@@ -1,22 +1,12 @@
+use glib::{Object, Properties};
+use gtk::{glib, prelude::*, subclass::prelude::*, CompositeTemplate, Image, Label};
 use std::cell::RefCell;
-use gtk::{
-    glib,
-    prelude::*,
-    subclass::prelude::*,
-    CompositeTemplate,
-    Label,
-    Image
-};
-use glib::{
-    Object,
-    Properties
-};
 
 mod imp {
     use super::*;
 
     #[derive(Properties, Default, CompositeTemplate)]
-    #[template(resource = "/org/euphonica/Euphonica/gtk/sidebar-button.ui")]
+    #[template(resource = "/io/github/htkhiem/Euphonica/gtk/sidebar-button.ui")]
     #[properties(wrapper_type = super::SidebarButton)]
     pub struct SidebarButton {
         #[template_child]
@@ -26,7 +16,7 @@ mod imp {
         #[property(get, set)]
         pub label: RefCell<String>,
         #[property(get, set)]
-        pub icon_name: RefCell<String>
+        pub icon_name: RefCell<String>,
     }
 
     #[glib::object_subclass]
@@ -53,12 +43,12 @@ mod imp {
             // `SYNC_CREATE` ensures that the label will be immediately set
             let obj = self.obj();
             obj.bind_property("label", &obj.imp().label_widget.get(), "label")
-               .sync_create()
-               .build();
+                .sync_create()
+                .build();
 
             obj.bind_property("icon_name", &obj.imp().icon_widget.get(), "icon-name")
-               .sync_create()
-               .build();
+                .sync_create()
+                .build();
         }
     }
 
@@ -74,7 +64,6 @@ glib::wrapper! {
     @extends gtk::ToggleButton, gtk::Widget,
     @implements gtk::Accessible, gtk::Buildable, gtk::ConstraintTarget, gtk::Orientable;
 }
-
 
 impl SidebarButton {
     pub fn new(label: &str, icon_name: &str) -> Self {

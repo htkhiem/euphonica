@@ -11,7 +11,7 @@ mod imp {
     use super::*;
 
     #[derive(Debug, Default, CompositeTemplate)]
-    #[template(resource = "/org/euphonica/Euphonica/gtk/preferences/player.ui")]
+    #[template(resource = "/io/github/htkhiem/Euphonica/gtk/preferences/player.ui")]
     pub struct PlayerPreferences {
         #[template_child]
         pub use_album_art_as_bg: TemplateChild<adw::SwitchRow>,

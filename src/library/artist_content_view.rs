@@ -1,34 +1,16 @@
+use adw::subclass::prelude::*;
+use glib::{clone, closure_local, signal::SignalHandlerId, Binding};
+use gtk::{gdk, gio, glib, prelude::*, CompositeTemplate, ListItem, SignalListItemFactory};
 use std::{
     cell::{OnceCell, RefCell},
     rc::Rc,
 };
-use adw::subclass::prelude::*;
-use gtk::{
-    gdk,
-    prelude::*,
-    gio,
-    glib,
-    CompositeTemplate,
-    SignalListItemFactory,
-    ListItem,
-};
-use glib::{
-    clone,
-    closure_local,
-    Binding,
-    signal::SignalHandlerId
-};
 
-use super::{
-    Library,
-    ArtistSongRow,
-    AlbumCell
-};
+use super::{AlbumCell, ArtistSongRow, Library};
 use crate::{
-    cache::{
-        Cache,
-        CacheState
-    }, client::ClientState, common::{Album, AlbumInfo, Artist, ArtistInfo, Song}
+    cache::{Cache, CacheState},
+    client::ClientState,
+    common::{Album, AlbumInfo, Artist, ArtistInfo, Song},
 };
 
 mod imp {
@@ -41,7 +23,7 @@ mod imp {
     use super::*;
 
     #[derive(Debug, CompositeTemplate)]
-    #[template(resource = "/org/euphonica/Euphonica/gtk/library/artist-content-view.ui")]
+    #[template(resource = "/io/github/htkhiem/Euphonica/gtk/library/artist-content-view.ui")]
     pub struct ArtistContentView {
         #[template_child]
         pub avatar: TemplateChild<adw::Avatar>,
@@ -67,6 +49,11 @@ mod imp {
         pub bio_attrib: TemplateChild<gtk::Label>,
         // #[template_child]
         // pub runtime: TemplateChild<gtk::Label>,
+        //
+        #[template_child]
+        pub all_songs_btn: TemplateChild<gtk::ToggleButton>,
+        #[template_child]
+        pub subview_stack: TemplateChild<gtk::Stack>,
 
         // All songs sub-view
         #[template_child]
@@ -97,7 +84,7 @@ mod imp {
         pub bindings: RefCell<Vec<Binding>>,
         pub avatar_signal_id: RefCell<Option<SignalHandlerId>>,
         pub cache: OnceCell<Rc<Cache>>,
-        pub selecting_all: Cell<bool>  // Enables queuing all songs from this artist efficiently
+        pub selecting_all: Cell<bool>, // Enables queuing all songs from this artist efficiently
     }
 
     impl Default for ArtistContentView {
@@ -114,6 +101,8 @@ mod imp {
                 bio_link: TemplateChild::default(),
                 bio_attrib: TemplateChild::default(),
                 // runtime: TemplateChild::default(),
+                all_songs_btn: TemplateChild::default(),
+                subview_stack: TemplateChild::default(),
                 // All songs sub-view
                 song_subview: TemplateChild::default(),
                 song_list: gio::ListStore::new::<Song>(),
@@ -132,7 +121,7 @@ mod imp {
                 bindings: RefCell::new(Vec::new()),
                 avatar_signal_id: RefCell::new(None),
                 cache: OnceCell::new(),
-                selecting_all: Cell::new(true)  // When nothing is selected, default to select-all
+                selecting_all: Cell::new(true), // When nothing is selected, default to select-all
             }
         }
     }
@@ -181,12 +170,13 @@ mod imp {
                         this.selecting_all.replace(true);
                         this.replace_queue_text.set_label("Play all");
                         this.append_queue_text.set_label("Queue all");
-                    }
-                    else {
+                    } else {
                         // TODO: l10n
                         this.selecting_all.replace(false);
-                        this.replace_queue_text.set_label(format!("Play {}", n_sel).as_str());
-                        this.append_queue_text.set_label(format!("Queue {}", n_sel).as_str());
+                        this.replace_queue_text
+                            .set_label(format!("Play {}", n_sel).as_str());
+                        this.append_queue_text
+                            .set_label(format!("Queue {}", n_sel).as_str());
                     }
                 }
             ));
@@ -220,18 +210,37 @@ mod imp {
                         .and_downcast::<Album>()
                         .expect("The item has to be a `common::Album`.");
 
-                    this.obj().emit_by_name::<()>("album-clicked", &[&album.to_value()]);
-                }));
+                    this.obj()
+                        .emit_by_name::<()>("album-clicked", &[&album.to_value()]);
+                }
+            ));
+
+            self.all_songs_btn
+                .bind_property(
+                    "active",
+                    &self.subview_stack.get(),
+                    "visible-child-name"
+                )
+                .transform_to(
+                    |_, active| {
+                        if active {
+                            Some("songs")
+                        }
+                        else {
+                            Some("albums")
+                        }
+                    }
+                )
+                .sync_create()
+                .build();
         }
 
         fn signals() -> &'static [Signal] {
             static SIGNALS: OnceLock<Vec<Signal>> = OnceLock::new();
             SIGNALS.get_or_init(|| {
-                vec![
-                    Signal::builder("album-clicked")
-                        .param_types([Album::static_type()])
-                        .build()
-                ]
+                vec![Signal::builder("album-clicked")
+                    .param_types([Album::static_type()])
+                    .build()]
             })
         }
     }
@@ -265,17 +274,14 @@ impl ArtistContentView {
                 if let Some(url) = bio.url.as_ref() {
                     bio_link.set_visible(true);
                     bio_link.set_uri(url);
-                }
-                else {
+                } else {
                     bio_link.set_visible(false);
                 }
                 bio_attrib.set_label(&bio.attribution);
-            }
-            else {
+            } else {
                 bio_box.set_visible(false);
             }
-        }
-        else {
+        } else {
             bio_box.set_visible(false);
         }
     }
@@ -295,7 +301,7 @@ impl ArtistContentView {
                         }
                     }
                 }
-            )
+            ),
         );
         cache.get_cache_state().connect_closure(
             "artist-meta-downloaded",
@@ -310,29 +316,21 @@ impl ArtistContentView {
                         }
                     }
                 }
-            )
+            ),
         );
 
         let infobox_revealer = self.imp().infobox_revealer.get();
         let collapse_infobox = self.imp().collapse_infobox.get();
         collapse_infobox
-            .bind_property(
-                "active",
-                &infobox_revealer,
-                "reveal-child"
-            )
-            .transform_to(|_, active: bool| { Some(!active) })
-            .transform_from(|_, active: bool| { Some(!active) })
+            .bind_property("active", &infobox_revealer, "reveal-child")
+            .transform_to(|_, active: bool| Some(!active))
+            .transform_from(|_, active: bool| Some(!active))
             .bidirectional()
             .sync_create()
             .build();
 
         infobox_revealer
-            .bind_property(
-                "child-revealed",
-                &collapse_infobox,
-                "icon-name"
-            )
+            .bind_property("child-revealed", &collapse_infobox, "icon-name")
             .transform_to(|_, revealed| {
                 if revealed {
                     return Some("up-symbolic");
@@ -346,63 +344,55 @@ impl ArtistContentView {
     fn setup_song_subview(&self, library: Library, cache: Rc<Cache>, client_state: ClientState) {
         // Hook up buttons
         let replace_queue_btn = self.imp().replace_queue.get();
-        replace_queue_btn.connect_clicked(
-            clone!(
-                #[strong(rename_to = this)]
-                self,
-                #[weak]
-                library,
-                move |_| {
-                    if let Some(artist) = this.imp().artist.borrow().as_ref() {
-                        if this.imp().selecting_all.get() {
-                            library.queue_artist(artist.clone(), false, true, true);
-                        }
-                        else {
-                            let store = &this.imp().song_list;
-                            // Get list of selected songs
-                            let sel = &this.imp().song_sel_model.selection();
-                            let mut songs: Vec<Song> = Vec::with_capacity(sel.size() as usize);
-                            let (iter, first_idx) = gtk::BitsetIter::init_first(sel).unwrap();
-                            songs.push(store.item(first_idx).and_downcast::<Song>().unwrap());
-                            iter
-                                .for_each(
-                                    |idx| songs.push(store.item(idx).and_downcast::<Song>().unwrap())
-                                );
-                            library.queue_songs(&songs, true, true);
-                        }
+        replace_queue_btn.connect_clicked(clone!(
+            #[strong(rename_to = this)]
+            self,
+            #[weak]
+            library,
+            move |_| {
+                if let Some(artist) = this.imp().artist.borrow().as_ref() {
+                    if this.imp().selecting_all.get() {
+                        library.queue_artist(artist.clone(), false, true, true);
+                    } else {
+                        let store = &this.imp().song_list;
+                        // Get list of selected songs
+                        let sel = &this.imp().song_sel_model.selection();
+                        let mut songs: Vec<Song> = Vec::with_capacity(sel.size() as usize);
+                        let (iter, first_idx) = gtk::BitsetIter::init_first(sel).unwrap();
+                        songs.push(store.item(first_idx).and_downcast::<Song>().unwrap());
+                        iter.for_each(|idx| {
+                            songs.push(store.item(idx).and_downcast::<Song>().unwrap())
+                        });
+                        library.queue_songs(&songs, true, true);
                     }
                 }
-            )
-        );
+            }
+        ));
         let append_queue_btn = self.imp().append_queue.get();
-        append_queue_btn.connect_clicked(
-            clone!(
-                #[strong(rename_to = this)]
-                self,
-                #[weak]
-                library,
-                move |_| {
-                    if let Some(artist) = this.imp().artist.borrow().as_ref() {
-                        if this.imp().selecting_all.get() {
-                            library.queue_artist(artist.clone(), false, false, false);
-                        }
-                        else {
-                            let store = &this.imp().song_list;
-                            // Get list of selected songs
-                            let sel = &this.imp().song_sel_model.selection();
-                            let mut songs: Vec<Song> = Vec::with_capacity(sel.size() as usize);
-                            let (iter, first_idx) = gtk::BitsetIter::init_first(sel).unwrap();
-                            songs.push(store.item(first_idx).and_downcast::<Song>().unwrap());
-                            iter
-                                .for_each(
-                                    |idx| songs.push(store.item(idx).and_downcast::<Song>().unwrap())
-                                );
-                            library.queue_songs(&songs, false, false);
-                        }
+        append_queue_btn.connect_clicked(clone!(
+            #[strong(rename_to = this)]
+            self,
+            #[weak]
+            library,
+            move |_| {
+                if let Some(artist) = this.imp().artist.borrow().as_ref() {
+                    if this.imp().selecting_all.get() {
+                        library.queue_artist(artist.clone(), false, false, false);
+                    } else {
+                        let store = &this.imp().song_list;
+                        // Get list of selected songs
+                        let sel = &this.imp().song_sel_model.selection();
+                        let mut songs: Vec<Song> = Vec::with_capacity(sel.size() as usize);
+                        let (iter, first_idx) = gtk::BitsetIter::init_first(sel).unwrap();
+                        songs.push(store.item(first_idx).and_downcast::<Song>().unwrap());
+                        iter.for_each(|idx| {
+                            songs.push(store.item(idx).and_downcast::<Song>().unwrap())
+                        });
+                        library.queue_songs(&songs, false, false);
                     }
                 }
-            )
-        );
+            }
+        ));
 
         client_state.connect_closure(
             "artist-songs-downloaded",
@@ -419,7 +409,7 @@ impl ArtistContentView {
                         }
                     }
                 }
-            )
+            ),
         );
 
         // Set up factory
@@ -433,10 +423,7 @@ impl ArtistContentView {
                 let item = list_item
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
-                let song_row = ArtistSongRow::new(
-                    library,
-                    &item
-                );
+                let song_row = ArtistSongRow::new(library, &item);
                 item.set_child(Some(&song_row));
             }
         ));
@@ -500,7 +487,7 @@ impl ArtistContentView {
                         }
                     }
                 }
-            )
+            ),
         );
 
         // Set up factory
@@ -517,28 +504,25 @@ impl ArtistContentView {
                 item.set_child(Some(&album_cell));
             }
         ));
-        factory.connect_bind(
-            move |_, list_item| {
-                let item: Album = list_item
-                    .downcast_ref::<ListItem>()
-                    .expect("Needs to be ListItem")
-                    .item()
-                    .and_downcast::<Album>()
-                    .expect("The item has to be a common::Album.");
-                let child: AlbumCell = list_item
-                    .downcast_ref::<ListItem>()
-                    .expect("Needs to be ListItem")
-                    .child()
-                    .and_downcast::<AlbumCell>()
-                    .expect("The child has to be an `AlbumCell`.");
+        factory.connect_bind(move |_, list_item| {
+            let item: Album = list_item
+                .downcast_ref::<ListItem>()
+                .expect("Needs to be ListItem")
+                .item()
+                .and_downcast::<Album>()
+                .expect("The item has to be a common::Album.");
+            let child: AlbumCell = list_item
+                .downcast_ref::<ListItem>()
+                .expect("Needs to be ListItem")
+                .child()
+                .and_downcast::<AlbumCell>()
+                .expect("The child has to be an `AlbumCell`.");
 
-                // Within this binding fn is where the cached artist avatar texture gets used.
-                child.bind(&item);
-            }
-        );
+            // Within this binding fn is where the cached artist avatar texture gets used.
+            child.bind(&item);
+        });
 
-        factory.connect_unbind(
-            move |_, list_item| {
+        factory.connect_unbind(move |_, list_item| {
             let child: AlbumCell = list_item
                 .downcast_ref::<ListItem>()
                 .expect("Needs to be ListItem")
@@ -558,10 +542,9 @@ impl ArtistContentView {
         self.setup_song_subview(library.clone(), cache.clone(), client_state.clone());
         self.setup_album_subview(cache, client_state);
 
-        self.imp().add_to_playlist.setup(
-            library.clone(),
-            self.imp().song_sel_model.clone()
-        );
+        self.imp()
+            .add_to_playlist
+            .setup(library.clone(), self.imp().song_sel_model.clone());
     }
 
     /// Returns true if an avatar was successfully retrieved.
@@ -573,9 +556,10 @@ impl ArtistContentView {
             if let Some(tex) = cache.load_cached_artist_avatar(info, false) {
                 self.imp().avatar.set_custom_image(Some(&tex));
                 return true;
-            }
-            else {
-                self.imp().avatar.set_custom_image(Option::<&gdk::Texture>::None);
+            } else {
+                self.imp()
+                    .avatar
+                    .set_custom_image(Option::<&gdk::Texture>::None);
                 return false;
             }
         }
@@ -621,7 +605,9 @@ impl ArtistContentView {
     fn add_album(&self, album: Album, cache: Rc<Cache>) {
         self.imp().album_list.append(&album);
         cache.ensure_cached_album_art(album.get_info(), false);
-        self.imp().album_count.set_label(&self.imp().album_list.n_items().to_string());
+        self.imp()
+            .album_count
+            .set_label(&self.imp().album_list.n_items().to_string());
     }
 
     pub fn add_songs(&self, songs: &[Song], cache: Rc<Cache>) {
@@ -635,7 +621,9 @@ impl ArtistContentView {
         // Might queue downloads, depending on user settings, but will not
         // actually load anything into memory just yet.
         cache.ensure_cached_album_arts(&infos);
-        self.imp().song_count.set_label(&self.imp().song_list.n_items().to_string());
+        self.imp()
+            .song_count
+            .set_label(&self.imp().song_list.n_items().to_string());
     }
 
     fn clear_content(&self) {

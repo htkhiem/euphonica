@@ -24,7 +24,7 @@
         <child>
           <object class="GtkImage" id="thumbnail">
             <property name="pixel-size">36</property>
-            <property name="resource">/org/euphonica/Euphonica/albumart-placeholder.svg</property>
+            <property name="resource">io/github/htkhiem/Euphonica/albumart-placeholder-thumb.png</property>
           </object>
         </child>
       </object>

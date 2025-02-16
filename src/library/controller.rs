@@ -1,23 +1,11 @@
-use std::{
-    cell::OnceCell,
-    rc::Rc,
-    vec::Vec,
-    sync::OnceLock,
-    borrow::Cow
-};
 use crate::{
     cache::Cache,
     client::{BackgroundTask, MpdWrapper},
-    common::{
-        Album, Artist, INode, Song
-    }
-};
-use gtk::{
-    glib,
-    gio,
-    prelude::*,
+    common::{Album, Artist, INode, Song},
 };
 use glib::subclass::Signal;
+use gtk::{gio, glib, prelude::*};
+use std::{borrow::Cow, cell::OnceCell, rc::Rc, sync::OnceLock, vec::Vec};
 
 use adw::subclass::prelude::*;
 
@@ -54,7 +42,7 @@ mod imp {
             Self {
                 playlists: gio::ListStore::new::<INode>(),
                 client: OnceCell::new(),
-                cache: OnceCell::new()
+                cache: OnceCell::new(),
             }
         }
     }
@@ -63,11 +51,9 @@ mod imp {
         fn signals() -> &'static [Signal] {
             static SIGNALS: OnceLock<Vec<Signal>> = OnceLock::new();
             SIGNALS.get_or_init(|| {
-                vec![
-                    Signal::builder("album-clicked")
-                        .param_types([Album::static_type(), gio::ListStore::static_type()])
-                        .build()
-                ]
+                vec![Signal::builder("album-clicked")
+                    .param_types([Album::static_type(), gio::ListStore::static_type()])
+                    .build()]
             })
         }
     }
@@ -100,7 +86,10 @@ impl Library {
         if let Some(cache) = self.imp().cache.get() {
             cache.ensure_cached_album_meta(album.get_info());
         }
-        self.client().queue_background(BackgroundTask::FetchAlbumSongs(album.get_title().to_owned()));
+        self.client()
+            .queue_background(BackgroundTask::FetchAlbumSongs(
+                album.get_title().to_owned(),
+            ), true);
     }
 
     /// Queue specific songs
@@ -109,7 +98,12 @@ impl Library {
         if replace {
             self.client().clear_queue();
         }
-        self.client().add_multi(&songs.iter().map(|s| s.get_uri().to_owned()).collect::<Vec<String>>());
+        self.client().add_multi(
+            &songs
+                .iter()
+                .map(|s| s.get_uri().to_owned())
+                .collect::<Vec<String>>(),
+        );
         if replace && play {
             self.client().play_at(0, false);
         }
@@ -121,7 +115,10 @@ impl Library {
             self.client().clear_queue();
         }
         let mut query = Query::new();
-        query.and(Term::Tag(Cow::Borrowed("album")), album.get_title().to_owned());
+        query.and(
+            Term::Tag(Cow::Borrowed("album")),
+            album.get_title().to_owned(),
+        );
         self.client().find_add(query);
         if replace && play {
             self.client().play_at(0, false);
@@ -135,11 +132,13 @@ impl Library {
         }
         let mut query = Query::new();
         query.and_with_op(
-            Term::Tag(Cow::Borrowed(
-                if use_albumartist { "albumartist" } else { "artist" }
-            )),
+            Term::Tag(Cow::Borrowed(if use_albumartist {
+                "albumartist"
+            } else {
+                "artist"
+            })),
             Operation::Contains,
-            artist.get_name().to_owned()
+            artist.get_name().to_owned(),
         );
         self.client().find_add(query);
         if replace && play {
@@ -154,7 +153,8 @@ impl Library {
         if let Some(cache) = self.imp().cache.get() {
             cache.ensure_cached_artist_meta(artist.get_info());
         }
-        self.client().get_artist_content(artist.get_name().to_owned());
+        self.client()
+            .get_artist_content(artist.get_name().to_owned());
     }
 
     /// Queue a song or folder (when recursive == true) for playback.
@@ -171,7 +171,9 @@ impl Library {
     /// Queue a playlist for playback.
     pub fn init_playlists(&self) {
         self.imp().playlists.remove_all();
-        self.imp().playlists.extend_from_slice(&self.client().get_playlists());
+        self.imp()
+            .playlists
+            .extend_from_slice(&self.client().get_playlists());
     }
 
     /// Get a reference to the local playlists store
@@ -181,7 +183,8 @@ impl Library {
 
     /// Retrieve songs in a playlist
     pub fn init_playlist(&self, name: &str) {
-        self.client().queue_background(BackgroundTask::FetchPlaylistSongs(name.to_owned()));
+        self.client()
+            .queue_background(BackgroundTask::FetchPlaylistSongs(name.to_owned()), true);
     }
 
     /// Queue a playlist for playback.
@@ -195,34 +198,45 @@ impl Library {
         }
     }
 
-    pub fn rename_playlist(&self, old_name: &str, new_name: &str) -> Result<(), Option<MpdError>>{
+    pub fn rename_playlist(&self, old_name: &str, new_name: &str) -> Result<(), Option<MpdError>> {
         self.client().rename_playlist(old_name, new_name)
     }
 
-    pub fn delete_playlist(&self, name: &str) -> Result<(), Option<MpdError>>{
+    pub fn delete_playlist(&self, name: &str) -> Result<(), Option<MpdError>> {
         self.client().delete_playlist(name)
     }
 
-    pub fn add_songs_to_playlist(&self, playlist_name: &str, songs: &[Song], mode: SaveMode) -> Result<(), Option<MpdError>> {
+    pub fn add_songs_to_playlist(
+        &self,
+        playlist_name: &str,
+        songs: &[Song],
+        mode: SaveMode,
+    ) -> Result<(), Option<MpdError>> {
         let mut edits: Vec<EditAction> = Vec::with_capacity(songs.len() + 1);
         if mode == SaveMode::Replace {
             edits.push(EditAction::Clear(Cow::Borrowed(playlist_name)));
         }
         songs.iter().for_each(|s| {
-            edits.push(EditAction::Add(Cow::Borrowed(playlist_name), Cow::Borrowed(s.get_uri()), None));
+            edits.push(EditAction::Add(
+                Cow::Borrowed(playlist_name),
+                Cow::Borrowed(s.get_uri()),
+                None,
+            ));
         });
         self.client().edit_playlist(&edits)
     }
 
     pub fn get_folder_contents(&self, uri: &str) {
-        self.client().queue_background(BackgroundTask::FetchFolderContents(uri.to_owned()));
+        self.client()
+            .queue_background(BackgroundTask::FetchFolderContents(uri.to_owned()), true);
     }
 
     pub fn init_albums(&self) {
-        self.client().queue_background(BackgroundTask::FetchAlbums);
+        self.client().queue_background(BackgroundTask::FetchAlbums, false);
     }
 
     pub fn init_artists(&self, use_albumartists: bool) {
-        self.client().queue_background(BackgroundTask::FetchArtists(use_albumartists));
+        self.client()
+            .queue_background(BackgroundTask::FetchArtists(use_albumartists), false);
     }
 }

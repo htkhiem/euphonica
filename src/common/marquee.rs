@@ -1,22 +1,17 @@
-use std::cell::Cell;
-use gtk::{
-    gio,
-    glib,
-    graphene,
-    subclass::prelude::*
-};
 use adw::prelude::*;
+use gtk::{gio, glib, graphene, subclass::prelude::*};
+use std::cell::Cell;
 
 mod imp {
-    use std::cell::OnceCell;
+    use super::*;
     use adw::TimedAnimation;
     use glib::{clone, Properties};
     use gtk::CompositeTemplate;
-    use super::*;
+    use std::cell::OnceCell;
 
     #[derive(Default, CompositeTemplate, Properties)]
     #[properties(wrapper_type = super::Marquee)]
-    #[template(resource = "/org/euphonica/Euphonica/gtk/marquee.ui")]
+    #[template(resource = "/io/github/htkhiem/Euphonica/gtk/marquee.ui")]
     pub struct Marquee {
         #[template_child]
         pub child: TemplateChild<gtk::Label>,
@@ -26,7 +21,7 @@ mod imp {
         curr_offset: Cell<f64>,
         child_width: Cell<i32>,
         #[property(get, set)]
-        should_run: Cell<bool>
+        should_run: Cell<bool>,
     }
     impl Marquee {
         pub fn check_animation(&self) {
@@ -37,8 +32,7 @@ mod imp {
                     let _ = self.curr_offset.replace(0.0);
                     anim.play();
                 }
-            }
-            else {
+            } else {
                 self.animation.get().unwrap().reset();
                 self.curr_offset.replace(0.0);
             }
@@ -65,42 +59,39 @@ mod imp {
     impl ObjectImpl for Marquee {
         fn constructed(&self) {
             self.parent_constructed();
-            let anim_target = adw::CallbackAnimationTarget::new(
-                clone!(
-                    #[weak(rename_to = this)]
-                    self,
-                    move |progress: f64| {
-                        // Update render offset
-                        // Reacquired on the fly to deal with changing child width
-                        let child_width = this.child_width.get();
-                        if child_width > 0 {
-                            let allocated_width = this.obj().width();
-                            let anim = this.animation.get().unwrap();
-                            if child_width > allocated_width {
-                                // Recomputed on the fly to deal with window resizing
-                                let distance = (child_width - allocated_width) as f64;
-                                let _ = this.curr_offset.replace(-distance * progress);
-                                anim.set_duration((distance / this.speed.get() * 1000.0) as u32);
-                                this.obj().queue_draw();
-                            }
-                            else {
-                                let _ = this.curr_offset.replace(0.0);
-                            }
+            let anim_target = adw::CallbackAnimationTarget::new(clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |progress: f64| {
+                    // Update render offset
+                    // Reacquired on the fly to deal with changing child width
+                    let child_width = this.child_width.get();
+                    if child_width > 0 {
+                        let allocated_width = this.obj().width();
+                        let anim = this.animation.get().unwrap();
+                        if child_width > allocated_width {
+                            // Recomputed on the fly to deal with window resizing
+                            let distance = (child_width - allocated_width) as f64;
+                            let _ = this.curr_offset.replace(-distance * progress);
+                            anim.set_duration((distance / this.speed.get() * 1000.0) as u32);
+                            this.obj().queue_draw();
+                        } else {
+                            let _ = this.curr_offset.replace(0.0);
                         }
-
                     }
-                )
-            );
+                }
+            ));
             let anim = adw::TimedAnimation::new(
                 self.obj().as_ref(),
-                0.0, 1.0,
+                0.0,
+                1.0,
                 1000, // Default 1s duration until we have a child widget
                 // (self.obj().width() as f64 / self.speed.get() * 1000.0).round() as u32,
-                anim_target
+                anim_target,
             );
             anim.set_easing(adw::Easing::EaseInOutSine);
             anim.set_repeat_count(0); // Repeat endlessly
-            anim.set_alternate(true);  // Back and forth
+            anim.set_alternate(true); // Back and forth
             let _ = self.animation.set(anim);
         }
 
@@ -121,21 +112,28 @@ mod imp {
             child.size_allocate(&gtk::Allocation::new(0, 0, width, height), baseline);
         }
 
-        fn measure(
-            &self,
-            orientation: gtk::Orientation,
-            for_size: i32,
-        ) -> (i32, i32, i32, i32) {
+        fn measure(&self, orientation: gtk::Orientation, for_size: i32) -> (i32, i32, i32, i32) {
             let min_width = self.obj().width_request();
             let child = self.child.get();
             // Measure the child's natural size in the given orientation
-            let (min_size, natural_size, min_baseline, natural_baseline) = child.measure(orientation, for_size);
+            let (min_size, natural_size, min_baseline, natural_baseline) =
+                child.measure(orientation, for_size);
 
             // For horizontal orientation, override the label's min width
             if orientation == gtk::Orientation::Horizontal {
-                return (min_width, natural_size.max(min_width), min_baseline, natural_baseline);
+                return (
+                    min_width,
+                    natural_size.max(min_width),
+                    min_baseline,
+                    natural_baseline,
+                );
             } else {
-                return (min_size, natural_size.max(min_width), min_baseline, natural_baseline);
+                return (
+                    min_size,
+                    natural_size.max(min_width),
+                    min_baseline,
+                    natural_baseline,
+                );
             }
         }
 
@@ -143,11 +141,20 @@ mod imp {
             let allocated_width = self.obj().width();
             let left_align_offset = (self.child_width.get() - allocated_width) as f32 / 2.0;
             snapshot.push_clip(&graphene::Rect::new(
-                0.0, 0.0, self.obj().width() as f32, self.obj().height() as f32
+                0.0,
+                0.0,
+                self.obj().width() as f32,
+                self.obj().height() as f32,
             ));
-            snapshot.translate(&graphene::Point::new(left_align_offset + self.curr_offset.get() as f32, 0.0)); // Apply horizontal translation for sliding effect
+            snapshot.translate(&graphene::Point::new(
+                left_align_offset + self.curr_offset.get() as f32,
+                0.0,
+            )); // Apply horizontal translation for sliding effect
             self.parent_snapshot(snapshot);
-            snapshot.translate(&graphene::Point::new(left_align_offset + -self.curr_offset.get() as f32, 0.0));
+            snapshot.translate(&graphene::Point::new(
+                left_align_offset + -self.curr_offset.get() as f32,
+                0.0,
+            ));
             snapshot.pop();
         }
     }

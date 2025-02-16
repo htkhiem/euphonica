@@ -1,45 +1,42 @@
+use adw::subclass::prelude::*;
+use glib::{clone, closure_local, signal::SignalHandlerId, Binding};
+use gtk::{gio, glib, prelude::*, BitsetIter, CompositeTemplate, ListItem, SignalListItemFactory};
 use std::{
     cell::{OnceCell, RefCell},
     rc::Rc,
 };
-use adw::subclass::prelude::*;
-use gtk::{
-    gio, glib, prelude::*, BitsetIter, CompositeTemplate, ListItem, SignalListItemFactory
-};
-use glib::{
-    clone,
-    closure_local,
-    Binding,
-    signal::SignalHandlerId
-};
 
 use mpd::error::{Error as MpdError, ErrorCode as MpdErrorCode, ServerError};
 
-use super::{
-    Library,
-    PlaylistSongRow
-};
+use super::{Library, PlaylistSongRow};
 use crate::{
-    cache::Cache, client::ClientState, common::{INode, Song}, utils::format_secs_as_duration, window::EuphonicaWindow
+    cache::Cache,
+    client::ClientState,
+    common::{INode, Song},
+    utils::format_secs_as_duration,
+    window::EuphonicaWindow,
 };
 
 #[derive(Debug)]
 pub enum InternalEditAction {
     ShiftBackward(u32),
     ShiftForward(u32),
-    Remove(u32)
+    Remove(u32),
 }
 
 #[derive(Debug)]
 pub struct HistoryStep {
     pub action: InternalEditAction,
-    pub song: Option<Song> // for undoing removals
+    pub song: Option<Song>, // for undoing removals
 }
 
 impl HistoryStep {
     fn update_queue_pos(&self, list: &gio::ListStore, from: u32, to: u32) {
         for i in from..=to {
-            list.item(i).and_downcast_ref::<Song>().unwrap().set_queue_pos(i);
+            list.item(i)
+                .and_downcast_ref::<Song>()
+                .unwrap()
+                .set_queue_pos(i);
         }
     }
     fn shift(&self, list: &gio::ListStore, old: u32, backward: bool) {
@@ -51,7 +48,7 @@ impl HistoryStep {
         list.splice(src, 2, &[des_song, src_song]);
         self.update_queue_pos(list, src, des);
     }
-    
+
     pub fn forward(&self, list: &gio::ListStore) {
         match self.action {
             InternalEditAction::ShiftBackward(idx) => {
@@ -103,7 +100,7 @@ mod imp {
     use super::*;
 
     #[derive(Debug, CompositeTemplate)]
-    #[template(resource = "/org/euphonica/Euphonica/gtk/library/playlist-content-view.ui")]
+    #[template(resource = "/io/github/htkhiem/Euphonica/gtk/library/playlist-content-view.ui")]
     pub struct PlaylistContentView {
         #[template_child]
         pub infobox_revealer: TemplateChild<gtk::Revealer>,
@@ -166,15 +163,15 @@ mod imp {
         pub sel_model: gtk::MultiSelection,
         pub is_editing: Cell<bool>,
         pub history: RefCell<Vec<HistoryStep>>,
-        pub history_idx: Cell<usize>,  // Starts from 1, since 0 is reserved for the initial state (before the first action).
+        pub history_idx: Cell<usize>, // Starts from 1, since 0 is reserved for the initial state (before the first action).
 
         pub playlist: RefCell<Option<INode>>,
         pub bindings: RefCell<Vec<Binding>>,
         pub cover_signal_id: RefCell<Option<SignalHandlerId>>,
         pub cache: OnceCell<Rc<Cache>>,
-        pub selecting_all: Cell<bool>,  // Enables queuing the entire playlist efficiently
+        pub selecting_all: Cell<bool>, // Enables queuing the entire playlist efficiently
         pub window: OnceCell<EuphonicaWindow>,
-        pub library: OnceCell<Library>
+        pub library: OnceCell<Library>,
     }
 
     impl Default for PlaylistContentView {
@@ -216,9 +213,9 @@ mod imp {
                 cover_signal_id: RefCell::new(None),
                 cache: OnceCell::new(),
                 playlist: RefCell::new(None),
-                selecting_all: Cell::new(true),  // When nothing is selected, default to select-all
+                selecting_all: Cell::new(true), // When nothing is selected, default to select-all
                 window: OnceCell::new(),
-                library: OnceCell::new()
+                library: OnceCell::new(),
             }
         }
     }
@@ -292,7 +289,10 @@ mod imp {
 
             self.sel_model.set_model(Some(&self.song_list.clone()));
             self.content.set_model(Some(&self.sel_model));
-            self.editing_content.set_model(Some(&gtk::NoSelection::new(Some(self.editing_song_list.clone()))));
+            self.editing_content
+                .set_model(Some(&gtk::NoSelection::new(Some(
+                    self.editing_song_list.clone(),
+                ))));
 
             // Change button labels depending on selection state
             self.sel_model.connect_selection_changed(clone!(
@@ -305,12 +305,13 @@ mod imp {
                         this.selecting_all.replace(true);
                         this.replace_queue_text.set_label("Play all");
                         this.append_queue_text.set_label("Queue all");
-                    }
-                    else {
+                    } else {
                         // TODO: l10n
                         this.selecting_all.replace(false);
-                        this.replace_queue_text.set_label(format!("Play {}", n_sel).as_str());
-                        this.append_queue_text.set_label(format!("Queue {}", n_sel).as_str());
+                        this.replace_queue_text
+                            .set_label(format!("Play {}", n_sel).as_str());
+                        this.append_queue_text
+                            .set_label(format!("Queue {}", n_sel).as_str());
                     }
                 }
             ));
@@ -339,7 +340,8 @@ mod imp {
         fn update_undo_redo_sensitivity(&self) {
             let curr_idx = self.history_idx.get();
             self.edit_undo.set_sensitive(curr_idx > 0);
-            self.edit_redo.set_sensitive(curr_idx < self.history.borrow().len());
+            self.edit_redo
+                .set_sensitive(curr_idx < self.history.borrow().len());
         }
 
         pub fn enter_edit_mode(&self) {
@@ -351,7 +353,13 @@ mod imp {
             // so we can revert in case user clicks Cancel.
             let mut songs: Vec<Song> = Vec::with_capacity(self.song_list.n_items() as usize);
             for i in 0..self.song_list.n_items() {
-                songs.push(self.song_list.item(i).clone().and_downcast::<Song>().unwrap());
+                songs.push(
+                    self.song_list
+                        .item(i)
+                        .clone()
+                        .and_downcast::<Song>()
+                        .unwrap(),
+                );
             }
             self.editing_song_list.extend_from_slice(&songs);
 
@@ -368,12 +376,19 @@ mod imp {
                     let song_count = self.editing_song_list.n_items();
                     let mut song_list: Vec<Song> = Vec::with_capacity(song_count as usize);
                     for i in 0..song_count {
-                        song_list.push(self.editing_song_list.item(i).unwrap().downcast_ref::<Song>().unwrap().clone());
+                        song_list.push(
+                            self.editing_song_list
+                                .item(i)
+                                .unwrap()
+                                .downcast_ref::<Song>()
+                                .unwrap()
+                                .clone(),
+                        );
                     }
                     let _ = self.library.get().unwrap().add_songs_to_playlist(
                         self.playlist.borrow().as_ref().unwrap().get_uri(),
                         &song_list,
-                        SaveMode::Replace
+                        SaveMode::Replace,
                     );
                     self.history_idx.replace(0);
                 }
@@ -448,7 +463,13 @@ impl Default for PlaylistContentView {
 }
 
 impl PlaylistContentView {
-    pub fn setup(&self, library: Library, client_state: ClientState, cache: Rc<Cache>, window: EuphonicaWindow) {
+    pub fn setup(
+        &self,
+        library: Library,
+        client_state: ClientState,
+        cache: Rc<Cache>,
+        window: EuphonicaWindow,
+    ) {
         // cache.get_cache_state().connect_closure(
         //     "album-art-downloaded",
         //     false,
@@ -464,8 +485,14 @@ impl PlaylistContentView {
         //         }
         //     )
         // );
-        self.imp().window.set(window).expect("PlaylistContentView: Cannot set reference to window");
-        self.imp().library.set(library).expect("PlaylistContentView: Cannot set reference to library controller");
+        self.imp()
+            .window
+            .set(window)
+            .expect("PlaylistContentView: Cannot set reference to window");
+        self.imp()
+            .library
+            .set(library)
+            .expect("PlaylistContentView: Cannot set reference to library controller");
         client_state.connect_closure(
             "playlist-songs-downloaded",
             false,
@@ -479,30 +506,22 @@ impl PlaylistContentView {
                         }
                     }
                 }
-            )
+            ),
         );
 
         let _ = self.imp().cache.set(cache.clone());
         let infobox_revealer = self.imp().infobox_revealer.get();
         let collapse_infobox = self.imp().collapse_infobox.get();
         collapse_infobox
-            .bind_property(
-                "active",
-                &infobox_revealer,
-                "reveal-child"
-            )
-            .transform_to(|_, active: bool| { Some(!active) })
-            .transform_from(|_, active: bool| { Some(!active) })
+            .bind_property("active", &infobox_revealer, "reveal-child")
+            .transform_to(|_, active: bool| Some(!active))
+            .transform_from(|_, active: bool| Some(!active))
             .bidirectional()
             .sync_create()
             .build();
 
         infobox_revealer
-            .bind_property(
-                "child-revealed",
-                &collapse_infobox,
-                "icon-name"
-            )
+            .bind_property("child-revealed", &collapse_infobox, "icon-name")
             .transform_to(|_, revealed| {
                 if revealed {
                     return Some("up-symbolic");
@@ -513,88 +532,78 @@ impl PlaylistContentView {
             .build();
 
         let replace_queue_btn = self.imp().replace_queue.get();
-        replace_queue_btn.connect_clicked(
-            clone!(
-                #[strong(rename_to = this)]
-                self,
-                move |_| {
-                    let library = this.imp().library.get().unwrap();
-                    if let Some(playlist) = this.imp().playlist.borrow().as_ref() {
-                        if this.imp().selecting_all.get() {
-                            library.queue_playlist(playlist.get_name().unwrap(), true, true);
-                        }
-                        else {
-                            let store = &this.imp().song_list;
-                            // Get list of selected songs
-                            let sel = &this.imp().sel_model.selection();
-                            let mut songs: Vec<Song> = Vec::with_capacity(sel.size() as usize);
-                            let (iter, first_idx) = BitsetIter::init_first(sel).unwrap();
-                            songs.push(store.item(first_idx).and_downcast::<Song>().unwrap());
-                            iter
-                                .for_each(
-                                    |idx| songs.push(store.item(idx).and_downcast::<Song>().unwrap())
-                                );
-                            library.queue_songs(&songs, true, true);
-                        }
+        replace_queue_btn.connect_clicked(clone!(
+            #[strong(rename_to = this)]
+            self,
+            move |_| {
+                let library = this.imp().library.get().unwrap();
+                if let Some(playlist) = this.imp().playlist.borrow().as_ref() {
+                    if this.imp().selecting_all.get() {
+                        library.queue_playlist(playlist.get_name().unwrap(), true, true);
+                    } else {
+                        let store = &this.imp().song_list;
+                        // Get list of selected songs
+                        let sel = &this.imp().sel_model.selection();
+                        let mut songs: Vec<Song> = Vec::with_capacity(sel.size() as usize);
+                        let (iter, first_idx) = BitsetIter::init_first(sel).unwrap();
+                        songs.push(store.item(first_idx).and_downcast::<Song>().unwrap());
+                        iter.for_each(|idx| {
+                            songs.push(store.item(idx).and_downcast::<Song>().unwrap())
+                        });
+                        library.queue_songs(&songs, true, true);
                     }
                 }
-            )
-        );
+            }
+        ));
         let append_queue_btn = self.imp().append_queue.get();
-        append_queue_btn.connect_clicked(
-            clone!(
-                #[strong(rename_to = this)]
-                self,
-                move |_| {
-                    let library = this.imp().library.get().unwrap();
-                    if let Some(playlist) = this.imp().playlist.borrow().as_ref() {
-                        if this.imp().selecting_all.get() {
-                            library.queue_playlist(playlist.get_name().unwrap(), false, false);
-                        }
-                        else {
-                            let store = &this.imp().song_list;
-                            // Get list of selected songs
-                            let sel = &this.imp().sel_model.selection();
-                            let mut songs: Vec<Song> = Vec::with_capacity(sel.size() as usize);
-                            let (iter, first_idx) = BitsetIter::init_first(sel).unwrap();
-                            songs.push(store.item(first_idx).and_downcast::<Song>().unwrap());
-                            iter
-                                .for_each(
-                                    |idx| songs.push(store.item(idx).and_downcast::<Song>().unwrap())
-                                );
-                            library.queue_songs(&songs, false, false);
-                        }
+        append_queue_btn.connect_clicked(clone!(
+            #[strong(rename_to = this)]
+            self,
+            move |_| {
+                let library = this.imp().library.get().unwrap();
+                if let Some(playlist) = this.imp().playlist.borrow().as_ref() {
+                    if this.imp().selecting_all.get() {
+                        library.queue_playlist(playlist.get_name().unwrap(), false, false);
+                    } else {
+                        let store = &this.imp().song_list;
+                        // Get list of selected songs
+                        let sel = &this.imp().sel_model.selection();
+                        let mut songs: Vec<Song> = Vec::with_capacity(sel.size() as usize);
+                        let (iter, first_idx) = BitsetIter::init_first(sel).unwrap();
+                        songs.push(store.item(first_idx).and_downcast::<Song>().unwrap());
+                        iter.for_each(|idx| {
+                            songs.push(store.item(idx).and_downcast::<Song>().unwrap())
+                        });
+                        library.queue_songs(&songs, false, false);
                     }
                 }
-            )
-        );
+            }
+        ));
 
         let rename_btn = self.imp().rename.get();
         let new_name = self.imp().new_name.get();
         let delete_btn = self.imp().delete.get();
 
-        new_name
-            .connect_closure(
-                "changed",
-                false,
-                closure_local!(
-                    #[weak(rename_to = this)]
-                    self,
-                    #[weak]
-                    rename_btn,
-                    move |entry: gtk::Entry| {
-                        if let Some(playlist) = this.imp().playlist.borrow().as_ref() {
-                            rename_btn.set_sensitive(
-                                entry.text_length() > 0 &&
-                                    entry.buffer().text() != playlist.get_name().unwrap()
-                            );
-                        }
-                        else {
-                            rename_btn.set_sensitive(false);
-                        }
+        new_name.connect_closure(
+            "changed",
+            false,
+            closure_local!(
+                #[weak(rename_to = this)]
+                self,
+                #[weak]
+                rename_btn,
+                move |entry: gtk::Entry| {
+                    if let Some(playlist) = this.imp().playlist.borrow().as_ref() {
+                        rename_btn.set_sensitive(
+                            entry.text_length() > 0
+                                && entry.buffer().text() != playlist.get_name().unwrap(),
+                        );
+                    } else {
+                        rename_btn.set_sensitive(false);
                     }
-                )
-            );
+                }
+            ),
+        );
 
         rename_btn.connect_clicked(clone!(
             #[weak(rename_to = this)]
@@ -650,18 +659,16 @@ impl PlaylistContentView {
                 if let Some(playlist) = this.imp().playlist.borrow().as_ref() {
                     if this.imp().selecting_all.get() {
                         library.queue_playlist(playlist.get_name().unwrap(), false, false);
-                    }
-                    else {
+                    } else {
                         let store = &this.imp().song_list;
                         // Get list of selected songs
                         let sel = &this.imp().sel_model.selection();
                         let mut songs: Vec<Song> = Vec::with_capacity(sel.size() as usize);
                         let (iter, first_idx) = BitsetIter::init_first(sel).unwrap();
                         songs.push(store.item(first_idx).and_downcast::<Song>().unwrap());
-                        iter
-                            .for_each(
-                                |idx| songs.push(store.item(idx).and_downcast::<Song>().unwrap())
-                            );
+                        iter.for_each(|idx| {
+                            songs.push(store.item(idx).and_downcast::<Song>().unwrap())
+                        });
                         library.queue_songs(&songs, false, false);
                     }
                 }
@@ -744,7 +751,6 @@ impl PlaylistContentView {
                     }
                 ));
 
-
                 // When row goes out of sight, unbind from item to allow reuse with another.
                 f.connect_unbind(move |_, list_item| {
                     // Get `PlaylistSongRow` from `ListItem` (the UI widget)
@@ -761,7 +767,9 @@ impl PlaylistContentView {
 
         // Set the factory of the list view
         self.imp().content.set_factory(Some(&factory));
-        self.imp().editing_content.set_factory(Some(&editing_factory));
+        self.imp()
+            .editing_content
+            .set_factory(Some(&editing_factory));
     }
 
     /// Returns true if an album art was successfully retrieved.
@@ -828,24 +836,29 @@ impl PlaylistContentView {
         let curr_len = self.imp().song_list.n_items();
         self.imp().song_list.extend_from_slice(songs);
         for i in curr_len..self.imp().song_list.n_items() {
-            self.imp().song_list.item(i).unwrap().downcast_ref::<Song>().unwrap().set_queue_pos(curr_len + i);
+            self.imp()
+                .song_list
+                .item(i)
+                .unwrap()
+                .downcast_ref::<Song>()
+                .unwrap()
+                .set_queue_pos(curr_len + i);
         }
-        self.imp().track_count.set_label(&self.imp().song_list.n_items().to_string());
-        self.imp().runtime.set_label(
-            &format_secs_as_duration(
-                self.imp().song_list
-                    .iter()
-                    .map(
-                        |item: Result<Song, _>| {
-                            if let Ok(song) = item {
-                                return song.get_duration();
-                            }
-                            0
-                        }
-                    )
-                    .sum::<u64>() as f64
-            )
-        );
+        self.imp()
+            .track_count
+            .set_label(&self.imp().song_list.n_items().to_string());
+        self.imp().runtime.set_label(&format_secs_as_duration(
+            self.imp()
+                .song_list
+                .iter()
+                .map(|item: Result<Song, _>| {
+                    if let Ok(song) = item {
+                        return song.get_duration();
+                    }
+                    0
+                })
+                .sum::<u64>() as f64,
+        ));
     }
 
     pub fn current_playlist(&self) -> Option<INode> {
@@ -856,7 +869,7 @@ impl PlaylistContentView {
         if idx > 0 {
             let step = HistoryStep {
                 action: InternalEditAction::ShiftBackward(idx),
-                song: None
+                song: None,
             };
             step.forward(&self.imp().editing_song_list);
             self.imp().push_history(step);
@@ -868,7 +881,7 @@ impl PlaylistContentView {
         if len > 1 && idx < (len - 1) {
             let step = HistoryStep {
                 action: InternalEditAction::ShiftForward(idx),
-                song: None
+                song: None,
             };
             step.forward(&self.imp().editing_song_list);
             self.imp().push_history(step);
@@ -879,14 +892,14 @@ impl PlaylistContentView {
         let step = HistoryStep {
             action: InternalEditAction::Remove(idx),
             song: Some(
-                self
-                    .imp()
+                self.imp()
                     .editing_song_list
                     .item(idx)
                     .unwrap()
                     .clone()
-                    .downcast::<Song>().unwrap()
-            )
+                    .downcast::<Song>()
+                    .unwrap(),
+            ),
         };
         step.forward(&self.imp().editing_song_list);
         self.imp().push_history(step);

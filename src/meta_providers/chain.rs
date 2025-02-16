@@ -1,6 +1,4 @@
-use super::{
-    lastfm::LastfmWrapper, models, musicbrainz::MusicBrainzWrapper, MetadataProvider
-};
+use super::{lastfm::LastfmWrapper, models, musicbrainz::MusicBrainzWrapper, MetadataProvider};
 
 /// A meta-MetadataProvider that works by daisy-chaining actual MetadataProviders.
 /// Think composite pattern.
@@ -8,14 +6,17 @@ use super::{
 /// to add a MusicBrainz ID. This should help downstream providers locate metadata
 /// more accurately.
 pub struct MetadataChain {
-    pub providers: Vec<Box<dyn MetadataProvider>>
+    pub providers: Vec<Box<dyn MetadataProvider>>,
 }
 
 impl MetadataProvider for MetadataChain {
     /// The priority argument exists only for compatibility and is always ignored.
-    fn new(_prio: u32) -> Self where Self: Sized {
+    fn new(_prio: u32) -> Self
+    where
+        Self: Sized,
+    {
         Self {
-            providers: Vec::new()
+            providers: Vec::new(),
         }
     }
 
@@ -32,7 +33,9 @@ impl MetadataProvider for MetadataChain {
     fn set_priority(&self, _prio: u32) {}
 
     fn get_album_meta(
-        self: &Self, key: bson::Document, mut existing: Option<models::AlbumMeta>
+        self: &Self,
+        key: bson::Document,
+        mut existing: Option<models::AlbumMeta>,
     ) -> Option<models::AlbumMeta> {
         let mut current_key: bson::Document = key.clone();
         for provider in self.providers.iter() {
@@ -50,7 +53,9 @@ impl MetadataProvider for MetadataChain {
     }
 
     fn get_artist_meta(
-        self: &Self, key: bson::Document, mut existing: Option<models::ArtistMeta>
+        self: &Self,
+        key: bson::Document,
+        mut existing: Option<models::ArtistMeta>,
     ) -> Option<models::ArtistMeta> {
         let mut current_key: bson::Document = key.clone();
         for provider in self.providers.iter() {
@@ -74,6 +79,6 @@ pub fn get_provider_with_priority(key: &str, prio: u32) -> Box<dyn MetadataProvi
     match key {
         "musicbrainz" => Box::new(MusicBrainzWrapper::new(prio)),
         "lastfm" => Box::new(LastfmWrapper::new(prio)),
-        _ => unimplemented!()
+        _ => unimplemented!(),
     }
 }

@@ -1,16 +1,10 @@
-use std::{
-    cell::Cell,
-    sync::OnceLock
-};
-use gtk::glib;
 use glib::{
     prelude::*,
-    subclass::{
-        prelude::*,
-        Signal
-    },
-    BoxedAnyObject
+    subclass::{prelude::*, Signal},
+    BoxedAnyObject,
 };
+use gtk::glib;
+use std::{cell::Cell, sync::OnceLock};
 
 use crate::common::{Album, Artist};
 
@@ -20,19 +14,15 @@ pub enum ConnectionState {
     #[default]
     NotConnected,
     Connecting,
-    Unauthenticated,      // Either no password is provided or the one provided is insufficiently privileged
+    Unauthenticated, // Either no password is provided or the one provided is insufficiently privileged
     CredentialStoreError, // Cannot access underlying credential store to fetch or save password
-    WrongPassword,        // The provided password does not match any of the configured passwords
-    Connected
+    WrongPassword,   // The provided password does not match any of the configured passwords
+    Connected,
 }
 
 mod imp {
-    use glib::{
-        ParamSpec,
-        ParamSpecBoolean,
-        ParamSpecEnum
-    };
-    
+    use glib::{ParamSpec, ParamSpecBoolean, ParamSpecEnum};
+
     use super::*;
     use once_cell::sync::Lazy;
 
@@ -42,7 +32,7 @@ mod imp {
         // Used to indicate that the background client is busy.
         pub busy: Cell<bool>,
         pub supports_stickers: Cell<bool>,
-        pub supports_playlists: Cell<bool>
+        pub supports_playlists: Cell<bool>,
     }
 
     #[glib::object_subclass]
@@ -55,7 +45,7 @@ mod imp {
                 connection_state: Cell::default(),
                 busy: Cell::new(false),
                 supports_stickers: Cell::new(false),
-                supports_playlists: Cell::new(false)
+                supports_playlists: Cell::new(false),
             }
         }
     }
@@ -65,9 +55,15 @@ mod imp {
             static PROPERTIES: Lazy<Vec<ParamSpec>> = Lazy::new(|| {
                 vec![
                     ParamSpecBoolean::builder("busy").read_only().build(),
-                    ParamSpecBoolean::builder("supports-stickers").read_only().build(),
-                    ParamSpecBoolean::builder("supports-playlists").read_only().build(),
-                    ParamSpecEnum::builder::<ConnectionState>("connection-state").read_only().build()
+                    ParamSpecBoolean::builder("supports-stickers")
+                        .read_only()
+                        .build(),
+                    ParamSpecBoolean::builder("supports-playlists")
+                        .read_only()
+                        .build(),
+                    ParamSpecEnum::builder::<ConnectionState>("connection-state")
+                        .read_only()
+                        .build(),
                 ]
             });
             PROPERTIES.as_ref()
@@ -90,19 +86,14 @@ mod imp {
                 vec![
                     Signal::builder("idle")
                         .param_types([
-                            BoxedAnyObject::static_type()  // mpd::Subsystem::to_str
+                            BoxedAnyObject::static_type(), // mpd::Subsystem::to_str
                         ])
                         .build(),
                     Signal::builder("album-art-downloaded")
                         .param_types([
                             String::static_type(),         // folder URI
                             BoxedAnyObject::static_type(), // hires
-                            BoxedAnyObject::static_type()  // thumbnail
-                        ])
-                        .build(),
-                    Signal::builder("album-art-not-available")
-                        .param_types([
-                            String::static_type(),  // folder URI
+                            BoxedAnyObject::static_type(), // thumbnail
                         ])
                         .build(),
                     // Enough information about this album has been downloaded to display it
@@ -115,7 +106,7 @@ mod imp {
                     Signal::builder("album-songs-downloaded")
                         .param_types([
                             String::static_type(),
-                            BoxedAnyObject::static_type()  // Vec<Song>
+                            BoxedAnyObject::static_type(), // Vec<Song>
                         ])
                         .build(),
                     // ArtistInfo downloaded. Should probably queue metadata retrieval.
@@ -127,19 +118,16 @@ mod imp {
                     Signal::builder("artist-songs-downloaded")
                         .param_types([
                             String::static_type(),
-                            BoxedAnyObject::static_type()  // Vec<Song>
+                            BoxedAnyObject::static_type(), // Vec<Song>
                         ])
                         .build(),
                     Signal::builder("artist-album-basic-info-downloaded")
-                        .param_types([
-                            String::static_type(),
-                            Album::static_type()
-                        ])
+                        .param_types([String::static_type(), Album::static_type()])
                         .build(),
                     Signal::builder("folder-contents-downloaded")
                         .param_types([
-                            str::static_type(), // corresponding path
-                            BoxedAnyObject::static_type() // Vec<INode>
+                            str::static_type(),            // corresponding path
+                            BoxedAnyObject::static_type(), // Vec<INode>
                         ])
                         .build(),
                     // A chunk of a playlist's songs have been retrieved. Emit this
@@ -147,7 +135,7 @@ mod imp {
                     Signal::builder("playlist-songs-downloaded")
                         .param_types([
                             String::static_type(),
-                            BoxedAnyObject::static_type()  // Vec<Song>
+                            BoxedAnyObject::static_type(), // Vec<Song>
                         ])
                         .build(),
                 ]
@@ -165,7 +153,6 @@ impl Default for ClientState {
         glib::Object::new()
     }
 }
-
 
 impl ClientState {
     pub fn get_connection_state(&self) -> ConnectionState {
@@ -192,19 +179,12 @@ impl ClientState {
 
     // Convenience emit wrappers
     pub fn emit_result<T: ToValue>(&self, signal_name: &str, val: T) {
-        self.emit_by_name::<()>(
-            signal_name,
-            &[
-                &val
-            ]
-        )
+        self.emit_by_name::<()>(signal_name, &[&val])
     }
 
     pub fn emit_boxed_result<T: 'static>(&self, signal_name: &str, to_box: T) {
         // T must be owned or static
-        self.emit_by_name::<()>(signal_name, &[
-            &BoxedAnyObject::new(to_box)
-        ]);
+        self.emit_by_name::<()>(signal_name, &[&BoxedAnyObject::new(to_box)]);
     }
 
     pub fn supports_stickers(&self) -> bool {

@@ -18,44 +18,36 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-use std::{cell::RefCell, ops::Deref, path::PathBuf, thread, time::Duration};
-use adw::{
-    prelude::*,
-    subclass::prelude::*
-};
-use gtk::{
-    gdk,
-    gio,
-    glib::{self, clone, closure_local, BoxedAnyObject}
-};
-use glib::signal::SignalHandlerId;
-use image::{imageops::FilterType, DynamicImage};
-use libblur::{stack_blur, FastBlurChannels, ThreadingPolicy};
-use mpd::Subsystem;
 use crate::{
     application::EuphonicaApplication,
     client::{ClientState, ConnectionState},
-    common::{Album, blend_mode::*, paintables::FadePaintable},
+    common::{blend_mode::*, paintables::FadePaintable, Album},
     library::{AlbumView, ArtistContentView, ArtistView, FolderView, PlaylistView},
     player::{Player, PlayerBar, QueueView},
     sidebar::Sidebar,
-    utils::{self, settings_manager}
+    utils::{self, settings_manager},
 };
+use adw::{prelude::*, subclass::prelude::*};
+use glib::signal::SignalHandlerId;
+use gtk::{
+    gdk, gio,
+    glib::{self, clone, closure_local, BoxedAnyObject},
+};
+use image::{imageops::FilterType, DynamicImage};
+use libblur::{stack_blur, FastBlurChannels, ThreadingPolicy};
+use mpd::Subsystem;
+use std::{cell::RefCell, ops::Deref, path::PathBuf, thread, time::Duration};
 
 #[derive(Debug)]
 pub struct BlurConfig {
     width: u32,
     height: u32,
     radius: u32,
-    fade: bool  // Whether this update requires fading to it. Those for updating radius shouldn't be faded.
+    fade: bool, // Whether this update requires fading to it. Those for updating radius shouldn't be faded.
 }
 
 fn run_blur(di: &DynamicImage, config: &BlurConfig) -> gdk::MemoryTexture {
-    let scaled = di.resize_to_fill(
-        config.width,
-        config.height,
-        FilterType::Nearest
-    );
+    let scaled = di.resize_to_fill(config.width, config.height, FilterType::Nearest);
     let mut dst_bytes: Vec<u8> = scaled.as_bytes().to_vec();
     // Always assume RGB8 (no alpha channel)
     // This works since we're the ones who wrote the original images
@@ -67,7 +59,7 @@ fn run_blur(di: &DynamicImage, config: &BlurConfig) -> gdk::MemoryTexture {
         config.height,
         config.radius,
         FastBlurChannels::Channels3,
-        ThreadingPolicy::Adaptive
+        ThreadingPolicy::Adaptive,
     );
     // Wrap in MemoryTexture for snapshotting
     gdk::MemoryTexture::new(
@@ -75,16 +67,16 @@ fn run_blur(di: &DynamicImage, config: &BlurConfig) -> gdk::MemoryTexture {
         config.height as i32,
         gdk::MemoryFormat::R8g8b8,
         &glib::Bytes::from_owned(dst_bytes),
-        (config.width * 3) as usize
+        (config.width * 3) as usize,
     )
 }
 
 pub enum BlurMessage {
     New(PathBuf, BlurConfig), // Load new image at FULL PATH & blur with given configuration. Will fade.
-    Update(BlurConfig), // Re-blur current image but do not fade.
-    Clear, // Clears last-blurred cache.
+    Update(BlurConfig),       // Re-blur current image but do not fade.
+    Clear,                    // Clears last-blurred cache.
     Result(gdk::MemoryTexture, bool), // GPU texture and whether to fade to this one.
-    Stop
+    Stop,
 }
 
 // Blurred background logic. Runs in a background thread. Both interpretations are valid :)
@@ -98,7 +90,10 @@ pub enum BlurMessage {
 // will not result in a rapidly-changing background - it will only change as quickly as it
 // can fade or the CPU can blur, whichever is slower.
 mod imp {
-    use std::{cell::{Cell, OnceCell}, sync::{Arc, Mutex}};
+    use std::{
+        cell::{Cell, OnceCell},
+        sync::{Arc, Mutex},
+    };
 
     use async_channel::Sender;
     use glib::Properties;
@@ -110,11 +105,11 @@ mod imp {
 
     #[derive(Debug, Default, Properties, gtk::CompositeTemplate)]
     #[properties(wrapper_type = super::EuphonicaWindow)]
-    #[template(resource = "/org/euphonica/Euphonica/window.ui")]
+    #[template(resource = "/io/github/htkhiem/Euphonica/window.ui")]
     pub struct EuphonicaWindow {
         // Top level widgets
         #[template_child]
-        pub split_view: TemplateChild<adw::NavigationSplitView>,
+        pub split_view: TemplateChild<adw::OverlaySplitView>,
         #[template_child]
         pub content: TemplateChild<gtk::Box>,
         #[template_child]
@@ -212,71 +207,53 @@ mod imp {
             let bg_paintable = &self.bg_paintable;
 
             settings
-                .bind(
-                    "use-album-art-as-bg",
-                    obj,
-                    "use-album-art-bg"
-                )
+                .bind("use-album-art-as-bg", obj, "use-album-art-bg")
                 .build();
 
-            settings
-                .bind(
-                    "bg-opacity",
-                    obj,
-                    "bg-opacity"
-                )
-                .build();
+            settings.bind("bg-opacity", obj, "bg-opacity").build();
 
             settings
                 .bind(
                     "bg-transition-duration-s",
                     bg_paintable,
-                    "transition-duration"
+                    "transition-duration",
                 )
                 .build();
 
-            settings.connect_changed(Some("bg-blur-radius"), clone!(
-                #[weak(rename_to = this)]
-                self,
-                move |_, _| {
-                    // Blur radius updates need not fade
-                    this.obj().queue_background_update(false);
-                }
-            ));
+            settings.connect_changed(
+                Some("bg-blur-radius"),
+                clone!(
+                    #[weak(rename_to = this)]
+                    self,
+                    move |_, _| {
+                        // Blur radius updates need not fade
+                        this.obj().queue_background_update(false);
+                    }
+                ),
+            );
 
             // If using album art as background we must disable the default coloured
             // backgrounds that navigation views use for their sidebars.
             // We do this by toggling the "no-shading" CSS class for the top-level
             // content widget, which in turn toggles the CSS selectors selecting those
             // views.
-            obj.connect_notify_local(
-                Some("use-album-art-bg"),
-                |this, _| {
-                    this.queue_new_background();
-                }
-            );
+            obj.connect_notify_local(Some("use-album-art-bg"), |this, _| {
+                this.queue_new_background();
+            });
 
             settings
-                .bind(
-                    "use-visualizer",
-                    obj,
-                    "use-visualizer"
-                )
+                .bind("use-visualizer", obj, "use-visualizer")
                 .build();
 
             settings
-                .bind(
-                    "visualizer-top-opacity",
-                    obj,
-                    "visualizer-top-opacity"
-                )
+                .bind("visualizer-top-opacity", obj, "visualizer-top-opacity")
                 .build();
 
             settings
                 .bind(
                     "visualizer-bottom-opacity",
                     obj,
-                    "visualizer-bottom-opacity"
+                    "visualizer-bottom-opacity",
                 )
                 .build();
 
@@ -284,41 +261,25 @@ mod imp {
                 .bind(
                     "visualizer-gradient-height",
                     obj,
-                    "visualizer-gradient-height"
+                    "visualizer-gradient-height",
                 )
                 .build();
 
             settings
-                .bind(
-                    "visualizer-scale",
-                    obj,
-                    "visualizer-scale"
-                )
+                .bind("visualizer-scale", obj, "visualizer-scale")
                 .build();
 
             settings
-                .bind(
-                    "visualizer-blend-mode",
-                    obj,
-                    "visualizer-blend-mode"
-                )
+                .bind("visualizer-blend-mode", obj, "visualizer-blend-mode")
                 .build();
 
             settings
-                .bind(
-                    "visualizer-use-splines",
-                    obj,
-                    "visualizer-use-splines"
-                )
+                .bind("visualizer-use-splines", obj, "visualizer-use-splines")
                 .get_only()
                 .build();
 
             settings
-                .bind(
-                    "visualizer-stroke-width",
-                    obj,
-                    "visualizer-stroke-width"
-                )
+                .bind("visualizer-stroke-width", obj, "visualizer-stroke-width")
                 .get_only()
                 .build();
 
@@ -331,7 +292,7 @@ mod imp {
                     move |settings, key| {
                         this.set_always_redraw(settings.boolean(key));
                     }
-                )
+                ),
             );
 
             self.sidebar.connect_notify_local(
@@ -342,8 +303,30 @@ mod imp {
                     move |_, _| {
                         this.update_player_bar_visibility();
                     }
-                )
+                ),
             );
+
+            let view = self.split_view.get();
+            [
+                self.album_view.upcast_ref::<gtk::Widget>(),
+                self.artist_view.upcast_ref::<gtk::Widget>(),
+                self.folder_view.upcast_ref::<gtk::Widget>(),
+                self.playlist_view.upcast_ref::<gtk::Widget>(),
+                self.queue_view.upcast_ref::<gtk::Widget>()
+            ].iter().for_each(clone!(
+                #[weak]
+                view,
+                move |item| {
+                    item.connect_local(
+                        "show-sidebar-clicked",
+                        false,
+                        move |_| {
+                            view.set_show_sidebar(true);
+                            None
+                        }
+                    );
+                }
+            ));
 
             self.queue_view.connect_notify_local(
                 Some("show-content"),
@@ -353,18 +336,18 @@ mod imp {
                     move |_, _| {
                         this.update_player_bar_visibility();
                     }
-                )
+                ),
             );
 
             self.queue_view.connect_notify_local(
-                Some("collapsed"),
+                Some("pane-collapsed"),
                 clone!(
                     #[weak(rename_to = this)]
                     obj,
                     move |_, _| {
                         this.update_player_bar_visibility();
                     }
-                )
+                ),
             );
 
             // Set up blur thread
@@ -391,16 +374,22 @@ mod imp {
                     }
                     match last_msg {
                         BlurMessage::New(path, config) => {
-                            if (curr_path_mut.is_some() && path != *curr_path_mut.unwrap()) || curr_path.is_none() {
+                            if (curr_path_mut.is_some() && path != *curr_path_mut.unwrap())
+                                || curr_path.is_none()
+                            {
                                 let di = Reader::open(&path).unwrap().decode().unwrap();
                                 curr_path.replace(path);
                                 // Guard against calls just after window creation: sizes will be 0, but
                                 // we should still record the image data here as the next calls (with sizes)
                                 // will only be Updates.
                                 if config.width > 0 && config.height > 0 {
-                                    let _ = sender_to_fg.send_blocking(BlurMessage::Result(run_blur(&di, &config), true));
+                                    let _ = sender_to_fg.send_blocking(BlurMessage::Result(
+                                        run_blur(&di, &config),
+                                        true,
+                                    ));
                                     thread::sleep(Duration::from_millis(
-                                        (settings.double("bg-transition-duration-s") * 1000.0) as u64
+                                        (settings.double("bg-transition-duration-s") * 1000.0)
+                                            as u64,
                                     ));
                                 }
                                 curr_data.replace(di);
@@ -411,11 +400,15 @@ mod imp {
                         BlurMessage::Update(config) => {
                             if let Some(data) = curr_data.as_ref() {
                                 if config.width > 0 && config.height > 0 {
-                                    let _ = sender_to_fg.send_blocking(BlurMessage::Result(run_blur(data, &config), config.fade));
+                                    let _ = sender_to_fg.send_blocking(BlurMessage::Result(
+                                        run_blur(data, &config),
+                                        config.fade,
+                                    ));
                                 }
                                 if config.fade {
                                     thread::sleep(Duration::from_millis(
-                                        (settings.double("bg-transition-duration-s") * 1000.0) as u64
+                                        (settings.double("bg-transition-duration-s") * 1000.0)
+                                            as u64,
                                     ));
                                 }
                             }
@@ -427,7 +420,7 @@ mod imp {
                         BlurMessage::Stop => {
                             break 'outer;
                         }
-                        _ => unreachable!()  // we shouldn't ever send BlurResult to the child thread
+                        _ => unreachable!(), // we shouldn't ever send BlurResult to the child thread
                     }
                 }
             });
@@ -447,11 +440,11 @@ mod imp {
                     while let Some(blur_msg) = receiver.next().await {
                         match blur_msg {
                             BlurMessage::Result(tex, do_fade) => this.push_tex(Some(tex), do_fade),
-                            _ => unreachable!()
+                            _ => unreachable!(),
                         }
-
                     }
-                }));
+                }
+            ));
         }
     }
     impl WidgetImpl for EuphonicaWindow {
@@ -482,7 +475,7 @@ mod imp {
                     self.bg_paintable.snapshot(
                         snapshot,
                         widget.width() as f64,
-                        widget.height() as f64
+                        widget.height() as f64,
                     );
                     if bg_opacity < 1.0 {
                         snapshot.pop();
@@ -508,8 +501,7 @@ mod imp {
                     snapshot.pop();
                     self.draw_spectrum(snapshot, width32, height32, &data.1, scale, &fg);
                     snapshot.pop();
-                }
-                else {
+                } else {
                     self.draw_spectrum(snapshot, width32, height32, &data.0, scale, &fg);
                     self.draw_spectrum(snapshot, width32, height32, &data.1, scale, &fg);
                 }
@@ -533,16 +525,16 @@ mod imp {
         /// This is currently necessary for the visualiser to get updated.
         pub fn set_always_redraw(&self, state: bool) {
             if state {
-                if let Some(old_id) = self.tick_callback.replace(
-                    Some(self.obj().add_tick_callback(move |obj, _| {
-                        obj.queue_draw();
-                        glib::ControlFlow::Continue
-                    }))
-                ) {
+                if let Some(old_id) =
+                    self.tick_callback
+                        .replace(Some(self.obj().add_tick_callback(move |obj, _| {
+                            obj.queue_draw();
+                            glib::ControlFlow::Continue
+                        })))
+                {
                     old_id.remove();
                 }
-            }
-            else {
+            } else {
                 if let Some(old_id) = self.tick_callback.take() {
                     old_id.remove();
                 }
@@ -556,7 +548,7 @@ mod imp {
             height: f32,
             data: &[f32],
             scale: f32,
-            color: &gdk::RGBA
+            color: &gdk::RGBA,
         ) {
             let band_width = width / (data.len() as f32 - 1.0);
 
@@ -575,10 +567,11 @@ mod imp {
                     let x = (i as f32 + 1.0) * band_width;
                     let y = (height - data[i] * scale * 1000000.0).max(0.0);
                     let x_next = x + band_width;
-                    let y_next = (height - data[i+1] * scale * 1000000.0).max(0.0);
+                    let y_next = (height - data[i + 1] * scale * 1000000.0).max(0.0);
                     // Midpoint
                     let x_mid = x + half_width;
-                    let y_mid = (height - (data[i] + data[i+1]) / 2.0 * scale * 1000000.0).max(0.0);
+                    let y_mid =
+                        (height - (data[i] + data[i + 1]) / 2.0 * scale * 1000000.0).max(0.0);
                     // The next two will serve as control points.
                     // Between current point and midpoint
                     let x_left_mid = x + quarter_width;
@@ -587,53 +580,54 @@ mod imp {
                     // First curve, from current point to midpoint
                     path_builder.quad_to(
                         // Control point
-                        x_left_mid, y,
-                        x_mid, y_mid
+                        x_left_mid, y, x_mid, y_mid,
                     );
                     // Second curve, from midpoint to next point
                     path_builder.quad_to(
                         // Control point
-                        x_right_mid, y_next,
-                        x_next , y_next
+                        x_right_mid,
+                        y_next,
+                        x_next,
+                        y_next,
                     );
                 }
-            }
-            else {
+            } else {
                 // Straight segments mode
                 for (band_idx, level) in data[1..data.len()].iter().enumerate() {
-                    path_builder.line_to((band_idx as f32 + 1.0) * band_width, (height - level * scale * 1000000.0).max(0.0));
+                    path_builder.line_to(
+                        (band_idx as f32 + 1.0) * band_width,
+                        (height - level * scale * 1000000.0).max(0.0),
+                    );
                 }
                 path_builder.line_to(width, height);
             }
 
             let path = path_builder.to_path();
 
-            snapshot.push_fill(
-                &path,
-                gsk::FillRule::Winding,
-            );
+            snapshot.push_fill(&path, gsk::FillRule::Winding);
             let bottom_stop = gsk::ColorStop::new(
                 0.0,
                 gdk::RGBA::new(
-                    color.red(), color.green(), color.blue(),
-                    self.visualizer_bottom_opacity.get() as f32 / 2.0
-                )
+                    color.red(),
+                    color.green(),
+                    color.blue(),
+                    self.visualizer_bottom_opacity.get() as f32 / 2.0,
+                ),
             );
             let top_stop = gsk::ColorStop::new(
                 self.visualizer_gradient_height.get() as f32,
                 gdk::RGBA::new(
-                    color.red(), color.green(), color.blue(),
-                    self.visualizer_top_opacity.get() as f32 / 2.0
-                )
+                    color.red(),
+                    color.green(),
+                    color.blue(),
+                    self.visualizer_top_opacity.get() as f32 / 2.0,
+                ),
             );
             snapshot.append_linear_gradient(
                 &graphene::Rect::new(0.0, 0.0, width, height),
                 &graphene::Point::new(0.0, height),
                 &graphene::Point::new(0.0, 0.0),
-                &[
-                    bottom_stop,
-                    top_stop
-                ]
+                &[bottom_stop, top_stop],
             );
             // Fill node
             snapshot.pop();
@@ -656,7 +650,7 @@ mod imp {
             }
             if let Some(mutex) = self.fft_data.get() {
                 if let Ok(data) = mutex.lock() {
-                     return (data.0.iter().sum::<f32>() + data.1.iter().sum::<f32>()) > 0.0;
+                    return (data.0.iter().sum::<f32>() + data.1.iter().sum::<f32>()) > 0.0;
                 }
             }
             return false;
@@ -669,8 +663,7 @@ mod imp {
                 if !self.content.has_css_class("no-shading") {
                     self.content.add_css_class("no-shading");
                 }
-            }
-            else {
+            } else {
                 if self.content.has_css_class("no-shading") {
                     self.content.remove_css_class("no-shading");
                 }
@@ -680,36 +673,32 @@ mod imp {
             if do_fade {
                 // Once we've finished the above (expensive) operations, we can safely start
                 // the fade animation without worrying about stuttering.
-                glib::idle_add_local_once(
-                    clone!(
-                        #[weak(rename_to = this)]
-                        self,
-                        move || {
-                            // Run fade transition once main thread is free
-                            // Remember to queue draw too
-                            let duration = (bg_paintable.transition_duration() * 1000.0).round() as u32;
-                            let anim_target = adw::CallbackAnimationTarget::new(
-                                clone!(
-                                    #[weak]
-                                    this,
-                                    move |progress: f64| {
-                                        bg_paintable.set_fade(progress);
-                                        this.obj().queue_draw();
-                                    }
-                                )
-                            );
-                            let anim = adw::TimedAnimation::new(
-                                this.obj().as_ref(),
-                                0.0, 1.0,
-                                duration,
-                                anim_target
-                            );
-                            anim.play();
-                        }
-                    )
-                );
-            }
-            else {
+                glib::idle_add_local_once(clone!(
+                    #[weak(rename_to = this)]
+                    self,
+                    move || {
+                        // Run fade transition once main thread is free
+                        // Remember to queue draw too
+                        let duration = (bg_paintable.transition_duration() * 1000.0).round() as u32;
+                        let anim_target = adw::CallbackAnimationTarget::new(clone!(
+                            #[weak]
+                            this,
+                            move |progress: f64| {
+                                bg_paintable.set_fade(progress);
+                                this.obj().queue_draw();
+                            }
+                        ));
+                        let anim = adw::TimedAnimation::new(
+                            this.obj().as_ref(),
+                            0.0,
+                            1.0,
+                            duration,
+                            anim_target,
+                        );
+                        anim.play();
+                    }
+                ));
+            } else {
                 // Just immediately show the new texture. Used for blur radius adjustments.
                 bg_paintable.set_fade(1.0);
             }
@@ -726,7 +715,7 @@ glib::wrapper! {
 
 impl EuphonicaWindow {
     pub fn new<P: glib::object::IsA<gtk::Application>>(application: &P) -> Self {
-        let win: Self =  glib::Object::builder()
+        let win: Self = glib::Object::builder()
             .property("application", application)
             .build();
 
@@ -734,7 +723,10 @@ impl EuphonicaWindow {
         let client_state = app.get_client().get_client_state();
         let player = app.get_player();
 
-        win.imp().fft_data.set(player.fft_data()).expect("Unable to bind FFT data to visualiser widget");
+        win.imp()
+            .fft_data
+            .set(player.fft_data())
+            .expect("Unable to bind FFT data to visualiser widget");
 
         win.queue_new_background();
         client_state.connect_closure(
@@ -751,7 +743,7 @@ impl EuphonicaWindow {
                         _ => {}
                     }
                 }
-            )
+            ),
         );
         client_state.connect_notify_local(
             Some("connection-state"),
@@ -792,47 +784,40 @@ impl EuphonicaWindow {
             clone!(
                 #[weak(rename_to = this)]
                 win,
-               move |_, _| {
+                move |_, _| {
                     this.queue_new_background();
                 }
-            )
+            ),
         );
         let _ = win.imp().player.set(player);
 
         win.restore_window_state();
-        win.imp().queue_view.setup(
-            app.get_player(),
-            app.get_cache(),
-            win.clone()
-        );
+        win.imp()
+            .queue_view
+            .setup(app.get_player(), app.get_cache(), win.clone());
         win.imp().album_view.setup(
             app.get_library(),
             app.get_cache(),
-            app.get_client().get_client_state()
+            app.get_client().get_client_state(),
         );
         win.imp().artist_view.setup(
             app.get_library(),
             app.get_cache(),
-            app.get_client().get_client_state()
+            app.get_client().get_client_state(),
         );
         win.imp().folder_view.setup(
             app.get_library(),
             app.get_cache(),
-            app.get_client().get_client_state()
+            app.get_client().get_client_state(),
         );
         win.imp().playlist_view.setup(
             app.get_library(),
             app.get_cache(),
             app.get_client().get_client_state(),
-            win.clone()
+            win.clone(),
         );
-        win.imp().sidebar.setup(
-            &win,
-            &app
-        );
-        win.imp().player_bar.setup(
-            &app.get_player()
-        );
+        win.imp().sidebar.setup(&win, &app);
+        win.imp().player_bar.setup(&app.get_player());
 
         win.imp().player_bar.connect_closure(
             "goto-pane-clicked",
@@ -843,7 +828,7 @@ impl EuphonicaWindow {
                 move |_: PlayerBar| {
                     this.goto_pane();
                 }
-            )
+            ),
         );
 
         win.imp().artist_view.get_content_view().connect_closure(
@@ -855,7 +840,7 @@ impl EuphonicaWindow {
                 move |_: ArtistContentView, album: Album| {
                     this.goto_album(&album);
                 }
-            )
+            ),
         );
 
         win.bind_state();
@@ -867,7 +852,7 @@ impl EuphonicaWindow {
         self.imp().stack.get()
     }
 
-    pub fn get_split_view(&self) -> adw::NavigationSplitView {
+    pub fn get_split_view(&self) -> adw::OverlaySplitView {
         self.imp().split_view.get()
     }
 
@@ -892,10 +877,7 @@ impl EuphonicaWindow {
     }
 
     pub fn send_simple_toast(&self, title: &str, timeout: u32) {
-        let toast = adw::Toast::builder()
-            .title(title)
-            .timeout(timeout)
-            .build();
+        let toast = adw::Toast::builder().title(title).timeout(timeout).build();
         self.imp().toast_overlay.add_toast(toast);
     }
 
@@ -910,17 +892,20 @@ impl EuphonicaWindow {
             if suggest_open_preferences {
                 diag.add_response("prefs", "Open _Preferences");
                 diag.set_response_appearance("prefs", adw::ResponseAppearance::Suggested);
-                diag.choose(self, Option::<gio::Cancellable>::None.as_ref(), clone!(
-                    #[weak(rename_to = this)]
+                diag.choose(
                     self,
-                    move |resp| {
-                        if resp == "prefs" {
-                            this.downcast_application().show_preferences();
+                    Option::<gio::Cancellable>::None.as_ref(),
+                    clone!(
+                        #[weak(rename_to = this)]
+                        self,
+                        move |resp| {
+                            if resp == "prefs" {
+                                this.downcast_application().show_preferences();
+                            }
                         }
-                    }
-                ));
-            }
-            else {
+                    ),
+                );
+            } else {
                 diag.present(Some(self));
             }
         }
@@ -938,21 +923,19 @@ impl EuphonicaWindow {
         let revealer = self.imp().player_bar_revealer.get();
         if self.imp().sidebar.showing_queue_view() {
             let queue_view = self.imp().queue_view.get();
-            if (queue_view.collapsed() && queue_view.show_content()) || !queue_view.collapsed() {
+            if (queue_view.pane_collapsed() && queue_view.show_content()) || !queue_view.pane_collapsed() {
                 revealer.set_reveal_child(false);
-            }
-            else {
+            } else {
                 revealer.set_reveal_child(true);
             }
-        }
-        else {
+        } else {
             revealer.set_reveal_child(true);
         }
     }
 
     fn goto_pane(&self) {
         self.imp().stack.set_visible_child_name("queue");
-        self.imp().split_view.set_show_content(true);
+        self.imp().split_view.set_show_sidebar(!self.imp().split_view.is_collapsed());
         self.imp().queue_view.set_show_content(true);
     }
 
@@ -960,8 +943,8 @@ impl EuphonicaWindow {
         self.imp().album_view.on_album_clicked(album);
         // self.imp().stack.set_visible_child_name("albums");
         self.imp().sidebar.set_view("albums");
-        if !self.imp().split_view.shows_content() {
-            self.imp().split_view.set_show_content(true);
+        if self.imp().split_view.shows_sidebar() {
+            self.imp().split_view.set_show_sidebar(!self.imp().split_view.is_collapsed());
         }
     }
 
@@ -969,7 +952,7 @@ impl EuphonicaWindow {
     /// minimise disk read time.
     fn queue_new_background(&self) {
         if let Some(player) = self.imp().player.get() {
-            if let Some(sender) =  self.imp().sender_to_bg.get() {
+            if let Some(sender) = self.imp().sender_to_bg.get() {
                 if let Some(path) = player.current_song_album_art_path(true) {
                     if path.exists() {
                         let settings = settings_manager().child("ui");
@@ -977,21 +960,18 @@ impl EuphonicaWindow {
                             width: self.width() as u32,
                             height: self.height() as u32,
                             radius: settings.uint("bg-blur-radius"),
-                            fade: true  // new image, must fade
+                            fade: true, // new image, must fade
                         };
                         let _ = sender.send_blocking(BlurMessage::New(path, config));
-                    }
-                    else {
+                    } else {
                         let _ = sender.send_blocking(BlurMessage::Clear);
                         self.imp().push_tex(None, true);
                     }
-                }
-                else {
+                } else {
                     let _ = sender.send_blocking(BlurMessage::Clear);
                     self.imp().push_tex(None, true);
                 }
-            }
-            else {
+            } else {
                 self.imp().push_tex(None, true);
             }
         }
@@ -1004,7 +984,7 @@ impl EuphonicaWindow {
                 width: self.width() as u32,
                 height: self.height() as u32,
                 radius: settings.uint("bg-blur-radius"),
-                fade
+                fade,
             };
             let _ = sender.send_blocking(BlurMessage::Update(config));
         }
@@ -1032,30 +1012,20 @@ impl EuphonicaWindow {
         let title = self.imp().title.get();
         let spinner = self.imp().busy_spinner.get();
         state
-            .bind_property(
-                "connection-state",
-                &title,
-                "subtitle"
-            )
-            .transform_to(|_, state: ConnectionState| {
-                match state {
-                    ConnectionState::NotConnected => Some("Not connected"),
-                    ConnectionState::Connecting => Some("Connecting"),
-                    ConnectionState::Unauthenticated |
-                    ConnectionState::WrongPassword |
-                    ConnectionState::CredentialStoreError => Some("Unauthenticated"),
-                    ConnectionState::Connected => Some("Connected")
-                }
+            .bind_property("connection-state", &title, "subtitle")
+            .transform_to(|_, state: ConnectionState| match state {
+                ConnectionState::NotConnected => Some("Not connected"),
+                ConnectionState::Connecting => Some("Connecting"),
+                ConnectionState::Unauthenticated
+                | ConnectionState::WrongPassword
+                | ConnectionState::CredentialStoreError => Some("Unauthenticated"),
+                ConnectionState::Connected => Some("Connected"),
             })
             .sync_create()
             .build();
 
         state
-            .bind_property(
-                "busy",
-                &spinner,
-                "visible"
-            )
+            .bind_property("busy", &spinner, "visible")
             .sync_create()
             .build();
     }
@@ -1074,8 +1044,8 @@ impl EuphonicaWindow {
                 .set_int("last-window-height", height)
                 .expect("Unable to stop last-window-height");
 
-	        // TODO: persist other settings at closing?
+            // TODO: persist other settings at closing?
             glib::Propagation::Proceed
         });
-	}
+    }
 }

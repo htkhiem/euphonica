@@ -1,0 +1,11 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+
+Name=Euphonica
+Comment=GTK4 libadwaita MPD client
+Categories=AudioVideo;Player;
+
+Icon=io.github.htkhiem.Euphonica
+Exec=euphonica
+Terminal=false

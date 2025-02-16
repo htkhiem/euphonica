@@ -1,7 +1,10 @@
-use std::cell::{Cell, RefCell};
 use gtk::{
-    gdk::{self, prelude::*, subclass::paintable::*}, prelude::*, subclass::prelude::*, glib::{self, Properties}
+    gdk::{self, prelude::*, subclass::paintable::*},
+    glib::{self, Properties},
+    prelude::*,
+    subclass::prelude::*,
 };
+use std::cell::{Cell, RefCell};
 
 // Background paintable implementation.
 // Euphonica can optionally use the currently-playing track's album art as its
@@ -38,8 +41,7 @@ mod imp {
         fn current_image(&self) -> gdk::Paintable {
             if let Some(current) = self.current.borrow().as_ref() {
                 current.current_image()
-            }
-            else {
+            } else {
                 gdk::Paintable::new_empty(1, 1)
             }
         }
@@ -47,8 +49,7 @@ mod imp {
         fn intrinsic_width(&self) -> i32 {
             if let Some(current) = self.current.borrow().as_ref() {
                 current.intrinsic_width()
-            }
-            else {
+            } else {
                 1
             }
         }
@@ -56,8 +57,7 @@ mod imp {
         fn intrinsic_height(&self) -> i32 {
             if let Some(current) = self.current.borrow().as_ref() {
                 current.intrinsic_height()
-            }
-            else {
+            } else {
                 1
             }
         }
@@ -65,8 +65,7 @@ mod imp {
         fn intrinsic_aspect_ratio(&self) -> f64 {
             if let Some(current) = self.current.borrow().as_ref() {
                 current.intrinsic_aspect_ratio()
-            }
-            else {
+            } else {
                 1.0
             }
         }
@@ -87,16 +86,27 @@ mod imp {
             if current_has_content {
                 if !previous_has_content && fade < 1.0 {
                     snapshot.push_opacity(fade);
-                    self.current.borrow().as_ref().unwrap().snapshot(snapshot, width, height);
+                    self.current
+                        .borrow()
+                        .as_ref()
+                        .unwrap()
+                        .snapshot(snapshot, width, height);
                     snapshot.pop();
-                }
-                else {
-                    self.current.borrow().as_ref().unwrap().snapshot(snapshot, width, height);
+                } else {
+                    self.current
+                        .borrow()
+                        .as_ref()
+                        .unwrap()
+                        .snapshot(snapshot, width, height);
                 }
             }
             if previous_has_content && fade < 1.0 {
                 snapshot.push_opacity(1.0 - fade);
-                self.previous.borrow().as_ref().unwrap().snapshot(snapshot, width, height);
+                self.previous
+                    .borrow()
+                    .as_ref()
+                    .unwrap()
+                    .snapshot(snapshot, width, height);
                 snapshot.pop();
             }
         }

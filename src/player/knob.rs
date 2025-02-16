@@ -1,19 +1,7 @@
-use std::{
-    cell::Cell,
-    f64::consts::PI
-};
-use gtk::{
-    glib,
-    prelude::*,
-    subclass::prelude::*,
-    CompositeTemplate,
-    cairo
-};
 use cairo::LineCap;
-use glib::{
-    clone,
-    Object,
-};
+use glib::{clone, Object};
+use gtk::{cairo, glib, prelude::*, subclass::prelude::*, CompositeTemplate};
+use std::{cell::Cell, f64::consts::PI};
 
 fn convert_to_dbfs(pct: f64) -> Result<f64, ()> {
     // Accepts 0-100
@@ -24,16 +12,12 @@ fn convert_to_dbfs(pct: f64) -> Result<f64, ()> {
 }
 
 mod imp {
-    use glib::{
-        ParamSpec,
-        ParamSpecDouble,
-        ParamSpecBoolean
-    };
-    use once_cell::sync::Lazy;
     use super::*;
+    use glib::{ParamSpec, ParamSpecBoolean, ParamSpecDouble};
+    use once_cell::sync::Lazy;
 
     #[derive(Default, CompositeTemplate)]
-    #[template(resource = "/org/euphonica/Euphonica/gtk/player/volume-knob.ui")]
+    #[template(resource = "/io/github/htkhiem/Euphonica/gtk/player/volume-knob.ui")]
     pub struct VolumeKnob {
         #[template_child]
         pub draw_area: TemplateChild<gtk::DrawingArea>,
@@ -51,7 +35,7 @@ mod imp {
         pub use_dbfs: Cell<bool>,
         // 0 to 100. Full precision for smooth scrolling effect.
         pub value: Cell<f64>,
-        pub is_muted: Cell<bool>
+        pub is_muted: Cell<bool>,
     }
 
     // The central trait for subclassing a GObject
@@ -72,7 +56,7 @@ mod imp {
                 use_dbfs: Cell::new(false),
                 sensitivity: Cell::new(1.0),
                 value: Cell::new(0.0),
-                is_muted: Cell::new(false)
+                is_muted: Cell::new(false),
             }
         }
 
@@ -121,7 +105,7 @@ mod imp {
                             obj.notify("sensitivity");
                         }
                     }
-                },
+                }
                 "is-muted" => {
                     if let Ok(is_muted) = value.get::<bool>() {
                         let was_muted = self.is_muted.replace(is_muted);
@@ -129,16 +113,16 @@ mod imp {
                             obj.notify("is-muted");
                         }
                     }
-                },
+                }
                 "use-dbfs" => {
                     if let Ok(b) = value.get::<bool>() {
                         let old_use_dbfs = self.use_dbfs.replace(b);
                         if old_use_dbfs != b {
                             obj.notify("use-dbfs");
-                            obj.notify("value");  // Fire this too to redraw the readout
+                            obj.notify("value"); // Fire this too to redraw the readout
                         }
                     }
-                },
+                }
                 _ => unimplemented!(),
             }
         }
@@ -210,15 +194,12 @@ impl VolumeKnob {
         if self.imp().use_dbfs.get() {
             if let Ok(dbfs) = convert_to_dbfs(val) {
                 readout.set_label(&format!("{:.2}", dbfs));
-            }
-            else if val > 0.0 {
+            } else if val > 0.0 {
                 readout.set_label("0");
-            }
-            else {
+            } else {
                 readout.set_label("-∞");
             }
-        }
-        else {
+        } else {
             readout.set_label(&format!("{:.0}", val));
         }
     }
@@ -229,11 +210,7 @@ impl VolumeKnob {
         let knob_btn = imp.knob_btn.get();
         let readout_stack = imp.readout_stack.get();
         knob_btn
-            .bind_property(
-                "active",
-                &readout_stack,
-                "visible-child-name"
-            )
+            .bind_property("active", &readout_stack, "visible-child-name")
             .transform_to(|_, active: bool| {
                 if active {
                     return Some("mute");
@@ -244,28 +221,16 @@ impl VolumeKnob {
             .build();
 
         knob_btn
-            .bind_property(
-                "active",
-                self,
-                "is-muted"
-            )
+            .bind_property("active", self, "is-muted")
             .sync_create()
             .build();
 
         self.update_readout();
-        self.connect_notify_local(
-            Some("value"),
-            |this, _| {
-                this.update_readout();
-            }
-        );
+        self.connect_notify_local(Some("value"), |this, _| {
+            this.update_readout();
+        });
         let unit = imp.unit.get();
-        self
-            .bind_property(
-                "use-dbfs",
-                &unit,
-                "label"
-            )
+        self.bind_property("use-dbfs", &unit, "label")
             .transform_to(|_, use_dbfs: bool| {
                 if use_dbfs {
                     return Some("dBFS");
@@ -278,34 +243,23 @@ impl VolumeKnob {
         // (goes from 7:30 to 4:30 CW, which is -270deg to 45deg for cairo_arc).
         // Currently hardcoding diameter to 96px.
         let draw_area = imp.draw_area.get();
-        draw_area.set_draw_func(
-            clone!(
-                #[weak(rename_to = this)]
-                self,
-                move |_, cr, w, h| {
-                    let fg = this.color();
-                    cr.set_source_rgb(
-                        fg.red() as f64,
-                        fg.green() as f64,
-                        fg.blue() as f64,
-                    );
-                    // Match seekbar thickness
-                    cr.set_line_width(4.0);
-                    cr.set_line_cap(LineCap::Round);
-                    // Starting
-                    // At 0 => 5pi/4
-                    let angle = -1.25 * PI + 1.5 * PI * this.imp().value.get() / 100.0;
-                    // u w0t m8
-                    cr.arc(
-                        w as f64 / 2.0,
-                        h as f64 / 2.0,
-                        40.0,
-                        -1.25 * PI, angle
-                    );
-                    let _ = cr.stroke();
-                }
-            )
-        );
+        draw_area.set_draw_func(clone!(
+            #[weak(rename_to = this)]
+            self,
+            move |_, cr, w, h| {
+                let fg = this.color();
+                cr.set_source_rgb(fg.red() as f64, fg.green() as f64, fg.blue() as f64);
+                // Match seekbar thickness
+                cr.set_line_width(4.0);
+                cr.set_line_cap(LineCap::Round);
+                // Starting
+                // At 0 => 5pi/4
+                let angle = -1.25 * PI + 1.5 * PI * this.imp().value.get() / 100.0;
+                // u w0t m8
+                cr.arc(w as f64 / 2.0, h as f64 / 2.0, 40.0, -1.25 * PI, angle);
+                let _ = cr.stroke();
+            }
+        ));
 
         // Enable scrolling to change volume
         // TODO: Implement vertical dragging & keyboard controls
@@ -313,30 +267,25 @@ impl VolumeKnob {
         let scroll_ctl = gtk::EventControllerScroll::default();
         scroll_ctl.set_flags(gtk::EventControllerScrollFlags::VERTICAL);
         scroll_ctl.set_propagation_phase(gtk::PropagationPhase::Capture);
-        scroll_ctl.connect_scroll(
-            clone!(
-                #[weak(rename_to = this)]
-                self,
-                #[upgrade_or]
-                glib::signal::Propagation::Proceed,
-                move |_, _, dy| {
-                    let new_vol = this.imp().value.get() - dy * this.sensitivity();
-                    if (0.0..=100.0).contains(&new_vol) {
-                        this.set_value(new_vol);
-                    }
-                    this.imp().draw_area.queue_draw();
-                    glib::signal::Propagation::Proceed
+        scroll_ctl.connect_scroll(clone!(
+            #[weak(rename_to = this)]
+            self,
+            #[upgrade_or]
+            glib::signal::Propagation::Proceed,
+            move |_, _, dy| {
+                let new_vol = this.imp().value.get() - dy * this.sensitivity();
+                if (0.0..=100.0).contains(&new_vol) {
+                    this.set_value(new_vol);
                 }
-            )
-        );
+                this.imp().draw_area.queue_draw();
+                glib::signal::Propagation::Proceed
+            }
+        ));
         self.add_controller(scroll_ctl);
 
         // Update level arc upon changing foreground colour, for example when switching dark/light mode
-        self.connect_notify_local(
-            Some("color"),
-            |this, _| {
-                this.imp().draw_area.queue_draw();
-            }
-        );
+        self.connect_notify_local(Some("color"), |this, _| {
+            this.imp().draw_area.queue_draw();
+        });
     }
 }

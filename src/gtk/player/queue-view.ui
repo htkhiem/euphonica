@@ -57,6 +57,7 @@
               <object class="AdwToolbarView">
                 <child type="top">
                   <object class="AdwHeaderBar">
+                    <property name="show-title" bind-source="EuphonicaQueueView" bind-property="collapsed" bind-flags="sync-create|invert-boolean"></property>
                     <property name="title-widget">
                       <object class="AdwWindowTitle" id="queue_title">
                         <property name="title" translatable="true">Queue</property>
@@ -65,6 +66,13 @@
                     <child type="start">
                       <object class="GtkBox">
                         <property name="spacing">6</property>
+                        <child>
+                          <object class="GtkButton" id="show_sidebar">
+                            <property name="icon-name">dock-left-symbolic</property>
+                            <property name="tooltip-text" translatable="true">Show sidebar</property>
+                            <property name="visible">false</property>
+                          </object>
+                        </child>
                         <child>
                           <object class="GtkMenuButton" id="save">
                             <property name="icon-name">document-save-symbolic</property>
@@ -93,24 +101,13 @@
                     </child>
                     <child type="end">
                       <object class="GtkButton" id="now_playing_button">
+                        <style>
+                          <class name="suggested-action"/>
+                        </style>
                         <property name="visible" bind-source="queue_pane_view" bind-property="collapsed" bind-flags="sync-create"/>
                         <property name="action-name">navigation.push</property>
                         <property name="action-target">'now_playing'</property>
-                        <child>
-                          <object class="GtkBox">
-                            <property name="spacing">6</property>
-                            <child>
-                              <object class="GtkLabel">
-                                <property name="label" translatable="true">Now Playing</property>
-                              </object>
-                            </child>
-                            <child>
-                              <object class="GtkImage">
-                                <property name="icon-name">right-symbolic</property>
-                              </object>
-                            </child>
-                          </object>
-                        </child>
+                        <property name="icon-name">play-symbolic</property>
                       </object>
                     </child>
                   </object>

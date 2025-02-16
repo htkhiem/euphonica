@@ -1,39 +1,25 @@
+use glib::{closure_local, signal::SignalHandlerId, Object};
+use gtk::{glib, prelude::*, subclass::prelude::*, CompositeTemplate};
 use std::{
     cell::{OnceCell, RefCell},
-    rc::Rc
-};
-use gtk::{
-    glib,
-    prelude::*,
-    subclass::prelude::*,
-    CompositeTemplate
-};
-use glib::{
-    closure_local,
-    Object,
-    signal::SignalHandlerId
+    rc::Rc,
 };
 
 use crate::{
-    cache::{
-        Cache,
-        CacheState
-    }, common::{Artist, ArtistInfo}
+    cache::{Cache, CacheState},
+    common::{Artist, ArtistInfo},
 };
 
 mod imp {
-    use glib::{
-        ParamSpec,
-        ParamSpecString
-    };
-    use once_cell::sync::Lazy;
     use super::*;
+    use glib::{ParamSpec, ParamSpecString};
+    use once_cell::sync::Lazy;
 
     #[derive(Default, CompositeTemplate)]
-    #[template(resource = "/org/euphonica/Euphonica/gtk/library/artist-cell.ui")]
+    #[template(resource = "/io/github/htkhiem/Euphonica/gtk/library/artist-cell.ui")]
     pub struct ArtistCell {
         #[template_child]
-        pub avatar: TemplateChild<adw::Avatar>,  // Use high-resolution version
+        pub avatar: TemplateChild<adw::Avatar>, // Use high-resolution version
         #[template_child]
         pub name: TemplateChild<gtk::Label>,
         pub avatar_signal_id: RefCell<Option<SignalHandlerId>>,
@@ -60,11 +46,8 @@ mod imp {
 
     impl ObjectImpl for ArtistCell {
         fn properties() -> &'static [ParamSpec] {
-            static PROPERTIES: Lazy<Vec<ParamSpec>> = Lazy::new(|| {
-                vec![
-                    ParamSpecString::builder("name").build()
-                ]
-            });
+            static PROPERTIES: Lazy<Vec<ParamSpec>> =
+                Lazy::new(|| vec![ParamSpecString::builder("name").build()]);
             PROPERTIES.as_ref()
         }
 
@@ -85,7 +68,7 @@ mod imp {
                         obj.notify("name");
                     }
                 }
-                _ => unimplemented!()
+                _ => unimplemented!(),
             }
         }
     }
@@ -106,39 +89,51 @@ glib::wrapper! {
 impl ArtistCell {
     pub fn new(item: &gtk::ListItem, cache: Rc<Cache>) -> Self {
         let res: Self = Object::builder().build();
-        res.imp().cache.set(cache).expect("ArtistCell cannot bind to cache");
+        res.imp()
+            .cache
+            .set(cache)
+            .expect("ArtistCell cannot bind to cache");
         res.setup(item);
-        let _ = res.imp().avatar_signal_id.replace(
-            Some(res.imp().cache.get().unwrap().get_cache_state().connect_closure(
-                "artist-avatar-downloaded",
-                false,
-                closure_local!(
-                    #[weak(rename_to = this)]
-                    res,
-                    move |_: CacheState, name: String| {
-                        if let Some(artist) = this.imp().artist.borrow().as_ref() {
-                            if artist.get_name() == &name {
-                                this.update_artist_avatar(artist.get_info());
+        let _ = res.imp().avatar_signal_id.replace(Some(
+            res.imp()
+                .cache
+                .get()
+                .unwrap()
+                .get_cache_state()
+                .connect_closure(
+                    "artist-avatar-downloaded",
+                    false,
+                    closure_local!(
+                        #[weak(rename_to = this)]
+                        res,
+                        move |_: CacheState, name: String| {
+                            if let Some(artist) = this.imp().artist.borrow().as_ref() {
+                                if artist.get_name() == &name {
+                                    this.update_artist_avatar(artist.get_info());
+                                }
                             }
                         }
-                    }
-                )
-            ))
-        );
+                    ),
+                ),
+        ));
         res
     }
 
     #[inline(always)]
     pub fn setup(&self, item: &gtk::ListItem) {
-        item
-            .property_expression("item")
+        item.property_expression("item")
             .chain_property::<Artist>("name")
             .bind(self, "name", gtk::Widget::NONE);
     }
 
     fn update_artist_avatar(&self, info: &ArtistInfo) {
         self.imp().avatar.set_custom_image(
-            self.imp().cache.get().unwrap().load_cached_artist_avatar(info, false).as_ref()
+            self.imp()
+                .cache
+                .get()
+                .unwrap()
+                .load_cached_artist_avatar(info, false)
+                .as_ref(),
         );
     }
 
@@ -164,7 +159,12 @@ impl ArtistCell {
 
     pub fn teardown(&self) {
         if let Some(id) = self.imp().avatar_signal_id.take() {
-            self.imp().cache.get().unwrap().get_cache_state().disconnect(id);
+            self.imp()
+                .cache
+                .get()
+                .unwrap()
+                .get_cache_state()
+                .disconnect(id);
         }
     }
 }

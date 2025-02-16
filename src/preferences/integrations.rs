@@ -1,10 +1,8 @@
-use std::rc::Rc;
-use std::cell::OnceCell;
-use adw::subclass::prelude::*;
 use adw::prelude::*;
-use gtk::{
-    glib, CompositeTemplate
-};
+use adw::subclass::prelude::*;
+use gtk::{glib, CompositeTemplate};
+use std::cell::OnceCell;
+use std::rc::Rc;
 
 use crate::{cache::Cache, utils};
 
@@ -15,7 +13,7 @@ mod imp {
     use super::*;
 
     #[derive(Debug, Default, CompositeTemplate)]
-    #[template(resource = "/org/euphonica/Euphonica/gtk/preferences/integrations.ui")]
+    #[template(resource = "/io/github/htkhiem/Euphonica/gtk/preferences/integrations.ui")]
     pub struct IntegrationsPreferences {
         #[template_child]
         pub enable_mpris: TemplateChild<adw::SwitchRow>,
@@ -32,7 +30,7 @@ mod imp {
 
         #[template_child]
         pub order_box: TemplateChild<gtk::ListBox>,
-        pub cache: OnceCell<Rc<Cache>>
+        pub cache: OnceCell<Rc<Cache>>,
     }
 
     #[glib::object_subclass]
@@ -78,11 +76,7 @@ impl IntegrationsPreferences {
         let player_settings = settings.child("player");
         let enable_mpris = self.imp().enable_mpris.get();
         player_settings
-            .bind(
-                "enable-mpris",
-                &enable_mpris,
-                "active"
-            )
+            .bind("enable-mpris", &enable_mpris, "active")
             .build();
 
         // Set up Last.fm settings
@@ -91,20 +85,10 @@ impl IntegrationsPreferences {
         let lastfm_download_album_art = imp.lastfm_download_album_art.get();
         // let lastfm_download_artist_avatar = imp.lastfm_download_artist_avatar.get();
 
-        lastfm_settings
-            .bind(
-                "api-key",
-                &lastfm_key,
-                "text"
-            )
-            .build();
+        lastfm_settings.bind("api-key", &lastfm_key, "text").build();
 
         lastfm_settings
-            .bind(
-                "download-album-art",
-                &lastfm_download_album_art,
-                "active"
-            )
+            .bind("download-album-art", &lastfm_download_album_art, "active")
             .build();
 
         // Set up MusicBrainz settings
@@ -113,18 +97,14 @@ impl IntegrationsPreferences {
         let mb_download_artist_avatar = imp.musicbrainz_download_artist_avatar.get();
 
         mb_settings
-            .bind(
-                "download-album-art",
-                &mb_download_album_art,
-                "active"
-            )
+            .bind("download-album-art", &mb_download_album_art, "active")
             .build();
 
         mb_settings
             .bind(
                 "download-artist-avatar",
                 &mb_download_artist_avatar,
-                "active"
+                "active",
             )
             .build();
 
@@ -137,27 +117,30 @@ impl IntegrationsPreferences {
             .array_iter_str()
             .unwrap()
             .enumerate()
-            .map(
-                |(prio, key)| ProviderRow::new(&self, key, prio as i32)
-            ) {
-                order_box.append(&row);
-            }
+            .map(|(prio, key)| ProviderRow::new(&self, key, prio as i32))
+        {
+            order_box.append(&row);
+        }
         order_box.set_sort_func(|r1, r2| {
             let pr1 = r1
-                .downcast_ref::<adw::PreferencesRow>().unwrap()
-                .downcast_ref::<adw::ActionRow>().unwrap()
-                .downcast_ref::<ProviderRow>().unwrap();
+                .downcast_ref::<adw::PreferencesRow>()
+                .unwrap()
+                .downcast_ref::<adw::ActionRow>()
+                .unwrap()
+                .downcast_ref::<ProviderRow>()
+                .unwrap();
             let pr2 = r2
-                .downcast_ref::<adw::PreferencesRow>().unwrap()
-                .downcast_ref::<adw::ActionRow>().unwrap()
-                .downcast_ref::<ProviderRow>().unwrap();
+                .downcast_ref::<adw::PreferencesRow>()
+                .unwrap()
+                .downcast_ref::<adw::ActionRow>()
+                .unwrap()
+                .downcast_ref::<ProviderRow>()
+                .unwrap();
             if pr1.priority() > pr2.priority() {
                 gtk::Ordering::Larger
-            }
-            else if pr1.priority() < pr2.priority() {
+            } else if pr1.priority() < pr2.priority() {
                 gtk::Ordering::Smaller
-            }
-            else {
+            } else {
                 gtk::Ordering::Equal
             }
         });
@@ -169,19 +152,25 @@ impl IntegrationsPreferences {
         let mut idx = 0;
         while let Some(row) = self.imp().order_box.row_at_index(idx) {
             let provider_row = row
-                .downcast_ref::<adw::PreferencesRow>().unwrap()
-                .downcast_ref::<adw::ActionRow>().unwrap()
-                .downcast_ref::<ProviderRow>().unwrap();
-            println!("Provider {} priority {}", provider_row.key(), provider_row.priority());
+                .downcast_ref::<adw::PreferencesRow>()
+                .unwrap()
+                .downcast_ref::<adw::ActionRow>()
+                .unwrap()
+                .downcast_ref::<ProviderRow>()
+                .unwrap();
+            println!(
+                "Provider {} priority {}",
+                provider_row.key(),
+                provider_row.priority()
+            );
             new_order.push((provider_row.priority(), provider_row.key()));
             idx += 1;
         }
         new_order.sort_by(|a, b| a.partial_cmp(b).unwrap());
-        let key_array: Vec<String> = new_order
-            .into_iter()
-            .map(|elem| elem.1)
-            .collect();
-        let _ = utils::settings_manager().child("metaprovider").set_value("order", &key_array.to_variant());
+        let key_array: Vec<String> = new_order.into_iter().map(|elem| elem.1).collect();
+        let _ = utils::settings_manager()
+            .child("metaprovider")
+            .set_value("order", &key_array.to_variant());
         if let Some(cache) = self.imp().cache.get() {
             cache.reinit_meta_providers();
         }
@@ -192,14 +181,20 @@ impl IntegrationsPreferences {
             let order_box = self.imp().order_box.get();
             let this_row = order_box.row_at_index(curr_prio as i32).unwrap();
             let this_row = this_row
-                .downcast_ref::<adw::PreferencesRow>().unwrap()
-                .downcast_ref::<adw::ActionRow>().unwrap()
-                .downcast_ref::<ProviderRow>().unwrap();
+                .downcast_ref::<adw::PreferencesRow>()
+                .unwrap()
+                .downcast_ref::<adw::ActionRow>()
+                .unwrap()
+                .downcast_ref::<ProviderRow>()
+                .unwrap();
             let upper_row = order_box.row_at_index((curr_prio - 1) as i32).unwrap();
             let upper_row = upper_row
-                .downcast_ref::<adw::PreferencesRow>().unwrap()
-                .downcast_ref::<adw::ActionRow>().unwrap()
-                .downcast_ref::<ProviderRow>().unwrap();
+                .downcast_ref::<adw::PreferencesRow>()
+                .unwrap()
+                .downcast_ref::<adw::ActionRow>()
+                .unwrap()
+                .downcast_ref::<ProviderRow>()
+                .unwrap();
             this_row.set_priority(curr_prio - 1);
             upper_row.set_priority(curr_prio);
             order_box.invalidate_sort();
@@ -212,13 +207,19 @@ impl IntegrationsPreferences {
         if let Some(lower_list_row) = order_box.row_at_index((curr_prio + 1) as i32) {
             let this_row = order_box.row_at_index(curr_prio as i32).unwrap();
             let this_row = this_row
-                .downcast_ref::<adw::PreferencesRow>().unwrap()
-                .downcast_ref::<adw::ActionRow>().unwrap()
-                .downcast_ref::<ProviderRow>().unwrap();
+                .downcast_ref::<adw::PreferencesRow>()
+                .unwrap()
+                .downcast_ref::<adw::ActionRow>()
+                .unwrap()
+                .downcast_ref::<ProviderRow>()
+                .unwrap();
             let lower_row = lower_list_row
-                .downcast_ref::<adw::PreferencesRow>().unwrap()
-                .downcast_ref::<adw::ActionRow>().unwrap()
-                .downcast_ref::<ProviderRow>().unwrap();
+                .downcast_ref::<adw::PreferencesRow>()
+                .unwrap()
+                .downcast_ref::<adw::ActionRow>()
+                .unwrap()
+                .downcast_ref::<ProviderRow>()
+                .unwrap();
             this_row.set_priority(curr_prio + 1);
             lower_row.set_priority(curr_prio);
             order_box.invalidate_sort();

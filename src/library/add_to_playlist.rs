@@ -1,13 +1,5 @@
-use gtk::{
-    glib,
-    prelude::*,
-    subclass::prelude::*,
-    CompositeTemplate,
-};
-use glib::{
-    clone,
-    Properties
-};
+use glib::{clone, Properties};
+use gtk::{glib, prelude::*, subclass::prelude::*, CompositeTemplate};
 
 use crate::{common::INode, utils};
 
@@ -26,7 +18,7 @@ mod imp {
     use super::*;
 
     #[derive(Properties, Default, CompositeTemplate)]
-    #[template(resource = "/org/euphonica/Euphonica/gtk/library/add-to-playlist-button.ui")]
+    #[template(resource = "/io/github/htkhiem/Euphonica/gtk/library/add-to-playlist-button.ui")]
     #[properties(wrapper_type = super::AddToPlaylistButton)]
     pub struct AddToPlaylistButton {
         #[template_child]
@@ -53,7 +45,9 @@ mod imp {
         pub search_model: OnceCell<gtk::FilterListModel>,
         pub sel_model: OnceCell<gtk::SingleSelection>, // For playlists
         pub library: OnceCell<Library>,
-        pub song_sel_model: OnceCell<gtk::MultiSelection>
+        pub song_sel_model: OnceCell<gtk::MultiSelection>,
+        #[property(get, set)]
+        pub collapsed: Cell<bool>
     }
 
     #[glib::object_subclass]
@@ -84,7 +78,7 @@ mod imp {
                 .expression(gtk::PropertyExpression::new(
                     INode::static_type(),
                     Option::<gtk::PropertyExpression>::None,
-                    "uri"
+                    "uri",
                 ))
                 .match_mode(gtk::StringFilterMatchMode::Substring)
                 .build();
@@ -94,26 +88,24 @@ mod imp {
                 .flags(gio::SettingsBindFlags::GET | gio::SettingsBindFlags::INVERT_BOOLEAN)
                 .build();
 
-            let search_model = gtk::FilterListModel::new(
-                Option::<gio::ListStore>::None,
-                Some(filter.clone())
-            );
+            let search_model =
+                gtk::FilterListModel::new(Option::<gio::ListStore>::None, Some(filter.clone()));
 
-            let sel_model = gtk::SingleSelection::new(
-                Some(gtk::SortListModel::builder()
-                     .incremental(true)
-                     .model(&search_model)
-                     .sorter(&gtk::StringSorter::builder()
-                             .expression(gtk::PropertyExpression::new(
-                                 INode::static_type(),
-                                 Option::<gtk::PropertyExpression>::None,
-                                 "last-modified"
-                             ))
-                             .build()
-                     )
-                     .build()
-                )
-            );
+            let sel_model = gtk::SingleSelection::new(Some(
+                gtk::SortListModel::builder()
+                    .incremental(true)
+                    .model(&search_model)
+                    .sorter(
+                        &gtk::StringSorter::builder()
+                            .expression(gtk::PropertyExpression::new(
+                                INode::static_type(),
+                                Option::<gtk::PropertyExpression>::None,
+                                "last-modified",
+                            ))
+                            .build(),
+                    )
+                    .build(),
+            ));
             sel_model.set_autoselect(false);
             sel_model.set_can_unselect(true);
 
@@ -160,8 +152,7 @@ mod imp {
                     let term = name_box.text();
                     if !term.is_empty() {
                         filter.set_search(Some(&name_box.text()));
-                    }
-                    else {
+                    } else {
                         filter.set_search(None);
                     }
                     this.on_changed(true);
@@ -171,7 +162,9 @@ mod imp {
             sel_model.connect_selection_changed(clone!(
                 #[weak(rename_to = this)]
                 self,
-                move |_, _, _| { this.on_changed(false); }
+                move |_, _, _| {
+                    this.on_changed(false);
+                }
             ));
 
             let _ = self.search_model.set(search_model);
@@ -182,12 +175,14 @@ mod imp {
                 self,
                 move |_| {
                     // Close the popover
-                        this.menu_btn.set_active(false);
+                    this.menu_btn.set_active(false);
                     // If the playlist does not exist yet, MPD automatically
                     // creates one.
                     // As such, as long as we don't pass SaveMode::Replace,
                     // the logic should still be correct.
-                    if let (Some(name), Some(song_sel_model)) = (this.get_name(), this.song_sel_model.get()) {
+                    if let (Some(name), Some(song_sel_model)) =
+                        (this.get_name(), this.song_sel_model.get())
+                    {
                         // Get songs
                         let sel = &song_sel_model.selection();
                         let store = &song_sel_model.model().unwrap();
@@ -195,12 +190,10 @@ mod imp {
                         if let Some((iter, first_idx)) = gtk::BitsetIter::init_first(sel) {
                             songs = Vec::with_capacity(sel.size() as usize);
                             songs.push(store.item(first_idx).and_downcast::<Song>().unwrap());
-                            iter
-                                .for_each(
-                                    |idx| songs.push(store.item(idx).and_downcast::<Song>().unwrap())
-                                );
-                        }
-                        else {
+                            iter.for_each(|idx| {
+                                songs.push(store.item(idx).and_downcast::<Song>().unwrap())
+                            });
+                        } else {
                             let model = song_sel_model.model().unwrap();
                             let n_items = model.n_items();
                             songs = Vec::with_capacity(n_items as usize);
@@ -210,7 +203,9 @@ mod imp {
                             }
                         }
                         let _ = this.library.get().unwrap().add_songs_to_playlist(
-                            &name, &songs, SaveMode::Append
+                            &name,
+                            &songs,
+                            SaveMode::Append,
                         );
                     }
                 }
@@ -231,30 +226,18 @@ mod imp {
             if self.will_create.get() {
                 if name_box_text.is_empty() {
                     None
-                }
-                else {
+                } else {
                     Some(name_box_text.to_string())
                 }
-            }
-            else {
+            } else {
                 // Never use name box in this case
                 if let Some(item) = sel_model.selected_item() {
-                    Some(
-                        item.downcast_ref::<INode>()?
-                            .get_uri()
-                            .to_owned()
-                    )
-                }
-                else if let Some(item) = search_model.item(0) {
+                    Some(item.downcast_ref::<INode>()?.get_uri().to_owned())
+                } else if let Some(item) = search_model.item(0) {
                     // Nothing is selected either, we'll have to take the first item
                     // in the list. At this point it should also be the only item left.
-                    Some(
-                        item.downcast_ref::<INode>()?
-                            .get_uri()
-                            .to_owned()
-                    )
-                }
-                else {
+                    Some(item.downcast_ref::<INode>()?.get_uri().to_owned())
+                } else {
                     None
                 }
             }
@@ -272,11 +255,15 @@ mod imp {
             let n_items = search_model.n_items();
             if n_items > 1 && sel_model.selected_item().is_none() {
                 will_create = true;
-            }
-            else if n_items == 1 && sel_model.selected_item().is_none() {
-                will_create = search_model.item(0).unwrap().downcast_ref::<INode>().unwrap().get_uri() != name_box.text().as_str();
-            }
-            else {
+            } else if n_items == 1 && sel_model.selected_item().is_none() {
+                will_create = search_model
+                    .item(0)
+                    .unwrap()
+                    .downcast_ref::<INode>()
+                    .unwrap()
+                    .get_uri()
+                    != name_box.text().as_str();
+            } else {
                 will_create = n_items == 0;
             }
             self.will_create.replace(will_create);
@@ -291,13 +278,13 @@ mod imp {
                 if will_create {
                     // Name might be empty in this case but it's okay since we would
                     // have hidden the button
-                    self.add_btn.set_label(format!("Create \"{}\"", name).as_str());
+                    self.add_btn
+                        .set_label(format!("Create \"{}\"", name).as_str());
+                } else {
+                    self.add_btn
+                        .set_label(format!("Append to \"{}\"", name).as_str());
                 }
-                else {
-                    self.add_btn.set_label(format!("Append to \"{}\"", name).as_str());
-                }
-            }
-            else {
+            } else {
                 self.add_btn.set_sensitive(false);
                 self.add_revealer.set_reveal_child(false);
             }
@@ -311,7 +298,6 @@ glib::wrapper! {
     @implements gtk::Accessible, gtk::Buildable, gtk::ConstraintTarget, gtk::Orientable;
 }
 
-
 impl AddToPlaylistButton {
     pub fn new() -> Self {
         glib::Object::new()
@@ -319,9 +305,19 @@ impl AddToPlaylistButton {
 
     pub fn setup(&self, library: Library, song_sel_model: gtk::MultiSelection) {
         let playlists = library.playlists();
-        self.imp().library.set(library).expect("Failed to initialise AddToPlaylistButton with Library");
-        self.imp().search_model.get().unwrap().set_model(Some(&playlists));
-        self.imp().song_sel_model.set(song_sel_model).expect("Failed to connect song model to AddToPlaylistButton");
+        self.imp()
+            .library
+            .set(library)
+            .expect("Failed to initialise AddToPlaylistButton with Library");
+        self.imp()
+            .search_model
+            .get()
+            .unwrap()
+            .set_model(Some(&playlists));
+        self.imp()
+            .song_sel_model
+            .set(song_sel_model)
+            .expect("Failed to connect song model to AddToPlaylistButton");
 
         playlists.connect_items_changed(clone!(
             #[weak(rename_to = this)]

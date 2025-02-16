@@ -17,14 +17,10 @@
  *
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
-use gtk::prelude::*;
 use adw::subclass::prelude::*;
+use gtk::prelude::*;
 use gtk::{gio, glib};
-use std::{
-    rc::Rc,
-    fs::create_dir_all,
-    path::PathBuf
-};
+use std::{fs::create_dir_all, path::PathBuf, rc::Rc};
 
 use crate::{
     cache::Cache,
@@ -33,7 +29,7 @@ use crate::{
     library::Library,
     player::Player,
     preferences::Preferences,
-    EuphonicaWindow
+    EuphonicaWindow,
 };
 
 use adw::prelude::*;
@@ -47,8 +43,8 @@ mod imp {
         pub library: Library,
         pub cache: Rc<Cache>,
         // pub library: Rc<LibraryController>, // TODO
-    	pub client: Rc<MpdWrapper>,
-    	pub cache_path: PathBuf // Just clone this to construct more detailed paths
+        pub client: Rc<MpdWrapper>,
+        pub cache_path: PathBuf, // Just clone this to construct more detailed paths
     }
 
     #[glib::object_subclass]
@@ -82,10 +78,9 @@ mod imp {
                 library,
                 client,
                 cache,
-                cache_path
+                cache_path,
             }
         }
-
     }
 
     impl ObjectImpl for EuphonicaApplication {
@@ -98,11 +93,8 @@ mod imp {
             obj.set_accels_for_action("app.refresh", &["F5"]);
 
             self.library.setup(self.client.clone(), self.cache.clone());
-            self.player.setup(
-                self.obj().clone(),
-                self.client.clone(),
-                self.cache.clone()
-            );
+            self.player
+                .setup(self.obj().clone(), self.client.clone(), self.cache.clone());
         }
     }
 
@@ -192,7 +184,7 @@ impl EuphonicaApplication {
             update_db_action,
             quit_action,
             about_action,
-            preferences_action
+            preferences_action,
         ]);
     }
 
@@ -210,9 +202,11 @@ impl EuphonicaApplication {
         if state {
             window.fullscreen();
             // Send a toast with instructions on how to return to windowed mode
-            window.downcast_ref::<EuphonicaWindow>().unwrap().send_simple_toast("Press F11 to exit fullscreen", 3);
-        }
-        else {
+            window
+                .downcast_ref::<EuphonicaWindow>()
+                .unwrap()
+                .send_simple_toast("Press F11 to exit fullscreen", 3);
+        } else {
             window.unfullscreen();
         }
     }
@@ -227,14 +221,17 @@ impl EuphonicaApplication {
     }
 
     fn update_db(&self) {
-        self.imp().client.clone().queue_background(BackgroundTask::Update);
+        self.imp()
+            .client
+            .clone()
+            .queue_background(BackgroundTask::Update, true);
     }
 
     pub fn show_about(&self) {
         let window = self.active_window().unwrap();
         let about = adw::AboutDialog::builder()
             .application_name("Euphonica")
-            .application_icon("org.euphonica.Euphonica")
+            .application_icon("io.github.htkhiem.Euphonica")
             .developer_name("htkhiem2000")
             .version(VERSION)
             .developers(vec!["htkhiem2000"])
@@ -242,9 +239,10 @@ impl EuphonicaApplication {
             .copyright("© 2024 htkhiem2000")
             .build();
 
-        about.add_credit_section(Some("Special Thanks"), &[
-            "Emmanuele Bassi (GTK, LibAdwaita, the Amberol project) https://www.bassi.io/"
-        ]);
+        about.add_credit_section(
+            Some("Special Thanks"),
+            &["Emmanuele Bassi (GTK, LibAdwaita, the Amberol project) https://www.bassi.io/"],
+        );
         about.present(Some(&window));
     }
 
@@ -253,7 +251,7 @@ impl EuphonicaApplication {
         let prefs = Preferences::new(
             self.imp().client.clone(),
             self.imp().cache.clone(),
-            &self.imp().player
+            &self.imp().player,
         );
         prefs.present(Some(&window));
     }

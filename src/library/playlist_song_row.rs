@@ -1,28 +1,14 @@
+use glib::{clone, closure_local, Object, SignalHandlerId};
+use gtk::{glib, prelude::*, subclass::prelude::*, CompositeTemplate};
 use std::{
-    cell::{RefCell, OnceCell},
-    rc::Rc
-};
-use gtk::{
-    glib,
-    prelude::*,
-    subclass::prelude::*,
-    CompositeTemplate,
-};
-use glib::{
-    clone,
-    closure_local,
-    Object,
-    SignalHandlerId
+    cell::{OnceCell, RefCell},
+    rc::Rc,
 };
 
 use crate::{
-    cache::{
-        placeholders::ALBUMART_THUMBNAIL_PLACEHOLDER,
-        Cache,
-        CacheState
-    },
+    cache::{placeholders::ALBUMART_THUMBNAIL_PLACEHOLDER, Cache, CacheState},
     common::{AlbumInfo, Song},
-    utils::format_secs_as_duration
+    utils::format_secs_as_duration,
 };
 
 use super::{Library, PlaylistContentView};
@@ -30,16 +16,14 @@ use super::{Library, PlaylistContentView};
 mod imp {
     use std::cell::Cell;
 
-    use glib::{
-        ParamSpec, ParamSpecBoolean, ParamSpecString
-    };
-    use once_cell::sync::Lazy;
     use crate::library::PlaylistContentView;
+    use glib::{ParamSpec, ParamSpecBoolean, ParamSpecString};
+    use once_cell::sync::Lazy;
 
     use super::*;
 
     #[derive(Default, CompositeTemplate)]
-    #[template(resource = "/org/euphonica/Euphonica/gtk/library/playlist-song-row.ui")]
+    #[template(resource = "/io/github/htkhiem/Euphonica/gtk/library/playlist-song-row.ui")]
     pub struct PlaylistSongRow {
         #[template_child]
         pub quality_grade: TemplateChild<gtk::Image>,
@@ -75,7 +59,7 @@ mod imp {
         pub library: OnceCell<Library>,
         pub content_view: OnceCell<PlaylistContentView>,
         pub queue_controls_visible: Cell<bool>,
-        pub edit_controls_visible: Cell<bool>
+        pub edit_controls_visible: Cell<bool>,
     }
 
     // The central trait for subclassing a GObject
@@ -100,31 +84,14 @@ mod imp {
         fn constructed(&self) {
             self.parent_constructed();
             let obj = self.obj();
-            for elem in [
-                self.replace_queue.get(),
-                self.append_queue.get()
-            ] {
-                obj
-                    .bind_property(
-                        "queue-controls-visible",
-                        &elem,
-                        "visible"
-                    )
+            for elem in [self.replace_queue.get(), self.append_queue.get()] {
+                obj.bind_property("queue-controls-visible", &elem, "visible")
                     .sync_create()
                     .build();
             }
 
-            for elem in [
-                self.raise.get(),
-                self.lower.get(),
-                self.remove.get()
-            ] {
-                obj
-                    .bind_property(
-                        "edit-controls-visible",
-                        &elem,
-                        "visible"
-                    )
+            for elem in [self.raise.get(), self.lower.get(), self.remove.get()] {
+                obj.bind_property("edit-controls-visible", &elem, "visible")
                     .sync_create()
                     .build();
             }
@@ -198,8 +165,7 @@ mod imp {
                     if let Ok(icon) = value.get::<&str>() {
                         self.quality_grade.set_icon_name(Some(icon));
                         self.quality_grade.set_visible(true);
-                    }
-                    else {
+                    } else {
                         self.quality_grade.set_icon_name(None);
                         self.quality_grade.set_visible(false);
                     }
@@ -243,36 +209,32 @@ impl PlaylistSongRow {
     pub fn setup(&self, library: Library, view: PlaylistContentView, item: &gtk::ListItem) {
         let _ = self.imp().library.set(library);
         let _ = self.imp().content_view.set(view);
-        item
-            .property_expression("item")
+        item.property_expression("item")
             .chain_property::<Song>("queue-pos")
-            .chain_closure::<String>(closure_local!(|_: Option<Object>, val: u32| { val.to_string() }))
+            .chain_closure::<String>(closure_local!(|_: Option<Object>, val: u32| {
+                val.to_string()
+            }))
             .bind(self, "order", gtk::Widget::NONE);
-        item
-            .property_expression("item")
+        item.property_expression("item")
             .chain_property::<Song>("name")
             .bind(self, "name", gtk::Widget::NONE);
 
-        item
-            .property_expression("item")
+        item.property_expression("item")
             .chain_property::<Song>("artist")
             .bind(self, "artist", gtk::Widget::NONE);
 
-        item
-            .property_expression("item")
+        item.property_expression("item")
             .chain_property::<Song>("album")
             .bind(self, "album", gtk::Widget::NONE);
 
-        item
-            .property_expression("item")
+        item.property_expression("item")
             .chain_property::<Song>("duration")
             .chain_closure::<String>(closure_local!(|_: Option<Object>, dur: u64| {
                 format_secs_as_duration(dur as f64)
             }))
             .bind(self, "duration", gtk::Widget::NONE);
 
-        item
-            .property_expression("item")
+        item.property_expression("item")
             .chain_property::<Song>("quality-grade")
             .bind(self, "quality-grade", gtk::Widget::NONE);
     }
@@ -285,7 +247,9 @@ impl PlaylistSongRow {
                 return;
             }
         }
-        self.imp().thumbnail.set_paintable(Some(&*ALBUMART_THUMBNAIL_PLACEHOLDER));
+        self.imp()
+            .thumbnail
+            .set_paintable(Some(&*ALBUMART_THUMBNAIL_PLACEHOLDER));
     }
 
     pub fn bind(&self, song: &Song, cache: Rc<Cache>) {
@@ -308,111 +272,103 @@ impl PlaylistSongRow {
                         }
                     }
                 }
-            )
+            ),
         );
-        self.imp().thumbnail_signal_id.replace(Some(thumbnail_binding));
+        self.imp()
+            .thumbnail_signal_id
+            .replace(Some(thumbnail_binding));
         // Bind the queue buttons
         let uri = song.get_uri().to_owned();
-        if let Some(old_id) = self.imp().replace_queue_id.replace(
-            Some(
-                self.imp().replace_queue.connect_clicked(
-                    clone!(
-                        #[weak(rename_to = this)]
-                        self,
-                        #[strong]
-                        uri,
-                        move |_| {
-                            if let Some(library) = this.imp().library.get() {
-                                library.queue_uri(&uri, true, true, false);
-                            }
+        if let Some(old_id) =
+            self.imp()
+                .replace_queue_id
+                .replace(Some(self.imp().replace_queue.connect_clicked(clone!(
+                    #[weak(rename_to = this)]
+                    self,
+                    #[strong]
+                    uri,
+                    move |_| {
+                        if let Some(library) = this.imp().library.get() {
+                            library.queue_uri(&uri, true, true, false);
                         }
-                    )
-                )
-            )
-        ) {
+                    }
+                ))))
+        {
             // Unbind old ID
             self.imp().replace_queue.disconnect(old_id);
         }
-        if let Some(old_id) = self.imp().append_queue_id.replace(
-            Some(
-                self.imp().append_queue.connect_clicked(
-                    clone!(
-                        #[weak(rename_to = this)]
-                        self,
-                        #[strong]
-                        uri,
-                        move |_| {
-                            if let Some(library) = this.imp().library.get() {
-                                library.queue_uri(&uri, false, false, false);
-                            }
+        if let Some(old_id) =
+            self.imp()
+                .append_queue_id
+                .replace(Some(self.imp().append_queue.connect_clicked(clone!(
+                    #[weak(rename_to = this)]
+                    self,
+                    #[strong]
+                    uri,
+                    move |_| {
+                        if let Some(library) = this.imp().library.get() {
+                            library.queue_uri(&uri, false, false, false);
                         }
-                    )
-                )
-            )
-        ) {
+                    }
+                ))))
+        {
             // Unbind old ID
             self.imp().append_queue.disconnect(old_id);
         }
 
-        if let Some(old_id) = self.imp().raise_signal_id.replace(
-            Some(
-                self.imp().raise.connect_clicked(
-                    clone!(
-                        #[weak(rename_to = this)]
-                        self,
-                        #[strong]
-                        song,
-                        move |_| {
-                            if let Some(view) = this.imp().content_view.get() {
-                                view.shift_backward(song.get_queue_pos());
-                            }
+        if let Some(old_id) =
+            self.imp()
+                .raise_signal_id
+                .replace(Some(self.imp().raise.connect_clicked(clone!(
+                    #[weak(rename_to = this)]
+                    self,
+                    #[strong]
+                    song,
+                    move |_| {
+                        if let Some(view) = this.imp().content_view.get() {
+                            view.shift_backward(song.get_queue_pos());
                         }
-                    )
-                )
-            )
-        ) {
+                    }
+                ))))
+        {
             // Unbind old ID
             self.imp().raise.disconnect(old_id);
         }
 
-        if let Some(old_id) = self.imp().lower_signal_id.replace(
-            Some(
-                self.imp().lower.connect_clicked(
-                    clone!(
-                        #[weak(rename_to = this)]
-                        self,
-                        #[strong]
-                        song,
-                        move |_| {
-                            if let Some(view) = this.imp().content_view.get() {
-                                view.shift_forward(song.get_queue_pos());
-                            }
+        if let Some(old_id) =
+            self.imp()
+                .lower_signal_id
+                .replace(Some(self.imp().lower.connect_clicked(clone!(
+                    #[weak(rename_to = this)]
+                    self,
+                    #[strong]
+                    song,
+                    move |_| {
+                        if let Some(view) = this.imp().content_view.get() {
+                            view.shift_forward(song.get_queue_pos());
                         }
-                    )
-                )
-            )
-        ) {
+                    }
+                ))))
+        {
             // Unbind old ID
             self.imp().lower.disconnect(old_id);
         }
 
-        if let Some(old_id) = self.imp().remove_signal_id.replace(
-            Some(
-                self.imp().remove.connect_clicked(
-                    clone!(
-                        #[weak(rename_to = this)]
-                        self,
-                        #[strong]
-                        song,
-                        move |_| {
-                            if let Some(view) = this.imp().content_view.get() {
-                                view.remove(song.get_queue_pos());
-                            }
+        if let Some(old_id) =
+            self.imp()
+                .remove_signal_id
+                .replace(Some(self.imp().remove.connect_clicked(clone!(
+                    #[weak(rename_to = this)]
+                    self,
+                    #[strong]
+                    song,
+                    move |_| {
+                        if let Some(view) = this.imp().content_view.get() {
+                            view.remove(song.get_queue_pos());
                         }
-                    )
-                )
-            )
-        ) {
+                    }
+                ))))
+        {
             // Unbind old ID
             self.imp().remove.disconnect(old_id);
         }

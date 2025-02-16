@@ -1,12 +1,12 @@
-use std::cell::Cell;
-use gtk::{
-    prelude::*,
-    glib::{self, clone},
-    subclass::prelude::*,
-    CompositeTemplate
-};
 use glib::{Object, Properties};
+use gtk::{
+    glib::{self, clone},
+    prelude::*,
+    subclass::prelude::*,
+    CompositeTemplate,
+};
 use mpd::output::Output;
+use std::cell::Cell;
 
 use super::Player;
 
@@ -15,7 +15,7 @@ fn map_icon_name(plugin_name: &str) -> &'static str {
         "alsa" => "alsa-symbolic",
         "pulse" => "pulseaudio-symbolic",
         "pipewire" => "pipewire-symbolic",
-        _ => "soundcard-symbolic"
+        _ => "soundcard-symbolic",
     }
 }
 
@@ -24,7 +24,7 @@ mod imp {
 
     #[derive(Properties, Default, CompositeTemplate)]
     #[properties(wrapper_type = super::MpdOutput)]
-    #[template(resource = "/org/euphonica/Euphonica/gtk/player/output.ui")]
+    #[template(resource = "/io/github/htkhiem/Euphonica/gtk/player/output.ui")]
     pub struct MpdOutput {
         #[template_child]
         pub toggle_btn: TemplateChild<gtk::Button>,
@@ -37,7 +37,7 @@ mod imp {
         #[template_child]
         pub options_preview: TemplateChild<gtk::Label>,
         #[property(get, set)]
-        pub enabled: Cell<bool>
+        pub enabled: Cell<bool>,
     }
 
     // The central trait for subclassing a GObject
@@ -82,8 +82,7 @@ impl MpdOutput {
         if is_enabled && is_dimmed {
             icon.remove_css_class("dim-label");
             label.remove_css_class("dim-label");
-        }
-        else if !is_enabled && !is_dimmed {
+        } else if !is_enabled && !is_dimmed {
             icon.add_css_class("dim-label");
             label.add_css_class("dim-label");
         }
@@ -110,8 +109,7 @@ impl MpdOutput {
             }
 
             options_preview.set_label(&attribs.join("\n"));
-        }
-        else {
+        } else {
             options.set_visible(false);
         }
         self.set_dim();

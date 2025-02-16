@@ -1,41 +1,25 @@
+use glib::{closure_local, signal::SignalHandlerId, Object};
+use gtk::{glib, prelude::*, subclass::prelude::*, CompositeTemplate, Image, Label};
 use std::{
-    cell::{RefCell, OnceCell},
-    rc::Rc
-};
-use gtk::{
-    glib,
-    prelude::*,
-    subclass::prelude::*,
-    CompositeTemplate,
-    Label,
-    Image
-};
-use glib::{
-    closure_local,
-    Object,
-    signal::SignalHandlerId
+    cell::{OnceCell, RefCell},
+    rc::Rc,
 };
 
 use crate::{
-    cache::{
-        placeholders::ALBUMART_PLACEHOLDER, Cache, CacheState
-    }, common::{
-        Album, AlbumInfo
-    }
+    cache::{placeholders::ALBUMART_PLACEHOLDER, Cache, CacheState},
+    common::{Album, AlbumInfo},
 };
 
 mod imp {
-    use glib::{
-        ParamSpec, ParamSpecString
-    };
-    use once_cell::sync::Lazy;
     use super::*;
+    use glib::{ParamSpec, ParamSpecString};
+    use once_cell::sync::Lazy;
 
     #[derive(Default, CompositeTemplate)]
-    #[template(resource = "/org/euphonica/Euphonica/gtk/library/album-cell.ui")]
+    #[template(resource = "/io/github/htkhiem/Euphonica/gtk/library/album-cell.ui")]
     pub struct AlbumCell {
         #[template_child]
-        pub cover: TemplateChild<gtk::Picture>,  // Use high-resolution version
+        pub cover: TemplateChild<gtk::Picture>, // Use high-resolution version
         #[template_child]
         pub title: TemplateChild<Label>,
         #[template_child]
@@ -45,7 +29,7 @@ mod imp {
         pub album: RefCell<Option<Album>>,
         // Vector holding the bindings to properties of the Album GObject
         pub cover_signal_id: RefCell<Option<SignalHandlerId>>,
-        pub cache: OnceCell<Rc<Cache>>
+        pub cache: OnceCell<Rc<Cache>>,
     }
 
     // The central trait for subclassing a GObject
@@ -72,7 +56,7 @@ mod imp {
                 vec![
                     ParamSpecString::builder("title").build(),
                     ParamSpecString::builder("artist").build(),
-                    ParamSpecString::builder("quality-grade").build()
+                    ParamSpecString::builder("quality-grade").build(),
                 ]
             });
             PROPERTIES.as_ref()
@@ -106,13 +90,12 @@ mod imp {
                     if let Ok(icon_name) = value.get::<&str>() {
                         self.quality_grade.set_icon_name(Some(icon_name));
                         self.quality_grade.set_visible(true);
-                    }
-                    else {
+                    } else {
                         self.quality_grade.set_icon_name(None);
                         self.quality_grade.set_visible(false);
                     }
                 }
-                _ => unimplemented!()
+                _ => unimplemented!(),
             }
         }
     }
@@ -133,51 +116,61 @@ glib::wrapper! {
 impl AlbumCell {
     pub fn new(item: &gtk::ListItem, cache: Rc<Cache>) -> Self {
         let res: Self = Object::builder().build();
-        res.imp().cache.set(cache).expect("AlbumCell cannot bind to cache");
+        res.imp()
+            .cache
+            .set(cache)
+            .expect("AlbumCell cannot bind to cache");
         res.setup(item);
-        let _ = res.imp().cover_signal_id.replace(
-            Some(res.imp().cache.get().unwrap().get_cache_state().connect_closure(
-                "album-art-downloaded",
-                false,
-                closure_local!(
-                    #[weak(rename_to = this)]
-                    res,
-                    move |_: CacheState, folder_uri: String| {
-                        if let Some(album) = this.imp().album.borrow().as_ref() {
-                            if album.get_uri() == &folder_uri {
-                                this.update_album_art(album.get_info());
+        let _ = res.imp().cover_signal_id.replace(Some(
+            res.imp()
+                .cache
+                .get()
+                .unwrap()
+                .get_cache_state()
+                .connect_closure(
+                    "album-art-downloaded",
+                    false,
+                    closure_local!(
+                        #[weak(rename_to = this)]
+                        res,
+                        move |_: CacheState, folder_uri: String| {
+                            if let Some(album) = this.imp().album.borrow().as_ref() {
+                                if album.get_uri() == &folder_uri {
+                                    this.update_album_art(album.get_info());
+                                }
                             }
                         }
-                    }
-                )
-            ))
-        );
+                    ),
+                ),
+        ));
         res
     }
 
     #[inline(always)]
     pub fn setup(&self, item: &gtk::ListItem) {
-        item
-            .property_expression("item")
+        item.property_expression("item")
             .chain_property::<Album>("title")
             .bind(self, "title", gtk::Widget::NONE);
 
-        item
-            .property_expression("item")
+        item.property_expression("item")
             .chain_property::<Album>("artist")
             .bind(self, "artist", gtk::Widget::NONE);
 
-        item
-            .property_expression("item")
+        item.property_expression("item")
             .chain_property::<Album>("quality-grade")
             .bind(self, "quality-grade", gtk::Widget::NONE);
     }
 
     fn update_album_art(&self, info: &AlbumInfo) {
-        if let Some(tex) = self.imp().cache.get().unwrap().load_cached_album_art(info, true, true) {
+        if let Some(tex) = self
+            .imp()
+            .cache
+            .get()
+            .unwrap()
+            .load_cached_album_art(info, true, true)
+        {
             self.imp().cover.set_paintable(Some(&tex));
-        }
-        else {
+        } else {
             self.imp().cover.set_paintable(Some(&*ALBUMART_PLACEHOLDER));
         }
     }
@@ -196,7 +189,12 @@ impl AlbumCell {
 
     pub fn teardown(&self) {
         if let Some(id) = self.imp().cover_signal_id.take() {
-            self.imp().cache.get().unwrap().get_cache_state().disconnect(id);
+            self.imp()
+                .cache
+                .get()
+                .unwrap()
+                .get_cache_state()
+                .disconnect(id);
         }
     }
 }

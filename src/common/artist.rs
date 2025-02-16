@@ -1,12 +1,9 @@
-use std::cell::OnceCell;
+use crate::utils::{ARTIST_DELIM_AUTOMATON, ARTIST_DELIM_EXCEPTION_AUTOMATON};
+use aho_corasick::Match;
 use gtk::glib;
 use gtk::prelude::*;
 use gtk::subclass::prelude::*;
-use aho_corasick::Match;
-use crate::utils::{
-    ARTIST_DELIM_AUTOMATON,
-    ARTIST_DELIM_EXCEPTION_AUTOMATON
-};
+use std::cell::OnceCell;
 
 /// Artist struct, for use with both Artist and AlbumArtist tags.
 #[derive(Debug, Clone, PartialEq)]
@@ -14,7 +11,7 @@ pub struct ArtistInfo {
     // TODO: Might want to refactor to Into<Cow<'a, str>>
     pub name: String,
     pub mbid: Option<String>,
-    pub is_composer: bool
+    pub is_composer: bool,
 }
 
 impl ArtistInfo {
@@ -22,7 +19,7 @@ impl ArtistInfo {
         Self {
             name: name.to_owned(),
             mbid: None,
-            is_composer
+            is_composer,
         }
     }
 }
@@ -32,7 +29,7 @@ impl Default for ArtistInfo {
         ArtistInfo {
             name: "Untitled Artist".to_owned(),
             mbid: None,
-            is_composer: false
+            is_composer: false,
         }
     }
 }
@@ -49,7 +46,7 @@ pub fn parse_mb_artist_tag<'a>(input: &'a str) -> Vec<&'a str> {
     // println!("Original buffer len: {}", buffer.len());
     if let (Some(exc_ac), Some(delim_ac)) = (
         &*ARTIST_DELIM_EXCEPTION_AUTOMATON.read().unwrap(),
-        &*ARTIST_DELIM_AUTOMATON.read().unwrap()
+        &*ARTIST_DELIM_AUTOMATON.read().unwrap(),
     ) {
         // Step 1: extract exceptions out first
         let mut found_artists: Vec<&str> = Vec::new();
@@ -76,8 +73,7 @@ pub fn parse_mb_artist_tag<'a>(input: &'a str) -> Vec<&'a str> {
             // Else return the whole string
             return vec![input];
             // Incorrect outputs are due to unspecified delimiters.
-        }
-        else {
+        } else {
             // Take note to check for "blankness" using the buffer, but return slices
             // of input, since buffer will go out of scope after this function concludes.
             let first_range = 0..matched_delims[0].start();
@@ -85,7 +81,7 @@ pub fn parse_mb_artist_tag<'a>(input: &'a str) -> Vec<&'a str> {
                 found_artists.push(input[first_range].trim());
             }
             for i in 1..(matched_delims.len()) {
-                let between_range = matched_delims[i-1].end()..matched_delims[i].start();
+                let between_range = matched_delims[i - 1].end()..matched_delims[i].start();
                 // println!("Between: `{between}`");
                 if buffer[between_range.clone()].trim().len() > 0 {
                     found_artists.push(input[between_range].trim());
@@ -97,8 +93,7 @@ pub fn parse_mb_artist_tag<'a>(input: &'a str) -> Vec<&'a str> {
             }
             return found_artists;
         }
-    }
-    else {
+    } else {
         vec![input]
     }
 }
@@ -106,8 +101,7 @@ pub fn parse_mb_artist_tag<'a>(input: &'a str) -> Vec<&'a str> {
 pub fn artists_to_string(artists: &[ArtistInfo]) -> Option<String> {
     if artists.is_empty() {
         None
-    }
-    else if artists.len() > 1 {
+    } else if artists.len() > 1 {
         // For now assume that only the first artist in the list can be a composer
         let mut res: String = "".to_owned();
         for (i, artist) in artists.iter().enumerate() {
@@ -122,24 +116,19 @@ pub fn artists_to_string(artists: &[ArtistInfo]) -> Option<String> {
             res.push_str(artist.name.as_ref());
         }
         Some(res)
-    }
-    else {
+    } else {
         Some(artists[0].name.clone())
     }
 }
 
-
 mod imp {
-    use glib::{
-        ParamSpec,
-        ParamSpecString
-    };
-    use once_cell::sync::Lazy;
     use super::*;
+    use glib::{ParamSpec, ParamSpecString};
+    use once_cell::sync::Lazy;
 
     #[derive(Default, Debug)]
     pub struct Artist {
-        pub info: OnceCell<ArtistInfo>
+        pub info: OnceCell<ArtistInfo>,
     }
 
     #[glib::object_subclass]
@@ -149,20 +138,15 @@ mod imp {
 
         fn new() -> Self {
             Self {
-                info: OnceCell::new()
+                info: OnceCell::new(),
             }
         }
     }
 
     impl ObjectImpl for Artist {
         fn properties() -> &'static [ParamSpec] {
-            static PROPERTIES: Lazy<Vec<ParamSpec>> = Lazy::new(|| {
-                vec![
-                    ParamSpecString::builder("name")
-                        .read_only()
-                        .build()
-                ]
-            });
+            static PROPERTIES: Lazy<Vec<ParamSpec>> =
+                Lazy::new(|| vec![ParamSpecString::builder("name").read_only().build()]);
             PROPERTIES.as_ref()
         }
 

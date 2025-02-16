@@ -1,13 +1,13 @@
-mod dialog;
 mod client;
-mod library;
-mod ui;
+mod dialog;
 mod integrations;
+mod library;
 mod provider_row;
+mod ui;
 
-pub use provider_row::ProviderRow;
-pub use ui::UIPreferences;
 pub use client::ClientPreferences;
+pub use dialog::Preferences;
 pub use integrations::IntegrationsPreferences;
 pub use library::LibraryPreferences;
-pub use dialog::Preferences;
+pub use provider_row::ProviderRow;
+pub use ui::UIPreferences;

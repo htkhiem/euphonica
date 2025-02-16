@@ -1,36 +1,18 @@
-use std::cell::{RefCell, OnceCell};
-use gtk::{
-    glib,
-    prelude::*,
-    subclass::prelude::*,
-    CompositeTemplate,
-    Label
-};
-use glib::{
-    clone,
-    closure,
-    Object,
-    SignalHandlerId
-};
+use glib::{clone, closure, Object, SignalHandlerId};
+use gtk::{glib, prelude::*, subclass::prelude::*, CompositeTemplate, Label};
+use std::cell::{OnceCell, RefCell};
 
-use crate::{
-    common::Song,
-    utils::format_secs_as_duration
-};
+use crate::{common::Song, utils::format_secs_as_duration};
 
 use super::Library;
 
 mod imp {
-    use glib::{
-        ParamSpec,
-        ParamSpecInt64,
-        ParamSpecString
-    };
-    use once_cell::sync::Lazy;
     use super::*;
+    use glib::{ParamSpec, ParamSpecInt64, ParamSpecString};
+    use once_cell::sync::Lazy;
 
     #[derive(Default, CompositeTemplate)]
-    #[template(resource = "/org/euphonica/Euphonica/gtk/library/album-song-row.ui")]
+    #[template(resource = "/io/github/htkhiem/Euphonica/gtk/library/album-song-row.ui")]
     pub struct AlbumSongRow {
         #[template_child]
         pub quality_grade: TemplateChild<gtk::Image>,
@@ -50,7 +32,7 @@ mod imp {
         // For unbinding the queue buttons when not bound to a song (i.e. being recycled)
         pub replace_queue_id: RefCell<Option<SignalHandlerId>>,
         pub append_queue_id: RefCell<Option<SignalHandlerId>>,
-        pub library: OnceCell<Library>
+        pub library: OnceCell<Library>,
     }
 
     // The central trait for subclassing a GObject
@@ -81,7 +63,7 @@ mod imp {
                     ParamSpecString::builder("artist").build(),
                     ParamSpecString::builder("duration").build(),
                     // ParamSpecInt64::builder("disc").build(),
-                    ParamSpecString::builder("quality-grade").build()
+                    ParamSpecString::builder("quality-grade").build(),
                 ]
             });
             PROPERTIES.as_ref()
@@ -89,7 +71,12 @@ mod imp {
 
         fn property(&self, _id: usize, pspec: &ParamSpec) -> glib::Value {
             match pspec.name() {
-                "track" => self.track_index.label().parse::<i64>().unwrap_or(-1).to_value(),
+                "track" => self
+                    .track_index
+                    .label()
+                    .parse::<i64>()
+                    .unwrap_or(-1)
+                    .to_value(),
                 "name" => self.song_name.label().to_value(),
                 // "last_mod" => obj.get_last_mod().to_value(),
                 // Represented in MusicBrainz format, i.e. Composer; Performer, Performer,...
@@ -109,8 +96,7 @@ mod imp {
                         if v >= 0 {
                             self.track_index.set_label(&v.to_string());
                             self.track_index.set_visible(true);
-                        }
-                        else {
+                        } else {
                             self.track_index.set_label("");
                             self.track_index.set_visible(false);
                         }
@@ -137,8 +123,7 @@ mod imp {
                     if let Ok(icon) = value.get::<&str>() {
                         self.quality_grade.set_icon_name(Some(icon));
                         self.quality_grade.set_visible(true);
-                    }
-                    else {
+                    } else {
                         self.quality_grade.set_icon_name(None);
                         self.quality_grade.set_visible(false);
                     }
@@ -171,31 +156,26 @@ impl AlbumSongRow {
     #[inline(always)]
     pub fn setup(&self, library: Library, item: &gtk::ListItem) {
         let _ = self.imp().library.set(library);
-        item
-            .property_expression("item")
+        item.property_expression("item")
             .chain_property::<Song>("track")
             .bind(self, "track", gtk::Widget::NONE);
 
-        item
-            .property_expression("item")
+        item.property_expression("item")
             .chain_property::<Song>("name")
             .bind(self, "name", gtk::Widget::NONE);
 
-        item
-            .property_expression("item")
+        item.property_expression("item")
             .chain_property::<Song>("artist")
             .bind(self, "artist", gtk::Widget::NONE);
 
-        item
-            .property_expression("item")
+        item.property_expression("item")
             .chain_property::<Song>("duration")
             .chain_closure::<String>(closure!(|_: Option<Object>, dur: u64| {
                 format_secs_as_duration(dur as f64)
             }))
             .bind(self, "duration", gtk::Widget::NONE);
 
-        item
-            .property_expression("item")
+        item.property_expression("item")
             .chain_property::<Song>("quality-grade")
             .bind(self, "quality-grade", gtk::Widget::NONE);
     }
@@ -203,43 +183,39 @@ impl AlbumSongRow {
     pub fn bind(&self, song: &Song) {
         // Bind the queue buttons
         let uri = song.get_uri().to_owned();
-        if let Some(old_id) = self.imp().replace_queue_id.replace(
-            Some(
-                self.imp().replace_queue.connect_clicked(
-                    clone!(
-                        #[weak(rename_to = this)]
-                        self,
-                        #[strong]
-                        uri,
-                        move |_| {
-                            if let Some(library) = this.imp().library.get() {
-                                library.queue_uri(&uri, true, true, false);
-                            }
+        if let Some(old_id) =
+            self.imp()
+                .replace_queue_id
+                .replace(Some(self.imp().replace_queue.connect_clicked(clone!(
+                    #[weak(rename_to = this)]
+                    self,
+                    #[strong]
+                    uri,
+                    move |_| {
+                        if let Some(library) = this.imp().library.get() {
+                            library.queue_uri(&uri, true, true, false);
                         }
-                    )
-                )
-            )
-        ) {
+                    }
+                ))))
+        {
             // Unbind old ID
             self.imp().replace_queue.disconnect(old_id);
         }
-        if let Some(old_id) = self.imp().append_queue_id.replace(
-            Some(
-                self.imp().append_queue.connect_clicked(
-                    clone!(
-                        #[weak(rename_to = this)]
-                        self,
-                        #[strong]
-                        uri,
-                        move |_| {
-                            if let Some(library) = this.imp().library.get() {
-                                library.queue_uri(&uri, false, false, false);
-                            }
+        if let Some(old_id) =
+            self.imp()
+                .append_queue_id
+                .replace(Some(self.imp().append_queue.connect_clicked(clone!(
+                    #[weak(rename_to = this)]
+                    self,
+                    #[strong]
+                    uri,
+                    move |_| {
+                        if let Some(library) = this.imp().library.get() {
+                            library.queue_uri(&uri, false, false, false);
                         }
-                    )
-                )
-            )
-        ) {
+                    }
+                ))))
+        {
             // Unbind old ID
             self.imp().append_queue.disconnect(old_id);
         }

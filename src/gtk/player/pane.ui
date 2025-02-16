@@ -171,53 +171,66 @@
             </child>
 
             <child>
-              <object class="EuphonicaPlaybackControls" id="playback_controls"/>
-            </child>
-            <child>
               <object class="GtkBox">
-                <style>
-                  <class name="toolbar"/>
-                </style>
-                <property name="spacing">6</property>
-                <property name="halign">center</property>
+                <property name="orientation">1</property>
                 <child>
-                  <object class="GtkButton" id="rg_btn">
-                    <property name="icon-name">rg-off-symbolic</property>
+                  <object class="EuphonicaPlaybackControls" id="playback_controls"/>
+                </child>
+                <child>
+                  <object class="EuphonicaSeekbar" id="seekbar"/>
+                </child>
+                <child>
+                  <object class="GtkBox">
+                    <property name="spacing">6</property>
+                    <property name="halign">center</property>
+                    <child>
+                      <object class="GtkButton" id="rg_btn">
+                        <style>
+                          <class name="flat"/>
+                        </style>
+                        <property name="icon-name">rg-off-symbolic</property>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="GtkMenuButton" id="crossfade_btn">
+                        <style>
+                          <class name="flat"/>
+                        </style>
+                        <property name="icon-name">crossfade-off-symbolic</property>
+                        <property name="tooltip-text" translatable="true">Crossfade</property>
+                        <property name="popover">crossfade_popover</property>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="GtkMenuButton" id="mixramp_btn">
+                        <style>
+                          <class name="flat"/>
+                        </style>
+                        <property name="icon-name">mixramp-off-symbolic</property>
+                        <property name="tooltip-text" translatable="true">MixRamp</property>
+                        <property name="popover">mixramp_popover</property>
+                      </object>
+                    </child>
                   </object>
                 </child>
                 <child>
-                  <object class="GtkMenuButton" id="crossfade_btn">
-                    <property name="icon-name">crossfade-off-symbolic</property>
-                    <property name="tooltip-text" translatable="true">Crossfade</property>
-                    <property name="popover">crossfade_popover</property>
-                  </object>
-                </child>
-                <child>
-                  <object class="GtkMenuButton" id="mixramp_btn">
-                    <property name="icon-name">mixramp-off-symbolic</property>
-                    <property name="tooltip-text" translatable="true">MixRamp</property>
-                    <property name="popover">mixramp_popover</property>
-                  </object>
-                </child>
-              </object>
-            </child>
-
-            <child>
-              <object class="GtkBox" id="format_info">
-                <property name="halign">center</property>
-                <property name="spacing">6</property>
-                <child>
-                  <object class="GtkImage" id="quality_grade">
-                    <property name="icon-name">format-base-symbolic</property>
-                    <property name="icon-size">1</property>
-                  </object>
-                </child>
-                <child>
-                  <object class="GtkLabel" id="format_desc">
-                    <property name="label">Unknown format</property>
-                    <style>
-                      <class name="caption" />
-                    </style>
+                  <object class="GtkBox" id="format_info">
+                    <property name="halign">center</property>
+                    <property name="spacing">6</property>
+                    <child>
+                      <object class="GtkImage" id="quality_grade">
+                        <property name="icon-name">format-base-symbolic</property>
+                        <property name="icon-size">1</property>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="GtkLabel" id="format_desc">
+                        <property name="label">Unknown format</property>
+                        <style>
+                          <class name="caption" />
+                        </style>
+                      </object>
+                    </child>
                   </object>
                 </child>
               </object>

@@ -4,27 +4,25 @@ extern crate bson;
 use std::sync::RwLock;
 
 use musicbrainz_rs::{
+    entity::{artist::*, release::*},
     prelude::*,
-    entity::{
-        artist::*,
-        release::*
-    }
 };
 
 use crate::utils::meta_provider_settings;
 
-use super::{super::{
-    models, prelude::*, MetadataProvider
-}, PROVIDER_KEY};
+use super::{
+    super::{models, prelude::*, MetadataProvider},
+    PROVIDER_KEY,
+};
 
 pub struct MusicBrainzWrapper {
-    priority: RwLock<u32>
+    priority: RwLock<u32>,
 }
 
 impl MetadataProvider for MusicBrainzWrapper {
     fn new(prio: u32) -> Self {
         Self {
-            priority: RwLock::new(prio)
+            priority: RwLock::new(prio),
         }
     }
 
@@ -46,7 +44,7 @@ impl MetadataProvider for MusicBrainzWrapper {
     fn get_album_meta(
         &self,
         key: bson::Document,
-        existing: Option<models::AlbumMeta>
+        existing: Option<models::AlbumMeta>,
     ) -> Option<models::AlbumMeta> {
         if meta_provider_settings(PROVIDER_KEY).boolean("enabled") {
             if let Some(mbid) = key.get("mbid") {
@@ -63,9 +61,11 @@ impl MetadataProvider for MusicBrainzWrapper {
                         return Some(old.merge(new));
                     }
                     return Some(new);
-                }
-                else {
-                    println!("[MusicBrainz] Could not fetch album metadata: {:?}", res.err());
+                } else {
+                    println!(
+                        "[MusicBrainz] Could not fetch album metadata: {:?}",
+                        res.err()
+                    );
                     return existing;
                 }
             }
@@ -73,15 +73,17 @@ impl MetadataProvider for MusicBrainzWrapper {
             else if let (Some(title), Some(artist)) = (key.get("name"), key.get("artist")) {
                 // Ensure linkages match those on MusicBrainz.
                 // TODO: use multiple ORed artist clauses instead.
-                println!("[MusicBrainz] Searching release with title = {title} and artist = {artist}");
+                println!(
+                    "[MusicBrainz] Searching release with title = {title} and artist = {artist}"
+                );
                 let res = Release::search(
                     ReleaseSearchQuery::query_builder()
                         .release(title.as_str().unwrap())
                         .artist(artist.as_str().unwrap())
-                        .build()
+                        .build(),
                 )
-                    .with_artist_credits()
-                    .execute();
+                .with_artist_credits()
+                .execute();
 
                 if let Ok(found) = res {
                     if let Some(first) = found.entities.into_iter().nth(0) {
@@ -91,23 +93,22 @@ impl MetadataProvider for MusicBrainzWrapper {
                             return Some(old.merge(new));
                         }
                         return Some(new);
-                    }
-                    else {
+                    } else {
                         println!("[MusicBrainz] No release found for artist & album title");
                         return existing;
                     }
-                }
-                else {
-                    println!("[MusicBrainz] Could not fetch album metadata: {:?}", res.err());
+                } else {
+                    println!(
+                        "[MusicBrainz] Could not fetch album metadata: {:?}",
+                        res.err()
+                    );
                     return existing;
                 }
-            }
-            else {
+            } else {
                 println!("[MusicBrainz] Either MBID or BOTH album name & artist must be provided");
                 return existing;
             }
-        }
-        else {
+        } else {
             return existing;
         }
     }
@@ -119,7 +120,7 @@ impl MetadataProvider for MusicBrainzWrapper {
     fn get_artist_meta(
         &self,
         key: bson::Document,
-        existing: std::option::Option<models::ArtistMeta>
+        existing: std::option::Option<models::ArtistMeta>,
     ) -> Option<models::ArtistMeta> {
         if meta_provider_settings(PROVIDER_KEY).boolean("enabled") {
             if let Some(mbid) = key.get("mbid") {
@@ -136,9 +137,11 @@ impl MetadataProvider for MusicBrainzWrapper {
                         return Some(old.merge(new));
                     }
                     return Some(new);
-                }
-                else {
-                    println!("[MusicBrainz] Could not fetch artist metadata: {:?}", res.err());
+                } else {
+                    println!(
+                        "[MusicBrainz] Could not fetch artist metadata: {:?}",
+                        res.err()
+                    );
                     return existing;
                 }
             }
@@ -149,10 +152,10 @@ impl MetadataProvider for MusicBrainzWrapper {
                 let res = Artist::search(
                     ArtistSearchQuery::query_builder()
                         .artist(name.as_str().unwrap())
-                        .build()
+                        .build(),
                 )
-                    .with_url_relations()
-                    .execute();
+                .with_url_relations()
+                .execute();
 
                 if let Ok(found) = res {
                     if let Some(first) = found.entities.into_iter().nth(0) {
@@ -163,23 +166,22 @@ impl MetadataProvider for MusicBrainzWrapper {
                             return Some(old.merge(new));
                         }
                         return Some(new);
-                    }
-                    else {
+                    } else {
                         println!("[MusicBrainz] No artist metadata found for {name}");
                         return existing;
                     }
-                }
-                else {
-                    println!("[MusicBrainz] Could not fetch artist metadata: {:?}", res.err());
+                } else {
+                    println!(
+                        "[MusicBrainz] Could not fetch artist metadata: {:?}",
+                        res.err()
+                    );
                     return existing;
                 }
-            }
-            else {
+            } else {
                 println!("[MusicBrainz] Key document is empty, will not fetch artist metadata");
                 return existing;
             }
-        }
-        else {
+        } else {
             return existing;
         }
     }

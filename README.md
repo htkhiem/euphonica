@@ -1,11 +1,11 @@
-![Euphonica icon](data/icons/hicolor/scalable/apps/org.euphonica.Euphonica.svg)
+![Euphonica icon](data/icons/hicolor/scalable/apps/io.github.htkhiem.Euphonica.svg)
 # Euphonica
 
 An MPD frontend with delusions of grandeur. 
 
 ## Features
 - GTK4 Libadwaita UI for most MPD features, from basic things like playback controls, queue reordering and ReplayGain to things like output control, crossfade and MixRamp configuration
-- Built-in, customisable spectrum visualiser.
+- Built-in, customisable spectrum visualiser, reading from MPD FIFO or system PipeWire.
 - Audio quality indicators (lossy, lossless, hi-res, DSD) for individual songs as well as albums & detailed format printout
 - Browse your library by album, artist and folders with multiselection support
   - Browsing by genre and other criteria are planned.

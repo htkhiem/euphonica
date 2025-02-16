@@ -1,4 +1,4 @@
-application_id = 'org.euphonica.Euphonica'
+application_id = 'io.github.htkhiem.Euphonica'
 
 scalable_dir = 'hicolor' / 'scalable' / 'apps'
 install_data(

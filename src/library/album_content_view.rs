@@ -1,27 +1,18 @@
+use adw::subclass::prelude::*;
+use glib::{clone, closure_local, signal::SignalHandlerId, Binding};
+use gtk::{gio, glib, prelude::*, BitsetIter, CompositeTemplate, ListItem, SignalListItemFactory};
 use std::{
     cell::{OnceCell, RefCell},
     rc::Rc,
 };
-use time::{Date, format_description};
-use adw::subclass::prelude::*;
-use gtk::{
-    gio, glib, prelude::*, BitsetIter, CompositeTemplate, ListItem, SignalListItemFactory
-};
-use glib::{
-    clone,
-    closure_local,
-    Binding,
-    signal::SignalHandlerId
-};
+use time::{format_description, Date};
 
-use super::{
-    Library,
-    AlbumSongRow
-};
+use super::{AlbumSongRow, Library};
 use crate::{
-    cache::{
-        placeholders::ALBUMART_PLACEHOLDER, Cache, CacheState
-    }, client::ClientState, common::{Album, AlbumInfo, Song}, utils::format_secs_as_duration
+    cache::{placeholders::ALBUMART_PLACEHOLDER, Cache, CacheState},
+    client::ClientState,
+    common::{Album, AlbumInfo, Song},
+    utils::format_secs_as_duration,
 };
 
 mod imp {
@@ -32,7 +23,7 @@ mod imp {
     use super::*;
 
     #[derive(Debug, CompositeTemplate)]
-    #[template(resource = "/org/euphonica/Euphonica/gtk/library/album-content-view.ui")]
+    #[template(resource = "/io/github/htkhiem/Euphonica/gtk/library/album-content-view.ui")]
     pub struct AlbumContentView {
         #[template_child]
         pub infobox_revealer: TemplateChild<gtk::Revealer>,
@@ -85,7 +76,7 @@ mod imp {
         pub bindings: RefCell<Vec<Binding>>,
         pub cover_signal_id: RefCell<Option<SignalHandlerId>>,
         pub cache: OnceCell<Rc<Cache>>,
-        pub selecting_all: Cell<bool>  // Enables queuing the entire album efficiently
+        pub selecting_all: Cell<bool>, // Enables queuing the entire album efficiently
     }
 
     impl Default for AlbumContentView {
@@ -117,7 +108,7 @@ mod imp {
                 bindings: RefCell::new(Vec::new()),
                 cover_signal_id: RefCell::new(None),
                 cache: OnceCell::new(),
-                selecting_all: Cell::new(true)  // When nothing is selected, default to select-all
+                selecting_all: Cell::new(true), // When nothing is selected, default to select-all
             }
         }
     }
@@ -165,12 +156,13 @@ mod imp {
                         this.selecting_all.replace(true);
                         this.replace_queue_text.set_label("Play all");
                         this.append_queue_text.set_label("Queue all");
-                    }
-                    else {
+                    } else {
                         // TODO: l10n
                         this.selecting_all.replace(false);
-                        this.replace_queue_text.set_label(format!("Play {}", n_sel).as_str());
-                        this.append_queue_text.set_label(format!("Queue {}", n_sel).as_str());
+                        this.replace_queue_text
+                            .set_label(format!("Play {}", n_sel).as_str());
+                        this.append_queue_text
+                            .set_label(format!("Queue {}", n_sel).as_str());
                     }
                 }
             ));
@@ -215,26 +207,21 @@ impl AlbumContentView {
         let wiki_text = self.imp().wiki_text.get();
         let wiki_link = self.imp().wiki_link.get();
         let wiki_attrib = self.imp().wiki_attrib.get();
-        if let Some(meta) = cache.load_cached_album_meta(
-            album.get_info()
-        ) {
+        if let Some(meta) = cache.load_cached_album_meta(album.get_info()) {
             if let Some(wiki) = meta.wiki {
                 wiki_box.set_visible(true);
                 wiki_text.set_label(&wiki.content);
                 if let Some(url) = wiki.url.as_ref() {
                     wiki_link.set_visible(true);
                     wiki_link.set_uri(url);
-                }
-                else {
+                } else {
                     wiki_link.set_visible(false);
                 }
                 wiki_attrib.set_label(&wiki.attribution);
-            }
-            else {
+            } else {
                 wiki_box.set_visible(false);
             }
-        }
-        else {
+        } else {
             wiki_box.set_visible(false);
         }
     }
@@ -253,7 +240,7 @@ impl AlbumContentView {
                         }
                     }
                 }
-            )
+            ),
         );
         cache.get_cache_state().connect_closure(
             "album-meta-downloaded",
@@ -268,7 +255,7 @@ impl AlbumContentView {
                         }
                     }
                 }
-            )
+            ),
         );
         client_state.connect_closure(
             "album-songs-downloaded",
@@ -283,30 +270,22 @@ impl AlbumContentView {
                         }
                     }
                 }
-            )
+            ),
         );
 
         let _ = self.imp().cache.set(cache);
         let infobox_revealer = self.imp().infobox_revealer.get();
         let collapse_infobox = self.imp().collapse_infobox.get();
         collapse_infobox
-            .bind_property(
-                "active",
-                &infobox_revealer,
-                "reveal-child"
-            )
-            .transform_to(|_, active: bool| { Some(!active) })
-            .transform_from(|_, active: bool| { Some(!active) })
+            .bind_property("active", &infobox_revealer, "reveal-child")
+            .transform_to(|_, active: bool| Some(!active))
+            .transform_from(|_, active: bool| Some(!active))
             .bidirectional()
             .sync_create()
             .build();
 
         infobox_revealer
-            .bind_property(
-                "child-revealed",
-                &collapse_infobox,
-                "icon-name"
-            )
+            .bind_property("child-revealed", &collapse_infobox, "icon-name")
             .transform_to(|_, revealed| {
                 if revealed {
                     return Some("up-symbolic");
@@ -317,63 +296,55 @@ impl AlbumContentView {
             .build();
 
         let replace_queue_btn = self.imp().replace_queue.get();
-        replace_queue_btn.connect_clicked(
-            clone!(
-                #[strong(rename_to = this)]
-                self,
-                #[weak]
-                library,
-                move |_| {
-                    if let Some(album) = this.imp().album.borrow().as_ref() {
-                        if this.imp().selecting_all.get() {
-                            library.queue_album(album.clone(), true, true);
-                        }
-                        else {
-                            let store = &this.imp().song_list;
-                            // Get list of selected songs
-                            let sel = &this.imp().sel_model.selection();
-                            let mut songs: Vec<Song> = Vec::with_capacity(sel.size() as usize);
-                            let (iter, first_idx) = BitsetIter::init_first(sel).unwrap();
-                            songs.push(store.item(first_idx).and_downcast::<Song>().unwrap());
-                            iter
-                                .for_each(
-                                    |idx| songs.push(store.item(idx).and_downcast::<Song>().unwrap())
-                                );
-                            library.queue_songs(&songs, true, true);
-                        }
+        replace_queue_btn.connect_clicked(clone!(
+            #[strong(rename_to = this)]
+            self,
+            #[weak]
+            library,
+            move |_| {
+                if let Some(album) = this.imp().album.borrow().as_ref() {
+                    if this.imp().selecting_all.get() {
+                        library.queue_album(album.clone(), true, true);
+                    } else {
+                        let store = &this.imp().song_list;
+                        // Get list of selected songs
+                        let sel = &this.imp().sel_model.selection();
+                        let mut songs: Vec<Song> = Vec::with_capacity(sel.size() as usize);
+                        let (iter, first_idx) = BitsetIter::init_first(sel).unwrap();
+                        songs.push(store.item(first_idx).and_downcast::<Song>().unwrap());
+                        iter.for_each(|idx| {
+                            songs.push(store.item(idx).and_downcast::<Song>().unwrap())
+                        });
+                        library.queue_songs(&songs, true, true);
                     }
                 }
-            )
-        );
+            }
+        ));
         let append_queue_btn = self.imp().append_queue.get();
-        append_queue_btn.connect_clicked(
-            clone!(
-                #[strong(rename_to = this)]
-                self,
-                #[weak]
-                library,
-                move |_| {
-                    if let Some(album) = this.imp().album.borrow().as_ref() {
-                        if this.imp().selecting_all.get() {
-                            library.queue_album(album.clone(), false, false);
-                        }
-                        else {
-                            let store = &this.imp().song_list;
-                            // Get list of selected songs
-                            let sel = &this.imp().sel_model.selection();
-                            let mut songs: Vec<Song> = Vec::with_capacity(sel.size() as usize);
-                            let (iter, first_idx) = BitsetIter::init_first(sel).unwrap();
-                            songs.push(store.item(first_idx).and_downcast::<Song>().unwrap());
-                            iter
-                                .for_each(
-                                    |idx| songs.push(store.item(idx).and_downcast::<Song>().unwrap())
-                                );
-                            library.queue_songs(&songs, false, false);
-                        }
+        append_queue_btn.connect_clicked(clone!(
+            #[strong(rename_to = this)]
+            self,
+            #[weak]
+            library,
+            move |_| {
+                if let Some(album) = this.imp().album.borrow().as_ref() {
+                    if this.imp().selecting_all.get() {
+                        library.queue_album(album.clone(), false, false);
+                    } else {
+                        let store = &this.imp().song_list;
+                        // Get list of selected songs
+                        let sel = &this.imp().sel_model.selection();
+                        let mut songs: Vec<Song> = Vec::with_capacity(sel.size() as usize);
+                        let (iter, first_idx) = BitsetIter::init_first(sel).unwrap();
+                        songs.push(store.item(first_idx).and_downcast::<Song>().unwrap());
+                        iter.for_each(|idx| {
+                            songs.push(store.item(idx).and_downcast::<Song>().unwrap())
+                        });
+                        library.queue_songs(&songs, false, false);
                     }
                 }
-            )
-        );
+            }
+        ));
 
         // Set up factory
         let factory = SignalListItemFactory::new();
@@ -383,12 +354,13 @@ impl AlbumContentView {
             #[weak]
             library,
             move |_, list_item| {
-            let item = list_item
-                .downcast_ref::<ListItem>()
-                .expect("Needs to be ListItem");
-            let row = AlbumSongRow::new(library.clone(), &item);
-            item.set_child(Some(&row));
-        }));
+                let item = list_item
+                    .downcast_ref::<ListItem>()
+                    .expect("Needs to be ListItem");
+                let row = AlbumSongRow::new(library.clone(), &item);
+                item.set_child(Some(&row));
+            }
+        ));
         // Tell factory how to bind `AlbumSongRow` to one of our Album GObjects
         factory.connect_bind(move |_, list_item| {
             // Get `Song` from `ListItem` (that is, the data side)
@@ -411,7 +383,6 @@ impl AlbumContentView {
             child.bind(&item);
         });
 
-
         // When row goes out of sight, unbind from item to allow reuse with another.
         factory.connect_unbind(move |_, list_item| {
             // Get `AlbumSongRow` from `ListItem` (the UI widget)
@@ -427,10 +398,9 @@ impl AlbumContentView {
         // Set the factory of the list view
         self.imp().content.set_factory(Some(&factory));
 
-        self.imp().add_to_playlist.setup(
-            library.clone(),
-            self.imp().sel_model.clone()
-        );
+        self.imp()
+            .add_to_playlist
+            .setup(library.clone(), self.imp().sel_model.clone());
     }
 
     /// Returns true if an album art was successfully retrieved.
@@ -440,8 +410,7 @@ impl AlbumContentView {
             if let Some(tex) = cache.load_cached_album_art(info, false, true) {
                 self.imp().cover.set_paintable(Some(&tex));
                 return true;
-            }
-            else {
+            } else {
                 self.imp().cover.set_paintable(Some(&*ALBUMART_PLACEHOLDER));
                 return false;
             }
@@ -472,17 +441,15 @@ impl AlbumContentView {
         self.update_meta(&album);
         let release_date_binding = album
             .bind_property("release_date", &release_date_label, "label")
-            .transform_to(
-                |_, boxed_date: glib::BoxedAnyObject| {
-                    let format = format_description::parse("[year]-[month]-[day]").ok().unwrap();
-                    if let Some(release_date) = boxed_date.borrow::<Option<Date>>().as_ref() {
-                        return release_date.format(
-                            &format
-                        ).ok();
-                    }
-                    Some("-".to_owned())
+            .transform_to(|_, boxed_date: glib::BoxedAnyObject| {
+                let format = format_description::parse("[year]-[month]-[day]")
+                    .ok()
+                    .unwrap();
+                if let Some(release_date) = boxed_date.borrow::<Option<Date>>().as_ref() {
+                    return release_date.format(&format).ok();
                 }
-            )
+                Some("-".to_owned())
+            })
             .sync_create()
             .build();
         // Save binding
@@ -490,14 +457,12 @@ impl AlbumContentView {
 
         let release_date_viz_binding = album
             .bind_property("release_date", &release_date_label, "visible")
-            .transform_to(
-                |_, boxed_date: glib::BoxedAnyObject| {
-                    if boxed_date.borrow::<Option<Date>>().is_some() {
-                        return Some(true);
-                    }
-                    Some(false)
+            .transform_to(|_, boxed_date: glib::BoxedAnyObject| {
+                if boxed_date.borrow::<Option<Date>>().is_some() {
+                    return Some(true);
                 }
-            )
+                Some(false)
+            })
             .sync_create()
             .build();
         // Save binding
@@ -524,21 +489,20 @@ impl AlbumContentView {
 
     fn add_songs(&self, songs: &[Song]) {
         self.imp().song_list.extend_from_slice(songs);
-        self.imp().track_count.set_label(&self.imp().song_list.n_items().to_string());
-        self.imp().runtime.set_label(
-            &format_secs_as_duration(
-                self.imp().song_list
-                    .iter()
-                    .map(
-                        |item: Result<Song, _>| {
-                            if let Ok(song) = item {
-                                return song.get_duration();
-                            }
-                            0
-                        }
-                    )
-                    .sum::<u64>() as f64
-            )
-        );
+        self.imp()
+            .track_count
+            .set_label(&self.imp().song_list.n_items().to_string());
+        self.imp().runtime.set_label(&format_secs_as_duration(
+            self.imp()
+                .song_list
+                .iter()
+                .map(|item: Result<Song, _>| {
+                    if let Ok(song) = item {
+                        return song.get_duration();
+                    }
+                    0
+                })
+                .sum::<u64>() as f64,
+        ));
     }
 }

@@ -50,8 +50,25 @@
 
     <child>
       <object class="GtkMenuButton" id="menu_btn">
+        <property name="halign">start</property>
         <property name="popover">options_popover</property>
-        <property name="label" translatable="true">Add to playlist</property>
+        <child>
+          <object class="GtkBox">
+            <property name="spacing">6</property>
+            <child>
+              <object class="GtkImage">
+                <property name="icon_name">playlist-symbolic</property>
+              </object>
+            </child>
+            <child>
+              <object class="GtkLabel" id="add_text">
+                <property name="visible" bind-source="EuphonicaAddToPlaylistButton" bind-property="collapsed" bind-flags="sync-create|invert-boolean"/>
+                <property name="label" translatable="true">Add to playlist</property>
+                <property name="ellipsize">end</property>
+              </object>
+            </child>
+          </object>
+        </child>
         <property name="tooltip-text" translatable="true">Add the selected songs to a playlist (or create a new one)</property>
       </object>
     </child>

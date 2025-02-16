@@ -1,16 +1,13 @@
 mod base;
 mod chain;
-pub mod models;
 pub mod lastfm;
+pub mod models;
 pub mod musicbrainz;
 
-pub use chain::{
-    MetadataChain,
-    get_provider_with_priority
-};
-pub use base::{MetadataProvider, Metadata, utils};
+pub use base::{utils, Metadata, MetadataProvider};
+pub use chain::{get_provider_with_priority, MetadataChain};
 
 pub mod prelude {
-    pub use super::base::{MetadataProvider, sleep_after_request};
+    pub use super::base::{sleep_after_request, MetadataProvider};
     pub use super::models::Merge;
 }

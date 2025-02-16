@@ -1,9 +1,12 @@
+use crate::utils::meta_provider_settings;
 use gtk::prelude::SettingsExt;
 use musicbrainz_rs::entity::artist::ArtistType;
 use serde::Deserialize;
-use crate::utils::meta_provider_settings;
 
-use super::{super::models::{AlbumMeta, ArtistMeta, ImageMeta, ImageSize, Tag, Wiki}, PROVIDER_KEY};
+use super::{
+    super::models::{AlbumMeta, ArtistMeta, ImageMeta, ImageSize, Tag, Wiki},
+    PROVIDER_KEY,
+};
 // Last.fm JSON structs, for deserialising API responses only.
 // Widgets should use the standard structs defined in the supercrate's models.rs.
 
@@ -17,7 +20,7 @@ pub struct NestedTagList {
 #[serde(untagged)]
 pub enum TagsHelper {
     String(String),
-    Nested(NestedTagList)
+    Nested(NestedTagList),
 }
 
 // fn deserialize_tags<'de, D>(deserializer: D) -> Result<Vec<Tag>, D::Error>
@@ -52,7 +55,7 @@ pub enum TagsHelper {
 pub struct LastfmImage {
     pub size: String,
     #[serde(rename = "#text")]
-    pub url: String
+    pub url: String,
 }
 
 impl From<LastfmImage> for ImageMeta {
@@ -62,13 +65,10 @@ impl From<LastfmImage> for ImageMeta {
             "medium" => ImageSize::Medium,
             "large" => ImageSize::Large,
             "extralarge" => ImageSize::Large, // Last.fm album arts only go up to 300x300
-            "mega" => ImageSize::Large, // Last.fm album arts only go up to 300x300
-            _ => ImageSize::Large, // Last.fm album arts only go up to 300x300
+            "mega" => ImageSize::Large,       // Last.fm album arts only go up to 300x300
+            _ => ImageSize::Large,            // Last.fm album arts only go up to 300x300
         };
-        ImageMeta {
-            size,
-            url: img.url
-        }
+        ImageMeta { size, url: img.url }
     }
 }
 
@@ -76,7 +76,7 @@ impl From<LastfmImage> for ImageMeta {
 #[derive(Deserialize, Debug, Clone)]
 #[non_exhaustive]
 pub struct LastfmWiki {
-    pub content: String
+    pub content: String,
 }
 
 impl Into<Wiki> for LastfmWiki {
@@ -124,35 +124,34 @@ pub struct LastfmAlbum {
     pub image: Vec<LastfmImage>,
     pub url: String,
     pub name: String,
-    pub wiki: Option<LastfmWiki>
+    pub wiki: Option<LastfmWiki>,
 }
 
 impl From<LastfmAlbum> for AlbumMeta {
     fn from(mut lfm: LastfmAlbum) -> Self {
         let tags: Vec<Tag> = match lfm.tags {
             TagsHelper::String(_) => Vec::with_capacity(0),
-            TagsHelper::Nested(obj) => obj.tag
+            TagsHelper::Nested(obj) => obj.tag,
         };
         let image: Vec<ImageMeta>;
         if meta_provider_settings(PROVIDER_KEY).boolean("download-album-art") {
             image = lfm.image.drain(0..).map(LastfmImage::into).collect();
-        }
-        else {
+        } else {
             image = Vec::with_capacity(0);
         }
         let wiki: Option<Wiki> = match lfm.wiki {
             Some(w) => Some(w.into()),
-            None => None
+            None => None,
         };
 
         Self {
-             name: lfm.name,
-             artist: Some(lfm.artist),
-             mbid: lfm.mbid,
-             tags,
-             image,
-             url: Some(lfm.url),
-             wiki
+            name: lfm.name,
+            artist: Some(lfm.artist),
+            mbid: lfm.mbid,
+            tags,
+            image,
+            url: Some(lfm.url),
+            wiki,
         }
     }
 }
@@ -161,9 +160,8 @@ impl From<LastfmAlbum> for AlbumMeta {
 // a single field "album".
 #[derive(Deserialize)]
 pub struct LastfmAlbumResponse {
-    pub album: LastfmAlbum
+    pub album: LastfmAlbum,
 }
-
 
 // Artist
 #[derive(Deserialize, Debug)]
@@ -171,7 +169,7 @@ pub struct LastfmAlbumResponse {
 pub struct LastfmSimilarArtist {
     pub name: String,
     pub url: String,
-    pub image: Vec<LastfmImage>
+    pub image: Vec<LastfmImage>,
 }
 
 impl Into<ArtistMeta> for LastfmSimilarArtist {
@@ -189,7 +187,7 @@ impl Into<ArtistMeta> for LastfmSimilarArtist {
             gender: None,
             begin_date: None,
             end_date: None,
-            country: None
+            country: None,
         }
     }
 }
@@ -197,7 +195,7 @@ impl Into<ArtistMeta> for LastfmSimilarArtist {
 #[derive(Deserialize, Debug)]
 #[non_exhaustive]
 pub struct LastfmSimilar {
-    pub artist: Vec<LastfmSimilarArtist>
+    pub artist: Vec<LastfmSimilarArtist>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -211,25 +209,24 @@ pub struct LastfmArtist {
     // via their API.
     pub similar: Option<LastfmSimilar>,
     pub tags: TagsHelper,
-    pub bio: Option<LastfmWiki>
+    pub bio: Option<LastfmWiki>,
 }
 
 impl Into<ArtistMeta> for LastfmArtist {
     fn into(self) -> ArtistMeta {
         let tags: Vec<Tag> = match self.tags {
             TagsHelper::String(_) => Vec::with_capacity(0),
-            TagsHelper::Nested(obj) => obj.tag
+            TagsHelper::Nested(obj) => obj.tag,
         };
         let similar: Vec<ArtistMeta>;
         if let Some(mut s) = self.similar {
             similar = s.artist.drain(..).map(LastfmSimilarArtist::into).collect();
-        }
-        else {
+        } else {
             similar = Vec::new();
         }
         let bio: Option<Wiki> = match self.bio {
             Some(w) => Some(w.into()),
-            None => None
+            None => None,
         };
 
         ArtistMeta {
@@ -244,7 +241,7 @@ impl Into<ArtistMeta> for LastfmArtist {
             gender: None,
             begin_date: None,
             end_date: None,
-            country: None
+            country: None,
         }
     }
 }
@@ -253,5 +250,5 @@ impl Into<ArtistMeta> for LastfmArtist {
 // a single field "artist".
 #[derive(Deserialize)]
 pub struct LastfmArtistResponse {
-    pub artist: LastfmArtist
+    pub artist: LastfmArtist,
 }

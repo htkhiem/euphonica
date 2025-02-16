@@ -1,20 +1,25 @@
-use std::{rc::Rc, str::FromStr};
+use duplicate::duplicate;
 use keyring::{Entry, Error as KeyringError};
+use std::{rc::Rc, str::FromStr};
 
-use adw::subclass::prelude::*;
 use adw::prelude::*;
-use gtk::{
-    glib,
-    CompositeTemplate
-};
+use adw::subclass::prelude::*;
+use gtk::{glib, CompositeTemplate};
 
 use glib::clone;
 
 use mpd::status::AudioFormat;
 
 use crate::{
-    client::{ClientState, ConnectionState, MpdWrapper}, player::{FftStatus, Player}, utils
+    client::{ClientState, ConnectionState, MpdWrapper},
+    player::{FftStatus, Player},
+    utils,
 };
+
+// Allows us to implicitly grant read access to files outside of the sandbox.
+// The default FileDialog will simply copy the file to /run/..., which is
+// not applicable for opening namedpipes.
+use ashpd::desktop::file_chooser::SelectedFiles;
 
 const FFT_SIZES: &'static [u32; 4] = &[512, 1024, 2048, 4096];
 
@@ -22,7 +27,7 @@ mod imp {
     use super::*;
 
     #[derive(Debug, Default, CompositeTemplate)]
-    #[template(resource = "/org/euphonica/Euphonica/gtk/preferences/client.ui")]
+    #[template(resource = "/io/github/htkhiem/Euphonica/gtk/preferences/client.ui")]
     pub struct ClientPreferences {
         // MPD
         #[template_child]
@@ -38,13 +43,18 @@ mod imp {
         #[template_child]
         pub mpd_download_album_art: TemplateChild<adw::SwitchRow>,
 
+        // Visualiser data source
+        #[template_child]
+        pub viz_source: TemplateChild<adw::ComboRow>,
         // FIFO output
         #[template_child]
-        pub fifo_path: TemplateChild<adw::EntryRow>,
+        pub fifo_path: TemplateChild<adw::ActionRow>,
+        #[template_child]
+        pub fifo_browse: TemplateChild<gtk::Button>,
         #[template_child]
         pub fifo_format: TemplateChild<adw::EntryRow>,
         #[template_child]
-        pub fifo_fps: TemplateChild<adw::SpinRow>,
+        pub fft_fps: TemplateChild<adw::SpinRow>,
         #[template_child]
         pub fft_n_samples: TemplateChild<adw::ComboRow>,
         #[template_child]
@@ -52,7 +62,7 @@ mod imp {
         #[template_child]
         pub fifo_status: TemplateChild<adw::ActionRow>,
         #[template_child]
-        pub fifo_reconnect: TemplateChild<gtk::Button>
+        pub fifo_reconnect: TemplateChild<gtk::Button>,
     }
 
     #[glib::object_subclass]
@@ -71,7 +81,84 @@ mod imp {
         }
     }
 
-    impl ObjectImpl for ClientPreferences {}
+    impl ObjectImpl for ClientPreferences {
+        fn constructed(&self) {
+            self.parent_constructed();
+
+            let viz_settings = utils::settings_manager().child("client");
+            let fifo_path_row = self.fifo_path.get();
+            viz_settings
+                .bind("mpd-fifo-path", &fifo_path_row, "subtitle")
+                .get_only()
+                .build();
+            self.fifo_browse.connect_clicked(|_| {
+                utils::tokio_runtime().spawn(async move {
+                    let maybe_files = SelectedFiles::open_file()
+                        .title("Select the FIFO output file")
+                        .modal(true)
+                        .multiple(false)
+                        .send()
+                        .await
+                        .expect("ashpd file open await failure")
+                        .response();
+
+                    if let Ok(files) = maybe_files {
+                        let fifo_settings = utils::settings_manager().child("client");
+                        let uris = files.uris();
+                        if uris.len() > 0 {
+                            fifo_settings
+                                .set_string(
+                                    "mpd-fifo-path",
+                                    uris[0].as_str(),
+                                )
+                                .expect("Unable to save FIFO path");
+                        }
+                    }
+                    else {
+                        println!("{:?}", maybe_files);
+                    }
+                });
+            });
+            let viz_source = self.viz_source.get();
+            viz_settings
+                .bind("mpd-visualizer-pcm-source", &viz_source, "selected")
+                .mapping(|var, _| {
+                    if let Some(typ) = var.get::<String>() {
+                        match typ.as_str() {
+                            "fifo" => Some(0u32.to_value()),
+                            "pipewire" => Some(1u32.to_value()),
+                            _ => unimplemented!()
+                        }
+                    }
+                    else {
+                        Option::<glib::Value>::None
+                    }
+                })
+                .set_mapping(|val, _| {
+                    println!("Setting backend idx...");
+                    if let Ok(idx) = val.get::<u32>() {
+                        match idx {
+                            0 => Some("fifo".to_variant()),
+                            1 => Some("pipewire".to_variant()),
+                            _ => unimplemented!()
+                        }
+                    }
+                    else {
+                        Option::<glib::Variant>::None
+                    }
+                })
+                .build();
+            // Disable FIFO-specific rows when PipeWire is selected as data source
+            duplicate!{
+                [name; [fifo_path]; [fifo_format];]
+                viz_source
+                    .bind_property("selected", &self.name.get(), "sensitive")
+                    .transform_to(|_, val: u32| Some(val == 0))
+                    .sync_create()
+                    .build();
+            }
+        }
+    }
     impl WidgetImpl for ClientPreferences {}
     impl PreferencesPageImpl for ClientPreferences {}
 }
@@ -96,17 +183,17 @@ impl ClientPreferences {
                 if !self.imp().mpd_port.has_css_class("error") {
                     self.imp().reconnect.set_sensitive(true);
                 }
-            },
+            }
             ConnectionState::Connecting => {
                 self.imp().mpd_status.set_subtitle("Connecting...");
                 self.imp().reconnect.set_sensitive(false);
-            },
+            }
             ConnectionState::Unauthenticated => {
                 self.imp().mpd_status.set_subtitle("Authentication failed");
                 if !self.imp().mpd_port.has_css_class("error") {
                     self.imp().reconnect.set_sensitive(true);
                 }
-            },
+            }
             ConnectionState::CredentialStoreError => {
                 self.imp().mpd_status.set_subtitle("Credential store error");
                 if !self.imp().mpd_port.has_css_class("error") {
@@ -118,7 +205,7 @@ impl ClientPreferences {
                 if !self.imp().mpd_port.has_css_class("error") {
                     self.imp().reconnect.set_sensitive(true);
                 }
-            },
+            }
             ConnectionState::Connected => {
                 self.imp().mpd_status.set_subtitle("Connected");
                 if !self.imp().mpd_port.has_css_class("error") {
@@ -142,7 +229,8 @@ impl ClientPreferences {
         // As such we won't bind the widgets directly to the settings.
         let conn_settings = settings.child("client");
         imp.mpd_host.set_text(&conn_settings.string("mpd-host"));
-        imp.mpd_port.set_text(&conn_settings.uint("mpd-port").to_string());
+        imp.mpd_port
+            .set_text(&conn_settings.uint("mpd-port").to_string());
         let maybe_keyring_entry = Entry::new("euphonica", "mpd-password");
         if let Ok(ref keyring_entry) = maybe_keyring_entry {
             // At startup the password entry is disabled with a tooltip stating that
@@ -169,8 +257,7 @@ impl ClientPreferences {
                         entry.add_css_class("error");
                         this.imp().reconnect.set_sensitive(false);
                     }
-                }
-                else if entry.has_css_class("error") {
+                } else if entry.has_css_class("error") {
                     entry.remove_css_class("error");
                     this.imp().reconnect.set_sensitive(true);
                 }
@@ -187,7 +274,7 @@ impl ClientPreferences {
                 move |cs, _| {
                     this.on_connection_state_changed(cs);
                 }
-            )
+            ),
         );
 
         imp.reconnect.connect_clicked(clone!(
@@ -199,18 +286,19 @@ impl ClientPreferences {
             client,
             move |_| {
                 let _ = conn_settings.set_string("mpd-host", &this.imp().mpd_host.text());
-                let _ = conn_settings.set_uint("mpd-port", this.imp().mpd_port.text().parse::<u32>().unwrap());
+                let _ = conn_settings.set_uint(
+                    "mpd-port",
+                    this.imp().mpd_port.text().parse::<u32>().unwrap(),
+                );
 
                 if let Ok(ref keyring_entry) = maybe_keyring_entry {
                     let password = this.imp().mpd_password.text();
                     if password.is_empty() {
-                        if let Err(KeyringError::NoEntry) = keyring_entry.delete_credential() {}
-                        else {
+                        if let Err(KeyringError::NoEntry) = keyring_entry.delete_credential() {
+                        } else {
                             panic!("Unable to clear MPD password from keyring");
                         }
-
-                    }
-                    else {
+                    } else {
                         keyring_entry
                             .set_password(password.as_str())
                             .expect("Unable to save MPD password to keyring");
@@ -221,14 +309,10 @@ impl ClientPreferences {
         ));
         let mpd_download_album_art = imp.mpd_download_album_art.get();
         conn_settings
-            .bind(
-                "mpd-download-album-art",
-                &mpd_download_album_art,
-                "active"
-            )
+            .bind("mpd-download-album-art", &mpd_download_album_art, "active")
             .build();
 
-        // FIFO
+        // Visualiser
         self.on_fifo_changed(player.fft_status());
         player.connect_notify_local(
             Some("fft-status"),
@@ -238,11 +322,11 @@ impl ClientPreferences {
                 move |player, _| {
                     this.on_fifo_changed(player.fft_status());
                 }
-            )
+            ),
         );
         let player_settings = settings.child("player");
-        imp.fifo_path.set_text(&conn_settings.string("mpd-fifo-path"));
-        imp.fifo_format.set_text(&conn_settings.string("mpd-fifo-format"));
+        imp.fifo_format
+            .set_text(&conn_settings.string("mpd-fifo-format"));
 
         // TODO: more input validation
         // Only accept valid MPD format strings
@@ -255,26 +339,26 @@ impl ClientPreferences {
                         entry.add_css_class("error");
                         this.imp().fifo_reconnect.set_sensitive(false);
                     }
-                }
-                else if entry.has_css_class("error") {
+                } else if entry.has_css_class("error") {
                     entry.remove_css_class("error");
                     this.imp().fifo_reconnect.set_sensitive(true);
                 }
             }
         ));
 
-        imp.fifo_fps.set_value(player_settings.uint("visualizer-fps") as f64);
+        imp.fft_fps
+            .set_value(player_settings.uint("visualizer-fps") as f64);
         // 512 1024 2048 4096
-        imp.fft_n_samples.set_selected(
-            match &player_settings.uint("visualizer-fft-samples") {
+        imp.fft_n_samples
+            .set_selected(match &player_settings.uint("visualizer-fft-samples") {
                 512 => 0,
                 1024 => 1,
                 2048 => 2,
                 4096 => 3,
-                _ => unreachable!()
-            }
-        );
-        imp.fft_n_bins.set_value(player_settings.uint("visualizer-spectrum-bins") as f64);
+                _ => unreachable!(),
+            });
+        imp.fft_n_bins
+            .set_value(player_settings.uint("visualizer-spectrum-bins") as f64);
         imp.fifo_reconnect.connect_clicked(clone!(
             #[weak(rename_to = this)]
             self,
@@ -288,24 +372,24 @@ impl ClientPreferences {
                 println!("Restarting FFT thread...");
                 let imp = this.imp();
                 conn_settings
-                    .set_string("mpd-fifo-path", &imp.fifo_path.text())
-                    .expect("Cannot save FIFO settings");
-                conn_settings
                     .set_string("mpd-fifo-format", &imp.fifo_format.text())
                     .expect("Cannot save FIFO settings");
                 player_settings
-                    .set_uint("visualizer-fps", imp.fifo_fps.value().round() as u32)
+                    .set_uint("visualizer-fps", imp.fft_fps.value().round() as u32)
                     .expect("Cannot save visualizer settings");
                 player_settings
                     .set_uint(
                         "visualizer-fft-samples",
-                        FFT_SIZES[imp.fft_n_samples.selected() as usize]
+                        FFT_SIZES[imp.fft_n_samples.selected() as usize],
                     )
                     .expect("Cannot save FFT settings");
                 player_settings
-                    .set_uint("visualizer-spectrum-bins", imp.fft_n_bins.value().round() as u32)
+                    .set_uint(
+                        "visualizer-spectrum-bins",
+                        imp.fft_n_bins.value().round() as u32,
+                    )
                     .expect("Cannot save visualizer settings");
-                player.reconnect_fifo();
+                player.restart_fft_thread();
             }
         ));
     }

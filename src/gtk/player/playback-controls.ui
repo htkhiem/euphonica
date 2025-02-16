@@ -1,106 +1,91 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <interface>
   <template class="EuphonicaPlaybackControls" parent="GtkBox">
+    <property name="spacing">6</property>
+    <property name="halign">3</property>
     <child>
-      <object class="GtkBox">
-        <property name="hexpand">true</property>
-        <property name="orientation">1</property>
+      <object class="GtkButton" id="flow_btn">
+        <property name="valign">center</property>
+        <property name="icon-name">playlist-consecutive-symbolic</property>
+        <style>
+          <class name="circular"/>
+          <class name="flat"/>
+        </style>
+      </object>
+    </child>
+    <child>
+      <object class="GtkButton" id="prev_btn">
+        <property name="valign">center</property>
+        <property name="icon-name">skip-backward-large-symbolic</property>
+        <style>
+          <class name="circular"/>
+          <class name="flat"/>
+        </style>
+      </object>
+    </child>
+    <child>
+      <object class="GtkButton" id="play_pause_btn">
+        <property name="valign">center</property>
         <child>
-          <!-- Above: buttons -->
-          <object class="GtkBox">
-            <property name="spacing">6</property>
-            <property name="halign">3</property>
+          <object class="GtkStack" id="play_pause_symbol">
+            <property name="transition-type">rotate-left-right</property>
             <child>
-              <object class="GtkButton" id="flow_btn">
-                <property name="valign">center</property>
-                <property name="icon-name">playlist-consecutive-symbolic</property>
-                <style>
-                  <class name="circular"/>
-                  <class name="flat"/>
-                </style>
-              </object>
-            </child>
-            <child>
-              <object class="GtkButton" id="prev_btn">
-                <property name="valign">center</property>
-                <property name="icon-name">skip-backward-large-symbolic</property>
-                <style>
-                  <class name="circular"/>
-                  <class name="flat"/>
-                </style>
-              </object>
-            </child>
-            <child>
-              <object class="GtkButton" id="play_pause_btn">
-                <property name="valign">center</property>
-                <child>
-                  <object class="GtkStack" id="play_pause_symbol">
-                    <property name="transition-type">rotate-left-right</property>
-                    <child>
-                      <object class="GtkStackPage">
-                        <property name="name">play</property>
-                        <property name="child">
-                          <object class="GtkImage">
-                            <property name="icon-name">pause-large-symbolic</property>
-                            <property name="icon_size">1</property>
-                            <style>
-                              <class name="circular"/>
-                              <class name="flat"/>
-                            </style>
-                          </object>
-                        </property>
-                      </object>
-                    </child>
-                    <child>
-                      <object class="GtkStackPage">
-                        <property name="name">pause</property>
-                        <property name="child">
-                          <object class="GtkImage">
-                            <property name="icon-name">play-large-symbolic</property>
-                            <property name="icon_size">1</property>
-                            <style>
-                              <class name="circular"/>
-                              <class name="flat"/>
-                            </style>
-                          </object>
-                        </property>
-                      </object>
-                    </child>
+              <object class="GtkStackPage">
+                <property name="name">play</property>
+                <property name="child">
+                  <object class="GtkImage">
+                    <property name="icon-name">pause-large-symbolic</property>
+                    <property name="icon_size">1</property>
+                    <style>
+                      <class name="circular"/>
+                      <class name="flat"/>
+                    </style>
                   </object>
-                </child>
-                <style>
-                  <class name="circular"/>
-                  <class name="padding-6"/>
-                </style>
+                </property>
               </object>
             </child>
             <child>
-              <object class="GtkButton" id="next_btn">
-                <property name="valign">center</property>
-                <property name="icon-name">skip-forward-large-symbolic</property>
-                <style>
-                  <class name="circular"/>
-                  <class name="flat"/>
-                </style>
-              </object>
-            </child>
-            <child>
-              <object class="GtkToggleButton" id="random_btn">
-                <property name="valign">center</property>
-                <property name="icon-name">media-playlist-shuffle-symbolic</property>
-                <property name="tooltip-text" translatable="true">Shuffle Queue</property>
-                <style>
-                  <class name="circular"/>
-                  <class name="flat"/>
-                </style>
+              <object class="GtkStackPage">
+                <property name="name">pause</property>
+                <property name="child">
+                  <object class="GtkImage">
+                    <property name="icon-name">play-large-symbolic</property>
+                    <property name="icon_size">1</property>
+                    <style>
+                      <class name="circular"/>
+                      <class name="flat"/>
+                    </style>
+                  </object>
+                </property>
               </object>
             </child>
           </object>
         </child>
-        <child>
-          <!-- Bottom: seekbar -->
-          <object class="EuphonicaSeekbar" id="seekbar"/>
-        </child>
+        <style>
+          <class name="circular"/>
+          <class name="padding-6"/>
+        </style>
+      </object>
+    </child>
+    <child>
+      <object class="GtkButton" id="next_btn">
+        <property name="valign">center</property>
+        <property name="icon-name">skip-forward-large-symbolic</property>
+        <style>
+          <class name="circular"/>
+          <class name="flat"/>
+        </style>
+      </object>
+    </child>
+    <child>
+      <object class="GtkToggleButton" id="random_btn">
+        <property name="valign">center</property>
+        <property name="icon-name">media-playlist-shuffle-symbolic</property>
+        <property name="tooltip-text" translatable="true">Shuffle Queue</property>
+        <style>
+          <class name="circular"/>
+          <class name="flat"/>
+        </style>
       </object>
     </child>
   </template>

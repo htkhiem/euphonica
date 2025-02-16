@@ -1,27 +1,17 @@
 use std::rc::Rc;
 
-
-
 use adw::subclass::prelude::*;
-use gtk::{
-    glib,
-    CompositeTemplate
-};
+use gtk::{glib, CompositeTemplate};
 
 use crate::{cache::Cache, client::MpdWrapper, player::Player};
 
-use super::{
-    ClientPreferences,
-    IntegrationsPreferences,
-    LibraryPreferences,
-    UIPreferences
-};
+use super::{ClientPreferences, IntegrationsPreferences, LibraryPreferences, UIPreferences};
 
 mod imp {
     use super::*;
 
     #[derive(Debug, Default, CompositeTemplate)]
-    #[template(resource = "/org/euphonica/Euphonica/gtk/preferences/dialog.ui")]
+    #[template(resource = "/io/github/htkhiem/Euphonica/gtk/preferences/dialog.ui")]
     pub struct Preferences {
         #[template_child]
         pub client_tab: TemplateChild<ClientPreferences>,
@@ -33,7 +23,7 @@ mod imp {
         pub library_tab: TemplateChild<LibraryPreferences>,
 
         #[template_child]
-        pub ui_tab: TemplateChild<UIPreferences>
+        pub ui_tab: TemplateChild<UIPreferences>,
     }
 
     #[glib::object_subclass]

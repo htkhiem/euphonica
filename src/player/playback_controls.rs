@@ -1,15 +1,13 @@
-
+use glib::{clone, Object};
 use gtk::{
-    gio, glib::{self, closure_local}, prelude::*, subclass::prelude::*, CompositeTemplate
-};
-use glib::{
-    clone,
-    Object,
+    gio,
+    glib::{self},
+    prelude::*,
+    subclass::prelude::*,
+    CompositeTemplate,
 };
 
-use super::{
-    PlaybackFlow, PlaybackState, Player, Seekbar
-};
+use super::{PlaybackFlow, PlaybackState, Player};
 
 // All playback controls are grouped in this custom widget since we'll need to draw
 // them in two different places: the bottom bar and the Now Playing pane. Only one
@@ -23,26 +21,22 @@ mod imp {
 
     #[derive(Default, Properties, CompositeTemplate)]
     #[properties(wrapper_type = super::PlaybackControls)]
-    #[template(resource = "/org/euphonica/Euphonica/gtk/player/playback-controls.ui")]
+    #[template(resource = "/io/github/htkhiem/Euphonica/gtk/player/playback-controls.ui")]
     pub struct PlaybackControls {
         #[template_child]
         pub flow_btn: TemplateChild<gtk::Button>,
         #[template_child]
         pub play_pause_btn: TemplateChild<gtk::Button>,
         #[template_child]
-        pub play_pause_symbol: TemplateChild<gtk::Stack>,  // inside the play/pause button
+        pub play_pause_symbol: TemplateChild<gtk::Stack>, // inside the play/pause button
         #[template_child]
         pub prev_btn: TemplateChild<gtk::Button>,
         #[template_child]
         pub next_btn: TemplateChild<gtk::Button>,
         #[template_child]
         pub random_btn: TemplateChild<gtk::ToggleButton>,
-        #[template_child]
-        pub seekbar: TemplateChild<Seekbar>,
         #[property(get, set)]
-        pub playing: Cell<bool>,
-        #[property(get, set)]
-        pub collapsed: Cell<bool>  // If true, will only show prev track, play/pause and next track
+        pub playing: Cell<bool>
     }
 
     // The central trait for subclassing a GObject
@@ -64,24 +58,7 @@ mod imp {
 
     // Trait shared by all GObjects
     #[glib::derived_properties]
-    impl ObjectImpl for PlaybackControls {
-        fn constructed(&self) {
-            self.parent_constructed();
-
-            let obj = self.obj();
-
-            // Hide certain widgets when not in expanded mode
-            obj
-                .bind_property(
-                    "collapsed",
-                    &self.seekbar.get(),
-                    "visible"
-                )
-                .transform_to(|_, val: bool| {Some(!val)})
-                .sync_create()
-                .build();
-        }
-    }
+    impl ObjectImpl for PlaybackControls {}
 
     // Trait shared by all widgets
     impl WidgetImpl for PlaybackControls {}
@@ -112,155 +89,52 @@ impl PlaybackControls {
         // Set up buttons
         let play_pause_symbol = imp.play_pause_symbol.get();
         player
-            .bind_property(
-                "playback-state",
-                &play_pause_symbol,
-                "visible-child-name"
-            )
-            .transform_to(
-                |_, state: PlaybackState| {
-                    match state {
-	                    PlaybackState::Playing => {
-	                        Some("play")
-                        },
-	                    PlaybackState::Paused | PlaybackState::Stopped => {
-	                        Some("pause")
-	                    },
-	                }
-                }
-            )
+            .bind_property("playback-state", &play_pause_symbol, "visible-child-name")
+            .transform_to(|_, state: PlaybackState| match state {
+                PlaybackState::Playing => Some("play"),
+                PlaybackState::Paused | PlaybackState::Stopped => Some("pause"),
+            })
             .sync_create()
             .build();
 
         let flow_btn = imp.flow_btn.get();
         player
-            .bind_property(
-                "playback-flow",
-                &flow_btn,
-                "icon-name"
-            )
-            .transform_to(|_, flow: PlaybackFlow| { Some(flow.icon_name()) })
+            .bind_property("playback-flow", &flow_btn, "icon-name")
+            .transform_to(|_, flow: PlaybackFlow| Some(flow.icon_name()))
             .sync_create()
             .build();
         player
-            .bind_property(
-                "playback-flow",
-                &flow_btn,
-                "tooltip-text"
-            )
+            .bind_property("playback-flow", &flow_btn, "tooltip-text")
             // TODO: translatable
-            .transform_to(|_, flow: PlaybackFlow| { Some(format!("Playback Mode: {}", flow.description())) })
+            .transform_to(|_, flow: PlaybackFlow| {
+                Some(format!("Playback Mode: {}", flow.description()))
+            })
             .sync_create()
             .build();
         flow_btn.connect_clicked(clone!(
             #[weak]
             player,
-            move |_| {
-                player.cycle_playback_flow();
-            }
+            move |_| player.cycle_playback_flow()
         ));
-        self.imp().prev_btn.connect_clicked(
-            clone!(
-                #[strong]
-                player,
-                move |_| {
-                    player.prev_song();
-                }
-            )
-        );
-        self.imp().play_pause_btn.connect_clicked(
-            clone!(
-                #[weak]
-                player,
-                move |_| {
-                    player.toggle_playback()
-                }
-            )
-        );
-        self.imp().next_btn.connect_clicked(
-            clone!(
-                #[strong]
-                player,
-                move |_| {
-                    player.next_song();
-                }
-            )
-        );
+        self.imp().prev_btn.connect_clicked(clone!(
+            #[strong]
+            player,
+            move |_| player.prev_song()
+        ));
+        self.imp().play_pause_btn.connect_clicked(clone!(
+            #[weak]
+            player,
+            move |_| player.toggle_playback()
+        ));
+        self.imp().next_btn.connect_clicked(clone!(
+            #[strong]
+            player,
+            move |_| player.next_song()
+        ));
         let shuffle_btn = imp.random_btn.get();
         shuffle_btn
-            .bind_property(
-                "active",
-                player,
-                "random"
-            )
+            .bind_property("active", player, "random")
             .bidirectional()
-            .sync_create()
-            .build();
-
-        self.setup_seekbar(player);
-    }
-
-    pub fn seekbar(&self) -> Seekbar {
-        self.imp().seekbar.get()
-    }
-
-    fn setup_seekbar(&self, player: &Player) {
-        let seekbar = self.imp().seekbar.get();
-        seekbar.connect_closure(
-            "pressed",
-            false,
-            closure_local!(
-                #[weak]
-                player,
-                move |_: Seekbar| {
-                    player.block_polling();
-                    player.stop_polling();
-                }
-            )
-        );
-
-        seekbar.connect_closure(
-            "released",
-            false,
-            closure_local!(
-                #[weak]
-                player,
-                move |_: Seekbar| {
-                    player.unblock_polling();
-                    player.send_seek();
-                    // Player will start polling again on next status update,
-                    // which should be triggered by us seeking.
-                }
-            )
-        );
-
-        seekbar.set_duration(player.duration() as f64);
-        player.connect_notify_local(
-            Some("duration"),
-            clone!(
-                #[weak(rename_to = this)]
-                self,
-                move |player, _| {
-                    this.imp().seekbar.set_duration(player.duration() as f64);
-                }
-            ),
-        );
-        player
-            .bind_property(
-                "position",
-                &seekbar,
-                "position"
-            )
-            .sync_create()
-            .bidirectional()
-            .build();
-
-        player
-            .bind_property(
-                "duration",
-                &seekbar,
-                "duration"
-            )
             .sync_create()
             .build();
     }

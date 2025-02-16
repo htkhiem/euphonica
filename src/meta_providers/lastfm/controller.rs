@@ -2,46 +2,41 @@ extern crate bson;
 
 use std::sync::RwLock;
 
+use gtk::prelude::*;
 use reqwest::{
     blocking::{Client, Response},
-    header::USER_AGENT
-};
-use gtk::prelude::*;
-
-use crate::{
-    config::APPLICATION_USER_AGENT,
-    utils::meta_provider_settings
+    header::USER_AGENT,
 };
 
-use super::{super::{
-    models, prelude::*, MetadataProvider
-}, PROVIDER_KEY};
+use crate::{config::APPLICATION_USER_AGENT, utils::meta_provider_settings};
+
 use super::models::{LastfmAlbumResponse, LastfmArtistResponse};
+use super::{
+    super::{models, prelude::*, MetadataProvider},
+    PROVIDER_KEY,
+};
 
 pub const API_ROOT: &str = "http://ws.audioscrobbler.com/2.0";
 
 pub struct LastfmWrapper {
     client: Client,
-    priority: RwLock<u32>
+    priority: RwLock<u32>,
 }
 
 impl LastfmWrapper {
-    fn get_lastfm(
-        &self,
-        method: &str,
-        params: &[(&str, String)]
-    ) -> Option<Response> {
+    fn get_lastfm(&self, method: &str, params: &[(&str, String)]) -> Option<Response> {
         let settings = meta_provider_settings(PROVIDER_KEY);
         let key = settings.string("api-key").to_string();
         // Return None if there is no API key specified.
         if !key.is_empty() {
             println!("Last.fm: calling `{}` with query {:?}", method, params);
-            let resp = self.client
+            let resp = self
+                .client
                 .get(API_ROOT)
                 .query(&[
                     ("format", "json"),
                     ("method", method),
-                    ("api_key", key.as_ref())
+                    ("api_key", key.as_ref()),
                 ])
                 .query(params)
                 .header(USER_AGENT, APPLICATION_USER_AGENT)
@@ -59,7 +54,7 @@ impl MetadataProvider for LastfmWrapper {
     fn new(prio: u32) -> Self {
         Self {
             client: Client::new(),
-            priority: RwLock::new(prio)
+            priority: RwLock::new(prio),
         }
     }
 
@@ -81,22 +76,27 @@ impl MetadataProvider for LastfmWrapper {
     fn get_album_meta(
         &self,
         key: bson::Document,
-        existing: Option<models::AlbumMeta>
+        existing: Option<models::AlbumMeta>,
     ) -> Option<models::AlbumMeta> {
         if meta_provider_settings(PROVIDER_KEY).boolean("enabled") {
             // Will panic if key document is not a simple map of String to String
-            let params: Vec<(&str, String)> = key.iter().map(
-                |kv: (&String, &bson::Bson)| {
+            let params: Vec<(&str, String)> = key
+                .iter()
+                .map(|kv: (&String, &bson::Bson)| {
                     // Last.fm wants "album" in query param but will return "name".
                     // Our bson key follows the returned result schema so it'll have to be renamed here.
-                    (if kv.0 == "name" { "album" } else { kv.0.as_ref() }, kv.1.as_str().unwrap().to_owned())
-                }
-            ).collect();
+                    (
+                        if kv.0 == "name" {
+                            "album"
+                        } else {
+                            kv.0.as_ref()
+                        },
+                        kv.1.as_str().unwrap().to_owned(),
+                    )
+                })
+                .collect();
 
-            if let Some(resp) = self.get_lastfm(
-                "album.getinfo",
-                &params
-            ) {
+            if let Some(resp) = self.get_lastfm("album.getinfo", &params) {
                 // TODO: Get summary
                 match resp.status() {
                     reqwest::StatusCode::OK => {
@@ -121,8 +121,7 @@ impl MetadataProvider for LastfmWrapper {
                                 // If there is existing data, merge new data to it
                                 if let Some(old) = existing {
                                     Some(old.merge(new))
-                                }
-                                else {
+                                } else {
                                     Some(new)
                                 }
                             }
@@ -137,12 +136,10 @@ impl MetadataProvider for LastfmWrapper {
                         existing
                     }
                 }
-            }
-            else {
+            } else {
                 existing
             }
-        }
-        else {
+        } else {
             existing
         }
     }
@@ -155,21 +152,26 @@ impl MetadataProvider for LastfmWrapper {
     fn get_artist_meta(
         &self,
         key: bson::Document,
-        existing: std::option::Option<models::ArtistMeta>
+        existing: std::option::Option<models::ArtistMeta>,
     ) -> Option<models::ArtistMeta> {
         if meta_provider_settings(PROVIDER_KEY).boolean("enabled") {
             // Will panic if key document is not a simple map of String to String
-            let params: Vec<(&str, String)> = key.iter().map(
-                |kv: (&String, &bson::Bson)| {
+            let params: Vec<(&str, String)> = key
+                .iter()
+                .map(|kv: (&String, &bson::Bson)| {
                     // Last.fm wants "artist" in query param but will return "name".
                     // Our bson key follows the returned result schema so it'll have to be renamed here.
-                    (if kv.0 == "name" { "artist" } else { kv.0.as_ref() }, kv.1.as_str().unwrap().to_owned())
-                }
-            ).collect();
-            if let Some(resp) = self.get_lastfm(
-                "artist.getinfo",
-                &params
-            ) {
+                    (
+                        if kv.0 == "name" {
+                            "artist"
+                        } else {
+                            kv.0.as_ref()
+                        },
+                        kv.1.as_str().unwrap().to_owned(),
+                    )
+                })
+                .collect();
+            if let Some(resp) = self.get_lastfm("artist.getinfo", &params) {
                 // TODO: Get summary
                 match resp.status() {
                     reqwest::StatusCode::OK => {
@@ -190,11 +192,10 @@ impl MetadataProvider for LastfmWrapper {
                                 }
                                 if let Some(old) = existing {
                                     Some(old.merge(new))
-                                }
-                                else {
+                                } else {
                                     Some(new)
                                 }
-                            },
+                            }
                             Err(err) => {
                                 println!("[Last.fm] get_artist_meta: {}", err);
                                 existing
@@ -206,12 +207,10 @@ impl MetadataProvider for LastfmWrapper {
                         existing
                     }
                 }
-            }
-            else {
+            } else {
                 existing
             }
-        }
-        else {
+        } else {
             existing
         }
     }

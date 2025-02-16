@@ -1,19 +1,23 @@
-use once_cell::sync::Lazy;
-use std::{
-    sync::RwLock,
-    hash::Hash,
-    io::Cursor
-};
-use aho_corasick::AhoCorasick;
-use image::{
-    imageops::FilterType, io::Reader as ImageReader, DynamicImage, RgbImage
-};
-use rustc_hash::FxHashSet;
-use gtk::gio;
-use gio::prelude::*;
-use gtk::Ordering;
 use crate::config::APPLICATION_ID;
+use aho_corasick::AhoCorasick;
+use gio::prelude::*;
+use gtk::gio;
+use gtk::Ordering;
+use image::{imageops::FilterType, io::Reader as ImageReader, DynamicImage, RgbImage};
 use mpd::status::AudioFormat;
+use once_cell::sync::Lazy;
+use rustc_hash::FxHashSet;
+use std::sync::OnceLock;
+use std::{hash::Hash, io::Cursor, sync::RwLock};
+use tokio::runtime::Runtime;
+
+/// Spawn a Tokio runtime on a new thread. This is needed by the zbus dependency.
+pub fn tokio_runtime() -> &'static Runtime {
+    static RUNTIME: OnceLock<Runtime> = OnceLock::new();
+    RUNTIME.get_or_init(|| {
+        Runtime::new().expect("Setting up tokio runtime needs to succeed.")
+    })
+}
 
 /// Get GSettings for the entire application.
 pub fn settings_manager() -> gio::Settings {
@@ -36,20 +40,11 @@ pub fn format_secs_as_duration(seconds: f64) -> String {
     let seconds = total_seconds % 60;
 
     if days > 0 {
-        format!(
-            "{} days {:02}:{:02}:{:02}",
-            days, hours, minutes, seconds
-        )
+        format!("{} days {:02}:{:02}:{:02}", days, hours, minutes, seconds)
     } else if hours > 0 {
-        format!(
-            "{:02}:{:02}:{:02}",
-            hours, minutes, seconds
-        )
+        format!("{:02}:{:02}:{:02}", hours, minutes, seconds)
     } else {
-        format!(
-            "{:02}:{:02}",
-            minutes, seconds
-        )
+        format!("{:02}:{:02}", minutes, seconds)
     }
 }
 
@@ -75,17 +70,20 @@ pub fn prettify_audio_format(format: &AudioFormat) -> String {
     )
 }
 
-pub fn g_cmp_options<T: Ord>(s1: Option<&T>, s2: Option<&T>, nulls_first: bool, asc: bool) -> Ordering {
+pub fn g_cmp_options<T: Ord>(
+    s1: Option<&T>,
+    s2: Option<&T>,
+    nulls_first: bool,
+    asc: bool,
+) -> Ordering {
     if s1.is_none() && s2.is_none() {
         return Ordering::Equal;
-    }
-    else if s1.is_none() {
+    } else if s1.is_none() {
         if nulls_first {
             return Ordering::Smaller;
         }
         return Ordering::Larger;
-    }
-    else if s2.is_none() {
+    } else if s2.is_none() {
         if nulls_first {
             return Ordering::Larger;
         }
@@ -98,20 +96,20 @@ pub fn g_cmp_options<T: Ord>(s1: Option<&T>, s2: Option<&T>, nulls_first: bool, 
 }
 
 pub fn g_cmp_str_options(
-    s1: Option<&str>, s2: Option<&str>,
-    nulls_first: bool, asc: bool,
-    case_sensitive: bool
+    s1: Option<&str>,
+    s2: Option<&str>,
+    nulls_first: bool,
+    asc: bool,
+    case_sensitive: bool,
 ) -> Ordering {
     if s1.is_none() && s2.is_none() {
         return Ordering::Equal;
-    }
-    else if s1.is_none() {
+    } else if s1.is_none() {
         if nulls_first {
             return Ordering::Smaller;
         }
         return Ordering::Larger;
-    }
-    else if s2.is_none() {
+    } else if s2.is_none() {
         if nulls_first {
             return Ordering::Larger;
         }
@@ -121,36 +119,22 @@ pub fn g_cmp_str_options(
         if case_sensitive {
             return Ordering::from(s1.unwrap().cmp(s2.unwrap()));
         }
-        return Ordering::from(
-            s1.unwrap().to_lowercase().cmp(
-                &s2.unwrap().to_lowercase()
-            )
-        );
+        return Ordering::from(s1.unwrap().to_lowercase().cmp(&s2.unwrap().to_lowercase()));
     }
     if case_sensitive {
         return Ordering::from(s2.unwrap().cmp(s1.unwrap()));
     }
-    Ordering::from(
-        s2.unwrap().to_lowercase().cmp(
-            &s1.unwrap().to_lowercase()
-        )
-    )
+    Ordering::from(s2.unwrap().to_lowercase().cmp(&s1.unwrap().to_lowercase()))
 }
 
-pub fn g_search_substr(
-    text: Option<&str>, term: &str,
-    case_sensitive: bool
-) -> bool {
+pub fn g_search_substr(text: Option<&str>, term: &str, case_sensitive: bool) -> bool {
     if text.is_none() && term.is_empty() {
         return true;
-    }
-    else if text.is_some() && !term.is_empty() {
+    } else if text.is_some() && !term.is_empty() {
         if case_sensitive {
             return text.unwrap().contains(term);
         }
-        return text.unwrap().to_lowercase().contains(
-            &term.to_lowercase()
-        );
+        return text.unwrap().to_lowercase().contains(&term.to_lowercase());
     }
     false
 }
@@ -182,11 +166,17 @@ pub fn read_image_from_bytes(bytes: Vec<u8>) -> Option<DynamicImage> {
 pub fn resize_convert_image(dyn_img: DynamicImage) -> (RgbImage, RgbImage) {
     let settings = settings_manager().child("library");
     // Avoid resizing to larger than the original image.
-    let hires_size = settings.uint("hires-image-size").min(dyn_img.width().max(dyn_img.height()));
+    let hires_size = settings
+        .uint("hires-image-size")
+        .min(dyn_img.width().max(dyn_img.height()));
     let thumbnail_size = settings.uint("thumbnail-image-size");
     (
-        dyn_img.resize(hires_size, hires_size, FilterType::Triangle).into_rgb8(),
-        dyn_img.thumbnail(thumbnail_size, thumbnail_size).into_rgb8()
+        dyn_img
+            .resize(hires_size, hires_size, FilterType::Triangle)
+            .into_rgb8(),
+        dyn_img
+            .thumbnail(thumbnail_size, thumbnail_size)
+            .into_rgb8(),
     )
 }
 
@@ -208,8 +198,7 @@ pub fn deduplicate<T: Eq + Hash + Clone>(input: &[T]) -> Vec<T> {
 pub fn build_aho_corasick_automaton(phrases: &[&str]) -> Option<AhoCorasick> {
     if phrases.is_empty() {
         None
-    }
-    else {
+    } else {
         // println!("[AhoCorasick] Configured to detect the following: {:?}", phrases);
         Some(AhoCorasick::new(phrases).unwrap())
     }
@@ -218,20 +207,14 @@ fn build_artist_delim_automaton() -> Option<AhoCorasick> {
     let setting = settings_manager()
         .child("library")
         .value("artist-tag-delims");
-    let delims: Vec<&str> = setting
-        .array_iter_str()
-        .unwrap()
-        .collect();
+    let delims: Vec<&str> = setting.array_iter_str().unwrap().collect();
     build_aho_corasick_automaton(&delims)
 }
 fn build_artist_delim_exceptions_automaton() -> Option<AhoCorasick> {
     let setting = settings_manager()
         .child("library")
         .value("artist-tag-delim-exceptions");
-    let excepts: Vec<&str> = setting
-        .array_iter_str()
-        .unwrap()
-        .collect();
+    let excepts: Vec<&str> = setting.array_iter_str().unwrap().collect();
     build_aho_corasick_automaton(&excepts)
 }
 

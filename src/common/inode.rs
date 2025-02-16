@@ -1,8 +1,8 @@
-use std::cell::OnceCell;
-use mpd::{lsinfo::LsInfoEntry, Playlist};
-use gtk::glib;
 use glib::prelude::*;
+use gtk::glib;
 use gtk::subclass::prelude::*;
+use mpd::{lsinfo::LsInfoEntry, Playlist};
+use std::cell::OnceCell;
 
 #[derive(Clone, Copy, Debug, glib::Enum, PartialEq, Default)]
 #[enum_type(name = "EuphonicaINodeType")]
@@ -11,7 +11,7 @@ pub enum INodeType {
     Unknown, // Catch-all
     Song,
     Folder,
-    Playlist
+    Playlist,
 }
 
 impl INodeType {
@@ -20,7 +20,7 @@ impl INodeType {
             Self::Folder => "folder-symbolic",
             Self::Song => "music-note-single-symbolic",
             Self::Playlist => "playlist-symbolic",
-            _ => "paper-symbolic"
+            _ => "paper-symbolic",
         }
     }
 }
@@ -34,15 +34,11 @@ pub struct INodeInfo {
 }
 
 impl INodeInfo {
-    pub fn new(
-        uri: &str,
-        last_modified: Option<&str>,
-        inode_type: INodeType
-    ) -> Self {
+    pub fn new(uri: &str, last_modified: Option<&str>, inode_type: INodeType) -> Self {
         Self {
             uri: uri.to_owned(),
             last_modified: last_modified.map(String::from),
-            inode_type
+            inode_type,
         }
     }
 }
@@ -52,7 +48,7 @@ impl Default for INodeInfo {
         INodeInfo {
             uri: "".to_owned(),
             last_modified: None,
-            inode_type: INodeType::default()
+            inode_type: INodeType::default(),
         }
     }
 }
@@ -63,13 +59,13 @@ impl From<LsInfoEntry> for INodeInfo {
             LsInfoEntry::Song(song) => Self {
                 uri: song.file,
                 last_modified: song.last_mod,
-                inode_type: INodeType::Song
+                inode_type: INodeType::Song,
             },
             LsInfoEntry::Directory(dir) => Self {
                 uri: dir.name,
                 last_modified: dir.last_mod,
-                inode_type: INodeType::Folder
-            }
+                inode_type: INodeType::Folder,
+            },
         }
     }
 }
@@ -79,19 +75,15 @@ impl From<Playlist> for INodeInfo {
         Self {
             uri: playlist.name,
             last_modified: Some(playlist.last_mod),
-            inode_type: INodeType::Playlist
+            inode_type: INodeType::Playlist,
         }
     }
 }
 
 mod imp {
-    use glib::{
-        ParamSpec,
-        ParamSpecEnum,
-        ParamSpecString
-    };
-    use once_cell::sync::Lazy;
     use super::*;
+    use glib::{ParamSpec, ParamSpecEnum, ParamSpecString};
+    use once_cell::sync::Lazy;
 
     /// The GObject Song wrapper.
     /// By nesting info inside another struct, we enforce tag editing to be
@@ -101,7 +93,7 @@ mod imp {
     /// This design also avoids a RefCell.
     #[derive(Default, Debug)]
     pub struct INode {
-        pub info: OnceCell<INodeInfo>
+        pub info: OnceCell<INodeInfo>,
     }
 
     #[glib::object_subclass]
@@ -111,7 +103,7 @@ mod imp {
 
         fn new() -> Self {
             Self {
-                info: OnceCell::new()
+                info: OnceCell::new(),
             }
         }
     }
@@ -121,8 +113,10 @@ mod imp {
             static PROPERTIES: Lazy<Vec<ParamSpec>> = Lazy::new(|| {
                 vec![
                     ParamSpecString::builder("uri").read_only().build(),
-                    ParamSpecString::builder("last-modified").read_only().build(),
-                    ParamSpecEnum::builder::<INodeType>("inode-type").build()
+                    ParamSpecString::builder("last-modified")
+                        .read_only()
+                        .build(),
+                    ParamSpecEnum::builder::<INodeType>("inode-type").build(),
                 ]
             });
             PROPERTIES.as_ref()
@@ -165,7 +159,7 @@ impl INode {
         Self::from(INodeInfo {
             uri: new_name.to_owned(),
             last_modified: old_info.last_modified.clone(),
-            inode_type: old_info.inode_type
+            inode_type: old_info.inode_type,
         })
     }
 

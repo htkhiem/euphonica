@@ -10,36 +10,32 @@
 //   of artist tags instead of the full tags.
 // - Text data is stored as BSON in PoloDB as most of the time we'll be querying
 //   from Last.fm.
-extern crate stretto;
-extern crate fasthash;
 extern crate bson;
+extern crate fasthash;
 extern crate polodb_core;
-use async_channel::{Sender, Receiver};
+extern crate stretto;
+use async_channel::{Receiver, Sender};
+use fasthash::murmur2;
+use gio::prelude::*;
+use glib::clone;
+use gtk::{gdk::Texture, gio, glib};
 use once_cell::sync::Lazy;
 use rustc_hash::FxHashSet;
 use std::{
-    cell::OnceCell, fmt, fs::create_dir_all, path::PathBuf, rc::Rc, sync::{Arc, RwLock}
+    cell::OnceCell,
+    fmt,
+    fs::create_dir_all,
+    path::PathBuf,
+    rc::Rc,
+    sync::{Arc, RwLock},
 };
-use gtk::{
-    glib,
-    gio,
-    gdk::Texture
-};
-use gio::prelude::*;
-use glib::clone;
-use fasthash::murmur2;
 
+use crate::meta_providers::{get_provider_with_priority, models::ArtistMeta};
 use crate::{
     client::{BackgroundTask, MpdWrapper},
     common::{AlbumInfo, ArtistInfo},
-    meta_providers::{
-        models, prelude::*, utils::get_best_image, Metadata, MetadataChain
-    },
-    utils::{resize_convert_image, settings_manager}
-};
-use crate::meta_providers::{
-    models::ArtistMeta,
-    get_provider_with_priority
+    meta_providers::{models, prelude::*, utils::get_best_image, Metadata, MetadataChain},
+    utils::{resize_convert_image, settings_manager},
 };
 
 use super::CacheState;
@@ -51,7 +47,7 @@ enum CacheTask {
     AlbumMeta(String, bson::Document),
     // Both meta and album art together, since for now we cannot provide artist avatars
     // locally.
-    ArtistMeta(bson::Document, PathBuf, PathBuf)
+    ArtistMeta(bson::Document, PathBuf, PathBuf),
 }
 
 // In-memory image cache. Declared here to ease usage between threads as Stretto
@@ -71,9 +67,8 @@ fn init_image_cache() -> stretto::Cache<(String, bool), Texture> {
     stretto::Cache::new(327680, 32768).unwrap()
 }
 
-static IMAGE_CACHE: Lazy<stretto::Cache<(String, bool), Texture>> = Lazy::new(|| {
-    init_image_cache()
-});
+static IMAGE_CACHE: Lazy<stretto::Cache<(String, bool), Texture>> =
+    Lazy::new(|| init_image_cache());
 
 pub struct Cache {
     albumart_path: PathBuf,
@@ -85,7 +80,7 @@ pub struct Cache {
     fg_sender: Sender<Metadata>,
     bg_sender: Sender<CacheTask>,
     meta_providers: Arc<RwLock<MetadataChain>>,
-    state: CacheState
+    state: CacheState,
 }
 
 impl fmt::Debug for Cache {
@@ -111,26 +106,18 @@ fn init_meta_provider_chain() -> MetadataChain {
 }
 
 impl Cache {
-    pub fn new(
-        app_cache_path: &PathBuf
-    ) -> Rc<Self> {
-        let (
-            fg_sender,
-            fg_receiver
-        ): (Sender<Metadata>, Receiver<Metadata>) = async_channel::bounded(1);
-        let (
-            bg_sender,
-            bg_receiver
-        ): (Sender<CacheTask>, Receiver<CacheTask>) = async_channel::unbounded();
+    pub fn new(app_cache_path: &PathBuf) -> Rc<Self> {
+        let (fg_sender, fg_receiver): (Sender<Metadata>, Receiver<Metadata>) =
+            async_channel::bounded(1);
+        let (bg_sender, bg_receiver): (Sender<CacheTask>, Receiver<CacheTask>) =
+            async_channel::unbounded();
         let mut albumart_path = app_cache_path.clone();
         albumart_path.push("albumart");
-        create_dir_all(&albumart_path)
-            .expect("ERROR: cannot create albumart cache folder");
+        create_dir_all(&albumart_path).expect("ERROR: cannot create albumart cache folder");
 
         let mut avatar_path = app_cache_path.clone();
         avatar_path.push("avatar");
-        create_dir_all(&avatar_path)
-            .expect("ERROR: cannot create albumart cache folder");
+        create_dir_all(&avatar_path).expect("ERROR: cannot create albumart cache folder");
 
         let mut doc_path = app_cache_path.clone();
 
@@ -141,17 +128,19 @@ impl Cache {
             albumart_path,
             avatar_path,
             doc_cache: Arc::new(RwLock::new(
-                polodb_core::Database::open_file(doc_path).expect("ERROR: cannot create a metadata database")
+                polodb_core::Database::open_file(doc_path)
+                    .expect("ERROR: cannot create a metadata database"),
             )),
             meta_providers: Arc::new(RwLock::new(providers)),
             mpd_client: OnceCell::new(),
             fg_sender: fg_sender.clone(),
             bg_sender,
-            state: CacheState::default()
+            state: CacheState::default(),
         };
         let res = Rc::new(cache);
 
-        res.clone().setup_channel(bg_receiver, fg_sender, fg_receiver);
+        res.clone()
+            .setup_channel(bg_receiver, fg_sender, fg_receiver);
         res
     }
     /// Re-initialise list of providers when priority order is changed
@@ -172,7 +161,7 @@ impl Cache {
         self: Rc<Self>,
         bg_receiver: Receiver<CacheTask>,
         fg_sender: Sender<Metadata>,
-        fg_receiver: Receiver<Metadata>
+        fg_receiver: Receiver<Metadata>,
     ) {
         // Handle remote metadata fetching tasks in another thread
         let doc_cache = self.clone().doc_cache.clone();
@@ -317,8 +306,7 @@ impl Cache {
         );
         let this = self.clone();
         // Listen to the background thread.
-        glib::MainContext::default().spawn_local(
-            async move {
+        glib::MainContext::default().spawn_local(async move {
             use futures::prelude::*;
             // Allow receiver to be mutated, but keep it at the same memory address.
             // See Receiver::next doc for why this is needed.
@@ -326,24 +314,39 @@ impl Cache {
             while let Some(notify) = receiver.next().await {
                 match notify {
                     Metadata::AlbumMeta(folder_uri) => {
-                        this.state.emit_with_param("album-meta-downloaded", &folder_uri);
+                        this.state
+                            .emit_with_param("album-meta-downloaded", &folder_uri);
                     }
                     Metadata::ArtistMeta(name) => {
                         this.state.emit_with_param("artist-meta-downloaded", &name);
                     }
                     Metadata::AlbumArt(folder_uri, _) => {
-                        this.state.emit_with_param("album-art-downloaded", &folder_uri);
+                        this.state
+                            .emit_with_param("album-art-downloaded", &folder_uri);
                     }
                     Metadata::AlbumArtNotAvailable(folder_uri, key) => {
-                        println!("MPD does not have album art for {}, fetching remotely...", &folder_uri);
-                        let path = self.get_path_for(&Metadata::AlbumArt(folder_uri.clone(), false));
-                        let thumbnail_path = self.get_path_for(&Metadata::AlbumArt(folder_uri.clone(), true));
-                        let _ = this.bg_sender.send_blocking(
-                            CacheTask::AlbumArt(folder_uri, key, path, thumbnail_path)
+                        println!(
+                            "MPD does not have album art for {}, fetching remotely...",
+                            &folder_uri
                         );
+                        // Fill out metadata before attempting to fetch album art from external sources.
+                        let _ = this
+                            .bg_sender
+                            .send_blocking(CacheTask::AlbumMeta(folder_uri.clone(), key.clone()));
+                        let path =
+                            self.get_path_for(&Metadata::AlbumArt(folder_uri.clone(), false));
+                        let thumbnail_path =
+                            self.get_path_for(&Metadata::AlbumArt(folder_uri.clone(), true));
+                        let _ = this.bg_sender.send_blocking(CacheTask::AlbumArt(
+                            folder_uri,
+                            key,
+                            path,
+                            thumbnail_path,
+                        ));
                     }
                     Metadata::ArtistAvatar(name, _) => {
-                        this.state.emit_with_param("artist-avatar-downloaded", &name);
+                        this.state
+                            .emit_with_param("artist-avatar-downloaded", &name);
                     }
                 }
             }
@@ -368,32 +371,35 @@ impl Cache {
                 let mut path = self.albumart_path.clone();
                 if *thumbnail {
                     path.push(hashed + "_thumb.png");
-                }
-                else {
+                } else {
                     path.push(hashed + ".png");
                 }
                 path
-            },
+            }
             Metadata::ArtistAvatar(name, thumbnail) => {
                 let hashed = murmur2::hash64(&name).to_string();
 
                 let mut path = self.avatar_path.clone();
                 if *thumbnail {
                     path.push(hashed + "_thumb.png");
-                }
-                else {
+                } else {
                     path.push(hashed + ".png");
                 }
                 path
-            },
-            _ => unreachable!()
+            }
+            _ => unreachable!(),
         }
     }
 
     /// This is a public method to allow other controllers to get cached album arts for
     /// specific songs/albums directly if possible.
     /// Without this, they can only get the textures via signals, which have overhead.s
-    pub fn load_cached_album_art(&self, album: &AlbumInfo, thumbnail: bool, schedule: bool) -> Option<Texture> {
+    pub fn load_cached_album_art(
+        &self,
+        album: &AlbumInfo,
+        thumbnail: bool,
+        schedule: bool,
+    ) -> Option<Texture> {
         let folder_uri = album.uri.to_owned();
         let key = (format!("uri:{}", &folder_uri), thumbnail);
         if let Some(tex) = IMAGE_CACHE.get(&key) {
@@ -407,7 +413,6 @@ impl Cache {
         None
     }
 
-
     /// Convenience method to check whether album art for a given album is locally available,
     /// and if not, queue its downloading from MPD.
     /// If MPD doesn't have one locally, we'll try fetching from all the enabled metadata providers.
@@ -416,7 +421,8 @@ impl Cache {
         let stretto_key = (format!("uri:{}", &folder_uri), thumbnail);
         if let Some(_) = IMAGE_CACHE.get(&stretto_key) {
             // Already cached. Simply notify UI.
-            self.state.emit_with_param("album-art-downloaded", &folder_uri);
+            self.state
+                .emit_with_param("album-art-downloaded", &folder_uri);
             return;
         }
         let thumbnail_path = self.get_path_for(&Metadata::AlbumArt(folder_uri.clone(), true));
@@ -426,11 +432,19 @@ impl Cache {
         if let Ok(bson_key) = self.get_album_key(album) {
             let settings = settings_manager().child("client");
             // First, try to load from disk. Do this using the threadpool to avoid blocking UI.
-            let path_to_use = if thumbnail {thumbnail_path.clone()} else {path.clone()};
+            let path_to_use = if thumbnail {
+                thumbnail_path.clone()
+            } else {
+                path.clone()
+            };
             if path_to_use.exists() {
                 gio::spawn_blocking(move || {
                     if let Ok(tex) = Texture::from_filename(&path_to_use) {
-                        IMAGE_CACHE.insert(stretto_key, tex.clone(), if thumbnail {1} else {16});
+                        IMAGE_CACHE.insert(
+                            stretto_key,
+                            tex.clone(),
+                            if thumbnail { 1 } else { 16 },
+                        );
                         IMAGE_CACHE.wait().unwrap();
                         let _ = fg_sender.send_blocking(Metadata::AlbumArt(folder_uri, thumbnail));
                     }
@@ -438,18 +452,26 @@ impl Cache {
             }
             // That failed, so try downloading it
             else if settings.boolean("mpd-download-album-art") {
-                self.mpd_client().queue_background(BackgroundTask::DownloadAlbumArt(
-                    folder_uri.to_string(),
-                    bson_key,
-                    path,
-                    thumbnail_path
-                ));
-            }
-            else {
+                self.mpd_client().queue_background(
+                    BackgroundTask::DownloadAlbumArt(
+                        folder_uri.to_string(),
+                        bson_key,
+                        path,
+                        thumbnail_path,
+                    ),
+                    false,
+                );
+            } else {
                 // Hop straight to remote providers. For this we'll need to have album metas ready,
                 // so schedule that first.
-                let _ = bg_sender.send_blocking(CacheTask::AlbumMeta(folder_uri.clone(), bson_key.clone()));
-                let _ = bg_sender.send_blocking(CacheTask::AlbumArt(folder_uri, bson_key, path, thumbnail_path));
+                let _ = bg_sender
+                    .send_blocking(CacheTask::AlbumMeta(folder_uri.clone(), bson_key.clone()));
+                let _ = bg_sender.send_blocking(CacheTask::AlbumArt(
+                    folder_uri,
+                    bson_key,
+                    path,
+                    thumbnail_path,
+                ));
             }
         }
     }
@@ -472,10 +494,7 @@ impl Cache {
         }
     }
 
-    fn get_album_key(
-        &self,
-        album: &AlbumInfo
-    ) -> Result<bson::Document, &str> {
+    fn get_album_key(&self, album: &AlbumInfo) -> Result<bson::Document, &str> {
         // AlbumInfo has to have either this (preferred)
         let mbid: Option<&str> = album.mbid.as_deref();
         // Or BOTH of these
@@ -485,26 +504,26 @@ impl Cache {
             Ok(bson::doc! {
                 "mbid": id.to_string()
             })
-        }
-        else if title.is_some() && artist.is_some() {
+        } else if title.is_some() && artist.is_some() {
             Ok(bson::doc! {
                 "name": title.unwrap().to_string(),
                 "artist": artist.unwrap().to_string()
             })
-        }
-        else {
+        } else {
             Err("If no mbid is available, both album name and artist must be specified")
         }
     }
 
-    pub fn load_cached_album_meta(
-        &self,
-        album: &AlbumInfo,
-    ) -> Option<models::AlbumMeta> {
+    pub fn load_cached_album_meta(&self, album: &AlbumInfo) -> Option<models::AlbumMeta> {
         // Check whether we have this album cached
         if let Ok(key) = self.get_album_key(album) {
             println!("Key is valid");
-            let result = self.doc_cache.read().unwrap().collection::<models::AlbumMeta>("album").find_one(key);
+            let result = self
+                .doc_cache
+                .read()
+                .unwrap()
+                .collection::<models::AlbumMeta>("album")
+                .find_one(key);
             if let Ok(res) = result {
                 if let Some(info) = res {
                     println!("Album info cache hit!");
@@ -520,30 +539,32 @@ impl Cache {
         None
     }
 
-    pub fn ensure_cached_album_meta(
-        &self,
-        album: &AlbumInfo,
-    ) {
+    pub fn ensure_cached_album_meta(&self, album: &AlbumInfo) {
         // Needed for signalling
         let folder_uri: &str = &album.uri;
         // Check whether we have this album cached
         if let Ok(key) = self.get_album_key(album) {
-            let result = self.doc_cache.read().unwrap().collection::<models::AlbumMeta>("album").find_one(key.clone());
+            let result = self
+                .doc_cache
+                .read()
+                .unwrap()
+                .collection::<models::AlbumMeta>("album")
+                .find_one(key.clone());
             if let Ok(response) = result {
                 if response.is_none() {
-                    self.bg_sender.send_blocking(CacheTask::AlbumMeta(folder_uri.to_owned(), key)).expect("Cache child thread: unable to notify main thread of task completion");
+                    self.bg_sender
+                        .send_blocking(CacheTask::AlbumMeta(folder_uri.to_owned(), key))
+                        .expect(
+                            "Cache child thread: unable to notify main thread of task completion",
+                        );
                 }
-            }
-            else {
+            } else {
                 println!("{:?}", result.err());
             }
         }
     }
 
-    fn get_artist_key(
-        &self,
-        artist: &ArtistInfo
-    ) -> Result<bson::Document, &str> {
+    fn get_artist_key(&self, artist: &ArtistInfo) -> Result<bson::Document, &str> {
         // Optional
         let mbid: Option<&str> = artist.mbid.as_deref();
         // Mandatory (used for signaling)
@@ -553,20 +574,21 @@ impl Cache {
                 "mbid": id.to_string(),
                 "name": name.to_string()
             })
-        }
-        else {
+        } else {
             Ok(bson::doc! {
                 "name": name.to_string()
             })
         }
     }
 
-    pub fn load_cached_artist_meta(
-        &self,
-        artist: &ArtistInfo
-    ) -> Option<ArtistMeta> {
+    pub fn load_cached_artist_meta(&self, artist: &ArtistInfo) -> Option<ArtistMeta> {
         if let Ok(key) = self.get_artist_key(artist) {
-            let result = self.doc_cache.read().unwrap().collection::<ArtistMeta>("artist").find_one(key);
+            let result = self
+                .doc_cache
+                .read()
+                .unwrap()
+                .collection::<ArtistMeta>("artist")
+                .find_one(key);
             if let Ok(res) = result {
                 if let Some(info) = res {
                     println!("Artist info cache hit!");
@@ -582,21 +604,28 @@ impl Cache {
         None
     }
 
-    pub fn ensure_cached_artist_meta(
-        &self,
-        artist: &ArtistInfo
-    ) {
+    pub fn ensure_cached_artist_meta(&self, artist: &ArtistInfo) {
         // Check whether we have this artist cached
         if let Ok(key) = self.get_artist_key(artist) {
-            let result = self.doc_cache.read().unwrap().collection::<ArtistMeta>("artist").find_one(key.clone());
+            let result = self
+                .doc_cache
+                .read()
+                .unwrap()
+                .collection::<ArtistMeta>("artist")
+                .find_one(key.clone());
             if let Ok(response) = result {
-                let path = self.get_path_for(&Metadata::ArtistAvatar(artist.name.to_owned(), false));
-                let thumbnail_path = self.get_path_for(&Metadata::ArtistAvatar(artist.name.to_owned(), true));
+                let path =
+                    self.get_path_for(&Metadata::ArtistAvatar(artist.name.to_owned(), false));
+                let thumbnail_path =
+                    self.get_path_for(&Metadata::ArtistAvatar(artist.name.to_owned(), true));
                 if response.is_none() {
-                    let _ = self.bg_sender.send_blocking(CacheTask::ArtistMeta(key, path, thumbnail_path));
+                    let _ = self.bg_sender.send_blocking(CacheTask::ArtistMeta(
+                        key,
+                        path,
+                        thumbnail_path,
+                    ));
                 }
-            }
-            else {
+            } else {
                 println!("{:?}", result.err());
             }
         }
@@ -610,7 +639,7 @@ impl Cache {
     pub fn load_cached_artist_avatar(
         &self,
         artist: &ArtistInfo,
-        thumbnail: bool
+        thumbnail: bool,
     ) -> Option<Texture> {
         // First try to get from cache
         let name = &artist.name;
@@ -627,7 +656,7 @@ impl Cache {
             // Try to load from disk. Do this using the threadpool to avoid blocking UI.
             if path.exists() {
                 if let Ok(tex) = Texture::from_filename(&path) {
-                    IMAGE_CACHE.insert(stretto_key, tex.clone(), if thumbnail {1} else {16});
+                    IMAGE_CACHE.insert(stretto_key, tex.clone(), if thumbnail { 1 } else { 16 });
                     IMAGE_CACHE.wait().unwrap();
                     let _ = fg_sender.send_blocking(content_type);
                 }

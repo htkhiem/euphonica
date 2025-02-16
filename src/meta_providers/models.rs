@@ -1,13 +1,13 @@
 use chrono::NaiveDate;
-use serde::{Deserialize, Serialize};
 use musicbrainz_rs::entity::artist::ArtistType;
+use serde::{Deserialize, Serialize};
 
 // Common building blocks that can be shared between different providers
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Tag {
     pub url: Option<String>,
     pub name: String,
-    pub count: Option<i32>
+    pub count: Option<i32>,
 }
 
 pub trait Tagged {
@@ -25,8 +25,7 @@ pub trait Merge {
     fn merge_option<T>(this: Option<T>, that: Option<T>) -> Option<T> {
         if this.is_none() && that.is_some() {
             that
-        }
-        else {
+        } else {
             this
         }
     }
@@ -40,18 +39,18 @@ pub trait HasImage {
 /// that the variants are declared in increasing order.
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
 pub enum ImageSize {
-    Small, // Around 32x32
-    Medium, // Around 64x64
-    Large, // Around 128x128
+    Small,      // Around 32x32
+    Medium,     // Around 64x64
+    Large,      // Around 128x128
     ExtraLarge, // Around 256x256
-    Mega // 512x512 or more
+    Mega,       // 512x512 or more
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ImageMeta {
     pub size: ImageSize,
     #[serde(rename = "#text")]
-    pub url: String
+    pub url: String,
 }
 
 // Album
@@ -62,7 +61,7 @@ pub struct Wiki {
     /// "Read more" URLs
     #[serde(skip_serializing_if = "Option::is_none")]
     pub url: Option<String>,
-    pub attribution: String // Mandatory. If public domain or local-only, specify so explicitly.
+    pub attribution: String, // Mandatory. If public domain or local-only, specify so explicitly.
 }
 
 // Standard (provider-agnostic) metadata structures for use across the app.
@@ -79,7 +78,7 @@ pub struct AlbumMeta {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub wiki: Option<Wiki>
+    pub wiki: Option<Wiki>,
 }
 
 impl AlbumMeta {
@@ -89,8 +88,7 @@ impl AlbumMeta {
         let mbid: Option<String>;
         if let Ok(mbid_str) = key.get_str("mbid") {
             mbid = Some(mbid_str.to_owned());
-        }
-        else {
+        } else {
             mbid = None;
         }
         Self {
@@ -100,13 +98,24 @@ impl AlbumMeta {
             tags: Vec::with_capacity(0),
             image: Vec::with_capacity(0),
             url: None,
-            wiki: None
+            wiki: None,
         }
     }
 }
 
 impl Merge for AlbumMeta {
-    fn merge(mut self, AlbumMeta { mbid, artist, mut tags, mut image, url, wiki, .. }: Self) -> Self {
+    fn merge(
+        mut self,
+        AlbumMeta {
+            mbid,
+            artist,
+            mut tags,
+            mut image,
+            url,
+            wiki,
+            ..
+        }: Self,
+    ) -> Self {
         self.tags.append(&mut tags);
         self.image.append(&mut image);
         self.mbid = Self::merge_option(self.mbid, mbid);
@@ -154,7 +163,7 @@ pub struct ArtistMeta {
     pub end_date: Option<NaiveDate>,
     // Two-letter country code, such as US, AU, UK, JP, etc.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub country: Option<String>
+    pub country: Option<String>,
 }
 
 impl ArtistMeta {
@@ -164,8 +173,7 @@ impl ArtistMeta {
         let mbid: Option<String>;
         if let Ok(mbid_str) = key.get_str("mbid") {
             mbid = Some(mbid_str.to_owned());
-        }
-        else {
+        } else {
             mbid = None;
         }
         Self {
@@ -180,7 +188,7 @@ impl ArtistMeta {
             gender: None,
             begin_date: None,
             end_date: None,
-            country: None
+            country: None,
         }
     }
 }
@@ -191,7 +199,8 @@ impl Merge for ArtistMeta {
     /// and will be replaced by what the other ArtistMeta object has, unless that other value is also
     /// one of those two.
     fn merge(
-        mut self, ArtistMeta {
+        mut self,
+        ArtistMeta {
             mut tags,
             mut similar,
             mut image,
@@ -204,7 +213,7 @@ impl Merge for ArtistMeta {
             end_date,
             country,
             ..
-        }: Self
+        }: Self,
     ) -> Self {
         self.tags.append(&mut tags);
         self.image.append(&mut image);
@@ -212,8 +221,11 @@ impl Merge for ArtistMeta {
         self.mbid = Self::merge_option(self.mbid, mbid);
         self.url = Self::merge_option(self.url, url);
         self.bio = Self::merge_option(self.bio, bio);
-        if (self.artist_type == ArtistType::Other || self.artist_type == ArtistType::UnrecognizedArtistType) && (
-            artist_type != ArtistType::Other && artist_type != ArtistType::UnrecognizedArtistType) {
+        if (self.artist_type == ArtistType::Other
+            || self.artist_type == ArtistType::UnrecognizedArtistType)
+            && (artist_type != ArtistType::Other
+                && artist_type != ArtistType::UnrecognizedArtistType)
+        {
             self.artist_type = artist_type;
         }
         self.gender = Self::merge_option(self.gender, gender);

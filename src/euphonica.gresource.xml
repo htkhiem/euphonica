@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <gresources>
-  <gresource prefix="/org/euphonica/Euphonica">
+  <gresource prefix="/io/github/htkhiem/Euphonica">
     <file preprocess="xml-stripblanks">window.ui</file>
     <file preprocess="xml-stripblanks">gtk/help-overlay.ui</file>
     <file preprocess="xml-stripblanks">gtk/sidebar-button.ui</file>
@@ -39,7 +39,7 @@
     <file preprocess="xml-stripblanks" alias="albumart-placeholder.svg">gtk/textures/albumart-placeholder.svg</file>
     <file alias="albumart-placeholder-thumb.png">gtk/textures/albumart-placeholder-thumb.png</file>
   </gresource>
-  <gresource prefix="/org/euphonica/Euphonica/icons/scalable/actions/">
+  <gresource prefix="/io/github/htkhiem/Euphonica/icons/scalable/actions/">
     <file preprocess="xml-stripblanks" alias="settings-symbolic.svg">gtk/icons/settings-symbolic.svg</file>
     <file preprocess="xml-stripblanks" alias="mixramp-off-symbolic.svg">gtk/icons/mixramp-off-symbolic.svg</file>
     <file preprocess="xml-stripblanks" alias="mixramp-symbolic.svg">gtk/icons/mixramp-symbolic.svg</file>
@@ -90,5 +90,6 @@
     <file preprocess="xml-stripblanks" alias="consume-on-symbolic.svg">gtk/icons/consume-on-symbolic.svg</file>
     <file preprocess="xml-stripblanks" alias="text-insert-symbolic.svg">gtk/icons/text-insert-symbolic.svg</file>
     <file preprocess="xml-stripblanks" alias="dot-symbolic.svg">gtk/icons/dot-symbolic.svg</file>
+    <file preprocess="xml-stripblanks" alias="dock-left-symbolic.svg">gtk/icons/dock-left-symbolic.svg</file>
   </gresource>
 </gresources>

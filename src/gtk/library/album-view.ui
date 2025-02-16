@@ -11,6 +11,14 @@
               <object class="AdwToolbarView">
                 <child type="top">
 					        <object class="AdwHeaderBar">
+                    <property name="show-title" bind-source="EuphonicaAlbumView" bind-property="collapsed" bind-flags="sync-create|invert-boolean"></property>
+                    <child type="start">
+                      <object class="GtkButton" id="show_sidebar">
+                        <property name="icon-name">dock-left-symbolic</property>
+                        <property name="tooltip-text" translatable="true">Show sidebar</property>
+                        <property name="visible">false</property>
+                      </object>
+                    </child>
                     <child type="end">
                       <object class="GtkToggleButton" id="search_btn">
                         <property name="icon-name">edit-find-symbolic</property>
@@ -71,7 +79,7 @@
                         <child>
                           <object class="GtkSearchEntry" id="search_entry">
                             <property name="search-delay">150</property>
-                            <property name="width-request">400</property>
+                            <property name="width-request">100</property>
                           </object>
                         </child>
                       </object>

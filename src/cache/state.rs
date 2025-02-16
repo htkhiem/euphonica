@@ -1,13 +1,9 @@
-use std::sync::OnceLock;
-use gtk::glib;
 use glib::{
     prelude::*,
-    subclass::{
-        prelude::*,
-        Signal
-    }
+    subclass::{prelude::*, Signal},
 };
-
+use gtk::glib;
+use std::sync::OnceLock;
 
 mod imp {
     // use glib::{
@@ -16,7 +12,6 @@ mod imp {
     //     ParamSpecEnum
     // };
     use super::*;
-    
 
     #[derive(Debug, Default)]
     pub struct CacheState {}
@@ -65,24 +60,24 @@ mod imp {
                     // Only emitted when a new album art becomes locally available.
                     Signal::builder("album-art-downloaded")
                         .param_types([
-                            String::static_type()  // folder URI
+                            String::static_type(), // folder URI
                         ])
                         .build(),
                     Signal::builder("album-meta-downloaded")
                         .param_types([
-                            String::static_type()  // album tag
+                            String::static_type(), // album tag
                         ])
                         .build(),
                     Signal::builder("artist-meta-downloaded")
                         .param_types([
-                            String::static_type()  // artist tag
+                            String::static_type(), // artist tag
                         ])
                         .build(),
                     Signal::builder("artist-avatar-downloaded")
                         .param_types([
-                            String::static_type()  // artist tag
+                            String::static_type(), // artist tag
                         ])
-                        .build()
+                        .build(),
                 ]
             })
         }
@@ -102,11 +97,6 @@ impl Default for CacheState {
 impl CacheState {
     // Convenience emit wrapper
     pub fn emit_with_param(&self, name: &str, tag: &str) {
-        self.emit_by_name::<()>(
-            name,
-            &[
-                &tag
-            ]
-        );
+        self.emit_by_name::<()>(name, &[&tag]);
     }
 }

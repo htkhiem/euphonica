@@ -1,17 +1,11 @@
-use std::cell::OnceCell;
-use time::Date;
-use gtk::glib;
 use gtk::gdk::Texture;
+use gtk::glib;
 use gtk::prelude::*;
 use gtk::subclass::prelude::*;
+use std::cell::OnceCell;
+use time::Date;
 
-use super::{
-    QualityGrade,
-    ArtistInfo,
-    SongInfo,
-    parse_mb_artist_tag,
-    artists_to_string
-};
+use super::{artists_to_string, parse_mb_artist_tag, ArtistInfo, QualityGrade, SongInfo};
 
 // This is a model class for queue view displays.
 // It does not contain any actual song in terms of data.
@@ -27,7 +21,7 @@ pub struct AlbumInfo {
     pub cover: Option<Texture>,
     pub release_date: Option<Date>,
     pub quality_grade: QualityGrade,
-    pub mbid: Option<String>
+    pub mbid: Option<String>,
 }
 
 impl AlbumInfo {
@@ -36,7 +30,7 @@ impl AlbumInfo {
         title: &str,
         artist_tag: Option<&str>,
         artists: Vec<ArtistInfo>,
-        quality_grade: QualityGrade
+        quality_grade: QualityGrade,
     ) -> Self {
         Self {
             uri: uri.to_owned(),
@@ -46,7 +40,7 @@ impl AlbumInfo {
             cover: None,
             release_date: None,
             quality_grade,
-            mbid: None
+            mbid: None,
         }
     }
 
@@ -77,7 +71,7 @@ impl Default for AlbumInfo {
             cover: None,
             release_date: None,
             quality_grade: QualityGrade::Unknown,
-            mbid: None
+            mbid: None,
         }
     }
 }
@@ -89,16 +83,16 @@ impl From<SongInfo> for AlbumInfo {
 }
 
 mod imp {
+    use super::*;
     use glib::{
         ParamSpec,
+        ParamSpecObject,
         // ParamSpecUInt,
         // ParamSpecUInt64,
         // ParamSpecBoolean,
         ParamSpecString,
-        ParamSpecObject
     };
     use once_cell::sync::Lazy;
-    use super::*;
 
     /// The GObject Song wrapper.
     /// By nesting info inside another struct, we enforce tag editing to be
@@ -108,7 +102,7 @@ mod imp {
     /// This design also avoids a RefCell.
     #[derive(Default, Debug)]
     pub struct Album {
-        pub info: OnceCell<AlbumInfo>
+        pub info: OnceCell<AlbumInfo>,
     }
 
     #[glib::object_subclass]
@@ -118,7 +112,7 @@ mod imp {
 
         fn new() -> Self {
             Self {
-                info: OnceCell::new()
+                info: OnceCell::new(),
             }
         }
     }
@@ -130,8 +124,12 @@ mod imp {
                     ParamSpecString::builder("uri").read_only().build(),
                     ParamSpecString::builder("title").read_only().build(),
                     ParamSpecString::builder("artist").read_only().build(),
-                    ParamSpecObject::builder::<glib::BoxedAnyObject>("release-date").read_only().build(),
-                    ParamSpecString::builder("quality-grade").read_only().build()
+                    ParamSpecObject::builder::<glib::BoxedAnyObject>("release-date")
+                        .read_only()
+                        .build(),
+                    ParamSpecString::builder("quality-grade")
+                        .read_only()
+                        .build(),
                 ]
             });
             PROPERTIES.as_ref()

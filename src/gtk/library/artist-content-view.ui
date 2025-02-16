@@ -14,28 +14,31 @@
           </object>
         </child>
         <property name="content">
-          <object class="GtkBox">
-            <property name="orientation">1</property>
-            <property name="hexpand">true</property>
+          <object class="AdwBreakpointBin">
+            <property name="width-request">240</property>
+            <property name="height-request">240</property>
             <child>
-              <!-- Collapsible infobox -->
-              <object class="GtkRevealer" id="infobox_revealer">
-                <property name="reveal-child">true</property>
-                <property name="transition-type">slide-down</property>
-                <property name="child">
-                  <object class="AdwBreakpointBin">
-                    <property name="width-request">240</property>
-                    <property name="height-request">240</property>
-                    <child>
-                      <object class="AdwBreakpoint">
-                        <condition>max-width: 550px</condition>
-                        <setter object="infobox" property="orientation">1</setter>
-                        <setter object="infobox_text" property="margin-start">12</setter>
-                        <setter object="avatar" property="size">64</setter>
-                      </object>
-                    </child>
+              <object class="AdwBreakpoint">
+                <condition>max-width: 550px</condition>
+                <setter object="infobox" property="orientation">1</setter>
+                <setter object="infobox_text" property="margin-start">12</setter>
+                <setter object="discography_text" property="visible">false</setter>
+                <setter object="all_songs_text" property="visible">false</setter>
+                <setter object="replace_queue_text" property="visible">false</setter>
+                <setter object="append_queue_text" property="visible">false</setter>
+                <setter object="add_to_playlist" property="collapsed">true</setter>
+              </object>
+            </child>
+            <property name="child">
+              <object class="GtkBox">
+                <property name="orientation">1</property>
+                <property name="hexpand">true</property>
+                <child>
+                  <!-- Collapsible infobox -->
+                  <object class="GtkRevealer" id="infobox_revealer">
+                    <property name="reveal-child">true</property>
+                    <property name="transition-type">slide-down</property>
                     <property name="child">
-
                       <object class="GtkBox" id="infobox">
                         <property name="margin-start">6</property>
                         <property name="spacing">12</property>
@@ -164,182 +167,221 @@
                       </object>
                     </property>
                   </object>
-                </property>
-              </object>
-            </child>
-            <child>
-              <!-- Sub-view switcher. Switches between album sub-view and all songs sub-view. -->
-              <object class="GtkCenterBox">
-                <style>
-                  <class name="padding-6"/>
-                </style>
-                <property name="center-widget">
-                  <object class="GtkStackSwitcher">
-                    <property name="stack">subview_stack</property>
-                  </object>
-                </property>
-                <property name="end-widget">
-                  <object class="GtkToggleButton" id="collapse_infobox">
-                    <property name="icon-name">up-symbolic</property>
+                </child>
+                <child>
+                  <!-- Sub-view switcher. Switches between album sub-view and all songs sub-view. -->
+                  <object class="GtkCenterBox">
                     <style>
-                      <class name="circular"/>
-                      <class name="flat"/>
+                      <class name="toolbar"/>
                     </style>
-                  </object>
-                </property>
-              </object>
-            </child>
-            <child>
-              <object class="GtkStack" id="subview_stack">
-                <child>
-                  <object class="GtkStackPage">
-                    <property name="name">albums</property>
-                    <property name="title" translatable="true">Discography</property>
-                    <property name="child">
+                    <property name="start-widget">
                       <object class="GtkBox">
-                        <property name="orientation">1</property>
+                        <style>
+                          <class name="linked"/>
+                        </style>
+                        <property name="margin-end">6</property>
                         <child>
-                          <object class="GtkScrolledWindow">
-                            <property name="hscrollbar-policy">never</property>
-                            <property name="vscrollbar-policy">automatic</property>
-                            <property name="propagate-natural-height">true</property>
-                            <property name="has-frame">false</property>
-                            <property name="vexpand">true</property>
-                            <property name="child">
-                              <object class="GtkGridView" id="album_subview">
-                                <property name="orientation">1</property>
-                                <property name="min-columns">1</property>
-                                <property name="single-click-activate">true</property>
-                                <style>
-                                  <class name="no-bg"/>
-                                  <class name="padding-12"/>
-                                </style>
+                          <object class="GtkToggleButton" id="discography_btn">
+                            <property name="active">true</property>
+                            <child>
+                              <object class="GtkBox">
+                                <property name="spacing">6</property>
+                                <child>
+                                  <object class="GtkImage">
+                                    <property name="icon-name">library-music-symbolic</property>
+                                  </object>
+                                </child>
+                                <child>
+                                  <object class="GtkLabel" id="discography_text">
+                                    <property name="label" translatable="true">Discography</property>
+                                  </object>
+                                </child>
                               </object>
-                            </property>
+                            </child>
                           </object>
                         </child>
+                        <child>
+                          <object class="GtkToggleButton" id="all_songs_btn">
+                            <property name="group">discography_btn</property>
+                            <child>
+                              <object class="GtkBox">
+                                <property name="spacing">6</property>
+                                <child>
+                                  <object class="GtkImage">
+                                    <property name="icon-name">music-note-single-symbolic</property>
+                                  </object>
+                                </child>
+                                <child>
+                                  <object class="GtkLabel" id="all_songs_text">
+                                    <property name="label" translatable="true">All Songs</property>
+                                  </object>
+                                </child>
+                              </object>
+                            </child>
+                          </object>
+                        </child>
+                      </object>
+                    </property>
+                    <property name="end-widget">
+                      <object class="GtkToggleButton" id="collapse_infobox">
+                        <property name="icon-name">up-symbolic</property>
                       </object>
                     </property>
                   </object>
                 </child>
                 <child>
-                  <object class="GtkStackPage">
-                    <property name="name">songs</property>
-                    <property name="title" translatable="true">All Songs</property>
-                    <property name="child">
-                      <object class="GtkBox">
-                        <property name="orientation">1</property>
-                        <child>
-                          <object class="GtkCenterBox">
-                            <style>
-                              <class name="padding-6"/>
-                            </style>
-                            <property name="start-widget">
-                              <object class="GtkBox">
-                                <property name="spacing">6</property>
-                                <child>
-                                  <object class="GtkButton" id="replace_queue">
-                                    <property name="tooltip-text" translatable="true">Replace the queue with the selected songs</property>
-                                    <child>
-                                      <object class="GtkBox">
-                                        <property name="spacing">6</property>
-                                        <child>
-                                          <object class="GtkImage">
-                                            <property name="icon-name">play-symbolic</property>
-                                          </object>
-                                        </child>
-                                        <child>
-                                          <object class="GtkLabel" id="replace_queue_text">
-                                            <property name="label" translatable="true">Play all</property>
-                                          </object>
-                                        </child>
-                                      </object>
-                                    </child>
+                  <object class="GtkStack" id="subview_stack">
+                    <child>
+                      <object class="GtkStackPage">
+                        <property name="name">albums</property>
+                        <property name="title" translatable="true">Discography</property>
+                        <property name="child">
+                          <object class="GtkBox">
+                            <property name="orientation">1</property>
+                            <child>
+                              <object class="GtkScrolledWindow">
+                                <property name="hscrollbar-policy">never</property>
+                                <property name="vscrollbar-policy">automatic</property>
+                                <property name="propagate-natural-height">true</property>
+                                <property name="has-frame">false</property>
+                                <property name="vexpand">true</property>
+                                <property name="child">
+                                  <object class="GtkGridView" id="album_subview">
+                                    <property name="orientation">1</property>
+                                    <property name="min-columns">1</property>
+                                    <property name="single-click-activate">true</property>
                                     <style>
-                                      <class name="suggested-action"/>
+                                      <class name="no-bg"/>
+                                      <class name="padding-12"/>
                                     </style>
                                   </object>
-                                </child>
-                                <child>
-                                  <object class="GtkButton" id="append_queue">
-                                    <property name="tooltip-text" translatable="true">Add selected songs to the end of the queue</property>
-                                    <child>
-                                      <object class="GtkBox">
-                                        <property name="spacing">6</property>
-                                        <child>
-                                          <object class="GtkImage">
-                                            <property name="icon-name">list-add-symbolic</property>
-                                          </object>
-                                        </child>
-                                        <child>
-                                          <object class="GtkLabel" id="append_queue_text">
-                                            <property name="label" translatable="true">Queue all</property>
-                                          </object>
-                                        </child>
-                                      </object>
-                                    </child>
-                                  </object>
-                                </child>
-                                <child>
-                                  <object class="EuphonicaAddToPlaylistButton" id="add_to_playlist"/>
-                                </child>
+                                </property>
                               </object>
-                            </property>
-                            <property name="end-widget">
-                              <object class="GtkBox">
-                                <property name="spacing">6</property>
-                                <child>
-                                  <object class="GtkButton" id="sel_all">
-                                    <style>
-                                      <class name="circular"/>
-                                    </style>
-                                    <property name="icon-name">edit-select-all-symbolic</property>
-                                    <style>
-                                      <class name="circular"/>
-                                      <class name="flat"/>
-                                    </style>
-                                  </object>
-                                </child>
-                                <child>
-                                  <object class="GtkButton" id="sel_none">
-                                    <style>
-                                      <class name="circular"/>
-                                    </style>
-                                    <property name="icon-name">edit-select-none-symbolic</property>
-                                    <style>
-                                      <class name="circular"/>
-                                      <class name="flat"/>
-                                    </style>
-                                  </object>
-                                </child>
-                              </object>
-                            </property>
+                            </child>
                           </object>
-                        </child>
-                        <child>
-                          <object class="GtkScrolledWindow">
-                            <property name="height-request">50</property>
-                            <property name="hscrollbar-policy">never</property>
-                            <property name="vscrollbar-policy">automatic</property>
-                            <property name="propagate-natural-height">true</property>
-                            <property name="has-frame">false</property>
-                            <property name="vexpand">true</property>
-                            <property name="child">
-                              <object class="GtkListView" id="song_subview">
-                                <property name="show-separators">true</property>
-                                <style>
-                                  <class name="no-bg"/>
-                                </style>
-                              </object>
-                            </property>
-                          </object>
-                        </child>
+                        </property>
                       </object>
-                    </property>
+                    </child>
+                    <child>
+                      <object class="GtkStackPage">
+                        <property name="name">songs</property>
+                        <property name="title" translatable="true">All Songs</property>
+                        <property name="child">
+                          <object class="GtkBox">
+                            <property name="orientation">1</property>
+                            <child>
+                              <object class="GtkCenterBox">
+                                <style>
+                                  <class name="padding-6"/>
+                                </style>
+                                <property name="start-widget">
+                                  <object class="GtkBox" id="action_btns">
+                                    <property name="spacing">6</property>
+                                    <child>
+                                      <object class="GtkButton" id="replace_queue">
+                                        <property name="tooltip-text" translatable="true">Replace the queue with the selected songs</property>
+                                        <child>
+                                          <object class="GtkBox">
+                                            <property name="spacing">6</property>
+                                            <child>
+                                              <object class="GtkImage">
+                                                <property name="icon-name">play-symbolic</property>
+                                              </object>
+                                            </child>
+                                            <child>
+                                              <object class="GtkLabel" id="replace_queue_text">
+                                                <property name="label" translatable="true">Play all</property>
+                                              </object>
+                                            </child>
+                                          </object>
+                                        </child>
+                                        <style>
+                                          <class name="suggested-action"/>
+                                        </style>
+                                      </object>
+                                    </child>
+                                    <child>
+                                      <object class="GtkButton" id="append_queue">
+                                        <property name="tooltip-text" translatable="true">Add selected songs to the end of the queue</property>
+                                        <child>
+                                          <object class="GtkBox">
+                                            <property name="spacing">6</property>
+                                            <child>
+                                              <object class="GtkImage">
+                                                <property name="icon-name">list-add-symbolic</property>
+                                              </object>
+                                            </child>
+                                            <child>
+                                              <object class="GtkLabel" id="append_queue_text">
+                                                <property name="label" translatable="true">Queue all</property>
+                                              </object>
+                                            </child>
+                                          </object>
+                                        </child>
+                                      </object>
+                                    </child>
+                                    <child>
+                                      <object class="EuphonicaAddToPlaylistButton" id="add_to_playlist"/>
+                                    </child>
+                                  </object>
+                                </property>
+                                <property name="end-widget">
+                                  <object class="GtkBox">
+                                    <property name="spacing">6</property>
+                                    <child>
+                                      <object class="GtkButton" id="sel_all">
+                                        <style>
+                                          <class name="circular"/>
+                                        </style>
+                                        <property name="icon-name">edit-select-all-symbolic</property>
+                                        <style>
+                                          <class name="circular"/>
+                                          <class name="flat"/>
+                                        </style>
+                                      </object>
+                                    </child>
+                                    <child>
+                                      <object class="GtkButton" id="sel_none">
+                                        <style>
+                                          <class name="circular"/>
+                                        </style>
+                                        <property name="icon-name">edit-select-none-symbolic</property>
+                                        <style>
+                                          <class name="circular"/>
+                                          <class name="flat"/>
+                                        </style>
+                                      </object>
+                                    </child>
+                                  </object>
+                                </property>
+                              </object>
+                            </child>
+                            <child>
+                              <object class="GtkScrolledWindow">
+                                <property name="height-request">50</property>
+                                <property name="hscrollbar-policy">never</property>
+                                <property name="vscrollbar-policy">automatic</property>
+                                <property name="propagate-natural-height">true</property>
+                                <property name="has-frame">false</property>
+                                <property name="vexpand">true</property>
+                                <property name="child">
+                                  <object class="GtkListView" id="song_subview">
+                                    <property name="show-separators">true</property>
+                                    <style>
+                                      <class name="no-bg"/>
+                                    </style>
+                                  </object>
+                                </property>
+                              </object>
+                            </child>
+                          </object>
+                        </property>
+                      </object>
+                    </child>
                   </object>
                 </child>
               </object>
-            </child>
+            </property>
           </object>
         </property>
       </object>

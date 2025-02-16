@@ -1,23 +1,20 @@
+use glib::{clone, closure_local, Object};
+use gtk::{gio, glib, prelude::*, subclass::prelude::*, CompositeTemplate};
 use std::cell::Cell;
-use gtk::{
-    gio, glib, prelude::*, subclass::prelude::*, CompositeTemplate
-};
-use glib::{
-    clone,
-    Object,
-};
+
+use super::Player;
 
 mod imp {
     use std::sync::OnceLock;
 
+    use crate::utils::format_secs_as_duration;
     use glib::{subclass::Signal, ParamSpec, ParamSpecDouble};
     use once_cell::sync::Lazy;
-    use crate::utils::format_secs_as_duration;
 
     use super::*;
 
     #[derive(Default, CompositeTemplate)]
-    #[template(resource = "/org/euphonica/Euphonica/gtk/player/seekbar.ui")]
+    #[template(resource = "/io/github/htkhiem/Euphonica/gtk/player/seekbar.ui")]
     pub struct Seekbar {
         pub position: Cell<f64>,
         #[template_child]
@@ -26,7 +23,7 @@ mod imp {
         pub elapsed: TemplateChild<gtk::Label>,
         #[template_child]
         pub duration: TemplateChild<gtk::Label>,
-        pub seekbar_clicked: Cell<bool>
+        pub seekbar_clicked: Cell<bool>,
     }
 
     // The central trait for subclassing a GObject
@@ -58,70 +55,52 @@ mod imp {
             // set by the seekbar's change-value signal to determine whether it is related to the seekbar or not.
             let seekbar_gesture = gtk::GestureClick::new();
             seekbar_gesture.set_propagation_phase(gtk::PropagationPhase::Capture);
-            seekbar_gesture.connect_released(
-                clone!(
-                    #[weak(rename_to = this)]
-                    self,
-                    move |gesture, _, _, _| {
-                        gesture.set_state(gtk::EventSequenceState::None); // allow propagating to seekbar
-                        if this.seekbar_clicked.get() {
-                            this.obj().emit_by_name::<()>(
-                                "released",
-                                &[]
-                            );
-                            this.seekbar_clicked.replace(false);
-                            // let _ = sender.send_blocking(
-                            //     MpdMessage::SeekCur(
-                            //         this.imp().seekbar.adjustment().value()
-                            //     )
-                            // );
-                            //
-                            // this.maybe_start_polling(player.clone(), sender.clone());
-                        }
+            seekbar_gesture.connect_released(clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |gesture, _, _, _| {
+                    gesture.set_state(gtk::EventSequenceState::None); // allow propagating to seekbar
+                    if this.seekbar_clicked.get() {
+                        this.obj().emit_by_name::<()>("released", &[]);
+                        this.seekbar_clicked.replace(false);
+                        // let _ = sender.send_blocking(
+                        //     MpdMessage::SeekCur(
+                        //         this.imp().seekbar.adjustment().value()
+                        //     )
+                        // );
+                        //
+                        // this.maybe_start_polling(player.clone(), sender.clone());
                     }
-                )
-            );
+                }
+            ));
             obj.add_controller(seekbar_gesture);
 
-            self.seekbar.connect_change_value(
-                clone!(
-                    #[weak(rename_to = this)]
-                    self,
-                    #[upgrade_or]
-                    glib::signal::Propagation::Proceed,
-                    move |_, _, _| {
-                        // Only emit this once
-                        if !this.seekbar_clicked.get() {
-                            let _ = this.seekbar_clicked.replace(true);
-                            this.obj().emit_by_name::<()>(
-                                "pressed",
-                                &[]
-                            );
-                        }
-                        this.obj().set_position(this.seekbar.adjustment().value());
-                        glib::signal::Propagation::Proceed
+            self.seekbar.connect_change_value(clone!(
+                #[weak(rename_to = this)]
+                self,
+                #[upgrade_or]
+                glib::signal::Propagation::Proceed,
+                move |_, _, _| {
+                    // Only emit this once
+                    if !this.seekbar_clicked.get() {
+                        let _ = this.seekbar_clicked.replace(true);
+                        this.obj().emit_by_name::<()>("pressed", &[]);
                     }
-                )
-            );
+                    this.obj().set_position(this.seekbar.adjustment().value());
+                    glib::signal::Propagation::Proceed
+                }
+            ));
 
-            self.seekbar.adjustment()
-                .bind_property(
-                    "value",
-                    &self.elapsed.get(),
-                    "label"
-                )
-                .transform_to(|_, pos| {
-                    Some(format_secs_as_duration(pos))
-                })
+            self.seekbar
+                .adjustment()
+                .bind_property("value", &self.elapsed.get(), "label")
+                .transform_to(|_, pos| Some(format_secs_as_duration(pos)))
                 .sync_create()
                 .build();
 
-            self.seekbar.adjustment()
-                .bind_property(
-                    "upper",
-                    &self.duration.get(),
-                    "label"
-                )
+            self.seekbar
+                .adjustment()
+                .bind_property("upper", &self.duration.get(), "label")
                 .transform_to(|_, dur: f64| {
                     if dur > 0.0 {
                         return Some(format_secs_as_duration(dur as f64));
@@ -136,7 +115,7 @@ mod imp {
             static PROPERTIES: Lazy<Vec<ParamSpec>> = Lazy::new(|| {
                 vec![
                     ParamSpecDouble::builder("position").build(),
-                    ParamSpecDouble::builder("duration").build()
+                    ParamSpecDouble::builder("duration").build(),
                 ]
             });
             PROPERTIES.as_ref()
@@ -155,10 +134,8 @@ mod imp {
             static SIGNALS: OnceLock<Vec<Signal>> = OnceLock::new();
             SIGNALS.get_or_init(|| {
                 vec![
-                    Signal::builder("pressed")
-                        .build(),
-                    Signal::builder("released")
-                        .build()
+                    Signal::builder("pressed").build(),
+                    Signal::builder("released").build(),
                 ]
             })
         }
@@ -170,12 +147,12 @@ mod imp {
                     if let Ok(v) = value.get::<f64>() {
                         obj.set_position(v);
                     }
-                },
+                }
                 "duration" => {
                     if let Ok(v) = value.get::<f64>() {
                         obj.set_duration(v);
                     }
-                },
+                }
                 _ => unimplemented!(),
             }
         }
@@ -226,5 +203,57 @@ impl Seekbar {
         // Re-apply position
         self.imp().seekbar.set_value(self.imp().position.get());
         self.notify("duration");
+    }
+
+    pub fn setup(&self, player: &Player) {
+        self.connect_closure(
+            "pressed",
+            false,
+            closure_local!(
+                #[weak]
+                player,
+                move |_: Seekbar| {
+                    player.block_polling();
+                    player.stop_polling();
+                }
+            ),
+        );
+
+        self.connect_closure(
+            "released",
+            false,
+            closure_local!(
+                #[weak]
+                player,
+                move |_: Self| {
+                    player.unblock_polling();
+                    player.send_seek();
+                    // Player will start polling again on next status update,
+                    // which should be triggered by us seeking.
+                }
+            ),
+        );
+
+        self.set_duration(player.duration() as f64);
+        player.connect_notify_local(
+            Some("duration"),
+            clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |player, _| {
+                    this.set_duration(player.duration() as f64);
+                }
+            ),
+        );
+        player
+            .bind_property("position", self, "position")
+            .sync_create()
+            .bidirectional()
+            .build();
+
+        player
+            .bind_property("duration", self, "duration")
+            .sync_create()
+            .build();
     }
 }

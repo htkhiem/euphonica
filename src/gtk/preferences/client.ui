@@ -53,11 +53,31 @@
     </child>
     <child>
       <object class="AdwPreferencesGroup">
-        <property name="title" translatable="true">FIFO</property>
-        <property name="description" translatable="true">Specify a FIFO PCM output for the spectrum visualiser to read from.</property>
+        <property name="title" translatable="true">Visualiser data source</property>
+        <property name="description" translatable="true">The built-in visualiser can read from either a FIFO output (more control, standard practice for most MPD setups, but won't work in Flatpak sandboxing) or simply straight from the system PipeWire output (works everywhere but less control and will also visualise system sounds).</property>
         <child>
-          <object class="AdwEntryRow" id="fifo_path">
-            <property name="title" translatable="true">Path to FIFO file</property>
+          <object class="AdwComboRow" id="viz_source">
+            <property name="title">Data source</property>
+            <property name="model">
+              <object class="GtkStringList">
+                <items>
+                  <item>MPD FIFO</item>
+                  <item>PipeWire</item>
+                </items>
+              </object>
+            </property>
+          </object>
+        </child>
+        <child>
+          <object class="AdwActionRow" id="fifo_path">
+            <property name="title" translatable="true">FIFO file</property>
+            <property name="subtitle">(none)</property>
+            <child type="suffix">
+              <object class="GtkButton" id="fifo_browse">
+                <property name="valign">center</property>
+                <property name="label" translatable="true">Browse...</property>
+              </object>
+            </child>
           </object>
         </child>
         <child>
@@ -66,7 +86,7 @@
           </object>
         </child>
         <child>
-          <object class="AdwSpinRow" id="fifo_fps">
+          <object class="AdwSpinRow" id="fft_fps">
             <property name="title" translatable="true">Sampling FPS</property>
             <property name="subtitle" translatable="true">Determines visualiser FPS. Higher values may result in increased CPU usage.</property>
             <property name="adjustment">
@@ -120,7 +140,7 @@
             <property name="subtitle">Invalid</property>
             <child type="suffix">
               <object class="GtkButton" id="fifo_reconnect">
-                <property name="label" translatable="true">Reconnect</property>
+                <property name="label" translatable="true">Apply</property>
                 <property name="valign">center</property>
                 <style>
                   <class name="suggested-action"/>

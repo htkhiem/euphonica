@@ -1,5 +1,4 @@
 use gtk::gsk;
-use std::default;
 
 /// Our version of gsk::BlendMode, with additional methods to facilitate storing in GSettings.
 #[derive(Default, Debug, Clone, Copy, Eq, PartialEq, glib::Enum)]
@@ -21,7 +20,7 @@ pub enum BlendMode {
     Color = 12,
     Hue = 13,
     Saturation = 14,
-    Luminosity = 15
+    Luminosity = 15,
 }
 
 impl TryFrom<u32> for BlendMode {
@@ -44,7 +43,7 @@ impl TryFrom<u32> for BlendMode {
             13 => Ok(Self::Hue),
             14 => Ok(Self::Saturation),
             15 => Ok(Self::Luminosity),
-            _ => Err(())
+            _ => Err(()),
         }
     }
 }
@@ -67,7 +66,7 @@ impl Into<u32> for BlendMode {
             Self::Color => 12,
             Self::Hue => 13,
             Self::Saturation => 14,
-            Self::Luminosity => 15
+            Self::Luminosity => 15,
         }
     }
 }
@@ -90,7 +89,7 @@ impl From<gsk::BlendMode> for BlendMode {
             gsk::BlendMode::Color => Self::Color,
             gsk::BlendMode::Saturation => Self::Saturation,
             gsk::BlendMode::Luminosity => Self::Luminosity,
-            _ => unimplemented!()
+            _ => unimplemented!(),
         }
     }
 }
@@ -113,7 +112,7 @@ impl Into<gsk::BlendMode> for BlendMode {
             Self::Color => gsk::BlendMode::Color,
             Self::Hue => gsk::BlendMode::Hue,
             Self::Saturation => gsk::BlendMode::Saturation,
-            Self::Luminosity => gsk::BlendMode::Luminosity
+            Self::Luminosity => gsk::BlendMode::Luminosity,
         }
     }
 }

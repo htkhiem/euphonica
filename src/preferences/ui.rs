@@ -1,8 +1,8 @@
-use adw::subclass::prelude::*;
 use adw::prelude::*;
+use adw::subclass::prelude::*;
 use gtk::{
     glib::{self, Value, Variant},
-    CompositeTemplate
+    CompositeTemplate,
 };
 
 use crate::utils;
@@ -11,7 +11,7 @@ mod imp {
     use super::*;
 
     #[derive(Debug, Default, CompositeTemplate)]
-    #[template(resource = "/org/euphonica/Euphonica/gtk/preferences/ui.ui")]
+    #[template(resource = "/io/github/htkhiem/Euphonica/gtk/preferences/ui.ui")]
     pub struct UIPreferences {
         #[template_child]
         pub recent_playlists_count: TemplateChild<adw::SpinRow>,
@@ -96,11 +96,7 @@ impl UIPreferences {
         // Set up UI settings
         let recent_playlists_count = imp.recent_playlists_count.get();
         ui_settings
-            .bind(
-                "recent-playlists-count",
-                &recent_playlists_count,
-                "value"
-            )
+            .bind("recent-playlists-count", &recent_playlists_count, "value")
             .build();
         let use_album_art_as_bg = imp.use_album_art_as_bg.get();
         let bg_blur_radius = imp.bg_blur_radius.get();
@@ -110,71 +106,51 @@ impl UIPreferences {
             .bind(
                 "use-album-art-as-bg",
                 &use_album_art_as_bg,
-                "enable-expansion"
+                "enable-expansion",
             )
             .build();
 
         ui_settings
-            .bind(
-                "bg-blur-radius",
-                &bg_blur_radius.adjustment(),
-                "value"
-            )
+            .bind("bg-blur-radius", &bg_blur_radius.adjustment(), "value")
             .build();
 
         ui_settings
-            .bind(
-                "bg-opacity",
-                &bg_opacity.adjustment(),
-                "value"
-            )
+            .bind("bg-opacity", &bg_opacity.adjustment(), "value")
             .build();
 
         ui_settings
             .bind(
                 "bg-transition-duration-s",
                 &bg_transition_duration.adjustment(),
-                "value"
+                "value",
             )
             .build();
 
         let vol_knob_unit = imp.vol_knob_unit.get();
         let vol_knob_sensitivity = imp.vol_knob_sensitivity.get();
         ui_settings
-            .bind(
-                "vol-knob-unit",
-                &vol_knob_unit,
-                "selected"
-            )
-            .mapping(
-                |v: &Variant, _| { match v.get::<String>().unwrap().as_str() {
-                    "percents" => Some(0.to_value()),
-                    "decibels" => Some(1.to_value()),
-                    _ => unreachable!()
-                }}
-            )
-            .set_mapping(
-                |v: &Value, _| { match v.get::<u32>().ok() {
-                    Some(0) => Some("percents".to_variant()),
-                    Some(1) => Some("decibels".to_variant()),
-                    _ => unreachable!()
-                }}
-            )
+            .bind("vol-knob-unit", &vol_knob_unit, "selected")
+            .mapping(|v: &Variant, _| match v.get::<String>().unwrap().as_str() {
+                "percents" => Some(0.to_value()),
+                "decibels" => Some(1.to_value()),
+                _ => unreachable!(),
+            })
+            .set_mapping(|v: &Value, _| match v.get::<u32>().ok() {
+                Some(0) => Some("percents".to_variant()),
+                Some(1) => Some("decibels".to_variant()),
+                _ => unreachable!(),
+            })
             .build();
 
         ui_settings
-            .bind(
-                "vol-knob-sensitivity",
-                &vol_knob_sensitivity,
-                "value"
-            )
+            .bind("vol-knob-sensitivity", &vol_knob_sensitivity, "value")
             .build();
 
         ui_settings
             .bind(
                 "use-visualizer",
                 &imp.use_visualizer.get(),
-                "enable-expansion"
+                "enable-expansion",
             )
             .build();
 
@@ -182,7 +158,7 @@ impl UIPreferences {
             .bind(
                 "visualizer-spectrum-min-hz",
                 &imp.visualizer_min_hz.get(),
-                "value"
+                "value",
             )
             .build();
 
@@ -190,43 +166,35 @@ impl UIPreferences {
             .bind(
                 "visualizer-spectrum-max-hz",
                 &imp.visualizer_max_hz.get(),
-                "value"
+                "value",
             )
             .build();
 
         // Constrain min and max hz to never flip around
         imp.visualizer_min_hz
-           .bind_property(
-               "value",
-               &imp.visualizer_max_hz.adjustment(),
-               "lower"
-           )
-           .sync_create()
-           .build();
+            .bind_property("value", &imp.visualizer_max_hz.adjustment(), "lower")
+            .sync_create()
+            .build();
         imp.visualizer_max_hz
-           .bind_property(
-               "value",
-               &imp.visualizer_min_hz.adjustment(),
-               "upper"
-           )
-           .sync_create()
-           .build();
+            .bind_property("value", &imp.visualizer_min_hz.adjustment(), "upper")
+            .sync_create()
+            .build();
 
         player_settings
             .bind(
                 "visualizer-spectrum-curr-step-weight",
                 &imp.visualizer_smoothing.get(),
-                "value"
+                "value",
             )
-            .mapping(|variant, _| { Some((1.0 - variant.get::<f64>().unwrap()).to_value()) })
-            .set_mapping(|val, _| { Some((1.0 - val.get::<f64>().unwrap()).to_variant()) })
+            .mapping(|variant, _| Some((1.0 - variant.get::<f64>().unwrap()).to_value()))
+            .set_mapping(|val, _| Some((1.0 - val.get::<f64>().unwrap()).to_variant()))
             .build();
 
         ui_settings
             .bind(
                 "visualizer-bottom-opacity",
                 &imp.visualizer_bottom_opacity.get(),
-                "value"
+                "value",
             )
             .build();
 
@@ -234,7 +202,7 @@ impl UIPreferences {
             .bind(
                 "visualizer-top-opacity",
                 &imp.visualizer_top_opacity.get(),
-                "value"
+                "value",
             )
             .build();
 
@@ -242,7 +210,7 @@ impl UIPreferences {
             .bind(
                 "visualizer-gradient-height",
                 &imp.visualizer_gradient_height.get(),
-                "value"
+                "value",
             )
             .build();
 
@@ -250,7 +218,7 @@ impl UIPreferences {
             .bind(
                 "visualizer-spectrum-use-log-bins",
                 &imp.visualizer_use_log_bins.get(),
-                "active"
+                "active",
             )
             .build();
 
@@ -258,7 +226,7 @@ impl UIPreferences {
             .bind(
                 "visualizer-use-splines",
                 &imp.visualizer_use_splines.get(),
-                "active"
+                "active",
             )
             .build();
 
@@ -266,16 +234,12 @@ impl UIPreferences {
             .bind(
                 "visualizer-stroke-width",
                 &imp.visualizer_stroke_width.get(),
-                "value"
+                "value",
             )
             .build();
 
         ui_settings
-            .bind(
-                "visualizer-scale",
-                &imp.visualizer_scale.get(),
-                "value"
-            )
+            .bind("visualizer-scale", &imp.visualizer_scale.get(), "value")
             .build();
     }
 }

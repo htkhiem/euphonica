@@ -4,41 +4,36 @@ use crate::{
     cache::{Cache, CacheState},
     client::{ClientState, ConnectionState, MpdWrapper},
     common::{AlbumInfo, QualityGrade, Song},
-    utils::{prettify_audio_format, settings_manager}
+    player::fft_backends::fifo::FifoFftBackend,
+    utils::{prettify_audio_format, settings_manager},
 };
 use async_lock::OnceCell as AsyncOnceCell;
-use futures::future::FusedFuture;
 use mpris_server::{
     zbus::{self, fdo},
-    LocalPlayerInterface, LocalRootInterface, LocalServer,
-    LoopStatus, Metadata as MprisMetadata, PlaybackRate,
-    PlaybackStatus as MprisPlaybackStatus,
-    Property, Signal as MprisSignal, Time, TrackId, Volume,
+    LocalPlayerInterface, LocalRootInterface, LocalServer, LoopStatus, Metadata as MprisMetadata,
+    PlaybackRate, PlaybackStatus as MprisPlaybackStatus, Property, Signal as MprisSignal, Time,
+    TrackId, Volume,
 };
 
 use adw::subclass::prelude::*;
-use glib::{closure_local, subclass::Signal, BoxedAnyObject, clone};
+use glib::{clone, closure_local, subclass::Signal, BoxedAnyObject};
 use gtk::gdk::Texture;
 use gtk::{gio, glib, prelude::*};
 use mpd::{
+    error::Error as MpdError,
     status::{AudioFormat, State, Status},
-    ReplayGain,
-    Subsystem,
-    SaveMode,
-    error::Error as MpdError
+    ReplayGain, SaveMode, Subsystem,
 };
 use std::{
-    cell::{Cell, OnceCell, RefCell}, ops::Deref, path::PathBuf, rc::Rc, str::FromStr, thread, time::Duration, vec::Vec,
-    sync::{
-        atomic::{
-            AtomicBool,
-            Ordering
-        },
-        Arc,
-        Mutex,
-        OnceLock
-    }
+    cell::{Cell, OnceCell, RefCell},
+    ops::Deref,
+    path::PathBuf,
+    rc::Rc,
+    sync::{Arc, Mutex, OnceLock},
+    vec::Vec,
 };
+
+use super::fft_backends::{backend::{FftBackend, FftStatus}, PipeWireFftBackend};
 
 #[derive(Clone, Copy, Debug, glib::Enum, PartialEq, Default)]
 #[enum_type(name = "EuphonicaPlaybackState")]
@@ -54,7 +49,7 @@ impl From<PlaybackState> for MprisPlaybackStatus {
         match ps {
             PlaybackState::Stopped => Self::Stopped,
             PlaybackState::Playing => Self::Playing,
-            PlaybackState::Paused => Self::Paused
+            PlaybackState::Paused => Self::Paused,
         }
     }
 }
@@ -63,19 +58,10 @@ impl From<PlaybackState> for MprisPlaybackStatus {
 #[enum_type(name = "EuphonicaPlaybackFlow")]
 pub enum PlaybackFlow {
     #[default]
-    Sequential,  // Plays through the queue once
-    Repeat,      // Loops through the queue
-    Single,      // Plays one song then stops & waits for click to play next song
-    RepeatSingle // Loops current song
-}
-
-#[derive(Clone, Copy, Debug, glib::Enum, PartialEq, Default)]
-#[enum_type(name = "EuphonicaFftStatus")]
-pub enum FftStatus {
-    #[default]
-    Invalid,
-    ValidNotReading, // due to visualiser not being run
-    Reading
+    Sequential, // Plays through the queue once
+    Repeat,       // Loops through the queue
+    Single,       // Plays one song then stops & waits for click to play next song
+    RepeatSingle, // Loops current song
 }
 
 impl FftStatus {
@@ -84,14 +70,14 @@ impl FftStatus {
         match self {
             Self::Invalid => "Invalid",
             Self::ValidNotReading => "Valid (not reading)",
-            Self::Reading => "Reading"
+            Self::Reading => "Reading",
         }
     }
 }
 
 pub enum SwapDirection {
     Up,
-    Down
+    Down,
 }
 
 impl PlaybackFlow {
@@ -99,16 +85,13 @@ impl PlaybackFlow {
         if st.repeat {
             if st.single {
                 PlaybackFlow::RepeatSingle
-            }
-            else {
+            } else {
                 PlaybackFlow::Repeat
             }
-        }
-        else {
+        } else {
             if st.single {
                 PlaybackFlow::Single
-            }
-            else {
+            } else {
                 PlaybackFlow::Sequential
             }
         }
@@ -119,7 +102,7 @@ impl PlaybackFlow {
             &PlaybackFlow::Sequential => "playlist-consecutive-symbolic",
             &PlaybackFlow::Repeat => "playlist-repeat-symbolic",
             &PlaybackFlow::Single => "stop-sign-outline-symbolic",
-            &PlaybackFlow::RepeatSingle => "playlist-repeat-song-symbolic"
+            &PlaybackFlow::RepeatSingle => "playlist-repeat-song-symbolic",
         }
     }
 
@@ -128,7 +111,7 @@ impl PlaybackFlow {
             &PlaybackFlow::Sequential => PlaybackFlow::Repeat,
             &PlaybackFlow::Repeat => PlaybackFlow::Single,
             &PlaybackFlow::Single => PlaybackFlow::RepeatSingle,
-            &PlaybackFlow::RepeatSingle => PlaybackFlow::Sequential
+            &PlaybackFlow::RepeatSingle => PlaybackFlow::Sequential,
         }
     }
 
@@ -138,7 +121,7 @@ impl PlaybackFlow {
             &PlaybackFlow::Sequential => "Sequential",
             &PlaybackFlow::Repeat => "Repeat Queue",
             &PlaybackFlow::Single => "Single Song",
-            &PlaybackFlow::RepeatSingle => "Repeat Current Song"
+            &PlaybackFlow::RepeatSingle => "Repeat Current Song",
         }
     }
 }
@@ -148,7 +131,7 @@ impl From<PlaybackFlow> for LoopStatus {
         match pf {
             PlaybackFlow::RepeatSingle => Self::Track,
             PlaybackFlow::Repeat => Self::Playlist,
-            PlaybackFlow::Sequential | PlaybackFlow::Single => Self::None
+            PlaybackFlow::Sequential | PlaybackFlow::Single => Self::None,
         }
     }
 }
@@ -158,7 +141,7 @@ impl From<LoopStatus> for PlaybackFlow {
         match ls {
             LoopStatus::Track => PlaybackFlow::RepeatSingle,
             LoopStatus::Playlist => PlaybackFlow::Repeat,
-            LoopStatus::None => PlaybackFlow::Sequential
+            LoopStatus::None => PlaybackFlow::Sequential,
         }
     }
 }
@@ -168,7 +151,7 @@ fn cycle_replaygain(curr: ReplayGain) -> ReplayGain {
         ReplayGain::Off => ReplayGain::Auto,
         ReplayGain::Auto => ReplayGain::Track,
         ReplayGain::Track => ReplayGain::Album,
-        ReplayGain::Album => ReplayGain::Off
+        ReplayGain::Album => ReplayGain::Off,
     }
 }
 
@@ -177,15 +160,25 @@ fn get_replaygain_icon_name(mode: ReplayGain) -> &'static str {
         ReplayGain::Off => "rg-off-symbolic",
         ReplayGain::Auto => "rg-auto-symbolic",
         ReplayGain::Track => "rg-track-symbolic",
-        ReplayGain::Album => "rg-album-symbolic"
+        ReplayGain::Album => "rg-album-symbolic",
     }
 }
 
+fn get_fft_backend() -> Rc<dyn FftBackend> {
+    let client_settings = settings_manager().child("client");
+    match client_settings.enum_("mpd-visualizer-pcm-source") {
+        0 => Rc::new(FifoFftBackend::default()),
+        1 => Rc::new(PipeWireFftBackend::default()),
+        _ => unimplemented!(),
+    }
+
+}
+
 mod imp {
-    use crate::application::EuphonicaApplication;
     use super::*;
+    use crate::application::EuphonicaApplication;
     use glib::{
-        ParamSpec, ParamSpecBoolean, ParamSpecDouble, ParamSpecEnum, ParamSpecFloat, ParamSpecObject, ParamSpecString, ParamSpecUInt, ParamSpecUInt64
+        ParamSpec, ParamSpecBoolean, ParamSpecDouble, ParamSpecEnum, ParamSpecFloat, ParamSpecInt, ParamSpecObject, ParamSpecString, ParamSpecUInt, ParamSpecUInt64
     };
     use once_cell::sync::Lazy;
 
@@ -222,10 +215,10 @@ mod imp {
         pub app: OnceCell<EuphonicaApplication>,
         pub supports_playlists: Cell<bool>,
         // For receiving frequency levels from FFT thread
-        pub fft_stop: Arc<AtomicBool>,
-        pub fft_data: Arc<Mutex<(Vec<f32>, Vec<f32>)>>,  // Binned magnitudes, in stereo
-        pub fft_handle: RefCell<Option<gio::JoinHandle<()>>>,
-        pub use_visualizer: Cell<bool>
+        pub fft_backend: RefCell<Rc<dyn FftBackend>>,
+        pub fft_data: Arc<Mutex<(Vec<f32>, Vec<f32>)>>, // Binned magnitudes, in stereo
+        pub use_visualizer: Cell<bool>,
+        pub fft_backend_idx: Cell<i32>
     }
 
     #[glib::object_subclass]
@@ -234,6 +227,9 @@ mod imp {
         type Type = super::Player;
 
         fn new() -> Self {
+            // 0 = fifo
+            // 1 = pipewire
+            let fft_backend: RefCell<Rc<dyn FftBackend>> = RefCell::new(get_fft_backend());
             Self {
                 state: Cell::new(PlaybackState::Stopped),
                 position: Cell::new(0.0),
@@ -256,14 +252,30 @@ mod imp {
                 mpris_server: AsyncOnceCell::new(),
                 mpris_enabled: Cell::new(false),
                 app: OnceCell::new(),
-                fft_stop: Arc::new(AtomicBool::new(false)),
+                fft_backend,
                 fft_data: Arc::new(Mutex::new((
-                    vec![0.0; settings_manager().child("player").uint("visualizer-spectrum-bins") as usize],
-                    vec![0.0; settings_manager().child("player").uint("visualizer-spectrum-bins") as usize]
+                    vec![
+                        0.0;
+                        settings_manager()
+                            .child("player")
+                            .uint("visualizer-spectrum-bins") as usize
+                    ],
+                    vec![
+                        0.0;
+                        settings_manager()
+                            .child("player")
+                            .uint("visualizer-spectrum-bins") as usize
+                    ],
                 ))),
-                fft_handle: RefCell::new(None),
-                use_visualizer: Cell::new(false)
+                use_visualizer: Cell::new(false),
+                fft_backend_idx: Cell::new(0)
             }
+        }
+    }
+
+    impl Default for Player {
+        fn default() -> Self {
+            Self::new()
         }
     }
 
@@ -272,12 +284,27 @@ mod imp {
             self.parent_constructed();
 
             let settings = settings_manager();
-            settings.child("ui")
-                .bind(
-                    "use-visualizer",
-                    self.obj().as_ref(),
-                    "use-visualizer"
-                )
+            settings
+                .child("client")
+                .bind("mpd-visualizer-pcm-source", self.obj().as_ref(), "fft-backend-idx")
+                .get_only()
+                .mapping(|var, _| {
+                    if let Some(name) = var.get::<String>() {
+                        match name.as_str() {
+                            "fifo" => Some(0i32.to_value()),
+                            "pipewire" => Some(1i32.to_value()),
+                            _ => unimplemented!()
+                        }
+                    }
+                    else {
+                        None
+                    }
+                })
+                .build();
+
+            settings
+                .child("ui")
+                .bind("use-visualizer", self.obj().as_ref(), "use-visualizer")
                 .get_only()
                 .build();
             if settings.child("ui").boolean("use-visualizer") {
@@ -286,11 +313,7 @@ mod imp {
         }
 
         fn dispose(&self) {
-            glib::MainContext::default().spawn_local(clone!(
-                #[weak(rename_to = this)]
-                self,
-                async move { this.obj().maybe_stop_fft_thread().await; })
-            );
+            self.obj().maybe_stop_fft_thread();
         }
 
         fn properties() -> &'static [ParamSpec] {
@@ -303,7 +326,7 @@ mod imp {
                         .read_only()
                         .build(),
                     ParamSpecString::builder("replaygain").read_only().build(), // use icon name directly to simplify implementation
-                    ParamSpecDouble::builder("crossfade").build(), // seconds
+                    ParamSpecDouble::builder("crossfade").build(),              // seconds
                     ParamSpecFloat::builder("mixramp-db").build(),
                     ParamSpecDouble::builder("mixramp-delay").build(), // seconds
                     ParamSpecBoolean::builder("random").build(),
@@ -326,6 +349,7 @@ mod imp {
                         .read_only()
                         .build(),
                     ParamSpecString::builder("format-desc").read_only().build(),
+                    ParamSpecInt::builder("fft-backend-idx").build()
                 ]
             });
             PROPERTIES.as_ref()
@@ -355,6 +379,7 @@ mod imp {
                 "quality-grade" => obj.quality_grade().to_value(),
                 "fft-status" => obj.fft_status().to_value(),
                 "format-desc" => obj.format_desc().to_value(),
+                "fft-backend-idx" => self.fft_backend_idx.get().to_value(),
                 _ => unimplemented!(),
             }
         }
@@ -366,22 +391,22 @@ mod imp {
                     if let Ok(v) = value.get::<f64>() {
                         obj.set_crossfade(v);
                     }
-                },
+                }
                 "mixramp-db" => {
                     if let Ok(v) = value.get::<f32>() {
                         obj.set_mixramp_db(v);
                     }
-                },
+                }
                 "mixramp-delay" => {
                     if let Ok(v) = value.get::<f64>() {
                         obj.set_mixramp_delay(v);
                     }
-                },
+                }
                 "position" => {
                     if let Ok(v) = value.get::<f64>() {
                         obj.set_position(v);
                     }
-                },
+                }
                 "random" => {
                     if let Ok(state) = value.get::<bool>() {
                         obj.set_random(state);
@@ -410,15 +435,25 @@ mod imp {
                         if state {
                             // Visualiser turned on. Start FFT thread.
                             self.obj().maybe_start_fft_thread();
-                        }
-                        else {
+                        } else {
                             // Visualiser turned off. FFT thread should
                             // have stopped by itself. Join & yeet handle.
-                            glib::MainContext::default().spawn_local(clone!(
-                                #[weak(rename_to = this)]
-                                self,
-                                async move { this.obj().maybe_stop_fft_thread().await; })
-                            );
+                            self.obj().maybe_stop_fft_thread();
+                        }
+                    }
+                }
+                "fft-backend-idx" => {
+                    if let Ok(new) = value.get::<i32>() {
+                        let old = self.fft_backend_idx.replace(new);
+
+                        if old != new {
+                            println!("Switching FFT backend...");
+                            self.obj().maybe_stop_fft_thread();
+                            self.fft_backend.replace(get_fft_backend());
+                            if self.use_visualizer.get() {
+                                self.obj().maybe_start_fft_thread();
+                            }
+                            self.obj().notify("fft-backend-idx");
                         }
                     }
                 }
@@ -458,12 +493,14 @@ impl Player {
     /// Lazily get an MPRIS server. This will always be invoked near the start anyway
     /// by the initial call to update_status().
     async fn get_mpris(&self) -> zbus::Result<&LocalServer<Self>> {
-        self.imp().mpris_server.get_or_try_init(|| async {
-            let server = LocalServer::new("org.euphonica.Euphonica", self.clone())
-                .await?;
-            glib::spawn_future_local(server.run());
-            Ok(server)
-        }).await
+        self.imp()
+            .mpris_server
+            .get_or_try_init(|| async {
+                let server = LocalServer::new("io.github.htkhiem.Euphonica", self.clone()).await?;
+                glib::spawn_future_local(server.run());
+                Ok(server)
+            })
+            .await
     }
 
     // Start a thread to read raw PCM data from MPD's named pipe output, transform them
@@ -477,133 +514,20 @@ impl Player {
     // 2. Perform FFT & extrapolate to the marker frequencies.
     // 3. Send results back to main thread via the async channel.
     fn maybe_start_fft_thread(&self) {
-        let stop_flag = self.imp().fft_stop.clone();
-        stop_flag.store(false, Ordering::Relaxed);
         let output = self.imp().fft_data.clone();
-        let should_start: bool;
-        {
-            should_start = self.imp().fft_handle.borrow().as_ref().is_none();
-        }
-        if should_start {
-            let fft_handle = gio::spawn_blocking(move || {
-                let settings = settings_manager();
-                let player_settings = settings.child("player");
-                // Will require starting a new thread to account for path and format changes
-                if let Ok(format) = AudioFormat::from_str(settings.child("client").string("mpd-fifo-format").as_str()) {
-                    // These settings require a restart
-                    let n_samples = player_settings.uint("visualizer-fft-samples") as usize;
-                    let n_bins = player_settings.uint("visualizer-spectrum-bins") as usize;
-                    if let Ok(mut reader) = super::fft::try_open_pipe(
-                        settings.child("client").string("mpd-fifo-path").as_str(),
-                        &format,
-                        n_samples
-                    ) {
-                        // Allocate the following once only
-                        let mut fft_buf_left: Vec<f32> = vec![0.0; n_samples];
-                        let mut fft_buf_right: Vec<f32> = vec![0.0; n_samples];
-                        let mut curr_step_left: Vec<f32> = vec![0.0; n_bins];
-                        let mut curr_step_right: Vec<f32> = vec![0.0; n_bins];
-                        'outer: loop {
-                            if stop_flag.load(Ordering::Relaxed) || !settings.child("ui").boolean("use-visualizer") {
-                                break 'outer;
-                            }
-                            // These should be applied on-the-fly
-                            let bin_mode = if player_settings.boolean("visualizer-spectrum-use-log-bins") {
-                                super::fft::BinMode::Logarithmic
-                            } else {
-                                super::fft::BinMode::Linear
-                            };
-                            let fps = player_settings.uint("visualizer-fps") as f32;
-                            let min_freq = player_settings.uint("visualizer-spectrum-min-hz") as f32;
-                            let max_freq = player_settings.uint("visualizer-spectrum-max-hz") as f32;
-                            let curr_step_weight = player_settings.double("visualizer-spectrum-curr-step-weight") as f32;
-                            match super::fft::get_stereo_pcm(
-                                &mut fft_buf_left,
-                                &mut fft_buf_right,
-                                &mut reader,
-                                &format,
-                                fps,
-                                true,
-                            ) {
-                                Ok(()) => {
-                                    // Compute outside of mutex lock please
-                                    super::fft::get_magnitudes(
-                                        &format,
-                                        &mut fft_buf_left,
-                                        &mut curr_step_left,
-                                        n_bins as u32,
-                                        bin_mode,
-                                        min_freq,
-                                        max_freq
-                                    );
-                                    super::fft::get_magnitudes(
-                                        &format,
-                                        &mut fft_buf_right,
-                                        &mut curr_step_right,
-                                        n_bins as u32,
-                                        bin_mode,
-                                        min_freq,
-                                        max_freq
-                                    );
-                                    // Replace last frame
-                                    if let Ok(mut output_lock) = output.lock() {
-                                        if output_lock.0.len() != n_bins || output_lock.1.len() != n_bins {
-                                            output_lock.0.clear();
-                                            output_lock.1.clear();
-                                            for _ in 0..n_bins {
-                                                output_lock.0.push(0.0);
-                                                output_lock.1.push(0.0);
-                                            }
-                                        }
-                                        for i in 0..n_bins {
-                                            output_lock.0[i] = curr_step_left[i] * curr_step_weight + output_lock.0[i] * (1.0 - curr_step_weight);
-                                            output_lock.1[i] = curr_step_right[i] * curr_step_weight + output_lock.1[i] * (1.0 - curr_step_weight);
-                                        }
-                                        // println!("FFT L: {:?}\tR: {:?}", &output_lock.0, &output_lock.1);
-                                    }
-                                    else {
-                                        panic!("Unable to lock FFT data mutex");
-                                    }
-                                }
-                                Err(e) => {
-                                    match e.kind() {
-                                        std::io::ErrorKind::UnexpectedEof | std::io::ErrorKind::WouldBlock => {}
-                                        _ => {
-                                            println!("FFT ERR: {:?}", &e);
-                                            break 'outer;
-                                        }
-                                    }
-                                }
-                            }
-                            thread::sleep(Duration::from_millis(
-                                (1000.0 / fps).floor() as u64
-                            ));
-                        }
-                    }
-                }
-            });
-            self.imp().fft_handle.replace(Some(fft_handle));
+        if let Ok(()) = self.imp().fft_backend.borrow().start(output) {
             self.notify("fft-status");
         }
     }
 
-    async fn maybe_stop_fft_thread(&self) {
-        if let Some(handle) = self.imp().fft_handle.take() {
-            self.imp().fft_stop.store(true, Ordering::Relaxed);
-            let _ = handle.await;
-            self.notify("fft-status");
-        }
+    fn maybe_stop_fft_thread(&self) {
+        self.imp().fft_backend.borrow().stop();
+        self.notify("fft-status");
     }
 
-    pub fn reconnect_fifo(&self) {
-        glib::MainContext::default().spawn_local(clone!(
-            #[weak(rename_to = this)]
-            self,
-            async move {
-                this.maybe_stop_fft_thread().await;
-                this.maybe_start_fft_thread();
-            }
-        ));
+    pub fn restart_fft_thread(&self) {
+        self.maybe_stop_fft_thread();
+        self.maybe_start_fft_thread();
     }
 
     pub fn fft_data(&self) -> Arc<Mutex<(Vec<f32>, Vec<f32>)>> {
@@ -614,7 +538,7 @@ impl Player {
         &self,
         application: EuphonicaApplication,
         client: Rc<MpdWrapper>,
-        cache: Rc<Cache>
+        cache: Rc<Cache>,
     ) {
         let client_state = client.clone().get_client_state();
         let _ = self.imp().client.set(client);
@@ -637,37 +561,36 @@ impl Player {
                         }
                     }
                 }
-            )
+            ),
         );
 
         let _ = self.imp().cache.set(cache);
         let _ = self.imp().app.set(application);
         // Connect to ClientState signals
-        client_state.connect_notify_local(Some("connection-state"), clone!(
-            #[weak(rename_to = this)]
-            self,
-            move |state, _| {
-                if state.get_connection_state() == ConnectionState::Connected {
-                    // Newly-connected? Get initial status
-                    // Remember to get queue before status so status parsing has something to read off.
-                    if let Some(songs) = this.client().get_current_queue() {
-                        this.update_queue(&songs, true);
-                    }
-                    if let Some(status) = this.client().get_status() {
-                        this.update_status(&status);
-                    }
-                    if let Some(outs) = this.client().get_outputs() {
-                        this.update_outputs(glib::BoxedAnyObject::new(outs));
+        client_state.connect_notify_local(
+            Some("connection-state"),
+            clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |state, _| {
+                    if state.get_connection_state() == ConnectionState::Connected {
+                        // Newly-connected? Get initial status
+                        // Remember to get queue before status so status parsing has something to read off.
+                        if let Some(songs) = this.client().get_current_queue() {
+                            this.update_queue(&songs, true);
+                        }
+                        if let Some(status) = this.client().get_status() {
+                            this.update_status(&status);
+                        }
+                        if let Some(outs) = this.client().get_outputs() {
+                            this.update_outputs(glib::BoxedAnyObject::new(outs));
+                        }
                     }
                 }
-            }
-        ));
+            ),
+        );
         client_state
-            .bind_property(
-                "supports-playlists",
-                self,
-                "supports-playlists"
-            )
+            .bind_property("supports-playlists", self, "supports-playlists")
             .sync_create()
             .build();
 
@@ -701,11 +624,14 @@ impl Player {
                         _ => {}
                     }
                 }
-            )
+            ),
         );
 
         let settings = settings_manager().child("player");
-        let _ = self.imp().mpris_enabled.replace(settings.boolean("enable-mpris"));
+        let _ = self
+            .imp()
+            .mpris_enabled
+            .replace(settings.boolean("enable-mpris"));
         settings.connect_changed(
             Some("enable-mpris"),
             clone!(
@@ -716,56 +642,54 @@ impl Player {
                     let _ = this.imp().mpris_enabled.replace(new_state);
                     if !new_state {
                         // Ping once to clear existing controls
-                        this.update_mpris_properties(vec![
-                            Property::Metadata(MprisMetadata::default()),
-                        ]);
+                        this.update_mpris_properties(vec![Property::Metadata(
+                            MprisMetadata::default(),
+                        )]);
                     }
                 }
-            )
+            ),
         );
     }
 
     fn update_mpris_properties(&self, properties: Vec<Property>) {
-        glib::spawn_future_local(
-            clone!(
-                #[weak(rename_to = this)]
-                self,
-                async move {
-                    match this.get_mpris().await {
-                        Ok(mpris) => {
-                            if let Err(err) = mpris.properties_changed(properties).await {
-                                println!("{:?}", err);
-                            }
-                        }
-                        Err(err) => {
-                            println!("No MPRIS server: {:?}", err);
+        glib::spawn_future_local(clone!(
+            #[weak(rename_to = this)]
+            self,
+            async move {
+                match this.get_mpris().await {
+                    Ok(mpris) => {
+                        if let Err(err) = mpris.properties_changed(properties).await {
+                            println!("{:?}", err);
                         }
                     }
+                    Err(err) => {
+                        println!("No MPRIS server: {:?}", err);
+                    }
                 }
-            ),
-        );
+            }
+        ));
     }
 
     fn seek_mpris(&self, position: f64) {
-        glib::spawn_future_local(
-            clone!(
-                #[weak(rename_to = this)]
-                self,
-                async move {
-                    match this.get_mpris().await {
-                        Ok(mpris) => {
-                            let pos_time = Time::from_millis((position * 1000.0).round() as i64);
-                            if let Err(err) = mpris.emit(MprisSignal::Seeked { position: pos_time }).await {
-                                println!("{:?}", err);
-                            }
-                        }
-                        Err(err) => {
-                            println!("No MPRIS server: {:?}", err);
+        glib::spawn_future_local(clone!(
+            #[weak(rename_to = this)]
+            self,
+            async move {
+                match this.get_mpris().await {
+                    Ok(mpris) => {
+                        let pos_time = Time::from_millis((position * 1000.0).round() as i64);
+                        if let Err(err) =
+                            mpris.emit(MprisSignal::Seeked { position: pos_time }).await
+                        {
+                            println!("{:?}", err);
                         }
                     }
+                    Err(err) => {
+                        println!("No MPRIS server: {:?}", err);
+                    }
                 }
-            ),
-        );
+            }
+        ));
     }
 
     // Update functions
@@ -794,7 +718,7 @@ impl Player {
                         mpris_changes.push(Property::PlaybackStatus(MprisPlaybackStatus::Playing));
                     }
                 }
-            },
+            }
             State::Pause => {
                 let new_state = PlaybackState::Paused;
                 let old_state = self.imp().state.replace(new_state);
@@ -805,7 +729,7 @@ impl Player {
                         mpris_changes.push(Property::PlaybackStatus(MprisPlaybackStatus::Paused));
                     }
                 }
-            },
+            }
             State::Stop => {
                 let new_state = PlaybackState::Stopped;
                 let old_state = self.imp().state.replace(new_state);
@@ -816,7 +740,7 @@ impl Player {
                         mpris_changes.push(Property::PlaybackStatus(MprisPlaybackStatus::Stopped));
                     }
                 }
-            },
+            }
         };
 
         let new_rg = status.replaygain.unwrap_or(ReplayGain::Off);
@@ -861,8 +785,7 @@ impl Player {
         let new_mixramp_delay: f64;
         if let Some(dur) = status.mixrampdelay {
             new_mixramp_delay = dur.as_secs_f64();
-        }
-        else {
+        } else {
             new_mixramp_delay = 0.0;
         }
         let old_mixramp_delay = self.imp().mixramp_delay.replace(new_mixramp_delay);
@@ -873,8 +796,7 @@ impl Player {
         let new_crossfade: f64;
         if let Some(dur) = status.crossfade {
             new_crossfade = dur.as_secs_f64();
-        }
-        else {
+        } else {
             new_crossfade = 0.0;
         }
         let old_crossfade = self.imp().crossfade.replace(new_crossfade);
@@ -919,9 +841,9 @@ impl Player {
                 .expect("Queue has to contain common::Song objects");
             // Set playing status
             new_song.set_is_playing(true); // this whole thing would only run if playback state is not Stopped
-            // Always replace current song to ensure we're pointing at something on the queue.
-            // This is because a partial queue update may replace the current song with another instance of the
-            // same song (for example, when deleting a song before it from the queue).
+                                           // Always replace current song to ensure we're pointing at something on the queue.
+                                           // This is because a partial queue update may replace the current song with another instance of the
+                                           // same song (for example, when deleting a song before it from the queue).
             let maybe_old_song = self.imp().current_song.replace(Some(new_song.clone()));
             if let Some(old_song) = maybe_old_song {
                 if old_song.get_queue_id() != new_song.get_queue_id() {
@@ -939,13 +861,12 @@ impl Player {
                     }
                     // Update MPRIS side
                     if self.imp().mpris_enabled.get() {
-                        mpris_changes.push(Property::Metadata(new_song.get_mpris_metadata(
-                            self.imp().cache.get().unwrap().clone())
+                        mpris_changes.push(Property::Metadata(
+                            new_song.get_mpris_metadata(self.imp().cache.get().unwrap().clone()),
                         ));
                     }
                 }
-            }
-            else {
+            } else {
                 // There was nothing playing previously. Update the following now:
                 self.notify("title");
                 self.notify("artist");
@@ -962,7 +883,7 @@ impl Player {
         } else {
             // No song is playing. Update state accordingly.
             let was_playing = self.imp().current_song.borrow().as_ref().is_some(); // end borrow
-            if  was_playing {
+            if was_playing {
                 let _ = self.imp().current_song.take();
                 self.notify("title");
                 self.notify("artist");
@@ -972,9 +893,7 @@ impl Player {
                 // Update MPRIS side
                 if self.imp().mpris_enabled.get() {
                     mpris_changes.push(Property::Metadata(
-                        MprisMetadata::builder()
-                            .trackid(TrackId::NO_TRACK)
-                            .build()
+                        MprisMetadata::builder().trackid(TrackId::NO_TRACK).build(),
                     ));
                 }
             }
@@ -986,7 +905,9 @@ impl Player {
         let old_len = self.imp().queue.n_items();
         let new_len = status.queue_len;
         if old_len > new_len {
-            self.imp().queue.splice(new_len, old_len - new_len, &[] as &[Song; 0]);
+            self.imp()
+                .queue
+                .splice(new_len, old_len - new_len, &[] as &[Song; 0]);
         }
 
         self.update_mpris_properties(mpris_changes);
@@ -1009,19 +930,21 @@ impl Player {
         if replace {
             if songs.len() == 0 {
                 queue.remove_all();
-            }
-            else {
+            } else {
                 // Replace overlapping portion.
                 // Only emit one changed signal for both removal and insertion. This avoids the brief visual
                 // blanking between queue versions.
                 // New songs should all have is_playing == false.
-                queue.splice(0, queue.n_items(), &songs[..(songs.len().min(queue.n_items() as usize))]);
+                queue.splice(
+                    0,
+                    queue.n_items(),
+                    &songs[..(songs.len().min(queue.n_items() as usize))],
+                );
                 if songs.len() > queue.n_items() as usize {
                     queue.extend_from_slice(&songs[(queue.n_items() as usize)..]);
                 }
             }
-        }
-        else {
+        } else {
             if songs.len() > 0 {
                 // Update overlapping portion
                 let curr_len = self.imp().queue.n_items() as usize;
@@ -1038,8 +961,7 @@ impl Player {
                         if new_pos < songs.len() - 1 {
                             new_pos += 1;
                         }
-                    }
-                    else {
+                    } else {
                         let old_song = maybe_old_song.expect("Cannot read from old queue");
                         overlap.push(old_song);
                     }
@@ -1150,26 +1072,22 @@ impl Player {
     }
 
     pub fn current_song_album_art_path(&self, thumbnail: bool) -> Option<PathBuf> {
-        if let (
-            Some(song), Some(cache)
-        ) = (
+        if let (Some(song), Some(cache)) = (
             self.imp().current_song.borrow().as_ref(),
-            self.imp().cache.get()
-        )
-            {
+            self.imp().cache.get(),
+        ) {
             if let Some(album) = song.get_album() {
                 // Always read from disk
                 Some(
-                    cache.get_path_for(
-                        &crate::meta_providers::Metadata::AlbumArt(album.uri.to_owned(), thumbnail)
-                    )
+                    cache.get_path_for(&crate::meta_providers::Metadata::AlbumArt(
+                        album.uri.to_owned(),
+                        thumbnail,
+                    )),
                 )
-            }
-            else {
+            } else {
                 None
             }
-        }
-        else {
+        } else {
             None
         }
     }
@@ -1182,18 +1100,7 @@ impl Player {
     }
 
     pub fn fft_status(&self) -> FftStatus {
-        if self.imp().fft_handle.borrow().as_ref().is_some() {
-            return FftStatus::Reading;
-        }
-        else {
-            // Try to open a new reader
-            if let Ok(_) = super::fft::open_named_pipe_readonly(
-                settings_manager().child("client").string("mpd-fifo-path").as_str(),
-            ) {
-                return FftStatus::ValidNotReading;
-            }
-            return FftStatus::Invalid
-        }
+        self.imp().fft_backend.borrow().status()
     }
 
     pub fn format_desc(&self) -> Option<String> {
@@ -1339,8 +1246,7 @@ impl Player {
                 }
             });
             self.imp().poller_handle.replace(Some(poller_handle));
-        }
-        else if self.imp().poll_blocked.get() {
+        } else if self.imp().poll_blocked.get() {
             println!("Polling blocked");
         }
     }
@@ -1360,7 +1266,6 @@ impl Player {
         let _ = self.imp().poll_blocked.replace(false);
     }
 }
-
 
 impl LocalRootInterface for Player {
     async fn raise(&self) -> fdo::Result<()> {
@@ -1401,11 +1306,11 @@ impl LocalRootInterface for Player {
     }
 
     async fn identity(&self) -> fdo::Result<String> {
-        Ok("Euphonica".to_string())
+        Ok("io.github.htkhiem.Euphonica".to_string())
     }
 
     async fn desktop_entry(&self) -> fdo::Result<String> {
-        Ok("org.euphonica.Euphonica".to_string())
+        Ok("io.github.htkhiem.Euphonica".to_string())
     }
 
     async fn supported_uri_schemes(&self) -> fdo::Result<Vec<String>> {
@@ -1457,11 +1362,14 @@ impl LocalPlayerInterface for Player {
     }
 
     /// Use MPD's queue ID to construct track_id in this format:
-    /// /org/euphonica/Euphonica/<queue_id>
+    /// io/github/htkhiem/Euphonica/<queue_id>
     async fn set_position(&self, track_id: TrackId, position: Time) -> fdo::Result<()> {
         if let Some(song) = self.imp().current_song.borrow().as_ref() {
             if track_id.as_str().split("/").last().unwrap() == &song.get_queue_id().to_string() {
-                let _ = self.imp().position.replace(position.as_millis() as f64 / 1000.0);
+                let _ = self
+                    .imp()
+                    .position
+                    .replace(position.as_millis() as f64 / 1000.0);
                 self.send_seek();
                 return Ok(());
             }
@@ -1471,7 +1379,9 @@ impl LocalPlayerInterface for Player {
     }
 
     async fn open_uri(&self, _uri: String) -> fdo::Result<()> {
-        Err(fdo::Error::NotSupported("Euphonica currently does not support playing local files via MPD".to_owned()))
+        Err(fdo::Error::NotSupported(
+            "Euphonica currently does not support playing local files via MPD".to_owned(),
+        ))
     }
 
     async fn playback_status(&self) -> fdo::Result<MprisPlaybackStatus> {
@@ -1494,8 +1404,8 @@ impl LocalPlayerInterface for Player {
 
     async fn set_rate(&self, _rate: PlaybackRate) -> zbus::Result<()> {
         Err(zbus::Error::from(fdo::Error::NotSupported(
-            "Euphonica currently does not support changing playback rate".to_owned())
-        ))
+            "Euphonica currently does not support changing playback rate".to_owned(),
+        )))
     }
 
     async fn shuffle(&self) -> fdo::Result<bool> {
@@ -1510,13 +1420,8 @@ impl LocalPlayerInterface for Player {
     async fn metadata(&self) -> fdo::Result<MprisMetadata> {
         if let Some(song) = self.imp().current_song.borrow().as_ref() {
             Ok(song.get_mpris_metadata(self.imp().cache.get().unwrap().clone()))
-        }
-        else {
-            Ok(
-                MprisMetadata::builder()
-                    .trackid(TrackId::NO_TRACK)
-                    .build()
-            )
+        } else {
+            Ok(MprisMetadata::builder().trackid(TrackId::NO_TRACK).build())
         }
     }
 
@@ -1530,7 +1435,9 @@ impl LocalPlayerInterface for Player {
     }
 
     async fn position(&self) -> fdo::Result<Time> {
-        Ok(Time::from_millis((self.imp().position.get() * 1000.0).round() as i64))
+        Ok(Time::from_millis(
+            (self.imp().position.get() * 1000.0).round() as i64,
+        ))
     }
 
     async fn minimum_rate(&self) -> fdo::Result<PlaybackRate> {

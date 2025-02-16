@@ -6,27 +6,14 @@
       <object class="AdwToolbarView" id="top_view">
         <child type="top">
 					<object class="AdwHeaderBar">
+            <property name="show-title">false</property>
             <child type="start">
-              <object class="GtkBox">
-                <child>
-                  <object class="GtkButton" id="back_btn">
-                    <property name="icon-name">left-symbolic</property>
-                    <property name="sensitive">false</property>
+                  <object class="GtkButton" id="show_sidebar">
+                    <property name="icon-name">dock-left-symbolic</property>
+                    <property name="tooltip-text" translatable="true">Show sidebar</property>
+                    <property name="visible">false</property>
                   </object>
-                </child>
-                <child>
-                  <object class="GtkButton" id="forward_btn">
-                    <property name="icon-name">right-symbolic</property>
-                    <property name="sensitive">false</property>
-                  </object>
-                </child>
-              </object>
             </child>
-            <property name="title-widget">
-              <object class="GtkLabel" id="path_widget">
-                <property name="ellipsize">end</property>
-              </object>
-            </property>
             <child type="end">
               <object class="GtkToggleButton" id="search_btn">
                 <property name="icon-name">edit-find-symbolic</property>
@@ -69,44 +56,75 @@
             <child>
               <object class="GtkSearchEntry" id="search_entry">
                 <property name="search-delay">150</property>
-                <property name="width-request">400</property>
+                <property name="width-request">100</property>
               </object>
             </child>
           </object>
         </child>
 				<property name="content">
-          <object class="GtkStack" id="loading_stack">
+          <object class="GtkBox">
+            <property name="hexpand">true</property>
+            <property name="orientation">1</property>
             <child>
-              <object class="GtkStackPage">
-                <property name="name">loading</property>
-                <property name="child">
-                  <object class="AdwSpinner">
-
+              <object class="GtkBox">
+                <style>
+                  <class name="toolbar"/>
+                </style>
+                <child>
+                  <object class="GtkButton" id="back_btn">
+                    <property name="icon-name">left-symbolic</property>
+                    <property name="sensitive">false</property>
                   </object>
-                </property>
+                </child>
+                <child>
+                  <object class="GtkButton" id="forward_btn">
+                    <property name="icon-name">right-symbolic</property>
+                    <property name="sensitive">false</property>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkLabel" id="path_widget">
+                    <property name="hexpand">true</property>
+                    <property name="ellipsize">end</property>
+                  </object>
+                </child>
               </object>
             </child>
             <child>
-              <object class="GtkStackPage">
-                <property name="name">content</property>
-                <property name="child">
-                  <object class="GtkScrolledWindow">
-                    <property name="hscrollbar-policy">never</property>
-                    <property name="vscrollbar-policy">automatic</property>
-                    <property name="propagate-natural-height">true</property>
-                    <property name="has-frame">false</property>
-                    <property name="vexpand">true</property>
+              <object class="GtkStack" id="loading_stack">
+                <child>
+                  <object class="GtkStackPage">
+                    <property name="name">loading</property>
                     <property name="child">
-                      <object class="GtkListView" id="list_view">
-                        <property name="show-separators">true</property>
-                        <property name="single-click-activate">true</property>
-                        <style>
-                          <class name="no-bg"/>
-                        </style>
+                      <object class="AdwSpinner">
+
                       </object>
                     </property>
                   </object>
-                </property>
+                </child>
+                <child>
+                  <object class="GtkStackPage">
+                    <property name="name">content</property>
+                    <property name="child">
+                      <object class="GtkScrolledWindow">
+                        <property name="hscrollbar-policy">never</property>
+                        <property name="vscrollbar-policy">automatic</property>
+                        <property name="propagate-natural-height">true</property>
+                        <property name="has-frame">false</property>
+                        <property name="vexpand">true</property>
+                        <property name="child">
+                          <object class="GtkListView" id="list_view">
+                            <property name="show-separators">true</property>
+                            <property name="single-click-activate">true</property>
+                            <style>
+                              <class name="no-bg"/>
+                            </style>
+                          </object>
+                        </property>
+                      </object>
+                    </property>
+                  </object>
+                </child>
               </object>
             </child>
           </object>

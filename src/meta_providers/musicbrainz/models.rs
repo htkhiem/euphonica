@@ -1,14 +1,20 @@
+use crate::{
+    meta_providers::models::{ImageMeta, ImageSize},
+    utils::meta_provider_settings,
+};
 use chrono::NaiveDate;
 use gtk::prelude::SettingsExt;
 use musicbrainz_rs::entity::{
-        artist::{Artist, ArtistType, Gender}, relations::RelationContent, release::Release, tag::Tag
-    };
-use crate::{meta_providers::models::{ImageMeta, ImageSize}, utils::meta_provider_settings};
+    artist::{Artist, ArtistType, Gender},
+    relations::RelationContent,
+    release::Release,
+    tag::Tag,
+};
 
-use super::{super::{
-    models,
-    prelude::*
-}, PROVIDER_KEY};
+use super::{
+    super::{models, prelude::*},
+    PROVIDER_KEY,
+};
 
 fn transform_wikimedia_url(url: &str) -> Option<String> {
     // MusicBrainz relations cannot contain direct links, so we'll have to extract one ourselves.
@@ -24,13 +30,12 @@ fn transform_wikimedia_url(url: &str) -> Option<String> {
     None
 }
 
-
 impl From<Tag> for models::Tag {
     fn from(mbtag: Tag) -> Self {
         Self {
             name: mbtag.name,
             count: Some(mbtag.count),
-            url: None
+            url: None,
         }
     }
 }
@@ -41,7 +46,7 @@ pub fn mb_gender_to_str(g: Gender) -> Option<String> {
         Gender::Male => Some(String::from("male")),
         Gender::Female => Some(String::from("female")),
         Gender::Other => Some(String::from("other")),
-        _ => None  // Company/legal entity, etc.
+        _ => None, // Company/legal entity, etc.
     }
 }
 
@@ -60,15 +65,13 @@ impl From<Release> for models::AlbumMeta {
                 }
             }
             artist_tag = Some(content);
-        }
-        else {
+        } else {
             artist_tag = None;
         }
         let tags: Vec<models::Tag>;
         if let Some(mbtags) = rel.tags {
             tags = mbtags.into_iter().map(models::Tag::from).collect();
-        }
-        else {
+        } else {
             tags = Vec::new();
         }
 
@@ -79,11 +82,10 @@ impl From<Release> for models::AlbumMeta {
             tags,
             image: Vec::new(), // acquired separately
             url: Some(format!("https://musicbrainz.org/release/{}", rel.id)),
-            wiki: None // not provided
+            wiki: None, // not provided
         }
     }
 }
-
 
 impl From<Artist> for models::ArtistMeta {
     fn from(artist: Artist) -> Self {
@@ -91,8 +93,7 @@ impl From<Artist> for models::ArtistMeta {
         let tags: Vec<models::Tag>;
         if let Some(mbtags) = artist.tags {
             tags = mbtags.into_iter().map(models::Tag::from).collect();
-        }
-        else {
+        } else {
             tags = Vec::new();
         }
         let begin_date: Option<NaiveDate>;
@@ -101,12 +102,10 @@ impl From<Artist> for models::ArtistMeta {
             begin_date = lifespan.begin;
             if lifespan.ended.unwrap_or(false) {
                 end_date = lifespan.end; // Might still be None
-            }
-            else {
+            } else {
                 end_date = None;
             }
-        }
-        else {
+        } else {
             begin_date = None;
             end_date = None;
         }
@@ -122,17 +121,16 @@ impl From<Artist> for models::ArtistMeta {
                                 if let Some(direct) = transform_wikimedia_url(&url.resource) {
                                     image.push(ImageMeta {
                                         size: ImageSize::Large,
-                                        url: direct
+                                        url: direct,
                                     });
                                 }
-                            },
+                            }
                             _ => {}
                         }
                     }
                 }
             }
-        }
-        else {
+        } else {
             image = Vec::with_capacity(0);
         }
 
@@ -148,7 +146,7 @@ impl From<Artist> for models::ArtistMeta {
             gender: mb_gender_to_str(artist.gender.unwrap_or(Gender::NotApplicable)),
             begin_date,
             end_date,
-            country: artist.country
+            country: artist.country,
         }
     }
 }

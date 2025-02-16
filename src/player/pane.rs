@@ -1,33 +1,30 @@
-use std::cell::{Cell, RefCell};
+use glib::{clone, closure_local, BoxedAnyObject};
 use gtk::{
     gdk,
     glib::{self, Variant},
     prelude::*,
     subclass::prelude::*,
-    CompositeTemplate
-};
-use glib::{
-    clone,
-    closure_local,
-    BoxedAnyObject
+    CompositeTemplate,
 };
 use mpd::output::Output;
+use std::cell::{Cell, RefCell};
 
 use crate::{
-    cache::placeholders::ALBUMART_PLACEHOLDER, common::{paintables::FadePaintable, QualityGrade}, utils::settings_manager
+    cache::placeholders::ALBUMART_PLACEHOLDER,
+    common::{paintables::FadePaintable, QualityGrade},
+    utils::settings_manager,
 };
 
-use super::{
-    Player, PlaybackControls,
-    PlaybackState, VolumeKnob, MpdOutput
-};
+use super::{MpdOutput, PlaybackControls, PlaybackState, Player, VolumeKnob};
 
 mod imp {
+
+    use crate::player::seekbar::Seekbar;
 
     use super::*;
 
     #[derive(Default, CompositeTemplate)]
-    #[template(resource = "/org/euphonica/Euphonica/gtk/player/pane.ui")]
+    #[template(resource = "/io/github/htkhiem/Euphonica/gtk/player/pane.ui")]
     pub struct PlayerPane {
         // Song info
         #[template_child]
@@ -46,6 +43,8 @@ mod imp {
         // Playback controls
         #[template_child]
         pub playback_controls: TemplateChild<PlaybackControls>,
+        #[template_child]
+        pub seekbar: TemplateChild<Seekbar>,
         #[template_child]
         pub rg_btn: TemplateChild<gtk::Button>,
         #[template_child]
@@ -111,11 +110,7 @@ mod imp {
             let settings = settings_manager().child("ui");
             let knob = self.vol_knob.get();
             settings
-                .bind(
-                    "vol-knob-unit",
-                    &knob,
-                    "use-dbfs"
-                )
+                .bind("vol-knob-unit", &knob, "use-dbfs")
                 .get_only()
                 .mapping(|v: &Variant, _| {
                     Some((v.get::<String>().unwrap().as_str() == "decibels").to_value())
@@ -123,12 +118,8 @@ mod imp {
                 .build();
 
             settings
-                .bind(
-                    "vol-knob-sensitivity",
-                    &knob,
-                    "sensitivity"
-                )
-                .mapping(|v: &Variant, _| { Some(v.get::<f64>().unwrap().to_value())})
+                .bind("vol-knob-sensitivity", &knob, "sensitivity")
+                .mapping(|v: &Variant, _| Some(v.get::<f64>().unwrap().to_value()))
                 .build();
         }
     }
@@ -138,7 +129,6 @@ mod imp {
 
     impl BoxImpl for PlayerPane {}
 }
-
 
 glib::wrapper! {
     pub struct PlayerPane(ObjectSubclass<imp::PlayerPane>)
@@ -161,6 +151,7 @@ impl PlayerPane {
         self.setup_volume_knob(player);
         self.bind_state(player);
         self.imp().playback_controls.setup(player);
+        self.imp().seekbar.setup(player);
     }
 
     fn setup_volume_knob(&self, player: &Player) {
@@ -175,7 +166,7 @@ impl PlayerPane {
                 move |knob: &VolumeKnob, _| {
                     player.send_set_volume(knob.value().round() as i8);
                 }
-            )
+            ),
         );
 
         knob.connect_notify_local(
@@ -186,50 +177,37 @@ impl PlayerPane {
                 move |knob: &VolumeKnob, _| {
                     if knob.is_muted() {
                         player.send_set_volume(0);
-                    }
-                    else {
+                    } else {
                         // Restore previous volume
                         player.send_set_volume(knob.value().round() as i8);
                     }
                 }
-            )
+            ),
         );
 
         // Only fired for EXTERNAL changes.
         player.connect_closure(
             "volume-changed",
             false,
-            closure_local!(
-                |_: Player, val: i8| {
-                    knob.sync_value(val);
-                }
-            )
+            closure_local!(|_: Player, val: i8| {
+                knob.sync_value(val);
+            }),
         );
 
         let rg_btn = self.imp().rg_btn.get();
         player
-            .bind_property(
-                "replaygain",
-                &rg_btn,
-                "icon-name"
-            )
+            .bind_property("replaygain", &rg_btn, "icon-name")
             .sync_create()
             .build();
         player
-            .bind_property(
-                "replaygain",
-                &rg_btn,
-                "tooltip-text"
-            )
+            .bind_property("replaygain", &rg_btn, "tooltip-text")
             // TODO: translatable
-            .transform_to(|_, icon: String| {
-                match icon.as_ref() {
-                    "rg-off-symbolic" => Some("ReplayGain: off"),
-                    "rg-auto-symbolic" => Some("ReplayGain: auto-select between track & album"),
-                    "rg-track-symbolic" => Some("ReplayGain: track"),
-                    "rg-album-symbolic" => Some("ReplayGain: album"),
-                    _ => None
-                }
+            .transform_to(|_, icon: String| match icon.as_ref() {
+                "rg-off-symbolic" => Some("ReplayGain: off"),
+                "rg-auto-symbolic" => Some("ReplayGain: auto-select between track & album"),
+                "rg-track-symbolic" => Some("ReplayGain: track"),
+                "rg-album-symbolic" => Some("ReplayGain: album"),
+                _ => None,
             })
             .sync_create()
             .build();
@@ -243,16 +221,11 @@ impl PlayerPane {
 
         let crossfade_btn = self.imp().crossfade_btn.get();
         player
-            .bind_property(
-                "crossfade",
-                &crossfade_btn,
-                "icon-name"
-            )
+            .bind_property("crossfade", &crossfade_btn, "icon-name")
             .transform_to(|_, secs: f64| {
                 if secs > 0.0 {
                     Some("crossfade-symbolic")
-                }
-                else {
+                } else {
                     Some("crossfade-off-symbolic")
                 }
             })
@@ -261,27 +234,18 @@ impl PlayerPane {
 
         let crossfade = self.imp().crossfade.get();
         player
-            .bind_property(
-                "crossfade",
-                &crossfade,
-                "value"
-            )
+            .bind_property("crossfade", &crossfade, "value")
             .bidirectional()
             .sync_create()
             .build();
 
         let mixramp_btn = self.imp().mixramp_btn.get();
         player
-            .bind_property(
-                "mixramp-delay",
-                &mixramp_btn,
-                "icon-name"
-            )
+            .bind_property("mixramp-delay", &mixramp_btn, "icon-name")
             .transform_to(|_, secs: f64| {
                 if secs > 0.0 {
                     Some("mixramp-symbolic")
-                }
-                else {
+                } else {
                     Some("mixramp-off-symbolic")
                 }
             })
@@ -289,21 +253,13 @@ impl PlayerPane {
             .build();
         let mixramp_db = self.imp().mixramp_db.get();
         player
-            .bind_property(
-                "mixramp-db",
-                &mixramp_db,
-                "value"
-            )
+            .bind_property("mixramp-db", &mixramp_db, "value")
             .bidirectional()
             .sync_create()
             .build();
         let mixramp_delay = self.imp().mixramp_delay.get();
         player
-            .bind_property(
-                "mixramp-delay",
-                &mixramp_delay,
-                "value"
-            )
+            .bind_property("mixramp-delay", &mixramp_delay, "value")
             .bidirectional()
             .sync_create()
             .build();
@@ -314,91 +270,51 @@ impl PlayerPane {
         let info_box = imp.info_box.get();
         let format_info = imp.format_info.get();
         player
-            .bind_property(
-                "playback-state",
-                &info_box,
-                "visible"
-            )
-            .transform_to(|_, state: PlaybackState| {
-                Some(state != PlaybackState::Stopped)
-            })
+            .bind_property("playback-state", &info_box, "visible")
+            .transform_to(|_, state: PlaybackState| Some(state != PlaybackState::Stopped))
             .sync_create()
             .build();
 
         player
-            .bind_property(
-                "playback-state",
-                &format_info,
-                "visible"
-            )
-            .transform_to(|_, state: PlaybackState| {
-                Some(state != PlaybackState::Stopped)
-            })
+            .bind_property("playback-state", &format_info, "visible")
+            .transform_to(|_, state: PlaybackState| Some(state != PlaybackState::Stopped))
             .sync_create()
             .build();
 
         let song_name = imp.song_name.get();
         player
-            .bind_property(
-                "title",
-                &song_name,
-                "label"
-            )
+            .bind_property("title", &song_name, "label")
             .sync_create()
             .build();
 
         let album = imp.album.get();
         player
-            .bind_property(
-                "album",
-                &album,
-                "label"
-            )
+            .bind_property("album", &album, "label")
             .sync_create()
             .build();
 
         let artist = imp.artist.get();
         player
-            .bind_property(
-                "artist",
-                &artist,
-                "label"
-            )
+            .bind_property("artist", &artist, "label")
             .sync_create()
             .build();
 
         let quality_grade = imp.quality_grade.get();
         player
-            .bind_property(
-                "quality-grade",
-                &quality_grade,
-                "icon-name"
-            )
-            .transform_to(|_, grade: QualityGrade| {
-                Some(grade.to_icon_name())}
-            )
+            .bind_property("quality-grade", &quality_grade, "icon-name")
+            .transform_to(|_, grade: QualityGrade| Some(grade.to_icon_name()))
             .sync_create()
             .build();
 
         player
-            .bind_property(
-                "quality-grade",
-                &quality_grade,
-                "visible"
-            )
-            .transform_to(|_, grade: QualityGrade| {
-                Some(grade != QualityGrade::Lossy)
-            })
+            .bind_property("quality-grade", &quality_grade, "visible")
+            .transform_to(|_, grade: QualityGrade| Some(grade != QualityGrade::Lossy))
             .sync_create()
             .build();
 
         let format_desc = imp.format_desc.get();
         player
-            .bind_property(
-                "format-desc",
-                &format_desc,
-                "label"
-            )
+            .bind_property("format-desc", &format_desc, "label")
             .sync_create()
             .build();
 
@@ -411,7 +327,7 @@ impl PlayerPane {
                 move |player: Player, outputs: BoxedAnyObject| {
                     this.update_outputs(player, outputs.borrow::<Vec<Output>>().as_ref());
                 }
-            )
+            ),
         );
 
         self.update_album_art(player.current_song_album_art(false));
@@ -425,28 +341,24 @@ impl PlayerPane {
                 move |_, _| {
                     this.update_album_art(player.current_song_album_art(false));
                 }
-            )
+            ),
         );
 
-        self.imp().prev_output.connect_clicked(
-            clone!(
-                #[weak(rename_to = this)]
-                self,
-                move |_| {
-                    this.prev_output();
-                }
-            )
-        );
+        self.imp().prev_output.connect_clicked(clone!(
+            #[weak(rename_to = this)]
+            self,
+            move |_| {
+                this.prev_output();
+            }
+        ));
 
-        self.imp().next_output.connect_clicked(
-            clone!(
-                #[weak(rename_to = this)]
-                self,
-                move |_| {
-                    this.next_output();
-                }
-            )
-        );
+        self.imp().next_output.connect_clicked(clone!(
+            #[weak(rename_to = this)]
+            self,
+            move |_| {
+                this.next_output();
+            }
+        ));
     }
 
     fn update_album_art(&self, tex: Option<gdk::Texture>) {
@@ -454,9 +366,10 @@ impl PlayerPane {
         // Update cover paintable
         if tex.is_some() {
             self.imp().albumart.set_paintable(tex.as_ref());
-        }
-        else {
-            self.imp().albumart.set_paintable(Some(&*ALBUMART_PLACEHOLDER));
+        } else {
+            self.imp()
+                .albumart
+                .set_paintable(Some(&*ALBUMART_PLACEHOLDER));
         }
     }
 
@@ -466,14 +379,12 @@ impl PlayerPane {
         let new_len = outputs.len();
         if new_len == 0 {
             section.set_visible(false);
-        }
-        else {
+        } else {
             section.set_visible(true);
             if new_len > 1 {
                 self.imp().prev_output.set_visible(true);
                 self.imp().next_output.set_visible(true);
-            }
-            else {
+            } else {
                 self.imp().prev_output.set_visible(false);
                 self.imp().next_output.set_visible(false);
             }
@@ -495,8 +406,7 @@ impl PlayerPane {
                 for (w, o) in output_widgets.iter().zip(outputs) {
                     w.update_state(o);
                 }
-            }
-            else {
+            } else {
                 // Need to add more widgets
                 // Override state of all current widgets. Personal reminder:
                 // zip() is auto-truncated to the shorter of the two iters.
@@ -522,13 +432,11 @@ impl PlayerPane {
                 let _ = self.imp().current_output.replace(max);
                 self.imp().next_output.set_sensitive(false);
                 self.imp().prev_output.set_sensitive(true);
-            }
-            else if new_idx <= 0 {
+            } else if new_idx <= 0 {
                 let _ = self.imp().current_output.replace(0);
                 self.imp().next_output.set_sensitive(true);
                 self.imp().prev_output.set_sensitive(false);
-            }
-            else {
+            } else {
                 let _ = self.imp().current_output.replace(new_idx as usize);
                 self.imp().next_output.set_sensitive(true);
                 self.imp().prev_output.set_sensitive(true);
@@ -536,9 +444,7 @@ impl PlayerPane {
 
             // Update stack
             self.imp().output_stack.set_visible_child(
-                &self.imp().output_widgets.borrow()[
-                    self.imp().current_output.get()
-                ]
+                &self.imp().output_widgets.borrow()[self.imp().current_output.get()],
             );
         }
     }

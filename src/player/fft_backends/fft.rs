@@ -1,14 +1,21 @@
 use libc;
 use std::{
-    f32::consts::PI, fs::{File, OpenOptions}, io::{self, prelude::*, BufReader, Error, SeekFrom}, os::unix::fs::OpenOptionsExt, sync::Arc
+    f32::consts::PI,
+    fs::{File, OpenOptions},
+    // Option 1: read from MPD FIFO output (default)
+    io::{self, prelude::*, BufReader, Error},
+    os::unix::fs::OpenOptionsExt,
 };
+
+// Option 2: read from local Pipewire output (works in Flatpak)
+use pipewire as pw;
 
 use mpd::status::AudioFormat;
 
 pub fn open_named_pipe_readonly(path: &str) -> io::Result<File> {
     OpenOptions::new()
         .read(true)
-        .custom_flags(libc::O_NONBLOCK | libc::O_RDONLY)  // from os::unix::fs::OpenOptionsExt, i.e. on Unix-like systems only.
+        .custom_flags(libc::O_NONBLOCK | libc::O_RDONLY) // from os::unix::fs::OpenOptionsExt, i.e. on Unix-like systems only.
         .open(path)
 }
 
@@ -39,13 +46,16 @@ fn blackman_harris_4term_inplace(samples: &mut [f32]) {
     }
 }
 
-
-pub fn try_open_pipe(path: &str, format: &AudioFormat, n_samples: usize) -> Result<BufReader<File>, Error> {
+pub fn try_open_pipe(
+    path: &str,
+    format: &AudioFormat,
+    n_samples: usize,
+) -> Result<BufReader<File>, Error> {
     // Bits per sample * 2 (stereo) * n_samples * 4 (safety factor)
     let buf_bytes = ((format.bits as usize * 8 * n_samples) as f64 / 8.0).ceil() as usize;
 
     println!("FIFO buffer size: {} bytes", buf_bytes);
-    let mut pipe = BufReader::with_capacity(buf_bytes, open_named_pipe_readonly(path)?);
+    let pipe = BufReader::with_capacity(buf_bytes, open_named_pipe_readonly(path)?);
     Ok(pipe)
 }
 
@@ -59,8 +69,7 @@ fn parse_to_float(buf: [u8; 4], format: &AudioFormat, is_le: bool) -> f32 {
         }
         if is_le {
             f32::from_le_bytes(buf)
-        }
-        else {
+        } else {
             f32::from_be_bytes(buf)
         }
     } else {
@@ -69,12 +78,11 @@ fn parse_to_float(buf: [u8; 4], format: &AudioFormat, is_le: bool) -> f32 {
             32 => std::i32::MAX as f32,
             16 => std::i16::MAX as f32,
             8 => std::i8::MAX as f32,
-            _ => unimplemented!()
+            _ => unimplemented!(),
         };
         if is_le {
             i32::from_le_bytes(buf) as f32 / max_val
-        }
-        else {
+        } else {
             i32::from_be_bytes(buf) as f32 / max_val
         }
     }
@@ -97,13 +105,13 @@ pub fn get_stereo_pcm(
     reader: &mut BufReader<File>,
     format: &AudioFormat,
     fps: f32,
-    is_le: bool
+    is_le: bool,
 ) -> Result<(), std::io::Error> {
     let num_samples = samples_left.len();
     if num_samples != samples_right.len() {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
-            "Given sample buffers' lengths do not match"
+            "Given sample buffers' lengths do not match",
         ));
     }
     samples_left.fill(0.0);
@@ -121,14 +129,12 @@ pub fn get_stereo_pcm(
     let available = internal_buf.len() / bps / 2;
     let read_offset: usize = if available > num_samples {
         available - num_samples
-    }
-    else {
+    } else {
         0
     };
     let write_offset: usize = if available < num_samples {
         num_samples - available
-    }
-    else {
+    } else {
         0
     };
     // Each per-sample buffer will always be 4 bytes for easier parsing. Since we're assuming
@@ -138,18 +144,16 @@ pub fn get_stereo_pcm(
         // Left channel
         let mut sample_buf = vec![0u8; 4];
         let first_pos = read_offset + idx * 2 * bps;
-        sample_buf[..bps].copy_from_slice(
-            &internal_buf[first_pos..(first_pos + bps)]
-        );
-        samples_left[write_offset + idx] = parse_to_float(sample_buf.try_into().unwrap(), format, is_le);
+        sample_buf[..bps].copy_from_slice(&internal_buf[first_pos..(first_pos + bps)]);
+        samples_left[write_offset + idx] =
+            parse_to_float(sample_buf.try_into().unwrap(), format, is_le);
 
         // Right channel
         let mut sample_buf = vec![0u8; 4];
         let second_pos = first_pos + bps;
-        sample_buf[..bps].copy_from_slice(
-            &internal_buf[second_pos..(second_pos + bps)]
-        );
-        samples_right[write_offset + idx] = parse_to_float(sample_buf.try_into().unwrap(), format, is_le);
+        sample_buf[..bps].copy_from_slice(&internal_buf[second_pos..(second_pos + bps)]);
+        samples_right[write_offset + idx] =
+            parse_to_float(sample_buf.try_into().unwrap(), format, is_le);
     }
     // Advance internal buffer
     reader.consume(bytes_per_frame);
@@ -159,7 +163,7 @@ pub fn get_stereo_pcm(
 #[derive(Clone, Copy, Eq, PartialEq, Debug)]
 pub enum BinMode {
     Linear,
-    Logarithmic
+    Logarithmic,
 }
 
 /// Get frequency domain of stereo PCM samples.
@@ -180,7 +184,7 @@ pub fn get_magnitudes(
     n_bins: u32,
     bin_mode: BinMode,
     min_freq: f32,
-    max_freq: f32
+    max_freq: f32,
 ) {
     let samples_len_f32 = input_buf.len() as f32;
     blackman_harris_4term_inplace(input_buf);
@@ -190,7 +194,7 @@ pub fn get_magnitudes(
         format.rate,
         spectrum_analyzer::FrequencyLimit::Range(min_freq, max_freq),
         None,
-        None
+        None,
     );
     let spectrum = fft_res.data();
     output_buf.clear();
@@ -208,7 +212,8 @@ pub fn get_magnitudes(
             for i in 0..spectrum.len() {
                 let (freq, x) = spectrum[i];
                 // Each bin's range is an interval open to the right, except for the last.
-                let bin_idx: usize = (((freq.val() - min_freq) / spacing).floor() as usize).min((n_bins - 1) as usize);
+                let bin_idx: usize = (((freq.val() - min_freq) / spacing).floor() as usize)
+                    .min((n_bins - 1) as usize);
                 output_buf[bin_idx] = output_buf[bin_idx].max(x.val());
             }
         }
@@ -218,9 +223,10 @@ pub fn get_magnitudes(
             for i in 0..spectrum.len() {
                 let (freq, x) = spectrum[i];
                 // Same logic as linear, but converted to logarithmic first
-                let bin_idx: usize = (
-                    ((freq.val().log10() - min_freq.log10()) / log_base).floor().max(0.0) as usize
-                ).min((n_bins - 1) as usize);
+                let bin_idx: usize = (((freq.val().log10() - min_freq.log10()) / log_base)
+                    .floor()
+                    .max(0.0) as usize)
+                    .min((n_bins - 1) as usize);
                 output_buf[bin_idx] = output_buf[bin_idx].max(x.val());
             }
         }

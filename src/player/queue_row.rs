@@ -1,22 +1,15 @@
-use std::{
-    cell::RefCell,
-    rc::Rc
-};
+use glib::{closure_local, signal::SignalHandlerId, Object};
 use gtk::{
-    glib::{self, clone}, prelude::*, subclass::prelude::*, CompositeTemplate, Image, Label
+    glib::{self, clone},
+    prelude::*,
+    subclass::prelude::*,
+    CompositeTemplate, Image, Label,
 };
-use glib::{
-    closure_local,
-    Object,
-    signal::SignalHandlerId
-};
+use std::{cell::RefCell, rc::Rc};
 
 use crate::{
-    cache::{
-        placeholders::ALBUMART_PLACEHOLDER,
-        Cache, CacheState
-    },
-    common::{AlbumInfo, Song}
+    cache::{placeholders::ALBUMART_PLACEHOLDER, Cache, CacheState},
+    common::{AlbumInfo, Song},
 };
 
 use super::{controller::SwapDirection, Player};
@@ -24,23 +17,21 @@ use super::{controller::SwapDirection, Player};
 mod imp {
     use std::cell::Cell;
 
-    use glib::{
-        ParamSpec, ParamSpecBoolean, ParamSpecString, ParamSpecUInt
-    };
+    use crate::common::Marquee;
+    use glib::{ParamSpec, ParamSpecBoolean, ParamSpecString, ParamSpecUInt};
     use gtk::{Button, Revealer};
     use once_cell::sync::Lazy;
-    use crate::common::Marquee;
 
     use super::*;
 
     #[derive(Default, CompositeTemplate)]
-    #[template(resource = "/org/euphonica/Euphonica/gtk/player/queue-row.ui")]
+    #[template(resource = "/io/github/htkhiem/Euphonica/gtk/player/queue-row.ui")]
     pub struct QueueRow {
         #[template_child]
         pub thumbnail: TemplateChild<Image>,
         #[template_child]
         pub song_name: TemplateChild<Marquee>,
-         #[template_child]
+        #[template_child]
         pub album_name: TemplateChild<Label>,
         #[template_child]
         pub artist_name: TemplateChild<Label>,
@@ -91,7 +82,7 @@ mod imp {
                     ParamSpecUInt::builder("queue-id").build(),
                     ParamSpecUInt::builder("queue-pos").build(),
                     // ParamSpecString::builder("duration").build(),
-                    ParamSpecString::builder("quality-grade").build()
+                    ParamSpecString::builder("quality-grade").build(),
                 ]
             });
             PROPERTIES.as_ref()
@@ -154,8 +145,7 @@ mod imp {
                     if let Ok(icon) = value.get::<&str>() {
                         self.quality_grade.set_icon_name(Some(icon));
                         self.quality_grade.set_visible(true);
-                    }
-                    else {
+                    } else {
                         self.quality_grade.set_icon_name(None);
                         self.quality_grade.set_visible(false);
                     }
@@ -218,18 +208,15 @@ impl QueueRow {
             }
         ));
 
-        item
-            .property_expression("item")
+        item.property_expression("item")
             .chain_property::<Song>("name")
             .bind(self, "name", gtk::Widget::NONE);
 
-        item
-            .property_expression("item")
+        item.property_expression("item")
             .chain_property::<Song>("album")
             .bind(self, "album", gtk::Widget::NONE);
 
-        item
-            .property_expression("item")
+        item.property_expression("item")
             .chain_property::<Song>("artist")
             .bind(self, "artist", gtk::Widget::NONE);
 
@@ -241,22 +228,18 @@ impl QueueRow {
         //     }))
         //     .bind(self, "duration", gtk::Widget::NONE);
 
-        item
-            .property_expression("item")
+        item.property_expression("item")
             .chain_property::<Song>("quality-grade")
             .bind(self, "quality-grade", gtk::Widget::NONE);
 
-        item
-            .property_expression("item")
+        item.property_expression("item")
             .chain_property::<Song>("is-playing")
             .bind(self, "is-playing", gtk::Widget::NONE);
 
-        item
-            .property_expression("item")
+        item.property_expression("item")
             .chain_property::<Song>("queue-id")
             .bind(self, "queue-id", gtk::Widget::NONE);
-        item
-            .property_expression("item")
+        item.property_expression("item")
             .chain_property::<Song>("queue-pos")
             .bind(self, "queue-pos", gtk::Widget::NONE);
 
@@ -264,24 +247,20 @@ impl QueueRow {
         // Run only while hovered
         let hover_ctl = gtk::EventControllerMotion::new();
         hover_ctl.set_propagation_phase(gtk::PropagationPhase::Capture);
-        hover_ctl.connect_enter(
-            clone!(
-                #[weak(rename_to = this)]
-                self,
-                move |_, _, _| {
-                    this.imp().song_name.set_should_run_and_check(true);
-                }
-            )
-        );
-        hover_ctl.connect_leave(
-            clone!(
-                #[weak(rename_to = this)]
-                self,
-                move |_| {
-                    this.imp().song_name.set_should_run_and_check(false);
-                }
-            )
-        );
+        hover_ctl.connect_enter(clone!(
+            #[weak(rename_to = this)]
+            self,
+            move |_, _, _| {
+                this.imp().song_name.set_should_run_and_check(true);
+            }
+        ));
+        hover_ctl.connect_leave(clone!(
+            #[weak(rename_to = this)]
+            self,
+            move |_| {
+                this.imp().song_name.set_should_run_and_check(false);
+            }
+        ));
         self.add_controller(hover_ctl);
     }
 
@@ -292,7 +271,9 @@ impl QueueRow {
                 return;
             }
         }
-        self.imp().thumbnail.set_paintable(Some(&*ALBUMART_PLACEHOLDER))
+        self.imp()
+            .thumbnail
+            .set_paintable(Some(&*ALBUMART_PLACEHOLDER))
     }
 
     pub fn bind(&self, song: &Song, cache: Rc<Cache>) {
@@ -324,9 +305,11 @@ impl QueueRow {
                         }
                     }
                 }
-            )
+            ),
         );
-        self.imp().thumbnail_signal_id.replace(Some(thumbnail_binding));
+        self.imp()
+            .thumbnail_signal_id
+            .replace(Some(thumbnail_binding));
     }
 
     pub fn unbind(&self, cache: Rc<Cache>) {

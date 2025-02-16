@@ -1,22 +1,20 @@
-use mpris_server::{zbus::zvariant::ObjectPath, Time};
-use time::{Date, Month};
 use core::time::Duration;
-use std::{
-    cell::{Cell, OnceCell}, ffi::OsStr, path::Path, rc::Rc
-};
 use gtk::glib;
 use gtk::prelude::*;
 use gtk::subclass::prelude::*;
 use mpd::status::AudioFormat;
+use mpris_server::{zbus::zvariant::ObjectPath, Time};
+use std::{
+    cell::{Cell, OnceCell},
+    ffi::OsStr,
+    path::Path,
+    rc::Rc,
+};
+use time::{Date, Month};
 
 use crate::{cache::Cache, meta_providers::Metadata, utils::strip_filename_linux};
 
-use super::{
-    ArtistInfo,
-    AlbumInfo,
-    parse_mb_artist_tag,
-    artists_to_string
-};
+use super::{artists_to_string, parse_mb_artist_tag, AlbumInfo, ArtistInfo};
 
 // Mostly for eyecandy
 #[derive(Clone, Copy, Debug, glib::Enum, PartialEq, Default)]
@@ -24,12 +22,12 @@ use super::{
 pub enum QualityGrade {
     #[default]
     Unknown, // Catch-all
-    Lossy,  // Anything not meeting the below
-    CD,  // Lossless codec (FLAC, WavPack & Monkey's Audio for now) 44100-48000Hz 16bit.
+    Lossy, // Anything not meeting the below
+    CD,    // Lossless codec (FLAC, WavPack & Monkey's Audio for now) 44100-48000Hz 16bit.
     // While 48000Hz isn't technically Red Book, the "quality" should
     // be the same (unless resampled from 44100Hz CD).
     HiRes, // Lossless codec above 48000Hz and at least 24 bit depth.
-    DSD // 150MB song files go brrr
+    DSD,   // 150MB song files go brrr
 }
 
 impl QualityGrade {
@@ -39,11 +37,10 @@ impl QualityGrade {
             Self::Lossy => None,
             Self::CD => Some("format-cd-symbolic"),
             Self::HiRes => Some("format-hires-symbolic"),
-            Self::DSD => Some("format-dsd-symbolic")
+            Self::DSD => Some("format-dsd-symbolic"),
         }
     }
 }
-
 
 fn parse_date(datestr: &str) -> Option<Date> {
     // MPD uses yyyy-MM-dd but the month and day may be optional.
@@ -55,8 +52,7 @@ fn parse_date(datestr: &str) -> Option<Date> {
     let year_str = comps.next()?;
     if let Ok(year) = year_str.parse::<i32>() {
         let _ = year_val.replace(year);
-    }
-    else {
+    } else {
         return None;
     }
 
@@ -72,11 +68,7 @@ fn parse_date(datestr: &str) -> Option<Date> {
             day_val = day;
         }
     }
-    if let Ok(date) = Date::from_calendar_date(
-        year_val.unwrap(),
-        month_val,
-        day_val
-    ) {
+    if let Ok(date) = Date::from_calendar_date(year_val.unwrap(), month_val, day_val) {
         return Some(date);
     }
     None
@@ -106,7 +98,7 @@ pub struct SongInfo {
     quality_grade: QualityGrade,
     // MusicBrainz stuff
     mbid: Option<String>,
-    last_modified: Option<String>
+    last_modified: Option<String>,
 }
 
 impl SongInfo {
@@ -133,29 +125,23 @@ impl Default for SongInfo {
             duration: None,
             queue_id: None,
             album: None,
-            track: Cell::new(-1),  // negative values indicate no track index 
+            track: Cell::new(-1), // negative values indicate no track index
             disc: Cell::new(-1),
             release_date: None,
             quality_grade: QualityGrade::Unknown,
             mbid: None,
-            last_modified: None
+            last_modified: None,
         }
     }
 }
 
-
 mod imp {
+    use super::*;
     use glib::{
-        ParamSpec,
-        ParamSpecUInt,
-        ParamSpecUInt64,
-        ParamSpecInt64,
-        ParamSpecBoolean,
-        ParamSpecString,
-        ParamSpecObject
+        ParamSpec, ParamSpecBoolean, ParamSpecInt64, ParamSpecObject, ParamSpecString,
+        ParamSpecUInt, ParamSpecUInt64,
     };
     use once_cell::sync::Lazy;
-    use super::*;
 
     /// The GObject Song wrapper.
     /// By nesting info inside another struct, we enforce tag editing to be
@@ -166,8 +152,8 @@ mod imp {
     #[derive(Default, Debug)]
     pub struct Song {
         pub info: OnceCell<SongInfo>,
-        pub pos: Cell<u32>,  // stored at the wrapper level to allow easy local updating
-        pub is_playing: Cell<bool>
+        pub pos: Cell<u32>, // stored at the wrapper level to allow easy local updating
+        pub is_playing: Cell<bool>,
     }
 
     #[glib::object_subclass]
@@ -179,7 +165,7 @@ mod imp {
             Self {
                 info: OnceCell::new(),
                 pos: Cell::new(0),
-                is_playing: Cell::new(false)
+                is_playing: Cell::new(false),
             }
         }
     }
@@ -200,9 +186,15 @@ mod imp {
                     ParamSpecString::builder("album").read_only().build(),
                     ParamSpecInt64::builder("track").read_only().build(),
                     ParamSpecInt64::builder("disc").read_only().build(),
-                    ParamSpecObject::builder::<glib::BoxedAnyObject>("release-date").read_only().build(),  // boxes Option<time::Date>
-                    ParamSpecString::builder("quality-grade").read_only().build(),
-                    ParamSpecString::builder("last-modified").read_only().build()
+                    ParamSpecObject::builder::<glib::BoxedAnyObject>("release-date")
+                        .read_only()
+                        .build(), // boxes Option<time::Date>
+                    ParamSpecString::builder("quality-grade")
+                        .read_only()
+                        .build(),
+                    ParamSpecString::builder("last-modified")
+                        .read_only()
+                        .build(),
                 ]
             });
             PROPERTIES.as_ref()
@@ -320,8 +312,7 @@ impl Song {
     pub fn get_album_title(&self) -> Option<&str> {
         if let Some(album) = &self.get_info().album {
             Some(album.title.as_ref())
-        }
-        else {
+        } else {
             None
         }
     }
@@ -360,34 +351,42 @@ impl Song {
     pub fn get_mpris_metadata(&self, cache: Rc<Cache>) -> mpris_server::Metadata {
         let mut meta = mpris_server::Metadata::builder()
             .title(self.get_name())
-            .trackid(
-                ObjectPath::from_string_unchecked(
-                    format!("/org/euphonica/Euphonica/{}", self.get_queue_id())
-                )
-            )
+            .trackid(ObjectPath::from_string_unchecked(format!(
+                "/io/github/htkhiem/Euphonica/{}",
+                self.get_queue_id()
+            )))
             .length(Time::from_millis(self.get_duration() as i64))
             .build();
         if let Some(album) = self.get_album() {
             meta.set_album(Some(&album.title));
             if album.artists.len() > 0 {
                 meta.set_album_artist(Some(
-                    album.artists.iter().map(|a| a.name.as_ref()).collect::<Vec<&str>>()
+                    album
+                        .artists
+                        .iter()
+                        .map(|a| a.name.as_ref())
+                        .collect::<Vec<&str>>(),
                 ));
             }
         }
         let artists = self.get_artists();
         if artists.len() > 0 {
             meta.set_artist(Some(
-                artists.iter().map(|a| a.name.as_ref()).collect::<Vec<&str>>()
+                artists
+                    .iter()
+                    .map(|a| a.name.as_ref())
+                    .collect::<Vec<&str>>(),
             ))
         }
 
         // Album art, if available
-        let thumbnail_path = cache.get_path_for(
-            &Metadata::AlbumArt(strip_filename_linux(self.get_uri()).to_owned(), true)
-        );
+        let thumbnail_path = cache.get_path_for(&Metadata::AlbumArt(
+            strip_filename_linux(self.get_uri()).to_owned(),
+            true,
+        ));
         if thumbnail_path.exists() {
-            let path_string = "file://".to_owned() + &thumbnail_path.into_os_string().into_string().unwrap();
+            let path_string =
+                "file://".to_owned() + &thumbnail_path.into_os_string().into_string().unwrap();
             meta.set_art_url(Some(path_string));
         }
         // TODO: disc & track num
@@ -410,8 +409,7 @@ impl From<mpd::song::Song> for SongInfo {
                 .iter()
                 .map(|s| ArtistInfo::new(s, false))
                 .collect();
-        }
-        else {
+        } else {
             artists = Vec::with_capacity(0);
         }
         let name: String;
@@ -421,8 +419,7 @@ impl From<mpd::song::Song> for SongInfo {
         // Else extract from URI
         else if let Some(stem) = Path::new(&song.file).file_stem() {
             name = String::from(stem.to_str().unwrap());
-        }
-        else {
+        } else {
             name = String::from("Untitled Song");
         }
         let mut res = Self {
@@ -438,7 +435,7 @@ impl From<mpd::song::Song> for SongInfo {
             release_date: None,
             quality_grade: QualityGrade::Unknown,
             mbid: None,
-            last_modified: song.last_mod
+            last_modified: song.last_mod,
         };
 
         if let Some(place) = song.place {
@@ -466,28 +463,24 @@ impl From<mpd::song::Song> for SongInfo {
             match tag.to_lowercase().as_str() {
                 "album" => {
                     if res.album.is_none() {
-                        let _ = res.album.replace(
-                            AlbumInfo::new(
-                                strip_filename_linux(&res.uri),
-                                &val,
-                                None,
-                                Vec::with_capacity(0),
-                                res.quality_grade.clone()
-                            )
-                        );
-                    }
-                    else {
+                        let _ = res.album.replace(AlbumInfo::new(
+                            strip_filename_linux(&res.uri),
+                            &val,
+                            None,
+                            Vec::with_capacity(0),
+                            res.quality_grade.clone(),
+                        ));
+                    } else {
                         panic!("Multiple Album tags found. Only one per song is supported.");
                     }
-                },
+                }
                 "albumartist" => {
                     if album_artist_str.is_none() {
                         let _ = album_artist_str.replace(val);
-                    }
-                    else {
+                    } else {
                         panic!("Multiple AlbumArtist tags found. Only one per song is supported (use MusicBrainz syntax to specify multiple artists).");
                     }
-                },
+                }
                 // "date" => res.imp().release_date.replace(Some(val.clone())),
                 "format" => {
                     if let Some(extension) = maybe_extension {
@@ -496,20 +489,18 @@ impl From<mpd::song::Song> for SongInfo {
                                 // Is probably lossless PCM
                                 if format.rate > 48000 && format.bits >= 24 {
                                     res.quality_grade = QualityGrade::HiRes;
-                                }
-                                else {
+                                } else {
                                     res.quality_grade = QualityGrade::CD;
                                 }
-                            }
-                            else {
+                            } else {
                                 res.quality_grade = QualityGrade::Lossy;
                             }
                         }
                     }
-                },
+                }
                 "originaldate" => {
                     res.release_date = parse_date(val.as_ref());
-                },
+                }
                 "track" => {
                     if let Ok(idx) = val.parse::<i64>() {
                         let _ = res.track.replace(idx);
@@ -529,8 +520,7 @@ impl From<mpd::song::Song> for SongInfo {
                     // Can encounter this before initialising the album object
                     if album_mbid.is_none() {
                         let _ = album_mbid.replace(val);
-                    }
-                    else {
+                    } else {
                         panic!("Multiple musicbrainz_albumid tags found. Only one per song is supported.");
                     }
                 }

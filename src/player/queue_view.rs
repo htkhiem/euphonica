@@ -1,43 +1,36 @@
 use std::rc::Rc;
 
+use adw::prelude::*;
 use adw::subclass::prelude::*;
 use gio::glib::closure_local;
-use gtk::{
-    prelude::*,
-    gio,
-    glib,
-    CompositeTemplate,
-    SingleSelection,
-    SignalListItemFactory,
-    ListItem,
-};
-use adw::prelude::*;
 use glib::clone;
-use mpd::{error::{Error as MpdError, ErrorCode as MpdErrorCode, ServerError}, SaveMode};
+use gtk::{
+    gio, glib, CompositeTemplate, ListItem, SignalListItemFactory, SingleSelection,
+};
+use mpd::{
+    error::{Error as MpdError, ErrorCode as MpdErrorCode, ServerError},
+    SaveMode,
+};
 
 use super::PlayerPane;
 
-use crate::{
-    cache::Cache,
-    common::Song, window::EuphonicaWindow
-};
+use crate::{cache::Cache, common::Song, window::EuphonicaWindow};
 
-use super::{
-    QueueRow,
-    Player,
-};
+use super::{Player, QueueRow};
 
 mod imp {
-    use std::cell::{Cell, OnceCell};
+    use std::{cell::{Cell, OnceCell}, sync::OnceLock};
 
-    use glib::Properties;
+    use glib::{subclass::Signal, Properties};
 
     use super::*;
 
     #[derive(Debug, Properties, Default, CompositeTemplate)]
     #[properties(wrapper_type = super::QueueView)]
-    #[template(resource = "/org/euphonica/Euphonica/gtk/player/queue-view.ui")]
+    #[template(resource = "/io/github/htkhiem/Euphonica/gtk/player/queue-view.ui")]
     pub struct QueueView {
+        #[template_child]
+        pub show_sidebar: TemplateChild<gtk::Button>,
         #[template_child]
         pub queue_pane_view: TemplateChild<adw::NavigationSplitView>,
         #[template_child]
@@ -52,10 +45,6 @@ mod imp {
         pub consume: TemplateChild<gtk::ToggleButton>,
         #[template_child]
         pub clear_queue: TemplateChild<gtk::Button>,
-        #[property(get, set)]
-        pub collapsed: Cell<bool>,
-        #[property(get, set)]
-        pub show_content: Cell<bool>,
 
         #[template_child]
         pub save: TemplateChild<gtk::MenuButton>,
@@ -64,7 +53,14 @@ mod imp {
         #[template_child]
         pub save_confirm: TemplateChild<gtk::Button>,
 
-        pub window: OnceCell<EuphonicaWindow>
+        pub window: OnceCell<EuphonicaWindow>,
+
+        #[property(get, set)]
+        pub pane_collapsed: Cell<bool>,
+        #[property(get, set)]
+        pub collapsed: Cell<bool>,
+        #[property(get, set)]
+        pub show_content: Cell<bool>,
     }
 
     #[glib::object_subclass]
@@ -97,20 +93,41 @@ mod imp {
         fn constructed(&self) {
             self.parent_constructed();
             let obj = self.obj();
-            obj
-                .bind_property("collapsed", &self.queue_pane_view.get(), "collapsed")
+            obj.bind_property("pane-collapsed", &self.queue_pane_view.get(), "collapsed")
                 .sync_create()
                 .build();
 
             self.queue_pane_view
-                .bind_property(
-                    "show-content",
-                    obj.as_ref(),
-                    "show-content"
-                )
+                .bind_property("show-content", obj.as_ref(), "show-content")
                 .bidirectional()
                 .sync_create()
                 .build();
+
+            self.obj()
+                .bind_property(
+                    "collapsed",
+                    &self.show_sidebar.get(),
+                    "visible"
+                )
+                .sync_create()
+                .build();
+
+            self.show_sidebar.connect_clicked(clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |_| {
+                    this.obj().emit_by_name::<()>("show-sidebar-clicked", &[]);
+                }
+            ));
+        }
+
+        fn signals() -> &'static [Signal] {
+            static SIGNALS: OnceLock<Vec<Signal>> = OnceLock::new();
+            SIGNALS.get_or_init(|| {
+                vec![
+                    Signal::builder("show-sidebar-clicked").build(),
+                ]
+            })
         }
     }
 
@@ -133,12 +150,10 @@ fn format_song_count(count: u32) -> Option<String> {
     // TODO: translatable
     if count == 0 {
         None
-    }
-    else {
+    } else {
         if count == 1 {
             Some(String::from("1 song"))
-        }
-        else {
+        } else {
             Some(format!("{} songs", count))
         }
     }
@@ -160,8 +175,7 @@ impl QueueView {
             .transform_to(|_, val: u32| {
                 if val == 0 {
                     Some("empty")
-                }
-                else {
+                } else {
                     Some("queue")
                 }
             })
@@ -178,12 +192,13 @@ impl QueueView {
             #[weak]
             player,
             move |_, list_item| {
-            let item = list_item
-                .downcast_ref::<ListItem>()
-                .expect("Needs to be ListItem");
-            let queue_row = QueueRow::new(&item, player);
-            item.set_child(Some(&queue_row));
-        }));
+                let item = list_item
+                    .downcast_ref::<ListItem>()
+                    .expect("Needs to be ListItem");
+                let queue_row = QueueRow::new(&item, player);
+                item.set_child(Some(&queue_row));
+            }
+        ));
         // Tell factory how to bind `QueueRow` to one of our Song GObjects
         factory.connect_bind(clone!(
             #[weak]
@@ -207,8 +222,8 @@ impl QueueView {
 
                 // Within this binding fn is where the cached album art texture gets used.
                 child.bind(&item, cache.clone());
-            })
-        );
+            }
+        ));
 
         // When row goes out of sight, unbind from item to allow reuse with another.
         // Remember to also unset the thumbnail widget's texture to potentially free it from memory.
@@ -224,8 +239,8 @@ impl QueueView {
                     .and_downcast::<QueueRow>()
                     .expect("The child has to be a `QueueRow`.");
                 child.unbind(cache);
-            })
-        );
+            }
+        ));
 
         // Set the factory of the list view
         self.imp().queue.set_factory(Some(&factory));
@@ -252,13 +267,19 @@ impl QueueView {
         diag.add_response("overwrite", "_Overwrite");
         diag.set_response_appearance("append", adw::ResponseAppearance::Suggested);
         diag.set_response_appearance("overwrite", adw::ResponseAppearance::Destructive);
-        diag.choose(self.imp().window.get().unwrap(), Option::<gio::Cancellable>::None.as_ref(), move |resp| {
-            match resp.as_str() {
-                "append" => {let _ = player.save_queue(&name, SaveMode::Append);}
-                "overwrite" => {let _ = player.save_queue(&name, SaveMode::Replace);}
+        diag.choose(
+            self.imp().window.get().unwrap(),
+            Option::<gio::Cancellable>::None.as_ref(),
+            move |resp| match resp.as_str() {
+                "append" => {
+                    let _ = player.save_queue(&name, SaveMode::Append);
+                }
+                "overwrite" => {
+                    let _ = player.save_queue(&name, SaveMode::Replace);
+                }
                 _ => {}
-            }
-        });
+            },
+        );
     }
 
     pub fn bind_state(&self, player: Player) {
@@ -270,47 +291,32 @@ impl QueueView {
         let save_name = self.imp().save_name.get();
         let save_confirm = self.imp().save_confirm.get();
         player_queue
-            .bind_property(
-                "n-items",
-                &clear_queue_btn,
-                "sensitive"
-            )
-            .transform_to(|_, size: u32| {Some(size > 0)})
+            .bind_property("n-items", &clear_queue_btn, "sensitive")
+            .transform_to(|_, size: u32| Some(size > 0))
             .sync_create()
             .build();
 
         player_queue
-            .bind_property(
-                "n-items",
-                &queue_title,
-                "subtitle"
-            )
+            .bind_property("n-items", &queue_title, "subtitle")
             // TODO: l10n
-            .transform_to(|_, size: u32| {format_song_count(size)})
+            .transform_to(|_, size: u32| format_song_count(size))
             .sync_create()
             .build();
 
         player
-            .bind_property(
-                "supports-playlists",
-                &save,
-                "visible"
-            )
+            .bind_property("supports-playlists", &save, "visible")
             .sync_create()
             .build();
 
-        save_name
-            .connect_closure(
-                "changed",
-                false,
-                closure_local!(
-                    #[weak]
-                    save_confirm,
-                    move |entry: gtk::Entry| {
-                        save_confirm.set_sensitive(entry.text_length() > 0)
-                    }
-                )
-            );
+        save_name.connect_closure(
+            "changed",
+            false,
+            closure_local!(
+                #[weak]
+                save_confirm,
+                move |entry: gtk::Entry| { save_confirm.set_sensitive(entry.text_length() > 0) }
+            ),
+        );
 
         save_confirm.connect_clicked(clone!(
             #[weak(rename_to = this)]
@@ -326,55 +332,58 @@ impl QueueView {
                 match player.save_queue(&name, SaveMode::Create) {
                     Ok(()) => {}
                     Err(e) => match e {
-                        Some(MpdError::Server(ServerError {code: MpdErrorCode::Exist, pos: _, command: _, detail: _})) => {
+                        Some(MpdError::Server(ServerError {
+                            code: MpdErrorCode::Exist,
+                            pos: _,
+                            command: _,
+                            detail: _,
+                        })) => {
                             this.show_save_error_dialog(name, player);
                         }
                         _ => {}
-                    }
+                    },
                 }
             }
         ));
 
         player
-            .bind_property(
-                "consume",
-                &consume,
-                "icon-name"
-            )
+            .bind_property("consume", &consume, "icon-name")
             .transform_to(|_, is_consuming: bool| {
-                if is_consuming {Some("consume-on-symbolic")}
-                else {Some("consume-off-symbolic")}
+                if is_consuming {
+                    Some("consume-on-symbolic")
+                } else {
+                    Some("consume-off-symbolic")
+                }
             })
             .sync_create()
             .build();
 
         player
-            .bind_property(
-                "consume",
-                &consume,
-                "tooltip-text"
-            )
+            .bind_property("consume", &consume, "tooltip-text")
             .transform_to(|_, is_consuming: bool| {
                 // TODO: translatable
-                if !is_consuming {Some("Consume mode: off")}
-                else {Some("Consume mode: on. Songs will be removed from the queue once played.")}
+                if !is_consuming {
+                    Some("Consume mode: off")
+                } else {
+                    Some("Consume mode: on. Songs will be removed from the queue once played.")
+                }
             })
             .sync_create()
             .build();
 
         consume
-            .bind_property(
-                "active",
-                &player,
-                "consume"
-            )
+            .bind_property("active", &player, "consume")
             .bidirectional()
             .sync_create()
             .build();
 
-        clear_queue_btn.connect_clicked(clone!(#[weak] player, move |_| {
-            player.clear_queue();
-        }));
+        clear_queue_btn.connect_clicked(clone!(
+            #[weak]
+            player,
+            move |_| {
+                player.clear_queue();
+            }
+        ));
     }
 
     pub fn setup(&self, player: Player, cache: Rc<Cache>, window: EuphonicaWindow) {

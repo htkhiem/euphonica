@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <schemalist gettext-domain="euphonica">
-	<enum id="org.euphonica.Euphonica.sortby">
+	<enum id="io.github.htkhiem.Euphonica.sortby">
 		<value nick="song-title" value="1"/>
 		<value nick="artist" value="2"/>
 		<value nick="album-title" value="3"/>
@@ -10,26 +10,31 @@
 		<value nick="last-modified" value="7"/>
 	</enum>
 
-	<enum id="org.euphonica.Euphonica.sortdir">
+	<enum id="io.github.htkhiem.Euphonica.sortdir">
 		<value nick="asc" value="1"/>
 		<value nick="desc" value="0"/>  <!-- Works as boolean too -->
 	</enum>
 
-	<enum id="org.euphonica.Euphonica.volumeunit">
+	<enum id="io.github.htkhiem.Euphonica.pcmsource">
+		<value nick="pipewire" value="1"/>
+		<value nick="fifo" value="0"/>
+	</enum>
+
+	<enum id="io.github.htkhiem.Euphonica.volumeunit">
 		<value nick="percents" value="0"/>
 		<value nick="decibels" value="1"/>  <!-- Works as boolean too -->
 	</enum>
 
-	<schema id="org.euphonica.Euphonica" path="/org/euphonica/Euphonica/">
-		<child schema="org.euphonica.Euphonica.ui" name="ui"/>
-		<child schema="org.euphonica.Euphonica.state" name="state"/>
-		<child schema="org.euphonica.Euphonica.library" name="library"/>
-		<child schema="org.euphonica.Euphonica.metaprovider" name="metaprovider"/>
-		<child schema="org.euphonica.Euphonica.player" name="player"/>
-		<child schema="org.euphonica.Euphonica.client" name="client"/>
+	<schema id="io.github.htkhiem.Euphonica" path="/org/euphonica/Euphonica/">
+		<child schema="io.github.htkhiem.Euphonica.ui" name="ui"/>
+		<child schema="io.github.htkhiem.Euphonica.state" name="state"/>
+		<child schema="io.github.htkhiem.Euphonica.library" name="library"/>
+		<child schema="io.github.htkhiem.Euphonica.metaprovider" name="metaprovider"/>
+		<child schema="io.github.htkhiem.Euphonica.player" name="player"/>
+		<child schema="io.github.htkhiem.Euphonica.client" name="client"/>
 	</schema>
 
-	<schema id="org.euphonica.Euphonica.client" path="/org/euphonica/Euphonica/client/">
+	<schema id="io.github.htkhiem.Euphonica.client" path="/org/euphonica/Euphonica/client/">
 		<!-- TODO: bool key for whether there's a password. Store password with oo7. -->
 		<key name="mpd-host" type="s">
 			<default>'localhost'</default>
@@ -52,6 +57,10 @@
 			<default>true</default>
 		</key>
 
+		<key name="mpd-visualizer-pcm-source" enum='io.github.htkhiem.Euphonica.pcmsource'>
+			<default>'pipewire'</default>
+		</key>
+
 		<key name="mpd-fifo-path" type="s">
 			<default>''</default>
 		</key>
@@ -62,7 +71,7 @@
 		</key>
 	</schema>
 
-	<schema id="org.euphonica.Euphonica.library" path="/org/euphonica/Euphonica/library/">
+	<schema id="io.github.htkhiem.Euphonica.library" path="/org/euphonica/Euphonica/library/">
 		<key name="artist-tag-delims" type="as">
 			<default>[",", ";", ":", "&amp;", "/", "//", "\\", "\\\\", " X ", "feat.", "ft.", "duet with", "special guest"]</default>
 		</key>
@@ -86,7 +95,7 @@
 		</key>
 	</schema>
 
-	<schema id="org.euphonica.Euphonica.metaprovider" path="/org/euphonica/Euphonica/metaprovider/">
+	<schema id="io.github.htkhiem.Euphonica.metaprovider" path="/org/euphonica/Euphonica/metaprovider/">
 		<key name="delay-between-requests-s" type="d">
 			<default>1.5</default>
 			<summary>How long to wait between metadata provider API calls</summary>
@@ -108,11 +117,11 @@
 			</description>
 		</key>
 
-		<child schema="org.euphonica.Euphonica.metaprovider.lastfm" name="lastfm"/>
-		<child schema="org.euphonica.Euphonica.metaprovider.musicbrainz" name="musicbrainz"/>
+		<child schema="io.github.htkhiem.Euphonica.metaprovider.lastfm" name="lastfm"/>
+		<child schema="io.github.htkhiem.Euphonica.metaprovider.musicbrainz" name="musicbrainz"/>
 	</schema>
 
-	<schema id="org.euphonica.Euphonica.metaprovider.lastfm" path="/org/euphonica/Euphonica/metaprovider/lastfm/">
+	<schema id="io.github.htkhiem.Euphonica.metaprovider.lastfm" path="/org/euphonica/Euphonica/metaprovider/lastfm/">
 		<key name="name" type="s">
 			<default>'Last.fm'</default>
 		</key>
@@ -127,7 +136,7 @@
 		</key>
 	</schema>
 
-	<schema id="org.euphonica.Euphonica.metaprovider.musicbrainz" path="/org/euphonica/Euphonica/metaprovider/musicbrainz/">
+	<schema id="io.github.htkhiem.Euphonica.metaprovider.musicbrainz" path="/org/euphonica/Euphonica/metaprovider/musicbrainz/">
 		<key name="name" type="s">
 			<default>'MusicBrainz'</default>
 		</key>
@@ -142,7 +151,7 @@
 		</key>
 	</schema>
 
-	<schema id="org.euphonica.Euphonica.player" path="/org/euphonica/Euphonica/player/">
+	<schema id="io.github.htkhiem.Euphonica.player" path="/org/euphonica/Euphonica/player/">
 		<key name="enable-mpris" type="b">
 			<default>true</default>
 		</key>
@@ -176,7 +185,7 @@
 		</key>
 	</schema>
 
-	<schema id="org.euphonica.Euphonica.ui" path="/org/euphonica/Euphonica/ui/">
+	<schema id="io.github.htkhiem.Euphonica.ui" path="/org/euphonica/Euphonica/ui/">
 		<key name="recent-playlists-count" type="u">
 			<default>5</default>
 		</key>
@@ -195,7 +204,7 @@
 		<key name="vol-knob-sensitivity" type="d">
 			<default>1.0</default>
 		</key>
-		<key name="vol-knob-unit" enum='org.euphonica.Euphonica.volumeunit'>
+		<key name="vol-knob-unit" enum='io.github.htkhiem.Euphonica.volumeunit'>
 			<default>'percents'</default>
 		</key>
 		<key name="use-visualizer" type="b">
@@ -225,11 +234,11 @@
 		</key>
 	</schema>
 
-	<schema id="org.euphonica.Euphonica.state" path="/org/euphonica/Euphonica/state/">
-		<child schema="org.euphonica.Euphonica.state.albumview" name="albumview"/>
-		<child schema="org.euphonica.Euphonica.state.artistview" name="artistview"/>
-		<child schema="org.euphonica.Euphonica.state.folderview" name="folderview"/>
-		<child schema="org.euphonica.Euphonica.state.playlistview" name="playlistview"/>
+	<schema id="io.github.htkhiem.Euphonica.state" path="/org/euphonica/Euphonica/state/">
+		<child schema="io.github.htkhiem.Euphonica.state.albumview" name="albumview"/>
+		<child schema="io.github.htkhiem.Euphonica.state.artistview" name="artistview"/>
+		<child schema="io.github.htkhiem.Euphonica.state.folderview" name="folderview"/>
+		<child schema="io.github.htkhiem.Euphonica.state.playlistview" name="playlistview"/>
 
 		<!-- Remember last window size -->
 		<key name="last-window-width" type="i">
@@ -240,48 +249,48 @@
 		</key>
 	</schema>
 
-	<schema id="org.euphonica.Euphonica.state.albumview" path="/org/euphonica/Euphonica/state/albumview/">
+	<schema id="io.github.htkhiem.Euphonica.state.albumview" path="/org/euphonica/Euphonica/state/albumview/">
 		<!-- Album view state -->
-		<key name='sort-by' enum='org.euphonica.Euphonica.sortby'>
+		<key name='sort-by' enum='io.github.htkhiem.Euphonica.sortby'>
 			<default>'album-title'</default>
 			<summary>Album View sort criterion</summary>
 		</key>
 
-		<key name="sort-direction" enum='org.euphonica.Euphonica.sortdir'>
+		<key name="sort-direction" enum='io.github.htkhiem.Euphonica.sortdir'>
 			<default>'asc'</default>
 			<summary>Album View sort direction</summary>
 		</key>
 	</schema>
 
-	<schema id="org.euphonica.Euphonica.state.artistview" path="/org/euphonica/Euphonica/state/artistview/">
+	<schema id="io.github.htkhiem.Euphonica.state.artistview" path="/org/euphonica/Euphonica/state/artistview/">
 		<!-- Artist view state -->
-		<key name="sort-direction" enum='org.euphonica.Euphonica.sortdir'>
+		<key name="sort-direction" enum='io.github.htkhiem.Euphonica.sortdir'>
 			<default>'asc'</default>
 			<summary>Artist View sort direction</summary>
 		</key>
 	</schema>
 
-	<schema id="org.euphonica.Euphonica.state.folderview" path="/org/euphonica/Euphonica/state/folderview/">
+	<schema id="io.github.htkhiem.Euphonica.state.folderview" path="/org/euphonica/Euphonica/state/folderview/">
 		<!-- Folder view state -->
-		<key name='sort-by' enum='org.euphonica.Euphonica.sortby'>
+		<key name='sort-by' enum='io.github.htkhiem.Euphonica.sortby'>
 			<default>'filename'</default>
 			<summary>Folder View sort criterion</summary>
 		</key>
 
-		<key name="sort-direction" enum='org.euphonica.Euphonica.sortdir'>
+		<key name="sort-direction" enum='io.github.htkhiem.Euphonica.sortdir'>
 			<default>'asc'</default>
 			<summary>Folder View sort direction</summary>
 		</key>
 	</schema>
 
-	<schema id="org.euphonica.Euphonica.state.playlistview" path="/org/euphonica/Euphonica/state/playlistview/">
+	<schema id="io.github.htkhiem.Euphonica.state.playlistview" path="/org/euphonica/Euphonica/state/playlistview/">
 		<!-- Folder view state -->
-		<key name='sort-by' enum='org.euphonica.Euphonica.sortby'>
+		<key name='sort-by' enum='io.github.htkhiem.Euphonica.sortby'>
 			<default>'filename'</default>
 			<summary>Playlist View sort criterion</summary>
 		</key>
 
-		<key name="sort-direction" enum='org.euphonica.Euphonica.sortdir'>
+		<key name="sort-direction" enum='io.github.htkhiem.Euphonica.sortdir'>
 			<default>'asc'</default>
 			<summary>Playlist View sort direction</summary>
 		</key>

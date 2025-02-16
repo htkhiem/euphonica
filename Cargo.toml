@@ -41,6 +41,11 @@ glib = "0.20.0"    # GHSA ID GHSA-wrw7-89jp-8q8g
 idna = "1.0.0"     # CVE-2024-12242
 libc = "0.2.169"
 spectrum-analyzer = "=0.5.2"
+ashpd = "0.10.2"
+tokio = { version = "1", features = ["rt-multi-thread"] }
+pipewire = {version = "0.8.0", features = ["v0_3_44"]}
+duplicate = "2.0.0"
+ringbuffer = "0.15.0"
 
 [dependencies.gtk]
 package = "gtk4"

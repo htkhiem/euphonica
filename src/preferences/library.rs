@@ -1,9 +1,6 @@
-use adw::subclass::prelude::*;
 use adw::prelude::*;
-use gtk::{
-    glib,
-    CompositeTemplate
-};
+use adw::subclass::prelude::*;
+use gtk::{glib, CompositeTemplate};
 
 use glib::clone;
 
@@ -13,7 +10,7 @@ mod imp {
     use super::*;
 
     #[derive(Debug, Default, CompositeTemplate)]
-    #[template(resource = "/org/euphonica/Euphonica/gtk/preferences/library.ui")]
+    #[template(resource = "/io/github/htkhiem/Euphonica/gtk/preferences/library.ui")]
     pub struct LibraryPreferences {
         #[template_child]
         pub sort_nulls_first: TemplateChild<adw::SwitchRow>,
@@ -75,27 +72,15 @@ impl LibraryPreferences {
         let library_settings = settings.child("library");
         let sort_nulls_first = imp.sort_nulls_first.get();
         library_settings
-            .bind(
-                "sort-nulls-first",
-                &sort_nulls_first,
-                "active"
-            )
+            .bind("sort-nulls-first", &sort_nulls_first, "active")
             .build();
         let sort_case_sensitive = imp.sort_case_sensitive.get();
         library_settings
-            .bind(
-                "sort-case-sensitive",
-                &sort_case_sensitive,
-                "active"
-            )
+            .bind("sort-case-sensitive", &sort_case_sensitive, "active")
             .build();
         let search_case_sensitive = imp.search_case_sensitive.get();
         library_settings
-            .bind(
-                "search-case-sensitive",
-                &search_case_sensitive,
-                "active"
-            )
+            .bind("search-case-sensitive", &search_case_sensitive, "active")
             .build();
 
         // Setup artist section
@@ -107,7 +92,7 @@ impl LibraryPreferences {
                 .array_iter_str()
                 .unwrap()
                 .collect::<Vec<&str>>()
-                .join("\n")
+                .join("\n"),
         );
         artist_delims_buf.connect_changed(clone!(
             #[weak]
@@ -128,12 +113,12 @@ impl LibraryPreferences {
                         .text(
                             &artist_delims_buf.start_iter(),
                             &artist_delims_buf.end_iter(),
-                            false
+                            false,
                         )
                         .to_string()
                         .lines()
                         .collect::<Vec<&str>>()
-                        .to_variant()
+                        .to_variant(),
                 );
                 btn.set_sensitive(false);
                 // Reinitialise the automaton
@@ -148,9 +133,8 @@ impl LibraryPreferences {
                 .value("artist-tag-delim-exceptions")
                 .array_iter_str()
                 .unwrap()
-
                 .collect::<Vec<&str>>()
-                .join("\n")
+                .join("\n"),
         );
         artist_excepts_buf.connect_changed(clone!(
             #[weak]
@@ -171,12 +155,12 @@ impl LibraryPreferences {
                         .text(
                             &artist_excepts_buf.start_iter(),
                             &artist_excepts_buf.end_iter(),
-                            false
+                            false,
                         )
                         .to_string()
                         .lines()
                         .collect::<Vec<&str>>()
-                        .to_variant()
+                        .to_variant(),
                 );
                 btn.set_sensitive(false);
                 // Reinitialise the automaton

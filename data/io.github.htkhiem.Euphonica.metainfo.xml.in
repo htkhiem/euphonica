@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.htkhiem.Euphonica</id>
+
+  <name>Euphonica</name>
+  <summary>An MPD client with delusions of grandeur</summary>
+  <developer id="io.github.htkhiem">
+    <name>Huynh Thien Khiem</name>
+  </developer>
+  <url type="bugtracker">https://github.com/htkhiem/euphonica/issues</url>
+  <url type="homepage">https://github.com/htkhiem/euphonica</url>
+  <content_rating type="oars-1.1" />
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+
+  <supports>
+    <control>pointing</control>
+    <control>keyboard</control>
+    <control>touch</control>
+  </supports>
+
+  <description>
+    <p>
+      Euphonica is an MPD client with integrated spectrum visualiser, metadata downloading &amp; more.
+    </p>
+    <ul>
+      <li>GTK4 Libadwaita UI for most MPD features, from basic things like playback controls, queue reordering and ReplayGain to things like output control, crossfade and MixRamp configuration</li>
+      <li>Built-in, customisable spectrum visualiser, reading from MPD FIFO or system PipeWire.</li>
+      <li>Audio quality indicators (lossy, lossless, hi-res, DSD) for individual songs as well as albums &amp; detailed format printout</li>
+      <li>Browse your library by album, artist and folders with multiselection support. Browsing by genre and other criteria are planned.</li>
+      <li>Playlist browser and editor</li>
+      <li>Sort albums by name, AlbumArtist or release date (provided you have the tags)</li>
+      <li>Asynchronous search for large collections</li>
+      <li>Configurable multi-artist tag syntax, works with anything you throw at it. In other words, your artist tags can be pretty messy and Euphonica will still be able to correctly split them into individual artists.</li>
+      <li>Performant album art fetching &amp; display (cached with Stretto)</li>
+      <li>Super-fast, **multithreaded**, **statically-cached** background blur powered by libblur's stack blur implementation</li>
+      <li>Automatically fetch album arts &amp; artist avatars from external sources (currently supports Last.fm and MusicBrainz)</li>
+      <li>Album wikis &amp; artist bios are supported too</li>
+      <li>All externally-acquired metadata are cached locally &amp; persisted on disk to avoid needless API calls</li>
+      <li>Volume knob with dBFS readout support ('cuz why not?)</li>
+      <li>MPRIS support (can be disabled if you're running `mpdris2` instead)</li>
+      <li>User-friendly configuration UI &amp; GSettings backend</li>
+      <li>MPD passwords are securely stored in your user's login keyring</li>
+      <li>Commands are bundled into lists for efficient MPD-side processing where possible.</li>
+    </ul>
+    <p><em>PipeWire permissions</em></p>
+    <p>Euphonica requires PipeWire capture permissions for its PipeWire visualizer backend, but currently it is only possible to specify a "blanket" PipeWire permission that also allows screen recording, microphone access, etc. Euphonica does not make use of these extra permissions, and will be updated to use a more restricted "audio portal" when one becomes available.</p>
+    <p><em>Screenshot content copyright information &amp; disclaimer</em></p>
+    <p>Album arts contained in the screenshots have been substituted with random photos from Pexel. All credits go to the original authors.</p>
+    <p>Euphonica is solely a music player programme and does not provide any media content or sources. Users must provide their own content or manually configure Euphonica to access third party online services.</p>
+  </description>
+
+  <launchable type="desktop-id">io.github.htkhiem.Euphonica.desktop</launchable>
+  <screenshots>
+    <screenshot type="default">
+      <image>https://i.ibb.co/ksWxmgCR/album-view-light.png</image>
+    </screenshot>
+    <screenshot>
+      <image>https://i.ibb.co/zTFHm0kg/queue-view-dark.png</image>
+    </screenshot>
+  </screenshots>
+
+  <releases>
+    <release version="0.12.0-alpha" date="2025-02-16">
+      <url type="details">https://github.com/htkhiem/euphonica/releases/tag/v0.12.0-alpha</url>
+      <description>
+        <p>PipeWire visualiser backend, fully adaptive UI and initial Flatpak release.</p>
+        <ul>
+          <li>New: Visualiser can now read from the current PipeWire audio stream (only way to visualisation inside Flatpak)</li>
+          <li>Refactor: UI rearrangements at smaller window sizes down to 360x640 for smartphone compatibility</li>
+          <li>Refactor: Visualsier backend has been refactored to allow hot-switching between data sources.</li>
+          <li>Fix: Slowdowns/stuttering upon startup or large changes to the queue.</li>
+          <li>Fix: Long wait times in content views after cold startup in extreme cases. We now have a second high-priority background task queue for user-initiated background tasks.</li>
+          <li>Fix: Multiple download attempts sent to MPD for the same album art.</li>
+        </ul>
+      </description>
+    </release>
+    <release version="0.11.0-alpha" date="2025-02-02">
+      <url type="details">https://github.com/htkhiem/euphonica/releases/tag/v0.11.0-alpha</url>
+      <description>
+        <p>First public tagged release for Euphonica.</p>
+        <ul>
+          <li>New: customisable spectrum visualiser (reads from MPD FIFO output)</li>
+          <li>Refactor: prefernces panel reorganisation</li>
+          <li>Fix: crash when connecting without a prior password entry in keyring</li>
+        </ul>
+      </description>
+    </release>
+  </releases>
+
+  <branding>
+    <color type="primary" scheme_preference="light">#99c1f1</color>
+    <color type="primary" scheme_preference="dark">#0a3162</color>
+  </branding>
+</component>

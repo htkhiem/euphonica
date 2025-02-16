@@ -1,19 +1,13 @@
-pub mod song;
 pub mod album;
-pub mod inode;
 pub mod artist;
-pub mod paintables;
-pub mod marquee;
 pub mod blend_mode;
+pub mod inode;
+pub mod marquee;
+pub mod paintables;
+pub mod song;
 
-pub use song::{SongInfo, Song, QualityGrade};
-pub use inode::{INodeType, INode};
-pub use album::{AlbumInfo, Album};
+pub use album::{Album, AlbumInfo};
+pub use artist::{artists_to_string, parse_mb_artist_tag, Artist, ArtistInfo};
+pub use inode::{INode, INodeType};
 pub use marquee::Marquee;
-pub use artist::{
-    ArtistInfo,
-    Artist,
-    parse_mb_artist_tag,
-    artists_to_string
-};
-pub use blend_mode::BlendMode;
+pub use song::{QualityGrade, Song, SongInfo};

@@ -1,6 +1,6 @@
 use adw::subclass::prelude::*;
+use glib::{clone, Properties};
 use gtk::{glib, prelude::*, CompositeTemplate};
-use glib::{Properties, clone};
 
 use crate::{application::EuphonicaApplication, common::INode, utils, window::EuphonicaWindow};
 
@@ -13,7 +13,7 @@ mod imp {
 
     #[derive(Debug, Properties, Default, CompositeTemplate)]
     #[properties(wrapper_type = super::Sidebar)]
-    #[template(resource = "/org/euphonica/Euphonica/gtk/sidebar.ui")]
+    #[template(resource = "/io/github/htkhiem/Euphonica/gtk/sidebar.ui")]
     pub struct Sidebar {
         #[template_child]
         pub albums_btn: TemplateChild<SidebarButton>,
@@ -32,7 +32,7 @@ mod imp {
         #[template_child]
         pub queue_len: TemplateChild<gtk::Label>,
         #[property(get, set)]
-        pub showing_queue_view: Cell<bool>
+        pub showing_queue_view: Cell<bool>,
     }
 
     #[glib::object_subclass]
@@ -82,11 +82,7 @@ impl Sidebar {
         Self::default()
     }
 
-    pub fn setup(
-        &self,
-        win: &EuphonicaWindow,
-        app: &EuphonicaApplication,
-    ) {
+    pub fn setup(&self, win: &EuphonicaWindow, app: &EuphonicaApplication) {
         let settings = utils::settings_manager().child("ui");
         let stack = win.get_stack();
         let split_view = win.get_split_view();
@@ -96,12 +92,8 @@ impl Sidebar {
         // Set default view. TODO: remember last view
         stack.set_visible_child_name("albums");
         stack
-            .bind_property(
-                "visible-child-name",
-                self,
-                "showing-queue-view"
-            )
-            .transform_to(|_, name: String| {Some(name == "queue")})
+            .bind_property("visible-child-name", self, "showing-queue-view")
+            .transform_to(|_, name: String| Some(name == "queue"))
             .sync_create()
             .build();
 
@@ -112,28 +104,31 @@ impl Sidebar {
             #[weak]
             stack,
             move |btn| {
-            if btn.is_active() {
-                stack.set_visible_child_name("albums");
+                if btn.is_active() {
+                    stack.set_visible_child_name("albums");
+                }
             }
-        }));
+        ));
 
         self.imp().artists_btn.connect_toggled(clone!(
             #[weak]
             stack,
             move |btn| {
-            if btn.is_active() {
-                stack.set_visible_child_name("artists");
+                if btn.is_active() {
+                    stack.set_visible_child_name("artists");
+                }
             }
-        }));
+        ));
 
         self.imp().folders_btn.connect_toggled(clone!(
             #[weak]
             stack,
             move |btn| {
-            if btn.is_active() {
-                stack.set_visible_child_name("folders");
+                if btn.is_active() {
+                    stack.set_visible_child_name("folders");
+                }
             }
-        }));
+        ));
 
         let playlist_view = win.get_playlist_view();
         let playlists = library.playlists();
@@ -142,25 +137,19 @@ impl Sidebar {
                 Some(playlists.clone()),
                 Some(
                     gtk::StringSorter::builder()
-                        .expression(
-                            gtk::PropertyExpression::new(
-                                INode::static_type(),
-                                Option::<gtk::PropertyExpression>::None,
-                                "last-modified"
-                            )
-                        )
-                        .build()
-                )
+                        .expression(gtk::PropertyExpression::new(
+                            INode::static_type(),
+                            Option::<gtk::PropertyExpression>::None,
+                            "last-modified",
+                        ))
+                        .build(),
+                ),
             )),
             0,
-            5 // placeholder, will be bound to a GSettings key later
+            5, // placeholder, will be bound to a GSettings key later
         );
         settings
-            .bind(
-                "recent-playlists-count",
-                &recent_playlists_model,
-                "size"
-            )
+            .bind("recent-playlists-count", &recent_playlists_model, "size")
             .build();
 
         let recent_playlists_widget = self.imp().recent_playlists.get();
@@ -194,13 +183,13 @@ impl Sidebar {
                             if btn.is_active() {
                                 playlist_view.on_playlist_clicked(&playlist);
                                 stack.set_visible_child_name("playlists");
-                                split_view.set_show_content(true);
+                                split_view.set_show_sidebar(!split_view.is_collapsed());
                             }
                         }
                     ));
                     btn.upcast::<gtk::Widget>()
                 }
-            )
+            ),
         );
 
         // Dirty hack to remove the highlight effect on hover
@@ -223,11 +212,7 @@ impl Sidebar {
         // Hide the list widget when there is no playlist at all to avoid
         // an unnecessary ~6px space after the Saved Playlists button
         recent_playlists_model
-            .bind_property(
-                "n-items",
-                &recent_playlists_widget,
-                "visible"
-            )
+            .bind_property("n-items", &recent_playlists_widget, "visible")
             .transform_to(|_, len: u32| Some(len > 0))
             .sync_create()
             .build();
@@ -238,17 +223,18 @@ impl Sidebar {
             #[weak]
             playlist_view,
             move |btn| {
-            if btn.is_active() {
-                playlist_view.pop();
-                stack.set_visible_child_name("playlists");
+                if btn.is_active() {
+                    playlist_view.pop();
+                    stack.set_visible_child_name("playlists");
+                }
             }
-        }));
+        ));
 
         client_state
             .bind_property(
                 "supports-playlists",
                 &self.imp().playlists_section.get(),
-                "visible"
+                "visible",
             )
             .sync_create()
             .build();
@@ -257,42 +243,41 @@ impl Sidebar {
             #[weak]
             stack,
             move |btn| {
-            if btn.is_active() {
-                stack.set_visible_child_name("queue");
-            }
-        }));
-
-        // Connect the raw "clicked" signals to show-content
-        self.imp().queue_btn.upcast_ref::<gtk::Button>().connect_clicked(clone!(
-            #[weak]
-            split_view,
-            move |_| {
-                split_view.set_show_content(true);
+                if btn.is_active() {
+                    stack.set_visible_child_name("queue");
+                }
             }
         ));
+
+        // Connect the raw "clicked" signals to show-content
+        self.imp()
+            .queue_btn
+            .upcast_ref::<gtk::Button>()
+            .connect_clicked(clone!(
+                #[weak]
+                split_view,
+                move |_| split_view.set_show_sidebar(!split_view.is_collapsed())
+            ));
         for btn in [
             &self.imp().albums_btn.get(),
             &self.imp().artists_btn.get(),
             &self.imp().folders_btn.get(),
-            &self.imp().playlists_btn.get()
+            &self.imp().playlists_btn.get(),
         ] {
-            btn.upcast_ref::<gtk::ToggleButton>().upcast_ref::<gtk::Button>().connect_clicked(clone!(
-                #[weak]
-                split_view,
-                move |_| {
-                    split_view.set_show_content(true);
-                }
-            ));
+            btn.upcast_ref::<gtk::ToggleButton>()
+                .upcast_ref::<gtk::Button>()
+                .connect_clicked(clone!(
+                    #[weak]
+                    split_view,
+                    move |_| split_view.set_show_sidebar(!split_view.is_collapsed())
+                ));
         }
 
-        player.queue()
-              .bind_property(
-                  "n-items",
-                  &self.imp().queue_len.get(),
-                  "label"
-              )
-              .transform_to(|_, size: u32| {Some(size.to_string())})
-              .build();
+        player
+            .queue()
+            .bind_property("n-items", &self.imp().queue_len.get(), "label")
+            .transform_to(|_, size: u32| Some(size.to_string()))
+            .build();
     }
 
     pub fn set_view(&self, view_name: &str) {
@@ -301,7 +286,7 @@ impl Sidebar {
             "albums" => self.imp().albums_btn.set_active(true),
             "artists" => self.imp().artists_btn.set_active(true),
             "queue" => self.imp().queue_btn.set_active(true),
-            _ => unimplemented!()
+            _ => unimplemented!(),
         };
     }
 }

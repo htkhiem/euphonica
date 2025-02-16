@@ -82,29 +82,31 @@
           </object>
         </child>
         <property name="content">
-          <object class="GtkBox">
-            <property name="orientation">1</property>
-            <property name="hexpand">true</property>
+          <object class="AdwBreakpointBin">
+            <property name="width-request">240</property>
+            <property name="height-request">10</property>
             <child>
-              <!-- Header. Contains two parts: a collapsible infobox and an
-                   always-visible action button row beneath it.
-                   This allows the user much more vertical space when scrolling
-                   through the album contents.
-              -->
-              <object class="GtkRevealer" id="infobox_revealer">
-                <property name="reveal-child">true</property>
-                <property name="transition-type">slide-down</property>
-                <property name="child">
-                  <object class="AdwBreakpointBin">
-                    <property name="width-request">240</property>
-                    <child>
-                      <object class="AdwBreakpoint">
-                        <condition>max-width: 550px</condition>
-                        <setter object="infobox" property="orientation">1</setter>
-                        <setter object="infobox_text" property="margin-start">12</setter>
-                        <setter object="cover" property="pixel-size">128</setter>
-                      </object>
-                    </child>
+              <object class="AdwBreakpoint">
+                <condition>max-width: 550px</condition>
+                <setter object="infobox_text" property="margin-start">12</setter>
+                <setter object="replace_queue_text" property="visible">false</setter>
+                <setter object="append_queue_text" property="visible">false</setter>
+                <setter object="edit_text" property="visible">false</setter>
+              </object>
+            </child>
+            <property name="child">
+              <object class="GtkBox">
+                <property name="orientation">1</property>
+                <property name="hexpand">true</property>
+                <child>
+                  <!-- Header. Contains two parts: a collapsible infobox and an
+                       always-visible action button row beneath it.
+                       This allows the user much more vertical space when scrolling
+                       through the album contents.
+                  -->
+                  <object class="GtkRevealer" id="infobox_revealer">
+                    <property name="reveal-child">true</property>
+                    <property name="transition-type">slide-down</property>
                     <property name="child">
                       <object class="GtkBox" id="infobox_text">
                         <property name="orientation">1</property>
@@ -204,166 +206,230 @@
                       </object>
                     </property>
                   </object>
-                </property>
-              </object>
-            </child>
-            <child>
-              <!-- The always-visible action row -->
-              <object class="GtkBox">
-                <property name="margin-end">6</property>
+                </child>
                 <child>
-                  <object class="GtkStack" id="action_row">
-                    <property name="transition-type">crossfade</property>
+
+                  <!-- The always-visible action row -->
+                  <object class="GtkBox">
+                    <property name="margin-end">6</property>
+                    <child>
+                      <object class="GtkStack" id="action_row">
+                        <property name="transition-type">crossfade</property>
+                        <property name="hexpand">true</property>
+                        <child>
+                          <object class="GtkStackPage">
+                            <property name="name">queue-mode</property>
+                            <property name="child">
+                              <object class="GtkCenterBox">
+                                <style>
+                                  <class name="padding-6"/>
+                                </style>
+                                <property name="start-widget">
+                                  <object class="GtkBox" id="queue_actions">
+                                    <property name="spacing">6</property>
+                                    <child>
+                                      <object class="GtkButton" id="replace_queue">
+                                        <property name="tooltip-text" translatable="true">Replace the queue with the selected songs</property>
+                                        <child>
+                                          <object class="GtkBox">
+                                            <property name="spacing">6</property>
+                                            <child>
+                                              <object class="GtkImage">
+                                                <property name="icon-name">play-symbolic</property>
+                                              </object>
+                                            </child>
+                                            <child>
+                                              <object class="GtkLabel" id="replace_queue_text">
+                                                <property name="label" translatable="true">Play all</property>
+                                              </object>
+                                            </child>
+                                          </object>
+                                        </child>
+                                        <style>
+                                          <class name="suggested-action"/>
+                                        </style>
+                                      </object>
+                                    </child>
+                                    <child>
+                                      <object class="GtkButton" id="append_queue">
+                                        <property name="tooltip-text" translatable="true">Add selected songs to the end of the queue</property>
+                                        <child>
+                                          <object class="GtkBox">
+                                            <property name="spacing">6</property>
+                                            <child>
+                                              <object class="GtkImage">
+                                                <property name="icon-name">list-add-symbolic</property>
+                                              </object>
+                                            </child>
+                                            <child>
+                                              <object class="GtkLabel" id="append_queue_text">
+                                                <property name="label" translatable="true">Queue all</property>
+                                              </object>
+                                            </child>
+                                          </object>
+                                        </child>
+                                      </object>
+                                    </child>
+                                    <child>
+                                      <object class="GtkButton" id="edit_playlist">
+                                        <property name="tooltip-text" translatable="true">Reorder and/or remove songs</property>
+                                        <child>
+                                          <object class="GtkBox">
+                                            <property name="spacing">6</property>
+                                            <child>
+                                              <object class="GtkImage">
+                                                <property name="icon-name">document-edit-symbolic</property>
+                                              </object>
+                                            </child>
+                                            <child>
+                                              <object class="GtkLabel" id="edit_text">
+                                                <property name="label" translatable="true">Edit</property>
+                                              </object>
+                                            </child>
+                                          </object>
+                                        </child>
+                                      </object>
+                                    </child>
+                                  </object>
+                                </property>
+                                <property name="end-widget">
+                                  <object class="GtkBox">
+                                    <property name="spacing">6</property>
+                                    <child>
+                                      <object class="GtkButton" id="sel_all">
+                                        <property name="icon-name">edit-select-all-symbolic</property>
+                                        <style>
+                                          <class name="flat"/>
+                                        </style>
+                                      </object>
+                                    </child>
+                                    <child>
+                                      <object class="GtkButton" id="sel_none">
+                                        <property name="icon-name">edit-select-none-symbolic</property>
+                                        <style>
+                                          <class name="flat"/>
+                                        </style>
+                                      </object>
+                                    </child>
+                                  </object>
+                                </property>
+                              </object>
+                            </property>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkStackPage">
+                            <property name="name">edit-mode</property>
+                            <property name="child">
+                              <object class="GtkCenterBox">
+                                <style>
+                                  <class name="padding-6"/>
+                                </style>
+                                <property name="start-widget">
+                                  <object class="GtkBox" id="edit_actions">
+                                    <property name="spacing">6</property>
+                                    <child>
+                                      <object class="GtkButton" id="edit_cancel">
+                                        <property name="label" translatable="true">Cancel</property>
+                                        <property name="tooltip-text" translatable="true">Discard all changes</property>
+                                      </object>
+                                    </child>
+                                    <child>
+                                      <object class="GtkBox">
+                                        <style>
+                                          <class name="linked"/>
+                                        </style>
+                                        <child>
+                                          <object class="GtkButton" id="edit_undo">
+                                            <property name="icon-name" translatable="true">edit-undo-symbolic</property>
+                                            <property name="tooltip-text" translatable="true">Undo</property>
+                                            <property name="sensitive">false</property>
+                                          </object>
+                                        </child>
+                                        <child>
+                                          <object class="GtkButton" id="edit_redo">
+                                            <property name="icon-name" translatable="true">edit-redo-symbolic</property>
+                                            <property name="tooltip-text" translatable="true">Redo</property>
+                                            <property name="sensitive">false</property>
+                                          </object>
+                                        </child>
+                                      </object>
+                                    </child>
+                                  </object>
+                                </property>
+                                <property name="end-widget">
+                                  <object class="GtkButton" id="edit_apply">
+                                    <style>
+                                      <class name="suggested-action"/>
+                                    </style>
+                                    <property name="label" translatable="true">Apply</property>
+                                    <property name="tooltip-text" translatable="true">Apply changes to this playlist</property>
+                                  </object>
+                                </property>
+                              </object>
+                            </property>
+                          </object>
+                        </child>
+                      </object>
+                    </child>
+
+                    <child>
+                      <object class="GtkToggleButton" id="collapse_infobox">
+                        <property name="icon-name">up-symbolic</property>
+                        <property name="valign">center</property>
+                        <style>
+                          <class name="flat"/>
+                        </style>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkStack" id="content_stack">
                     <property name="hexpand">true</property>
+                    <property name="vexpand">true</property>
+                    <property name="transition-type">crossfade</property>
                     <child>
                       <object class="GtkStackPage">
                         <property name="name">queue-mode</property>
                         <property name="child">
-                          <object class="GtkCenterBox">
-                            <style>
-                              <class name="padding-6"/>
-                            </style>
-                            <property name="start-widget">
-                              <object class="GtkBox">
-                                <property name="spacing">6</property>
-                                <child>
-                                  <object class="GtkButton" id="replace_queue">
-                                    <property name="tooltip-text" translatable="true">Replace the queue with the selected songs</property>
-                                    <child>
-                                      <object class="GtkBox">
-                                        <property name="spacing">6</property>
-                                        <child>
-                                          <object class="GtkImage">
-                                            <property name="icon-name">play-symbolic</property>
-                                          </object>
-                                        </child>
-                                        <child>
-                                          <object class="GtkLabel" id="replace_queue_text">
-                                            <property name="label" translatable="true">Play all</property>
-                                          </object>
-                                        </child>
-                                      </object>
-                                    </child>
-                                    <style>
-                                      <class name="suggested-action"/>
-                                    </style>
-                                  </object>
-                                </child>
-                                <child>
-                                  <object class="GtkButton" id="append_queue">
-                                    <property name="tooltip-text" translatable="true">Add selected songs to the end of the queue</property>
-                                    <child>
-                                      <object class="GtkBox">
-                                        <property name="spacing">6</property>
-                                        <child>
-                                          <object class="GtkImage">
-                                            <property name="icon-name">list-add-symbolic</property>
-                                          </object>
-                                        </child>
-                                        <child>
-                                          <object class="GtkLabel" id="append_queue_text">
-                                            <property name="label" translatable="true">Queue all</property>
-                                          </object>
-                                        </child>
-                                      </object>
-                                    </child>
-                                  </object>
-                                </child>
-                                <child>
-                                  <object class="GtkButton" id="edit_playlist">
-                                    <property name="tooltip-text" translatable="true">Reorder and/or remove songs</property>
-                                    <child>
-                                      <object class="GtkBox">
-                                        <property name="spacing">6</property>
-                                        <child>
-                                          <object class="GtkImage">
-                                            <property name="icon-name">document-edit-symbolic</property>
-                                          </object>
-                                        </child>
-                                        <child>
-                                          <object class="GtkLabel">
-                                            <property name="label" translatable="true">Edit</property>
-                                          </object>
-                                        </child>
-                                      </object>
-                                    </child>
-                                  </object>
-                                </child>
-                              </object>
-                            </property>
-                            <property name="end-widget">
-                              <object class="GtkBox">
-                                <property name="spacing">6</property>
-                                <child>
-                                  <object class="GtkButton" id="sel_all">
-                                    <style>
-                                      <class name="circular"/>
-                                    </style>
-                                    <property name="icon-name">edit-select-all-symbolic</property>
-                                    <style>
-                                      <class name="circular"/>
-                                      <class name="flat"/>
-                                    </style>
-                                  </object>
-                                </child>
-                                <child>
-                                  <object class="GtkButton" id="sel_none">
-                                    <style>
-                                      <class name="circular"/>
-                                    </style>
-                                    <property name="icon-name">edit-select-none-symbolic</property>
-                                    <style>
-                                      <class name="circular"/>
-                                      <class name="flat"/>
-                                    </style>
-                                  </object>
-                                </child>
+                          <object class="GtkScrolledWindow" id="content_scroller">
+                            <property name="height-request">50</property>
+                            <property name="hscrollbar-policy">never</property>
+                            <property name="vscrollbar-policy">automatic</property>
+                            <property name="propagate-natural-height">true</property>
+                            <property name="has-frame">false</property>
+                            <property name="vexpand">true</property>
+                            <property name="child">
+                              <object class="GtkListView" id="content">
+                                <property name="show-separators">true</property>
+                                <style>
+                                  <class name="no-bg"/>
+                                </style>
                               </object>
                             </property>
                           </object>
                         </property>
                       </object>
                     </child>
+
                     <child>
                       <object class="GtkStackPage">
                         <property name="name">edit-mode</property>
                         <property name="child">
-                          <object class="GtkCenterBox">
-                            <style>
-                              <class name="padding-6"/>
-                            </style>
-                            <property name="start-widget">
-                              <object class="GtkBox">
-                                <property name="spacing">6</property>
-                                <child>
-                                  <object class="GtkButton" id="edit_cancel">
-                                    <property name="label" translatable="true">Cancel</property>
-                                    <property name="tooltip-text" translatable="true">Discard all changes</property>
-                                  </object>
-                                </child>
-                                <child>
-                                  <object class="GtkButton" id="edit_undo">
-                                    <property name="icon-name" translatable="true">edit-undo-symbolic</property>
-                                    <property name="tooltip-text" translatable="true">Undo</property>
-                                    <property name="sensitive">false</property>
-                                  </object>
-                                </child>
-                                <child>
-                                  <object class="GtkButton" id="edit_redo">
-                                    <property name="icon-name" translatable="true">edit-redo-symbolic</property>
-                                    <property name="tooltip-text" translatable="true">Redo</property>
-                                    <property name="sensitive">false</property>
-                                  </object>
-                                </child>
-                              </object>
-                            </property>
-                            <property name="end-widget">
-                              <object class="GtkButton" id="edit_apply">
+                          <object class="GtkScrolledWindow" id="editing_content_scroller">
+                            <property name="height-request">50</property>
+                            <property name="hscrollbar-policy">never</property>
+                            <property name="vscrollbar-policy">automatic</property>
+                            <property name="propagate-natural-height">true</property>
+                            <property name="has-frame">false</property>
+                            <property name="vexpand">true</property>
+                            <property name="child">
+                              <object class="GtkListView" id="editing_content">
+                                <property name="show-separators">true</property>
                                 <style>
-                                  <class name="suggested-action"/>
+                                  <class name="no-bg"/>
                                 </style>
-                                <property name="label" translatable="true">Apply</property>
-                                <property name="tooltip-text" translatable="true">Apply changes to this playlist</property>
                               </object>
                             </property>
                           </object>
@@ -372,73 +438,8 @@
                     </child>
                   </object>
                 </child>
-
-                <child>
-                  <object class="GtkToggleButton" id="collapse_infobox">
-                    <property name="icon-name">up-symbolic</property>
-                    <property name="valign">center</property>
-                    <style>
-                      <class name="circular"/>
-                      <class name="flat"/>
-                    </style>
-                  </object>
-                </child>
               </object>
-            </child>
-            <child>
-              <object class="GtkStack" id="content_stack">
-                <property name="hexpand">true</property>
-                <property name="vexpand">true</property>
-                <property name="transition-type">crossfade</property>
-                <child>
-                  <object class="GtkStackPage">
-                    <property name="name">queue-mode</property>
-                    <property name="child">
-                      <object class="GtkScrolledWindow" id="content_scroller">
-                        <property name="height-request">50</property>
-                        <property name="hscrollbar-policy">never</property>
-                        <property name="vscrollbar-policy">automatic</property>
-                        <property name="propagate-natural-height">true</property>
-                        <property name="has-frame">false</property>
-                        <property name="vexpand">true</property>
-                        <property name="child">
-                          <object class="GtkListView" id="content">
-                            <property name="show-separators">true</property>
-                            <style>
-                              <class name="no-bg"/>
-                            </style>
-                          </object>
-                        </property>
-                      </object>
-                    </property>
-                  </object>
-                </child>
-
-                <child>
-                  <object class="GtkStackPage">
-                    <property name="name">edit-mode</property>
-                    <property name="child">
-                      <object class="GtkScrolledWindow" id="editing_content_scroller">
-                        <property name="height-request">50</property>
-                        <property name="hscrollbar-policy">never</property>
-                        <property name="vscrollbar-policy">automatic</property>
-                        <property name="propagate-natural-height">true</property>
-                        <property name="has-frame">false</property>
-                        <property name="vexpand">true</property>
-                        <property name="child">
-                          <object class="GtkListView" id="editing_content">
-                            <property name="show-separators">true</property>
-                            <style>
-                              <class name="no-bg"/>
-                            </style>
-                          </object>
-                        </property>
-                      </object>
-                    </property>
-                  </object>
-                </child>
-              </object>
-            </child>
+            </property>
           </object>
         </property>
       </object>
