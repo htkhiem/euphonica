@@ -52,6 +52,11 @@ windowhandle {
     padding: 12pt;
 }
 
+/* Fixes the weirdly dark vertical edges between panes */
+.light-right-edge {
+	border-right: 1px solid @borders;
+}
+
 .player-pane {
     padding-left: 12px;
     padding-right: 12px;

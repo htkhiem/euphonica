@@ -51,6 +51,9 @@
         </property>
         <property name="sidebar">
           <object class="AdwNavigationPage">
+            <style>
+              <class name="light-right-edge"/>
+            </style>
             <property name="title" translatable="yes">Queue</property>
             <property name="tag">queue</property>
             <property name="child">

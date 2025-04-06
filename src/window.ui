@@ -38,6 +38,9 @@
                 <property name="vexpand">true</property>
                 <property name="sidebar">
                   <object class="AdwNavigationPage">
+                    <style>
+                      <class name="light-right-edge"/>
+                    </style>
                     <property name="title">Euphonica</property>
                     <property name="child">
                       <object class="AdwToolbarView">
