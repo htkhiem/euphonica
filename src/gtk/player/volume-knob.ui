@@ -5,8 +5,8 @@
       <object class="GtkOverlay">
         <property name="child">
           <object class="GtkDrawingArea" id="draw_area">
-            <property name="width-request">96</property>
-            <property name="height-request">96</property>
+            <property name="width-request">115</property>
+            <property name="height-request">115</property>
           </object>
         </property>
         <child type="overlay">

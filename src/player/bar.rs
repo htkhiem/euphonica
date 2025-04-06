@@ -20,8 +20,7 @@ use super::{
     PlaybackControls,
     PlaybackState,
     Player,
-    VolumeKnob,
-    RatioCenterBox
+    VolumeKnob
 };
 
 mod imp {
@@ -39,8 +38,6 @@ mod imp {
     pub struct PlayerBar {
         #[template_child]
         pub multi_layout_view: TemplateChild<adw::MultiLayoutView>,
-        #[template_child]
-        pub center_layout: TemplateChild<RatioCenterBox>,
         // Left side: current song info
         #[template_child]
         pub albumart: TemplateChild<gtk::Image>,
@@ -60,6 +57,8 @@ mod imp {
         // Centre: playback controls
         #[template_child]
         pub playback_controls: TemplateChild<PlaybackControls>,
+        #[template_child]
+        pub seekbar_revealer: TemplateChild<gtk::Revealer>,
         #[template_child]
         pub seekbar: TemplateChild<Seekbar>,
 
@@ -128,7 +127,7 @@ mod imp {
                         if collapsed {
                             Some(48)
                         } else {
-                            Some(96)
+                            Some(115)
                         }
                     },
                 )
@@ -266,6 +265,7 @@ impl PlayerBar {
 
         let infobox_revealer = imp.infobox_revealer.get();
         let mini_infobox_revealer = imp.mini_infobox_revealer.get();
+        let seekbar_revealer = imp.seekbar_revealer.get();
         // Also controls seekbar revealer, see binding in bar.ui
         player
             .bind_property("playback-state", &infobox_revealer, "reveal_child")
@@ -275,6 +275,12 @@ impl PlayerBar {
 
         player
             .bind_property("playback-state", &mini_infobox_revealer, "reveal_child")
+            .transform_to(|_, state: PlaybackState| Some(state != PlaybackState::Stopped))
+            .sync_create()
+            .build();
+
+        player
+            .bind_property("playback-state", &seekbar_revealer, "reveal_child")
             .transform_to(|_, state: PlaybackState| Some(state != PlaybackState::Stopped))
             .sync_create()
             .build();

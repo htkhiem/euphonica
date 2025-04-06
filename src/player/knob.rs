@@ -256,7 +256,7 @@ impl VolumeKnob {
                 // At 0 => 5pi/4
                 let angle = -1.25 * PI + 1.5 * PI * this.imp().value.get() / 100.0;
                 // u w0t m8
-                cr.arc(w as f64 / 2.0, h as f64 / 2.0, 40.0, -1.25 * PI, angle);
+                cr.arc(w as f64 / 2.0, h as f64 / 2.0, 50.0, -1.25 * PI, angle);
                 let _ = cr.stroke();
             }
         ));
