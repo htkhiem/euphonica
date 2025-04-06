@@ -85,26 +85,6 @@
                 </child>
               </object>
             </child>
-            <child>
-              <object class="GtkBox">
-                <property name="visible" bind-source="format_desc" bind-property="visible" bind-flags="sync-create"/>
-                <property name="spacing">6</property>
-                <child>
-                  <object class="GtkImage" id="quality_grade">
-                    <property name="icon-name">format-base-symbolic</property>
-                    <property name="icon-size">1</property>
-                  </object>
-                </child>
-                <child>
-                  <object class="GtkLabel" id="format_desc">
-                    <property name="label">Unknown format</property>
-                    <style>
-                      <class name="caption" />
-                    </style>
-                  </object>
-                </child>
-              </object>
-            </child>
           </object>
         </child>
 

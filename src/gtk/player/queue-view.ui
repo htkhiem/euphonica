@@ -32,7 +32,7 @@
         </style>
         <property name="min-sidebar-width">240</property>
         <property name="max-sidebar-width">3840</property>
-        <property name="sidebar-width-fraction">0.65</property>
+        <property name="sidebar-width-fraction">0.45</property>
         <property name="content">
           <object class="AdwNavigationPage">
             <property name="title" translatable="yes">Now Playing</property>

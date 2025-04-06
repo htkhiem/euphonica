@@ -1,33 +1,62 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <interface>
-  <template class="EuphonicaSeekbar" parent="GtkWidget">
+  <template class="EuphonicaSeekbar" parent="GtkBox">
+    <property name="spacing">0</property>
+    <property name="orientation">1</property>
     <child>
-      <object class="GtkCenterBox" id="seekbar_box">
+      <object class="GtkScale" id="seekbar">
+        <property name="draw-value">false</property>
+        <property name="hexpand">true</property>
+        <property name="orientation">0</property>
+        <property name="width-request">120</property>
+        <property name="adjustment">
+          <object class="GtkAdjustment">
+            <property name="lower">0</property>
+            <property name="upper">0</property>
+            <property name="value">0</property>
+          </object>
+        </property>
+      </object>
+    </child>
+    <child>
+      <object class="GtkCenterBox">
         <property name="hexpand">true</property>
         <property name="start-widget">
           <object class="GtkLabel" id="elapsed">
+            <property name="margin-start">11</property>
             <style>
               <class name="caption"/>
             </style>
           </object>
         </property>
         <property name="center-widget">
-          <object class="GtkScale" id="seekbar">
-            <property name="draw-value">false</property>
-            <property name="hexpand">true</property>
-            <property name="orientation">0</property>
-            <property name="width-request">120</property>
-            <property name="adjustment">
-              <object class="GtkAdjustment">
-                <property name="lower">0</property>
-                <property name="upper">0</property>
-                <property name="value">0</property>
+          <object class="GtkBox">
+            <property name="spacing">6</property>
+            <child>
+              <object class="GtkImage" id="quality_grade"/>
+            </child>
+            <child>
+              <object class="GtkLabel" id="format_desc">
+                <style>
+                  <class name="caption"/>
+                </style>
               </object>
-            </property>
+            </child>
+            <child>
+              <object class="GtkSeparator"/>
+            </child>
+            <child>
+              <object class="GtkLabel" id="bitrate">
+                <style>
+                  <class name="caption"/>
+                </style>
+              </object>
+            </child>
           </object>
         </property>
         <property name="end-widget">
           <object class="GtkLabel" id="duration">
+            <property name="margin-end">11</property>
             <style>
               <class name="caption"/>
             </style>

@@ -188,6 +188,7 @@ mod imp {
         pub queue: gio::ListStore,
         pub current_song: RefCell<Option<Song>>,
         pub format: RefCell<Option<AudioFormat>>,
+        pub bitrate: Cell<u32>,
         pub flow: Cell<PlaybackFlow>,
         pub random: Cell<bool>,
         pub consume: Cell<bool>,
@@ -243,6 +244,7 @@ mod imp {
                 queue: gio::ListStore::new::<Song>(),
                 current_song: RefCell::new(None),
                 format: RefCell::new(None),
+                bitrate: Cell::default(),
                 flow: Cell::default(),
                 client: OnceCell::new(),
                 cache: OnceCell::new(),
@@ -345,6 +347,9 @@ mod imp {
                     ParamSpecEnum::builder::<QualityGrade>("quality-grade")
                         .read_only()
                         .build(),
+                    ParamSpecUInt::builder("bitrate")
+                        .read_only()
+                        .build(),
                     ParamSpecEnum::builder::<FftStatus>("fft-status")
                         .read_only()
                         .build(),
@@ -377,6 +382,7 @@ mod imp {
                 "duration" => obj.duration().to_value(),
                 "queue-id" => obj.queue_id().to_value(),
                 "quality-grade" => obj.quality_grade().to_value(),
+                "bitrate" => self.bitrate.get().to_value(),
                 "fft-status" => obj.fft_status().to_value(),
                 "format-desc" => obj.format_desc().to_value(),
                 "fft-backend-idx" => self.fft_backend_idx.get().to_value(),
@@ -775,6 +781,12 @@ impl Player {
         let old_format = self.imp().format.replace(status.audio);
         if old_format != status.audio {
             self.notify("format-desc");
+        }
+
+        let new_bitrate = status.bitrate.unwrap_or(0);
+        let old_bitrate = self.imp().bitrate.replace(new_bitrate);
+        if new_bitrate != old_bitrate {
+            self.notify("bitrate");
         }
 
         let old_mixramp_db = self.imp().mixramp_db.replace(status.mixrampdb);

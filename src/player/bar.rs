@@ -56,10 +56,6 @@ mod imp {
         pub artist: TemplateChild<gtk::Label>,
         #[template_child]
         pub album: TemplateChild<gtk::Label>,
-        #[template_child]
-        pub quality_grade: TemplateChild<gtk::Image>,
-        #[template_child]
-        pub format_desc: TemplateChild<gtk::Label>,
 
         // Centre: playback controls
         #[template_child]
@@ -146,16 +142,6 @@ mod imp {
 
             // Hide certain widgets when in compact mode
             obj.bind_property("collapsed", &self.album.get(), "visible")
-                .invert_boolean()
-                .sync_create()
-                .build();
-
-            obj.bind_property("collapsed", &self.quality_grade.get(), "visible")
-                .invert_boolean()
-                .sync_create()
-                .build();
-
-            obj.bind_property("collapsed", &self.format_desc.get(), "visible")
                 .invert_boolean()
                 .sync_create()
                 .build();
@@ -308,25 +294,6 @@ impl PlayerBar {
         let artist = imp.artist.get();
         player
             .bind_property("artist", &artist, "label")
-            .sync_create()
-            .build();
-
-        let quality_grade = imp.quality_grade.get();
-        player
-            .bind_property("quality-grade", &quality_grade, "icon-name")
-            .transform_to(|_, grade: QualityGrade| Some(grade.to_icon_name()))
-            .sync_create()
-            .build();
-
-        player
-            .bind_property("quality-grade", &quality_grade, "visible")
-            .transform_to(|_, grade: QualityGrade| Some(grade != QualityGrade::Lossy))
-            .sync_create()
-            .build();
-
-        let format_desc = imp.format_desc.get();
-        player
-            .bind_property("format-desc", &format_desc, "label")
             .sync_create()
             .build();
 

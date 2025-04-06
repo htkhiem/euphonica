@@ -6,9 +6,9 @@ use gtk::Ordering;
 use image::{imageops::FilterType, io::Reader as ImageReader, DynamicImage, RgbImage};
 use mpd::status::AudioFormat;
 use once_cell::sync::Lazy;
-use rustc_hash::FxHashSet;
 use std::sync::OnceLock;
-use std::{hash::Hash, io::Cursor, sync::RwLock};
+use std::fmt::Write;
+use std::{io::Cursor, sync::RwLock};
 use tokio::runtime::Runtime;
 
 /// Spawn a Tokio runtime on a new thread. This is needed by the zbus dependency.
@@ -45,6 +45,23 @@ pub fn format_secs_as_duration(seconds: f64) -> String {
         format!("{:02}:{:02}:{:02}", hours, minutes, seconds)
     } else {
         format!("{:02}:{:02}", minutes, seconds)
+    }
+}
+
+pub fn format_bitrate(bitrate_kbps: u32) -> String {
+    if bitrate_kbps < 5000 {
+        format!("{}kbps", bitrate_kbps)
+    } else {
+        let bitrate_mbps = bitrate_kbps as f64 / 1000.0;
+        let mut buffer = String::new();
+        let result = write!(&mut buffer, "{:.2}Mbps", bitrate_mbps);
+
+        match result {
+            Ok(_) => buffer,
+            Err(e) => {
+                format!("{:?}", e)
+            }
+        }
     }
 }
 
@@ -178,15 +195,6 @@ pub fn resize_convert_image(dyn_img: DynamicImage) -> (RgbImage, RgbImage) {
             .thumbnail(thumbnail_size, thumbnail_size)
             .into_rgb8(),
     )
-}
-
-// TODO: Optimise this
-pub fn deduplicate<T: Eq + Hash + Clone>(input: &[T]) -> Vec<T> {
-    let mut seen = FxHashSet::default();
-    for elem in input.iter() {
-        seen.insert(elem.clone());
-    }
-    seen.into_iter().collect()
 }
 
 // Build Aho-Corasick automatons only once. In case no delimiter or exception is

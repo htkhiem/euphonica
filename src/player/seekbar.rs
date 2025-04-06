@@ -2,6 +2,8 @@ use glib::{clone, closure_local, Object};
 use gtk::{gio, glib, prelude::*, subclass::prelude::*, CompositeTemplate};
 use std::cell::Cell;
 
+use crate::{common::QualityGrade, utils};
+
 use super::Player;
 
 mod imp {
@@ -23,6 +25,12 @@ mod imp {
         pub elapsed: TemplateChild<gtk::Label>,
         #[template_child]
         pub duration: TemplateChild<gtk::Label>,
+        #[template_child]
+        pub quality_grade: TemplateChild<gtk::Image>,
+        #[template_child]
+        pub format_desc: TemplateChild<gtk::Label>,
+        #[template_child]
+        pub bitrate: TemplateChild<gtk::Label>,
         pub seekbar_clicked: Cell<bool>,
     }
 
@@ -32,7 +40,7 @@ mod imp {
         // `NAME` needs to match `class` attribute of template
         const NAME: &'static str = "EuphonicaSeekbar";
         type Type = super::Seekbar;
-        type ParentType = gtk::Widget;
+        type ParentType = gtk::Box;
 
         fn class_init(klass: &mut Self::Class) {
             klass.bind_template();
@@ -44,7 +52,6 @@ mod imp {
         }
     }
 
-    // Trait shared by all GObjects
     impl ObjectImpl for Seekbar {
         fn constructed(&self) {
             self.parent_constructed();
@@ -159,6 +166,8 @@ mod imp {
     }
 
     impl WidgetImpl for Seekbar {}
+
+    impl BoxImpl for Seekbar {}
 }
 
 glib::wrapper! {
@@ -253,6 +262,23 @@ impl Seekbar {
 
         player
             .bind_property("duration", self, "duration")
+            .sync_create()
+            .build();
+
+        player
+            .bind_property("quality-grade", &self.imp().quality_grade.get(), "icon-name")
+            .transform_to(|_, grade: QualityGrade| Some(grade.to_icon_name()))
+            .sync_create()
+            .build();
+
+        player
+            .bind_property("format-desc", &self.imp().format_desc.get(), "label")
+            .sync_create()
+            .build();
+
+        player
+            .bind_property("bitrate", &self.imp().bitrate.get(), "label")
+            .transform_to(|_, val: u32| Some(utils::format_bitrate(val))) 
             .sync_create()
             .build();
     }
