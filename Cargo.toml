@@ -48,6 +48,7 @@ rusqlite = { version = "0.33.0", features = ["time"] }
 base64 = "0.22.1"
 r2d2_sqlite = "0.26.0"
 r2d2 = "0.8.10"
+auto-palette = "0.6.0"
 
 [dependencies.gtk]
 package = "gtk4"

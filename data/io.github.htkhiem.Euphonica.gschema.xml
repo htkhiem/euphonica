@@ -233,6 +233,9 @@
 		<key name="visualizer-stroke-width" type='d'>
 			<default>2.0</default>
 		</key>
+		<key name="auto-accent" type='b'>
+			<default>true</default>
+		</key>
 	</schema>
 
 	<schema id="io.github.htkhiem.Euphonica.state" path="/org/euphonica/Euphonica/state/">

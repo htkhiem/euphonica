@@ -37,6 +37,7 @@ use image::{imageops::FilterType, DynamicImage};
 use libblur::{stack_blur, FastBlurChannels, ThreadingPolicy};
 use mpd::Subsystem;
 use std::{cell::RefCell, ops::Deref, path::PathBuf, thread, time::Duration};
+use auto_palette::{ImageData, Palette, Theme, color::RGB};
 
 #[derive(Debug)]
 pub struct BlurConfig {
@@ -71,11 +72,22 @@ fn run_blur(di: &DynamicImage, config: &BlurConfig) -> gdk::MemoryTexture {
     )
 }
 
-pub enum BlurMessage {
-    New(PathBuf, BlurConfig), // Load new image at FULL PATH & blur with given configuration. Will fade.
-    Update(BlurConfig),       // Re-blur current image but do not fade.
-    Clear,                    // Clears last-blurred cache.
-    Result(gdk::MemoryTexture, bool), // GPU texture and whether to fade to this one.
+fn get_dominant_color(img: &DynamicImage) -> RGB {
+    let colors = img.as_rgb8().unwrap().pixels().flat_map(|pixel| {
+        [pixel[0], pixel[1], pixel[2], 255]
+    }).collect::<Vec::<u8>>();
+
+    let palette = Palette::<f32>::extract(&ImageData::new(img.width(), img.height(), &colors).unwrap()).unwrap();
+
+    palette.find_swatches_with_theme(1, Theme::Colorful).first().unwrap().color().to_rgb()
+}
+
+
+pub enum WindowMessage {
+    NewBackground(PathBuf, BlurConfig), // Load new image at FULL PATH & blur with given configuration. Will fade.
+    UpdateBackground(BlurConfig),       // Re-blur current image but do not fade.
+    ClearBackground,                    // Clears last-blurred cache.
+    Result(gdk::MemoryTexture, Option<RGB>, bool), // GPU texture and whether to fade to this one.
     Stop,
 }
 
@@ -97,7 +109,7 @@ mod imp {
 
     use async_channel::Sender;
     use glib::Properties;
-    use gtk::{gdk, graphene, gsk};
+    use gtk::{gdk, graphene, gsk, CssProvider};
     use image::io::Reader;
     use utils::settings_manager;
 
@@ -156,7 +168,7 @@ mod imp {
         pub bg_opacity: Cell<f64>,
         pub bg_paintable: FadePaintable,
         pub player: OnceCell<Player>,
-        pub sender_to_bg: OnceCell<Sender<BlurMessage>>, // sending a None will terminate the thread
+        pub sender_to_bg: OnceCell<Sender<WindowMessage>>, // sending a None will terminate the thread
         pub bg_handle: OnceCell<gio::JoinHandle<()>>,
         pub prev_size: Cell<(u32, u32)>,
 
@@ -177,8 +189,13 @@ mod imp {
         pub visualizer_use_splines: Cell<bool>,
         #[property(get, set)]
         pub visualizer_stroke_width: Cell<f64>,
+        #[property(get, set)]
+        pub auto_accent: Cell<bool>,
         pub tick_callback: RefCell<Option<gtk::TickCallbackId>>,
         pub fft_data: OnceCell<Arc<Mutex<(Vec<f32>, Vec<f32>)>>>,
+        pub accent_color: RefCell<Option<RGB>>,
+
+        pub provider: CssProvider,
     }
 
     #[glib::object_subclass]
@@ -283,6 +300,11 @@ mod imp {
                 .get_only()
                 .build();
 
+            settings
+                .bind("auto-accent", obj, "auto-accent")
+                .get_only()
+                .build();
+
             self.set_always_redraw(self.use_visualizer.get());
             settings.connect_changed(
                 Some("use-visualizer"),
@@ -350,10 +372,15 @@ mod imp {
                 ),
             );
 
-            // Set up blur thread
-            let (sender_to_bg, bg_receiver) = async_channel::unbounded::<BlurMessage>();
+            // Set up accent colour provider
+            if let Some(display) = gdk::Display::default() {
+                gtk::style_context_add_provider_for_display(&display, &self.provider, gtk::STYLE_PROVIDER_PRIORITY_USER);
+            }
+
+            // Set up blur & accent thread
+            let (sender_to_bg, bg_receiver) = async_channel::unbounded::<WindowMessage>();
             let _ = self.sender_to_bg.set(sender_to_bg);
-            let (sender_to_fg, fg_receiver) = async_channel::bounded::<BlurMessage>(1); // block background thread until sent
+            let (sender_to_fg, fg_receiver) = async_channel::bounded::<WindowMessage>(1); // block background thread until sent
             let bg_handle = gio::spawn_blocking(move || {
                 println!("Starting background blur thread...");
                 let settings = settings_manager().child("ui");
@@ -363,7 +390,7 @@ mod imp {
                 'outer: loop {
                     let curr_path_mut = curr_path.as_mut();
                     // Check if there is work to do (block until there is)
-                    let mut last_msg: BlurMessage = bg_receiver
+                    let mut last_msg: WindowMessage = bg_receiver
                         .recv_blocking()
                         .expect("Fatal: invalid message sent to window's blur thread");
                     // In case the queue has more than one item, get the last one.
@@ -373,7 +400,7 @@ mod imp {
                             .expect("Fatal: invalid message sent to window's blur thread");
                     }
                     match last_msg {
-                        BlurMessage::New(path, config) => {
+                        WindowMessage::NewBackground(path, config) => {
                             if (curr_path_mut.is_some() && path != *curr_path_mut.unwrap())
                                 || curr_path.is_none()
                             {
@@ -383,8 +410,9 @@ mod imp {
                                 // we should still record the image data here as the next calls (with sizes)
                                 // will only be Updates.
                                 if config.width > 0 && config.height > 0 {
-                                    let _ = sender_to_fg.send_blocking(BlurMessage::Result(
+                                    let _ = sender_to_fg.send_blocking(WindowMessage::Result(
                                         run_blur(&di, &config),
+                                        Some(get_dominant_color(&di)),
                                         true,
                                     ));
                                     thread::sleep(Duration::from_millis(
@@ -392,16 +420,18 @@ mod imp {
                                             as u64,
                                     ));
                                 }
+
                                 curr_data.replace(di);
                             }
                             // Else no need to blur again
                             // (size/radius updates are never sent via this message)
                         }
-                        BlurMessage::Update(config) => {
+                        WindowMessage::UpdateBackground(config) => {
                             if let Some(data) = curr_data.as_ref() {
                                 if config.width > 0 && config.height > 0 {
-                                    let _ = sender_to_fg.send_blocking(BlurMessage::Result(
+                                    let _ = sender_to_fg.send_blocking(WindowMessage::Result(
                                         run_blur(data, &config),
+                                        Some(get_dominant_color(&data)),  // No need to update accent colour
                                         config.fade,
                                     ));
                                 }
@@ -413,11 +443,11 @@ mod imp {
                                 }
                             }
                         }
-                        BlurMessage::Clear => {
+                        WindowMessage::ClearBackground => {
                             curr_data = None;
                             curr_path = None;
                         }
-                        BlurMessage::Stop => {
+                        WindowMessage::Stop => {
                             break 'outer;
                         }
                         _ => unreachable!(), // we shouldn't ever send BlurResult to the child thread
@@ -439,7 +469,11 @@ mod imp {
                     let mut receiver = std::pin::pin!(fg_receiver);
                     while let Some(blur_msg) = receiver.next().await {
                         match blur_msg {
-                            BlurMessage::Result(tex, do_fade) => this.push_tex(Some(tex), do_fade),
+                            WindowMessage::Result(tex, maybe_accent, do_fade) => {
+                                this.push_tex(Some(tex), do_fade);
+                                let _ = this.accent_color.replace(maybe_accent);
+                                this.update_accent_color();
+                            }
                             _ => unreachable!(),
                         }
                     }
@@ -490,7 +524,13 @@ mod imp {
             if self.use_visualizer.get() {
                 let mutex = self.fft_data.get().unwrap();
                 let scale = self.visualizer_scale.get() as f32;
-                let fg = widget.color();
+                let fg: gdk::RGBA;
+                if let Some(rgb) = self.accent_color.borrow().as_ref() {
+                    fg = gdk::RGBA::new(rgb.r as f32 / 255.0, rgb.g as f32 / 255.0, rgb.b as f32 / 255.0, 1.0);
+                }
+                else {
+                    fg = widget.color();
+                }
                 // Halve configured opacity since we're drawing two channels
                 let width32 = widget.width() as f32;
                 let height32 = widget.height() as f32;
@@ -512,6 +552,44 @@ mod imp {
     impl AdwApplicationWindowImpl for EuphonicaWindow {}
 
     impl EuphonicaWindow {
+        pub fn set_auto_accent(&self, new: bool) {
+            let old = self.auto_accent.replace(new);
+            if old != new {
+                if new {
+                    self.obj().queue_background_update(false);
+                }
+                else {
+                    let _ = self.accent_color.take();
+                    self.update_accent_color();
+                }
+                self.obj().notify("auto-accent");
+            }
+        }
+
+        pub fn update_accent_color(&self) {
+            if let (Some(color), true) = (self.accent_color.borrow().as_ref(), self.auto_accent.get()) {
+                // Is the generated accent colour too bright?
+                // Luminance formula: L = 0.2126 * R + 0.7152 * G + 0.0722 * B
+                let lum = 0.2126 * color.r as f32 / 255.0 + 0.7152 * color.g as f32 / 255.0 + 0.0722 * color.b as f32 / 255.0;
+                if lum > 0.5 {
+                    self.provider.load_from_string(&format!(
+                        ":root {{ --accent-bg-color: rgb({}, {}, {}); --accent-fg-color: rgb(0 0 0 / 80%); }}",
+                        color.r, color.g, color.b
+                    ));
+                }
+                else {
+                    self.provider.load_from_string(&format!(
+                        ":root {{ --accent-bg-color: rgb({}, {}, {}); }}",
+                        color.r, color.g, color.b
+                    ));
+                }
+            }
+            else {
+                // If no accent colour is given, revert to system accent colour
+                self.provider.load_from_string("");
+            }
+        }
+
         /// Force window to be redrawn on each frame.
         ///
         /// This is currently necessary for the visualiser to get updated.
@@ -540,7 +618,7 @@ mod imp {
             height: f32,
             data: &[f32],
             scale: f32,
-            color: &gdk::RGBA,
+            color: &gdk::RGBA
         ) {
             let band_width = width / (data.len() as f32 - 1.0);
 
@@ -953,13 +1031,13 @@ impl EuphonicaWindow {
                             radius: settings.uint("bg-blur-radius"),
                             fade: true, // new image, must fade
                         };
-                        let _ = sender.send_blocking(BlurMessage::New(path, config));
+                        let _ = sender.send_blocking(WindowMessage::NewBackground(path, config));
                     } else {
-                        let _ = sender.send_blocking(BlurMessage::Clear);
+                        let _ = sender.send_blocking(WindowMessage::ClearBackground);
                         self.imp().push_tex(None, true);
                     }
                 } else {
-                    let _ = sender.send_blocking(BlurMessage::Clear);
+                    let _ = sender.send_blocking(WindowMessage::ClearBackground);
                     self.imp().push_tex(None, true);
                 }
             } else {
@@ -977,7 +1055,7 @@ impl EuphonicaWindow {
                 radius: settings.uint("bg-blur-radius"),
                 fade,
             };
-            let _ = sender.send_blocking(BlurMessage::Update(config));
+            let _ = sender.send_blocking(WindowMessage::UpdateBackground(config));
         }
     }
 
