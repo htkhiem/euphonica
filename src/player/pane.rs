@@ -46,6 +46,8 @@ mod imp {
         #[template_child]
         pub seekbar: TemplateChild<Seekbar>,
         #[template_child]
+        pub seekbar_revealer: TemplateChild<gtk::Revealer>,
+        #[template_child]
         pub rg_btn: TemplateChild<gtk::Button>,
         #[template_child]
         pub crossfade_btn: TemplateChild<gtk::MenuButton>,
@@ -264,6 +266,13 @@ impl PlayerPane {
         let info_box = imp.info_box.get();
         player
             .bind_property("playback-state", &info_box, "visible")
+            .transform_to(|_, state: PlaybackState| Some(state != PlaybackState::Stopped))
+            .sync_create()
+            .build();
+
+        let seekbar_revealer = imp.seekbar_revealer.get();
+        player
+            .bind_property("playback-state", &seekbar_revealer, "reveal_child")
             .transform_to(|_, state: PlaybackState| Some(state != PlaybackState::Stopped))
             .sync_create()
             .build();

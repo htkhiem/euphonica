@@ -106,19 +106,18 @@
         <property name="vscrollbar-policy">automatic</property>
         <property name="propagate-natural-height">true</property>
         <property name="vexpand">true</property>
-
         <property name="child">
-          <object class="GtkBox">
-            <style>
-              <class name="player-pane"/>
-            </style>
-            <property name="orientation">vertical</property>
-            <property name="spacing">12</property>
-            <child>
-              <object class="AdwClamp">
-                <property name="maximum-size">480px</property>
-                <property name="tightening-threshold">360px</property>
-                <property name="child">
+          <object class="AdwClamp">
+            <property name="maximum-size">480px</property>
+            <property name="tightening-threshold">360px</property>
+            <property name="child">
+              <object class="GtkBox">
+                <style>
+                  <class name="player-pane"/>
+                </style>
+                <property name="orientation">vertical</property>
+                <property name="spacing">12</property>
+                <child>
                   <object class="GtkBox"> <!-- Wraps around picture to give it rounded corners & card shadow -->
                     <property name="height-request">180sp</property>
                     <property name="halign">center</property>
@@ -132,133 +131,166 @@
                       </object>
                     </child>
                   </object>
-                </property>
-              </object>
-            </child>
-
-            <child>
-              <object class="GtkBox" id="info_box">
-                <property name="orientation">vertical</property>
-                <property name="visible">false</property>
+                </child>
                 <child>
-                  <object class="GtkLabel" id="song_name">
-                    <property name="wrap">true</property>
-                    <property name="label">Untitled Song</property>
-                    <property name="wrap">true</property>
-                    <property name="justify">2</property>
-                    <style>
-                      <class name="title-4"/>
-                    </style>
+                  <object class="GtkBox" id="info_box">
+                    <property name="orientation">vertical</property>
+                    <property name="spacing">6</property>
+                    <property name="halign">center</property>
+                    <property name="visible">false</property>
+                    <child>
+                      <object class="GtkLabel" id="song_name">
+                        <property name="wrap">true</property>
+                        <property name="label">Untitled Song</property>
+                        <property name="wrap">true</property>
+                        <property name="justify">2</property>
+                        <style>
+                          <class name="heading"/>
+                        </style>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="GtkBox">
+                        <property name="halign">center</property>
+                        <property name="spacing">6</property>
+                        <child>
+                          <object class="GtkImage">
+                            <property name="icon-name">music-artist-symbolic</property>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkLabel" id="artist">
+                            <property name="wrap">true</property>
+                            <property name="label">Unknown</property>
+                            <property name="wrap">true</property>
+                            <property name="justify">2</property>
+                            <style>
+                              <class name="caption" />
+                            </style>
+                          </object>
+                        </child>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="GtkBox">
+                        <property name="halign">center</property>
+                        <property name="spacing">6</property>
+                        <child>
+                          <object class="GtkImage">
+                            <property name="icon-name">library-music-symbolic</property>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkLabel" id="album">
+                            <property name="wrap">true</property>
+                            <property name="label">Unknown</property>
+                            <property name="wrap">true</property>
+                            <property name="justify">2</property>
+                            <style>
+                              <class name="caption" />
+                            </style>
+                          </object>
+                        </child>
+                      </object>
+                    </child>
                   </object>
-                </child>
-                <child>
-                  <object class="GtkLabel" id="artist">
-                    <property name="wrap">true</property>
-                    <property name="label">Unknown</property>
-                    <property name="wrap">true</property>
-                    <property name="justify">2</property>
-                  </object>
-                </child>
-                <child>
-                  <object class="GtkLabel" id="album">
-                    <property name="wrap">true</property>
-                    <property name="label">Unknown</property>
-                    <property name="wrap">true</property>
-                    <property name="justify">2</property>
-                  </object>
-                </child>
-              </object>
-            </child>
-
-            <child>
-              <object class="GtkBox">
-                <property name="orientation">1</property>
-                <child>
-                  <object class="EuphonicaPlaybackControls" id="playback_controls"/>
-                </child>
-                <child>
-                  <object class="EuphonicaSeekbar" id="seekbar"/>
                 </child>
                 <child>
                   <object class="GtkBox">
-                    <property name="spacing">6</property>
-                    <property name="halign">center</property>
+                    <property name="orientation">1</property>
                     <child>
-                      <object class="GtkButton" id="rg_btn">
-                        <style>
-                          <class name="flat"/>
-                        </style>
-                        <property name="icon-name">rg-off-symbolic</property>
+                      <object class="EuphonicaPlaybackControls" id="playback_controls"/>
+                    </child>
+                    <child>
+                      <object class="GtkBox">
+                        <property name="spacing">6</property>
+                        <property name="halign">center</property>
+                        <child>
+                          <object class="GtkButton" id="rg_btn">
+                            <style>
+                              <class name="flat"/>
+                            </style>
+                            <property name="icon-name">rg-off-symbolic</property>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkMenuButton" id="crossfade_btn">
+                            <style>
+                              <class name="flat"/>
+                            </style>
+                            <property name="icon-name">crossfade-off-symbolic</property>
+                            <property name="tooltip-text" translatable="true">Crossfade</property>
+                            <property name="popover">crossfade_popover</property>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkMenuButton" id="mixramp_btn">
+                            <style>
+                              <class name="flat"/>
+                            </style>
+                            <property name="icon-name">mixramp-off-symbolic</property>
+                            <property name="tooltip-text" translatable="true">MixRamp</property>
+                            <property name="popover">mixramp_popover</property>
+                          </object>
+                        </child>
                       </object>
                     </child>
                     <child>
-                      <object class="GtkMenuButton" id="crossfade_btn">
-                        <style>
-                          <class name="flat"/>
-                        </style>
-                        <property name="icon-name">crossfade-off-symbolic</property>
-                        <property name="tooltip-text" translatable="true">Crossfade</property>
-                        <property name="popover">crossfade_popover</property>
-                      </object>
-                    </child>
-                    <child>
-                      <object class="GtkMenuButton" id="mixramp_btn">
-                        <style>
-                          <class name="flat"/>
-                        </style>
-                        <property name="icon-name">mixramp-off-symbolic</property>
-                        <property name="tooltip-text" translatable="true">MixRamp</property>
-                        <property name="popover">mixramp_popover</property>
+                      <object class="GtkRevealer" id="seekbar_revealer">
+                        <property name="transition-type">slide-down</property>
+                        <child>
+                          <object class="EuphonicaSeekbar" id="seekbar">
+                            <property name="hexpand">true</property>
+                          </object>
+                        </child>
                       </object>
                     </child>
                   </object>
                 </child>
-              </object>
-            </child>
 
-            <child>
-              <object class="GtkBox">
-                <property name="halign">center</property>
-                <property name="spacing">12</property>
                 <child>
-                  <object class="GtkBox" id="output_section">
-                    <property name="visible">false</property>
-                    <child>
-                      <object class="GtkButton" id="prev_output">
+                  <object class="GtkCenterBox">
+                    <property name="start-widget">
+                      <object class="GtkBox" id="output_section">
                         <property name="visible">false</property>
-                        <property name="sensitive">false</property>
-                        <property name="valign">center</property>
-                        <property name="icon-name">left-symbolic</property>
-                        <style>
-                          <class name="flat"/>
-                          <class name="circular"/>
-                        </style>
+                        <child>
+                          <object class="GtkButton" id="prev_output">
+                            <property name="visible">false</property>
+                            <property name="sensitive">false</property>
+                            <property name="valign">center</property>
+                            <property name="icon-name">left-symbolic</property>
+                            <style>
+                              <class name="flat"/>
+                              <class name="circular"/>
+                            </style>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkStack" id="output_stack">
+                            <property name="transition-type">slide-left-right</property>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkButton" id="next_output">
+                            <property name="visible">false</property>
+                            <property name="sensitive">false</property>
+                            <property name="valign">center</property>
+                            <property name="icon-name">right-symbolic</property>
+                            <style>
+                              <class name="flat"/>
+                              <class name="circular"/>
+                            </style>
+                          </object>
+                        </child>
                       </object>
-                    </child>
-                    <child>
-                      <object class="GtkStack" id="output_stack">
-                        <property name="transition-type">slide-left-right</property>
-                      </object>
-                    </child>
-                    <child>
-                      <object class="GtkButton" id="next_output">
-                        <property name="visible">false</property>
-                        <property name="sensitive">false</property>
-                        <property name="valign">center</property>
-                        <property name="icon-name">right-symbolic</property>
-                        <style>
-                          <class name="flat"/>
-                          <class name="circular"/>
-                        </style>
-                      </object>
-                    </child>
+                    </property>
+                    <property name="end-widget">
+                      <object class="EuphonicaVolumeKnob" id="vol_knob"/>
+                    </property>
                   </object>
                 </child>
-                <child>
-                  <object class="EuphonicaVolumeKnob" id="vol_knob"/>
-                </child>
               </object>
-            </child>
+            </property>
           </object>
         </property>
       </object>
