@@ -572,14 +572,29 @@ mod imp {
                 // Luminance formula: L = 0.2126 * R + 0.7152 * G + 0.0722 * B
                 let lum = 0.2126 * color.r as f32 / 255.0 + 0.7152 * color.g as f32 / 255.0 + 0.0722 * color.b as f32 / 255.0;
                 if lum > 0.5 {
-                    self.provider.load_from_string(&format!(
-                        ":root {{ --accent-bg-color: rgb({}, {}, {}); --accent-fg-color: rgb(0 0 0 / 80%); }}",
+                    self.provider.load_from_string(&format!("
+:root {{
+    --accent-bg-color: rgb({}, {}, {});
+    --accent-fg-color: rgb(0 0 0 / 80%);
+}}
+.fg-auto-accent {{
+    color: rgb({}, {}, {});
+}}
+",
+                        color.r, color.g, color.b,
                         color.r, color.g, color.b
                     ));
                 }
                 else {
-                    self.provider.load_from_string(&format!(
-                        ":root {{ --accent-bg-color: rgb({}, {}, {}); }}",
+                    self.provider.load_from_string(&format!("
+:root {{
+    --accent-bg-color: rgb({}, {}, {});
+}}
+.fg-auto-accent {{
+    color: rgb({}, {}, {});
+}}
+",
+                        color.r, color.g, color.b,
                         color.r, color.g, color.b
                     ));
                 }

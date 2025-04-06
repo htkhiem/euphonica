@@ -7,6 +7,9 @@
           <object class="GtkDrawingArea" id="draw_area">
             <property name="width-request">115</property>
             <property name="height-request">115</property>
+            <style>
+              <class name="fg-auto-accent"/>
+            </style>
           </object>
         </property>
         <child type="overlay">

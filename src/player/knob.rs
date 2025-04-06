@@ -246,8 +246,8 @@ impl VolumeKnob {
         draw_area.set_draw_func(clone!(
             #[weak(rename_to = this)]
             self,
-            move |_, cr, w, h| {
-                let fg = this.color();
+            move |da, cr, w, h| {
+                let fg = da.color();
                 cr.set_source_rgb(fg.red() as f64, fg.green() as f64, fg.blue() as f64);
                 // Match seekbar thickness
                 cr.set_line_width(4.0);
