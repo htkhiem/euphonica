@@ -57,7 +57,7 @@ mod imp {
             // Create cache folder. This is where the cached album arts go.
             let mut cache_path: PathBuf = glib::user_cache_dir();
             cache_path.push("euphonica");
-            println!("Cache path: {}", cache_path.to_str().unwrap());
+            // println!("Cache path: {}", cache_path.to_str().unwrap());
             create_dir_all(&cache_path).expect("Could not create temporary directories!");
 
             // Create cache controller

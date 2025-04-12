@@ -382,7 +382,6 @@ mod imp {
             let _ = self.sender_to_bg.set(sender_to_bg);
             let (sender_to_fg, fg_receiver) = async_channel::bounded::<WindowMessage>(1); // block background thread until sent
             let bg_handle = gio::spawn_blocking(move || {
-                println!("Starting background blur thread...");
                 let settings = settings_manager().child("ui");
                 // Cached here to avoid having to load the same image multiple times
                 let mut curr_data: Option<DynamicImage> = None;
@@ -553,7 +552,6 @@ mod imp {
 
     impl EuphonicaWindow {
         pub fn set_auto_accent(&self, new: bool) {
-            println!("Setting auto accent...");
             let old = self.auto_accent.replace(new);
             if old != new {
                 if new {
