@@ -5,7 +5,8 @@ An MPD frontend with delusions of grandeur.
 
 ## Features
 - Responsive GTK4 LibAdwaita UI for most MPD features, from basic things like playback controls, queue reordering and ReplayGain to things like output control, crossfade and MixRamp configuration
-- Built-in, customisable spectrum visualiser, reading from MPD FIFO or system PipeWire.
+- Built-in, customisable spectrum visualiser, reading from MPD FIFO or system PipeWire
+- Automatic accent colours based on album art (optional)
 - Rate albums (requires MPD 0.24+)
 - Audio quality indicators (lossy, lossless, hi-res, DSD) for individual songs as well as albums & detailed format printout
 - Browse your library by album, artist and folders with multiselection support
@@ -34,27 +35,28 @@ An MPD frontend with delusions of grandeur.
 
 ## Screenshots
 
-- Album View in light mode[^1]
-  ![album-view-light](https://github.com/user-attachments/assets/302b0e37-ff4a-4151-b688-6d6b5e1dcb60)
+The below were captured with a mix of dark and light modes.
+
+- Album View[^1]
+  ![album-view](https://github.com/user-attachments/assets/26f9f3bb-3032-4ae5-ba46-15e4ece680ef)
 
 - UI at different sizes (v0.12+)[^1]
-![mini-layouts-light](https://github.com/user-attachments/assets/af7b2cb0-7f85-42ce-ac16-14a3c0cf2153)
+  ![mini-layouts-v2](https://github.com/user-attachments/assets/1caace0d-751e-41c6-be9c-5aa54ac67f91)
 
-- Queue View in dark mode[^1]
-  ![queue-view-dark](https://github.com/user-attachments/assets/0ed85f77-48dc-4dc6-9e43-850e731bcaaa)
+- Queue View[^1]
+  ![queue-view](https://github.com/user-attachments/assets/020faf32-33f3-4711-a86c-4934d058f3a1)
 
 - Artist bio as fetched from Last.fm[^1][^2][^3]
-  ![artist-content-view-dark](https://github.com/user-attachments/assets/659c0ca3-08f6-44f5-9840-26060057fad7)
+  ![artist-content-view](https://github.com/user-attachments/assets/54161399-1f16-490f-91b9-89b581b28839)
 
 - Album wiki as fetched from Last.fm[^1][^2]
-  ![album-content-view-dark](https://github.com/user-attachments/assets/2665a48a-e81c-43ff-b3c1-76a6d7443f5e)
+  ![album-content-view](https://github.com/user-attachments/assets/f3246730-3ad1-4056-a414-37807a145dc2)
   
-- Playlist Content View in dark mode[^1]
-  ![playlist-content-view-dark](https://github.com/user-attachments/assets/42c3b9c5-a4fe-4e70-9765-5326c75d6c5b)
-
+- Playlist Content View[^1]
+  ![playlist-content-view](https://github.com/user-attachments/assets/be9913e7-2378-4374-9a8a-d08512fc1e09)
   
 - Some of the available UI customisations[^1]
-![visualiser-customisation](https://github.com/user-attachments/assets/e21d0a36-6dba-4fea-84a2-0fdb0810bff5)
+  ![visualiser-customisation](https://github.com/user-attachments/assets/e21d0a36-6dba-4fea-84a2-0fdb0810bff5)
 
 [^1]: Actual album arts have been replaced with random pictures from [Pexels](https://www.pexels.com/). All credits go to the original authors.
 [^2]: Artist bios and album wikis are user-contributed and licensed by Last.fm under CC-BY-SA.
