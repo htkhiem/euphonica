@@ -189,7 +189,7 @@ mod imp {
         pub visualizer_use_splines: Cell<bool>,
         #[property(get, set)]
         pub visualizer_stroke_width: Cell<f64>,
-        #[property(get, set)]
+        #[property(get, set = Self::set_auto_accent)]
         pub auto_accent: Cell<bool>,
         pub tick_callback: RefCell<Option<gtk::TickCallbackId>>,
         pub fft_data: OnceCell<Arc<Mutex<(Vec<f32>, Vec<f32>)>>>,
@@ -553,6 +553,7 @@ mod imp {
 
     impl EuphonicaWindow {
         pub fn set_auto_accent(&self, new: bool) {
+            println!("Setting auto accent...");
             let old = self.auto_accent.replace(new);
             if old != new {
                 if new {

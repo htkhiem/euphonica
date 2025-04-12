@@ -7,7 +7,12 @@
     <property name="icon-name">brush-monitor-symbolic</property>
     <child>
       <object class="AdwPreferencesGroup">
-        <property name="title" translatable="true">Sidebar</property>
+        <property name="title" translatable="true">General</property>
+        <child>
+          <object class="AdwSwitchRow" id="auto_accent">
+            <property name="title" translatable="true">Recolour accent to album art</property>
+          </object>
+        </child>
         <child>
           <object class="AdwSpinRow" id="recent_playlists_count">
             <property name="title" translatable="true">Number of recent playlists to show</property>

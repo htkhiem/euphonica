@@ -15,6 +15,8 @@ mod imp {
     pub struct UIPreferences {
         #[template_child]
         pub recent_playlists_count: TemplateChild<adw::SpinRow>,
+        #[template_child]
+        pub auto_accent: TemplateChild<adw::SwitchRow>,
 
         #[template_child]
         pub use_album_art_as_bg: TemplateChild<adw::ExpanderRow>,
@@ -97,6 +99,10 @@ impl UIPreferences {
         let recent_playlists_count = imp.recent_playlists_count.get();
         ui_settings
             .bind("recent-playlists-count", &recent_playlists_count, "value")
+            .build();
+        let auto_accent = imp.auto_accent.get();
+        ui_settings
+            .bind("auto-accent", &auto_accent, "active")
             .build();
         let use_album_art_as_bg = imp.use_album_art_as_bg.get();
         let bg_blur_radius = imp.bg_blur_radius.get();
