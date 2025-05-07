@@ -35,7 +35,7 @@ mod imp {
         pub rating_val: Cell<i8>,
         pub album: RefCell<Option<Album>>,
         // Vector holding the bindings to properties of the Album GObject
-        pub cover_signal_id: RefCell<Option<SignalHandlerId>>,
+        pub cover_signal_ids: RefCell<Option<(SignalHandlerId, SignalHandlerId)>>,
         pub cache: OnceCell<Rc<Cache>>,
     }
 
@@ -141,7 +141,7 @@ mod imp {
 
 glib::wrapper! {
     pub struct AlbumCell(ObjectSubclass<imp::AlbumCell>)
-    @extends gtk::Box, gtk::Widget,
+        @extends gtk::Box, gtk::Widget,
     @implements gtk::Accessible, gtk::Buildable, gtk::ConstraintTarget, gtk::Orientable;
 }
 
@@ -149,32 +149,49 @@ impl AlbumCell {
     pub fn new(item: &gtk::ListItem, cache: Rc<Cache>) -> Self {
         let res: Self = Object::builder().build();
         res.imp()
-            .cache
-            .set(cache)
-            .expect("AlbumCell cannot bind to cache");
+           .cache
+           .set(cache)
+           .expect("AlbumCell cannot bind to cache");
         res.setup(item);
-        let _ = res.imp().cover_signal_id.replace(Some(
-            res.imp()
-                .cache
-                .get()
-                .unwrap()
-                .get_cache_state()
-                .connect_closure(
-                    "album-art-downloaded",
-                    false,
-                    closure_local!(
-                        #[weak(rename_to = this)]
-                        res,
-                        move |_: CacheState, folder_uri: String| {
-                            if let Some(album) = this.imp().album.borrow().as_ref() {
-                                if album.get_uri() == &folder_uri {
-                                    this.update_album_art(album.get_info());
-                                }
-                            }
-                        }
-                    ),
-                ),
-        ));
+        let cache_state = res.imp()
+               .cache
+               .get()
+               .unwrap()
+               .get_cache_state();
+        let _ = res.imp().cover_signal_ids.replace(Some((
+            cache_state
+               .connect_closure(
+                   "album-art-downloaded",
+                   false,
+                   closure_local!(
+                       #[weak(rename_to = this)]
+                       res,
+                       move |_: CacheState, folder_uri: String| {
+                           if let Some(album) = this.imp().album.borrow().as_ref() {
+                               if album.get_uri() == &folder_uri {
+                                   this.update_album_art(album.get_info());
+                               }
+                           }
+                       }
+                   ),
+               ),
+            cache_state
+               .connect_closure(
+                   "album-art-cleared",
+                   false,
+                   closure_local!(
+                       #[weak(rename_to = this)]
+                       res,
+                       move |_: CacheState, folder_uri: String| {
+                           if let Some(album) = this.imp().album.borrow().as_ref() {
+                               if album.get_uri() == &folder_uri {
+                                   this.imp().cover.set_paintable(Some(&*ALBUMART_PLACEHOLDER));
+                               }
+                           }
+                       }
+                   ),
+               ),
+        )));
         res
     }
 
@@ -224,13 +241,15 @@ impl AlbumCell {
     }
 
     pub fn teardown(&self) {
-        if let Some(id) = self.imp().cover_signal_id.take() {
-            self.imp()
+        if let Some((update_id, clear_id)) = self.imp().cover_signal_ids.take() {
+            let cache_state = self.imp()
                 .cache
                 .get()
                 .unwrap()
-                .get_cache_state()
-                .disconnect(id);
+                .get_cache_state();
+
+            cache_state.disconnect(update_id);
+            cache_state.disconnect(clear_id);
         }
     }
 }

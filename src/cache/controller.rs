@@ -13,9 +13,10 @@ extern crate bson;
 extern crate stretto;
 use base64::{engine::general_purpose::URL_SAFE, Engine as _};
 use async_channel::{Receiver, Sender};
+use image::io::Reader as ImageReader;
 use gio::prelude::*;
 use glib::clone;
-use gtk::{gdk::Texture, gio, glib};
+use gtk::{gdk::{self, Texture}, gio, glib};
 use once_cell::sync::Lazy;
 use rustc_hash::FxHashSet;
 use std::{
@@ -296,6 +297,9 @@ impl Cache {
                     ProviderMessage::AlbumArtAvailable(folder_uri) => {
                         this.on_album_art_downloaded(&folder_uri)
                     }
+                    ProviderMessage::ClearAlbumArt(folder_uri) => {
+                        this.on_album_art_cleared(&folder_uri);
+                    }
                     ProviderMessage::AlbumArtNotAvailable(key) => {
                         let folder_uri = &key.uri;
                         println!(
@@ -318,6 +322,9 @@ impl Cache {
                     ProviderMessage::ArtistAvatarAvailable(name) => {
                         this.on_artist_avatar_downloaded(&name)
                     }
+                    ProviderMessage::ClearArtistAvatar(name) => {
+                        this.on_artist_avatar_cleared(&name)
+                    }
                     _ => {}
                 }
             }
@@ -338,8 +345,17 @@ impl Cache {
             .emit_with_param("album-art-downloaded", folder_uri);
     }
 
+    fn on_album_art_cleared(&self, folder_uri: &str) {
+        self.state
+            .emit_with_param("album-art-cleared", folder_uri);
+    }
+
     fn on_artist_avatar_downloaded(&self, name: &str) {
         self.state.emit_with_param("artist-avatar-downloaded", name);
+    }
+
+    fn on_artist_avatar_cleared(&self, name: &str) {
+        self.state.emit_with_param("artist-avatar-cleared", name);
     }
 
     pub fn get_cache_state(&self) -> CacheState {
@@ -382,7 +398,7 @@ impl Cache {
 
     /// This is a public method to allow other controllers to get cached album arts for
     /// specific songs/albums directly if possible.
-    /// Without this, they can only get the textures via signals, which have overhead.s
+    /// Without this, they can only get the textures via signals, which have overhead.
     pub fn load_cached_album_art(
         &self,
         album: &AlbumInfo,
@@ -460,6 +476,56 @@ impl Cache {
                 thumbnail_path,
             ));
         }
+    }
+
+    /// Load the specified image, resize it, load into cache then send a message to frontend.
+    /// All of the above must be done in the background to avoid blocking UI.
+    pub fn set_album_art(&self, folder_uri: &str, path: &str) {
+        let fg_sender = self.fg_sender.clone();
+        let folder_uri = folder_uri.to_owned();
+        let hires_path = self.get_path_for(&MetadataType::AlbumArt(&folder_uri, false));
+        let thumbnail_path = self.get_path_for(&MetadataType::AlbumArt(&folder_uri, true));
+        let filepath = path.to_owned();
+        gio::spawn_blocking(move || {
+            if let Ok(ptr) = ImageReader::open(filepath) {
+                if let Ok(dyn_img) = ptr.decode() {
+                    let (hires, thumbnail) = resize_convert_image(dyn_img);
+                    let _ = hires.save(&hires_path);
+                    let _ = thumbnail.save(&thumbnail_path);
+                    // TODO: Optimise to avoid reading back from disk
+                    IMAGE_CACHE.insert(
+                        (format!("uri:{}", &folder_uri), false),
+                        gdk::Texture::from_filename(&hires_path).unwrap(),
+                        16
+                    );
+                    IMAGE_CACHE.insert(
+                        (format!("uri:{}", &folder_uri), true),
+                        gdk::Texture::from_filename(&thumbnail_path).unwrap(),
+                        1
+                    );
+                    IMAGE_CACHE.wait().unwrap();
+                    let _ = fg_sender.send_blocking(ProviderMessage::AlbumArtAvailable(folder_uri));
+                }
+            }
+        });
+    }
+
+    /// Evict the album art from cache and delete from cache folder on disk.
+    /// This does not by itself yeet the art from memory (UI elements will still hold refs to it).
+    /// We'll need to signal to these elements to clear themselves.
+    pub fn clear_album_art(&self, folder_uri: &str) {
+        let fg_sender = self.fg_sender.clone();
+        let folder_uri = folder_uri.to_owned();
+        let hires_path = self.get_path_for(&MetadataType::AlbumArt(&folder_uri, false));
+        let thumbnail_path = self.get_path_for(&MetadataType::AlbumArt(&folder_uri, true));
+
+        gio::spawn_blocking(move || {
+            let _ = std::fs::remove_file(hires_path);
+            let _ = std::fs::remove_file(thumbnail_path);
+            IMAGE_CACHE.remove(&(format!("uri:{}", &folder_uri), false));
+            IMAGE_CACHE.remove(&(format!("uri:{}", &folder_uri), true));
+            let _ = fg_sender.send_blocking(ProviderMessage::ClearAlbumArt(folder_uri));
+        });
     }
 
     // TODO: GUI for downloading album arts from external providers.

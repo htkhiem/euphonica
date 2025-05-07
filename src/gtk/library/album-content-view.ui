@@ -394,7 +394,7 @@
                     </property>
                   </object>
                 </child>
-              </object>
+              </object> 
             </property>
           </object>
         </property>
@@ -405,6 +405,16 @@
         <attribute name="label" translatable="true">Clear rating</attribute>
         <attribute name="action">acv.clear-rating</attribute>
       </item>
+      <section>
+        <item>
+          <attribute name="label" translatable="true">Set album art</attribute>
+          <attribute name="action">acv.set-album-art</attribute>
+        </item>
+        <item>
+          <attribute name="label" translatable="true">Clear album art</attribute>
+          <attribute name="action">acv.clear-album-art</attribute>
+        </item>
+      </section>
     </menu>
   </template>
 </interface>

@@ -63,6 +63,11 @@ mod imp {
                             String::static_type(), // folder URI
                         ])
                         .build(),
+                    Signal::builder("album-art-cleared")
+                        .param_types([
+                            String::static_type(), // folder URI
+                        ])
+                        .build(),
                     Signal::builder("album-meta-downloaded")
                         .param_types([
                             String::static_type(), // album tag
@@ -74,6 +79,11 @@ mod imp {
                         ])
                         .build(),
                     Signal::builder("artist-avatar-downloaded")
+                        .param_types([
+                            String::static_type(), // artist tag
+                        ])
+                        .build(),
+                    Signal::builder("artist-avatar-cleared")
                         .param_types([
                             String::static_type(), // artist tag
                         ])

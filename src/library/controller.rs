@@ -79,6 +79,10 @@ impl Library {
         self.imp().client.get().unwrap()
     }
 
+    fn cache(&self) -> &Rc<Cache> {
+        self.imp().cache.get().unwrap()
+    }
+
     /// Get all the information available about an album & its contents (won't block;
     /// UI will get notified of result later if one does arrive late).
     /// TODO: implement provider daisy-chaining on the cache side
@@ -243,9 +247,17 @@ impl Library {
     pub fn init_albums(&self) {
         self.client().queue_background(BackgroundTask::FetchAlbums, false);
     }
-
+ 
     pub fn init_artists(&self, use_albumartists: bool) {
         self.client()
             .queue_background(BackgroundTask::FetchArtists(use_albumartists), false);
     }
-}
+
+    pub fn set_album_art(&self, folder_uri: &str, path: &str) {
+        self.cache().set_album_art(folder_uri, path);
+    }
+
+    pub fn clear_album_art(&self, folder_uri: &str) {
+        self.cache().clear_album_art(folder_uri);
+    }
+} 

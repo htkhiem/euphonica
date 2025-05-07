@@ -52,7 +52,7 @@ mod imp {
         // For unbinding the queue buttons when not bound to a song (i.e. being recycled)
         pub replace_queue_id: RefCell<Option<SignalHandlerId>>,
         pub append_queue_id: RefCell<Option<SignalHandlerId>>,
-        pub thumbnail_signal_id: RefCell<Option<SignalHandlerId>>,
+        pub thumbnail_signal_ids: RefCell<Option<(SignalHandlerId, SignalHandlerId)>>,
         pub raise_signal_id: RefCell<Option<SignalHandlerId>>,
         pub lower_signal_id: RefCell<Option<SignalHandlerId>>,
         pub remove_signal_id: RefCell<Option<SignalHandlerId>>,
@@ -255,28 +255,48 @@ impl PlaylistSongRow {
     pub fn bind(&self, song: &Song, cache: Rc<Cache>) {
         // Bind album art listener. Set once first (like sync_create)
         self.update_thumbnail(song.get_album(), cache.clone(), true);
-        let thumbnail_binding = cache.get_cache_state().connect_closure(
-            "album-art-downloaded",
-            false,
-            closure_local!(
-                #[weak(rename_to = this)]
-                self,
-                #[strong]
-                song,
-                #[weak]
-                cache,
-                move |_: CacheState, folder_uri: String| {
-                    if let Some(album) = song.get_album() {
-                        if album.uri == folder_uri {
-                            this.update_thumbnail(Some(album), cache, false);
-                        }
-                    }
-                }
-            ),
-        );
+        let cache_state = cache.get_cache_state();
         self.imp()
-            .thumbnail_signal_id
-            .replace(Some(thumbnail_binding));
+            .thumbnail_signal_ids
+            .replace(Some((
+                cache_state.connect_closure(
+                    "album-art-downloaded",
+                    false,
+                    closure_local!(
+                        #[weak(rename_to = this)]
+                        self,
+                        #[strong]
+                        song,
+                        #[weak]
+                        cache,
+                        move |_: CacheState, folder_uri: String| {
+                            if let Some(album) = song.get_album() {
+                                if album.uri == folder_uri {
+                                    this.update_thumbnail(Some(album), cache, false);
+                                }
+                            }
+                        }
+                    ),
+                ),
+                cache_state.connect_closure(
+                    "album-art-cleared",
+                    false,
+                    closure_local!(
+                        #[weak(rename_to = this)]
+                        self,
+                        #[strong]
+                        song,
+                        move |_: CacheState, folder_uri: String| {
+                            if let Some(album) = song.get_album() {
+                                if album.uri == folder_uri {
+                                    this.imp().thumbnail.set_paintable(Some(&*ALBUMART_THUMBNAIL_PLACEHOLDER));
+                                }
+                            }
+                        }
+                    ),
+                )
+            )));
+
         // Bind the queue buttons
         let uri = song.get_uri().to_owned();
         if let Some(old_id) =

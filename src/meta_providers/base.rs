@@ -16,6 +16,7 @@ pub fn sleep_after_request() {
 /// Enum for communication with provider threads from the cache controller living on the main thread.
 /// Can be used for both request and response.
 pub enum ProviderMessage {
+    ClearAlbumArt(String), // Only need folder URI
     AlbumArt(AlbumInfo, PathBuf, PathBuf),
     AlbumArtAvailable(String), // Only return folder URI
     /// Negative response (currently only used by MpdWrapper)
@@ -23,6 +24,7 @@ pub enum ProviderMessage {
     /// Both request and positive response
     AlbumMeta(AlbumInfo),
     AlbumMetaAvailable(String), // Only return folder URI
+    ClearArtistAvatar(String), // Only need name
     /// Both request and positive response
     ArtistAvatar(ArtistInfo, PathBuf, PathBuf),
     ArtistAvatarAvailable(String), // Only return name

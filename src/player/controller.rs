@@ -569,6 +569,24 @@ impl Player {
                 }
             ),
         );
+        // Same logic should also work for clearing
+        cache.get_cache_state().connect_closure(
+            "album-art-cleared",
+            false,
+            closure_local!(
+                #[weak(rename_to = this)]
+                self,
+                move |_: CacheState, folder_uri: String| {
+                    if let Some(song) = this.imp().current_song.borrow().as_ref() {
+                        if let Some(album) = song.get_album() {
+                            if album.uri.as_str() == folder_uri.as_str() {
+                                this.notify("album-art");
+                            }
+                        }
+                    }
+                }
+            ),
+        );
 
         let _ = self.imp().cache.set(cache);
         let _ = self.imp().app.set(application);

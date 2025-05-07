@@ -306,6 +306,21 @@ impl AlbumContentView {
                 }
             ),
         );
+        cache.get_cache_state().connect_closure(
+            "album-art-cleared",
+            false,
+            closure_local!(
+                #[weak(rename_to = this)]
+                self,
+                move |_: CacheState, folder_uri: String| {
+                    if let Some(album) = this.imp().album.borrow().as_ref() {
+                        if folder_uri == album.get_uri() {
+                            this.imp().cover.set_paintable(Some(&*ALBUMART_PLACEHOLDER));
+                        }
+                    }
+                }
+            ),
+        );
 
         self.imp().rating
             .connect_closure(
