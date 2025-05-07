@@ -485,9 +485,15 @@ impl Cache {
         let folder_uri = folder_uri.to_owned();
         let hires_path = self.get_path_for(&MetadataType::AlbumArt(&folder_uri, false));
         let thumbnail_path = self.get_path_for(&MetadataType::AlbumArt(&folder_uri, true));
-        let filepath = path.to_owned();
+        // Assume ashpd always return filesystem spec
+        let filepath = if path.starts_with("file://") {
+            &path[7..]
+        } else {
+            path
+        }.to_owned();
         gio::spawn_blocking(move || {
-            if let Ok(ptr) = ImageReader::open(filepath) {
+            let maybe_ptr = ImageReader::open(&filepath);
+            if let Ok(ptr) = maybe_ptr {
                 if let Ok(dyn_img) = ptr.decode() {
                     let (hires, thumbnail) = resize_convert_image(dyn_img);
                     let _ = hires.save(&hires_path);
@@ -506,6 +512,9 @@ impl Cache {
                     IMAGE_CACHE.wait().unwrap();
                     let _ = fg_sender.send_blocking(ProviderMessage::AlbumArtAvailable(folder_uri));
                 }
+            }
+            else {
+                println!("{:?}", maybe_ptr.err());
             }
         });
     }

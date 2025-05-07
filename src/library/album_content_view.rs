@@ -19,7 +19,10 @@ use crate::{
 mod imp {
     use std::cell::Cell;
 
-    use crate::{common::Rating, library::add_to_playlist::AddToPlaylistButton};
+    use ashpd::desktop::file_chooser::SelectedFiles;
+    use async_channel::{Receiver, Sender};
+
+    use crate::{common::Rating, library::add_to_playlist::AddToPlaylistButton, utils};
 
     use super::*;
 
@@ -88,6 +91,7 @@ mod imp {
         pub cover_signal_id: RefCell<Option<SignalHandlerId>>,
         pub cache: OnceCell<Rc<Cache>>,
         pub selecting_all: Cell<bool>, // Enables queuing the entire album efficiently
+        pub filepath_sender: OnceCell<Sender<String>>
     }
 
     impl Default for AlbumContentView {
@@ -125,6 +129,7 @@ mod imp {
                 cover_signal_id: RefCell::new(None),
                 cache: OnceCell::new(),
                 selecting_all: Cell::new(true), // When nothing is selected, default to select-all
+                filepath_sender: OnceCell::new()
             }
         }
     }
@@ -229,10 +234,59 @@ mod imp {
                     }
                 ))
                 .build();
+            let action_set_album_art = ActionEntry::builder("set-album-art")
+                .activate(clone!(
+                    #[strong]
+                    obj,
+                    move |_, _, _| {
+                        if let Some(sender) = obj.imp().filepath_sender.get() {
+                            let sender = sender.clone();
+                            utils::tokio_runtime().spawn(async move {
+                                let maybe_files = SelectedFiles::open_file()
+                                    .title("Select a new album art")
+                                    .modal(true)
+                                    .multiple(false)
+                                    .send()
+                                    .await
+                                    .expect("ashpd file open await failure")
+                                    .response();
+
+                                if let Ok(files) = maybe_files {
+                                    let uris = files.uris();
+                                    if uris.len() > 0 {
+                                        let _ = sender.send_blocking(uris[0].to_string());
+                                    }
+                                }
+                                else {
+                                    println!("{:?}", maybe_files);
+                                }
+                            });
+                        }
+                    }
+                ))
+                .build();
+            let action_clear_album_art = ActionEntry::builder("clear-album-art")
+                .activate(clone!(
+                    #[strong]
+                    obj,
+                    move |_, _, _| {
+                        if let (Some(album), Some(library)) = (
+                            obj.imp().album.borrow().as_ref(),
+                            obj.imp().library.get()
+                        ) {
+                            library.clear_album_art(album.get_uri());
+                        }
+                    }
+                ))
+                .build();
 
             // Create a new action group and add actions to it
             let actions = SimpleActionGroup::new();
-            actions.add_action_entries([action_clear_rating]);
+            actions.add_action_entries([
+                action_clear_rating,
+                action_set_album_art,
+                action_clear_album_art
+            ]);
             self.obj().insert_action_group("acv", Some(&actions));
         }
     }
@@ -243,7 +297,7 @@ mod imp {
 glib::wrapper! {
     pub struct AlbumContentView(ObjectSubclass<imp::AlbumContentView>)
         @extends gtk::Widget,
-        @implements gio::ActionGroup, gio::ActionMap;
+    @implements gio::ActionGroup, gio::ActionMap;
 }
 
 impl Default for AlbumContentView {
@@ -286,6 +340,15 @@ impl AlbumContentView {
         }
     }
 
+    pub fn set_album_art(&self, path: &str) {
+        if let (Some(album), Some(library)) = (
+            self.imp().album.borrow().as_ref(),
+            self.imp().library.get()
+        ) {
+            library.set_album_art(album.get_uri(), path);
+        }
+    }
+
     pub fn setup(&self, library: Library, client_state: ClientState, cache: Rc<Cache>) {
         self.imp()
             .add_to_playlist
@@ -322,8 +385,9 @@ impl AlbumContentView {
             ),
         );
 
-        self.imp().rating
-            .connect_closure(
+        self.imp()
+            .rating
+            .connect_closure( 
                 "changed",
                 false,
                 closure_local!(
@@ -446,6 +510,25 @@ impl AlbumContentView {
                         });
                         library.queue_songs(&songs, false, false);
                     }
+                }
+            }
+        ));
+
+        // Set up channel for listening to album art dialog
+        // It is in these situations that Rust's lack of a standard async library bites hard.
+        let (sender, receiver) = async_channel::unbounded::<String>();
+        let _ = self.imp().filepath_sender.set(sender);
+        glib::MainContext::default().spawn_local(clone!(
+            #[strong(rename_to = this)]
+            self,
+            async move {
+                use futures::prelude::*;
+                // Allow receiver to be mutated, but keep it at the same memory address.
+                // See Receiver::next doc for why this is needed.
+                let mut receiver = std::pin::pin!(receiver);
+
+                while let Some(path) = receiver.next().await {
+                    this.set_album_art(&path);
                 }
             }
         ));
