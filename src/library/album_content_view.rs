@@ -20,7 +20,7 @@ mod imp {
     use std::cell::Cell;
 
     use ashpd::desktop::file_chooser::SelectedFiles;
-    use async_channel::{Receiver, Sender};
+    use async_channel::Sender;
 
     use crate::{common::Rating, library::add_to_playlist::AddToPlaylistButton, utils};
 
@@ -287,7 +287,7 @@ mod imp {
                 action_set_album_art,
                 action_clear_album_art
             ]);
-            self.obj().insert_action_group("acv", Some(&actions));
+            self.obj().insert_action_group("album-content-view", Some(&actions));
         }
     }
 
@@ -340,7 +340,8 @@ impl AlbumContentView {
         }
     }
 
-    pub fn set_album_art(&self, path: &str) {
+    /// Set a user-selected path as the new local cover.
+    pub fn set_cover(&self, path: &str) {
         if let (Some(album), Some(library)) = (
             self.imp().album.borrow().as_ref(),
             self.imp().library.get()
@@ -528,7 +529,7 @@ impl AlbumContentView {
                 let mut receiver = std::pin::pin!(receiver);
 
                 while let Some(path) = receiver.next().await {
-                    this.set_album_art(&path);
+                    this.set_cover(&path);
                 }
             }
         ));

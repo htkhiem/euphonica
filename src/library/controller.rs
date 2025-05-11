@@ -260,4 +260,12 @@ impl Library {
     pub fn clear_album_art(&self, folder_uri: &str) {
         self.cache().clear_album_art(folder_uri);
     }
-} 
+
+    pub fn set_artist_avatar(&self, tag: &str, path: &str) {
+        self.cache().set_artist_avatar(tag, path);
+    }
+
+    pub fn clear_artist_avatar(&self, tag: &str) {
+        self.cache().clear_artist_avatar(tag);
+    }
+}

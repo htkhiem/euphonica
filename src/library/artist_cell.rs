@@ -1,5 +1,5 @@
 use glib::{closure_local, signal::SignalHandlerId, Object};
-use gtk::{glib, prelude::*, subclass::prelude::*, CompositeTemplate};
+use gtk::{gdk, glib, prelude::*, subclass::prelude::*, CompositeTemplate};
 use std::{
     cell::{OnceCell, RefCell},
     rc::Rc,
@@ -22,7 +22,7 @@ mod imp {
         pub avatar: TemplateChild<adw::Avatar>, // Use high-resolution version
         #[template_child]
         pub name: TemplateChild<gtk::Label>,
-        pub avatar_signal_id: RefCell<Option<SignalHandlerId>>,
+        pub avatar_signal_ids: RefCell<Option<(SignalHandlerId, SignalHandlerId)>>,
         pub cache: OnceCell<Rc<Cache>>,
         pub artist: RefCell<Option<Artist>>,
     }
@@ -94,12 +94,13 @@ impl ArtistCell {
             .set(cache)
             .expect("ArtistCell cannot bind to cache");
         res.setup(item);
-        let _ = res.imp().avatar_signal_id.replace(Some(
-            res.imp()
+        let cache_state = res.imp()
                 .cache
                 .get()
                 .unwrap()
-                .get_cache_state()
+                .get_cache_state();
+        let _ = res.imp().avatar_signal_ids.replace(Some((
+            cache_state
                 .connect_closure(
                     "artist-avatar-downloaded",
                     false,
@@ -115,7 +116,23 @@ impl ArtistCell {
                         }
                     ),
                 ),
-        ));
+            cache_state
+               .connect_closure(
+                   "artist-avatar-cleared",
+                   false,
+                   closure_local!(
+                       #[weak(rename_to = this)]
+                       res,
+                       move |_: CacheState, tag: String| {
+                           if let Some(artist) = this.imp().artist.borrow().as_ref() {
+                               if artist.get_name() == &tag {
+                                   this.imp().avatar.set_custom_image(Option::<gdk::Texture>::None.as_ref());
+                               }
+                           }
+                       }
+                   ),
+               ),
+        )));
         res
     }
 
@@ -158,13 +175,14 @@ impl ArtistCell {
     }
 
     pub fn teardown(&self) {
-        if let Some(id) = self.imp().avatar_signal_id.take() {
-            self.imp()
+        if let Some((update_id, clear_id)) = self.imp().avatar_signal_ids.take() {
+            let cache = self.imp()
                 .cache
                 .get()
                 .unwrap()
-                .get_cache_state()
-                .disconnect(id);
+                .get_cache_state();
+            cache.disconnect(update_id);
+            cache.disconnect(clear_id);
         }
     }
 }

@@ -403,16 +403,16 @@
     <menu id="edit_menu_model">
       <item>
         <attribute name="label" translatable="true">Clear rating</attribute>
-        <attribute name="action">acv.clear-rating</attribute>
+        <attribute name="action">album-content-view.clear-rating</attribute>
       </item>
       <section>
         <item>
           <attribute name="label" translatable="true">Set album art</attribute>
-          <attribute name="action">acv.set-album-art</attribute>
+          <attribute name="action">album-content-view.set-album-art</attribute>
         </item>
         <item>
           <attribute name="label" translatable="true">Clear album art</attribute>
-          <attribute name="action">acv.clear-album-art</attribute>
+          <attribute name="action">album-content-view.clear-album-art</attribute>
         </item>
       </section>
     </menu>

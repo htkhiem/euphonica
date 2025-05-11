@@ -486,11 +486,11 @@ impl Cache {
         let hires_path = self.get_path_for(&MetadataType::AlbumArt(&folder_uri, false));
         let thumbnail_path = self.get_path_for(&MetadataType::AlbumArt(&folder_uri, true));
         // Assume ashpd always return filesystem spec
-        let filepath = if path.starts_with("file://") {
+        let filepath = urlencoding::decode(if path.starts_with("file://") {
             &path[7..]
         } else {
             path
-        }.to_owned();
+        }).expect("UTF-8").into_owned();
         gio::spawn_blocking(move || {
             let maybe_ptr = ImageReader::open(&filepath);
             if let Ok(ptr) = maybe_ptr {
@@ -534,6 +534,66 @@ impl Cache {
             IMAGE_CACHE.remove(&(format!("uri:{}", &folder_uri), false));
             IMAGE_CACHE.remove(&(format!("uri:{}", &folder_uri), true));
             let _ = fg_sender.send_blocking(ProviderMessage::ClearAlbumArt(folder_uri));
+        });
+    }
+
+    /// Load the specified image, resize it, load into cache then send a message to frontend.
+    /// All of the above must be done in the background to avoid blocking UI.
+    pub fn set_artist_avatar(&self, tag: &str, path: &str) {
+        let fg_sender = self.fg_sender.clone();
+        let tag = tag.to_owned();
+        let hires_path = self.get_path_for(&MetadataType::ArtistAvatar(&tag, false));
+        let thumbnail_path = self.get_path_for(&MetadataType::ArtistAvatar(&tag, true));
+        // Assume ashpd always return filesystem spec
+        let filepath = urlencoding::decode(if path.starts_with("file://") {
+            &path[7..]
+        } else {
+            path
+        }).expect("UTF-8").into_owned();
+        println!("{:?}", filepath);
+        gio::spawn_blocking(move || {
+            let maybe_ptr = ImageReader::open(&filepath);
+            if let Ok(ptr) = maybe_ptr {
+                if let Ok(dyn_img) = ptr.decode() {
+                    let (hires, thumbnail) = resize_convert_image(dyn_img);
+                    let _ = hires.save(&hires_path);
+                    let _ = thumbnail.save(&thumbnail_path);
+                    // TODO: Optimise to avoid reading back from disk
+                    IMAGE_CACHE.insert(
+                        (format!("uri:{}", &tag), false),
+                        gdk::Texture::from_filename(&hires_path).unwrap(),
+                        16
+                    );
+                    IMAGE_CACHE.insert(
+                        (format!("uri:{}", &tag), true),
+                        gdk::Texture::from_filename(&thumbnail_path).unwrap(),
+                        1
+                    );
+                    IMAGE_CACHE.wait().unwrap();
+                    let _ = fg_sender.send_blocking(ProviderMessage::ArtistAvatarAvailable(tag));
+                }
+            }
+            else {
+                println!("{:?}", maybe_ptr.err());
+            }
+        });
+    }
+
+    /// Evict the album art from cache and delete from cache folder on disk.
+    /// This does not by itself yeet the art from memory (UI elements will still hold refs to it).
+    /// We'll need to signal to these elements to clear themselves.
+    pub fn clear_artist_avatar(&self, tag: &str) {
+        let fg_sender = self.fg_sender.clone();
+        let tag = tag.to_owned();
+        let hires_path = self.get_path_for(&MetadataType::ArtistAvatar(&tag, false));
+        let thumbnail_path = self.get_path_for(&MetadataType::ArtistAvatar(&tag, true));
+
+        gio::spawn_blocking(move || {
+            let _ = std::fs::remove_file(hires_path);
+            let _ = std::fs::remove_file(thumbnail_path);
+            IMAGE_CACHE.remove(&(format!("uri:{}", &tag), false));
+            IMAGE_CACHE.remove(&(format!("uri:{}", &tag), true));
+            let _ = fg_sender.send_blocking(ProviderMessage::ClearArtistAvatar(tag));
         });
     }
 

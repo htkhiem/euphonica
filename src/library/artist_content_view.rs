@@ -17,9 +17,12 @@ use crate::{
 mod imp {
     use std::{cell::Cell, sync::OnceLock};
 
+    use ashpd::desktop::file_chooser::SelectedFiles;
+    use async_channel::Sender;
+    use gio::{ActionEntry, SimpleActionGroup};
     use glib::subclass::Signal;
 
-    use crate::library::add_to_playlist::AddToPlaylistButton;
+    use crate::{library::add_to_playlist::AddToPlaylistButton, utils};
 
     use super::*;
 
@@ -87,11 +90,13 @@ mod imp {
         pub album_subview: TemplateChild<gtk::GridView>,
         pub album_list: gio::ListStore,
 
+        pub library: OnceCell<Library>,
         pub artist: RefCell<Option<Artist>>,
         pub bindings: RefCell<Vec<Binding>>,
         pub avatar_signal_id: RefCell<Option<SignalHandlerId>>,
         pub cache: OnceCell<Rc<Cache>>,
         pub selecting_all: Cell<bool>, // Enables queuing all songs from this artist efficiently
+        pub filepath_sender: OnceCell<Sender<String>>
     }
 
     impl Default for ArtistContentView {
@@ -127,10 +132,12 @@ mod imp {
                 album_spinner: TemplateChild::default(),
                 album_subview: TemplateChild::default(),
                 album_list: gio::ListStore::new::<Album>(),
+                library: OnceCell::new(),
                 artist: RefCell::new(None),
                 bindings: RefCell::new(Vec::new()),
                 avatar_signal_id: RefCell::new(None),
                 cache: OnceCell::new(),
+                filepath_sender: OnceCell::new(),
                 selecting_all: Cell::new(true), // When nothing is selected, default to select-all
             }
         }
@@ -243,6 +250,62 @@ mod imp {
                 )
                 .sync_create()
                 .build();
+
+            // Edit actions
+            let obj = self.obj();
+            let action_set_avatar = ActionEntry::builder("set-avatar")
+                .activate(clone!(
+                    #[strong]
+                    obj,
+                    move |_, _, _| {
+                        if let Some(sender) = obj.imp().filepath_sender.get() {
+                            let sender = sender.clone();
+                            utils::tokio_runtime().spawn(async move {
+                                let maybe_files = SelectedFiles::open_file()
+                                    .title("Select a new avatar")
+                                    .modal(true)
+                                    .multiple(false)
+                                    .send()
+                                    .await
+                                    .expect("ashpd file open await failure")
+                                    .response();
+
+                                if let Ok(files) = maybe_files {
+                                    let uris = files.uris();
+                                    if uris.len() > 0 {
+                                        let _ = sender.send_blocking(uris[0].to_string());
+                                    }
+                                }
+                                else {
+                                    println!("{:?}", maybe_files);
+                                }
+                            });
+                        }
+                    }
+                ))
+                .build();
+            let action_clear_avatar = ActionEntry::builder("clear-avatar")
+                .activate(clone!(
+                    #[strong]
+                    obj,
+                    move |_, _, _| {
+                        if let (Some(artist), Some(library)) = (
+                            obj.imp().artist.borrow().as_ref(),
+                            obj.imp().library.get()
+                        ) {
+                            library.clear_artist_avatar(artist.get_name());
+                        }
+                    }
+                ))
+                .build();
+
+            // Create a new action group and add actions to it
+            let actions = SimpleActionGroup::new();
+            actions.add_action_entries([
+                action_set_avatar,
+                action_clear_avatar
+            ]);
+            self.obj().insert_action_group("artist-content-view", Some(&actions));
         }
 
         fn signals() -> &'static [Signal] {
@@ -301,7 +364,8 @@ impl ArtistContentView {
     }
 
     #[inline(always)]
-    fn setup_info_box(&self, cache: Rc<Cache>) {
+    fn setup_info_box(&self) {
+        let cache = self.imp().cache.get().unwrap();
         cache.get_cache_state().connect_closure(
             "artist-avatar-downloaded",
             false,
@@ -312,6 +376,21 @@ impl ArtistContentView {
                     if let Some(artist) = this.imp().artist.borrow().as_ref() {
                         if name == artist.get_name() {
                             this.update_avatar(artist.get_info());
+                        }
+                    }
+                }
+            ),
+        );
+        cache.get_cache_state().connect_closure(
+            "artist-avatar-cleared",
+            false,
+            closure_local!(
+                #[weak(rename_to = this)]
+                self,
+                move |_: CacheState, tag: String| {
+                    if let Some(artist) = this.imp().artist.borrow().as_ref() {
+                        if tag == artist.get_name() {
+                            this.imp().avatar.set_custom_image(Option::<gdk::Texture>::None.as_ref());
                         }
                     }
                 }
@@ -355,16 +434,15 @@ impl ArtistContentView {
             .build();
     }
 
-    fn setup_song_subview(&self, library: Library, cache: Rc<Cache>, client_state: ClientState) {
+    fn setup_song_subview(&self, client_state: ClientState) {
         // Hook up buttons
         let replace_queue_btn = self.imp().replace_queue.get();
         replace_queue_btn.connect_clicked(clone!(
             #[strong(rename_to = this)]
             self,
-            #[weak]
-            library,
             move |_| {
                 if let Some(artist) = this.imp().artist.borrow().as_ref() {
+                    let library = this.imp().library.get().unwrap();
                     if this.imp().selecting_all.get() {
                         library.queue_artist(artist.clone(), false, true, true);
                     } else {
@@ -386,10 +464,9 @@ impl ArtistContentView {
         append_queue_btn.connect_clicked(clone!(
             #[strong(rename_to = this)]
             self,
-            #[weak]
-            library,
             move |_| {
                 if let Some(artist) = this.imp().artist.borrow().as_ref() {
+                    let library = this.imp().library.get().unwrap();
                     if this.imp().selecting_all.get() {
                         library.queue_artist(artist.clone(), false, false, false);
                     } else {
@@ -414,12 +491,10 @@ impl ArtistContentView {
             closure_local!(
                 #[weak(rename_to = this)]
                 self,
-                #[weak]
-                cache,
                 move |_: ClientState, name: String, songs: glib::BoxedAnyObject| {
                     if let Some(artist) = this.imp().artist.borrow().as_ref() {
                         if name == artist.get_name() {
-                            this.add_songs(songs.borrow::<Vec<Song>>().as_ref(), cache);
+                            this.add_songs(songs.borrow::<Vec<Song>>().as_ref());
                         }
                     }
                 }
@@ -427,8 +502,9 @@ impl ArtistContentView {
         );
 
         // Set up factory
+        let library = self.imp().library.get().unwrap();
+        let cache = self.imp().cache.get().unwrap();
         let factory = SignalListItemFactory::new();
-
         // Create an empty `ArtistSongRow` during setup
         factory.connect_setup(clone!(
             #[weak]
@@ -483,7 +559,7 @@ impl ArtistContentView {
         self.imp().song_subview.set_factory(Some(&factory));
     }
 
-    fn setup_album_subview(&self, cache: Rc<Cache>, client_state: ClientState) {
+    fn setup_album_subview(&self, client_state: ClientState) {
         // TODO: handle click (switch to album tab & push album content page)
         // Unlike songs, we receive albums one by one.
         client_state.connect_closure(
@@ -492,12 +568,10 @@ impl ArtistContentView {
             closure_local!(
                 #[weak(rename_to = this)]
                 self,
-                #[weak]
-                cache,
                 move |_: ClientState, name: String, album: Album| {
                     if let Some(artist) = this.imp().artist.borrow().as_ref() {
                         if name == artist.get_name() {
-                            this.add_album(album, cache);
+                            this.add_album(album);
                         }
                     }
                 }
@@ -505,6 +579,7 @@ impl ArtistContentView {
         );
 
         // Set up factory
+        let cache = self.imp().cache.get().unwrap();
         let factory = SignalListItemFactory::new();
         factory.connect_setup(clone!(
             #[weak]
@@ -551,14 +626,44 @@ impl ArtistContentView {
     }
 
     pub fn setup(&self, library: Library, cache: Rc<Cache>, client_state: ClientState) {
-        let _ = self.imp().cache.set(cache.clone());
-        self.setup_info_box(cache.clone());
-        self.setup_song_subview(library.clone(), cache.clone(), client_state.clone());
-        self.setup_album_subview(cache, client_state);
+        self.imp().cache.set(cache).expect("Could not register artist content view with cache controller");
+        self.imp().library.set(library.clone()).expect("Could not register album content view with library controller");
+        // Set up channel for listening to album art dialog
+        // It is in these situations that Rust's lack of a standard async library bites hard.
+        let (sender, receiver) = async_channel::unbounded::<String>();
+        let _ = self.imp().filepath_sender.set(sender);
+        glib::MainContext::default().spawn_local(clone!(
+            #[strong(rename_to = this)]
+            self,
+            async move {
+                use futures::prelude::*;
+                // Allow receiver to be mutated, but keep it at the same memory address.
+                // See Receiver::next doc for why this is needed.
+                let mut receiver = std::pin::pin!(receiver);
+
+                while let Some(tag) = receiver.next().await {
+                    this.set_avatar(&tag);
+                }
+            }
+        ));
+
+        self.setup_info_box();
+        self.setup_song_subview(client_state.clone());
+        self.setup_album_subview(client_state);
 
         self.imp()
             .add_to_playlist
-            .setup(library.clone(), self.imp().song_sel_model.clone());
+            .setup(library, self.imp().song_sel_model.clone());
+    }
+
+    /// Set a user-selected path as the new local avatar.
+    pub fn set_avatar(&self, path: &str) {
+        if let (Some(artist), Some(library)) = (
+            self.imp().artist.borrow().as_ref(),
+            self.imp().library.get()
+        ) {
+            library.set_artist_avatar(artist.get_name(), path); 
+        }
     }
 
     /// Returns true if an avatar was successfully retrieved.
@@ -622,9 +727,9 @@ impl ArtistContentView {
         }
     }
 
-    fn add_album(&self, album: Album, cache: Rc<Cache>) {
+    fn add_album(&self, album: Album) {
         self.imp().album_list.append(&album);
-        cache.ensure_cached_album_art(album.get_info(), false);
+        self.imp().cache.get().unwrap().ensure_cached_album_art(album.get_info(), false);
         self.imp()
             .album_count
             .set_label(&self.imp().album_list.n_items().to_string());
@@ -634,7 +739,7 @@ impl ArtistContentView {
         }
     }
 
-    pub fn add_songs(&self, songs: &[Song], cache: Rc<Cache>) {
+    pub fn add_songs(&self, songs: &[Song]) {
         self.imp().song_list.extend_from_slice(songs);
         let infos: Vec<&AlbumInfo> = songs
             .into_iter()
@@ -644,7 +749,7 @@ impl ArtistContentView {
             .collect();
         // Might queue downloads, depending on user settings, but will not
         // actually load anything into memory just yet.
-        cache.ensure_cached_album_arts(&infos);
+        self.imp().cache.get().unwrap().ensure_cached_album_arts(&infos);
         self.imp()
             .song_count
             .set_label(&self.imp().song_list.n_items().to_string());

@@ -23,7 +23,6 @@ reqwest = { version = "0.12.5", features = ["blocking", "json"] }
 bson = "2.11.0"
 serde = "1.0.207"
 serde_json = "1.0.124"
-html-escape = "0.2.13"
 regex = "1.10.6"
 rustc-hash = "2.0.0"
 itertools = "0.13.0"
@@ -49,6 +48,7 @@ base64 = "0.22.1"
 r2d2_sqlite = "0.26.0"
 r2d2 = "0.8.10"
 auto-palette = "0.6.0"
+urlencoding = "2.1.3"
 
 [dependencies.gtk]
 package = "gtk4"

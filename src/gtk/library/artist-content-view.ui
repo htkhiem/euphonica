@@ -11,6 +11,12 @@
                 <property name="title" translatable="true">Artist Info</property>
               </object>
             </property>
+            <child type="end">
+              <object class="GtkMenuButton" id="edit_menu">
+                <property name="menu-model">edit_menu_model</property>
+                <property name="icon-name">view-more-symbolic</property>
+              </object>
+            </child>
           </object>
         </child>
         <property name="content">
@@ -437,5 +443,15 @@
         </property>
       </object>
     </child>
+    <menu id="edit_menu_model">
+      <item>
+        <attribute name="label" translatable="true">Set avatar</attribute>
+        <attribute name="action">artist-content-view.set-avatar</attribute>
+      </item>
+      <item>
+        <attribute name="label" translatable="true">Clear avatar</attribute>
+        <attribute name="action">artist-content-view.clear-avatar</attribute>
+      </item>
+    </menu>
   </template>
 </interface>
