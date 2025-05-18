@@ -15,6 +15,8 @@ use mpd::{
 };
 use rustc_hash::FxHashSet;
 
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::{
     borrow::Cow,
     cell::{Cell, RefCell},
@@ -69,7 +71,7 @@ pub enum BackgroundTask {
 // Thin wrapper around the blocking mpd::Client. It contains two separate client
 // objects connected to the same address. One lives on the main thread along
 // with the GUI and takes care of sending user commands to the daemon, while the
-// other lives on on a child thread and is often in idle mode in order to
+// other lives on a child thread. It is often in idle mode in order to
 // receive all server-side changes, including those resulting from commands from
 // other clients, such as MPRIS controls in the notification centre or another
 // frontend. Note that this second client will not notify the main thread on
@@ -87,6 +89,22 @@ pub enum BackgroundTask {
 // thread will also post a message to an mpd inter-client channel also listened
 // to by the child client. This will trigger an idle notification for the Message
 // subsystem, allowing the child client to break out of the blocking idle.
+//
+// The reverse also needs to be taken care of. In case there are too many background
+// tasks (such as mass album art downloading upon a cold start), the child client
+// might spend too much time completing these tasks without listening to idle updates.
+// This is unacceptable as our entire UI relies on idle updates. To solve this, we
+// conversely break the child thread out of background tasks when there are foreground
+// actions that would cause an idle update using an atomic flag.
+// 1. Prior to processing a work item, the child client checks whether this flag is
+// true. If it is, it is guaranteed that it could switch back to idle mode for a
+// quick update and won't be stuck there for too long.
+// 2. The child thread then switches to idle mode, which should return immediately
+// as there should be at least one idle message in the queue. The child client
+// forwards all queued-up messages to the main thread, sets the atomic flag to false,
+// then ends the iteration.
+// 3. When there is nothing left in the work queue, simply enter idle mode without
+// checking the flag.
 
 // The child thread never modifies the main state directly. It instead sends
 // messages containing a list of subsystems with updated states to the main thread
@@ -364,6 +382,7 @@ pub struct MpdWrapper {
     bg_sender: RefCell<Option<Sender<BackgroundTask>>>, // For sending tasks to background thread
     bg_sender_high: RefCell<Option<Sender<BackgroundTask>>>, // For sending high-priority tasks to background thread
     meta_sender: Sender<ProviderMessage>, // For sending album arts to cache controller
+    pending_idle: Arc<AtomicBool>,
     // Stored here so we can use them to get queue diffs.
     // It will be updated every time get_status() is called.
     queue_version: Cell<u32>,
@@ -384,6 +403,7 @@ impl MpdWrapper {
             bg_channel: Channel::new(&ch_name).unwrap(),
             bg_sender: RefCell::new(None),
             bg_sender_high: RefCell::new(None),
+            pending_idle: Arc::new(AtomicBool::new(false)),
             meta_sender,
             queue_version: Cell::new(0),
         });
@@ -399,6 +419,7 @@ impl MpdWrapper {
 
     fn start_bg_thread(&self, addr: &str, password: Option<&str>) {
         let sender_to_fg = self.main_sender.clone();
+        let pending_idle = self.pending_idle.clone();
         // We have two queues here:
         // A "normal" queue for tasks that don't require immediacy, like batch album art downloading
         // on cold startups.
@@ -445,7 +466,9 @@ impl MpdWrapper {
                     else {
                         curr_task = None;
                     }
-                    if let Some(task) = curr_task {
+                    let skip_to_idle = pending_idle.load(Ordering::Relaxed);
+                    if !skip_to_idle && curr_task.is_some() {
+                        let task = curr_task.unwrap();
                         if !busy {
                             // We have tasks now, set state to busy
                             busy = true;
@@ -495,6 +518,10 @@ impl MpdWrapper {
                         if busy {
                             busy = false;
                             let _ = sender_to_fg.send_blocking(AsyncClientMessage::Busy(false));
+                        }
+                        if skip_to_idle {
+                            println!("Background MPD thread skipping to idle mode as there are pending messages");
+                            pending_idle.store(false, Ordering::Relaxed);
                         }
                         if let Ok(changes) = client.wait(&[]) {
                             println!("Change: {:?}", changes);
@@ -615,8 +642,7 @@ impl MpdWrapper {
 
     async fn handle_idle_changes(&self, changes: Vec<Subsystem>) {
         for subsystem in changes {
-            self.state.emit_boxed_result("idle", subsystem);
-            // Handle some directly here
+            self.state.emit_boxed_result("idle", subsystem);            // Handle some directly here
             match subsystem {
                 Subsystem::Database => {
                     // Database changed after updating. Perform a reconnection,
@@ -775,26 +801,35 @@ impl MpdWrapper {
         }
     }
 
+    fn force_idle(&self) {
+        if !self.pending_idle.load(Ordering::Relaxed) {
+            self.pending_idle.store(true, Ordering::Relaxed);
+        }
+    }
+
     pub fn add(&self, uri: String, recursive: bool) {
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
             if recursive {
                 let _ = client.findadd(Query::new().and(Term::Base, uri));
+
             } else {
                 let _ = client.push(uri);
             }
+            self.force_idle();
         }
     }
 
     pub fn add_multi(&self, uris: &[String]) {
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
-            let ids = client.push_multiple(uris);
-            println!("{:?}", ids);
+            client.push_multiple(uris).expect("Could not add multiple songs into queue");
+            self.force_idle();
         }
     }
 
     pub fn volume(&self, vol: i8) {
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
             let _ = client.volume(vol);
+            self.force_idle();
         }
     }
 
@@ -811,6 +846,7 @@ impl MpdWrapper {
     pub fn set_output(&self, id: u32, state: bool) {
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
             let _ = client.output(id, state);
+            self.force_idle();
         }
     }
 
@@ -854,7 +890,7 @@ impl MpdWrapper {
         let min_lvl = if typ == "song" { StickersSupportLevel::SongsOnly } else { StickersSupportLevel::All };
         if let (true, Some(client)) = (self.state.get_stickers_support_level() >= min_lvl, self.main_client.borrow_mut().as_mut()) {
             match client.set_sticker(typ, uri, name, value) {
-                Ok(()) => {},
+                Ok(()) => {self.force_idle();},
                 Err(err) => match err {
                     MpdError::Server(server_err) => {
                         self.handle_sticker_server_error(server_err);
@@ -872,7 +908,7 @@ impl MpdWrapper {
         let min_lvl = if typ == "song" { StickersSupportLevel::SongsOnly } else { StickersSupportLevel::All };
         if let (true, Some(client)) = (self.state.get_stickers_support_level() > min_lvl, self.main_client.borrow_mut().as_mut()) {
             match client.delete_sticker(typ, uri, name) {
-                Ok(()) => {},
+                Ok(()) => {self.force_idle();},
                 Err(err) => match err {
                     MpdError::Server(server_err) => {
                         self.handle_sticker_server_error(server_err);
@@ -921,6 +957,7 @@ impl MpdWrapper {
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
             match client.load(name, ..) {
                 Ok(()) => {
+                    self.force_idle();
                     self.state.set_supports_playlists(true);
                     return Ok(());
                 }
@@ -950,6 +987,7 @@ impl MpdWrapper {
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
             match client.save(name, Some(save_mode)) {
                 Ok(()) => {
+                    self.force_idle();
                     self.state.set_supports_playlists(true);
                     return Ok(());
                 }
@@ -974,7 +1012,10 @@ impl MpdWrapper {
     pub fn rename_playlist(&self, old_name: &str, new_name: &str) -> Result<(), Option<MpdError>> {
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
             match client.pl_rename(old_name, new_name) {
-                Ok(()) => Ok(()),
+                Ok(()) => {
+                    self.force_idle();
+                    Ok(())
+                },
                 Err(e) => Err(Some(e)),
             }
         } else {
@@ -985,7 +1026,10 @@ impl MpdWrapper {
     pub fn edit_playlist(&self, actions: &[EditAction]) -> Result<(), Option<MpdError>> {
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
             match client.pl_edit(actions) {
-                Ok(()) => Ok(()),
+                Ok(()) => {
+                    self.force_idle();
+                    Ok(())
+                },
                 Err(e) => Err(Some(e)),
             }
         } else {
@@ -996,7 +1040,10 @@ impl MpdWrapper {
     pub fn delete_playlist(&self, name: &str) -> Result<(), Option<MpdError>> {
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
             match client.pl_remove(name) {
-                Ok(()) => Ok(()),
+                Ok(()) => {
+                    self.force_idle();
+                    Ok(())
+                },
                 Err(e) => Err(Some(e)),
             }
         } else {
@@ -1041,62 +1088,80 @@ impl MpdWrapper {
                     let _ = client.single(true);
                 }
             }
+            self.force_idle();
         }
     }
 
     pub fn set_crossfade(&self, fade: f64) {
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
-            let _ = client.crossfade(fade as i64);
+            if client.crossfade(fade as i64).is_ok() {
+                self.force_idle();
+            }
         }
     }
 
     pub fn set_replaygain(&self, mode: mpd::status::ReplayGain) {
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
-            let _ = client.replaygain(mode);
+            if client.replaygain(mode).is_ok() {
+                self.force_idle();
+            }
         }
     }
 
     pub fn set_mixramp_db(&self, db: f32) {
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
-            let _ = client.mixrampdb(db);
+            if client.mixrampdb(db).is_ok() {
+                self.force_idle();
+            }
         }
     }
 
     pub fn set_mixramp_delay(&self, delay: f64) {
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
-            let _ = client.mixrampdelay(delay);
+            if client.mixrampdelay(delay).is_ok() {
+                self.force_idle();
+            }
         }
     }
 
     pub fn set_random(&self, state: bool) {
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
-            let _ = client.random(state);
+            if client.random(state).is_ok() {
+                self.force_idle();
+            }
         }
     }
 
     pub fn set_consume(&self, state: bool) {
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
-            let _ = client.consume(state);
+            if client.consume(state).is_ok() {
+                self.force_idle();
+            }
         }
     }
 
     pub fn pause(&self, is_pause: bool) {
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
-            let _ = client.pause(is_pause);
+            if client.pause(is_pause).is_ok() {
+                self.force_idle();
+            }
         }
     }
 
     pub fn stop(&self) {
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
-            let _ = client.stop();
+            if client.stop().is_ok() {
+                self.force_idle();
+            }
         }
     }
 
     pub fn prev(&self) {
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
             // TODO: Make it stop/play base on toggle
-            let _ = client.prev();
-            // TODO: handle error
+            if client.prev().is_ok() {
+                self.force_idle();
+            }
         } else {
             // TODO: handle error
         }
@@ -1105,8 +1170,9 @@ impl MpdWrapper {
     pub fn next(&self) {
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
             // TODO: Make it stop/play base on toggle
-            let _ = client.next();
-            // TODO: handle error
+            if client.next().is_ok() {
+                self.force_idle();
+            }
         } else {
             // TODO: handle error
         }
@@ -1119,6 +1185,7 @@ impl MpdWrapper {
             } else {
                 client.switch(id_or_pos).expect("Could not switch song");
             }
+            self.force_idle();
         }
     }
 
@@ -1131,6 +1198,7 @@ impl MpdWrapper {
             } else {
                 client.swap(id1, id2).expect("Could not swap songs by pos");
             }
+            self.force_idle();
         }
     }
 
@@ -1145,15 +1213,14 @@ impl MpdWrapper {
                     .delete(id_or_pos)
                     .expect("Could not delete song from queue");
             }
+            self.force_idle();
         }
     }
 
     pub fn clear_queue(&self) {
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
-            let _ = client.clear();
-            // TODO: handle error
-        } else {
-            // TODO: handle error
+            client.clear().expect("Could not clear queue");
+            self.force_idle();
         }
     }
 
@@ -1175,8 +1242,8 @@ impl MpdWrapper {
 
     pub fn seek_current_song(&self, position: f64) {
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
-            let _ = client.rewind(position);
-            // If successful, should trigger an idle message for Player
+            client.rewind(position).expect("Failed to seek song");
+            self.force_idle();
         }
     }
 
@@ -1242,6 +1309,7 @@ impl MpdWrapper {
             //     query.and(term.0.into(), term.1);
             // }
             client.findadd(&query).expect("Failed to run query!");
+            self.force_idle();
         }
     }
 
