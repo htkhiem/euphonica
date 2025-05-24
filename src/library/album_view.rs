@@ -63,7 +63,6 @@ mod imp {
         #[template_child]
         pub content_view: TemplateChild<AlbumContentView>,
 
-        pub album_list: gio::ListStore,
         // Search & filter models
         pub search_filter: gtk::CustomFilter,
         pub sorter: gtk::CustomSorter,
@@ -98,7 +97,6 @@ mod imp {
                 grid_view: TemplateChild::default(),
                 content_page: TemplateChild::default(),
                 content_view: TemplateChild::default(),
-                album_list: gio::ListStore::new::<Album>(),
                 // Search & filter models
                 search_filter: gtk::CustomFilter::default(),
                 sorter: gtk::CustomSorter::default(),
@@ -199,7 +197,7 @@ impl AlbumView {
             .library
             .set(library.clone())
             .expect("Cannot init AlbumView with Library");
-        self.setup_gridview(client_state.clone(), cache.clone());
+        self.setup_gridview(cache.clone());
 
         let content_view = self.imp().content_view.get();
         content_view.setup(library.clone(), client_state, cache);
@@ -518,35 +516,9 @@ impl AlbumView {
         self.imp().nav_view.push_by_tag("content");
     }
 
-    fn setup_gridview(&self, client_state: ClientState, cache: Rc<Cache>) {
-        // Refresh upon reconnection.
-        // User-initiated refreshes will also trigger a reconnection, which will
-        // in turn trigger this.
-        client_state.connect_notify_local(
-            Some("connection-state"),
-            clone!(
-                #[weak(rename_to = this)]
-                self,
-                move |state, _| {
-                    if state.get_connection_state() == ConnectionState::Connected {
-                        this.clear();
-                        this.imp().library.get().unwrap().init_albums();
-                    }
-                }
-            ),
-        );
-        client_state.connect_closure(
-            "album-basic-info-downloaded",
-            false,
-            closure_local!(
-                #[strong(rename_to = this)]
-                self,
-                move |_: ClientState, album: Album| {
-                    this.add_album(album);
-                }
-            ),
-        );
+    fn setup_gridview(&self, cache: Rc<Cache>) {
         // Setup search bar
+        let album_list = self.imp().library.get().unwrap().albums();
         let search_bar = self.imp().search_bar.get();
         let search_entry = self.imp().search_entry.get();
         search_bar.connect_entry(&search_entry);
@@ -559,7 +531,7 @@ impl AlbumView {
 
         // Chain search & sort. Put sort after search to reduce number of sort items.
         let search_model = gtk::FilterListModel::new(
-            Some(self.imp().album_list.clone()),
+            Some(album_list.clone()),
             Some(self.imp().search_filter.clone()),
         );
         search_model.set_incremental(true);
@@ -652,14 +624,5 @@ impl AlbumView {
                 this.on_album_clicked(&album);
             }
         ));
-    }
-
-    fn add_album(&self, album: Album) {
-        self.imp().album_list.append(&album);
-        // self.imp().album_count.set_label(&self.imp().album_list.n_items().to_string());
-    }
-
-    pub fn clear(&self) {
-        self.imp().album_list.remove_all();
     }
 }

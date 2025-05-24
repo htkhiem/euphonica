@@ -1,9 +1,9 @@
 use crate::{
     cache::Cache,
-    client::{BackgroundTask, MpdWrapper},
+    client::{BackgroundTask, ClientState, ConnectionState, MpdWrapper},
     common::{Album, Artist, INode, Song, Stickers},
 };
-use glib::subclass::Signal;
+use glib::{clone, closure_local, subclass::Signal};
 use gtk::{gio, glib, prelude::*};
 use std::{borrow::Cow, cell::OnceCell, rc::Rc, sync::OnceLock, vec::Vec};
 
@@ -18,6 +18,7 @@ mod imp {
     pub struct Library {
         pub client: OnceCell<Rc<MpdWrapper>>,
         pub playlists: gio::ListStore,
+        pub albums: gio::ListStore,
         // Each view gets their own list, except Playlist View.
         // This is due to the need to access playlists from other views.
         //
@@ -41,6 +42,7 @@ mod imp {
         fn new() -> Self {
             Self {
                 playlists: gio::ListStore::new::<INode>(),
+                albums: gio::ListStore::new::<Album>(),
                 client: OnceCell::new(),
                 cache: OnceCell::new(),
             }
@@ -71,8 +73,38 @@ impl Default for Library {
 
 impl Library {
     pub fn setup(&self, client: Rc<MpdWrapper>, cache: Rc<Cache>) {
+        let client_state = client.get_client_state();
         let _ = self.imp().cache.set(cache);
         let _ = self.imp().client.set(client);
+
+        // Refresh upon reconnection.
+        // User-initiated refreshes will also trigger a reconnection, which will
+        // in turn trigger this.
+        client_state.connect_notify_local(
+            Some("connection-state"),
+            clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |state, _| {
+                    if state.get_connection_state() == ConnectionState::Connected {
+                        this.imp().albums.remove_all();
+                        this.init_albums();
+                    }
+                }
+            ),
+        );
+
+        client_state.connect_closure(
+            "album-basic-info-downloaded",
+            false,
+            closure_local!(
+                #[strong(rename_to = this)]
+                self,
+                move |_: ClientState, album: Album| {
+                    this.imp().albums.append(&album);
+                }
+            ),
+        );
     }
 
     fn client(&self) -> &Rc<MpdWrapper> {
@@ -192,6 +224,11 @@ impl Library {
     /// Get a reference to the local playlists store
     pub fn playlists(&self) -> gio::ListStore {
         self.imp().playlists.clone()
+    }
+
+    /// Get a reference to the local albums store
+    pub fn albums(&self) -> gio::ListStore {
+        self.imp().albums.clone()
     }
 
     /// Retrieve songs in a playlist

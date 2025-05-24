@@ -211,6 +211,7 @@ mod background {
     }
 
     pub fn fetch_all_albums(client: &mut mpd::Client, sender_to_fg: &Sender<AsyncClientMessage>) {
+        println!("FETCH_ALL_ALBUMS called");
         fetch_albums_by_query(client, &Query::new(), |info| {
             sender_to_fg.send_blocking(AsyncClientMessage::AlbumBasicInfoDownloaded(info))
         });
@@ -674,14 +675,6 @@ impl MpdWrapper {
         } else {
             panic!("Cannot queue background task (background sender not initialised)");
         }
-    }
-
-    pub fn fetch_albums(&self) {
-        self.queue_background(BackgroundTask::FetchAlbums, false);
-    }
-
-    pub fn fetch_artists(&self, use_albumartists: bool) {
-        self.queue_background(BackgroundTask::FetchArtists(use_albumartists), false);
     }
 
     pub fn queue_connect(&self) {
