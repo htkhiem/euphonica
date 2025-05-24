@@ -8,12 +8,29 @@
 
 		<child>
 			<object class="AdwPreferencesGroup">
-				<property name="title" translatable="true">MPRIS</property>
-				<property name="description" translatable="true">Control Euphonica from your shell or other applications via the MPRIS protocol.</property>
+				<property name="title" translatable="true">MPRIS Daemon</property>
+				<property name="description" translatable="true">Control your MPD instance via keyboard shortcuts and shell applets without having to keep the Euphonica window open.</property>
 				<child>
 					<object class="AdwSwitchRow" id="enable_mpris">
 						<property name="title" translatable="true">Enable MPRIS integration</property>
 						<property name="subtitle" translatable="true">Requires a relaunch.</property>
+					</object>
+				</child>
+				<child>
+					<object class="AdwSwitchRow" id="run_in_background">
+						<property name="title" translatable="true">Run in background</property>
+						<property name="subtitle" translatable="true">Allow Euphonica to keep running after its window is closed.</property>
+					</object>
+				</child>
+				<child>
+					<object class="AdwSwitchRow" id="autostart">
+						<property name="title" translatable="true">Autostart</property>
+						<property name="subtitle" translatable="true">Start Euphonica on system startup.</property>
+					</object>
+				</child>
+				<child>
+					<object class="AdwSwitchRow" id="start_minimized">
+						<property name="title" translatable="true">Start minimised</property>
 					</object>
 				</child>
 			</object>

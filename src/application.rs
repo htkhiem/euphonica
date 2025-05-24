@@ -21,6 +21,7 @@ use adw::subclass::prelude::*;
 use gtk::prelude::*;
 use gtk::{gio, glib};
 use std::{fs::create_dir_all, path::PathBuf, rc::Rc};
+use gio::prelude::*;
 
 use crate::{
     cache::Cache,
@@ -35,6 +36,12 @@ use crate::{
 use adw::prelude::*;
 
 mod imp {
+    use std::cell::RefCell;
+
+    use glib::clone;
+
+    use crate::utils;
+
     use super::*;
 
     #[derive(Debug)]
@@ -45,6 +52,7 @@ mod imp {
         // pub library: Rc<LibraryController>, // TODO
         pub client: Rc<MpdWrapper>,
         pub cache_path: PathBuf, // Just clone this to construct more detailed paths
+        pub hold_guard: RefCell<Option<gio::ApplicationHoldGuard>>
     }
 
     #[glib::object_subclass]
@@ -79,6 +87,7 @@ mod imp {
                 client,
                 cache,
                 cache_path,
+                hold_guard: RefCell::new(None)
             }
         }
     }
@@ -95,6 +104,35 @@ mod imp {
             self.library.setup(self.client.clone(), self.cache.clone());
             self.player
                 .setup(self.obj().clone(), self.client.clone(), self.cache.clone());
+
+            // Background mode
+            let settings = utils::settings_manager().child("state");
+            if settings.boolean("run-in-background") {
+                println!("Creating new hold guard");
+                self.hold_guard.replace(Some(self.obj().hold()));
+            }
+            else {
+                println!("Dropping hold guard");
+                self.hold_guard.take();
+            }
+
+            settings.connect_changed(
+                Some("run-in-background"),
+                clone!(
+                    #[weak(rename_to = this)]
+                    self,
+                    move |settings, _| {
+                        if settings.boolean("run-in-background") {
+                            println!("Creating new hold guard");
+                            this.hold_guard.replace(Some(this.obj().hold()));
+                        }
+                        else {
+                            println!("Dropping hold guard");
+                            this.hold_guard.take();
+                        }
+                    }
+                )
+            );
         }
     }
 
