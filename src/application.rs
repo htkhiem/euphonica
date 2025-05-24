@@ -254,5 +254,6 @@ impl EuphonicaApplication {
             &self.imp().player,
         );
         prefs.present(Some(&window));
+        prefs.update();
     }
 }

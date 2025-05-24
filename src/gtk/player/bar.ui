@@ -170,6 +170,7 @@
                 <property name="center-widget">
                   <object class="GtkBox">
                     <property name="hexpand">true</property>
+                    <property name="valign">center</property>
                     <property name="orientation">1</property>
                     <child>
                       <object class="GtkCenterBox">

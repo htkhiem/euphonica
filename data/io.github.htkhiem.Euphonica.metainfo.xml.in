@@ -65,19 +65,25 @@
   </screenshots>
 
   <releases>
-    <release version="0.90.4-alpha" date="2025-02-18">
+    <release version="0.91.0-alpha" date="2025-05-24">
+      <url type="details">https://github.com/htkhiem/euphonica/releases/tag/v0.91.0-alpha</url>
+      <description>
+        <p>New: Cache size report and open button in Library preferences tab.</p>
+        <p>Fix: Bottom bar playback control buttons not centering themselves vertically when seekbar is hidden.</p>
+      </description>
+    </release>
+    <release version="0.90.4-alpha" date="2025-05-18">
       <url type="details">https://github.com/htkhiem/euphonica/releases/tag/v0.90.4-alpha</url>
       <description>
         <p>Fix: child client getting clogged on cold-starts by one-time tasks such as album art downloading.</p>
       </description>
     </release>
-    <release version="0.90.3-alpha" date="2025-02-16">
+    <release version="0.90.3-alpha" date="2025-05-17">
       <url type="details">https://github.com/htkhiem/euphonica/releases/tag/v0.90.3-alpha</url>
       <description>
         <p>From this version onwards we are targeting a v1.0 release, hence the version bump.</p>
         <p>This version introduces support for matching app accent colour to currently-playing song's album art, and a big revamp of the offline cache mechanism.</p>
         <ul>
-          <li>New: Customisable spectrum equaliser!</li>
           <li>New: album rating system using myMPD-compatible tag schema (requires MPD 0.24+).</li>
           <li>New: Optional capabilities UI with instructions on how to enable them for your MPD instance.</li>
           <li>New: UI with album-art-matching accent colour support, wider seekbar, and live bitrate readout.</li>
@@ -96,7 +102,7 @@
         <ul>
           <li>New: Visualiser can now read from the current PipeWire audio stream (only way to visualisation inside Flatpak)</li>
           <li>Refactor: UI rearrangements at smaller window sizes down to 360x640 for smartphone compatibility</li>
-          <li>Refactor: Visualsier backend has been refactored to allow hot-switching between data sources.</li>
+          <li>Refactor: Visualiser backend has been refactored to allow hot-switching between data sources.</li>
           <li>Fix: Slowdowns/stuttering upon startup or large changes to the queue.</li>
           <li>Fix: Long wait times in content views after cold startup in extreme cases. We now have a second high-priority background task queue for user-initiated background tasks.</li>
           <li>Fix: Multiple download attempts sent to MPD for the same album art.</li>

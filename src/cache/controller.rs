@@ -64,8 +64,10 @@ static IMAGE_CACHE: Lazy<stretto::Cache<(String, bool), Texture>> =
     Lazy::new(|| init_image_cache());
 
 pub struct Cache {
+    app_cache_path: PathBuf,
     albumart_path: PathBuf,
     avatar_path: PathBuf,
+    doc_path: PathBuf,
     // Embedded document database for caching responses from metadata providers.
     // Think MongoDB x SQLite x Rust.
     doc_cache: Arc<LocalMetaDb>,
@@ -114,13 +116,15 @@ impl Cache {
 
         let mut doc_path = app_cache_path.clone();
         doc_path.push("metadata.sqlite");
-
+        let doc_cache = Arc::new(LocalMetaDb::new(&doc_path).expect("Failed to connect to the local metadata cache"));
         let providers = init_meta_provider_chain();
 
         let cache = Self {
+            app_cache_path: app_cache_path.to_path_buf(),
             albumart_path,
             avatar_path,
-            doc_cache: Arc::new(LocalMetaDb::new(doc_path).expect("Failed to connect to the local metadata cache")),
+            doc_path,
+            doc_cache,
             meta_providers: Arc::new(RwLock::new(providers)),
             mpd_client: OnceCell::new(),
             fg_sender: fg_sender.clone(),
@@ -137,6 +141,22 @@ impl Cache {
     pub fn reinit_meta_providers(&self) {
         let mut curr_providers = self.meta_providers.write().unwrap();
         *curr_providers = init_meta_provider_chain();
+    }
+
+    pub fn get_app_cache_path(&self) -> &PathBuf {
+        &self.app_cache_path
+    }
+
+    pub fn get_albumart_path(&self) -> &PathBuf {
+        &self.albumart_path
+    }
+
+    pub fn get_avatar_path(&self) -> &PathBuf {
+        &self.avatar_path
+    }
+
+    pub fn get_doc_cache_path(&self) -> &PathBuf {
+        &self.doc_path
     }
 
     pub fn set_mpd_client(&self, client: Rc<MpdWrapper>) {
