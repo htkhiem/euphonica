@@ -180,6 +180,7 @@ mod imp {
     use glib::{
         ParamSpec, ParamSpecBoolean, ParamSpecDouble, ParamSpecEnum, ParamSpecFloat, ParamSpecInt, ParamSpecObject, ParamSpecString, ParamSpecUInt, ParamSpecUInt64
     };
+    use mpd::Output;
     use once_cell::sync::Lazy;
 
     pub struct Player {
@@ -219,7 +220,8 @@ mod imp {
         pub fft_backend: RefCell<Rc<dyn FftBackend>>,
         pub fft_data: Arc<Mutex<(Vec<f32>, Vec<f32>)>>, // Binned magnitudes, in stereo
         pub use_visualizer: Cell<bool>,
-        pub fft_backend_idx: Cell<i32>
+        pub fft_backend_idx: Cell<i32>,
+        pub outputs: gio::ListStore
     }
 
     #[glib::object_subclass]
@@ -270,7 +272,8 @@ mod imp {
                     ],
                 ))),
                 use_visualizer: Cell::new(false),
-                fft_backend_idx: Cell::new(0)
+                fft_backend_idx: Cell::new(0),
+                outputs: gio::ListStore::new::<BoxedAnyObject>()
             }
         }
     }
@@ -472,7 +475,6 @@ mod imp {
             SIGNALS.get_or_init(|| {
                 vec![
                     Signal::builder("outputs-changed")
-                        .param_types([BoxedAnyObject::static_type()])
                         .build(),
                     // Reserved for EXTERNAL changes (i.e. changes made by this client won't
                     // emit this).
@@ -538,6 +540,10 @@ impl Player {
 
     pub fn fft_data(&self) -> Arc<Mutex<(Vec<f32>, Vec<f32>)>> {
         self.imp().fft_data.clone()
+    }
+
+    pub fn outputs(&self) -> gio::ListStore {
+        self.imp().outputs.clone()
     }
 
     pub fn setup(
@@ -606,8 +612,8 @@ impl Player {
                         if let Some(status) = this.client().get_status() {
                             this.update_status(&status);
                         }
-                        if let Some(outs) = this.client().get_outputs() {
-                            this.update_outputs(glib::BoxedAnyObject::new(outs));
+                        if let Some(outputs) = this.client().get_outputs() {
+                            this.update_outputs(outputs);
                         }
                     }
                 }
@@ -642,7 +648,7 @@ impl Player {
                         }
                         Subsystem::Output => {
                             if let Some(outs) = this.client().get_outputs() {
-                                this.update_outputs(glib::BoxedAnyObject::new(outs));
+                                this.update_outputs(outs);
                             }
                         }
                         _ => {}
@@ -1023,8 +1029,12 @@ impl Player {
         self.imp().client.get().unwrap()
     }
 
-    fn update_outputs(&self, outputs: BoxedAnyObject) {
-        self.emit_by_name::<()>("outputs-changed", &[&outputs]);
+    fn update_outputs(&self, outputs: Vec<mpd::Output>) {
+        self.imp().outputs.remove_all();
+        self.imp().outputs.extend_from_slice(
+            &outputs.into_iter().map(glib::BoxedAnyObject::new).collect::<Vec<glib::BoxedAnyObject>>()
+        );
+        self.emit_by_name::<()>("outputs-changed", &[]);
     }
 
     pub fn set_output(&self, id: u32, state: bool) {
