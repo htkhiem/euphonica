@@ -28,7 +28,7 @@ mod imp {
 
     use glib::{subclass::Signal, Properties};
 
-    use crate::player::seekbar::Seekbar;
+    use crate::player::{ratio_center_box::RatioCenterBox, seekbar::Seekbar};
 
     use super::*;
 
@@ -38,6 +38,8 @@ mod imp {
     pub struct PlayerBar {
         #[template_child]
         pub multi_layout_view: TemplateChild<adw::MultiLayoutView>,
+        #[template_child]
+        pub full_layout_box: TemplateChild<RatioCenterBox>,
         // Left side: current song info
         #[template_child]
         pub albumart: TemplateChild<gtk::Image>,
