@@ -17,11 +17,6 @@ mod imp {
     #[derive(Debug)]
     pub struct Library {
         pub client: OnceCell<Rc<MpdWrapper>>,
-        pub playlists: gio::ListStore,
-        pub albums: gio::ListStore,
-        // Each view gets their own list, except Playlist View.
-        // This is due to the need to access playlists from other views.
-        //
         // Album/Artist retrieval routine:
         // 1. Library places a background task to fetch albums.
         // 3. Background client gets list of unique album tags
@@ -31,6 +26,9 @@ mod imp {
         // 4.3. Send AlbumInfo class to main thread via AsyncClientMessage.
         // 4.4. Wrapper tells Library controller to create an Album GObject with that AlbumInfo &
         // append to the list store.
+        pub playlists: gio::ListStore,
+        pub albums: gio::ListStore,
+        pub artists: gio::ListStore,
         pub cache: OnceCell<Rc<Cache>>,
     }
 
@@ -43,6 +41,7 @@ mod imp {
             Self {
                 playlists: gio::ListStore::new::<INode>(),
                 albums: gio::ListStore::new::<Album>(),
+                artists: gio::ListStore::new::<Artist>(),
                 client: OnceCell::new(),
                 cache: OnceCell::new(),
             }
@@ -88,7 +87,9 @@ impl Library {
                 move |state, _| {
                     if state.get_connection_state() == ConnectionState::Connected {
                         this.imp().albums.remove_all();
+                        this.imp().artists.remove_all();
                         this.init_albums();
+                        this.init_artists(false);
                     }
                 }
             ),
@@ -102,6 +103,18 @@ impl Library {
                 self,
                 move |_: ClientState, album: Album| {
                     this.imp().albums.append(&album);
+                }
+            ),
+        );
+
+        client_state.connect_closure(
+            "artist-basic-info-downloaded",
+            false,
+            closure_local!(
+                #[strong(rename_to = this)]
+                self,
+                move |_: ClientState, artist: Artist| {
+                    this.imp().artists.append(&artist);
                 }
             ),
         );
@@ -229,6 +242,11 @@ impl Library {
     /// Get a reference to the local albums store
     pub fn albums(&self) -> gio::ListStore {
         self.imp().albums.clone()
+    }
+
+    /// Get a reference to the local artists store
+    pub fn artists(&self) -> gio::ListStore {
+        self.imp().artists.clone()
     }
 
     /// Retrieve songs in a playlist
