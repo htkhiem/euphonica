@@ -1,4 +1,4 @@
-use glib::{clone, closure_local, BoxedAnyObject};
+use glib::{clone, closure_local};
 use gtk::{
     gdk,
     glib::{self, Variant},
@@ -6,12 +6,11 @@ use gtk::{
     subclass::prelude::*,
     CompositeTemplate,
 };
-use mpd::output::Output;
 use std::cell::{Cell, RefCell};
 
 use crate::{
     cache::placeholders::ALBUMART_PLACEHOLDER,
-    common::{paintables::FadePaintable, QualityGrade},
+    common::paintables::FadePaintable,
     utils::settings_manager,
 };
 
@@ -295,14 +294,15 @@ impl PlayerPane {
             .sync_create()
             .build();
 
+        self.update_outputs(&player);
         player.connect_closure(
             "outputs-changed",
             false,
             closure_local!(
                 #[strong(rename_to = this)]
                 self,
-                move |player: Player, outputs: BoxedAnyObject| {
-                    this.update_outputs(player, outputs.borrow::<Vec<Output>>().as_ref());
+                move |player: Player| {
+                    this.update_outputs(&player);
                 }
             ),
         );
@@ -350,10 +350,13 @@ impl PlayerPane {
         }
     }
 
-    fn update_outputs(&self, player: Player, outputs: &[Output]) {
+    fn update_outputs(&self, player: &Player) {
+        let outputs = player.outputs();
+        let outputs: Vec<glib::BoxedAnyObject> = (0..outputs.n_items())
+            .map(|i| outputs.item(i).unwrap().downcast::<glib::BoxedAnyObject>().unwrap()).collect();
         let section = self.imp().output_section.get();
         let stack = self.imp().output_stack.get();
-        let new_len = outputs.len();
+        let new_len = outputs.len() as usize;
         if new_len == 0 {
             section.set_visible(false);
         } else {
@@ -366,7 +369,7 @@ impl PlayerPane {
                 self.imp().next_output.set_visible(false);
             }
         }
-        // Handle new/removed outputs.
+        // Handle new/removed outputs
         // Pretty rare though...
         {
             let mut output_widgets = self.imp().output_widgets.borrow_mut();
@@ -381,18 +384,18 @@ impl PlayerPane {
                 // Note that this does not re-populate the stack, so the visible
                 // child won't be changed.
                 for (w, o) in output_widgets.iter().zip(outputs) {
-                    w.update_state(o);
+                    w.update_state(&o.borrow());
                 }
             } else {
                 // Need to add more widgets
                 // Override state of all current widgets. Personal reminder:
                 // zip() is auto-truncated to the shorter of the two iters.
-                for (w, o) in output_widgets.iter().zip(outputs) {
-                    w.update_state(o);
+                for (w, o) in output_widgets.iter().zip(&outputs) {
+                    w.update_state(&o.borrow());
                 }
                 output_widgets.reserve_exact(new_len - curr_len);
                 for o in &outputs[curr_len..] {
-                    let w = MpdOutput::from_output(o, &player);
+                    let w = MpdOutput::from_output(&o.borrow(), &player);
                     stack.add_child(&w);
                     output_widgets.push(w);
                 }

@@ -271,7 +271,7 @@ end;
         }
         else {
             tx.execute(
-                "delete from albums where name = ?1",
+                "delete from artists where name = ?1",
                 params![&artist.name]
             ).map_err(|e| Error::DbError(e))?;
         }

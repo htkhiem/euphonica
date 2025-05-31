@@ -2,7 +2,7 @@ use adw::prelude::*;
 use adw::subclass::prelude::*;
 use gtk::{
     gio,
-    glib::{self, closure_local},
+    glib,
     CompositeTemplate, ListItem, SignalListItemFactory, SingleSelection,
 };
 use std::{cell::Cell, cmp::Ordering, rc::Rc};
@@ -12,7 +12,7 @@ use glib::clone;
 use super::{ArtistCell, ArtistContentView, Library};
 use crate::{
     cache::Cache,
-    client::{ClientState, ConnectionState},
+    client::ClientState,
     common::Artist,
     utils::{g_cmp_str_options, g_search_substr, settings_manager},
 };
@@ -54,7 +54,6 @@ mod imp {
         #[template_child]
         pub content_view: TemplateChild<ArtistContentView>,
 
-        pub artist_list: gio::ListStore,
         // Search & filter models
         pub search_filter: gtk::CustomFilter,
         pub sorter: gtk::CustomSorter,
@@ -85,7 +84,7 @@ mod imp {
                 grid_view: TemplateChild::default(),
                 content_page: TemplateChild::default(),
                 content_view: TemplateChild::default(),
-                artist_list: gio::ListStore::new::<Artist>(),
+
                 // Search & filter models
                 search_filter: gtk::CustomFilter::default(),
                 sorter: gtk::CustomSorter::default(),
@@ -176,7 +175,7 @@ impl ArtistView {
         res
     }
 
-    pub fn setup(&self, library: Library, cache: Rc<Cache>, client_state: ClientState) {
+    pub fn setup(&self, library: Library, client_state: ClientState, cache: Rc<Cache>) {
         self.setup_sort();
         self.setup_search();
         self.setup_gridview(library.clone(), client_state.clone(), cache.clone());
@@ -354,32 +353,8 @@ impl ArtistView {
         // Refresh upon reconnection.
         // User-initiated refreshes will also trigger a reconnection, which will
         // in turn trigger this.
-        client_state.connect_notify_local(
-            Some("connection-state"),
-            clone!(
-                #[weak(rename_to = this)]
-                self,
-                #[weak]
-                library,
-                move |state, _| {
-                    if state.get_connection_state() == ConnectionState::Connected {
-                        this.clear();
-                        library.init_artists(false);
-                    }
-                }
-            ),
-        );
-        client_state.connect_closure(
-            "artist-basic-info-downloaded",
-            false,
-            closure_local!(
-                #[weak(rename_to = this)]
-                self,
-                move |_: ClientState, artist: Artist| {
-                    this.add_artist(artist);
-                }
-            ),
-        );
+        let artists = library.artists();
+        
         // Setup search bar
         let search_bar = self.imp().search_bar.get();
         let search_entry = self.imp().search_entry.get();
@@ -393,7 +368,7 @@ impl ArtistView {
 
         // Chain search & sort. Put sort after search to reduce number of sort items.
         let search_model = gtk::FilterListModel::new(
-            Some(self.imp().artist_list.clone()),
+            Some(artists.clone()),
             Some(self.imp().search_filter.clone()),
         );
         search_model.set_incremental(true);
@@ -488,14 +463,5 @@ impl ArtistView {
                 this.on_artist_clicked(artist, library);
             }
         ));
-    }
-
-    fn add_artist(&self, artist: Artist) {
-        self.imp().artist_list.append(&artist);
-        // self.imp().album_count.set_label(&self.imp().album_list.n_items().to_string());
-    }
-
-    pub fn clear(&self) {
-        self.imp().artist_list.remove_all();
     }
 }

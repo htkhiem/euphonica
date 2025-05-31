@@ -173,12 +173,12 @@
                     <property name="valign">center</property>
                     <property name="orientation">1</property>
                     <child>
-                      <object class="GtkCenterBox">
+                      <object class="EuphonicaRatioCenterBox" id="full_layout_box">
+                        <property name="max-center-ratio">0.95</property>
                         <property name="hexpand">true</property>
-                        <property name="shrink-center-last">true</property>
                         <property name="margin-start">11</property>
                         <property name="margin-end">11</property>
-                        <property name="start-widget">
+                        <property name="left-widget">
                           <object class="GtkRevealer" id="infobox_revealer">
                             <property name="transition-type">slide-right</property>
                             <property name="transition-duration">1000</property>
@@ -194,8 +194,9 @@
                             <property name="id">playback-controls</property>
                           </object>
                         </property>
-                        <property name="end-widget">
+                        <property name="right-widget">
                           <object class="GtkBox" id="output_section">
+                            <property name="halign">end</property>
                             <property name="visible">false</property>
                             <child>
                               <object class="GtkButton" id="prev_output">

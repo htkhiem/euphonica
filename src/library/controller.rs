@@ -1,9 +1,9 @@
 use crate::{
     cache::Cache,
-    client::{BackgroundTask, MpdWrapper},
+    client::{BackgroundTask, ClientState, ConnectionState, MpdWrapper},
     common::{Album, Artist, INode, Song, Stickers},
 };
-use glib::subclass::Signal;
+use glib::{clone, closure_local, subclass::Signal};
 use gtk::{gio, glib, prelude::*};
 use std::{borrow::Cow, cell::OnceCell, rc::Rc, sync::OnceLock, vec::Vec};
 
@@ -12,15 +12,13 @@ use adw::subclass::prelude::*;
 use mpd::{error::Error as MpdError, search::Operation, EditAction, Query, SaveMode, Term};
 
 mod imp {
+    use std::cell::{Cell, RefCell};
+
     use super::*;
 
     #[derive(Debug)]
     pub struct Library {
         pub client: OnceCell<Rc<MpdWrapper>>,
-        pub playlists: gio::ListStore,
-        // Each view gets their own list, except Playlist View.
-        // This is due to the need to access playlists from other views.
-        //
         // Album/Artist retrieval routine:
         // 1. Library places a background task to fetch albums.
         // 3. Background client gets list of unique album tags
@@ -30,6 +28,16 @@ mod imp {
         // 4.3. Send AlbumInfo class to main thread via AsyncClientMessage.
         // 4.4. Wrapper tells Library controller to create an Album GObject with that AlbumInfo &
         // append to the list store.
+        pub playlists: gio::ListStore,
+        pub albums: gio::ListStore,
+        pub artists: gio::ListStore,
+
+        // Folder view
+        // Files and folders
+        pub folder_history: RefCell<Vec<String>>,
+        pub folder_curr_idx: Cell<usize>, // 0 means at root.
+        pub folder_inodes: gio::ListStore,
+
         pub cache: OnceCell<Rc<Cache>>,
     }
 
@@ -41,8 +49,14 @@ mod imp {
         fn new() -> Self {
             Self {
                 playlists: gio::ListStore::new::<INode>(),
+                albums: gio::ListStore::new::<Album>(),
+                artists: gio::ListStore::new::<Artist>(),
                 client: OnceCell::new(),
                 cache: OnceCell::new(),
+
+                folder_history: RefCell::new(Vec::new()),
+                folder_curr_idx: Cell::new(0),
+                folder_inodes: gio::ListStore::new::<INode>(),
             }
         }
     }
@@ -71,8 +85,52 @@ impl Default for Library {
 
 impl Library {
     pub fn setup(&self, client: Rc<MpdWrapper>, cache: Rc<Cache>) {
+        let client_state = client.get_client_state();
         let _ = self.imp().cache.set(cache);
         let _ = self.imp().client.set(client);
+
+        // Refresh upon reconnection.
+        // User-initiated refreshes will also trigger a reconnection, which will
+        // in turn trigger this.
+        client_state.connect_notify_local(
+            Some("connection-state"),
+            clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |state, _| {
+                    if state.get_connection_state() == ConnectionState::Connected {
+                        this.imp().albums.remove_all();
+                        this.imp().artists.remove_all();
+                        this.init_albums();
+                        this.init_artists(false);
+                    }
+                }
+            ),
+        );
+
+        client_state.connect_closure(
+            "album-basic-info-downloaded",
+            false,
+            closure_local!(
+                #[strong(rename_to = this)]
+                self,
+                move |_: ClientState, album: Album| {
+                    this.imp().albums.append(&album);
+                }
+            ),
+        );
+
+        client_state.connect_closure(
+            "artist-basic-info-downloaded",
+            false,
+            closure_local!(
+                #[strong(rename_to = this)]
+                self,
+                move |_: ClientState, artist: Artist| {
+                    this.imp().artists.append(&artist);
+                }
+            ),
+        );
     }
 
     fn client(&self) -> &Rc<MpdWrapper> {
@@ -194,6 +252,16 @@ impl Library {
         self.imp().playlists.clone()
     }
 
+    /// Get a reference to the local albums store
+    pub fn albums(&self) -> gio::ListStore {
+        self.imp().albums.clone()
+    }
+
+    /// Get a reference to the local artists store
+    pub fn artists(&self) -> gio::ListStore {
+        self.imp().artists.clone()
+    }
+
     /// Retrieve songs in a playlist
     pub fn init_playlist(&self, name: &str) {
         self.client()
@@ -240,6 +308,7 @@ impl Library {
     }
 
     pub fn get_folder_contents(&self, uri: &str) {
+        println!("get_folder_contents...");
         self.client()
             .queue_background(BackgroundTask::FetchFolderContents(uri.to_owned()), true);
     }

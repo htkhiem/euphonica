@@ -154,7 +154,7 @@
   <menu id="primary_menu">
     <section>
       <item>
-        <attribute name="label" translatable="yes">_Toggle full screen</attribute>
+        <attribute name="label" translatable="yes">_Toggle Full Screen</attribute>
         <attribute name="action">app.fullscreen</attribute>
       </item>
       <item>
@@ -162,7 +162,7 @@
         <attribute name="action">app.refresh</attribute>
       </item>
       <item>
-        <attribute name="label" translatable="yes">_Update database</attribute>
+        <attribute name="label" translatable="yes">_Update Database</attribute>
         <attribute name="action">app.update-db</attribute>
       </item>
       <item>
