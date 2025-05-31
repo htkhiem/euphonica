@@ -314,6 +314,16 @@ impl FolderView {
         self.imp().loading_stack.set_visible_child_name("loading");
     }
 
+    pub fn reset(&self, state: &ClientState) {
+        println!("Attempting to reset folder view...");
+        if state.get_connection_state() == ConnectionState::Connected {
+            // Newly-connected? Reset path to ""
+            let _ = self.imp().history.replace(Vec::new()); 
+            let _ = self.imp().curr_idx.replace(0);
+            self.imp().library.get().unwrap().get_folder_contents("");
+        }
+    }
+
     pub fn setup(&self, library: Library, cache: Rc<Cache>, client_state: ClientState) {
         self.setup_sort();
         self.setup_search();
@@ -322,21 +332,6 @@ impl FolderView {
             .library
             .set(library.clone())
             .expect("Cannot init FolderView with Library");
-        client_state.connect_notify_local(
-            Some("connection-state"),
-            clone!(
-                #[weak(rename_to = this)]
-                self,
-                move |state, _| {
-                    if state.get_connection_state() == ConnectionState::Connected {
-                        // Newly-connected? Reset path to ""
-                        let _ = this.imp().history.replace(Vec::new());
-                        let _ = this.imp().curr_idx.replace(0);
-                        this.imp().library.get().unwrap().get_folder_contents("");
-                    }
-                }
-            ),
-        );
         client_state.connect_closure(
             "folder-contents-downloaded",
             false,
@@ -354,6 +349,18 @@ impl FolderView {
                             .extend_from_slice(entries.borrow::<Vec<INode>>().as_ref());
                         this.imp().loading_stack.set_visible_child_name("content");
                     }
+                }
+            ),
+        );
+        // Always reset on window creation (when coming back from background mode)
+        self.reset(&client_state);
+        client_state.connect_notify_local(
+            Some("connection-state"),
+            clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |state, _| {
+                    this.reset(&state);
                 }
             ),
         );

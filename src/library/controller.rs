@@ -12,6 +12,8 @@ use adw::subclass::prelude::*;
 use mpd::{error::Error as MpdError, search::Operation, EditAction, Query, SaveMode, Term};
 
 mod imp {
+    use std::cell::{Cell, RefCell};
+
     use super::*;
 
     #[derive(Debug)]
@@ -29,6 +31,13 @@ mod imp {
         pub playlists: gio::ListStore,
         pub albums: gio::ListStore,
         pub artists: gio::ListStore,
+
+        // Folder view
+        // Files and folders
+        pub folder_history: RefCell<Vec<String>>,
+        pub folder_curr_idx: Cell<usize>, // 0 means at root.
+        pub folder_inodes: gio::ListStore,
+
         pub cache: OnceCell<Rc<Cache>>,
     }
 
@@ -44,6 +53,10 @@ mod imp {
                 artists: gio::ListStore::new::<Artist>(),
                 client: OnceCell::new(),
                 cache: OnceCell::new(),
+
+                folder_history: RefCell::new(Vec::new()),
+                folder_curr_idx: Cell::new(0),
+                folder_inodes: gio::ListStore::new::<INode>(),
             }
         }
     }
@@ -295,6 +308,7 @@ impl Library {
     }
 
     pub fn get_folder_contents(&self, uri: &str) {
+        println!("get_folder_contents...");
         self.client()
             .queue_background(BackgroundTask::FetchFolderContents(uri.to_owned()), true);
     }
