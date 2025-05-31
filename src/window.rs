@@ -928,6 +928,9 @@ impl EuphonicaWindow {
 
         win.bind_state();
         win.setup_signals();
+
+        // Refresh background
+        win.queue_new_background();
         win
     }
 
