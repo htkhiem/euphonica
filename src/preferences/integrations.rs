@@ -1,6 +1,5 @@
 use adw::prelude::*;
 use adw::subclass::prelude::*;
-use ashpd::desktop::background::Background;
 use gtk::{glib, CompositeTemplate};
 use std::cell::OnceCell;
 use std::rc::Rc;
@@ -8,34 +7,6 @@ use std::rc::Rc;
 use crate::{cache::Cache, utils};
 
 use super::ProviderRow;
-
-fn update_background_request() {
-    let settings = utils::settings_manager().child("state");
-    let autostart = settings.boolean("autostart");
-    if settings.boolean("run-in-background") {
-        utils::tokio_runtime().spawn(async move {
-            let response = Background::request()
-                .reason("Run Euphonica in the background")
-                .auto_start(autostart)
-                .dbus_activatable(false)
-                .send()
-                .await
-                .expect("ashpd background await failure")
-                .response();
-
-            if let Ok(response) = response {
-                let state_settings = utils::settings_manager().child("state");
-
-                println!("Autostart: {}", response.auto_start());
-                println!("Background: {}", response.run_in_background());
-
-                // Might have to turn them off if system replies negatively
-                let _ = state_settings.set_boolean("autostart", response.auto_start());
-                let _ = state_settings.set_boolean("run-in-background", response.run_in_background());
-            }
-        });
-    }
-}
 
 mod imp {
 
@@ -125,14 +96,12 @@ impl IntegrationsPreferences {
             .build();
         state_settings
             .bind("start-minimized", &start_minimized, "active")
+            .get_only()
             .build();
         autostart
             .bind_property("active", &start_minimized, "sensitive")
             .sync_create()
             .build();
-        state_settings.connect_changed(Some("run-in-background"), |_, _| update_background_request());
-        state_settings.connect_changed(Some("autostart"), |_, _| update_background_request());
-        state_settings.connect_changed(Some("minimized"), |_, _| update_background_request());
 
         // Set up Last.fm settings
         let lastfm_settings = utils::meta_provider_settings("lastfm");

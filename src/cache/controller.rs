@@ -203,7 +203,6 @@ impl Cache {
                                         if let Some(album) = res {
                                             doc_cache.write_album_meta(&key, &album)
                                                 .expect("Unable to store downloaded album meta");
-                                            let _ = fg_sender.send_blocking(ProviderMessage::AlbumMetaAvailable(folder_uri));
                                         }
                                         else {
                                             // Push an empty AlbumMeta to block further calls for this album.
@@ -211,6 +210,7 @@ impl Cache {
                                             doc_cache.write_album_meta(&key, &models::AlbumMeta::from_key(&key))
                                                 .expect("Unable to store placeholder album meta");
                                         }
+                                        let _ = fg_sender.send_blocking(ProviderMessage::AlbumMetaAvailable(folder_uri));
                                         sleep_after_request();
                                     }
                                 }
@@ -250,7 +250,6 @@ impl Cache {
                                             }
                                             doc_cache.write_artist_meta(&key, &artist)
                                                 .expect("Unable to write downloaded artist meta");
-                                            let _ = fg_sender.send_blocking(ProviderMessage::ArtistMetaAvailable(name));
                                         }
 
                                         else {
@@ -258,6 +257,7 @@ impl Cache {
                                             println!("No artist meta could be found for {:?}. Pushing empty document...", &key);
                                             doc_cache.write_artist_meta(&key, &models::ArtistMeta::from_key(&key)).expect("Unable to write downloaded artist meta");
                                         }
+                                        let _ = fg_sender.send_blocking(ProviderMessage::ArtistMetaAvailable(name));
                                         sleep_after_request();
                                     }
                                 }

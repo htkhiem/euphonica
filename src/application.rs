@@ -40,11 +40,14 @@ use std::{
 use adw::prelude::*;
 
 mod imp {
+    use ashpd::desktop::background::Background;
+
     use super::*;
 
     #[derive(Debug)]
     pub struct EuphonicaApplication {
         pub initialized: Cell<bool>,
+        pub start_minimized: Cell<bool>,
         pub player: OnceCell<Player>,
         pub library: OnceCell<Library>,
         pub cache: OnceCell<Rc<Cache>>,
@@ -69,6 +72,7 @@ mod imp {
 
             Self {
                 initialized: Cell::new(false),
+                start_minimized: Cell::new(false),
                 player: OnceCell::new(),
                 library: OnceCell::new(),
                 client: OnceCell::new(),
@@ -136,7 +140,32 @@ mod imp {
                 );
 
                 // Background mode
+
                 let settings = utils::settings_manager().child("state");
+                // let curr_background = settings.boolean("run-in-background");
+                let autostart = settings.boolean("autostart");
+
+                utils::tokio_runtime().spawn(async move {
+                    let response = Background::request()
+                        .reason("Run Euphonica in the background")
+                        .auto_start(autostart)
+                        .dbus_activatable(false)
+                        .send()
+                        .await
+                        .expect("ashpd background await failure")
+                        .response();
+
+                    if let Ok(response) = response {
+                        let state_settings = utils::settings_manager().child("state");
+
+                        println!("Autostart: {}", response.auto_start());
+                        println!("Background: {}", response.run_in_background());
+
+                        // Might have to turn them off if system replies negatively
+                        let _ = state_settings.set_boolean("autostart", response.auto_start());
+                        let _ = state_settings.set_boolean("run-in-background", response.run_in_background());
+                    }
+                });
                 if settings.boolean("run-in-background") {
                     // println!("Creating new hold guard");
                     self.hold_guard.replace(Some(self.obj().hold()));
@@ -165,9 +194,17 @@ mod imp {
                 application.refresh();
 
                 self.initialized.set(true);
-            }
 
-            self.obj().raise_window();
+                // If this is the main instance, respect the minimized flag
+                if !self.start_minimized.get() {
+                    self.obj().raise_window();
+                }
+            }
+            else {
+                // Not the main instance -> not starting a new one -> always open a window regardless
+                // of whether the main instance was started with the --minimized flag or not.
+                self.obj().raise_window();
+            }
         }
     }
 
@@ -185,10 +222,18 @@ impl EuphonicaApplication {
     pub fn new(application_id: &str, flags: &gio::ApplicationFlags) -> Self {
         // TODO: Find a better place to put these
         musicbrainz_rs::config::set_user_agent(APPLICATION_USER_AGENT);
-        glib::Object::builder()
+        let app: EuphonicaApplication = glib::Object::builder()
             .property("application-id", application_id)
             .property("flags", flags)
-            .build()
+            .build();
+
+        app.connect_handle_local_options(|this: &Self, vd: &glib::VariantDict| {
+            if vd.lookup_value("minimized", None).is_some() {
+                this.imp().start_minimized.set(true);
+            }
+            -1  // let execution continue
+        });
+        app
     }
 
     pub fn get_player(&self) -> Player {
@@ -242,7 +287,12 @@ impl EuphonicaApplication {
     }
 
     pub fn is_fullscreen(&self) -> bool {
-        self.active_window().unwrap().is_fullscreen()
+        if let Some(window) = self.active_window() {
+            window.is_fullscreen()
+        }
+        else {
+            false
+        }
     }
 
     pub fn set_fullscreen(&self, state: bool) {

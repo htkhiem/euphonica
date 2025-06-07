@@ -17,6 +17,7 @@
  *
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
+
 mod application;
 mod cache;
 mod client;
@@ -69,6 +70,14 @@ fn main() -> glib::ExitCode {
     // desktop features such as file opening and single-instance applications.
     let app = EuphonicaApplication::new("io.github.htkhiem.Euphonica", &gio::ApplicationFlags::empty());
     app.connect_startup(|_| load_css());
+    app.add_main_option(
+        "minimized",
+        glib::Char::from(b'm'),
+        glib::OptionFlags::IN_MAIN | glib::OptionFlags::OPTIONAL_ARG,
+        glib::OptionArg::None,
+        "Start Euphonica without opening a window",
+        None
+    );
 
     // Run the application. This function will block until the application
     // exits. Upon return, we have our exit code to return to the shell. (This
