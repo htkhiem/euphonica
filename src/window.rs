@@ -447,6 +447,7 @@ mod imp {
                             curr_path = None;
                         }
                         WindowMessage::Stop => {
+                            println!("Stopping background blur thread...");
                             break 'outer;
                         }
                         _ => unreachable!(), // we shouldn't ever send BlurResult to the child thread
@@ -1129,6 +1130,15 @@ impl EuphonicaWindow {
             state
                 .set_int("last-window-height", height)
                 .expect("Unable to stop last-window-height");
+
+            // Stop blur thread when closing window.
+            // We need to take care of this now that the app's lifetime is decoupled from the window
+            // (background running support)
+            if window.imp().bg_handle.get().is_some() {
+                window.imp().sender_to_bg.get().unwrap().send_blocking(WindowMessage::Stop).expect("Could not stop background blur thread");
+            }
+
+            window.downcast_application().on_window_closed();
 
             // TODO: persist other settings at closing?
             glib::Propagation::Proceed

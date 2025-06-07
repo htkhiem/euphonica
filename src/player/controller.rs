@@ -312,9 +312,8 @@ mod imp {
                 .bind("use-visualizer", self.obj().as_ref(), "use-visualizer")
                 .get_only()
                 .build();
-            if settings.child("ui").boolean("use-visualizer") {
-                self.obj().maybe_start_fft_thread();
-            }
+
+            self.obj().maybe_start_fft_thread();
         }
 
         fn dispose(&self) {
@@ -459,9 +458,7 @@ mod imp {
                             println!("Switching FFT backend...");
                             self.obj().maybe_stop_fft_thread();
                             self.fft_backend.replace(get_fft_backend());
-                            if self.use_visualizer.get() {
-                                self.obj().maybe_start_fft_thread();
-                            }
+                            self.obj().maybe_start_fft_thread();
                             self.obj().notify("fft-backend-idx");
                         }
                     }
@@ -511,6 +508,23 @@ impl Player {
             .await
     }
 
+    pub fn set_is_foreground(&self, mode: bool) {
+        // If running in foreground mode, maybe start FFT thread and seekbar polling.
+        if mode {
+            println!("Player controller: entering foreground mode");
+            // Don't block polling: some shells' MPRIS applets have seekbars
+            // self.unblock_polling();
+            // self.maybe_start_polling();
+            self.maybe_start_fft_thread();
+        }
+        else {
+            println!("Player controller: entering background mode");
+            // self.block_polling();
+            // self.stop_polling();
+            self.maybe_stop_fft_thread();
+        }
+    }
+
     // Start a thread to read raw PCM data from MPD's named pipe output, transform them
     // to the frequency domain, then return the frequency magnitudes.
     // On each FFT frame (not screen frame):
@@ -522,9 +536,11 @@ impl Player {
     // 2. Perform FFT & extrapolate to the marker frequencies.
     // 3. Send results back to main thread via the async channel.
     fn maybe_start_fft_thread(&self) {
-        let output = self.imp().fft_data.clone();
-        if let Ok(()) = self.imp().fft_backend.borrow().start(output) {
-            self.notify("fft-status");
+        if self.imp().use_visualizer.get() {
+            let output = self.imp().fft_data.clone();
+            if let Ok(()) = self.imp().fft_backend.borrow().start(output) {
+                self.notify("fft-status");
+            }
         }
     }
 

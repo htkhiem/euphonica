@@ -17,11 +17,6 @@
  *
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
-use adw::subclass::prelude::*;
-use gtk::prelude::*;
-use gtk::{gio, glib};
-use std::{fs::create_dir_all, path::PathBuf, rc::Rc};
-
 use crate::{
     cache::Cache,
     client::{BackgroundTask, MpdWrapper},
@@ -29,18 +24,22 @@ use crate::{
     library::Library,
     player::Player,
     preferences::Preferences,
-    EuphonicaWindow,
+    utils, EuphonicaWindow,
+};
+use adw::subclass::prelude::*;
+use glib::clone;
+use gtk::prelude::*;
+use gtk::{gio, glib};
+use std::{
+    cell::{Cell, OnceCell, RefCell},
+    fs::create_dir_all,
+    path::PathBuf,
+    rc::Rc,
 };
 
 use adw::prelude::*;
 
 mod imp {
-    use std::cell::{Cell, OnceCell, RefCell};
-
-    use glib::clone;
-
-    use crate::utils;
-
     use super::*;
 
     #[derive(Debug)]
@@ -168,16 +167,7 @@ mod imp {
                 self.initialized.set(true);
             }
 
-            // Get the current window or create one if necessary
-            let window = if let Some(window) = application.active_window() {
-                window
-            } else {
-                let window = EuphonicaWindow::new(&*application);
-                window.upcast()
-            };
-
-            // Ask the window manager/compositor to present the window
-            window.present();
+            self.obj().raise_window();
         }
     }
 
@@ -270,8 +260,18 @@ impl EuphonicaApplication {
     }
 
     pub fn raise_window(&self) {
-        let window = self.active_window().unwrap();
+        let window = if let Some(window) = self.active_window() {
+            window
+        } else {
+            let window = EuphonicaWindow::new(&*self);
+            window.upcast()
+        };
+        self.imp().player.get().unwrap().set_is_foreground(true);
         window.present();
+    }
+
+    pub fn on_window_closed(&self) {
+        self.imp().player.get().unwrap().set_is_foreground(false);
     }
 
     fn refresh(&self) {
@@ -304,11 +304,7 @@ impl EuphonicaApplication {
 
     pub fn show_preferences(&self) {
         let window = self.active_window().unwrap();
-        let prefs = Preferences::new(
-            self.get_client(),
-            self.get_cache(),
-            &self.get_player()
-        );
+        let prefs = Preferences::new(self.get_client(), self.get_cache(), &self.get_player());
         prefs.present(Some(&window));
         prefs.update();
     }
