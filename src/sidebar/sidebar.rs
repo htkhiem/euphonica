@@ -82,6 +82,19 @@ impl Sidebar {
         Self::default()
     }
 
+    // Dirty hack to remove the highlight effect on hover
+    // (as the items themselves are toggle buttons already, there is no need
+    // for the ListBoxRows to do this)
+    pub fn hide_highlights(&self) {
+        let settings = utils::settings_manager().child("ui");
+        let recent_playlists_widget = self.imp().recent_playlists.get();
+        for idx in 0..settings.uint("recent-playlists-count") {
+            if let Some(row) = recent_playlists_widget.row_at_index(idx as i32) {
+                row.set_activatable(false);
+            }
+        }
+    }
+
     pub fn setup(&self, win: &EuphonicaWindow, app: &EuphonicaApplication) {
         let settings = utils::settings_manager().child("ui");
         let stack = win.get_stack();
@@ -192,21 +205,11 @@ impl Sidebar {
             ),
         );
 
-        // Dirty hack to remove the highlight effect on hover
-        // (as the items themselves are toggle buttons already, there is no need
-        // for the ListBoxRows to do this)
+        self.hide_highlights();
         playlists.connect_items_changed(clone!(
-            #[weak]
-            recent_playlists_widget,
-            #[strong]
-            settings,
-            move |_, _, _, _| {
-                for idx in 0..settings.uint("recent-playlists-count") {
-                    if let Some(row) = recent_playlists_widget.row_at_index(idx as i32) {
-                        row.set_activatable(false);
-                    }
-                }
-            }
+            #[weak(rename_to = this)]
+            self,
+            move |_, _, _, _| {this.hide_highlights();}
         ));
 
         // Hide the list widget when there is no playlist at all to avoid

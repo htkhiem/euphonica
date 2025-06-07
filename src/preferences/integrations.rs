@@ -1,5 +1,6 @@
 use adw::prelude::*;
 use adw::subclass::prelude::*;
+use ashpd::desktop::background::Background;
 use gtk::{glib, CompositeTemplate};
 use std::cell::OnceCell;
 use std::rc::Rc;
@@ -7,6 +8,34 @@ use std::rc::Rc;
 use crate::{cache::Cache, utils};
 
 use super::ProviderRow;
+
+fn update_background_request() {
+    let settings = utils::settings_manager().child("state");
+    let autostart = settings.boolean("autostart");
+    if settings.boolean("run-in-background") {
+        utils::tokio_runtime().spawn(async move {
+            let response = Background::request()
+                .reason("Run Euphonica in the background")
+                .auto_start(autostart)
+                .dbus_activatable(false)
+                .send()
+                .await
+                .expect("ashpd background await failure")
+                .response();
+
+            if let Ok(response) = response {
+                let state_settings = utils::settings_manager().child("state");
+
+                println!("Autostart: {}", response.auto_start());
+                println!("Background: {}", response.run_in_background());
+
+                // Might have to turn them off if system replies negatively
+                let _ = state_settings.set_boolean("autostart", response.auto_start());
+                let _ = state_settings.set_boolean("run-in-background", response.run_in_background());
+            }
+        });
+    }
+}
 
 mod imp {
 
@@ -17,6 +46,12 @@ mod imp {
     pub struct IntegrationsPreferences {
         #[template_child]
         pub enable_mpris: TemplateChild<adw::SwitchRow>,
+        #[template_child]
+        pub run_in_background: TemplateChild<adw::SwitchRow>,
+        #[template_child]
+        pub autostart: TemplateChild<adw::SwitchRow>,
+        #[template_child]
+        pub start_minimized: TemplateChild<adw::SwitchRow>,
 
         #[template_child]
         pub lastfm_key: TemplateChild<adw::EntryRow>,
@@ -57,7 +92,7 @@ mod imp {
 glib::wrapper! {
     pub struct IntegrationsPreferences(ObjectSubclass<imp::IntegrationsPreferences>)
         @extends adw::PreferencesPage,
-        @implements gtk::Accessible, gtk::Buildable, gtk::ConstraintTarget, gtk::Widget;
+    @implements gtk::Accessible, gtk::Buildable, gtk::ConstraintTarget, gtk::Widget;
 }
 
 impl Default for IntegrationsPreferences {
@@ -74,10 +109,30 @@ impl IntegrationsPreferences {
         let settings = utils::settings_manager();
 
         let player_settings = settings.child("player");
-        let enable_mpris = self.imp().enable_mpris.get();
+        let state_settings = settings.child("state");
+        let enable_mpris = imp.enable_mpris.get();
         player_settings
             .bind("enable-mpris", &enable_mpris, "active")
             .build();
+        let run_in_background = imp.run_in_background.get();
+        let autostart = imp.autostart.get();
+        let start_minimized = imp.start_minimized.get();
+        state_settings
+            .bind("run-in-background", &run_in_background, "active")
+            .build();
+        state_settings
+            .bind("autostart", &autostart, "active")
+            .build();
+        state_settings
+            .bind("start-minimized", &start_minimized, "active")
+            .build();
+        autostart
+            .bind_property("active", &start_minimized, "sensitive")
+            .sync_create()
+            .build();
+        state_settings.connect_changed(Some("run-in-background"), |_, _| update_background_request());
+        state_settings.connect_changed(Some("autostart"), |_, _| update_background_request());
+        state_settings.connect_changed(Some("minimized"), |_, _| update_background_request());
 
         // Set up Last.fm settings
         let lastfm_settings = utils::meta_provider_settings("lastfm");

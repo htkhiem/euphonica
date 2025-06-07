@@ -321,7 +321,6 @@ mod background {
         path: String,
     ) {
         if let Ok(contents) = client.lsinfo(&path) {
-            println!("Downloaded {} folder entries", contents.len());
             let _ = sender_to_fg
                 .send_blocking(AsyncClientMessage::FolderContentsDownloaded(path, contents));
         }
@@ -445,28 +444,27 @@ impl MpdWrapper {
                 .subscribe(self.bg_channel.clone())
                 .expect("Child thread could not subscribe to inter-client channel");
             let bg_handle = gio::spawn_blocking(move || {
-                println!("Starting idle loop...");
                 let mut busy: bool = false;
                 'outer: loop {
-                    // Try to fetch a task
-                    let curr_task: Option<BackgroundTask>;
-                    if !bg_receiver_high.is_empty() {
-                        curr_task = Some(
-                            bg_receiver_high
-                                .recv_blocking()
-                                .expect("Unable to read from high-priority queue"),
-                        );
-                    } else if !bg_receiver.is_empty() {
-                        curr_task = Some(
-                            bg_receiver
-                                .recv_blocking()
-                                .expect("Unable to read from background queue"),
-                        );
-                    }
-                    else {
-                        curr_task = None;
-                    }
                     let skip_to_idle = pending_idle.load(Ordering::Relaxed);
+
+                    let mut curr_task: Option<BackgroundTask> = None;
+                    if !skip_to_idle {
+                        if !bg_receiver_high.is_empty() {
+                            curr_task = Some(
+                                bg_receiver_high
+                                    .recv_blocking()
+                                    .expect("Unable to read from high-priority queue"),
+                            );
+                        } else if !bg_receiver.is_empty() {
+                            curr_task = Some(
+                                bg_receiver
+                                    .recv_blocking()
+                                    .expect("Unable to read from background queue"),
+                            );
+                        }
+                    }
+
                     if !skip_to_idle && curr_task.is_some() {
                         let task = curr_task.unwrap();
                         if !busy {
@@ -520,16 +518,14 @@ impl MpdWrapper {
                             let _ = sender_to_fg.send_blocking(AsyncClientMessage::Busy(false));
                         }
                         if skip_to_idle {
-                            println!("Background MPD thread skipping to idle mode as there are pending messages");
+                            // println!("Background MPD thread skipping to idle mode as there are pending messages");
                             pending_idle.store(false, Ordering::Relaxed);
                         }
                         if let Ok(changes) = client.wait(&[]) {
-                            println!("Change: {:?}", changes);
                             if changes.contains(&Subsystem::Message) {
                                 if let Ok(msgs) = client.readmessages() {
                                     for msg in msgs {
                                         let content = msg.message.as_str();
-                                        println!("Received msg: {}", content);
                                         match content {
                                             // More to come
                                             "STOP" => {
@@ -588,10 +584,7 @@ impl MpdWrapper {
             loop {
                 if let Some(client) = this.main_client.borrow_mut().as_mut() {
                     let res = client.ping();
-                    if res.is_ok() {
-                        println!("[KeepAlive]");
-                    }
-                    else {
+                    if res.is_err() {
                         println!("[KeepAlive] [FATAL] Could not ping mpd. The connection might have already timed out, or the daemon might have crashed.");
                         break;
                     }
@@ -674,14 +667,6 @@ impl MpdWrapper {
         } else {
             panic!("Cannot queue background task (background sender not initialised)");
         }
-    }
-
-    pub fn fetch_albums(&self) {
-        self.queue_background(BackgroundTask::FetchAlbums, false);
-    }
-
-    pub fn fetch_artists(&self, use_albumartists: bool) {
-        self.queue_background(BackgroundTask::FetchArtists(use_albumartists), false);
     }
 
     pub fn queue_connect(&self) {

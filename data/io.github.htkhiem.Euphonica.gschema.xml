@@ -36,7 +36,6 @@
 	</schema>
 
 	<schema id="io.github.htkhiem.Euphonica.client" path="/org/euphonica/Euphonica/client/">
-		<!-- TODO: bool key for whether there's a password. Store password with oo7. -->
 		<key name="mpd-host" type="s">
 			<default>'localhost'</default>
 		</key>
@@ -250,6 +249,17 @@
 		</key>
 		<key name="last-window-height" type="i">
 			<default>400</default>
+		</key>
+
+		<!-- Background & autostart -->
+		<key name="run-in-background" type="b">
+			<default>false</default>
+		</key>
+		<key name="autostart" type="b">
+			<default>false</default>
+		</key>
+		<key name="start-minimized" type="b">
+			<default>true</default>
 		</key>
 	</schema>
 

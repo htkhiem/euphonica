@@ -180,6 +180,7 @@ mod imp {
     use glib::{
         ParamSpec, ParamSpecBoolean, ParamSpecDouble, ParamSpecEnum, ParamSpecFloat, ParamSpecInt, ParamSpecObject, ParamSpecString, ParamSpecUInt, ParamSpecUInt64
     };
+    use mpd::Output;
     use once_cell::sync::Lazy;
 
     pub struct Player {
@@ -219,7 +220,8 @@ mod imp {
         pub fft_backend: RefCell<Rc<dyn FftBackend>>,
         pub fft_data: Arc<Mutex<(Vec<f32>, Vec<f32>)>>, // Binned magnitudes, in stereo
         pub use_visualizer: Cell<bool>,
-        pub fft_backend_idx: Cell<i32>
+        pub fft_backend_idx: Cell<i32>,
+        pub outputs: gio::ListStore
     }
 
     #[glib::object_subclass]
@@ -270,7 +272,8 @@ mod imp {
                     ],
                 ))),
                 use_visualizer: Cell::new(false),
-                fft_backend_idx: Cell::new(0)
+                fft_backend_idx: Cell::new(0),
+                outputs: gio::ListStore::new::<BoxedAnyObject>()
             }
         }
     }
@@ -309,9 +312,8 @@ mod imp {
                 .bind("use-visualizer", self.obj().as_ref(), "use-visualizer")
                 .get_only()
                 .build();
-            if settings.child("ui").boolean("use-visualizer") {
-                self.obj().maybe_start_fft_thread();
-            }
+
+            self.obj().maybe_start_fft_thread();
         }
 
         fn dispose(&self) {
@@ -456,9 +458,7 @@ mod imp {
                             println!("Switching FFT backend...");
                             self.obj().maybe_stop_fft_thread();
                             self.fft_backend.replace(get_fft_backend());
-                            if self.use_visualizer.get() {
-                                self.obj().maybe_start_fft_thread();
-                            }
+                            self.obj().maybe_start_fft_thread();
                             self.obj().notify("fft-backend-idx");
                         }
                     }
@@ -472,7 +472,6 @@ mod imp {
             SIGNALS.get_or_init(|| {
                 vec![
                     Signal::builder("outputs-changed")
-                        .param_types([BoxedAnyObject::static_type()])
                         .build(),
                     // Reserved for EXTERNAL changes (i.e. changes made by this client won't
                     // emit this).
@@ -509,6 +508,23 @@ impl Player {
             .await
     }
 
+    pub fn set_is_foreground(&self, mode: bool) {
+        // If running in foreground mode, maybe start FFT thread and seekbar polling.
+        if mode {
+            println!("Player controller: entering foreground mode");
+            // Don't block polling: some shells' MPRIS applets have seekbars
+            // self.unblock_polling();
+            // self.maybe_start_polling();
+            self.maybe_start_fft_thread();
+        }
+        else {
+            println!("Player controller: entering background mode");
+            // self.block_polling();
+            // self.stop_polling();
+            self.maybe_stop_fft_thread();
+        }
+    }
+
     // Start a thread to read raw PCM data from MPD's named pipe output, transform them
     // to the frequency domain, then return the frequency magnitudes.
     // On each FFT frame (not screen frame):
@@ -520,9 +536,11 @@ impl Player {
     // 2. Perform FFT & extrapolate to the marker frequencies.
     // 3. Send results back to main thread via the async channel.
     fn maybe_start_fft_thread(&self) {
-        let output = self.imp().fft_data.clone();
-        if let Ok(()) = self.imp().fft_backend.borrow().start(output) {
-            self.notify("fft-status");
+        if self.imp().use_visualizer.get() {
+            let output = self.imp().fft_data.clone();
+            if let Ok(()) = self.imp().fft_backend.borrow().start(output) {
+                self.notify("fft-status");
+            }
         }
     }
 
@@ -538,6 +556,10 @@ impl Player {
 
     pub fn fft_data(&self) -> Arc<Mutex<(Vec<f32>, Vec<f32>)>> {
         self.imp().fft_data.clone()
+    }
+
+    pub fn outputs(&self) -> gio::ListStore {
+        self.imp().outputs.clone()
     }
 
     pub fn setup(
@@ -606,8 +628,8 @@ impl Player {
                         if let Some(status) = this.client().get_status() {
                             this.update_status(&status);
                         }
-                        if let Some(outs) = this.client().get_outputs() {
-                            this.update_outputs(glib::BoxedAnyObject::new(outs));
+                        if let Some(outputs) = this.client().get_outputs() {
+                            this.update_outputs(outputs);
                         }
                     }
                 }
@@ -642,7 +664,7 @@ impl Player {
                         }
                         Subsystem::Output => {
                             if let Some(outs) = this.client().get_outputs() {
-                                this.update_outputs(glib::BoxedAnyObject::new(outs));
+                                this.update_outputs(outs);
                             }
                         }
                         _ => {}
@@ -1023,8 +1045,12 @@ impl Player {
         self.imp().client.get().unwrap()
     }
 
-    fn update_outputs(&self, outputs: BoxedAnyObject) {
-        self.emit_by_name::<()>("outputs-changed", &[&outputs]);
+    fn update_outputs(&self, outputs: Vec<mpd::Output>) {
+        self.imp().outputs.remove_all();
+        self.imp().outputs.extend_from_slice(
+            &outputs.into_iter().map(glib::BoxedAnyObject::new).collect::<Vec<glib::BoxedAnyObject>>()
+        );
+        self.emit_by_name::<()>("outputs-changed", &[]);
     }
 
     pub fn set_output(&self, id: u32, state: bool) {
