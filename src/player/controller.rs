@@ -180,7 +180,7 @@ mod imp {
     use glib::{
         ParamSpec, ParamSpecBoolean, ParamSpecDouble, ParamSpecEnum, ParamSpecFloat, ParamSpecInt, ParamSpecObject, ParamSpecString, ParamSpecUInt, ParamSpecUInt64
     };
-    use mpd::Output;
+    
     use once_cell::sync::Lazy;
 
     pub struct Player {

@@ -13,7 +13,6 @@ mod seekbar;
 use knob::VolumeKnob;
 use output::MpdOutput;
 use queue_row::QueueRow;
-use ratio_center_box::RatioCenterBox;
 
 pub use fft_backends::backend::FftStatus;
 pub use bar::PlayerBar;

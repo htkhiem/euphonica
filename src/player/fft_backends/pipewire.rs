@@ -135,11 +135,6 @@ impl FftBackend for PipeWireFftBackend {
                             .format
                             .parse(param)
                             .expect("Failed to parse param 'changed' to AudioInfoRaw");
-
-                        println!(
-                            "PipeWire stream format: {:?}",
-                            &user_data.format
-                        );
                     })
                     .process(move |stream, user_data| match stream.dequeue_buffer() {
                         None => {return;},
@@ -318,7 +313,6 @@ impl FftBackend for PipeWireFftBackend {
     }
 
     fn stop(&self) {
-        println!("Stopping pipewire thread");
         let fft_stop = self.fft_stop.clone();
         fft_stop.store(true, Ordering::Relaxed);
         if let Some(sender) = self.pw_sender.take() {

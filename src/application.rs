@@ -29,7 +29,6 @@ use crate::{
     utils, EuphonicaWindow
 };
 use adw::subclass::prelude::*;
-use glib::clone;
 use gtk::{gio, glib};
 use std::{
     cell::{Cell, OnceCell, RefCell},
@@ -67,9 +66,6 @@ pub fn update_xdg_background_request() {
 
         if let Ok(response) = response {
             let state_settings = utils::settings_manager().child("state");
-
-            println!("Autostart: {}", response.auto_start());
-            println!("Background: {}", run_in_background && response.run_in_background());
 
             // Might have to turn them off if system replies negatively
             let _ = state_settings.set_boolean("autostart", response.auto_start());

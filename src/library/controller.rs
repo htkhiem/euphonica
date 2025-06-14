@@ -308,7 +308,6 @@ impl Library {
     }
 
     pub fn get_folder_contents(&self, uri: &str) {
-        println!("get_folder_contents...");
         self.client()
             .queue_background(BackgroundTask::FetchFolderContents(uri.to_owned()), true);
     }

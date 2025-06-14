@@ -2,7 +2,7 @@ use adw::prelude::*;
 use adw::subclass::prelude::*;
 use gtk::{
     gio,
-    glib::{self, closure_local},
+    glib::{self},
     CompositeTemplate, ListItem, SignalListItemFactory, SingleSelection,
 };
 use std::{cell::Cell, cmp::Ordering, rc::Rc};
@@ -12,7 +12,7 @@ use glib::{clone, Properties};
 use super::{AlbumCell, AlbumContentView, Library};
 use crate::{
     cache::Cache,
-    client::{ClientState, ConnectionState},
+    client::ClientState,
     common::Album,
     utils::{g_cmp_options, g_cmp_str_options, g_search_substr, settings_manager},
 };

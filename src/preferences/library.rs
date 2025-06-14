@@ -80,7 +80,7 @@ mod imp {
                 self,
                 move |_| {
                     if let Some(cache) = this.cache.get() {
-                        open::that(cache.get_app_cache_path());
+                        let _ = open::that(cache.get_app_cache_path());
                     }
                 }
             ));

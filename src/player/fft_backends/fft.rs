@@ -8,7 +8,6 @@ use std::{
 };
 
 // Option 2: read from local Pipewire output (works in Flatpak)
-use pipewire as pw;
 
 use mpd::status::AudioFormat;
 
@@ -54,7 +53,6 @@ pub fn try_open_pipe(
     // Bits per sample * 2 (stereo) * n_samples * 4 (safety factor)
     let buf_bytes = ((format.bits as usize * 8 * n_samples) as f64 / 8.0).ceil() as usize;
 
-    println!("FIFO buffer size: {} bytes", buf_bytes);
     let pipe = BufReader::with_capacity(buf_bytes, open_named_pipe_readonly(path)?);
     Ok(pipe)
 }
@@ -186,7 +184,6 @@ pub fn get_magnitudes(
     min_freq: f32,
     max_freq: f32,
 ) {
-    let samples_len_f32 = input_buf.len() as f32;
     blackman_harris_4term_inplace(input_buf);
 
     let fft_res = spectrum_analyzer::samples_fft_to_spectrum(

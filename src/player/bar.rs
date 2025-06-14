@@ -1,4 +1,4 @@
-use glib::{clone, closure_local, BoxedAnyObject};
+use glib::{clone, closure_local};
 use gtk::{
     gdk,
     glib::{self, Variant},
@@ -6,12 +6,11 @@ use gtk::{
     subclass::prelude::*,
     CompositeTemplate,
 };
-use mpd::output::Output;
 use std::cell::{Cell, RefCell};
 
 use crate::{
     cache::placeholders::ALBUMART_PLACEHOLDER,
-    common::{Marquee, QualityGrade},
+    common::Marquee,
     utils::settings_manager,
 };
 

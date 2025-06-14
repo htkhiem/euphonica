@@ -315,7 +315,6 @@ impl FolderView {
     }
 
     pub fn reset(&self, state: &ClientState) {
-        println!("Attempting to reset folder view...");
         if state.get_connection_state() == ConnectionState::Connected {
             // Newly-connected? Reset path to ""
             let _ = self.imp().history.replace(Vec::new()); 

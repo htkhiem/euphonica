@@ -8,7 +8,7 @@ pub mod paintables;
 pub mod song;
 pub mod sticker;
 
-pub use sticker::{Stickers, Thumbs};
+pub use sticker::Stickers;
 pub use album::{Album, AlbumInfo};
 pub use artist::{artists_to_string, parse_mb_artist_tag, Artist, ArtistInfo};
 pub use inode::{INode, INodeType};
