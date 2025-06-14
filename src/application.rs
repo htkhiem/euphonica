@@ -42,6 +42,8 @@ use adw::prelude::*;
 mod imp {
     use ashpd::desktop::background::Background;
 
+    use crate::config;
+
     use super::*;
 
     #[derive(Debug)]
@@ -144,12 +146,22 @@ mod imp {
                 let settings = utils::settings_manager().child("state");
                 // let curr_background = settings.boolean("run-in-background");
                 let autostart = settings.boolean("autostart");
+                let start_minimized = settings.boolean("start-minimized");
 
                 utils::tokio_runtime().spawn(async move {
-                    let response = Background::request()
+                    let mut request = Background::request()
                         .reason("Run Euphonica in the background")
-                        .auto_start(autostart)
-                        .dbus_activatable(false)
+                        .dbus_activatable(false);
+
+                    if autostart {
+                        request = request
+                            .auto_start(true);
+                        if start_minimized {
+                            request = request.command(&["euphonica", "--minimized"])
+                        }
+                    }
+                    
+                    let response = request
                         .send()
                         .await
                         .expect("ashpd background await failure")
@@ -167,10 +179,10 @@ mod imp {
                     }
                 });
                 if settings.boolean("run-in-background") {
-                    // println!("Creating new hold guard");
+                    println!("Creating new hold guard");
                     self.hold_guard.replace(Some(self.obj().hold()));
                 } else {
-                    // println!("Dropping hold guard");
+                    println!("Dropping hold guard");
                     self.hold_guard.take();
                 }
 
@@ -181,10 +193,10 @@ mod imp {
                         self,
                         move |settings, _| {
                             if settings.boolean("run-in-background") {
-                                // println!("Creating new hold guard");
+                                println!("Creating new hold guard");
                                 this.hold_guard.replace(Some(this.obj().hold()));
                             } else {
-                                // println!("Dropping hold guard");
+                                println!("Dropping hold guard");
                                 this.hold_guard.take();
                             }
                         }
@@ -262,8 +274,9 @@ impl EuphonicaApplication {
         let update_db_action = gio::ActionEntry::builder("update-db")
             .activate(move |app: &Self, _, _| app.update_db())
             .build();
+        // Overrides background mode and ends instance
         let quit_action = gio::ActionEntry::builder("quit")
-            .activate(move |app: &Self, _, _| app.quit())
+            .activate(move |app: &Self, _, _| app.quit_app())
             .build();
         let about_action = gio::ActionEntry::builder("about")
             .activate(move |app: &Self, _, _| app.show_about())
@@ -277,7 +290,7 @@ impl EuphonicaApplication {
             update_db_action,
             quit_action,
             about_action,
-            preferences_action,
+            preferences_action
         ]);
     }
 
@@ -357,5 +370,11 @@ impl EuphonicaApplication {
         let prefs = Preferences::new(self.get_client(), self.get_cache(), &self.get_player());
         prefs.present(Some(&window));
         prefs.update();
+    }
+
+    /// Quit Euphonica. Useful for when run-in-background is true. Otherwise just close the window.
+    pub fn quit_app(&self) {
+        self.imp().hold_guard.take();
+        self.quit();
     }
 }

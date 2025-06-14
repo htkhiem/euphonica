@@ -3,8 +3,11 @@
 
 An MPD frontend with delusions of grandeur. 
 
+It exists to sate my need for something that's got the bling and the features to back that bling up.
+
 ## Features
 - Responsive GTK4 LibAdwaita UI for most MPD features, from basic things like playback controls, queue reordering and ReplayGain to things like output control, crossfade and MixRamp configuration
+- Integrated MPRIS client with background run supported. The background instance can be reopened via your shell's MPRIS applet, the "Background applications" section in GNOME's quick settings shade (if installed via Flatpak) or simply by launching Euphonica again.
 - Built-in, customisable spectrum visualiser, reading from MPD FIFO or system PipeWire
 - Automatic accent colours based on album art (optional)
 - Rate albums (requires MPD 0.24+)
@@ -27,7 +30,6 @@ An MPD frontend with delusions of grandeur.
 - Album wikis & artist bios are supported too
 - All externally-acquired metadata are cached locally & persisted on disk to avoid needless API calls
 - Volume knob with dBFS readout support ('cuz why not?)
-- MPRIS support (can be disabled if you're running `mpdris2` instead)
 - User-friendly configuration UI & GSettings backend
 - MPD passwords are securely stored in your user's login keyring
 - Commands are bundled into lists for efficient MPD-side processing where possible.
@@ -99,7 +101,7 @@ It is the most lightweight option, but has only been tested on Arch Linux.
   - `rustup` >= 1.27
   - `meson` >= 1.5
   - `gettext` >= 0.23
-  - `mpd` >= 0.21 (Euphonica relies on the new filter syntax)
+  - `mpd` >= 0.24 (Euphonica relies on the new filter syntax and expanded tagging)
   
     If you are on Arch Linux, `gettext` should have been installed as part of the `base-devel` metapackage, which also includes `git` (to clone this repo :) ).
 
@@ -141,7 +143,6 @@ Euphonica is developed with Beets tagging in mind and can take advantage of its 
 Most libraries, especially those that ran well with other MPD clients like [Cantata](https://github.com/CDrummond/cantata), should require no reorganisation.
 
 ## TODO
-- Local storage management UI (to allow re-fetching metadata, clearing album art cache and the like)
 - Support more stickers-based features:
   - Recently played
   - Per-song ratings

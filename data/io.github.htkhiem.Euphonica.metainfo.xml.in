@@ -65,6 +65,15 @@
   </screenshots>
 
   <releases>
+    <release version="0.92.0-alpha" date="2025-06-14">
+      <url type="details">https://github.com/htkhiem/euphonica/releases/tag/v0.92.0-alpha</url>
+      <description>
+        <p>New: Background mode. Euphonica can now run in the background, allowing it to serve as your MPRIS daemon. Visualisation backends and album art blur thread will be shut down upon entering background mode, reducing CPU usage to pretty much zero. Polling will still be performed to support shell applets with seekbars (GNOME does with an extension).</p>
+        <p>New: Command-line argument to start Euphonica minimised (--minimized). This allows setting up autostart scripts.</p>
+        <p>Fix: Playback controls are now properly centered instead of being forced to the right by long titles (which will scroll like a marquee instead).</p>
+        <p>Fix: Album info and artist bio spinners not going away in case no metadata could be found.</p>
+      </description>
+    </release>
     <release version="0.91.0-alpha" date="2025-05-24">
       <url type="details">https://github.com/htkhiem/euphonica/releases/tag/v0.91.0-alpha</url>
       <description>

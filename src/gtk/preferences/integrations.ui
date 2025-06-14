@@ -19,18 +19,19 @@
 				<child>
 					<object class="AdwSwitchRow" id="run_in_background">
 						<property name="title" translatable="true">Run in background</property>
-						<property name="subtitle" translatable="true">Allow Euphonica to keep running after its window is closed.</property>
+						<property name="subtitle" translatable="true">Allow Euphonica to keep running after its window is closed. If Euphonica is installed via Flatpak and your shell supports the XDG Background protocol, Euphonica can additionally show up in your shell's background apps section.</property>
 					</object>
 				</child>
 				<child>
 					<object class="AdwSwitchRow" id="autostart">
 						<property name="title" translatable="true">Autostart</property>
-						<property name="subtitle" translatable="true">Start Euphonica on system startup.</property>
+						<property name="subtitle" translatable="true">Start Euphonica on shell login. This option only works when installed via Flatpak and on shells supporting the XDG Background protocol. For other setups, please use their preferred autostarting mechanisms.</property>
 					</object>
 				</child>
 				<child>
 					<object class="AdwSwitchRow" id="start_minimized">
-						<property name="title" translatable="true">Start minimised</property>
+						<property name="title" translatable="true">Autostart minimised</property>
+						<property name="subtitle" translatable="true">You may also launch Euphonica minimised using the --minimized command-line argument.</property>
 					</object>
 				</child>
 			</object>
