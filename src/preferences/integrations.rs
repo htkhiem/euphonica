@@ -4,7 +4,7 @@ use gtk::{glib, CompositeTemplate};
 use std::cell::OnceCell;
 use std::rc::Rc;
 
-use crate::{cache::Cache, utils};
+use crate::{application::update_xdg_background_request, cache::Cache, utils};
 
 use super::ProviderRow;
 
@@ -88,20 +88,34 @@ impl IntegrationsPreferences {
         let run_in_background = imp.run_in_background.get();
         let autostart = imp.autostart.get();
         let start_minimized = imp.start_minimized.get();
-        state_settings
-            .bind("run-in-background", &run_in_background, "active")
-            .build();
-        state_settings
-            .bind("autostart", &autostart, "active")
-            .build();
-        state_settings
-            .bind("start-minimized", &start_minimized, "active")
-            .get_only()
-            .build();
+
+        // Init background & autostart toggle states
+        // Do NOT bind the widgets directly to the settings to avoid an infinite loo
+        // when we update the settings from code (system might refuse our background
+        // and autostart requests).
+        run_in_background.set_active(state_settings.boolean("run-in-background"));
+        autostart.set_active(state_settings.boolean("autostart"));
+        start_minimized.set_active(state_settings.boolean("start-minimized"));
         autostart
             .bind_property("active", &start_minimized, "sensitive")
             .sync_create()
             .build();
+
+        run_in_background.connect_notify_local(Some("active"), |sw, _| {
+            let settings = utils::settings_manager().child("state");
+            let _ = settings.set_boolean("run-in-background", sw.is_active());
+            update_xdg_background_request();
+        });
+        autostart.connect_notify_local(Some("active"), |sw, _| {
+            let settings = utils::settings_manager().child("state");
+            let _ = settings.set_boolean("autostart", sw.is_active());
+            update_xdg_background_request();
+        });
+        start_minimized.connect_notify_local(Some("active"), |sw, _| {
+            let settings = utils::settings_manager().child("state");
+            let _ = settings.set_boolean("start-minimized", sw.is_active());
+            update_xdg_background_request();
+        });
 
         // Set up Last.fm settings
         let lastfm_settings = utils::meta_provider_settings("lastfm");

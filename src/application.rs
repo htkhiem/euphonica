@@ -17,6 +17,8 @@
  *
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
+
+use adw::prelude::*;
 use crate::{
     cache::Cache,
     client::{BackgroundTask, MpdWrapper},
@@ -24,11 +26,10 @@ use crate::{
     library::Library,
     player::Player,
     preferences::Preferences,
-    utils, EuphonicaWindow,
+    utils, EuphonicaWindow
 };
 use adw::subclass::prelude::*;
 use glib::clone;
-use gtk::prelude::*;
 use gtk::{gio, glib};
 use std::{
     cell::{Cell, OnceCell, RefCell},
@@ -37,13 +38,49 @@ use std::{
     rc::Rc,
 };
 
-use adw::prelude::*;
+use ashpd::desktop::background::Background;
+
+pub fn update_xdg_background_request() {
+    let settings = utils::settings_manager().child("state");
+    let run_in_background = settings.boolean("run-in-background");
+    let autostart = settings.boolean("autostart");
+    let start_minimized = settings.boolean("start-minimized");
+
+    utils::tokio_runtime().spawn(async move {
+        let mut request = Background::request()
+            .reason("Run Euphonica in the background")
+            .dbus_activatable(false);
+
+        if autostart {
+            request = request
+                .auto_start(true);
+            if start_minimized {
+                request = request.command(&["euphonica", "--minimized"])
+            }
+        }
+
+        let response = request
+            .send()
+            .await
+            .expect("ashpd background await failure")
+            .response();
+
+        if let Ok(response) = response {
+            let state_settings = utils::settings_manager().child("state");
+
+            println!("Autostart: {}", response.auto_start());
+            println!("Background: {}", run_in_background && response.run_in_background());
+
+            // Might have to turn them off if system replies negatively
+            let _ = state_settings.set_boolean("autostart", response.auto_start());
+            // Since we call the above regardless of whether we wish to run in background
+            // or not (to update autostart) we need to do an AND here.
+            let _ = state_settings.set_boolean("run-in-background", run_in_background && response.run_in_background());
+        }
+    });
+}
 
 mod imp {
-    use ashpd::desktop::background::Background;
-
-    use crate::config;
-
     use super::*;
 
     #[derive(Debug)]
@@ -141,68 +178,6 @@ mod imp {
                     self.cache.get().unwrap().clone(),
                 );
 
-                // Background mode
-
-                let settings = utils::settings_manager().child("state");
-                // let curr_background = settings.boolean("run-in-background");
-                let autostart = settings.boolean("autostart");
-                let start_minimized = settings.boolean("start-minimized");
-
-                utils::tokio_runtime().spawn(async move {
-                    let mut request = Background::request()
-                        .reason("Run Euphonica in the background")
-                        .dbus_activatable(false);
-
-                    if autostart {
-                        request = request
-                            .auto_start(true);
-                        if start_minimized {
-                            request = request.command(&["euphonica", "--minimized"])
-                        }
-                    }
-                    
-                    let response = request
-                        .send()
-                        .await
-                        .expect("ashpd background await failure")
-                        .response();
-
-                    if let Ok(response) = response {
-                        let state_settings = utils::settings_manager().child("state");
-
-                        println!("Autostart: {}", response.auto_start());
-                        println!("Background: {}", response.run_in_background());
-
-                        // Might have to turn them off if system replies negatively
-                        let _ = state_settings.set_boolean("autostart", response.auto_start());
-                        let _ = state_settings.set_boolean("run-in-background", response.run_in_background());
-                    }
-                });
-                if settings.boolean("run-in-background") {
-                    println!("Creating new hold guard");
-                    self.hold_guard.replace(Some(self.obj().hold()));
-                } else {
-                    println!("Dropping hold guard");
-                    self.hold_guard.take();
-                }
-
-                settings.connect_changed(
-                    Some("run-in-background"),
-                    clone!(
-                        #[weak(rename_to = this)]
-                        self,
-                        move |settings, _| {
-                            if settings.boolean("run-in-background") {
-                                println!("Creating new hold guard");
-                                this.hold_guard.replace(Some(this.obj().hold()));
-                            } else {
-                                println!("Dropping hold guard");
-                                this.hold_guard.take();
-                            }
-                        }
-                    ),
-                );
-
                 application.refresh();
 
                 self.initialized.set(true);
@@ -245,6 +220,10 @@ impl EuphonicaApplication {
             }
             -1  // let execution continue
         });
+
+        // Background mode
+        update_xdg_background_request();
+
         app
     }
 
@@ -334,7 +313,16 @@ impl EuphonicaApplication {
     }
 
     pub fn on_window_closed(&self) {
-        self.imp().player.get().unwrap().set_is_foreground(false);
+        let settings = utils::settings_manager().child("state");
+        if settings.boolean("run-in-background") {
+            self.imp().player.get().unwrap().set_is_foreground(false);
+            if let Some(_) = self.imp().hold_guard.replace(Some(self.hold())) {
+                println!("Created a new hold guard");
+            }
+        } else {
+            println!("Dropping hold guard");
+            self.imp().hold_guard.take();
+        }
     }
 
     fn refresh(&self) {
