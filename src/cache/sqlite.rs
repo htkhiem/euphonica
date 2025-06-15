@@ -7,7 +7,7 @@ use r2d2_sqlite::SqliteConnectionManager;
 use rusqlite::{params, Error as SqliteError, Result, Row};
 use time::OffsetDateTime;
 
-use crate::{common::{AlbumInfo, ArtistInfo}, meta_providers::models::{AlbumMeta, ArtistMeta}};
+use crate::{common::{AlbumInfo, ArtistInfo, SongInfo}, meta_providers::models::{AlbumMeta, ArtistMeta, Lyrics, LyricsParseError}};
 
 #[derive(Debug)]
 pub enum Error {
@@ -119,6 +119,37 @@ impl TryFrom<&Row<'_>> for ArtistMetaRow {
             mbid: row.get(1)?,
             last_modified: row.get(2)?,
             data: row.get(3)?
+        })
+    }
+}
+
+pub struct LyricsRow {
+    uri: String,
+    lyrics: String,
+    synced: bool,
+    last_modified: OffsetDateTime
+}
+
+impl TryInto<Lyrics> for LyricsRow {
+    type Error = LyricsParseError;
+    fn try_into(self) -> std::result::Result<Lyrics, Self::Error> {
+        if self.synced {
+            Ok(Lyrics::try_from_synced_lrclib_str(&self.lyrics)?)
+        }
+        else {
+            Ok(Lyrics::try_from_plain_lrclib_str(&self.lyrics)?)
+        }
+    }
+}
+
+impl TryFrom<&Row<'_>> for LyricsRow {
+    type Error = SqliteError;
+    fn try_from(row: &Row) -> std::result::Result<Self, Self::Error> {
+        Ok(Self {
+            uri: row.get(0)?,
+            lyrics: row.get(1)?,
+            synced: row.get(2)?,
+            last_modified: row.get(3)?
         })
     }
 }
@@ -270,7 +301,7 @@ end;
         Ok(())
     }
 
-    pub fn write_artist_meta(&self, artist: &ArtistInfo, meta: &ArtistMeta) -> Result<(), Error>  {
+    pub fn write_artist_meta(&self, artist: &ArtistInfo, meta: &ArtistMeta) -> Result<(), Error> {
         let mut conn = self.pool.get().unwrap();
         let tx = conn.transaction().map_err(|e| Error::DbError(e))?;
         if let Some(mbid) = artist.mbid.as_deref() {
@@ -292,6 +323,41 @@ end;
                 &artist.mbid,
                 OffsetDateTime::now_utc(),
                 bson::to_vec(&bson::to_document(meta).map_err(|_| Error::MetaToDocError)?).map_err(|_| Error::DocToBytesError)?
+            ]
+        ).map_err(|e| Error::DbError(e))?;
+        tx.commit().map_err(|e| Error::DbError(e))?;
+        Ok(())
+    }
+
+    pub fn find_lyrics(&self, song: &SongInfo) -> Result<Option<Lyrics>, Error> {
+        let query: Result<LyricsRow, SqliteError>;
+        let conn = self.pool.get().unwrap();
+        query = conn.prepare("select * from songs where uri = ?1")
+                    .unwrap().query_row(params![&song.uri], |r| {LyricsRow::try_from(r)}); 
+        match query {
+            Ok(row) => {
+                let res = row.try_into().map_err(|_| Error::DocToMetaError)?;
+                return Ok(Some(res));
+            }
+            Err(SqliteError::QueryReturnedNoRows) => {
+                println!("Couldn't find lyrics for song {:?} in local DB", song);
+                return Ok(None);
+            }
+            Err(e) => {return Err(Error::DbError(e));}
+        }
+    }
+
+    pub fn write_lyrics(&self, song: &SongInfo, lyrics: &Lyrics) -> Result<(), Error> {
+        let mut conn = self.pool.get().unwrap();
+        let tx = conn.transaction().map_err(|e| Error::DbError(e))?;
+        tx.execute("delete from songs where uri = ?1", params![&song.uri]).map_err(|e| Error::DbError(e))?;
+        tx.execute(
+            "insert into songs (uri, lyrics, synced, last_modified) values (?1,?2,?3,?4)",
+            params![
+                &song.uri,
+                &lyrics.to_string(), 
+                lyrics.synced,
+                OffsetDateTime::now_utc()
             ]
         ).map_err(|e| Error::DbError(e))?;
         tx.commit().map_err(|e| Error::DbError(e))?;

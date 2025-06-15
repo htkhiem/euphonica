@@ -246,7 +246,7 @@ pub struct Lyrics {
 #[derive(Debug, Clone)]
 pub enum LyricsParseError {
     TimestampNotFoundError,
-    TimestampFormatError,
+    TimestampFormatError
 }
 
 pub type LyricsResult = Result<Lyrics, LyricsParseError>;
@@ -293,5 +293,26 @@ impl Lyrics {
             lines,
             synced: true,
         })
+    }
+
+    pub fn to_string(&self) -> String {
+        self.lines.iter().map(|line| {
+            let total_seconds = line.0.max(0.0);
+            let content = line.1;
+
+            let minutes = (total_seconds / 60.0).floor() as u32;
+            let remaining_seconds = total_seconds % 60.0;
+            // Extract the integer part of the seconds
+            let seconds_integer = remaining_seconds.floor() as u32;
+
+            // Extract the fractional part (hundredths of a second)
+            // Multiply by 100, round to the nearest integer, and then cast to u32.
+            // Using `round()` to handle potential floating-point inaccuracies
+            // and ensure correct rounding for the hundredths.
+            let hundredths = (remaining_seconds.fract() * 100.0).round() as u32;
+
+            // Format the components into the desired string
+            format!("[{:02}:{:02}.{:02}] {}", minutes, seconds_integer, hundredths, content)
+        }).join('\n')
     }
 }
