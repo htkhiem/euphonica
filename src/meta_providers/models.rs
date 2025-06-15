@@ -313,6 +313,6 @@ impl Lyrics {
 
             // Format the components into the desired string
             format!("[{:02}:{:02}.{:02}] {}", minutes, seconds_integer, hundredths, content)
-        }).join('\n')
+        }).collect::<Vec<String>>().join("\n")
     }
 }
