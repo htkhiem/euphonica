@@ -162,10 +162,20 @@ create table if not exists `artists` (
     `data` BLOB not null,
     primary key (`name`)
 );
+
+create table if not exists `songs` (
+    `uri` VARCHAR not null unique,
+    `lyrics` VARCHAR not null,
+    `synced` BOOL not null,
+    `last_modified` DATETIME not null,
+    primary key(`uri`)
+);
+
 create unique index if not exists `artist_mbid` on `artists` (
     `mbid`
 );
 create unique index if not exists `artist_name` on `artists` (`name`);
+create unique index if not exists `song_uri` on `songs` (`uri`);
 end;
 ",
         )?;

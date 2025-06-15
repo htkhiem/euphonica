@@ -200,4 +200,12 @@ impl MetadataProvider for LastfmWrapper {
             existing
         }
     }
+
+    /// Last.fm does not provide lyrics.
+    fn get_lyrics(
+        &self,
+        _key: &crate::common::SongInfo
+    ) -> Option<models::Lyrics> {
+        None
+    }
 }

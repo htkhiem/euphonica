@@ -79,15 +79,15 @@ fn parse_date(datestr: &str) -> Option<Date> {
 #[derive(Debug, Clone)]
 pub struct SongInfo {
     // TODO: Might want to refactor to Into<Cow<'a, str>>
-    uri: String,
-    title: String, // Might just be filename
+    pub uri: String,
+    pub title: String, // Might just be filename
     // last_mod: RefCell<Option<u64>>,
     artists: Vec<ArtistInfo>,
-    artist_tag: Option<String>, // Original tag, with all the linkages and formatting
-    duration: Option<Duration>, // Default to 0 if somehow the option in mpd's Song is None
+    pub artist_tag: Option<String>, // Original tag, with all the linkages and formatting
+    pub duration: Option<Duration>, // Default to 0 if somehow the option in mpd's Song is None
     queue_id: Option<u32>,
     // range: Option<Range>,
-    album: Option<AlbumInfo>,
+    pub album: Option<AlbumInfo>,
     track: Cell<i64>,
     disc: Cell<i64>,
     // TODO: add albumsort
