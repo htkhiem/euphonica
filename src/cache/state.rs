@@ -88,6 +88,11 @@ mod imp {
                             String::static_type(), // artist tag
                         ])
                         .build(),
+                    Signal::builder("song-lyrics-downloaded")
+                        .param_types([
+                            String::static_type(), // full song URI
+                        ])
+                        .build(),
                 ]
             })
         }

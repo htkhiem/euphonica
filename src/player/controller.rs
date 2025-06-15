@@ -176,7 +176,7 @@ fn get_fft_backend() -> Rc<dyn FftBackend> {
 
 mod imp {
     use super::*;
-    use crate::application::EuphonicaApplication;
+    use crate::{application::EuphonicaApplication, meta_providers::models::Lyrics};
     use glib::{
         ParamSpec, ParamSpecBoolean, ParamSpecDouble, ParamSpecEnum, ParamSpecFloat, ParamSpecInt, ParamSpecObject, ParamSpecString, ParamSpecUInt, ParamSpecUInt64
     };
@@ -187,6 +187,8 @@ mod imp {
         pub state: Cell<PlaybackState>,
         pub position: Cell<f64>,
         pub queue: gio::ListStore,
+        pub lyric_lines: gtk::StringList,  // Line by line for display. May be empty.
+        pub lyrics: RefCell<Option<Lyrics>>,
         pub current_song: RefCell<Option<Song>>,
         pub format: RefCell<Option<AudioFormat>>,
         pub bitrate: Cell<u32>,
@@ -236,6 +238,8 @@ mod imp {
             Self {
                 state: Cell::new(PlaybackState::Stopped),
                 position: Cell::new(0.0),
+                lyric_lines: gtk::StringList::new(&[]),
+                lyrics: RefCell::new(None),
                 random: Cell::new(false),
                 consume: Cell::new(false),
                 supports_playlists: Cell::new(false),
@@ -478,6 +482,8 @@ mod imp {
                     Signal::builder("volume-changed")
                         .param_types([i8::static_type()])
                         .build(),
+                    Signal::builder("lyrics-changed")
+                        .build()
                 ]
             })
         }
@@ -916,6 +922,20 @@ impl Player {
                         mpris_changes.push(Property::Metadata(
                             new_song.get_mpris_metadata(self.imp().cache.get().unwrap().clone()),
                         ));
+                    }
+                    // Get new lyrics
+                    // First remove all current lines
+                    self.imp().lyric_lines.splice(0, self.imp().lyric_lines.n_items(), &[]);
+                    let _ = self.imp().lyrics.take();
+                    self.emit_by_name::<()>("lyrics-changed", &[]);
+                    // Fetch new lyrics
+                    if let Some(lyrics) = self.imp().cache.get().unwrap().load_cached_lyrics(new_song.get_info()) {
+                        self.imp().lyric_lines.splice(0, 0, &lyrics.to_plain_lines());
+                        self.imp().lyrics.replace(Some(lyrics));
+                    }
+                    else {
+                        // Schedule downloading
+                        self.imp().cache.get().unwrap().ensure_cached_lyrics(new_song.get_info());
                     }
                 }
             } else {

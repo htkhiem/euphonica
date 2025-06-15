@@ -30,7 +30,9 @@ pub enum ProviderMessage {
     ArtistAvatarAvailable(String), // Only return name
     /// Both request and positive response. Includes downloading artist avatar.
     ArtistMeta(ArtistInfo, PathBuf, PathBuf),
-    ArtistMetaAvailable(String) // Only return name
+    ArtistMetaAvailable(String), // Only return name
+    Lyrics(SongInfo),
+    LyricsAvailable(String) // Only return full URI
 }
 
 pub enum MetadataType<'a> {
@@ -42,6 +44,8 @@ pub enum MetadataType<'a> {
     ArtistAvatar(&'a str, bool),
     // Tag
     ArtistMeta(&'a str),
+    // Song URI
+    Lyrics(&'a str)
 }
 
 /// Common provider-agnostic utilities.
@@ -137,5 +141,5 @@ pub trait MetadataProvider: Send + Sync {
     fn get_lyrics(
         &self,
         key: &SongInfo
-    ) -> Option<models::Lyrics>;
+    ) -> Option<models::Lyrics>; 
 }

@@ -107,7 +107,7 @@
 		</key>
 
 		<key name="order" type="as">
-			<default>["musicbrainz", "lastfm"]</default>
+			<default>["musicbrainz", "lastfm", "lrclib"]</default>
 			<summary>The order of providers within the daisy chain.</summary>
 			<description>
 			Providers will be called in this order. Provider names are as returned by the
@@ -119,6 +119,7 @@
 
 		<child schema="io.github.htkhiem.Euphonica.metaprovider.lastfm" name="lastfm"/>
 		<child schema="io.github.htkhiem.Euphonica.metaprovider.musicbrainz" name="musicbrainz"/>
+		<child schema="io.github.htkhiem.Euphonica.metaprovider.lrclib" name="lrclib"/>
 	</schema>
 
 	<schema id="io.github.htkhiem.Euphonica.metaprovider.lastfm" path="/org/euphonica/Euphonica/metaprovider/lastfm/">
@@ -133,6 +134,15 @@
 		</key>
 		<key name="download-album-art" type="b">
 			<default>true</default>
+		</key>
+	</schema>
+
+	<schema id="io.github.htkhiem.Euphonica.metaprovider.lrclib" path="/org/euphonica/Euphonica/metaprovider/lrclib/">
+		<key name="name" type="s">
+			<default>'LRCLIB'</default>
+		</key>
+		<key name="enabled" type="b">
+			<default>false</default>
 		</key>
 	</schema>
 

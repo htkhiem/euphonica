@@ -146,6 +146,8 @@ impl IntegrationsPreferences {
             )
             .build();
 
+        // LRCLIB currently needs no settings.
+
         // Set up priority settings
         let order_box = self.imp().order_box.get();
 
