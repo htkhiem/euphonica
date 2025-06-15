@@ -28,7 +28,7 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use crate::meta_providers::{get_provider_with_priority, models::ArtistMeta};
+use crate::{common::SongInfo, meta_providers::{get_provider_with_priority, models::{ArtistMeta, Lyrics}}};
 use crate::{
     client::{BackgroundTask, MpdWrapper},
     common::{AlbumInfo, ArtistInfo},
@@ -729,5 +729,38 @@ impl Cache {
             }
         });
         None
+    }
+
+    pub fn load_cached_lyrics(&self, song: &SongInfo) -> Option<Lyrics> {
+        let result = self.doc_cache.find_artist_meta(artist);
+        if let Ok(res) = result {
+            if let Some(info) = res {
+                println!("Artist info cache hit!");
+                return Some(info);
+            }
+            println!("Artist info cache miss");
+            return None;
+        }
+        println!("{:?}", result.err());
+        return None;
+    }
+
+    pub fn ensure_cached_lyrics(&self, song: &SongInfo) {
+        // Check whether we have this artist cached
+        let result = self.doc_cache.find_artist_meta(artist);
+        if let Ok(response) = result {
+            if response.is_none() {
+                let path = self.get_path_for(&MetadataType::ArtistAvatar(&artist.name, false));
+                let thumbnail_path =
+                    self.get_path_for(&MetadataType::ArtistAvatar(&artist.name, true));
+                let _ = self.bg_sender.send_blocking(ProviderMessage::ArtistMeta(
+                    artist.clone(),
+                    path,
+                    thumbnail_path,
+                ));
+            }
+        } else {
+            println!("{:?}", result.err());
+        }
     }
 }

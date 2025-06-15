@@ -183,4 +183,12 @@ impl MetadataProvider for MusicBrainzWrapper {
             return existing;
         }
     }
+
+    /// MusicBrainz does not provide lyrics.
+    fn get_lyrics(
+        &self,
+        key: &crate::common::SongInfo
+    ) -> Option<models::Lyrics> {
+        None
+    }
 }

@@ -1,4 +1,4 @@
-use crate::common::{AlbumInfo, ArtistInfo};
+use crate::common::{AlbumInfo, ArtistInfo, SongInfo};
 
 use super::{lastfm::LastfmWrapper, models, musicbrainz::MusicBrainzWrapper, MetadataProvider};
 
@@ -66,6 +66,18 @@ impl MetadataProvider for MetadataChain {
             }
         }
         existing
+    }
+
+    fn get_lyrics(
+        &self,
+        key: &SongInfo
+    ) -> Option<models::Lyrics> {
+        for provider in self.providers.iter() {
+            if let Some(lyrics) = provider.get_lyrics(key) {
+                return Some(lyrics)
+            }
+        }
+        None
     }
 }
 

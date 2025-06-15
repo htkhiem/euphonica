@@ -2,7 +2,7 @@ extern crate bson;
 use gtk::prelude::*;
 use std::{path::PathBuf, thread, time::Duration};
 
-use crate::{common::{AlbumInfo, ArtistInfo}, utils::settings_manager};
+use crate::{common::{AlbumInfo, ArtistInfo, SongInfo}, utils::settings_manager};
 
 use super::models;
 
@@ -129,4 +129,13 @@ pub trait MetadataProvider: Send + Sync {
         key: &mut ArtistInfo,
         existing: Option<models::ArtistMeta>,
     ) -> Option<models::ArtistMeta>;
+
+    /// Get lyrics for a song. Synced lyrics take precedence over plain ones. The lyrics with the most similar
+    /// duration to the song is returned.
+    ///
+    /// Unlike with album and artist metadata, we stop when one metadata provider returns lyrics.
+    fn get_lyrics(
+        &self,
+        key: &SongInfo
+    ) -> Option<models::Lyrics>;
 }
