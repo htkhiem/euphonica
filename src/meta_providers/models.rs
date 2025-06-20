@@ -278,7 +278,7 @@ impl Lyrics {
             }
             let ts: f32 = ts_parts[0]
                 .parse::<f32>()
-                .map_err(|_| LyricsParseError::TimestampFormatError)?
+                .map_err(|_| LyricsParseError::TimestampFormatError)? * 60.0
                 + ts_parts[1]
                     .parse::<f32>()
                     .map_err(|_| LyricsParseError::TimestampFormatError)?;
@@ -322,5 +322,26 @@ impl Lyrics {
 
     pub fn to_plain_lines(&self) -> Vec<&str> {
         self.lines.iter().map(|line| line.1.as_ref()).collect()
+    }
+
+    pub fn get_line_at_timestamp(&self, ts: f32) -> usize {
+        if !self.synced {
+            return 0;
+        }
+        match self.lines.binary_search_by(|line| {
+            line.0.partial_cmp(&ts).unwrap()
+        }) {
+            Ok(index) => index, // Oh lucky
+            Err(index) => {
+                // Most of the time we'll hit this case because we're not looking
+                // for an exact timestamp match
+                if index > 0 {
+                    index - 1
+                }
+                else {
+                    0
+                }
+            }
+        }
     }
 }

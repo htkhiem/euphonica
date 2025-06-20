@@ -37,7 +37,10 @@ mod imp {
         #[template_child]
         pub album: TemplateChild<gtk::Label>,
 
-        // TODO: Time-synced lyrics
+        #[template_child]
+        pub lyrics_window: TemplateChild<gtk::ScrolledWindow>,
+        #[template_child]
+        pub lyrics_box: TemplateChild<gtk::ListBox>,
 
         // Playback controls
         #[template_child]
@@ -151,7 +154,7 @@ impl PlayerPane {
 
     fn setup_volume_knob(&self, player: &Player) {
         let knob = self.imp().vol_knob.get();
-        knob.setup();
+        knob.set_value(player.mpd_volume() as f64);
 
         knob.connect_notify_local(
             Some("value"),
@@ -293,6 +296,29 @@ impl PlayerPane {
             .bind_property("artist", &artist, "label")
             .sync_create()
             .build();
+
+        let lyric_lines = player.lyrics();
+        let lyrics_window = imp.lyrics_window.get();
+        lyric_lines
+            .bind_property("n-items", &lyrics_window, "visible")
+            .transform_to(|_, n_items: u32| Some(n_items > 0))
+            .sync_create()
+            .build();
+
+        let lyrics_box = imp.lyrics_box.get();
+        lyrics_box.bind_model(Some(&lyric_lines), |line| {
+            let widget = gtk::Label::new(Some(&line.downcast_ref::<gtk::StringObject>().unwrap().string()));
+            widget.set_halign(gtk::Align::Center);
+            widget.set_hexpand(true);
+            widget.into()
+        });
+        player.connect_notify_local(Some("current-lyric-line"), clone!(
+            #[weak]
+            lyrics_box,
+            move |player, _| {
+                lyrics_box.select_row(lyrics_box.row_at_index(player.current_lyric_line() as i32).as_ref());
+            }
+        ));
 
         self.update_outputs(&player);
         player.connect_closure(

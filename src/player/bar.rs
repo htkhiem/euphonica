@@ -209,7 +209,7 @@ impl PlayerBar {
     fn setup_volume_knob(&self, player: &Player) {
         let settings = settings_manager().child("ui");
         let knob = self.imp().vol_knob.get();
-        knob.setup();
+        knob.set_value(player.mpd_volume() as f64);
 
         settings
             .bind("vol-knob-unit", &knob, "use-dbfs")

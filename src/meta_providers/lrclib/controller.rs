@@ -132,10 +132,16 @@ impl MetadataProvider for LrcLibWrapper {
                                     None
                                 }
                             }
-                            Err(_) => None,
+                            Err(e) => {
+                                dbg!(e);
+                                None
+                            },
                         }
                     }
-                    _ => None,
+                    code => {
+                        dbg!(code);
+                        None
+                    },
                 }
                 // Pick the one with the closest duration to our song
             } else {

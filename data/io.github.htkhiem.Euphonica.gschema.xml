@@ -26,7 +26,7 @@
 		<value nick="decibels" value="1"/>  <!-- Works as boolean too -->
 	</enum>
 
-	<schema id="io.github.htkhiem.Euphonica" path="/org/euphonica/Euphonica/">
+	<schema id="io.github.htkhiem.Euphonica" path="/io/github/htkhiem/Euphonica/">
 		<child schema="io.github.htkhiem.Euphonica.ui" name="ui"/>
 		<child schema="io.github.htkhiem.Euphonica.state" name="state"/>
 		<child schema="io.github.htkhiem.Euphonica.library" name="library"/>
@@ -35,7 +35,7 @@
 		<child schema="io.github.htkhiem.Euphonica.client" name="client"/>
 	</schema>
 
-	<schema id="io.github.htkhiem.Euphonica.client" path="/org/euphonica/Euphonica/client/">
+	<schema id="io.github.htkhiem.Euphonica.client" path="/io/github/htkhiem/Euphonica/client/">
 		<key name="mpd-host" type="s">
 			<default>'localhost'</default>
 		</key>
@@ -71,7 +71,7 @@
 		</key>
 	</schema>
 
-	<schema id="io.github.htkhiem.Euphonica.library" path="/org/euphonica/Euphonica/library/">
+	<schema id="io.github.htkhiem.Euphonica.library" path="/io/github/htkhiem/Euphonica/library/">
 		<key name="artist-tag-delims" type="as">
 			<default>[",", ";", ":", "&amp;", "/", "//", "\\", "\\\\", " X ", "feat.", "ft.", "duet with", "special guest"]</default>
 		</key>
@@ -95,7 +95,7 @@
 		</key>
 	</schema>
 
-	<schema id="io.github.htkhiem.Euphonica.metaprovider" path="/org/euphonica/Euphonica/metaprovider/">
+	<schema id="io.github.htkhiem.Euphonica.metaprovider" path="/io/github/htkhiem/Euphonica/metaprovider/">
 		<key name="delay-between-requests-s" type="d">
 			<default>1.5</default>
 			<summary>How long to wait between metadata provider API calls</summary>
@@ -122,7 +122,7 @@
 		<child schema="io.github.htkhiem.Euphonica.metaprovider.lrclib" name="lrclib"/>
 	</schema>
 
-	<schema id="io.github.htkhiem.Euphonica.metaprovider.lastfm" path="/org/euphonica/Euphonica/metaprovider/lastfm/">
+	<schema id="io.github.htkhiem.Euphonica.metaprovider.lastfm" path="/io/github/htkhiem/Euphonica/metaprovider/lastfm/">
 		<key name="name" type="s">
 			<default>'Last.fm'</default>
 		</key>
@@ -137,7 +137,7 @@
 		</key>
 	</schema>
 
-	<schema id="io.github.htkhiem.Euphonica.metaprovider.lrclib" path="/org/euphonica/Euphonica/metaprovider/lrclib/">
+	<schema id="io.github.htkhiem.Euphonica.metaprovider.lrclib" path="/io/github/htkhiem/Euphonica/metaprovider/lrclib/">
 		<key name="name" type="s">
 			<default>'LRCLIB'</default>
 		</key>
@@ -146,7 +146,7 @@
 		</key>
 	</schema>
 
-	<schema id="io.github.htkhiem.Euphonica.metaprovider.musicbrainz" path="/org/euphonica/Euphonica/metaprovider/musicbrainz/">
+	<schema id="io.github.htkhiem.Euphonica.metaprovider.musicbrainz" path="/io/github/htkhiem/Euphonica/metaprovider/musicbrainz/">
 		<key name="name" type="s">
 			<default>'MusicBrainz'</default>
 		</key>
@@ -161,7 +161,7 @@
 		</key>
 	</schema>
 
-	<schema id="io.github.htkhiem.Euphonica.player" path="/org/euphonica/Euphonica/player/">
+	<schema id="io.github.htkhiem.Euphonica.player" path="/io/github/htkhiem/Euphonica/player/">
 		<key name="enable-mpris" type="b">
 			<default>true</default>
 		</key>
@@ -195,7 +195,7 @@
 		</key>
 	</schema>
 
-	<schema id="io.github.htkhiem.Euphonica.ui" path="/org/euphonica/Euphonica/ui/">
+	<schema id="io.github.htkhiem.Euphonica.ui" path="/io/github/htkhiem/Euphonica/ui/">
 		<key name="recent-playlists-count" type="u">
 			<default>5</default>
 		</key>
@@ -247,7 +247,7 @@
 		</key>
 	</schema>
 
-	<schema id="io.github.htkhiem.Euphonica.state" path="/org/euphonica/Euphonica/state/">
+	<schema id="io.github.htkhiem.Euphonica.state" path="/io/github/htkhiem/Euphonica/state/">
 		<child schema="io.github.htkhiem.Euphonica.state.albumview" name="albumview"/>
 		<child schema="io.github.htkhiem.Euphonica.state.artistview" name="artistview"/>
 		<child schema="io.github.htkhiem.Euphonica.state.folderview" name="folderview"/>
@@ -273,7 +273,7 @@
 		</key>
 	</schema>
 
-	<schema id="io.github.htkhiem.Euphonica.state.albumview" path="/org/euphonica/Euphonica/state/albumview/">
+	<schema id="io.github.htkhiem.Euphonica.state.albumview" path="/io/github/htkhiem/Euphonica/state/albumview/">
 		<!-- Album view state -->
 		<key name='sort-by' enum='io.github.htkhiem.Euphonica.sortby'>
 			<default>'album-title'</default>
@@ -286,7 +286,7 @@
 		</key>
 	</schema>
 
-	<schema id="io.github.htkhiem.Euphonica.state.artistview" path="/org/euphonica/Euphonica/state/artistview/">
+	<schema id="io.github.htkhiem.Euphonica.state.artistview" path="/io/github/htkhiem/Euphonica/state/artistview/">
 		<!-- Artist view state -->
 		<key name="sort-direction" enum='io.github.htkhiem.Euphonica.sortdir'>
 			<default>'asc'</default>
@@ -294,7 +294,7 @@
 		</key>
 	</schema>
 
-	<schema id="io.github.htkhiem.Euphonica.state.folderview" path="/org/euphonica/Euphonica/state/folderview/">
+	<schema id="io.github.htkhiem.Euphonica.state.folderview" path="/io/github/htkhiem/Euphonica/state/folderview/">
 		<!-- Folder view state -->
 		<key name='sort-by' enum='io.github.htkhiem.Euphonica.sortby'>
 			<default>'filename'</default>
@@ -307,7 +307,7 @@
 		</key>
 	</schema>
 
-	<schema id="io.github.htkhiem.Euphonica.state.playlistview" path="/org/euphonica/Euphonica/state/playlistview/">
+	<schema id="io.github.htkhiem.Euphonica.state.playlistview" path="/io/github/htkhiem/Euphonica/state/playlistview/">
 		<!-- Folder view state -->
 		<key name='sort-by' enum='io.github.htkhiem.Euphonica.sortby'>
 			<default>'filename'</default>

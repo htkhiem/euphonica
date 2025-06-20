@@ -30,6 +30,55 @@
         </object>
       </property>
     </object>
+    <object class="GtkPopover" id="output_popover">
+      <property name="has-arrow">true</property>
+      <property name="name">output_popover</property>
+      <property name="child">
+        <object class="GtkBox">
+          <property name="spacing">6</property>
+          <property name="orientation">1</property>
+          <child>
+            <object class="EuphonicaVolumeKnob" id="vol_knob">
+              <property name="halign">center</property>
+            </object>
+          </child>
+          <child>
+            <object class="GtkBox" id="output_section">
+              <property name="visible">false</property>
+              <child>
+                <object class="GtkButton" id="prev_output">
+                  <property name="visible">false</property>
+                  <property name="sensitive">false</property>
+                  <property name="valign">center</property>
+                  <property name="icon-name">left-symbolic</property>
+                  <style>
+                    <class name="flat"/>
+                    <class name="circular"/>
+                  </style>
+                </object>
+              </child>
+              <child>
+                <object class="GtkStack" id="output_stack">
+                  <property name="transition-type">slide-left-right</property>
+                </object>
+              </child>
+              <child>
+                <object class="GtkButton" id="next_output">
+                  <property name="visible">false</property>
+                  <property name="sensitive">false</property>
+                  <property name="valign">center</property>
+                  <property name="icon-name">right-symbolic</property>
+                  <style>
+                    <class name="flat"/>
+                    <class name="circular"/>
+                  </style>
+                </object>
+              </child>
+            </object>
+          </child>
+        </object>
+      </property>
+    </object>
     <object class="GtkPopover" id="mixramp_popover">
       <property name="has-arrow">true</property>
       <property name="name">mixramp_popover</property>
@@ -172,6 +221,24 @@
                       </object>
                     </child>
                     <child>
+                      <object class="GtkScrolledWindow" id="lyrics_window">
+                        <property name="hscrollbar-policy">never</property>
+                        <property name="vscrollbar-policy">automatic</property>
+                        <property name="propagate-natural-height">false</property>
+                        <property name="has-frame">false</property>
+                        <property name="hexpand">true</property>
+                        <property name="height-request">96</property>
+                        <property name="child">
+                          <object class="GtkListBox" id="lyrics_box">
+                            <property name="selection-mode">1</property>
+                            <style>
+                              <class name="no-selection-highlight"/>
+                            </style>
+                          </object>
+                        </property>
+                      </object>
+                    </child>
+                    <child>
                       <object class="GtkBox">
                         <property name="halign">center</property>
                         <property name="spacing">6</property>
@@ -233,6 +300,15 @@
                             <property name="popover">mixramp_popover</property>
                           </object>
                         </child>
+                        <child>
+                          <object class="GtkMenuButton" id="output_btn">
+                            <style>
+                              <class name="flat"/>
+                            </style>
+                            <property name="icon-name">speaker-0-symbolic</property>
+                            <property name="popover">output_popover</property>
+                          </object>
+                        </child>
                       </object>
                     </child>
                     <child>
@@ -245,48 +321,6 @@
                         </child>
                       </object>
                     </child>
-                  </object>
-                </child>
-
-                <child>
-                  <object class="GtkCenterBox">
-                    <property name="start-widget">
-                      <object class="GtkBox" id="output_section">
-                        <property name="visible">false</property>
-                        <child>
-                          <object class="GtkButton" id="prev_output">
-                            <property name="visible">false</property>
-                            <property name="sensitive">false</property>
-                            <property name="valign">center</property>
-                            <property name="icon-name">left-symbolic</property>
-                            <style>
-                              <class name="flat"/>
-                              <class name="circular"/>
-                            </style>
-                          </object>
-                        </child>
-                        <child>
-                          <object class="GtkStack" id="output_stack">
-                            <property name="transition-type">slide-left-right</property>
-                          </object>
-                        </child>
-                        <child>
-                          <object class="GtkButton" id="next_output">
-                            <property name="visible">false</property>
-                            <property name="sensitive">false</property>
-                            <property name="valign">center</property>
-                            <property name="icon-name">right-symbolic</property>
-                            <style>
-                              <class name="flat"/>
-                              <class name="circular"/>
-                            </style>
-                          </object>
-                        </child>
-                      </object>
-                    </property>
-                    <property name="end-widget">
-                      <object class="EuphonicaVolumeKnob" id="vol_knob"/>
-                    </property>
                   </object>
                 </child>
               </object>

@@ -71,6 +71,92 @@ mod imp {
 
     // Trait shared by all GObjects
     impl ObjectImpl for VolumeKnob {
+        fn constructed(&self) {
+            self.parent_constructed();
+            // Bind readouts
+            let obj_ = self.obj();
+            let obj = obj_.as_ref();
+            let knob_btn = self.knob_btn.get();
+            let readout_stack = self.readout_stack.get();
+            knob_btn
+                .bind_property("active", &readout_stack, "visible-child-name")
+                .transform_to(|_, active: bool| {
+                    if active {
+                        return Some("mute");
+                    }
+                    Some("readout")
+                })
+                .sync_create()
+                .build();
+
+            knob_btn
+                .bind_property("active", obj, "is-muted")
+                .sync_create()
+                .build();
+
+            obj.update_readout();
+            obj.connect_notify_local(Some("value"), |this, _| {
+                this.update_readout();
+            });
+            let unit = self.unit.get();
+            obj.bind_property("use-dbfs", &unit, "label")
+                .transform_to(|_, use_dbfs: bool| {
+                    if use_dbfs {
+                        return Some("dBFS");
+                    }
+                    Some("%")
+                })
+                .sync_create()
+                .build();
+            // Draw curve from 0 to current volume level
+            // (goes from 7:30 to 4:30 CW, which is -270deg to 45deg for cairo_arc).
+            // Currently hardcoding diameter to 96px.
+            let draw_area = self.draw_area.get();
+            draw_area.set_draw_func(clone!(
+                #[weak(rename_to = this)]
+                obj,
+                move |da, cr, w, h| {
+                    let fg = da.color();
+                    cr.set_source_rgb(fg.red() as f64, fg.green() as f64, fg.blue() as f64);
+                    // Match seekbar thickness
+                    cr.set_line_width(4.0);
+                    cr.set_line_cap(LineCap::Round);
+                    // Starting
+                    // At 0 => 5pi/4
+                    let angle = -1.25 * PI + 1.5 * PI * this.imp().value.get() / 100.0;
+                    // u w0t m8
+                    cr.arc(w as f64 / 2.0, h as f64 / 2.0, 50.0, -1.25 * PI, angle);
+                    let _ = cr.stroke();
+                }
+            ));
+
+            // Enable scrolling to change volume
+            // TODO: Implement vertical dragging & keyboard controls
+            // TODO: Let user control scroll sensitivity
+            let scroll_ctl = gtk::EventControllerScroll::default();
+            scroll_ctl.set_flags(gtk::EventControllerScrollFlags::VERTICAL);
+            scroll_ctl.set_propagation_phase(gtk::PropagationPhase::Capture);
+            scroll_ctl.connect_scroll(clone!(
+                #[weak(rename_to = this)]
+                obj,
+                #[upgrade_or]
+                glib::signal::Propagation::Proceed,
+                move |_, _, dy| {
+                    let new_vol = this.imp().value.get() - dy * this.sensitivity();
+                    if (0.0..=100.0).contains(&new_vol) {
+                        this.set_value(new_vol);
+                    }
+                    this.imp().draw_area.queue_draw();
+                    glib::signal::Propagation::Proceed
+                }
+            ));
+            obj.add_controller(scroll_ctl);
+
+            // Update level arc upon changing foreground colour, for example when switching dark/light mode
+            obj.connect_notify_local(Some("color"), |this, _| {
+                this.imp().draw_area.queue_draw();
+            });
+        }
         fn properties() -> &'static [ParamSpec] {
             static PROPERTIES: Lazy<Vec<ParamSpec>> = Lazy::new(|| {
                 vec![
@@ -202,90 +288,5 @@ impl VolumeKnob {
         } else {
             readout.set_label(&format!("{:.0}", val));
         }
-    }
-
-    pub fn setup(&self) {
-        let imp = self.imp();
-        // Bind readouts
-        let knob_btn = imp.knob_btn.get();
-        let readout_stack = imp.readout_stack.get();
-        knob_btn
-            .bind_property("active", &readout_stack, "visible-child-name")
-            .transform_to(|_, active: bool| {
-                if active {
-                    return Some("mute");
-                }
-                Some("readout")
-            })
-            .sync_create()
-            .build();
-
-        knob_btn
-            .bind_property("active", self, "is-muted")
-            .sync_create()
-            .build();
-
-        self.update_readout();
-        self.connect_notify_local(Some("value"), |this, _| {
-            this.update_readout();
-        });
-        let unit = imp.unit.get();
-        self.bind_property("use-dbfs", &unit, "label")
-            .transform_to(|_, use_dbfs: bool| {
-                if use_dbfs {
-                    return Some("dBFS");
-                }
-                Some("%")
-            })
-            .sync_create()
-            .build();
-        // Draw curve from 0 to current volume level
-        // (goes from 7:30 to 4:30 CW, which is -270deg to 45deg for cairo_arc).
-        // Currently hardcoding diameter to 96px.
-        let draw_area = imp.draw_area.get();
-        draw_area.set_draw_func(clone!(
-            #[weak(rename_to = this)]
-            self,
-            move |da, cr, w, h| {
-                let fg = da.color();
-                cr.set_source_rgb(fg.red() as f64, fg.green() as f64, fg.blue() as f64);
-                // Match seekbar thickness
-                cr.set_line_width(4.0);
-                cr.set_line_cap(LineCap::Round);
-                // Starting
-                // At 0 => 5pi/4
-                let angle = -1.25 * PI + 1.5 * PI * this.imp().value.get() / 100.0;
-                // u w0t m8
-                cr.arc(w as f64 / 2.0, h as f64 / 2.0, 50.0, -1.25 * PI, angle);
-                let _ = cr.stroke();
-            }
-        ));
-
-        // Enable scrolling to change volume
-        // TODO: Implement vertical dragging & keyboard controls
-        // TODO: Let user control scroll sensitivity
-        let scroll_ctl = gtk::EventControllerScroll::default();
-        scroll_ctl.set_flags(gtk::EventControllerScrollFlags::VERTICAL);
-        scroll_ctl.set_propagation_phase(gtk::PropagationPhase::Capture);
-        scroll_ctl.connect_scroll(clone!(
-            #[weak(rename_to = this)]
-            self,
-            #[upgrade_or]
-            glib::signal::Propagation::Proceed,
-            move |_, _, dy| {
-                let new_vol = this.imp().value.get() - dy * this.sensitivity();
-                if (0.0..=100.0).contains(&new_vol) {
-                    this.set_value(new_vol);
-                }
-                this.imp().draw_area.queue_draw();
-                glib::signal::Propagation::Proceed
-            }
-        ));
-        self.add_controller(scroll_ctl);
-
-        // Update level arc upon changing foreground colour, for example when switching dark/light mode
-        self.connect_notify_local(Some("color"), |this, _| {
-            this.imp().draw_area.queue_draw();
-        });
     }
 }

@@ -200,7 +200,7 @@ impl Sidebar {
                             }
                         }
                     ));
-                    btn.upcast::<gtk::Widget>()
+                    btn.into()
                 }
             ),
         );

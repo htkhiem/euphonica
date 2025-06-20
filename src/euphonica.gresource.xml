@@ -99,5 +99,10 @@
     <file preprocess="xml-stripblanks" alias="enabled-feature-symbolic.svg">gtk/icons/check-round-outline-symbolic.svg</file>
     <file preprocess="xml-stripblanks" alias="disabled-feature-symbolic.svg">gtk/icons/cross-small-circle-outline-symbolic.svg</file>
     <file preprocess="xml-stripblanks" alias="content-loading-symbolic.svg">gtk/icons/content-loading-symbolic.svg</file>
+    <file preprocess="xml-stripblanks" alias="speaker-0-symbolic.svg">gtk/icons/speaker-0-symbolic.svg</file>
+    <file preprocess="xml-stripblanks" alias="speaker-1-symbolic.svg">gtk/icons/speaker-1-symbolic.svg</file>
+    <file preprocess="xml-stripblanks" alias="speaker-2-symbolic.svg">gtk/icons/speaker-2-symbolic.svg</file>
+    <file preprocess="xml-stripblanks" alias="speaker-3-symbolic.svg">gtk/icons/speaker-3-symbolic.svg</file>
+    <file preprocess="xml-stripblanks" alias="speaker-4-symbolic.svg">gtk/icons/speaker-4-symbolic.svg</file>
   </gresource>
 </gresources>
