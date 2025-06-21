@@ -7,9 +7,10 @@ It exists to sate my need for something that's got the bling and the features to
 
 ## Features
 - Responsive GTK4 LibAdwaita UI for most MPD features, from basic things like playback controls, queue reordering and ReplayGain to things like output control, crossfade and MixRamp configuration
-- Integrated MPRIS client with background run supported. The background instance can be reopened via your shell's MPRIS applet, the "Background applications" section in GNOME's quick settings shade (if installed via Flatpak) or simply by launching Euphonica again.
+- Automatically fetch album arts, artist avatars and (synced) song lyrics from external sources (currently supports Last.fm, MusicBrainz and LRCLIB). All externally-acquired metadata are cached locally & persisted on disk to avoid needless API calls.
 - Built-in, customisable spectrum visualiser, reading from MPD FIFO or system PipeWire
 - Automatic accent colours based on album art (optional)
+- Integrated MPRIS client with background run supported. The background instance can be reopened via your shell's MPRIS applet, the "Background applications" section in GNOME's quick settings shade (if installed via Flatpak) or simply by launching Euphonica again.
 - Rate albums (requires MPD 0.24+)
 - Audio quality indicators (lossy, lossless, hi-res, DSD) for individual songs as well as albums & detailed format printout
 - Browse your library by album, artist and folders with multiselection support
@@ -25,10 +26,7 @@ It exists to sate my need for something that's got the bling and the features to
 - Performant album art fetching & display (cached with Stretto)
 - Super-fast, **multithreaded**, **statically-cached** background blur powered by [libblur](https://github.com/awxkee/libblur)'s stack blur implementation.
   - Completely independent of blur radius in terms of time complexity.
-  - Multithreaded, queued update logic never blocks UI and **only runs when needed** (once _after_ window resizes, once every time album art changes, etc).
-- Automatically fetch album arts & artist avatars from external sources (currently supports Last.fm and MusicBrainz)
-- Album wikis & artist bios are supported too
-- All externally-acquired metadata are cached locally & persisted on disk to avoid needless API calls
+  - Multithreaded, queued update logic never blocks UI and **only runs when needed** (once _after_ window resizes, once every time album art changes, etc). 
 - Volume knob with dBFS readout support ('cuz why not?)
 - User-friendly configuration UI & GSettings backend
 - MPD passwords are securely stored in your user's login keyring
@@ -154,5 +152,4 @@ Most libraries, especially those that ran well with other MPD clients like [Cant
   - Save downloaded album arts and artist avatars directly into the music folders themselves so other instances
     and clients can use them.
 - Browse by genre
-- Realtime lyrics fetching
 - An "All tracks" page with advanced, freeform querying to take full advantage of MPD v0.21+'s new query syntax

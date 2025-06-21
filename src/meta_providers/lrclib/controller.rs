@@ -26,7 +26,6 @@ pub struct LrcLibWrapper {
 
 impl LrcLibWrapper {
     fn get_lrclib(&self, params: &[(&str, &str)]) -> Option<Response> {
-        println!("get_lrclib with params: {:?}", params);
         let resp = self
             .client
             .get(format!("{API_ROOT}search"))

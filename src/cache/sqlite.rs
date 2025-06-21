@@ -234,7 +234,6 @@ end;
                 return Ok(Some(res));
             }
             Err(SqliteError::QueryReturnedNoRows) => {
-                println!("Couldn't find anything for {:?} in local DB", album);
                 return Ok(None);
             }
             Err(e) => {return Err(Error::DbError(e));}
@@ -260,7 +259,6 @@ end;
                 return Ok(Some(res));
             }
             Err(SqliteError::QueryReturnedNoRows) => {
-                println!("Couldn't find anything for {:?} in local DB", artist);
                 return Ok(None);
             }
             Err(e) => {return Err(Error::DbError(e));}
@@ -340,7 +338,6 @@ end;
                 return Ok(Some(res));
             }
             Err(SqliteError::QueryReturnedNoRows) => {
-                println!("Couldn't find lyrics for song {:?} in local DB", song);
                 return Ok(None);
             }
             Err(e) => {return Err(Error::DbError(e));}
