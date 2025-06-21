@@ -565,10 +565,6 @@ impl Player {
         self.imp().outputs.clone()
     }
 
-    pub fn current_lyric_line(&self) -> u32 {
-        self.imp().current_lyric_line.get()
-    }
-
     pub fn setup(
         &self,
         application: EuphonicaApplication,
@@ -1013,6 +1009,25 @@ impl Player {
         self.imp().current_lyric_line.set(0);
         self.imp().lyric_lines.splice(0, 0, &lyrics.to_plain_lines());
         self.imp().lyrics.replace(Some(lyrics));
+        self.notify("current-lyric-line");
+    }
+
+    /// Returns true if we have lyrics for the current song and it is synced; false otherwise.
+    pub fn lyrics_are_synced(&self) -> bool {
+        if let Some(lyrics) = self.imp().lyrics.borrow().as_ref() {
+            lyrics.synced
+        }
+        else {
+            false
+        }
+    }
+
+    pub fn current_lyric_line(&self) -> u32 {
+        self.imp().current_lyric_line.get()
+    }
+
+    pub fn n_lyric_lines(&self) -> u32 {
+        self.imp().lyric_lines.n_items()
     }
 
     /// Update the queue, optionally with diffs or an entirely new queue.

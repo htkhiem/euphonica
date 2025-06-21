@@ -149,10 +149,63 @@
         </object>
       </property>
     </object>
+    <object class="GtkPopover" id="lyrics_popover">
+      <property name="has-arrow">true</property>
+      <property name="name">lyrics_popover</property>
+      <property name="child">
+        <object class="GtkGrid">
+          <style>
+            <class name="padding-6"/>
+          </style>
+          <property name="row-spacing">6</property>
+          <property name="column-spacing">6</property>
+          <child>
+            <object class="GtkLabel">
+              <property name="label" translatable="true">Show lyrics</property>
+              <property name="justify">left</property>
+              <property name="hexpand">true</property>
+              <layout>
+                <property name="column">0</property>
+                <property name="row">0</property>
+              </layout>
+            </object>
+          </child>
+          <child>
+            <object class="GtkSwitch" id="show_lyrics">
+              <layout>
+                <property name="column">1</property>
+                <property name="row">0</property>
+              </layout>
+            </object>
+          </child>
+
+          <child>
+            <object class="GtkLabel">
+              <property name="label" translatable="true">Use synced if available</property>
+              <property name="justify">left</property>
+              <property name="hexpand">true</property>
+              <layout>
+                <property name="column">0</property>
+                <property name="row">1</property>
+              </layout>
+            </object>
+          </child>
+          <child>
+            <object class="GtkSwitch" id="use_synced_lyrics">
+              <layout>
+                <property name="column">1</property>
+                <property name="row">1</property>
+              </layout>
+            </object>
+          </child>
+        </object>
+      </property>
+    </object>
     <child>
       <object class="AdwClamp">
         <property name="maximum-size">480px</property>
         <property name="tightening-threshold">360px</property>
+        <property name="margin-bottom">12px</property>
         <property name="child">
           <object class="GtkBox">
             <style>
@@ -297,6 +350,16 @@
                         <property name="icon-name">mixramp-off-symbolic</property>
                         <property name="tooltip-text" translatable="true">MixRamp</property>
                         <property name="popover">mixramp_popover</property>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="GtkMenuButton" id="lyrics_btn">
+                        <style>
+                          <class name="flat"/>
+                        </style>
+                        <property name="icon-name">lyrics-off-symbolic</property>
+                        <property name="tooltip-text" translatable="true">Crossfade</property>
+                        <property name="popover">lyrics_popover</property>
                       </object>
                     </child>
                     <child>

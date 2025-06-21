@@ -104,5 +104,7 @@
     <file preprocess="xml-stripblanks" alias="speaker-2-symbolic.svg">gtk/icons/speaker-2-symbolic.svg</file>
     <file preprocess="xml-stripblanks" alias="speaker-3-symbolic.svg">gtk/icons/speaker-3-symbolic.svg</file>
     <file preprocess="xml-stripblanks" alias="speaker-4-symbolic.svg">gtk/icons/speaker-4-symbolic.svg</file>
+    <file preprocess="xml-stripblanks" alias="lyrics-on-symbolic.svg">gtk/icons/lyrics-on-symbolic.svg</file>
+    <file preprocess="xml-stripblanks" alias="lyrics-off-symbolic.svg">gtk/icons/lyrics-off-symbolic.svg</file>
   </gresource>
 </gresources>

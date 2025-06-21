@@ -252,6 +252,7 @@
 		<child schema="io.github.htkhiem.Euphonica.state.artistview" name="artistview"/>
 		<child schema="io.github.htkhiem.Euphonica.state.folderview" name="folderview"/>
 		<child schema="io.github.htkhiem.Euphonica.state.playlistview" name="playlistview"/>
+		<child schema="io.github.htkhiem.Euphonica.state.queueview" name="queueview"/>
 
 		<!-- Remember last window size -->
 		<key name="last-window-width" type="i">
@@ -317,6 +318,26 @@
 		<key name="sort-direction" enum='io.github.htkhiem.Euphonica.sortdir'>
 			<default>'asc'</default>
 			<summary>Playlist View sort direction</summary>
+		</key>
+	</schema>
+
+	<schema id="io.github.htkhiem.Euphonica.state.queueview" path="/io/github/htkhiem/Euphonica/state/queueview/">
+		<!-- Queue view & player pane state -->
+		<key name='show-lyrics' type='b'>
+			<default>true</default>
+		</key>
+
+		<key name='use-synced-lyrics' type='b'>
+			<default>true</default>
+		</key>
+
+		<key name='maximize-lyrics-view' type='b'>
+			<default>false</default>
+		</key>
+
+		<key name="sort-direction" enum='io.github.htkhiem.Euphonica.sortdir'>
+			<default>'asc'</default>
+			<summary>Album View sort direction</summary>
 		</key>
 	</schema>
 </schemalist>

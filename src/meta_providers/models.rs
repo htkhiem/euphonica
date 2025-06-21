@@ -319,7 +319,6 @@ impl Lyrics {
         else {
             self.lines.iter().map(|line| line.1.as_str()).collect::<Vec<&str>>().join("\n")
         }
-
     }
 
     pub fn to_plain_string(&self) -> String {
@@ -349,5 +348,9 @@ impl Lyrics {
                 }
             }
         }
+    }
+
+    pub fn n_lines(&self) -> usize {
+        self.lines.len()
     }
 }

@@ -17,7 +17,6 @@ use crate::{
 use super::{MpdOutput, PlaybackControls, PlaybackState, Player, VolumeKnob};
 
 mod imp {
-
     use crate::player::seekbar::Seekbar;
 
     use super::*;
@@ -37,6 +36,7 @@ mod imp {
         #[template_child]
         pub album: TemplateChild<gtk::Label>,
 
+        // Lyrics box
         #[template_child]
         pub lyrics_window: TemplateChild<gtk::ScrolledWindow>,
         #[template_child]
@@ -61,8 +61,14 @@ mod imp {
         pub mixramp_db: TemplateChild<gtk::SpinButton>,
         #[template_child]
         pub mixramp_delay: TemplateChild<gtk::SpinButton>,
-
-        // Bottom: output info, volume control & quality
+        #[template_child]
+        pub lyrics_btn: TemplateChild<gtk::MenuButton>,
+        #[template_child]
+        pub show_lyrics: TemplateChild<gtk::Switch>,
+        #[template_child]
+        pub use_synced_lyrics: TemplateChild<gtk::Switch>,
+        #[template_child]
+        pub output_btn: TemplateChild<gtk::MenuButton>,
         #[template_child]
         pub output_section: TemplateChild<gtk::Box>,
         #[template_child]
@@ -105,9 +111,9 @@ mod imp {
     impl ObjectImpl for PlayerPane {
         fn constructed(&self) {
             self.parent_constructed();
-            let settings = settings_manager().child("ui");
+            let ui_settings = settings_manager().child("ui");
             let knob = self.vol_knob.get();
-            settings
+            ui_settings
                 .bind("vol-knob-unit", &knob, "use-dbfs")
                 .get_only()
                 .mapping(|v: &Variant, _| {
@@ -115,9 +121,56 @@ mod imp {
                 })
                 .build();
 
-            settings
+            ui_settings
                 .bind("vol-knob-sensitivity", &knob, "sensitivity")
                 .mapping(|v: &Variant, _| Some(v.get::<f64>().unwrap().to_value()))
+                .build();
+
+            let pane_settings = settings_manager().child("state").child("queueview");
+            pane_settings
+                .bind("show-lyrics", &self.show_lyrics.get(), "active")
+                .build();
+
+            pane_settings
+                .bind("use-synced-lyrics", &self.use_synced_lyrics.get(), "active")
+                .build();
+
+            self.show_lyrics
+                .bind_property(
+                    "active",
+                    &self.lyrics_btn.get(),
+                    "icon-name"
+                )
+                .transform_to(|_, show_lyrics: bool| {
+                    if show_lyrics {
+                        Some("lyrics-on-symbolic")
+                    } else {
+                        Some("lyrics-off-symbolic")
+                    }
+                })
+                .sync_create()
+                .build();
+
+            self.vol_knob
+                .bind_property(
+                    "value",
+                    &self.output_btn.get(),
+                    "icon-name"
+                )
+                .transform_to(|_, level: f64| {
+                    if level > 75.0 {
+                        Some("speaker-4-symbolic")
+                    } else if level > 50.0 {
+                        Some("speaker-3-symbolic")
+                    } else if level > 25.0 {
+                        Some("speaker-2-symbolic")
+                    } else if level > 0.0 {
+                        Some("speaker-1-symbolic")
+                    } else {
+                        Some("speaker-0-symbolic")
+                    }
+                })
+                .sync_create()
                 .build();
         }
     }
@@ -143,6 +196,42 @@ impl Default for PlayerPane {
 impl PlayerPane {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn update_lyrics_window_visibility(&self, player: &Player) {
+        self.imp().lyrics_window.set_visible(player.n_lyric_lines() > 0 && self.imp().show_lyrics.is_active());
+    }
+
+    pub fn update_lyrics_state(&self, player: &Player) {
+        let lyrics_box = self.imp().lyrics_box.get();
+        let n_lyric_lines = player.n_lyric_lines();
+        if player.lyrics_are_synced() && self.imp().use_synced_lyrics.is_active() {
+            let curr_line_idx = player.current_lyric_line();
+            for i in 0..n_lyric_lines {
+                if let Some(row) = lyrics_box.row_at_index(i as i32) {
+                    if let Some(label) = row.child() {
+                        label.set_opacity(if i == curr_line_idx {1.0} else {0.2});
+                    }
+                }
+            }
+            // Actually focus on several (currently 2) lines after the
+            // current one, such that the next lines are visible too.
+            // TODO: Figure out exactly how many lines ahead to focus
+            // on, based on lyrics box height, such that the current line
+            // is vertically centered.
+            let focus_line = if curr_line_idx == 0 {0} else {(curr_line_idx + 2).min(n_lyric_lines - 1)};
+            if let Some(row) = lyrics_box.row_at_index(focus_line as i32) {
+                row.grab_focus();
+            }
+        } else {
+            for i in 0..n_lyric_lines {
+                if let Some(row) = lyrics_box.row_at_index(i as i32) {
+                    if let Some(label) = row.child() {
+                        label.set_opacity(1.0);
+                    }
+                }
+            }
+        }
     }
 
     pub fn setup(&self, player: &Player) {
@@ -298,28 +387,46 @@ impl PlayerPane {
             .build();
 
         let lyric_lines = player.lyrics();
-        let lyrics_window = imp.lyrics_window.get();
-        lyric_lines
-            .bind_property("n-items", &lyrics_window, "visible")
-            .transform_to(|_, n_items: u32| Some(n_items > 0))
-            .sync_create()
-            .build();
-
-        let lyrics_box = imp.lyrics_box.get();
-        lyrics_box.bind_model(Some(&lyric_lines), |line| {
-            let widget = gtk::Label::new(Some(&line.downcast_ref::<gtk::StringObject>().unwrap().string()));
-            widget.set_halign(gtk::Align::Center);
-            widget.set_hexpand(true);
-            widget.set_wrap(true);
-            widget.into()
-        });
-        player.connect_notify_local(Some("current-lyric-line"), clone!(
+        lyric_lines.connect_notify_local(Some("n-items"), clone!(
+            #[weak(rename_to = this)]
+            self,
             #[weak]
-            lyrics_box,
-            move |player, _| {
-                if let Some(row) = lyrics_box.row_at_index(player.current_lyric_line() as i32) {
-                    row.grab_focus();
+            player,
+            move |_, _| {
+                this.update_lyrics_window_visibility(&player);
+            }
+        ));
+
+        // Synced lyrics handling:
+        // - Upon loading new lyrics, player controller sets new lyrics object,
+        // clears out lyric_lines and repopulates it with new lyrics.
+        // - With new lyrics object already in place, this callback will always
+        // fetch that new object's synced property, rendering all newly created
+        // Labels at 20% opacity.
+        let lyrics_box = imp.lyrics_box.get();
+        lyrics_box.bind_model(Some(&lyric_lines), clone!(
+            #[strong]
+            player,
+            move |line| {
+                let widget = gtk::Label::new(Some(&line.downcast_ref::<gtk::StringObject>().unwrap().string()));
+                widget.set_halign(gtk::Align::Center);
+                widget.set_hexpand(true);
+                widget.set_wrap(true);
+                if player.lyrics_are_synced() {
+                    widget.set_opacity(0.2);
                 }
+                widget.into()
+            }
+        ));
+        // - After having repopulated lyric_lines, player controller will then
+        // trigger a current-lyric-line notification (with current_lyric_line
+        // at zero), which in turn runs this callback to highlight the initial
+        // lyric line.
+        player.connect_notify_local(Some("current-lyric-line"), clone!(
+            #[weak(rename_to = this)]
+            self,
+            move |player, _| {
+                this.update_lyrics_state(player);
             }
         ));
 
@@ -350,7 +457,7 @@ impl PlayerPane {
             ),
         );
 
-        self.imp().prev_output.connect_clicked(clone!(
+        imp.prev_output.connect_clicked(clone!(
             #[weak(rename_to = this)]
             self,
             move |_| {
@@ -358,13 +465,44 @@ impl PlayerPane {
             }
         ));
 
-        self.imp().next_output.connect_clicked(clone!(
+        imp.next_output.connect_clicked(clone!(
             #[weak(rename_to = this)]
             self,
             move |_| {
                 this.next_output();
             }
         ));
+
+        imp.show_lyrics.connect_notify_local(
+            Some("active"),
+            clone!(
+                #[weak(rename_to = this)]
+                self,
+                #[weak]
+                player,
+                move |_, _| {
+                    println!("show-lyrics changed");
+                    this.update_lyrics_window_visibility(&player);
+                }
+            )
+        );
+
+        imp.use_synced_lyrics.connect_notify_local(
+            Some("active"),
+            clone!(
+                #[weak(rename_to = this)]
+                self,
+                #[weak]
+                player,
+                move |_, _| {
+                    println!("use-synced-lyrics changed");
+                    this.update_lyrics_state(&player);
+                }
+            )
+        );
+
+        self.update_lyrics_window_visibility(&player);
+        self.update_lyrics_state(&player);
     }
 
     fn update_album_art(&self, tex: Option<gdk::Texture>) {
