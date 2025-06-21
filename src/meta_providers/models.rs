@@ -296,7 +296,8 @@ impl Lyrics {
     }
 
     pub fn to_string(&self) -> String {
-        self.lines.iter().map(|line| {
+        if self.synced {
+            self.lines.iter().map(|line| {
             let total_seconds = line.0.max(0.0);
             let content = &line.1;
 
@@ -314,6 +315,11 @@ impl Lyrics {
             // Format the components into the desired string
             format!("[{:02}:{:02}.{:02}] {}", minutes, seconds_integer, hundredths, content)
         }).collect::<Vec<String>>().join("\n")
+        }
+        else {
+            self.lines.iter().map(|line| line.1.as_str()).collect::<Vec<&str>>().join("\n")
+        }
+
     }
 
     pub fn to_plain_string(&self) -> String {
