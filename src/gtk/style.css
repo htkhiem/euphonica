@@ -7,6 +7,12 @@ listview > row {
     margin-right: 12px;
 }
 
+.lyrics-box > undershoot {
+	background-image: none;
+	border-style: none;
+	box-shadow: none;
+}
+
 .radius-6 {
     border-radius: 6px;
 }

@@ -1021,7 +1021,8 @@ impl EuphonicaWindow {
     }
 
     fn goto_pane(&self) {
-        self.imp().stack.set_visible_child_name("queue");
+        self.imp().sidebar.set_view("queue");
+        // self.imp().stack.set_visible_child_name("queue");
         self.imp().split_view.set_show_sidebar(!self.imp().split_view.is_collapsed());
         self.imp().queue_view.set_show_content(true);
     }

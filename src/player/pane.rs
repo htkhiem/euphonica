@@ -310,13 +310,16 @@ impl PlayerPane {
             let widget = gtk::Label::new(Some(&line.downcast_ref::<gtk::StringObject>().unwrap().string()));
             widget.set_halign(gtk::Align::Center);
             widget.set_hexpand(true);
+            widget.set_wrap(true);
             widget.into()
         });
         player.connect_notify_local(Some("current-lyric-line"), clone!(
             #[weak]
             lyrics_box,
             move |player, _| {
-                lyrics_box.select_row(lyrics_box.row_at_index(player.current_lyric_line() as i32).as_ref());
+                if let Some(row) = lyrics_box.row_at_index(player.current_lyric_line() as i32) {
+                    row.grab_focus();
+                }
             }
         ));
 
