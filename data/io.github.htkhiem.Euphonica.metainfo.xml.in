@@ -65,6 +65,13 @@
   </screenshots>
 
   <releases>
+    <release version="0.93.0-alpha" date="2025-06-21">
+      <url type="details">https://github.com/htkhiem/euphonica/releases/tag/v0.93.0-alpha</url>
+      <description>
+        <p>New: Synced lyrics! Currently fetching from LRCLIB and enabled by default. Plain lyrics will be fetched if no synced version is available. If multiple lyrics entries are available for a song, the one whose stated duration is closest to your local file will be used. You may also turn lyrics fetching off in the Integrations menu as usual.</p>
+        <p>Fix: Sidebar not updating itself to highlighting Queue View when the "jump to pane" button (only visible in mini-bar mode) is clicked.</p>
+      </description>
+    </release>
     <release version="0.92.0-alpha" date="2025-06-14">
       <url type="details">https://github.com/htkhiem/euphonica/releases/tag/v0.92.0-alpha</url>
       <description>

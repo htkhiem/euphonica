@@ -214,12 +214,12 @@ impl PlayerPane {
                     }
                 }
             }
-            // Actually focus on several (currently 2) lines after the
+            // Actually focus on several (currently 1) lines after the
             // current one, such that the next lines are visible too.
             // TODO: Figure out exactly how many lines ahead to focus
             // on, based on lyrics box height, such that the current line
             // is vertically centered.
-            let focus_line = if curr_line_idx == 0 {0} else {(curr_line_idx + 2).min(n_lyric_lines - 1)};
+            let focus_line = if curr_line_idx == 0 {0} else {(curr_line_idx + 1).min(n_lyric_lines - 1)};
             if let Some(row) = lyrics_box.row_at_index(focus_line as i32) {
                 row.grab_focus();
             }
