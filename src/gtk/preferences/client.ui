@@ -10,8 +10,19 @@
         <property name="title" translatable="true">Music Player Daemon</property>
         <property name="description" translatable="true">Change how Euphonica connects to your Music Player Daemon instance. Click Reconnect to save these settings and initiate a new connection.</property>
         <child>
+          <object class="AdwSwitchRow" id="mpd_use_unix_socket">
+            <property name="title" translatable="true">Connect via local socket</property>
+          </object>
+        </child>
+        <child>
+          <object class="AdwEntryRow" id="mpd_unix_socket">
+            <property name="title" translatable="true">Local socket (absolute path)</property>
+            <property name="visible">false</property>
+          </object>
+        </child>
+        <child>
           <object class="AdwEntryRow" id="mpd_host">
-            <property name="title" translatable="true">Host address or local socket</property>
+            <property name="title" translatable="true">Host address</property>
           </object>
         </child>
         <child>

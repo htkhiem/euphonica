@@ -40,7 +40,7 @@
 			<default>false</default>
 		</key>
 		<key name="mpd-unix-socket" type="s">
-			<default>''</default>
+			<default>'/run/mpd/socket'</default>
 		</key>
 		<key name="mpd-host" type="s">
 			<default>'localhost'</default>

@@ -728,87 +728,90 @@ impl MpdWrapper {
                 mpd::Client::new(stream)
             });
         }
-        
-        if let Ok(Ok(mut client)) = handle.await {
-            // Set to maximum supported level first. Any subsequent sticker command will then
-            // update it to a lower state upon encountering related errors.
-            // Euphonica relies on 0.24+ stickers capabilities. Disable if connected to
-            // an older daemon.
-            if client.version.1 < 24 {
-                self.state.set_stickers_support_level(StickersSupportLevel::SongsOnly);
-            }
-            else {
-                self.state.set_stickers_support_level(StickersSupportLevel::All);
-            }
-            // If there is a password configured, use it to authenticate.
-            let password_access_failed: bool;
-            let client_password: Option<String>;
-            match Entry::new("euphonica", "mpd-password") {
-                Ok(entry) => {
-                    password_access_failed = false;
-                    match entry.get_password() {
-                        Ok(password) => {
-                            let password_res = client.login(&password);
-                            client_password = Some(password);
-                            if let Err(MpdError::Server(se)) = password_res {
-                                let _ = client.close();
-                                if se.code == MpdErrorCode::Password {
-                                    self.state
-                                        .set_connection_state(ConnectionState::WrongPassword);
-                                } else {
-                                    self.state
-                                        .set_connection_state(ConnectionState::NotConnected);
-                                }
-                                return;
-                            }
-                        }
-                        Err(e) => {
-                            client_password = None;
-                            match e {
-                                KeyringError::NoEntry => {}
-                                _ => {
-                                    println!("{:?}", e);
+        match handle.await {
+            Ok(Ok(mut client)) => {
+                // Set to maximum supported level first. Any subsequent sticker command will then
+                // update it to a lower state upon encountering related errors.
+                // Euphonica relies on 0.24+ stickers capabilities. Disable if connected to
+                // an older daemon.
+                if client.version.1 < 24 {
+                    self.state.set_stickers_support_level(StickersSupportLevel::SongsOnly);
+                }
+                else {
+                    self.state.set_stickers_support_level(StickersSupportLevel::All);
+                }
+                // If there is a password configured, use it to authenticate.
+                let password_access_failed: bool;
+                let client_password: Option<String>;
+                match Entry::new("euphonica", "mpd-password") {
+                    Ok(entry) => {
+                        password_access_failed = false;
+                        match entry.get_password() {
+                            Ok(password) => {
+                                let password_res = client.login(&password);
+                                client_password = Some(password);
+                                if let Err(MpdError::Server(se)) = password_res {
                                     let _ = client.close();
-                                    self.state.set_connection_state(
-                                        ConnectionState::CredentialStoreError,
-                                    );
+                                    if se.code == MpdErrorCode::Password {
+                                        self.state
+                                            .set_connection_state(ConnectionState::WrongPassword);
+                                    } else {
+                                        self.state
+                                            .set_connection_state(ConnectionState::NotConnected);
+                                    }
                                     return;
                                 }
                             }
+                            Err(e) => {
+                                client_password = None;
+                                match e {
+                                    KeyringError::NoEntry => {}
+                                    _ => {
+                                        println!("{:?}", e);
+                                        let _ = client.close();
+                                        self.state.set_connection_state(
+                                            ConnectionState::CredentialStoreError,
+                                        );
+                                        return;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        client_password = None;
+                        match e {
+                            KeyringError::NoStorageAccess(_) | KeyringError::PlatformFailure(_) => {
+                                // Note this down in case we really needed a password (different error
+                                // message).
+                                password_access_failed = true;
+                            }
+                            _ => {
+                                password_access_failed = false;
+                            }
                         }
                     }
                 }
-                Err(e) => {
-                    client_password = None;
-                    match e {
-                        KeyringError::NoStorageAccess(_) | KeyringError::PlatformFailure(_) => {
-                            // Note this down in case we really needed a password (different error
-                            // message).
-                            password_access_failed = true;
-                        }
-                        _ => {
-                            password_access_failed = false;
-                        }
+                // Doubles as a litmus test to see if we are authenticated.
+                if let Err(MpdError::Server(se)) = client.subscribe(self.bg_channel.clone()) {
+                    if se.code == MpdErrorCode::Permission {
+                        self.state.set_connection_state(if password_access_failed {
+                            ConnectionState::CredentialStoreError
+                        } else {
+                            ConnectionState::Unauthenticated
+                        });
                     }
+                } else {
+                    self.main_client.replace(Some(client));
+                    self.start_bg_thread(client_password);
+                    self.state.set_connection_state(ConnectionState::Connected);
                 }
             }
-            // Doubles as a litmus test to see if we are authenticated.
-            if let Err(MpdError::Server(se)) = client.subscribe(self.bg_channel.clone()) {
-                if se.code == MpdErrorCode::Permission {
-                    self.state.set_connection_state(if password_access_failed {
-                        ConnectionState::CredentialStoreError
-                    } else {
-                        ConnectionState::Unauthenticated
-                    });
-                }
-            } else {
-                self.main_client.replace(Some(client));
-                self.start_bg_thread(client_password);
-                self.state.set_connection_state(ConnectionState::Connected);
+            e => {
+                dbg!(e);
+                self.state
+                    .set_connection_state(ConnectionState::NotConnected);
             }
-        } else {
-            self.state
-                .set_connection_state(ConnectionState::NotConnected);
         }
     }
 

@@ -82,6 +82,10 @@ mod imp {
     pub struct ClientPreferences {
         // MPD
         #[template_child]
+        pub mpd_use_unix_socket: TemplateChild<adw::SwitchRow>,
+        #[template_child]
+        pub mpd_unix_socket: TemplateChild<adw::EntryRow>,
+        #[template_child]
         pub mpd_host: TemplateChild<adw::EntryRow>,
         #[template_child]
         pub mpd_port: TemplateChild<adw::EntryRow>,
@@ -146,6 +150,35 @@ mod imp {
         fn constructed(&self) {
             self.parent_constructed();
 
+            self.mpd_use_unix_socket
+                .bind_property(
+                    "active",
+                    &self.mpd_unix_socket.get(),
+                    "visible"
+                )
+                .sync_create()
+                .build();
+
+            self.mpd_use_unix_socket
+                .bind_property(
+                    "active",
+                    &self.mpd_host.get(),
+                    "visible"
+                )
+                .invert_boolean()
+                .sync_create()
+                .build();
+
+            self.mpd_use_unix_socket
+                .bind_property(
+                    "active",
+                    &self.mpd_port.get(),
+                    "visible"
+                )
+                .invert_boolean()
+                .sync_create()
+                .build();
+
             let viz_settings = utils::settings_manager().child("client");
             let fifo_path_row = self.fifo_path.get();
             viz_settings
@@ -192,7 +225,7 @@ mod imp {
                         }
                     }
                     else {
-                        Option::<glib::Value>::None
+                         Option::<glib::Value>::None
                     }
                 })
                 .set_mapping(|val, _| {
@@ -238,7 +271,7 @@ impl Default for ClientPreferences {
 
 impl ClientPreferences {
     fn on_connection_state_changed(&self, cs: &ClientState) {
-        match cs.get_connection_state() {
+        match cs.get_connection_state() { 
             ConnectionState::NotConnected => {
                 self.imp().mpd_status.set_subtitle("Failed to connect");
                 self.imp().mpd_status.set_enable_expansion(false);
@@ -327,7 +360,13 @@ impl ClientPreferences {
         // These should only be saved when the Apply button is clicked.
         // As such we won't bind the widgets directly to the settings.
         let conn_settings = settings.child("client");
+        conn_settings.bind(
+            "mpd-use-unix-socket",
+            &imp.mpd_use_unix_socket.get(),
+            "active"
+        ).build();
         imp.mpd_host.set_text(&conn_settings.string("mpd-host"));
+        imp.mpd_unix_socket.set_text(&conn_settings.string("mpd-unix-socket"));
         imp.mpd_port
             .set_text(&conn_settings.uint("mpd-port").to_string());
         let maybe_keyring_entry = Entry::new("euphonica", "mpd-password");
@@ -347,14 +386,20 @@ impl ClientPreferences {
         // TODO: more input validation
         // Prevent entering anything other than digits into the port entry row
         // This is needed since using a spinbutton row for port entry feels a bit weird
+        // Don't perform this check when we're connecting to a local socket.
         imp.mpd_port.connect_changed(clone!(
             #[weak(rename_to = this)]
             self,
             move |entry| {
-                if entry.text().parse::<u32>().is_err() {
-                    if !entry.has_css_class("error") {
-                        entry.add_css_class("error");
-                        this.imp().reconnect.set_sensitive(false);
+                if !this.imp().mpd_use_unix_socket.is_active() {
+                    if entry.text().parse::<u32>().is_err() {
+                        if !entry.has_css_class("error") {
+                            entry.add_css_class("error");
+                            this.imp().reconnect.set_sensitive(false);
+                        }
+                    } else if entry.has_css_class("error") {
+                        entry.remove_css_class("error");
+                        this.imp().reconnect.set_sensitive(true);
                     }
                 } else if entry.has_css_class("error") {
                     entry.remove_css_class("error");
@@ -408,11 +453,16 @@ impl ClientPreferences {
             #[weak]
             client,
             move |_| {
-                let _ = conn_settings.set_string("mpd-host", &this.imp().mpd_host.text());
-                let _ = conn_settings.set_uint(
-                    "mpd-port",
-                    this.imp().mpd_port.text().parse::<u32>().unwrap(),
-                );
+                if this.imp().mpd_use_unix_socket.is_active() {
+                    let _ = conn_settings.set_string("mpd-unix-socket", &this.imp().mpd_unix_socket.text());
+                }
+                else {
+                    let _ = conn_settings.set_string("mpd-host", &this.imp().mpd_host.text());
+                    let _ = conn_settings.set_uint(
+                        "mpd-port",
+                        this.imp().mpd_port.text().parse::<u32>().unwrap(),
+                    );
+                }
 
                 if let Ok(ref keyring_entry) = maybe_keyring_entry {
                     let password = this.imp().mpd_password.text();
