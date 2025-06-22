@@ -36,6 +36,12 @@
 	</schema>
 
 	<schema id="io.github.htkhiem.Euphonica.client" path="/io/github/htkhiem/Euphonica/client/">
+		<key name="mpd-use-unix-socket" type="b">
+			<default>false</default>
+		</key>
+		<key name="mpd-unix-socket" type="s">
+			<default>''</default>
+		</key>
 		<key name="mpd-host" type="s">
 			<default>'localhost'</default>
 		</key>

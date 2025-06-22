@@ -11,7 +11,7 @@
         <property name="description" translatable="true">Change how Euphonica connects to your Music Player Daemon instance. Click Reconnect to save these settings and initiate a new connection.</property>
         <child>
           <object class="AdwEntryRow" id="mpd_host">
-            <property name="title" translatable="true">Host address</property>
+            <property name="title" translatable="true">Host address or local socket</property>
           </object>
         </child>
         <child>

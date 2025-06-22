@@ -15,6 +15,8 @@ use mpd::{
 };
 use rustc_hash::FxHashSet;
 
+use std::net::TcpStream;
+use std::os::unix::net::UnixStream;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::{
@@ -34,6 +36,7 @@ use crate::{
 };
 
 use super::state::{ClientState, ConnectionState, StickersSupportLevel};
+use super::stream::StreamWrapper;
 
 const BATCH_SIZE: u32 = 1024;
 const FETCH_LIMIT: usize = 10000000; // Fetch at most ten million songs at once (same
@@ -51,7 +54,7 @@ enum AsyncClientMessage {
     ArtistAlbumBasicInfoDownloaded(String, AlbumInfo), // Return albums that had this artist in their AlbumArtist tag.
     FolderContentsDownloaded(String, Vec<LsInfoEntry>),
     PlaylistSongInfoDownloaded(String, Vec<SongInfo>),
-    DBUpdated,
+    DBUpdated
 }
 
 // Work requests for sending to the child thread.
@@ -123,8 +126,7 @@ mod background {
     use std::ops::Range;
 
     use super::*;
-    pub fn update_mpd_database(
-        client: &mut mpd::Client,
+    pub fn update_mpd_database(client: &mut mpd::Client<StreamWrapper>,
         sender_to_fg: &Sender<AsyncClientMessage>,
     ) {
         if let Ok(_) = client.update() {
@@ -133,7 +135,7 @@ mod background {
     }
 
     pub fn download_album_art(
-        client: &mut mpd::Client,
+        client: &mut mpd::Client<StreamWrapper>,
         sender_to_cache: &Sender<ProviderMessage>,
         key: AlbumInfo,
         path: PathBuf,
@@ -164,7 +166,7 @@ mod background {
         }
     }
 
-    fn fetch_albums_by_query<F>(client: &mut mpd::Client, query: &Query, respond: F)
+    fn fetch_albums_by_query<F>(client: &mut mpd::Client<StreamWrapper>, query: &Query, respond: F)
     where
         F: Fn(AlbumInfo) -> Result<(), SendError<AsyncClientMessage>>,
     {
@@ -188,7 +190,7 @@ mod background {
         }
     }
 
-    fn fetch_songs_by_query<F>(client: &mut mpd::Client, query: &Query, respond: F)
+    fn fetch_songs_by_query<F>(client: &mut mpd::Client<StreamWrapper>, query: &Query, respond: F)
     where
         F: Fn(Vec<SongInfo>) -> Result<(), SendError<AsyncClientMessage>>,
     {
@@ -210,14 +212,14 @@ mod background {
         }
     }
 
-    pub fn fetch_all_albums(client: &mut mpd::Client, sender_to_fg: &Sender<AsyncClientMessage>) {
+    pub fn fetch_all_albums(client: &mut mpd::Client<StreamWrapper>, sender_to_fg: &Sender<AsyncClientMessage>) {
         fetch_albums_by_query(client, &Query::new(), |info| {
             sender_to_fg.send_blocking(AsyncClientMessage::AlbumBasicInfoDownloaded(info))
         });
     }
 
     pub fn fetch_albums_of_artist(
-        client: &mut mpd::Client,
+        client: &mut mpd::Client<StreamWrapper>,
         sender_to_fg: &Sender<AsyncClientMessage>,
         artist_name: String,
     ) {
@@ -238,7 +240,7 @@ mod background {
     }
 
     pub fn fetch_album_songs(
-        client: &mut mpd::Client,
+        client: &mut mpd::Client<StreamWrapper>,
         sender_to_fg: &Sender<AsyncClientMessage>,
         tag: String,
     ) {
@@ -255,7 +257,7 @@ mod background {
     }
 
     pub fn fetch_artists(
-        client: &mut mpd::Client,
+        client: &mut mpd::Client<StreamWrapper>,
         sender_to_fg: &Sender<AsyncClientMessage>,
         use_album_artist: bool,
     ) {
@@ -295,7 +297,7 @@ mod background {
     }
 
     pub fn fetch_songs_of_artist(
-        client: &mut mpd::Client,
+        client: &mut mpd::Client<StreamWrapper>,
         sender_to_fg: &Sender<AsyncClientMessage>,
         name: String,
     ) {
@@ -316,7 +318,7 @@ mod background {
     }
 
     pub fn fetch_folder_contents(
-        client: &mut mpd::Client,
+        client: &mut mpd::Client<StreamWrapper>,
         sender_to_fg: &Sender<AsyncClientMessage>,
         path: String,
     ) {
@@ -327,7 +329,7 @@ mod background {
     }
 
     pub fn fetch_playlist_songs(
-        client: &mut mpd::Client,
+        client: &mut mpd::Client<StreamWrapper>,
         sender_to_fg: &Sender<AsyncClientMessage>,
         name: String,
     ) {
@@ -372,7 +374,7 @@ pub struct MpdWrapper {
     main_sender: Sender<AsyncClientMessage>,
     // The main client living on the main thread. Every single method of
     // mpd::Client is mutating so we'll just rely on a RefCell for now.
-    main_client: RefCell<Option<Client>>,
+    main_client: RefCell<Option<Client<StreamWrapper>>>, 
     // The state GObject, used for communicating client status & changes to UI elements
     state: ClientState,
     // Handle to the child thread.
@@ -416,7 +418,7 @@ impl MpdWrapper {
         self.state.clone()
     }
 
-    fn start_bg_thread(&self, addr: &str, password: Option<&str>) {
+    fn start_bg_thread(&self, password: Option<String>) {
         let sender_to_fg = self.main_sender.clone();
         let pending_idle = self.pending_idle.clone();
         // We have two queues here:
@@ -432,128 +434,139 @@ impl MpdWrapper {
         let meta_sender = self.meta_sender.clone();
         self.bg_sender.replace(Some(bg_sender));
         self.bg_sender_high.replace(Some(bg_sender_high));
-        if let Ok(mut client) = Client::connect(addr) {
-            // If we're unauthenticated, this will fail and no child thread
-            // will be spawned.
+        let bg_channel = self.bg_channel.clone();
+
+        let bg_handle = gio::spawn_blocking(move || {
+            // Create a new connection for the child thread
+            let conn = utils::settings_manager().child("client");
+
+            let mut client: Client<StreamWrapper>;
+
+            let error_msg = "Unable to start background client using current connection settings";
+            if conn.boolean("mpd-use-unix-socket") {
+                let path = conn.string("mpd-unix-socket");
+                let stream = StreamWrapper::new_unix(UnixStream::connect(path.as_str()).map_err(mpd::error::Error::Io).expect(error_msg));
+                client = mpd::Client::new(stream).expect(error_msg);
+            } else {
+                let addr = format!("{}:{}", conn.string("mpd-host"), conn.uint("mpd-port"));
+                println!("Connecting to TCP socket {}", &addr);
+                let stream = StreamWrapper::new_tcp(TcpStream::connect(addr).map_err(mpd::error::Error::Io).expect(error_msg));
+                client = mpd::Client::new(stream).expect(error_msg);
+            }
             if let Some(password) = password {
                 client
-                    .login(password)
-                    .expect("Main client logged in successfully but child thread did not");
+                    .login(&password)
+                    .expect("Background client failed to authenticate in the same manner as main client");
             }
             client
-                .subscribe(self.bg_channel.clone())
-                .expect("Child thread could not subscribe to inter-client channel");
-            let bg_handle = gio::spawn_blocking(move || {
-                let mut busy: bool = false;
-                'outer: loop {
-                    let skip_to_idle = pending_idle.load(Ordering::Relaxed);
+                .subscribe(bg_channel)
+                .expect("Background client could not subscribe to inter-client channel");
 
-                    let mut curr_task: Option<BackgroundTask> = None;
-                    if !skip_to_idle {
-                        if !bg_receiver_high.is_empty() {
-                            curr_task = Some(
-                                bg_receiver_high
-                                    .recv_blocking()
-                                    .expect("Unable to read from high-priority queue"),
-                            );
-                        } else if !bg_receiver.is_empty() {
-                            curr_task = Some(
-                                bg_receiver
-                                    .recv_blocking()
-                                    .expect("Unable to read from background queue"),
-                            );
+            let mut busy: bool = false;
+            'outer: loop {
+                let skip_to_idle = pending_idle.load(Ordering::Relaxed);
+
+                let mut curr_task: Option<BackgroundTask> = None;
+                if !skip_to_idle {
+                    if !bg_receiver_high.is_empty() {
+                        curr_task = Some(
+                            bg_receiver_high
+                                .recv_blocking()
+                                .expect("Unable to read from high-priority queue"),
+                        );
+                    } else if !bg_receiver.is_empty() {
+                        curr_task = Some(
+                            bg_receiver
+                                .recv_blocking()
+                                .expect("Unable to read from background queue"),
+                        );
+                    }
+                }
+
+                if !skip_to_idle && curr_task.is_some() {
+                    let task = curr_task.unwrap();
+                    if !busy {
+                        // We have tasks now, set state to busy
+                        busy = true;
+                        let _ = sender_to_fg.send_blocking(AsyncClientMessage::Busy(true));
+                    }
+                    match task {
+                        BackgroundTask::Update => {
+                            background::update_mpd_database(&mut client, &sender_to_fg)
+                        }
+                        BackgroundTask::DownloadAlbumArt(key, path, thumbnail_path) => {
+                            background::download_album_art(
+                                &mut client,
+                                &meta_sender,
+                                key,
+                                path,
+                                thumbnail_path,
+                            )
+                        }
+                        BackgroundTask::FetchAlbums => {
+                            background::fetch_all_albums(&mut client, &sender_to_fg)
+                        }
+                        BackgroundTask::FetchAlbumSongs(tag) => {
+                            background::fetch_album_songs(&mut client, &sender_to_fg, tag)
+                        }
+                        BackgroundTask::FetchArtists(use_albumartist) => {
+                            background::fetch_artists(
+                                &mut client,
+                                &sender_to_fg,
+                                use_albumartist,
+                            )
+                        }
+                        BackgroundTask::FetchArtistSongs(name) => {
+                            background::fetch_songs_of_artist(&mut client, &sender_to_fg, name)
+                        }
+                        BackgroundTask::FetchArtistAlbums(name) => {
+                            background::fetch_albums_of_artist(&mut client, &sender_to_fg, name)
+                        }
+                        BackgroundTask::FetchFolderContents(uri) => {
+                            background::fetch_folder_contents(&mut client, &sender_to_fg, uri)
+                        }
+                        BackgroundTask::FetchPlaylistSongs(name) => {
+                            background::fetch_playlist_songs(&mut client, &sender_to_fg, name)
                         }
                     }
-
-                    if !skip_to_idle && curr_task.is_some() {
-                        let task = curr_task.unwrap();
-                        if !busy {
-                            // We have tasks now, set state to busy
-                            busy = true;
-                            let _ = sender_to_fg.send_blocking(AsyncClientMessage::Busy(true));
-                        }
-                        match task {
-                            BackgroundTask::Update => {
-                                background::update_mpd_database(&mut client, &sender_to_fg)
-                            }
-                            BackgroundTask::DownloadAlbumArt(key, path, thumbnail_path) => {
-                                background::download_album_art(
-                                    &mut client,
-                                    &meta_sender,
-                                    key,
-                                    path,
-                                    thumbnail_path,
-                                )
-                            }
-                            BackgroundTask::FetchAlbums => {
-                                background::fetch_all_albums(&mut client, &sender_to_fg)
-                            }
-                            BackgroundTask::FetchAlbumSongs(tag) => {
-                                background::fetch_album_songs(&mut client, &sender_to_fg, tag)
-                            }
-                            BackgroundTask::FetchArtists(use_albumartist) => {
-                                background::fetch_artists(
-                                    &mut client,
-                                    &sender_to_fg,
-                                    use_albumartist,
-                                )
-                            }
-                            BackgroundTask::FetchArtistSongs(name) => {
-                                background::fetch_songs_of_artist(&mut client, &sender_to_fg, name)
-                            }
-                            BackgroundTask::FetchArtistAlbums(name) => {
-                                background::fetch_albums_of_artist(&mut client, &sender_to_fg, name)
-                            }
-                            BackgroundTask::FetchFolderContents(uri) => {
-                                background::fetch_folder_contents(&mut client, &sender_to_fg, uri)
-                            }
-                            BackgroundTask::FetchPlaylistSongs(name) => {
-                                background::fetch_playlist_songs(&mut client, &sender_to_fg, name)
-                            }
-                        }
-                    } else {
-                        // If not, go into idle mode
-                        if busy {
-                            busy = false;
-                            let _ = sender_to_fg.send_blocking(AsyncClientMessage::Busy(false));
-                        }
-                        if skip_to_idle {
-                            // println!("Background MPD thread skipping to idle mode as there are pending messages");
-                            pending_idle.store(false, Ordering::Relaxed);
-                        }
-                        if let Ok(changes) = client.wait(&[]) {
-                            if changes.contains(&Subsystem::Message) {
-                                if let Ok(msgs) = client.readmessages() {
-                                    for msg in msgs {
-                                        let content = msg.message.as_str();
-                                        match content {
-                                            // More to come
-                                            "STOP" => {
-                                                let _ = client.close();
-                                                break 'outer;
-                                            }
-                                            _ => {}
+                } else {
+                    // If not, go into idle mode
+                    if busy {
+                        busy = false;
+                        let _ = sender_to_fg.send_blocking(AsyncClientMessage::Busy(false));
+                    }
+                    if skip_to_idle {
+                        // println!("Background MPD thread skipping to idle mode as there are pending messages");
+                        pending_idle.store(false, Ordering::Relaxed);
+                    }
+                    if let Ok(changes) = client.wait(&[]) {
+                        if changes.contains(&Subsystem::Message) {
+                            if let Ok(msgs) = client.readmessages() {
+                                for msg in msgs {
+                                    let content = msg.message.as_str();
+                                    match content {
+                                        // More to come
+                                        "STOP" => {
+                                            let _ = client.close();
+                                            break 'outer;
                                         }
+                                        _ => {}
                                     }
                                 }
                             }
-                            let _ = sender_to_fg.send_blocking(AsyncClientMessage::Idle(changes));
-                        } else {
-                            let _ = client.close();
-                            println!(
-                                "Child thread encountered a client error while idling. Stopping..."
-                            );
-                            break 'outer;
                         }
+                        let _ = sender_to_fg.send_blocking(AsyncClientMessage::Idle(changes));
+                    } else {
+                        let _ = client.close();
+                        println!(
+                            "Child thread encountered a client error while idling. Stopping..."
+                        );
+                        break 'outer;
                     }
                 }
-            });
-            self.bg_handle.replace(Some(bg_handle));
-        } else {
-            // Since many features now run in the child thread, it is no longer acceptable
-            // to run without one.
-            panic!("Could not spawn a child thread for the background client!")
-        }
+            }
+        });
+        self.bg_handle.replace(Some(bg_handle));
     }
 
     fn setup_channel(self: Rc<Self>, receiver: Receiver<AsyncClientMessage>) {
@@ -698,12 +711,25 @@ impl MpdWrapper {
 
         let conn = utils::settings_manager().child("client");
 
-        let addr = format!("{}:{}", conn.string("mpd-host"), conn.uint("mpd-port"));
-        println!("Connecting to {}", &addr);
         self.state.set_connection_state(ConnectionState::Connecting);
-        let addr_clone = addr.clone();
-        let handle = gio::spawn_blocking(move || mpd::Client::connect(addr_clone)).await;
-        if let Ok(Ok(mut client)) = handle {
+        let handle: gio::JoinHandle<Result<mpd::Client<StreamWrapper>, MpdError>>;
+        if conn.boolean("mpd-use-unix-socket") {
+            let path = conn.string("mpd-unix-socket");
+            println!("Connecting to local socket {}", path.as_str());
+            handle = gio::spawn_blocking(move || {
+                let stream = StreamWrapper::new_unix(UnixStream::connect(path.as_str()).map_err(mpd::error::Error::Io)?);
+                mpd::Client::new(stream)
+            });
+        } else {
+            let addr = format!("{}:{}", conn.string("mpd-host"), conn.uint("mpd-port"));
+            println!("Connecting to TCP socket {}", &addr);
+            handle = gio::spawn_blocking(move || {
+                let stream = StreamWrapper::new_tcp(TcpStream::connect(addr).map_err(mpd::error::Error::Io)?);
+                mpd::Client::new(stream)
+            });
+        }
+        
+        if let Ok(Ok(mut client)) = handle.await {
             // Set to maximum supported level first. Any subsequent sticker command will then
             // update it to a lower state upon encountering related errors.
             // Euphonica relies on 0.24+ stickers capabilities. Disable if connected to
@@ -777,7 +803,7 @@ impl MpdWrapper {
                 }
             } else {
                 self.main_client.replace(Some(client));
-                self.start_bg_thread(addr.as_ref(), client_password.as_deref());
+                self.start_bg_thread(client_password);
                 self.state.set_connection_state(ConnectionState::Connected);
             }
         } else {

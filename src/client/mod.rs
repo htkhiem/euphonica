@@ -1,3 +1,4 @@
+mod stream;
 pub mod state;
 pub mod wrapper;
 
