@@ -98,11 +98,18 @@ impl Library {
                 #[weak(rename_to = this)]
                 self,
                 move |state, _| {
-                    if state.get_connection_state() == ConnectionState::Connected {
-                        this.imp().albums.remove_all();
-                        this.imp().artists.remove_all();
-                        this.init_albums();
-                        this.init_artists(false);
+                    match state.get_connection_state() {
+                        ConnectionState::Connected => {
+                            this.init_albums();
+                            this.init_artists(false);
+                        }
+                        ConnectionState::Connecting => {
+                            this.imp().albums.remove_all();
+                            this.imp().artists.remove_all();
+                            this.imp().playlists.remove_all();
+                            this.imp().folder_inodes.remove_all();
+                        }
+                        _ => {}
                     }
                 }
             ),

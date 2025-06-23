@@ -720,7 +720,8 @@ impl MpdWrapper {
 
         self.state.set_connection_state(ConnectionState::Connecting);
         let handle: gio::JoinHandle<Result<mpd::Client<StreamWrapper>, MpdError>>;
-        if conn.boolean("mpd-use-unix-socket") {
+        let use_unix_socket = conn.boolean("mpd-use-unix-socket");
+        if use_unix_socket {
             let path = conn.string("mpd-unix-socket");
             println!("Connecting to local socket {}", &path);
             if let Ok(resolved_path) = path.as_str().try_resolve() {
@@ -734,7 +735,7 @@ impl MpdWrapper {
                     let stream = StreamWrapper::new_unix(UnixStream::connect(&path.as_str()).map_err(mpd::error::Error::Io)?);
                     mpd::Client::new(stream)
                 });
-            };
+            }
         } else {
             let addr = format!("{}:{}", conn.string("mpd-host"), conn.uint("mpd-port"));
             println!("Connecting to TCP socket {}", &addr);
@@ -825,7 +826,13 @@ impl MpdWrapper {
             e => {
                 let _ = dbg!(e);
                 self.state
-                    .set_connection_state(ConnectionState::NotConnected);
+                    .set_connection_state(
+                        if use_unix_socket {
+                            ConnectionState::SocketNotFound
+                        } else {
+                            ConnectionState::ConnectionRefused
+                        }
+                    );
             }
         }
     }

@@ -13,6 +13,8 @@ use crate::common::{Album, Artist};
 pub enum ConnectionState {
     #[default]
     NotConnected,
+    ConnectionRefused,
+    SocketNotFound,
     Connecting,
     Unauthenticated, // Either no password is provided or the one provided is insufficiently privileged
     CredentialStoreError, // Cannot access underlying credential store to fetch or save password

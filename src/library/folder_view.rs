@@ -315,11 +315,16 @@ impl FolderView {
     }
 
     pub fn reset(&self, state: &ClientState) {
-        if state.get_connection_state() == ConnectionState::Connected {
-            // Newly-connected? Reset path to ""
-            let _ = self.imp().history.replace(Vec::new()); 
-            let _ = self.imp().curr_idx.replace(0);
-            self.imp().library.get().unwrap().get_folder_contents("");
+        // Newly-connected? Reset path to ""
+        match state.get_connection_state() {
+            ConnectionState::Connected => {
+                self.imp().library.get().unwrap().get_folder_contents("");
+            }
+            ConnectionState::Connecting => {
+                let _ = self.imp().history.replace(Vec::new());
+                let _ = self.imp().curr_idx.replace(0);
+            }
+            _ => {}
         }
     }
 

@@ -310,6 +310,22 @@ impl ClientPreferences {
                     self.imp().reconnect.set_sensitive(true);
                 }
             }
+            ConnectionState::ConnectionRefused => {
+                self.imp().mpd_status.set_subtitle("Connection refused");
+                self.imp().mpd_status.set_enable_expansion(false);
+                set_status_icon(&self.imp().mpd_status_icon.get(), StatusIconState::Disabled);
+                if !self.imp().mpd_port.has_css_class("error") {
+                    self.imp().reconnect.set_sensitive(true);
+                }
+            }
+            ConnectionState::SocketNotFound => {
+                self.imp().mpd_status.set_subtitle("Socket not found");
+                self.imp().mpd_status.set_enable_expansion(false);
+                set_status_icon(&self.imp().mpd_status_icon.get(), StatusIconState::Disabled);
+                if !self.imp().mpd_port.has_css_class("error") {
+                    self.imp().reconnect.set_sensitive(true);
+                }
+            }
             ConnectionState::Connected => {
                 self.imp().mpd_status.set_subtitle("Connected");
                 self.imp().mpd_status.set_enable_expansion(true);

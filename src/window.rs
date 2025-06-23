@@ -829,36 +829,14 @@ impl EuphonicaWindow {
                 }
             ),
         );
+        win.handle_connection_state(client_state.get_connection_state());
         client_state.connect_notify_local(
             Some("connection-state"),
             clone!(
                 #[weak(rename_to = this)]
                 win,
                 move |state: &ClientState, _| {
-                    match state.get_connection_state() {
-                        ConnectionState::WrongPassword => {
-                            this.show_error_dialog(
-                                "Incorrect password",
-                                "MPD has refused the provided password. Please note that if your MPD instance is not password-protected, providing one will also cause this error.",
-                                true
-                            );
-                        }
-                        ConnectionState::Unauthenticated => {
-                            this.show_error_dialog(
-                                "Authentication Failed",
-                                "Your MPD instance requires a password, which was either not provided or lacks the necessary privileges for Euphonica to function correctly.",
-                                true
-                            );
-                        }
-                        ConnectionState::CredentialStoreError => {
-                            this.show_error_dialog(
-                                "Credential Store Error",
-                                "Your MPD instance requires a password, but Euphonica could not access your default credential store to retrieve it. Please ensure that it has been unlocked before starting Euphonica.",
-                                false
-                            );
-                        }
-                        _ => {}
-                    }
+                    this.handle_connection_state(state.get_connection_state());
                 }
             )
         );
@@ -998,6 +976,56 @@ impl EuphonicaWindow {
         }
     }
 
+    fn handle_connection_state(&self, state: ConnectionState) {
+        match state {
+            ConnectionState::ConnectionRefused => {
+                let conn_settings = utils::settings_manager().child("client");
+                self.show_error_dialog(
+                    "Connection refused",
+                    &format!(
+                        "Euphonica could not connect to {}:{}. Please check your connection and network configuration and try again.",
+                        conn_settings.string("mpd-host").as_str(),
+                        conn_settings.uint("mpd-port")
+                    ),
+                    true
+                );
+            }
+            ConnectionState::SocketNotFound => {
+                let conn_settings = utils::settings_manager().child("client");
+                self.show_error_dialog(
+                    "Socket not found",
+                    &format!(
+                        "Euphonica couldn't connect to your socket at {}. Please ensure that MPD has been configured to bind to that socket and try again.",
+                        conn_settings.string("mpd-unix-socket").as_str(),
+                    ),
+                    true
+                );
+            }
+            ConnectionState::WrongPassword => {
+                self.show_error_dialog(
+                    "Incorrect password",
+                    "MPD has refused the provided password. Please note that if your MPD instance is not password-protected, providing one will also cause this error.",
+                    true
+                );
+            }
+            ConnectionState::Unauthenticated => {
+                self.show_error_dialog(
+                    "Authentication Failed",
+                    "Your MPD instance requires a password, which was either not provided or lacks the necessary privileges for Euphonica to function correctly.",
+                    true
+                );
+            }
+            ConnectionState::CredentialStoreError => {
+                self.show_error_dialog(
+                    "Credential Store Error",
+                    "Your MPD instance requires a password, but Euphonica could not access your default credential store to retrieve it. Please ensure that it has been unlocked before starting Euphonica.",
+                    false
+                );
+            }
+            _ => {}
+        }
+    }
+
     pub fn show_dialog(&self, heading: &str, body: &str) {
         let diag = adw::AlertDialog::builder()
             .heading(heading)
@@ -1102,12 +1130,12 @@ impl EuphonicaWindow {
         state
             .bind_property("connection-state", &title, "subtitle")
             .transform_to(|_, state: ConnectionState| match state {
-                ConnectionState::NotConnected => Some("Not connected"),
                 ConnectionState::Connecting => Some("Connecting"),
                 ConnectionState::Unauthenticated
                 | ConnectionState::WrongPassword
                 | ConnectionState::CredentialStoreError => Some("Unauthenticated"),
                 ConnectionState::Connected => Some("Connected"),
+                _ => Some("Not connected")
             })
             .sync_create()
             .build();

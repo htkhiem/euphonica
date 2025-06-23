@@ -638,18 +638,26 @@ impl Player {
                 #[weak(rename_to = this)]
                 self,
                 move |state, _| {
-                    if state.get_connection_state() == ConnectionState::Connected {
-                        // Newly-connected? Get initial status
-                        // Remember to get queue before status so status parsing has something to read off.
-                        if let Some(songs) = this.client().get_current_queue() {
-                            this.update_queue(&songs, true);
+                    match state.get_connection_state() {
+                        ConnectionState::Connected => {
+                            // Newly-connected? Get initial status
+                            // Remember to get queue before status so status parsing has something to read off.
+                            if let Some(songs) = this.client().get_current_queue() {
+                                this.update_queue(&songs, true);
+                            }
+                            if let Some(status) = this.client().get_status() {
+                                this.update_status(&status);
+                            }
+                            if let Some(outputs) = this.client().get_outputs() {
+                                this.update_outputs(outputs);
+                            }
                         }
-                        if let Some(status) = this.client().get_status() {
-                            this.update_status(&status);
+                        ConnectionState::Connecting => {
+                            this.imp().queue.remove_all();
+                            this.imp().outputs.remove_all();
+                            this.update_status(&mpd::Status::default());
                         }
-                        if let Some(outputs) = this.client().get_outputs() {
-                            this.update_outputs(outputs);
-                        }
+                        _ => {}
                     }
                 }
             ),
