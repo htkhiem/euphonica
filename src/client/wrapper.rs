@@ -4,6 +4,7 @@ use glib::clone;
 use gtk::{gio, glib};
 use gtk::{gio::prelude::*, glib::BoxedAnyObject};
 use keyring::{error::Error as KeyringError, Entry};
+use resolve_path::PathResolveExt;
 use mpd::error::ServerError;
 use mpd::{
     client::Client,
@@ -23,7 +24,7 @@ use std::{
     borrow::Cow,
     cell::{Cell, RefCell},
     path::PathBuf,
-    rc::Rc,
+    rc::Rc
 };
 use uuid::Uuid;
 
@@ -444,8 +445,14 @@ impl MpdWrapper {
 
             let error_msg = "Unable to start background client using current connection settings";
             if conn.boolean("mpd-use-unix-socket") {
+                let stream: StreamWrapper;
                 let path = conn.string("mpd-unix-socket");
-                let stream = StreamWrapper::new_unix(UnixStream::connect(path.as_str()).map_err(mpd::error::Error::Io).expect(error_msg));
+                if let Ok(resolved_path) = path.try_resolve() {
+                    stream = StreamWrapper::new_unix(UnixStream::connect(resolved_path).map_err(mpd::error::Error::Io).expect(error_msg));
+                }
+                else {
+                    stream = StreamWrapper::new_unix(UnixStream::connect(path.as_str()).map_err(mpd::error::Error::Io).expect(error_msg));
+                }
                 client = mpd::Client::new(stream).expect(error_msg);
             } else {
                 let addr = format!("{}:{}", conn.string("mpd-host"), conn.uint("mpd-port"));
@@ -715,11 +722,19 @@ impl MpdWrapper {
         let handle: gio::JoinHandle<Result<mpd::Client<StreamWrapper>, MpdError>>;
         if conn.boolean("mpd-use-unix-socket") {
             let path = conn.string("mpd-unix-socket");
-            println!("Connecting to local socket {}", path.as_str());
-            handle = gio::spawn_blocking(move || {
-                let stream = StreamWrapper::new_unix(UnixStream::connect(path.as_str()).map_err(mpd::error::Error::Io)?);
-                mpd::Client::new(stream)
-            });
+            println!("Connecting to local socket {}", &path);
+            if let Ok(resolved_path) = path.as_str().try_resolve() {
+                let resolved_path = resolved_path.into_owned();
+                handle = gio::spawn_blocking(move || {
+                    let stream = StreamWrapper::new_unix(UnixStream::connect(&resolved_path).map_err(mpd::error::Error::Io)?);
+                    mpd::Client::new(stream)
+                });
+            } else {
+                handle = gio::spawn_blocking(move || {
+                    let stream = StreamWrapper::new_unix(UnixStream::connect(&path.as_str()).map_err(mpd::error::Error::Io)?);
+                    mpd::Client::new(stream)
+                });
+            };
         } else {
             let addr = format!("{}:{}", conn.string("mpd-host"), conn.uint("mpd-port"));
             println!("Connecting to TCP socket {}", &addr);
@@ -808,7 +823,7 @@ impl MpdWrapper {
                 }
             }
             e => {
-                dbg!(e);
+                let _ = dbg!(e);
                 self.state
                     .set_connection_state(ConnectionState::NotConnected);
             }

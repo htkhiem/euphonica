@@ -16,7 +16,7 @@
         </child>
         <child>
           <object class="AdwEntryRow" id="mpd_unix_socket">
-            <property name="title" translatable="true">Local socket (absolute path)</property>
+            <property name="title" translatable="true">Local socket</property>
             <property name="visible">false</property>
           </object>
         </child>
