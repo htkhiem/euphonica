@@ -651,30 +651,6 @@ impl PlaylistContentView {
             }
         ));
 
-        append_queue_btn.connect_clicked(clone!(
-            #[strong(rename_to = this)]
-            self,
-            move |_| {
-                let library = this.imp().library.get().unwrap();
-                if let Some(playlist) = this.imp().playlist.borrow().as_ref() {
-                    if this.imp().selecting_all.get() {
-                        library.queue_playlist(playlist.get_name().unwrap(), false, false);
-                    } else {
-                        let store = &this.imp().song_list;
-                        // Get list of selected songs
-                        let sel = &this.imp().sel_model.selection();
-                        let mut songs: Vec<Song> = Vec::with_capacity(sel.size() as usize);
-                        let (iter, first_idx) = BitsetIter::init_first(sel).unwrap();
-                        songs.push(store.item(first_idx).and_downcast::<Song>().unwrap());
-                        iter.for_each(|idx| {
-                            songs.push(store.item(idx).and_downcast::<Song>().unwrap())
-                        });
-                        library.queue_songs(&songs, false, false);
-                    }
-                }
-            }
-        ));
-
         delete_btn.connect_clicked(clone!(
             #[strong(rename_to = this)]
             self,
