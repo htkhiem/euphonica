@@ -100,6 +100,11 @@ mod imp {
                             BoxedAnyObject::static_type(), // mpd::Subsystem::to_str
                         ])
                         .build(),
+                    Signal::builder("queue-changed")
+                        .param_types([
+                            BoxedAnyObject::static_type(), // Vec<Song> (diff only)
+                        ])
+                        .build(),
                     Signal::builder("album-art-downloaded")
                         .param_types([
                             String::static_type(),         // folder URI

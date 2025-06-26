@@ -385,9 +385,20 @@ pub struct MpdWrapper {
     bg_sender_high: RefCell<Option<Sender<BackgroundTask>>>, // For sending high-priority tasks to background thread
     meta_sender: Sender<ProviderMessage>, // For sending album arts to cache controller
     pending_idle: Arc<AtomicBool>,
-    // Stored here so we can use them to get queue diffs.
-    // It will be updated every time get_status() is called.
+
+    // To improve efficiency & avoid UI scroll resetting problems we'll
+    // cheat by applying queue edits locally first, then send the commands
+    // afterwards. This requires us to carefully skip the next updates
+    // from the idle client by tracking the expected queue version after
+    // performing the updates.
+    // Local changes increment the expected queue version by the expected number
+    // of version changes (depending on their logic) BEFORE actually sending
+    // the commands to MPD.
+    // On every update_status() call, if the newest version gets ahead of
+    // expected_queue version, we are out of sync and must perform a refresh
+    // using the old logic. Else do nothing.
     queue_version: Cell<u32>,
+    expected_queue_version: Cell<u32>
 }
 
 impl MpdWrapper {
@@ -408,6 +419,7 @@ impl MpdWrapper {
             pending_idle: Arc::new(AtomicBool::new(false)),
             meta_sender,
             queue_version: Cell::new(0),
+            expected_queue_version: Cell::new(0)
         });
 
         // For future noob self: these are shallow
@@ -1088,20 +1100,35 @@ impl MpdWrapper {
     }
 
     pub fn get_status(&self) -> Option<mpd::Status> {
+        let res: Option<Result<mpd::Status, MpdError>>;
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
-            let res = client.status();
-            match res {
-                Ok(status) => {
-                    self.queue_version.replace(status.queue_version);
-                    return Some(status);
+            res = Some(client.status());
+        }
+        else {
+            res = None;
+        }
+        match res {
+            Some(Ok(status)) => {
+                // Check whether we need to perform a full queue reload (inefficient)
+                let old_version = self.queue_version.replace(status.queue_version);
+                println!("Queue: old {}, new {}, expected {}", old_version, status.queue_version, self.expected_queue_version.get());
+                if status.queue_version > old_version {
+                    if status.queue_version > self.expected_queue_version.get() {
+                        self.expected_queue_version.set(status.queue_version);
+                        if let Some(changes) = self.get_queue_changes(old_version) {
+                            self.state.emit_by_name::<()>("queue-changed", &[
+                                &BoxedAnyObject::new(changes).to_value(),
+                            ]);
+                        }
+                    }
                 }
-                Err(e) => {
-                    println!("{:?}", e);
-                    return None;
-                }
+                Some(status)
+            }
+            e => {
+                println!("{:?}", e);
+                None
             }
         }
-        return None;
     }
 
     pub fn set_playback_flow(&self, flow: PlaybackFlow) {
@@ -1260,10 +1287,14 @@ impl MpdWrapper {
         }
     }
 
-    pub fn get_queue_changes(&self) -> Option<Vec<Song>> {
+    pub fn register_local_queue_changes(&self, n_changes: u32) {
+        self.expected_queue_version.set(self.expected_queue_version.get() + n_changes);
+    }
+
+    pub fn get_queue_changes(&self, from_version: u32) -> Option<Vec<Song>> {
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
             // TODO: move to background thread
-            if let Ok(mut changes) = client.changes(self.queue_version.get()) {
+            if let Ok(mut changes) = client.changes(from_version) {
                 return Some(
                     changes
                         .iter_mut()

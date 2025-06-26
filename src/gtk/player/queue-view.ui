@@ -133,7 +133,7 @@
                       <object class="GtkStackPage">
                         <property name="name">queue</property>
                         <property name="child">
-                          <object class="GtkScrolledWindow">
+                          <object class="GtkScrolledWindow" id="scrolled_window">
                             <property name="hscrollbar-policy">never</property>
                             <property name="vscrollbar-policy">automatic</property>
                             <property name="propagate-natural-height">true</property>

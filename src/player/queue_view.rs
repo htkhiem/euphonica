@@ -36,6 +36,8 @@ mod imp {
         #[template_child]
         pub content_stack: TemplateChild<gtk::Stack>,
         #[template_child]
+        pub scrolled_window: TemplateChild<gtk::ScrolledWindow>,
+        #[template_child]
         pub queue: TemplateChild<gtk::ListView>,
         #[template_child]
         pub queue_title: TemplateChild<adw::WindowTitle>,
@@ -61,6 +63,8 @@ mod imp {
         pub collapsed: Cell<bool>,
         #[property(get, set)]
         pub show_content: Cell<bool>,
+
+        pub last_scroll_pos: Cell<f64>
     }
 
     #[glib::object_subclass]
@@ -307,6 +311,37 @@ impl QueueView {
             .bind_property("supports-playlists", &save, "visible")
             .sync_create()
             .build();
+
+        player.connect_closure(
+            "queue-updating",
+            false,
+            closure_local!(
+                #[weak(rename_to = this)]
+                self,
+                move |_: Player| {
+                    this.imp().last_scroll_pos.set(this.imp().scrolled_window.vadjustment().value());
+                }
+            )
+        );
+
+        player.connect_closure(
+            "queue-updated",
+            false,
+            closure_local!(
+                #[weak(rename_to = this)]
+                self,
+                move |_: Player| {
+                    glib::idle_add_local_once(clone!(
+                        #[weak]
+                        this,
+                        move || {
+                            println!("Resetting queue position");
+                            this.imp().scrolled_window.vadjustment().set_value(this.imp().last_scroll_pos.get());
+                        }
+                    ));
+                }
+            )
+        );
 
         save_name.connect_closure(
             "changed",

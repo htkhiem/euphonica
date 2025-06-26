@@ -220,7 +220,7 @@ mod imp {
         pub fft_data: Arc<Mutex<(Vec<f32>, Vec<f32>)>>, // Binned magnitudes, in stereo
         pub use_visualizer: Cell<bool>,
         pub fft_backend_idx: Cell<i32>,
-        pub outputs: gio::ListStore
+        pub outputs: gio::ListStore,
     }
 
     #[glib::object_subclass]
@@ -275,7 +275,7 @@ mod imp {
                 ))),
                 use_visualizer: Cell::new(false),
                 fft_backend_idx: Cell::new(0),
-                outputs: gio::ListStore::new::<BoxedAnyObject>()
+                outputs: gio::ListStore::new::<BoxedAnyObject>(),
             }
         }
     }
@@ -475,6 +475,8 @@ mod imp {
             static SIGNALS: OnceLock<Vec<Signal>> = OnceLock::new();
             SIGNALS.get_or_init(|| {
                 vec![
+                    Signal::builder("queue-updating").build(),
+                    Signal::builder("queue-updated").build(),
                     Signal::builder("outputs-changed")
                         .build(),
                     // Reserved for EXTERNAL changes (i.e. changes made by this client won't
@@ -675,16 +677,7 @@ impl Player {
                 self,
                 move |_: ClientState, subsys: glib::BoxedAnyObject| {
                     match subsys.borrow::<Subsystem>().deref() {
-                        Subsystem::Player | Subsystem::Options => {
-                            if let Some(status) = this.client().get_status() {
-                                this.update_status(&status);
-                            }
-                        }
-                        Subsystem::Queue => {
-                            if let Some(songs) = this.client().get_queue_changes() {
-                                this.update_queue(&songs, false);
-                            }
-                            // Need to also update queue length
+                        Subsystem::Player | Subsystem::Queue | Subsystem::Options => {
                             if let Some(status) = this.client().get_status() {
                                 this.update_status(&status);
                             }
@@ -693,9 +686,21 @@ impl Player {
                             if let Some(outs) = this.client().get_outputs() {
                                 this.update_outputs(outs);
                             }
-                        }
+                        } 
                         _ => {}
                     }
+                }
+            ),
+        );
+
+        client_state.connect_closure(
+            "queue-changed",
+            false,
+            closure_local!(
+                #[weak(rename_to = this)]
+                self,
+                move |_: ClientState, songs: BoxedAnyObject| {
+                    this.update_queue(songs.borrow::<Vec<Song>>().as_ref(), false);
                 }
             ),
         );
@@ -1049,9 +1054,9 @@ impl Player {
     /// before update_status() (by MPD's idle change notifier) and as such has no way to know the
     /// new queue length. The update_status() function will instead truncate the queue to the new
     /// length for us once called.
-    ///
     /// If an MPRIS server is running, it will also emit property change signals.
-    pub fn update_queue(&self, songs: &[Song], replace: bool) {
+    pub fn update_queue(&self, songs: &[Song], replace: bool) { 
+        println!("RUNNING UPDATE_QUEUE");
         let queue = &self.imp().queue;
         if replace {
             if songs.len() == 0 {
@@ -1112,7 +1117,6 @@ impl Player {
             // Might queue downloads, depending on user settings
             cache.ensure_cached_album_arts(&infos);
         }
-        // Downstream widgets should now receive an item-changed signal.
     }
 
     fn client(&self) -> &Rc<MpdWrapper> {
@@ -1344,20 +1348,46 @@ impl Player {
         self.client().play_at(song.get_queue_id(), true);
     }
 
-    pub fn remove_song_id(&self, id: u32) {
-        self.client().delete_at(id, true);
+    fn pos_of_id(&self, id: u32) -> Option<u32> {
+        for (i, song_obj) in self.imp().queue.iter::<Song>().enumerate() {
+            let song: Song = song_obj.unwrap().downcast::<Song>().unwrap();
+            if song.get_queue_id() == id {
+                return Some(i as u32);
+            }
+        }
+        None
     }
 
-    pub fn swap_dir(&self, pos: u32, direction: SwapDirection) {
-        match direction {
-            SwapDirection::Up => {
-                if pos > 0 {
-                    self.client().swap(pos, pos - 1, false);
+    pub fn remove_song_id(&self, id: u32) {
+        if let Some(pos) = self.pos_of_id(id) {
+            self.emit_by_name::<()>("queue-updating", &[]);
+            self.client().register_local_queue_changes(1);
+            self.imp().queue.remove(pos);
+            self.client().delete_at(id, true);
+            self.emit_by_name::<()>("queue-updated", &[]);
+        }
+    }
+
+    pub fn swap_dir(&self, id: u32, direction: SwapDirection) {
+        // Find position of given queue_id
+        if let Some(pos) = self.pos_of_id(id) {
+            self.client().register_local_queue_changes(1);
+            match direction {
+                SwapDirection::Up => {
+                    if pos > 0 {
+                        let target = self.imp().queue.item(pos).unwrap();
+                        let upper = self.imp().queue.item(pos - 1).unwrap();
+                        self.imp().queue.splice(pos - 1, 2, &[target, upper]);
+                        self.client().swap(pos, pos - 1, false);
+                    }
                 }
-            }
-            SwapDirection::Down => {
-                if pos < self.imp().queue.n_items() - 1 {
-                    self.client().swap(pos, pos + 1, false);
+                SwapDirection::Down => {
+                    if pos < self.imp().queue.n_items() - 1 {
+                        let target = self.imp().queue.item(pos).unwrap();
+                        let lower = self.imp().queue.item(pos + 1).unwrap();
+                        self.imp().queue.splice(pos, 2, &[lower, target]);
+                        self.client().swap(pos, pos + 1, false);
+                    }
                 }
             }
         }
