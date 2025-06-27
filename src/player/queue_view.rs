@@ -64,7 +64,17 @@ mod imp {
         #[property(get, set)]
         pub show_content: Cell<bool>,
 
-        pub last_scroll_pos: Cell<f64>
+        // FIXME: ScrolledWindow resets scroll position upon item removal.
+        // This is especially annoying in that the scroll position might be
+        // reset to zero many times, negating our first restores.
+        // Our current workaround is to:
+        // - Only restore when the value hits zero.
+        // - Stop trying to do so once the value has changed twice without
+        // either being zero (indicating user scrolling).
+        // Disgusting I know but it works for now without being too
+        // noticeable.
+        pub last_scroll_pos: Cell<f64>,
+        pub restore_last_pos: Cell<u8>
     }
 
     #[glib::object_subclass]
@@ -153,7 +163,7 @@ impl Default for QueueView {
 fn format_song_count(count: u32) -> Option<String> {
     // TODO: translatable
     if count == 0 {
-        None
+        Some(String::from("Empty"))
     } else {
         if count == 1 {
             Some(String::from("1 song"))
@@ -246,6 +256,17 @@ impl QueueView {
             }
         ));
 
+        factory.connect_teardown(clone!(
+            #[weak(rename_to = this)]
+            self,
+            move |_, _| {
+                // The above scroll bug only manifests after this, so now is the best time to set
+                // the corresponding values.
+                this.imp().last_scroll_pos.set(this.imp().scrolled_window.vadjustment().value());
+                this.imp().restore_last_pos.set(2);
+            }
+        ));
+
         // Set the factory of the list view
         self.imp().queue.set_factory(Some(&factory));
 
@@ -312,33 +333,24 @@ impl QueueView {
             .sync_create()
             .build();
 
-        player.connect_closure(
-            "queue-updating",
-            false,
-            closure_local!(
+        // Disgusting workaround until I can pinpoint whenever this is a GTK problem.
+        self.imp().scrolled_window.vadjustment().connect_notify_local(
+            Some("value"),
+            clone!(
                 #[weak(rename_to = this)]
                 self,
-                move |_: Player| {
-                    this.imp().last_scroll_pos.set(this.imp().scrolled_window.vadjustment().value());
-                }
-            )
-        );
-
-        player.connect_closure(
-            "queue-updated",
-            false,
-            closure_local!(
-                #[weak(rename_to = this)]
-                self,
-                move |_: Player| {
-                    glib::idle_add_local_once(clone!(
-                        #[weak]
-                        this,
-                        move || {
-                            println!("Resetting queue position");
-                            this.imp().scrolled_window.vadjustment().set_value(this.imp().last_scroll_pos.get());
+                move |adj, _| {
+                    let checks_left = this.imp().restore_last_pos.get();
+                    if checks_left > 0 {
+                        let old_pos = this.imp().last_scroll_pos.get();
+                        if adj.value() == 0.0 {
+                            adj.set_value(old_pos);
                         }
-                    ));
+                        else {
+                            this.imp().restore_last_pos.set(checks_left - 1);
+                            // this.imp().restore_last_pos.set(false);
+                        }
+                    }
                 }
             )
         );

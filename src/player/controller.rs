@@ -475,8 +475,6 @@ mod imp {
             static SIGNALS: OnceLock<Vec<Signal>> = OnceLock::new();
             SIGNALS.get_or_init(|| {
                 vec![
-                    Signal::builder("queue-updating").build(),
-                    Signal::builder("queue-updated").build(),
                     Signal::builder("outputs-changed")
                         .build(),
                     // Reserved for EXTERNAL changes (i.e. changes made by this client won't
@@ -1360,11 +1358,9 @@ impl Player {
 
     pub fn remove_song_id(&self, id: u32) {
         if let Some(pos) = self.pos_of_id(id) {
-            self.emit_by_name::<()>("queue-updating", &[]);
             self.client().register_local_queue_changes(1);
             self.imp().queue.remove(pos);
             self.client().delete_at(id, true);
-            self.emit_by_name::<()>("queue-updated", &[]);
         }
     }
 

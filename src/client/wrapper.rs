@@ -1111,7 +1111,6 @@ impl MpdWrapper {
             Some(Ok(status)) => {
                 // Check whether we need to perform a full queue reload (inefficient)
                 let old_version = self.queue_version.replace(status.queue_version);
-                println!("Queue: old {}, new {}, expected {}", old_version, status.queue_version, self.expected_queue_version.get());
                 if status.queue_version > old_version {
                     if status.queue_version > self.expected_queue_version.get() {
                         self.expected_queue_version.set(status.queue_version);
