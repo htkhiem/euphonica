@@ -14,6 +14,9 @@ use mpd::{error::Error as MpdError, search::Operation, EditAction, Query, SaveMo
 mod imp {
     use std::cell::{Cell, RefCell};
 
+    use glib::{ParamSpec, ParamSpecString, ParamSpecUInt};
+    use once_cell::sync::Lazy;
+
     use super::*;
 
     #[derive(Debug)]
@@ -35,7 +38,7 @@ mod imp {
         // Folder view
         // Files and folders
         pub folder_history: RefCell<Vec<String>>,
-        pub folder_curr_idx: Cell<usize>, // 0 means at root.
+        pub folder_curr_idx: Cell<u32>, // 0 means at root.
         pub folder_inodes: gio::ListStore,
 
         pub cache: OnceCell<Rc<Cache>>,
@@ -62,6 +65,33 @@ mod imp {
     }
 
     impl ObjectImpl for Library {
+        fn properties() -> &'static [ParamSpec] {
+            static PROPERTIES: Lazy<Vec<ParamSpec>> = Lazy::new(|| {
+                vec![
+                    ParamSpecUInt::builder("folder-curr-idx")
+                        .read_only()
+                        .build(),
+                    ParamSpecUInt::builder("folder-his-len")
+                        .read_only()
+                        .build(),
+                    ParamSpecString::builder("folder-path")
+                        .read_only()
+                        .build()
+                ]
+            });
+            PROPERTIES.as_ref()
+        }
+
+        fn property(&self, _id: usize, pspec: &ParamSpec) -> glib::Value {
+            let obj = self.obj();
+            match pspec.name() {
+                "folder-curr-idx" => self.folder_curr_idx.get().to_value(),
+                "folder-his-len" => (self.folder_history.borrow().len() as u32).to_value(),
+                "folder-path" => obj.folder_path().to_value(),
+                _ => {unimplemented!()}
+            }
+        }
+
         fn signals() -> &'static [Signal] {
             static SIGNALS: OnceLock<Vec<Signal>> = OnceLock::new();
             SIGNALS.get_or_init(|| {
@@ -102,12 +132,15 @@ impl Library {
                         ConnectionState::Connected => {
                             this.init_albums();
                             this.init_artists(false);
+                            this.get_folder_contents("");
                         }
                         ConnectionState::Connecting => {
                             this.imp().albums.remove_all();
                             this.imp().artists.remove_all();
                             this.imp().playlists.remove_all();
                             this.imp().folder_inodes.remove_all();
+                            let _ = this.imp().folder_history.replace(Vec::new());
+                            let _ = this.imp().folder_curr_idx.replace(0);
                         }
                         _ => {}
                     }
@@ -135,6 +168,25 @@ impl Library {
                 self,
                 move |_: ClientState, artist: Artist| {
                     this.imp().artists.append(&artist);
+                }
+            ),
+        );
+
+        client_state.connect_closure(
+            "folder-contents-downloaded",
+            false,
+            closure_local!(
+                #[weak(rename_to = this)]
+                self,
+                move |_: ClientState, uri: String, entries: glib::BoxedAnyObject| {
+                    // If original URI matches current URI, refresh current view
+                    println!("Requested URI: {}", &uri);
+                    if uri == this.folder_path() {
+                        this.imp().folder_inodes.remove_all();
+                        this.imp()
+                            .folder_inodes
+                            .extend_from_slice(entries.borrow::<Vec<INode>>().as_ref());
+                    }
                 }
             ),
         );
@@ -235,6 +287,62 @@ impl Library {
             .get_artist_content(artist.get_name().to_owned());
     }
 
+    pub fn folder_inodes(&self) -> gio::ListStore {
+        self.imp().folder_inodes.clone()
+    }
+
+    pub fn folder_curr_idx(&self) -> u32 {
+        self.imp().folder_curr_idx.get()
+    }
+
+    pub fn folder_history_len(&self) -> u32 {
+        self.imp().folder_history.borrow().len() as u32
+    }
+
+    pub fn folder_path(&self) -> String {
+        let history = self.imp().folder_history.borrow();
+        let curr_idx = self.imp().folder_curr_idx.get();
+        if history.len() > 0 && curr_idx > 0 {
+            history[..curr_idx as usize].join("/")
+        } else {
+            "".to_string()
+        }
+    }
+
+    pub fn folder_backward(&self) {
+        let curr_idx = self.imp().folder_curr_idx.get();
+        if curr_idx > 0 {
+            self.imp().folder_curr_idx.set(curr_idx - 1);
+            self.notify("folder-curr-idx");
+            self.get_folder_contents(&self.folder_path());
+            self.notify("folder-path");
+        }
+    }
+
+    pub fn folder_forward(&self) {
+        let curr_idx = self.imp().folder_curr_idx.get();
+        if curr_idx < self.imp().folder_history.borrow().len() as u32 {
+            self.imp().folder_curr_idx.set(curr_idx + 1);
+            self.notify("folder-curr-idx");
+            self.get_folder_contents(&self.folder_path());
+            self.notify("folder-path");
+        }
+    }
+
+    pub fn navigate_to(&self, name: &str) {
+        let curr_idx = self.imp().folder_curr_idx.get();
+        {
+            // Limit scope of mut borrow
+            let mut history = self.imp().folder_history.borrow_mut();
+            let hist_len = history.len();
+            if curr_idx < hist_len as u32 {
+                history.truncate(curr_idx as usize);
+            }
+            history.push(name.to_owned());
+        }
+        self.folder_forward();
+    }
+    
     /// Queue a song or folder (when recursive == true) for playback.
     pub fn queue_uri(&self, uri: &str, replace: bool, play: bool, recursive: bool) {
         if replace {

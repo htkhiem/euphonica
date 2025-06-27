@@ -2,7 +2,7 @@ use adw::prelude::*;
 use adw::subclass::prelude::*;
 use gtk::{
     gio,
-    glib::{self, closure_local},
+    glib,
     CompositeTemplate, ListItem, SignalListItemFactory, SingleSelection,
 };
 use std::{cell::Cell, cmp::Ordering, rc::Rc};
@@ -12,7 +12,6 @@ use glib::clone;
 use super::{generic_row::GenericRow, Library};
 use crate::{
     cache::Cache,
-    client::{ClientState, ConnectionState},
     common::{INode, INodeType},
     utils::{g_cmp_str_options, g_search_substr, settings_manager},
 };
@@ -41,9 +40,9 @@ use crate::{
 // 2. Repeat steps 3-5 as above. If curr_idx is 0 after decrementing, simply use ""
 // as path.
 mod imp {
-    use std::{cell::{OnceCell, RefCell}, sync::OnceLock};
+    use std::{cell::OnceCell, sync::OnceLock};
 
-    use glib::{subclass::Signal, ParamSpec, ParamSpecBoolean, ParamSpecString};
+    use glib::{subclass::Signal, ParamSpec, ParamSpecBoolean};
     use once_cell::sync::Lazy;
 
     use super::*;
@@ -55,8 +54,6 @@ mod imp {
         pub show_sidebar: TemplateChild<gtk::Button>,
         #[template_child]
         pub path_widget: TemplateChild<gtk::Label>,
-        #[template_child]
-        pub loading_stack: TemplateChild<gtk::Stack>,
         #[template_child]
         pub back_btn: TemplateChild<gtk::Button>,
         #[template_child]
@@ -80,10 +77,6 @@ mod imp {
         #[template_child]
         pub list_view: TemplateChild<gtk::ListView>,
 
-        // Files and folders
-        pub history: RefCell<Vec<String>>,
-        pub curr_idx: Cell<usize>, // 0 means at root.
-        pub inodes: gio::ListStore,
         // Search & filter models
         pub search_filter: gtk::CustomFilter,
         pub sorter: gtk::CustomSorter,
@@ -102,7 +95,6 @@ mod imp {
             Self {
                 show_sidebar: TemplateChild::default(),
                 path_widget: TemplateChild::default(),
-                loading_stack: TemplateChild::default(),
                 back_btn: TemplateChild::default(),
                 forward_btn: TemplateChild::default(),
                 // Search & filter widgets
@@ -113,10 +105,7 @@ mod imp {
                 search_bar: TemplateChild::default(),
                 search_entry: TemplateChild::default(),
                 // Content
-                history: RefCell::new(Vec::new()),
-                curr_idx: Cell::new(0),
                 list_view: TemplateChild::default(),
-                inodes: gio::ListStore::new::<INode>(),
                 // Search & filter models
                 search_filter: gtk::CustomFilter::default(),
                 sorter: gtk::CustomSorter::default(),
@@ -157,21 +146,25 @@ mod imp {
 
         fn constructed(&self) {
             self.parent_constructed();
-            self.obj()
-                .bind_property("path", &self.path_widget.get(), "label")
-                .sync_create()
-                .build();
 
             self.back_btn.connect_clicked(clone!(
                 #[weak(rename_to = this)]
                 self,
-                move |_| this.move_back()
+                move |_| {
+                    if let Some(lib) = this.library.get() {
+                        lib.folder_backward();
+                    }
+                }
             ));
 
             self.forward_btn.connect_clicked(clone!(
                 #[weak(rename_to = this)]
                 self,
-                move |_| this.move_forward()
+                move |_| {
+                    if let Some(lib) = this.library.get() {
+                        lib.folder_forward();
+                    }
+                }
             ));
 
             self.obj()
@@ -195,16 +188,13 @@ mod imp {
         fn properties() -> &'static [ParamSpec] {
             static PROPERTIES: Lazy<Vec<ParamSpec>> =
                 Lazy::new(|| vec![
-                    ParamSpecString::builder("path").read_only().build(),
                     ParamSpecBoolean::builder("collapsed").build()
                 ]);
             PROPERTIES.as_ref()
         }
 
         fn property(&self, _id: usize, pspec: &ParamSpec) -> glib::Value {
-            let obj = self.obj();
             match pspec.name() {
-                "path" => obj.get_path().to_value(),
                 "collapsed" => self.collapsed.get().to_value(),
                 _ => unimplemented!(),
             }
@@ -237,9 +227,10 @@ mod imp {
     impl WidgetImpl for FolderView {}
 
     impl FolderView {
-        fn update_nav_btn_sensitivity(&self) {
-            let curr_idx = self.curr_idx.get();
-            let hist_len = self.history.borrow().len();
+        pub fn update_nav_btn_sensitivity(&self) {
+            let lib = self.library.get().unwrap();
+            let curr_idx = lib.folder_curr_idx();
+            let hist_len = lib.folder_history_len();
             println!("Curr idx: {}", curr_idx);
             println!("Hist len: {}", hist_len);
             if curr_idx == 0 {
@@ -251,26 +242,6 @@ mod imp {
                 self.forward_btn.set_sensitive(false);
             } else {
                 self.forward_btn.set_sensitive(true);
-            }
-        }
-        pub fn move_back(&self) {
-            let curr_idx = self.curr_idx.get();
-            if curr_idx > 0 {
-                self.curr_idx.replace(curr_idx - 1);
-                self.obj().navigate();
-                self.update_nav_btn_sensitivity();
-            }
-        }
-
-        pub fn move_forward(&self) {
-            let curr_idx = self.curr_idx.get();
-            let hist_len = self.history.borrow().len();
-            // Reminder: this index is 1-based because 0 means root (before first
-            // element in history).
-            if curr_idx < hist_len {
-                self.curr_idx.replace(curr_idx + 1);
-                self.obj().navigate();
-                self.update_nav_btn_sensitivity();
             }
         }
     }
@@ -293,80 +264,44 @@ impl FolderView {
         glib::Object::new()
     }
 
-    pub fn get_path(&self) -> String {
-        let imp = self.imp();
-        let history = imp.history.borrow();
-        let curr_idx = imp.curr_idx.get();
-        if history.len() > 0 && curr_idx > 0 {
-            history[..curr_idx].join("/")
-        } else {
-            "".to_string()
-        }
+    fn library(&self) -> &Library {
+        self.imp().library.get().unwrap()
     }
 
-    pub fn navigate(&self) {
-        self.notify("path");
-        self.imp()
-            .library
-            .get()
-            .unwrap()
-            .get_folder_contents(&self.get_path());
-        self.imp().loading_stack.set_visible_child_name("loading");
-    }
-
-    pub fn reset(&self, state: &ClientState) {
-        // Newly-connected? Reset path to ""
-        match state.get_connection_state() {
-            ConnectionState::Connected => {
-                self.imp().library.get().unwrap().get_folder_contents("");
-            }
-            ConnectionState::Connecting => {
-                let _ = self.imp().history.replace(Vec::new());
-                let _ = self.imp().curr_idx.replace(0);
-            }
-            _ => {}
-        }
-    }
-
-    pub fn setup(&self, library: Library, cache: Rc<Cache>, client_state: ClientState) {
-        self.setup_sort();
-        self.setup_search();
-        self.setup_listview(cache.clone(), library.clone());
+    pub fn setup(&self, library: Library, cache: Rc<Cache>) {
         self.imp()
             .library
             .set(library.clone())
             .expect("Cannot init FolderView with Library");
-        client_state.connect_closure(
-            "folder-contents-downloaded",
-            false,
-            closure_local!(
-                #[weak(rename_to = this)]
-                self,
-                move |_: ClientState, uri: String, entries: glib::BoxedAnyObject| {
-                    // If original URI matches current URI, refresh current view
-                    println!("Requested URI: {}", &uri);
-                    println!("Current URI: {}", &this.get_path());
-                    if uri == this.get_path() {
-                        this.imp().inodes.remove_all();
-                        this.imp()
-                            .inodes
-                            .extend_from_slice(entries.borrow::<Vec<INode>>().as_ref());
-                        this.imp().loading_stack.set_visible_child_name("content");
-                    }
-                }
-            ),
-        );
-        // Always reset on window creation (when coming back from background mode)
-        self.reset(&client_state);
-        client_state.connect_notify_local(
-            Some("connection-state"),
+        self.setup_sort();
+        self.setup_search();
+        self.setup_listview(cache.clone(), library.clone());
+
+        library
+            .bind_property("folder-path", &self.imp().path_widget.get(), "label")
+            .sync_create()
+            .build();
+
+        library.connect_notify_local(
+            Some("folder-curr-idx"),
             clone!(
                 #[weak(rename_to = this)]
                 self,
-                move |state, _| {
-                    this.reset(&state);
+                move |_, _| {
+                    this.imp().update_nav_btn_sensitivity();
                 }
-            ),
+            )
+        );
+
+        library.connect_notify_local(
+            Some("folder-his-len"),
+            clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |_, _| {
+                    this.imp().update_nav_btn_sensitivity();
+                }
+            )
         );
     }
 
@@ -558,16 +493,7 @@ impl FolderView {
         // - Else: do nothing (adding songs and playlists are done with buttons to the right of each row).
         if let Some(name) = inode.get_name() {
             if inode.get_info().inode_type == INodeType::Folder {
-                {
-                    let curr_idx = self.imp().curr_idx.get();
-                    let mut history = self.imp().history.borrow_mut();
-                    let hist_len = history.len();
-                    if curr_idx < hist_len {
-                        history.truncate(curr_idx);
-                    }
-                    history.push(name.to_owned());
-                }
-                self.imp().move_forward();
+                self.library().navigate_to(name);
             }
         }
     }
@@ -597,7 +523,7 @@ impl FolderView {
 
         // Chain search & sort. Put sort after search to reduce number of sort items.
         let search_model = gtk::FilterListModel::new(
-            Some(self.imp().inodes.clone()),
+            Some(self.library().folder_inodes()), 
             Some(self.imp().search_filter.clone()),
         );
         search_model.set_incremental(true);

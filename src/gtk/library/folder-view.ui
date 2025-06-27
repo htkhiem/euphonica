@@ -91,40 +91,21 @@
               </object>
             </child>
             <child>
-              <object class="GtkStack" id="loading_stack">
-                <child>
-                  <object class="GtkStackPage">
-                    <property name="name">loading</property>
-                    <property name="child">
-                      <object class="AdwSpinner">
-
-                      </object>
-                    </property>
+              <object class="GtkScrolledWindow">
+                <property name="hscrollbar-policy">never</property>
+                <property name="vscrollbar-policy">automatic</property>
+                <property name="propagate-natural-height">true</property>
+                <property name="has-frame">false</property>
+                <property name="vexpand">true</property>
+                <property name="child">
+                  <object class="GtkListView" id="list_view">
+                    <property name="show-separators">true</property>
+                    <property name="single-click-activate">true</property>
+                    <style>
+                      <class name="no-bg"/>
+                    </style>
                   </object>
-                </child>
-                <child>
-                  <object class="GtkStackPage">
-                    <property name="name">content</property>
-                    <property name="child">
-                      <object class="GtkScrolledWindow">
-                        <property name="hscrollbar-policy">never</property>
-                        <property name="vscrollbar-policy">automatic</property>
-                        <property name="propagate-natural-height">true</property>
-                        <property name="has-frame">false</property>
-                        <property name="vexpand">true</property>
-                        <property name="child">
-                          <object class="GtkListView" id="list_view">
-                            <property name="show-separators">true</property>
-                            <property name="single-click-activate">true</property>
-                            <style>
-                              <class name="no-bg"/>
-                            </style>
-                          </object>
-                        </property>
-                      </object>
-                    </property>
-                  </object>
-                </child>
+                </property>
               </object>
             </child>
           </object>
