@@ -154,7 +154,7 @@ Most libraries, especially those that ran well with other MPD clients like [Cant
   - User-editable album wikis and artist bios
   - Metadata sync between Euphonica instances (instead of being stored locally)
   - Should follow existing sticker schemas, such as that proposed by myMPD, where possible.
-- Special support for local socket connection, or remote filesystem access, to enable the following features:
+- Local socket-exclusive features:
   - Library management operations such as tag editing (will require access to the files themselves)
   - Save downloaded album arts and artist avatars directly into the music folders themselves so other instances
     and clients can use them.

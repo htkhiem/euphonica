@@ -25,20 +25,18 @@
     </p>
     <ul>
       <li>Responsive GTK4 LibAdwaita UI for most MPD features, from basic things like playback controls, queue reordering and ReplayGain to things like output control, crossfade and MixRamp configuration</li>
+      <li>Automatically fetch album arts, artist avatars and (synced) song lyrics from external sources (currently supports Last.fm, MusicBrainz and LRCLIB). All external metadata are cached locally &amp; persisted on disk to avoid needless API calls.</li>
+      <li>Playlist browser and editor</li>
       <li>Integrated MPRIS client with background running supported (via the XDG Background protocol).</li>
       <li>Built-in, customisable spectrum visualiser, reading from MPD FIFO or system PipeWire.</li>
       <li>Rate albums (requires MPD 0.24+)</li>
       <li>Live bitrate readout + audio quality indicators (lossy, lossless, hi-res, DSD) for individual songs as well as albums &amp; detailed format printout</li>
       <li>Browse your library by album, artist and folders with multiselection support. Browsing by genre and other criteria are planned.</li>
-      <li>Playlist browser and editor</li>
       <li>Sort albums by name, AlbumArtist or release date (provided you have the tags)</li>
       <li>Asynchronous search for large collections</li>
       <li>Configurable multi-artist tag syntax, works with anything you throw at it. In other words, your artist tags can be pretty messy and Euphonica will still be able to correctly split them into individual artists.</li>
       <li>Performant album art fetching &amp; display (cached with Stretto)</li>
-      <li>Super-fast, **multithreaded**, **statically-cached** background blur powered by libblur's stack blur implementation</li>
-      <li>Automatically fetch album arts &amp; artist avatars from external sources (currently supports Last.fm and MusicBrainz)</li>
-      <li>Album wikis &amp; artist bios are supported too</li>
-      <li>All externally-acquired metadata are cached locally &amp; persisted on disk to avoid needless API calls</li>
+      <li>Super-fast, multithreaded, statically-cached background blur powered by libblur.</li>
       <li>Volume knob with dBFS readout support ('cuz why not?)</li>
       <li>User-friendly configuration UI &amp; GSettings backend</li>
       <li>MPD passwords are securely stored in your user's login keyring</li>
@@ -65,6 +63,23 @@
   </screenshots>
 
   <releases>
+    <release version="0.94.0-alpha" date="2025-06-28">
+      <url type="details">https://github.com/htkhiem/euphonica/releases/tag/v0.94.0-alpha</url>
+      <description>
+        <p>New: Local socket connection support. This also opens up MPD capabilities only available via local sockets, such as configuration editing.</p>
+        <p>Refactor: Folder view state is now preserved across window launches (when background running is enabled)</p>
+        <p>Fix: "Queue all" button in playlist content view queuing twice.</p>
+        <p>Fix: Queue View resetting scroll position upon removing a track.</p>
+        <p>Fix: Queue View subtitle not updating upon clearing queue.</p>
+        <p>Fix: Connection error popups now work again.</p>
+      </description>
+    </release>
+    <release version="0.93.1-alpha" date="2025-06-22">
+      <url type="details">https://github.com/htkhiem/euphonica/releases/tag/v0.93.1-alpha</url>
+      <description>
+        <p>Fix: MPRIS duration using the wrong unit, causing seekbars in shell applets to malfunction.</p>
+      </description>
+    </release>
     <release version="0.93.0-alpha" date="2025-06-21">
       <url type="details">https://github.com/htkhiem/euphonica/releases/tag/v0.93.0-alpha</url>
       <description>
