@@ -1010,7 +1010,7 @@ dependencies = [
 
 [[package]]
 name = "euphonica"
-version = "0.93.2"
+version = "0.94.0"
 dependencies = [
  "aho-corasick",
  "ashpd",

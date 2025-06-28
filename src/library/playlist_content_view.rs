@@ -113,6 +113,10 @@ mod imp {
         #[template_child]
         pub editing_content: TemplateChild<gtk::ListView>,
         #[template_child]
+        pub content_scroller: TemplateChild<gtk::ScrolledWindow>,
+        #[template_child]
+        pub editing_content_scroller: TemplateChild<gtk::ScrolledWindow>,
+        #[template_child]
         pub title: TemplateChild<gtk::Label>,
 
         #[template_child]
@@ -172,6 +176,10 @@ mod imp {
         pub selecting_all: Cell<bool>, // Enables queuing the entire playlist efficiently
         pub window: OnceCell<EuphonicaWindow>,
         pub library: OnceCell<Library>,
+
+        // FIXME: Working around the scroll position bug. See src/player/queue_view.rs (same issue).
+        pub last_scroll_pos: Cell<f64>,
+        pub restore_last_pos: Cell<u8>
     }
 
     impl Default for PlaylistContentView {
@@ -186,6 +194,8 @@ mod imp {
                 content_stack: TemplateChild::default(),
                 content: TemplateChild::default(),
                 editing_content: TemplateChild::default(),
+                content_scroller: TemplateChild::default(),
+                editing_content_scroller: TemplateChild::default(),
                 song_list: gio::ListStore::new::<Song>(),
                 editing_song_list: gio::ListStore::new::<Song>(),
                 is_editing: Cell::new(false),
@@ -216,6 +226,8 @@ mod imp {
                 selecting_all: Cell::new(true), // When nothing is selected, default to select-all
                 window: OnceCell::new(),
                 library: OnceCell::new(),
+                last_scroll_pos: Cell::new(0.0),
+                restore_last_pos: Cell::new(0)
             }
         }
     }
@@ -741,11 +753,44 @@ impl PlaylistContentView {
             }
         ));
 
+        editing_factory.connect_teardown(clone!(
+            #[weak(rename_to = this)]
+            self,
+            move |_, _| {
+                // The above scroll bug only manifests after this, so now is the best time to set
+                // the corresponding values.
+                this.imp().last_scroll_pos.set(this.imp().editing_content_scroller.vadjustment().value());
+                this.imp().restore_last_pos.set(2);
+            }
+        ));
+
         // Set the factory of the list view
         self.imp().content.set_factory(Some(&factory));
         self.imp()
             .editing_content
             .set_factory(Some(&editing_factory));
+
+        // Disgusting workaround until I can pinpoint whenever this is a GTK problem.
+        self.imp().editing_content_scroller.vadjustment().connect_notify_local(
+            Some("value"),
+            clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |adj, _| {
+                    let checks_left = this.imp().restore_last_pos.get();
+                    if checks_left > 0 {
+                        let old_pos = this.imp().last_scroll_pos.get();
+                        if adj.value() == 0.0 {
+                            adj.set_value(old_pos);
+                        }
+                        else {
+                            this.imp().restore_last_pos.set(checks_left - 1);
+                            // this.imp().restore_last_pos.set(false);
+                        }
+                    }
+                }
+            )
+        );
     }
 
     /// Returns true if an album art was successfully retrieved.

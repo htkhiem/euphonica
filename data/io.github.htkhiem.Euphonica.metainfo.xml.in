@@ -69,7 +69,7 @@
         <p>New: Local socket connection support. This also opens up MPD capabilities only available via local sockets, such as configuration editing.</p>
         <p>Refactor: Folder view state is now preserved across window launches (when background running is enabled)</p>
         <p>Fix: "Queue all" button in playlist content view queuing twice.</p>
-        <p>Fix: Queue View resetting scroll position upon removing a track.</p>
+        <p>Fix: Queue View &amp; Playlist Editor resetting scroll position upon removing a track.</p>
         <p>Fix: Queue View subtitle not updating upon clearing queue.</p>
         <p>Fix: Connection error popups now work again.</p>
       </description>
