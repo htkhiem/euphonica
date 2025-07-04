@@ -1,5 +1,5 @@
 extern crate bson;
-use gtk::prelude::*;
+use gtk::{prelude::*, gdk};
 use std::{path::PathBuf, thread, time::Duration};
 
 use crate::{common::{AlbumInfo, ArtistInfo, SongInfo}, utils::settings_manager};
@@ -16,20 +16,19 @@ pub fn sleep_after_request() {
 /// Enum for communication with provider threads from the cache controller living on the main thread.
 /// Can be used for both request and response.
 pub enum ProviderMessage {
-    ClearAlbumArt(String), // Only need folder URI
-    AlbumArt(AlbumInfo, PathBuf, PathBuf),
-    AlbumArtAvailable(String), // Only return folder URI
+    ClearAlbumArt(String), // URI can be track or folder
+    Cover(SongInfo, PathBuf),  // With cache basepath
+    CoverAvailable(String), // URI can be track or folder
     /// Negative response (currently only used by MpdWrapper)
-    AlbumArtNotAvailable(AlbumInfo),
-    /// Both request and positive response
+    CoverNotAvailable(SongInfo),
     AlbumMeta(AlbumInfo),
-    AlbumMetaAvailable(String), // Only return folder URI
+    AlbumMetaAvailable(String), // Only return URI
     ClearArtistAvatar(String), // Only need name
     /// Both request and positive response
-    ArtistAvatar(ArtistInfo, PathBuf, PathBuf),
-    ArtistAvatarAvailable(String), // Only return name
+    ArtistAvatar(ArtistInfo, PathBuf), // With cache basepath
+    ArtistAvatarAvailable(String), // Name
     /// Both request and positive response. Includes downloading artist avatar.
-    ArtistMeta(ArtistInfo, PathBuf, PathBuf),
+    ArtistMeta(ArtistInfo, PathBuf), // With cache basepath (for passthrough to artist avatar)
     ArtistMetaAvailable(String), // Only return name
     Lyrics(SongInfo),
     LyricsAvailable(String) // Only return full URI
@@ -37,7 +36,7 @@ pub enum ProviderMessage {
 
 pub enum MetadataType<'a> {
     // folder-level URI, true for thumbnail
-    AlbumArt(&'a str, bool),
+    Cover(&'a str, bool),
     // folder-level URI
     AlbumMeta(&'a str),
     // Tag, true for thumbnail

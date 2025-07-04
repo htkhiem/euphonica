@@ -437,11 +437,11 @@ impl Library {
     }
 
     pub fn set_album_art(&self, folder_uri: &str, path: &str) {
-        self.cache().set_album_art(folder_uri, path);
+        self.cache().set_cover(folder_uri, path);
     }
 
     pub fn clear_album_art(&self, folder_uri: &str) {
-        self.cache().clear_album_art(folder_uri);
+        self.cache().clear_cover(folder_uri);
     }
 
     pub fn set_artist_avatar(&self, tag: &str, path: &str) {

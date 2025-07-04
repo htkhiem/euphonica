@@ -594,7 +594,7 @@ impl AlbumContentView {
     /// On false, we will want to call cache.ensure_local_album_art()
     fn update_cover(&self, info: &AlbumInfo) -> bool {
         if let Some(cache) = self.imp().cache.get() {
-            if let Some(tex) = cache.load_cached_album_art(info, false, true) {
+            if let Some(tex) = cache.load_cached_cover(info, false, true) {
                 self.imp().cover.set_paintable(Some(&tex));
                 return true;
             } else {

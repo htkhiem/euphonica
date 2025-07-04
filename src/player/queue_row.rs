@@ -1,5 +1,6 @@
 use glib::{closure_local, signal::SignalHandlerId, Object};
 use gtk::{
+    gdk,
     glib::{self, clone},
     prelude::*,
     subclass::prelude::*,
@@ -9,13 +10,13 @@ use std::{cell::RefCell, rc::Rc};
 
 use crate::{
     cache::{placeholders::ALBUMART_PLACEHOLDER, Cache, CacheState},
-    common::{AlbumInfo, Song},
+    common::Song,
 };
 
 use super::{controller::SwapDirection, Player};
 
 mod imp {
-    use std::cell::Cell;
+    use std::cell::{Cell, OnceCell};
 
     use crate::common::Marquee;
     use glib::{ParamSpec, ParamSpecBoolean, ParamSpecString, ParamSpecUInt};
@@ -46,10 +47,10 @@ mod imp {
         #[template_child]
         pub remove: TemplateChild<Button>,
         pub queue_id: Cell<u32>,
+        pub has_thumbnail: Cell<bool>,
         pub thumbnail_signal_id: RefCell<Option<SignalHandlerId>>,
-        // pub marquee_tick_callback_id: RefCell<Option<TickCallbackId>>,
-        // pub marquee_forward: Cell<bool>,
-        // pub marquee_progress: Cell<f64>
+        pub song: RefCell<Option<Song>>,
+        pub cache: OnceCell<Rc<Cache>>,
     }
 
     // The central trait for subclassing a GObject
@@ -161,14 +162,14 @@ glib::wrapper! {
 }
 
 impl QueueRow {
-    pub fn new(item: &gtk::ListItem, player: Player) -> Self {
+    pub fn new(item: &gtk::ListItem, player: Player, cache: Rc<Cache>) -> Self {
         let res: Self = Object::builder().build();
-        res.setup(item, player);
+        res.setup(item, player, cache);
         res
     }
 
     #[inline(always)]
-    pub fn setup(&self, item: &gtk::ListItem, player: Player) {
+    pub fn setup(&self, item: &gtk::ListItem, player: Player, cache: Rc<Cache>) {
         // Bind controls
         self.imp().remove.connect_clicked(clone!(
             #[weak(rename_to = this)]
@@ -232,6 +233,38 @@ impl QueueRow {
             .chain_property::<Song>("queue-id")
             .bind(self, "queue-id", gtk::Widget::NONE);
 
+        let _ =
+            self.imp()
+                .thumbnail_signal_id
+                .replace(Some(cache.get_cache_state().connect_closure(
+                    "album-art-downloaded",
+                    false,
+                    closure_local!(
+                        #[weak(rename_to = this)]
+                        self,
+                        move |_: CacheState, folder_uri: String, tex: gdk::Texture| {
+                            // Match song URI first then folder URI. Only try to match by folder URI
+                            // if we don't have a current thumbnail
+                            if let Some(song) = this.imp().song.borrow().as_ref() {
+                                if folder_uri.as_str() == song.get_uri() {
+                                    this.update_thumbnail(Some(tex));
+                                }
+                                else if let (false, Some(album)) = (this.imp().has_thumbnail.get(), song.get_album()) {
+                                    if album.uri == folder_uri {
+                                        this.update_thumbnail(Some(tex));
+                                    } else {
+                                        this.update_thumbnail(None);
+                                    }
+                                } else {
+                                    this.update_thumbnail(None);
+                                }
+                            } else {
+                                this.update_thumbnail(None);
+                            }
+                        }
+                    ),
+                )));
+
         // Bind marquee controller only once here
         // Run only while hovered
         let hover_ctl = gtk::EventControllerMotion::new();
@@ -251,59 +284,38 @@ impl QueueRow {
             }
         ));
         self.add_controller(hover_ctl);
+        let _ = self.imp().cache.set(cache);
     }
 
-    fn update_thumbnail(&self, info: Option<&AlbumInfo>, cache: Rc<Cache>, schedule: bool) {
-        if let Some(album) = info {
-            if let Some(tex) = cache.load_cached_album_art(album, true, schedule) {
-                self.imp().thumbnail.set_paintable(Some(&tex));
-                return;
-            }
+    fn update_thumbnail(&self, tex: Option<gdk::Texture>) {
+        if tex.is_some() {
+            self.imp().thumbnail.set_paintable(tex.as_ref());
+            self.imp().has_thumbnail.set(true);
+        } else {
+            self.imp().thumbnail.set_paintable(Some(&*ALBUMART_PLACEHOLDER));
+            self.imp().has_thumbnail.set(false);
         }
-        self.imp()
-            .thumbnail
-            .set_paintable(Some(&*ALBUMART_PLACEHOLDER))
     }
 
-    pub fn bind(&self, song: &Song, cache: Rc<Cache>) {
+    pub fn bind(&self, song: &Song) {
         // The string properties are bound using property expressions in setup().
         // Here we only need to manually bind to the cache controller to fetch album art.
         // Set once first (like sync_create)
         // We need schedule = True here since the QueueView only requested caching the entire
         // queue's worth of album arts once (at the beginning), and by now some might have been
         // evicted from the cache.
-        self.update_thumbnail(song.get_album(), cache.clone(), true);
-        let thumbnail_binding = cache.get_cache_state().connect_closure(
-            "album-art-downloaded",
-            false,
-            closure_local!(
-                #[weak(rename_to = this)]
-                self,
-                #[strong]
-                song,
-                #[weak]
-                cache,
-                move |_: CacheState, folder_uri: String| {
-                    if let Some(album) = song.get_album() {
-                        if album.uri == folder_uri {
-                            // If we have been notified and yet the cache does not contain
-                            // the corresponding art, then we either failed to fetch the
-                            // art to begin with or the cache is experiencing serious thrashing.
-                            // Do not attempt to re-schedule.
-                            this.update_thumbnail(Some(album), cache, false);
-                        }
-                    }
-                }
-            ),
-        );
-        self.imp()
-            .thumbnail_signal_id
-            .replace(Some(thumbnail_binding));
+        self.imp().song.replace(Some(song.clone()));
     }
 
-    pub fn unbind(&self, cache: Rc<Cache>) {
-        if let Some(id) = self.imp().thumbnail_signal_id.take() {
-            cache.get_cache_state().disconnect(id);
+    pub fn unbind(&self) {
+        let _ = self.imp().song.take();
+    }
+
+    pub fn teardown(&self) {
+        if let Some(cover_id) = self.imp().thumbnail_signal_id.take() {
+            let cache_state = self.imp().cache.get().unwrap().get_cache_state();
+
+            cache_state.disconnect(cover_id);
         }
     }
 }

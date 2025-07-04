@@ -1,7 +1,6 @@
 extern crate mpd;
 use crate::{
-    config::APPLICATION_ID,
-    application::EuphonicaApplication, cache::{Cache, CacheState}, client::{ClientState, ConnectionState, MpdWrapper}, common::{AlbumInfo, QualityGrade, Song}, meta_providers::models::Lyrics, player::fft_backends::fifo::FifoFftBackend, utils::{prettify_audio_format, settings_manager}
+    application::EuphonicaApplication, cache::{get_path_for, Cache, CacheState}, client::{ClientState, ConnectionState, MpdWrapper}, common::{AlbumInfo, QualityGrade, Song, SongInfo}, config::APPLICATION_ID, meta_providers::models::Lyrics, player::fft_backends::fifo::FifoFftBackend, utils::{prettify_audio_format, settings_manager}
 };
 use async_lock::OnceCell as AsyncOnceCell;
 use mpris_server::{
@@ -1104,17 +1103,6 @@ impl Player {
                 }
             }
         }
-
-        if let Some(cache) = self.imp().cache.get() {
-            let infos: Vec<&AlbumInfo> = songs
-                .into_iter()
-                .map(|song| song.get_album())
-                .filter(|ao| ao.is_some())
-                .map(|info| info.unwrap())
-                .collect();
-            // Might queue downloads, depending on user settings
-            cache.ensure_cached_album_arts(&infos);
-        }
     }
 
     fn client(&self) -> &Rc<MpdWrapper> {
@@ -1193,10 +1181,7 @@ impl Player {
     pub fn current_song_album_art(&self, thumbnail: bool) -> Option<Texture> {
         if let Some(song) = self.imp().current_song.borrow().as_ref() {
             if let Some(cache) = self.imp().cache.get() {
-                if let Some(album) = song.get_album() {
-                    // Should have been scheduled by queue updates.
-                    return cache.load_cached_album_art(album, thumbnail, false);
-                }
+                return cache.load_cached_cover(song.get_info(), thumbnail, false);
             }
             return None;
         }
@@ -1211,8 +1196,8 @@ impl Player {
             if let Some(album) = song.get_album() {
                 // Always read from disk
                 Some(
-                    cache.get_path_for(&crate::meta_providers::MetadataType::AlbumArt(
-                        &album.uri,
+                    get_path_for(cache.get_albumart_path(), &crate::meta_providers::MetadataType::Cover(
+                        &song.get_uri(),
                         thumbnail,
                     )),
                 )

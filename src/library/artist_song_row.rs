@@ -165,7 +165,7 @@ impl ArtistSongRow {
     fn update_thumbnail(&self, info: Option<&AlbumInfo>, cache: Rc<Cache>, schedule: bool) {
         if let Some(album) = info {
             // Should already have been downloaded by the album view
-            if let Some(tex) = cache.load_cached_album_art(album, true, schedule) {
+            if let Some(tex) = cache.load_cached_cover(album, true, schedule) {
                 self.imp().thumbnail.set_paintable(Some(&tex));
                 return;
             }

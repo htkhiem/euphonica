@@ -63,7 +63,7 @@ enum AsyncClientMessage {
 #[derive(Debug)]
 pub enum BackgroundTask {
     Update,
-    DownloadAlbumArt(AlbumInfo, PathBuf, PathBuf), // folder-level URI
+    DownloadCover(SongInfo, PathBuf), // Track-level URI + cache basepath
     FetchFolderContents(String), // Gradually get all inodes in folder at path
     FetchAlbums,                 // Gradually get all albums
     FetchAlbumSongs(String),     // Get songs of album with given tag
@@ -152,14 +152,14 @@ mod background {
 
                     if let (Ok(_), Ok(_)) = (hires.save(path), thumb.save(thumbnail_path)) {
                         sender_to_cache
-                            .send_blocking(ProviderMessage::AlbumArtAvailable(uri))
+                            .send_blocking(ProviderMessage::CoverAvailable(uri))
                             .expect("Cannot notify main cache of album art download result.");
                     }
                 }
             } else {
                 // Fetch from local sources instead.
                 sender_to_cache
-                    .send_blocking(ProviderMessage::AlbumArtNotAvailable(key))
+                    .send_blocking(ProviderMessage::CoverNotAvailable(key))
                     .expect("Album art not available from MPD, but cannot notify cache of this.");
             }
         } else {
@@ -513,7 +513,7 @@ impl MpdWrapper {
                         BackgroundTask::Update => {
                             background::update_mpd_database(&mut client, &sender_to_fg)
                         }
-                        BackgroundTask::DownloadAlbumArt(key, path, thumbnail_path) => {
+                        BackgroundTask::DownloadCover(key, path, thumbnail_path) => {
                             background::download_album_art(
                                 &mut client,
                                 &meta_sender,
