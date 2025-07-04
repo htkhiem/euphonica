@@ -28,7 +28,7 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use crate::{common::SongInfo, meta_providers::{get_provider_with_priority, models::{ArtistMeta, Lyrics}}};
+use crate::{common::SongInfo, meta_providers::{get_provider_with_priority, models::{ArtistMeta, Lyrics}}, utils::strip_filename_linux};
 use crate::{
     client::{BackgroundTask, MpdWrapper},
     common::{AlbumInfo, ArtistInfo},
@@ -42,6 +42,33 @@ use super::{
     CacheState,
     sqlite::LocalMetaDb
 };
+
+pub fn get_path_for(base_path: &PathBuf, content: &MetadataType) -> PathBuf {
+    let mut path = base_path.clone();
+    match content {
+        // Returns the full-resolution path.
+        // Do not include filename in URI.
+        MetadataType::Cover(uri, thumbnail) => {
+            let encoded = URL_SAFE.encode(uri);
+            if *thumbnail {
+                path.push(encoded + "_thumb.png");
+            } else {
+                path.push(encoded + ".png");
+            }
+            path
+        }
+        MetadataType::ArtistAvatar(name, thumbnail) => {
+            let hashed = URL_SAFE.encode(name);
+            if *thumbnail {
+                path.push(hashed + "_thumb.png");
+            } else {
+                path.push(hashed + ".png");
+            }
+            path
+        }
+        _ => unreachable!(),
+    }
+}
 
 // In-memory image cache. Declared here to ease usage between threads as Stretto
 // is already internally-mutable.
@@ -265,7 +292,7 @@ impl Cache {
                                 }
                             )).await;
                         },
-                        ProviderMessage::AlbumArt(key, path, thumbnail_path) => {
+                        ProviderMessage::Cover(key, path, thumbnail_path) => {
                             let _ = gio::spawn_blocking(clone!(
                                 #[strong]
                                 fg_sender,
@@ -281,7 +308,7 @@ impl Cache {
                                                         hires.save(&path),
                                                         thumbnail.save(&thumbnail_path)
                                                     ) {
-                                                        let _ = fg_sender.send_blocking(ProviderMessage::AlbumArtAvailable(key.uri));
+                                                        let _ = fg_sender.send_blocking(ProviderMessage::CoverAvailable(key.uri));
                                                     }
                                                 }
                                             }
@@ -333,30 +360,30 @@ impl Cache {
                     ProviderMessage::ArtistMetaAvailable(name) => {
                         this.on_artist_meta_downloaded(&name)
                     }
-                    ProviderMessage::AlbumArtAvailable(folder_uri) => {
+                    ProviderMessage::CoverAvailable(folder_uri) => { 
                         this.on_album_art_downloaded(&folder_uri)
                     }
                     ProviderMessage::ClearAlbumArt(folder_uri) => {
                         this.on_album_art_cleared(&folder_uri);
                     }
-                    ProviderMessage::AlbumArtNotAvailable(key) => {
+                    ProviderMessage::CoverNotAvailable(key) => { 
                         let folder_uri = &key.uri;
                         println!(
                             "MPD does not have album art for {}, fetching remotely...",
                             folder_uri
                         );
                         // Fill out metadata before attempting to fetch album art from external sources.
-                        let _ = this.bg_sender.send_blocking(ProviderMessage::AlbumMeta(
-                            key.clone(),
-                        ));
-                        let path = self.get_path_for(&MetadataType::AlbumArt(&folder_uri, false));
-                        let thumbnail_path =
-                            self.get_path_for(&MetadataType::AlbumArt(&folder_uri, true));
-                        let _ = this.bg_sender.send_blocking(ProviderMessage::AlbumArt(
-                            key,
-                            path,
-                            thumbnail_path,
-                        ));
+                        if let Some(album) = key.album.as_ref() {
+                            let _ = this.bg_sender.send_blocking(ProviderMessage::AlbumMeta(album.clone()));
+                            let path = self.get_path_for(&MetadataType::Cover(&folder_uri, false)); 
+                            let thumbnail_path =
+                                self.get_path_for(&MetadataType::Cover(&folder_uri, true));
+                            let _ = this.bg_sender.send_blocking(ProviderMessage::Cover(
+                                key,
+                                path,
+                                thumbnail_path,
+                            ));
+                        }
                     }
                     ProviderMessage::ArtistAvatarAvailable(name) => {
                         this.on_artist_avatar_downloaded(&name)
@@ -412,125 +439,136 @@ impl Cache {
         self.mpd_client.get().unwrap().clone()
     }
 
-    pub fn get_path_for(&self, content_type: &MetadataType) -> PathBuf {
-        match content_type {
-            // Returns the full-resolution path.
-            // Do not include filename in URI.
-            MetadataType::AlbumArt(folder_uri, thumbnail) => {
-                let encoded = URL_SAFE.encode(folder_uri);
-
-                let mut path = self.albumart_path.clone();
-                if *thumbnail {
-                    path.push(encoded + "_thumb.png");
-                } else {
-                    path.push(encoded + ".png");
-                }
-                path
-            }
-            MetadataType::ArtistAvatar(name, thumbnail) => {
-                let hashed = URL_SAFE.encode(name);
-
-                let mut path = self.avatar_path.clone();
-                if *thumbnail {
-                    path.push(hashed + "_thumb.png");
-                } else {
-                    path.push(hashed + ".png");
-                }
-                path
-            }
-            _ => unreachable!(),
-        }
+    pub fn get_cached_cover_path(&self, song: &SongInfo, thumbnail: bool) -> Option<PathBuf> {
+        // TODO
     }
 
-    /// This is a public method to allow other controllers to get cached album arts for
+    /// This is a public method to allow other controllers to get cached cover arts for
     /// specific songs/albums directly if possible.
     /// Without this, they can only get the textures via signals, which have overhead.
-    pub fn load_cached_album_art(
+    pub fn load_cached_cover(
         &self,
-        album: &AlbumInfo,
+        song: &SongInfo,
         thumbnail: bool,
         schedule: bool,
     ) -> Option<Texture> {
-        let key = (format!("uri:{}", &album.uri), thumbnail);
+        // Try track-specific cover first, then folder-wide cover
+        let key = (format!("uri:{}", &song.uri), thumbnail);
+        let mut res: Option<Texture> = None;
         if let Some(tex) = IMAGE_CACHE.get(&key) {
             // Cloning GObjects is cheap since they're just references
-            return Some(tex.value().clone());
+            res = Some(tex.value().clone());
         }
-        // If missed, try loading from disk into cache or fetch remotely
-        if schedule {
-            self.ensure_cached_album_art(album, thumbnail);
+        else if let Some(album) = song.album.as_ref() {
+            let key = (format!("uri:{}", &album.uri), thumbnail);
+            if let Some(tex) = IMAGE_CACHE.get(&key) {
+                res = Some(tex.value().clone());
+            }
         }
-        None
+        if res.is_none() && schedule {
+            // If missed, try loading from disk into cache or fetch remotely
+            self.find_cover(song, thumbnail);
+        }
+        res
+    }
+
+    fn spawn_load_image(&self, path: PathBuf, stretto_prefix: &str, respond_msg: ProviderMessage) {
+        let stretto_key = (format!("{}:{}", stretto_prefix, &folder_uri), thumbnail);
+        gio::spawn_blocking(move || {
+            if let Ok(tex) = Texture::from_filename(path) {
+                IMAGE_CACHE.insert(
+                    stretto_key,
+                    tex.clone(),
+                    if thumbnail { 1 } else { 16 },
+                );
+                IMAGE_CACHE.wait().unwrap();
+                let _ =
+                    fg_sender.send_blocking(ProviderMessage::CoverAvailable(folder_uri));
+            }
+        });
     }
 
     /// Convenience method to check whether album art for a given album is locally available,
     /// and if not, queue its downloading from MPD.
     /// If MPD doesn't have one locally, we'll try fetching from all the enabled metadata providers.
-    pub fn ensure_cached_album_art(&self, album: &AlbumInfo, thumbnail: bool) {
-        let folder_uri = &album.uri;
-        let stretto_key = (format!("uri:{}", &folder_uri), thumbnail);
-        if let Some(_) = IMAGE_CACHE.get(&stretto_key) {
-            // Already cached. Simply notify UI.
-            self.on_album_art_downloaded(&folder_uri);
-            return;
-        }
+    pub fn find_cover(&self, song: &SongInfo, thumbnail: bool) {
+        // let folder_uri = &song.uri;
+        // if let Some(_) = IMAGE_CACHE.get(&stretto_key) {
+        //     // Already cached. Simply notify UI.
+        //     self.on_album_art_downloaded(&folder_uri);
+        //     return;
+        // }
         // Not in memory => try loading from disk
-        let thumbnail_path = self.get_path_for(&MetadataType::AlbumArt(&folder_uri, true));
-        let path = self.get_path_for(&MetadataType::AlbumArt(&folder_uri, false));
         let bg_sender = self.bg_sender.clone();
         let fg_sender = self.fg_sender.clone();
         let settings = settings_manager().child("client");
         // First, try to load from disk. Do this using the threadpool to avoid blocking UI.
-        let path_to_use = if thumbnail { &thumbnail_path } else { &path };
-        if path_to_use.exists() {
-            let path_to_use = path_to_use.to_owned();
-            let folder_uri = folder_uri.to_owned();
+        // Prefer embedded art to folder art.
+        let cover_path = get_path_for(&self.albumart_path, &MetadataType::Cover(&song.uri, thumbnail));
+
+        if cover_path.exists() {
+            let uri = song.uri.to_owned();
             gio::spawn_blocking(move || {
-                if let Ok(tex) = Texture::from_filename(path_to_use) {
+                if let Ok(tex) = Texture::from_filename(cover_path) {
                     IMAGE_CACHE.insert(
-                        stretto_key,
+                        (format!("uri:{}", &uri), thumbnail),
                         tex.clone(),
                         if thumbnail { 1 } else { 16 },
                     );
                     IMAGE_CACHE.wait().unwrap();
                     let _ =
-                        fg_sender.send_blocking(ProviderMessage::AlbumArtAvailable(folder_uri));
+                        fg_sender.send_blocking(ProviderMessage::CoverAvailable(uri));
                 }
             });
         }
-        // Not on disk either. Try downloading it.
-        else if settings.boolean("mpd-download-album-art") {
-            self.mpd_client().queue_background(
-                BackgroundTask::DownloadAlbumArt(
-                    album.clone(),
-                    path,
-                    thumbnail_path,
-                ),
-                false,
-            );
-        }
-        // Not allowed to load from MPD. Check external providers
         else {
+            let folder_uri = strip_filename_linux(&song.uri).to_owned();
+            let cover_path = get_path_for(&self.albumart_path, &MetadataType::Cover(&folder_uri, thumbnail));
+            if cover_path.exists() {
+                gio::spawn_blocking(move || {
+                    if let Ok(tex) = Texture::from_filename(cover_path) {
+                        IMAGE_CACHE.insert(
+                            (format!("uri:{}", &folder_uri), thumbnail),
+                            tex.clone(),
+                            if thumbnail { 1 } else { 16 },
+                        );
+                        IMAGE_CACHE.wait().unwrap();
+                        let _ =
+                            fg_sender.send_blocking(ProviderMessage::CoverAvailable(folder_uri));
+                    }
+                });
+            }
+            else if settings.boolean("mpd-download-album-art") {
+                self.mpd_client().queue_background(
+                    BackgroundTask::DownloadCover( 
+                        song.clone(),
+                        self.albumart_path.clone()
+                    ),
+                    false,
+                );
+            }
+            // Not allowed to load from MPD. Check external providers
             // For this we'll need to have album metas ready,
             // so schedule that first.
-            let _ = bg_sender.send_blocking(ProviderMessage::AlbumMeta(
-                album.clone(),
-            ));
-            let _ = bg_sender.send_blocking(ProviderMessage::AlbumArt(
-                album.clone(),
-                path,
-                thumbnail_path,
-            ));
+            else if let Some(album) = song.album.as_ref() {
+                let _ = bg_sender.send_blocking(ProviderMessage::AlbumMeta(
+                    album.clone(),
+                ));
+                let _ = bg_sender.send_blocking(ProviderMessage::Cover(
+                    song.clone(),
+                    self.albumart_path.clone()
+                ));
+            }
         }
     }
 
     /// Load the specified image, resize it, load into cache then send a message to frontend.
     /// All of the above must be done in the background to avoid blocking UI.
-    pub fn set_album_art(&self, folder_uri: &str, path: &str) {
+    pub fn set_cover(&self, folder_uri: &str, path: &str) {
         let fg_sender = self.fg_sender.clone();
         let folder_uri = folder_uri.to_owned();
-        let hires_path = self.get_path_for(&MetadataType::AlbumArt(&folder_uri, false));
-        let thumbnail_path = self.get_path_for(&MetadataType::AlbumArt(&folder_uri, true));
+        let hires_path = get_path_for(&self.albumart_path, &MetadataType::Cover(&folder_uri, false));
+        let thumbnail_path = get_path_for(&self.albumart_path, &MetadataType::Cover(&folder_uri, true));
         // Assume ashpd always return filesystem spec
         let filepath = urlencoding::decode(if path.starts_with("file://") {
             &path[7..]
@@ -556,7 +594,7 @@ impl Cache {
                         1
                     );
                     IMAGE_CACHE.wait().unwrap();
-                    let _ = fg_sender.send_blocking(ProviderMessage::AlbumArtAvailable(folder_uri));
+                    let _ = fg_sender.send_blocking(ProviderMessage::CoverAvailable(folder_uri));
                 }
             }
             else {
@@ -568,11 +606,11 @@ impl Cache {
     /// Evict the album art from cache and delete from cache folder on disk.
     /// This does not by itself yeet the art from memory (UI elements will still hold refs to it).
     /// We'll need to signal to these elements to clear themselves.
-    pub fn clear_album_art(&self, folder_uri: &str) {
+    pub fn clear_cover(&self, folder_uri: &str) {
         let fg_sender = self.fg_sender.clone();
         let folder_uri = folder_uri.to_owned();
-        let hires_path = self.get_path_for(&MetadataType::AlbumArt(&folder_uri, false));
-        let thumbnail_path = self.get_path_for(&MetadataType::AlbumArt(&folder_uri, true));
+        let hires_path = get_path_for(&self.albumart_path, &MetadataType::Cover(&folder_uri, false));
+        let thumbnail_path = get_path_for(&self.albumart_path, &MetadataType::Cover(&folder_uri, true));
 
         gio::spawn_blocking(move || {
             let _ = std::fs::remove_file(hires_path);
@@ -643,23 +681,6 @@ impl Cache {
         });
     }
 
-    // TODO: GUI for downloading album arts from external providers.
-    /// Batched version of ensure_cached_album_art.
-    /// The list of folder-level URIs will be deduplicated internally to avoid fetching the same
-    /// album art multiple times. This is useful for fetching album arts of songs in the queue,
-    /// for example.
-    /// From MPD, this method only supports downloading thumbnails. Remote sources always provide
-    /// both sizes.
-    pub fn ensure_cached_album_arts(&self, albums: &[&AlbumInfo]) {
-        let mut seen = FxHashSet::default();
-        for album in albums.iter() {
-            let folder_uri = &album.uri;
-            if seen.insert(folder_uri.to_owned()) {
-                // println!("ensure_cached_album_arts ({}): calling ensure_cached_album_art", &folder_uri);
-                self.ensure_cached_album_art(album, false);
-            }
-        }
-    }
 
     pub fn load_cached_album_meta(&self, album: &AlbumInfo) -> Option<models::AlbumMeta> {
         // Check whether we have this album cached

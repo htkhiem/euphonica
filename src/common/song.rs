@@ -380,7 +380,7 @@ impl Song {
         }
 
         // Album art, if available
-        let thumbnail_path = cache.get_path_for(&MetadataType::AlbumArt(
+        let thumbnail_path = cache.get_path_for(&MetadataType::Cover(
             strip_filename_linux(self.get_uri()),
             true,
         ));

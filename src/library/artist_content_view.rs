@@ -729,7 +729,7 @@ impl ArtistContentView {
 
     fn add_album(&self, album: Album) {
         self.imp().album_list.append(&album);
-        self.imp().cache.get().unwrap().ensure_cached_album_art(album.get_info(), false);
+        // self.imp().cache.get().unwrap().ensure_cached_cover(album.get_info(), false);
         self.imp()
             .album_count
             .set_label(&self.imp().album_list.n_items().to_string());
@@ -749,7 +749,7 @@ impl ArtistContentView {
             .collect();
         // Might queue downloads, depending on user settings, but will not
         // actually load anything into memory just yet.
-        self.imp().cache.get().unwrap().ensure_cached_album_arts(&infos);
+        self.imp().cache.get().unwrap().ensure_cached_covers(&infos);
         self.imp()
             .song_count
             .set_label(&self.imp().song_list.n_items().to_string());
