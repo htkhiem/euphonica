@@ -3,171 +3,26 @@ extern crate rusqlite;
 
 use std::{io::Cursor, path::Path};
 
+use once_cell::sync::Lazy;
 use r2d2_sqlite::SqliteConnectionManager;
 use rusqlite::{params, Error as SqliteError, Result, Row};
 use time::OffsetDateTime;
 
-use crate::{common::{AlbumInfo, ArtistInfo, SongInfo}, meta_providers::models::{AlbumMeta, ArtistMeta, Lyrics, LyricsParseError}};
+use crate::{
+    common::{AlbumInfo, ArtistInfo, SongInfo},
+    meta_providers::models::{AlbumMeta, ArtistMeta, Lyrics, LyricsParseError},
+};
 
-#[derive(Debug)]
-pub enum Error {
-    BytesToDocError,
-    DocToMetaError,
-    MetaToDocError,
-    DocToBytesError,
-    DbError(SqliteError),
-    InsufficientKey
-}
+use super::controller::get_doc_cache_path;
 
-pub struct AlbumMetaRow {
-    folder_uri: String,
-    mbid: Option<String>,
-    title: String,
-    artist: Option<String>,
-    last_modified: OffsetDateTime,
-    data: Vec<u8>, // BSON
-}
-
-impl TryInto<AlbumMeta> for AlbumMetaRow {
-    type Error = Error;
-    fn try_into(self) -> Result<AlbumMeta, Self::Error> {
-        let mut reader = Cursor::new(self.data);
-        bson::from_document(
-            bson::Document::from_reader(&mut reader).map_err(|_| Error::BytesToDocError)?,
-        )
-            .map_err(|_| Error::DocToMetaError)
-    }
-}
-
-impl TryFrom<&Row<'_>> for AlbumMetaRow {
-    type Error = SqliteError;
-    fn try_from(row: &Row) -> std::result::Result<Self, Self::Error> {
-        Ok(Self {
-            folder_uri: row.get(0)?,
-            mbid: row.get(1)?,
-            title: row.get(2)?,
-            artist: row.get(3)?,
-            last_modified: row.get(4)?,
-            data: row.get(5)?
-        })
-    }
-}
-
-impl AlbumMetaRow {
-    pub fn new(
-        folder_uri: String,
-        mbid: Option<String>,
-        title: String,
-        artist: Option<String>,
-        last_modified: OffsetDateTime,
-        meta: &AlbumMeta,
-    ) -> Result<Self, Error> {
-        let res = Self {
-            folder_uri,
-            mbid,
-            title,
-            artist,
-            last_modified,
-            data: bson::to_vec(&bson::to_document(meta).map_err(|_| Error::MetaToDocError)?)
-                .map_err(|_| Error::DocToBytesError)?,
-        };
-        Ok(res)
-    }
-}
-
-pub struct ArtistMetaRow {
-    name: String,
-    mbid: Option<String>,
-    last_modified: OffsetDateTime,
-    data: Vec<u8>, // BSON
-}
-
-impl TryInto<ArtistMeta> for ArtistMetaRow {
-    type Error = Error;
-    fn try_into(self) -> Result<ArtistMeta, Self::Error> {
-        let mut reader = Cursor::new(self.data);
-        bson::from_document(
-            bson::Document::from_reader(&mut reader).map_err(|_| Error::BytesToDocError)?,
-        )
-            .map_err(|_| Error::DocToMetaError)
-    }
-}
-
-impl ArtistMetaRow {
-    pub fn new(
-        name: String,
-        mbid: Option<String>,
-        last_modified: OffsetDateTime,
-        meta: &ArtistMeta,
-    ) -> Result<Self, Error> {
-        let res = Self {
-            name,
-            mbid,
-            last_modified,
-            data: bson::to_vec(&bson::to_document(meta).map_err(|_| Error::MetaToDocError)?)
-                .map_err(|_| Error::DocToBytesError)?,
-        };
-        Ok(res)
-    }
-}
-
-impl TryFrom<&Row<'_>> for ArtistMetaRow {
-    type Error = SqliteError;
-    fn try_from(row: &Row) -> std::result::Result<Self, Self::Error> {
-        Ok(Self {
-            name: row.get(0)?,
-            mbid: row.get(1)?,
-            last_modified: row.get(2)?,
-            data: row.get(3)?
-        })
-    }
-}
-
-pub struct LyricsRow {
-    uri: String,
-    lyrics: String,
-    synced: bool,
-    last_modified: OffsetDateTime
-}
-
-impl TryInto<Lyrics> for LyricsRow {
-    type Error = LyricsParseError;
-    fn try_into(self) -> std::result::Result<Lyrics, Self::Error> {
-        if self.synced {
-            Ok(Lyrics::try_from_synced_lrclib_str(&self.lyrics)?)
-        }
-        else {
-            Ok(Lyrics::try_from_plain_lrclib_str(&self.lyrics)?)
-        }
-    }
-}
-
-impl TryFrom<&Row<'_>> for LyricsRow {
-    type Error = SqliteError;
-    fn try_from(row: &Row) -> std::result::Result<Self, Self::Error> {
-        Ok(Self {
-            uri: row.get(0)?,
-            lyrics: row.get(1)?,
-            synced: row.get(2)?,
-            last_modified: row.get(3)?
-        })
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct LocalMetaDb {
-    pool: r2d2::Pool<SqliteConnectionManager>
-}
-
-impl LocalMetaDb {
-    /// Connect to the local metadata database, or create an empty one if one
-    /// does not exist yet.
-    pub fn new<P: AsRef<Path>>(path: P) -> Result<Self, SqliteError> {
-        let manager = SqliteConnectionManager::file(path);
-        let pool = r2d2::Pool::new(manager).unwrap();
-        // let conn = Connection::open(path)?;
-        // Init schema & indices
-        pool.get().unwrap().execute_batch(
+static SQLITE_POOL: Lazy<r2d2::Pool<SqliteConnectionManager>> = Lazy::new(|| {
+    let manager = SqliteConnectionManager::file(get_doc_cache_path());
+    let pool = r2d2::Pool::new(manager).unwrap();
+    // let conn = Connection::open(path)?;
+    // Init schema & indices
+    pool.get()
+        .unwrap()
+        .execute_batch(
             "begin;
 create table if not exists `albums` (
     `folder_uri` VARCHAR not null unique,
@@ -208,156 +63,357 @@ create unique index if not exists `artist_mbid` on `artists` (
 create unique index if not exists `artist_name` on `artists` (`name`);
 create unique index if not exists `song_uri` on `songs` (`uri`);
 end;
+
+create table if not exists `images` (
+    `key` VARCHAR not null unique,
+    `is_thumbnail` INTEGER not null,
+    `filename` VARCHAR not null,
+    `last_modified` DATETIME not null,
+    primary key (`filename`)
+);
+create unique index if not exists `image_key` on `images` (
+    `key`,
+    `resolution`
+);
 ",
-        )?;
+        )
+        .expect("Unable to init metadata SQLite DB");
+    pool
+});
 
-        Ok(Self {pool})
+#[derive(Debug)]
+pub enum Error {
+    BytesToDocError,
+    DocToMetaError,
+    MetaToDocError,
+    DocToBytesError,
+    DbError(SqliteError),
+    InsufficientKey,
+}
+
+pub struct AlbumMetaRow {
+    folder_uri: String,
+    mbid: Option<String>,
+    title: String,
+    artist: Option<String>,
+    last_modified: OffsetDateTime,
+    data: Vec<u8>, // BSON
+}
+
+impl TryInto<AlbumMeta> for AlbumMetaRow {
+    type Error = Error;
+    fn try_into(self) -> Result<AlbumMeta, Self::Error> {
+        let mut reader = Cursor::new(self.data);
+        bson::from_document(
+            bson::Document::from_reader(&mut reader).map_err(|_| Error::BytesToDocError)?,
+        )
+        .map_err(|_| Error::DocToMetaError)
     }
+}
 
-    pub fn find_album_meta(&self, album: &AlbumInfo) -> Result<Option<AlbumMeta>, Error> {
-        let query: Result<AlbumMetaRow, SqliteError>;
-        let conn = self.pool.get().unwrap();
-        if let Some(mbid) = album.mbid.as_deref() {
-            query = conn
-                .prepare("select * from albums where mbid = ?1")
-                .unwrap().query_row(params![mbid], |r| { AlbumMetaRow::try_from(r) });
-        }
-        else if let (title, Some(artist)) = (&album.title, album.get_artist_tag()) {
-            query = conn
-                .prepare("select * from albums where title = ?1 and artist = ?2")
-                .unwrap().query_row(params![title, artist], |r| { AlbumMetaRow::try_from(r) });
-        }
-        else { return Ok(None); }
-        match query {
-            Ok(row) => {
-                let res = row.try_into()?;
-                return Ok(Some(res));
-            }
-            Err(SqliteError::QueryReturnedNoRows) => {
-                return Ok(None);
-            }
-            Err(e) => {return Err(Error::DbError(e));}
+impl TryFrom<&Row<'_>> for AlbumMetaRow {
+    type Error = SqliteError;
+    fn try_from(row: &Row) -> std::result::Result<Self, Self::Error> {
+        Ok(Self {
+            folder_uri: row.get(0)?,
+            mbid: row.get(1)?,
+            title: row.get(2)?,
+            artist: row.get(3)?,
+            last_modified: row.get(4)?,
+            data: row.get(5)?,
+        })
+    }
+}
+
+impl AlbumMetaRow {
+    pub fn new(
+        folder_uri: String,
+        mbid: Option<String>,
+        title: String,
+        artist: Option<String>,
+        last_modified: OffsetDateTime,
+        meta: &AlbumMeta,
+    ) -> Result<Self, Error> {
+        let res = Self {
+            folder_uri,
+            mbid,
+            title,
+            artist,
+            last_modified,
+            data: bson::to_vec(&bson::to_document(meta).map_err(|_| Error::MetaToDocError)?)
+                .map_err(|_| Error::DocToBytesError)?,
+        };
+        Ok(res)
+    }
+}
+
+pub struct ArtistMetaRow {
+    name: String,
+    mbid: Option<String>,
+    last_modified: OffsetDateTime,
+    data: Vec<u8>, // BSON
+}
+
+impl TryInto<ArtistMeta> for ArtistMetaRow {
+    type Error = Error;
+    fn try_into(self) -> Result<ArtistMeta, Self::Error> {
+        let mut reader = Cursor::new(self.data);
+        bson::from_document(
+            bson::Document::from_reader(&mut reader).map_err(|_| Error::BytesToDocError)?,
+        )
+        .map_err(|_| Error::DocToMetaError)
+    }
+}
+
+impl ArtistMetaRow {
+    pub fn new(
+        name: String,
+        mbid: Option<String>,
+        last_modified: OffsetDateTime,
+        meta: &ArtistMeta,
+    ) -> Result<Self, Error> {
+        let res = Self {
+            name,
+            mbid,
+            last_modified,
+            data: bson::to_vec(&bson::to_document(meta).map_err(|_| Error::MetaToDocError)?)
+                .map_err(|_| Error::DocToBytesError)?,
+        };
+        Ok(res)
+    }
+}
+
+impl TryFrom<&Row<'_>> for ArtistMetaRow {
+    type Error = SqliteError;
+    fn try_from(row: &Row) -> std::result::Result<Self, Self::Error> {
+        Ok(Self {
+            name: row.get(0)?,
+            mbid: row.get(1)?,
+            last_modified: row.get(2)?,
+            data: row.get(3)?,
+        })
+    }
+}
+
+pub struct LyricsRow {
+    uri: String,
+    lyrics: String,
+    synced: bool,
+    last_modified: OffsetDateTime,
+}
+
+impl TryInto<Lyrics> for LyricsRow {
+    type Error = LyricsParseError;
+    fn try_into(self) -> std::result::Result<Lyrics, Self::Error> {
+        if self.synced {
+            Ok(Lyrics::try_from_synced_lrclib_str(&self.lyrics)?)
+        } else {
+            Ok(Lyrics::try_from_plain_lrclib_str(&self.lyrics)?)
         }
     }
+}
 
-    pub fn find_artist_meta(&self, artist: &ArtistInfo) -> Result<Option<ArtistMeta>, Error> {
-        let query: Result<ArtistMetaRow, SqliteError>;
-        let conn = self.pool.get().unwrap();
-        if let Some(mbid) = artist.mbid.as_deref() {
-            query = conn
-                .prepare("select * from artists where mbid = ?1")
-                .unwrap().query_row(params![mbid], |r| { ArtistMetaRow::try_from(r) });
+impl TryFrom<&Row<'_>> for LyricsRow {
+    type Error = SqliteError;
+    fn try_from(row: &Row) -> std::result::Result<Self, Self::Error> {
+        Ok(Self {
+            uri: row.get(0)?,
+            lyrics: row.get(1)?,
+            synced: row.get(2)?,
+            last_modified: row.get(3)?,
+        })
+    }
+}
+
+pub fn find_album_meta(album: &AlbumInfo) -> Result<Option<AlbumMeta>, Error> {
+    let query: Result<AlbumMetaRow, SqliteError>;
+    let conn = SQLITE_POOL.get().unwrap();
+    if let Some(mbid) = album.mbid.as_deref() {
+        query = conn
+            .prepare("select * from albums where mbid = ?1")
+            .unwrap()
+            .query_row(params![mbid], |r| AlbumMetaRow::try_from(r));
+    } else if let (title, Some(artist)) = (&album.title, album.get_artist_tag()) {
+        query = conn
+            .prepare("select * from albums where title = ?1 and artist = ?2")
+            .unwrap()
+            .query_row(params![title, artist], |r| AlbumMetaRow::try_from(r));
+    } else {
+        return Ok(None);
+    }
+    match query {
+        Ok(row) => {
+            let res = row.try_into()?;
+            return Ok(Some(res));
         }
-        else {
-            query = conn
-                .prepare("select * from artists where name = ?1")
-                .unwrap().query_row(params![&artist.name], |r| { ArtistMetaRow::try_from(r) });
+        Err(SqliteError::QueryReturnedNoRows) => {
+            return Ok(None);
         }
-        match query {
-            Ok(row) => {
-                let res = row.try_into()?;
-                return Ok(Some(res));
-            }
-            Err(SqliteError::QueryReturnedNoRows) => {
-                return Ok(None);
-            }
-            Err(e) => {return Err(Error::DbError(e));}
+        Err(e) => {
+            return Err(Error::DbError(e));
         }
     }
+}
 
-    pub fn write_album_meta(&self, album: &AlbumInfo, meta: &AlbumMeta) -> Result<(), Error> {
-        let mut conn = self.pool.get().unwrap();
-        let tx = conn.transaction().map_err(|e| Error::DbError(e))?;
-        if let Some(mbid) = album.mbid.as_deref() {
-            tx.execute(
-                "delete from albums where mbid = ?1",
-                params![mbid]
-            ).map_err(|e| Error::DbError(e))?;
+pub fn find_artist_meta(artist: &ArtistInfo) -> Result<Option<ArtistMeta>, Error> {
+    let query: Result<ArtistMetaRow, SqliteError>;
+    let conn = SQLITE_POOL.get().unwrap();
+    if let Some(mbid) = artist.mbid.as_deref() {
+        query = conn
+            .prepare("select * from artists where mbid = ?1")
+            .unwrap()
+            .query_row(params![mbid], |r| ArtistMetaRow::try_from(r));
+    } else {
+        query = conn
+            .prepare("select * from artists where name = ?1")
+            .unwrap()
+            .query_row(params![&artist.name], |r| ArtistMetaRow::try_from(r));
+    }
+    match query {
+        Ok(row) => {
+            let res = row.try_into()?;
+            return Ok(Some(res));
         }
-        else if let (title, Some(artist)) = (&album.title, album.get_artist_tag()) {
-            tx.execute(
-                "delete from albums where title = ?1 and artist = ?2",
-                params![title, artist]
-            ).map_err(|e| Error::DbError(e))?;
+        Err(SqliteError::QueryReturnedNoRows) => {
+            return Ok(None);
         }
-        else {
-            tx.rollback().map_err(|e| Error::DbError(e))?;
-            return Err(Error::InsufficientKey);
+        Err(e) => {
+            return Err(Error::DbError(e));
         }
+    }
+}
+
+pub fn write_album_meta(album: &AlbumInfo, meta: &AlbumMeta) -> Result<(), Error> {
+    let mut conn = SQLITE_POOL.get().unwrap();
+    let tx = conn.transaction().map_err(|e| Error::DbError(e))?;
+    if let Some(mbid) = album.mbid.as_deref() {
+        tx.execute("delete from albums where mbid = ?1", params![mbid])
+            .map_err(|e| Error::DbError(e))?;
+    } else if let (title, Some(artist)) = (&album.title, album.get_artist_tag()) {
         tx.execute(
-            "insert into albums (folder_uri, mbid, title, artist, last_modified, data) values (?1,?2,?3,?4,?5,?6)",
-            params![
-                &album.uri,
-                &album.mbid,
-                &album.title,
-                &album.get_artist_tag(),
-                OffsetDateTime::now_utc(),
-                bson::to_vec(&bson::to_document(meta).map_err(|_| Error::MetaToDocError)?).map_err(|_| Error::DocToBytesError)?
-            ]
-        ).map_err(|e| Error::DbError(e))?;
-        tx.commit().map_err(|e| Error::DbError(e))?;
-        Ok(())
+            "delete from albums where title = ?1 and artist = ?2",
+            params![title, artist],
+        )
+        .map_err(|e| Error::DbError(e))?;
+    } else {
+        tx.rollback().map_err(|e| Error::DbError(e))?;
+        return Err(Error::InsufficientKey);
     }
+    tx.execute(
+        "insert into albums (folder_uri, mbid, title, artist, last_modified, data) values (?1,?2,?3,?4,?5,?6)",
+        params![
+            &album.uri,
+            &album.mbid,
+            &album.title,
+            &album.get_artist_tag(),
+            OffsetDateTime::now_utc(),
+            bson::to_vec(&bson::to_document(meta).map_err(|_| Error::MetaToDocError)?).map_err(|_| Error::DocToBytesError)?
+        ]
+    ).map_err(|e| Error::DbError(e))?;
+    tx.commit().map_err(|e| Error::DbError(e))?;
+    Ok(())
+}
 
-    pub fn write_artist_meta(&self, artist: &ArtistInfo, meta: &ArtistMeta) -> Result<(), Error> {
-        let mut conn = self.pool.get().unwrap();
-        let tx = conn.transaction().map_err(|e| Error::DbError(e))?;
-        if let Some(mbid) = artist.mbid.as_deref() {
-            tx.execute(
-                "delete from artists where mbid = ?1",
-                params![mbid]
-            ).map_err(|e| Error::DbError(e))?;
-        }
-        else {
-            tx.execute(
-                "delete from artists where name = ?1",
-                params![&artist.name]
-            ).map_err(|e| Error::DbError(e))?;
-        }
-        tx.execute(
-            "insert into artists (name, mbid, last_modified, data) values (?1,?2,?3,?4)",
-            params![
-                &artist.name,
-                &artist.mbid,
-                OffsetDateTime::now_utc(),
-                bson::to_vec(&bson::to_document(meta).map_err(|_| Error::MetaToDocError)?).map_err(|_| Error::DocToBytesError)?
-            ]
-        ).map_err(|e| Error::DbError(e))?;
-        tx.commit().map_err(|e| Error::DbError(e))?;
-        Ok(())
+pub fn write_artist_meta(artist: &ArtistInfo, meta: &ArtistMeta) -> Result<(), Error> {
+    let mut conn = SQLITE_POOL.get().unwrap();
+    let tx = conn.transaction().map_err(|e| Error::DbError(e))?;
+    if let Some(mbid) = artist.mbid.as_deref() {
+        tx.execute("delete from artists where mbid = ?1", params![mbid])
+            .map_err(|e| Error::DbError(e))?;
+    } else {
+        tx.execute("delete from artists where name = ?1", params![&artist.name])
+            .map_err(|e| Error::DbError(e))?;
     }
+    tx.execute(
+        "insert into artists (name, mbid, last_modified, data) values (?1,?2,?3,?4)",
+        params![
+            &artist.name,
+            &artist.mbid,
+            OffsetDateTime::now_utc(),
+            bson::to_vec(&bson::to_document(meta).map_err(|_| Error::MetaToDocError)?)
+                .map_err(|_| Error::DocToBytesError)?
+        ],
+    )
+    .map_err(|e| Error::DbError(e))?;
+    tx.commit().map_err(|e| Error::DbError(e))?;
+    Ok(())
+}
 
-    pub fn find_lyrics(&self, song: &SongInfo) -> Result<Option<Lyrics>, Error> {
-        let query: Result<LyricsRow, SqliteError>;
-        let conn = self.pool.get().unwrap();
-        query = conn.prepare("select * from songs where uri = ?1")
-                    .unwrap().query_row(params![&song.uri], |r| {LyricsRow::try_from(r)}); 
-        match query {
-            Ok(row) => {
-                let res = row.try_into().map_err(|_| Error::DocToMetaError)?;
-                return Ok(Some(res));
-            }
-            Err(SqliteError::QueryReturnedNoRows) => {
-                return Ok(None);
-            }
-            Err(e) => {return Err(Error::DbError(e));}
+pub fn find_lyrics(song: &SongInfo) -> Result<Option<Lyrics>, Error> {
+    let query: Result<LyricsRow, SqliteError>;
+    let conn = SQLITE_POOL.get().unwrap();
+    query = conn
+        .prepare("select * from songs where uri = ?1")
+        .unwrap()
+        .query_row(params![&song.uri], |r| LyricsRow::try_from(r));
+    match query {
+        Ok(row) => {
+            let res = row.try_into().map_err(|_| Error::DocToMetaError)?;
+            return Ok(Some(res));
+        }
+        Err(SqliteError::QueryReturnedNoRows) => {
+            return Ok(None);
+        }
+        Err(e) => {
+            return Err(Error::DbError(e));
         }
     }
+}
 
-    pub fn write_lyrics(&self, song: &SongInfo, lyrics: &Lyrics) -> Result<(), Error> {
-        let mut conn = self.pool.get().unwrap();
-        let tx = conn.transaction().map_err(|e| Error::DbError(e))?;
-        tx.execute("delete from songs where uri = ?1", params![&song.uri]).map_err(|e| Error::DbError(e))?;
-        tx.execute(
-            "insert into songs (uri, lyrics, synced, last_modified) values (?1,?2,?3,?4)",
-            params![
-                &song.uri,
-                &lyrics.to_string(), 
-                lyrics.synced,
-                OffsetDateTime::now_utc()
-            ]
-        ).map_err(|e| Error::DbError(e))?;
-        tx.commit().map_err(|e| Error::DbError(e))?;
-        Ok(())
+pub fn write_lyrics(song: &SongInfo, lyrics: &Lyrics) -> Result<(), Error> {
+    let mut conn = SQLITE_POOL.get().unwrap();
+    let tx = conn.transaction().map_err(|e| Error::DbError(e))?;
+    tx.execute("delete from songs where uri = ?1", params![&song.uri])
+        .map_err(|e| Error::DbError(e))?;
+    tx.execute(
+        "insert into songs (uri, lyrics, synced, last_modified) values (?1,?2,?3,?4)",
+        params![
+            &song.uri,
+            &lyrics.to_string(),
+            lyrics.synced,
+            OffsetDateTime::now_utc()
+        ],
+    )
+    .map_err(|e| Error::DbError(e))?;
+    tx.commit().map_err(|e| Error::DbError(e))?;
+    Ok(())
+}
+
+pub fn find_image_by_key(key: &str, is_thumbnail: bool) -> Result<Option<String>, Error> {
+    let query: Result<String, SqliteError>;
+    let conn = SQLITE_POOL.get().unwrap();
+    query = conn
+        .prepare("select filename from images where key = ?1 and is_thumbnail = ?2")
+        .unwrap()
+        .query_row(params![key, is_thumbnail as u32], |r| Ok(r.get::<usize, String>(0)?));
+    match query {
+        Ok(filename) => {
+            return Ok(Some(filename));
+        }
+        Err(SqliteError::QueryReturnedNoRows) => {
+            return Ok(None);
+        }
+        Err(e) => {
+            return Err(Error::DbError(e));
+        }
     }
+}
+
+pub fn register_image_key(key: &str, filename: &str, is_thumbnail: bool) -> Result<(), Error> {
+    let mut conn = SQLITE_POOL.get().unwrap();
+    let tx = conn.transaction().map_err(|e| Error::DbError(e))?;
+    tx.execute("delete from images where key = ?1", params![key])
+        .map_err(|e| Error::DbError(e))?;
+    tx.execute(
+        "insert into images (key, is_thumbnail, filename, last_modified) values (?1,?2,?3, ?4)",
+        params![
+            key,
+            is_thumbnail as u32,
+            filename,
+            OffsetDateTime::now_utc()
+        ],
+    )
+    .map_err(|e| Error::DbError(e))?;
+    tx.commit().map_err(|e| Error::DbError(e))?;
+    Ok(())
 }

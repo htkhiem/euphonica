@@ -16,26 +16,28 @@ pub fn sleep_after_request() {
 /// Enum for communication with provider threads from the cache controller living on the main thread.
 /// Can be used for both request and response.
 pub enum ProviderMessage {
-    ClearAlbumArt(String), // URI can be track or folder
-    Cover(SongInfo, PathBuf),  // With cache basepath
+    ClearFolderCover(String),
+    SongCover(SongInfo),
+    FolderCover(AlbumInfo),
     CoverAvailable(String), // URI can be track or folder
-    /// Negative response (currently only used by MpdWrapper)
-    CoverNotAvailable(SongInfo),
+    /// Negative responses (currently only used by MpdWrapper)
+    SongCoverNotAvailable(SongInfo),
+    FolderCoverNotAvailable(AlbumInfo),
     AlbumMeta(AlbumInfo),
     AlbumMetaAvailable(String), // Only return URI
     ClearArtistAvatar(String), // Only need name
     /// Both request and positive response
-    ArtistAvatar(ArtistInfo, PathBuf), // With cache basepath
+    ArtistAvatar(ArtistInfo), // With cache basepath
     ArtistAvatarAvailable(String), // Name
     /// Both request and positive response. Includes downloading artist avatar.
-    ArtistMeta(ArtistInfo, PathBuf), // With cache basepath (for passthrough to artist avatar)
+    ArtistMeta(ArtistInfo), // With cache basepath (for passthrough to artist avatar)
     ArtistMetaAvailable(String), // Only return name
     Lyrics(SongInfo),
     LyricsAvailable(String) // Only return full URI
 }
 
 pub enum MetadataType<'a> {
-    // folder-level URI, true for thumbnail
+    // URI (either folder or track level), true for thumbnail
     Cover(&'a str, bool),
     // folder-level URI
     AlbumMeta(&'a str),

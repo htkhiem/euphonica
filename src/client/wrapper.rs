@@ -32,6 +32,7 @@ use crate::common::Stickers;
 use crate::{
     common::{Album, AlbumInfo, Artist, ArtistInfo, INode, Song, SongInfo},
     meta_providers::ProviderMessage,
+    cache::get_new_image_paths,
     player::PlaybackFlow,
     utils,
 };
@@ -63,7 +64,8 @@ enum AsyncClientMessage {
 #[derive(Debug)]
 pub enum BackgroundTask {
     Update,
-    DownloadCover(SongInfo, PathBuf, bool), // Track-level URI, cache basepath, prioritise embedded art?
+    DownloadFolderCover(SongInfo, bool), // album info, cache basepath, allow fallback to embedded track art
+    DownloadEmbeddedCover(SongInfo, bool), // song info, cache basepath, allow fallback to folder art
     FetchFolderContents(String), // Gradually get all inodes in folder at path
     FetchAlbums,                 // Gradually get all albums
     FetchAlbumSongs(String),     // Get songs of album with given tag
@@ -135,11 +137,30 @@ mod background {
         }
     }
 
+    pub fn download_embedded_cover(
+        client: &mut mpd::Client<StreamWrapper>,
+        sender_to_cache: &Sender<ProviderMessage>,
+        key: SongInfo,
+        fallback: bool
+    ) {
+        if let Ok(bytes) = client.readpicture(&key.uri) {
+            if let Some(dyn_img) = utils::read_image_from_bytes(bytes) {
+                let (hires, thumb) = utils::resize_convert_image(dyn_img);
+
+                if let (Ok(_), Ok(_)) = (hires.save(path), thumb.save(thumbnail_path)) {
+                    sender_to_cache
+                        .send_blocking(ProviderMessage::CoverAvailable(uri))
+                        .expect("Cannot notify main cache of album art download result.");
+                    success = true;
+                }
+            }
+        }
+    }
+
     pub fn download_cover(
         client: &mut mpd::Client<StreamWrapper>,
         sender_to_cache: &Sender<ProviderMessage>,
         key: SongInfo,
-        cache_basepath: PathBuf,
         prioritize_embedded: bool
     ) {
         let uri = key.uri.to_owned();
@@ -150,7 +171,7 @@ mod background {
                 // println!("Downloaded album art for {:?}", &uri);
                 if let Some(dyn_img) = utils::read_image_from_bytes(bytes) {
                     let (hires, thumb) = utils::resize_convert_image(dyn_img);
-
+                    let (path, thumbnail_path) = get_new_image_paths();
                     if let (Ok(_), Ok(_)) = (hires.save(path), thumb.save(thumbnail_path)) {
                         sender_to_cache
                             .send_blocking(ProviderMessage::CoverAvailable(uri))
@@ -158,10 +179,43 @@ mod background {
                     }
                 }
             } else {
-                // Fetch from local sources instead.
-                sender_to_cache
-                    .send_blocking(ProviderMessage::CoverNotAvailable(key))
-                    .expect("Album art not available from MPD, but cannot notify cache of this.");
+                let mut success = false;
+                // Try to find a song in the album to extract its URI for readpicture
+
+                // MPD doesn't expect the final / at the end of a URI
+                let mut trimmed_uri = uri.clone();
+                trimmed_uri.pop();
+
+                // Query MPD for a song under this URI
+                let songs= client
+                    .find(
+                        Query::new().and_with_op(
+                            Term::Base,
+                            QueryOperation::Contains,
+                            trimmed_uri.clone()
+                        ),
+                        Window::from((0, 1)));
+                if let Ok(songs) = songs {
+                    if let Some(song) = songs.first() {
+                        if let Ok(bytes) = client.readpicture(&song.file) {
+                            if let Some(dyn_img) = utils::read_image_from_bytes(bytes) {
+                                let (hires, thumb) = utils::resize_convert_image(dyn_img);
+                                
+                                if let (Ok(_), Ok(_)) = (hires.save(path), thumb.save(thumbnail_path)) {
+                                    sender_to_cache
+                                        .send_blocking(ProviderMessage::CoverAvailable(uri))
+                                        .expect("Cannot notify main cache of album art download result.");
+                                        success = true;
+                                }
+                            }
+                        }
+                    }
+                }
+                if !success {
+                    sender_to_cache
+                        .send_blocking(ProviderMessage::SongCoverNotAvailable(key))
+                        .expect("Album art not available from MPD, but cannot notify cache of this.");
+                }
             }
         } else {
             // println!("Skipped downloading album art for {:?}", &uri);
@@ -514,8 +568,8 @@ impl MpdWrapper {
                         BackgroundTask::Update => {
                             background::update_mpd_database(&mut client, &sender_to_fg)
                         }
-                        BackgroundTask::DownloadCover(key, basepath) => {
-                            background::download_cover(
+                        BackgroundTask::DownloadFolderCover(key, path, thumbnail_path) => {
+                            background::download_album_art(
                                 &mut client,
                                 &meta_sender,
                                 key,
