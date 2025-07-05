@@ -59,11 +59,11 @@ enum AsyncClientMessage {
 }
 
 // Work requests for sending to the child thread.
-// Completed results will be reported back via MpdMessage.
+// Completed results will be reported back via AsyncClientMessage.
 #[derive(Debug)]
 pub enum BackgroundTask {
     Update,
-    DownloadCover(SongInfo, PathBuf), // Track-level URI + cache basepath
+    DownloadCover(SongInfo, PathBuf, bool), // Track-level URI, cache basepath, prioritise embedded art?
     FetchFolderContents(String), // Gradually get all inodes in folder at path
     FetchAlbums,                 // Gradually get all albums
     FetchAlbumSongs(String),     // Get songs of album with given tag
@@ -135,14 +135,15 @@ mod background {
         }
     }
 
-    pub fn download_album_art(
+    pub fn download_cover(
         client: &mut mpd::Client<StreamWrapper>,
         sender_to_cache: &Sender<ProviderMessage>,
-        key: AlbumInfo,
-        path: PathBuf,
-        thumbnail_path: PathBuf,
+        key: SongInfo,
+        cache_basepath: PathBuf,
+        prioritize_embedded: bool
     ) {
         let uri = key.uri.to_owned();
+        // Try embedded art first.
         if !path.exists() || !thumbnail_path.exists() {
             // println!("Downloading album art for {:?}", &uri);
             if let Ok(bytes) = client.albumart(&uri) {
@@ -513,13 +514,12 @@ impl MpdWrapper {
                         BackgroundTask::Update => {
                             background::update_mpd_database(&mut client, &sender_to_fg)
                         }
-                        BackgroundTask::DownloadCover(key, path, thumbnail_path) => {
-                            background::download_album_art(
+                        BackgroundTask::DownloadCover(key, basepath) => {
+                            background::download_cover(
                                 &mut client,
                                 &meta_sender,
                                 key,
-                                path,
-                                thumbnail_path,
+                                basepath
                             )
                         }
                         BackgroundTask::FetchAlbums => {
