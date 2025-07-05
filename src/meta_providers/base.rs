@@ -1,6 +1,6 @@
 extern crate bson;
-use gtk::{prelude::*, gdk};
-use std::{path::PathBuf, thread, time::Duration};
+use gtk::prelude::*;
+use std::{thread, time::Duration};
 
 use crate::{common::{AlbumInfo, ArtistInfo, SongInfo}, utils::settings_manager};
 

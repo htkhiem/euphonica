@@ -1,6 +1,13 @@
 extern crate mpd;
 use crate::{
-    application::EuphonicaApplication, cache::{get_path_for, Cache, CacheState}, client::{ClientState, ConnectionState, MpdWrapper}, common::{AlbumInfo, QualityGrade, Song, SongInfo}, config::APPLICATION_ID, meta_providers::models::Lyrics, player::fft_backends::fifo::FifoFftBackend, utils::{prettify_audio_format, settings_manager}
+    application::EuphonicaApplication,
+    cache::{get_image_cache_path, sqlite, Cache, CacheState},
+    client::{ClientState, ConnectionState, MpdWrapper},
+    common::{QualityGrade, Song},
+    config::APPLICATION_ID,
+    meta_providers::models::Lyrics,
+    player::fft_backends::fifo::FifoFftBackend,
+    utils::{prettify_audio_format, settings_manager, strip_filename_linux}
 };
 use async_lock::OnceCell as AsyncOnceCell;
 use mpris_server::{
@@ -1181,7 +1188,7 @@ impl Player {
     pub fn current_song_album_art(&self, thumbnail: bool) -> Option<Texture> {
         if let Some(song) = self.imp().current_song.borrow().as_ref() {
             if let Some(cache) = self.imp().cache.get() {
-                return cache.load_cached_cover(song.get_info(), thumbnail, false);
+                return cache.load_cached_embedded_cover(song.get_info(), thumbnail, false, true);
             }
             return None;
         }
@@ -1189,19 +1196,18 @@ impl Player {
     }
 
     pub fn current_song_album_art_path(&self, thumbnail: bool) -> Option<PathBuf> {
-        if let (Some(song), Some(cache)) = (
-            self.imp().current_song.borrow().as_ref(),
-            self.imp().cache.get(),
-        ) {
-            if let Some(album) = song.get_album() {
-                // Always read from disk
-                Some(
-                    get_path_for(cache.get_albumart_path(), &crate::meta_providers::MetadataType::Cover(
-                        &song.get_uri(),
-                        thumbnail,
-                    )),
-                )
-            } else {
+        if let Some(song) = self.imp().current_song.borrow().as_ref() {
+            // Prioritise embedded version
+            let mut path = get_image_cache_path();
+            if let Some(filename) = sqlite::find_image_by_key(&song.get_uri(), thumbnail).unwrap() {
+                path.push(filename);
+                Some(path)
+            }
+            else if let Some(filename) = sqlite::find_image_by_key(strip_filename_linux(&song.get_uri()), thumbnail).unwrap() {
+                path.push(filename);
+                Some(path)
+            }
+            else {
                 None
             }
         } else {

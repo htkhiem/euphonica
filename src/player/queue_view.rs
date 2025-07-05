@@ -205,61 +205,62 @@ impl QueueView {
         factory.connect_setup(clone!(
             #[weak]
             player,
+            #[weak]
+            cache,
             move |_, list_item| {
                 let item = list_item
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
-                let queue_row = QueueRow::new(&item, player);
+                let queue_row = QueueRow::new(&item, player, cache);
                 item.set_child(Some(&queue_row));
             }
         ));
         // Tell factory how to bind `QueueRow` to one of our Song GObjects
-        factory.connect_bind(clone!(
-            #[weak]
-            cache,
-            move |_, list_item| {
-                // Get `Song` from `ListItem` (that is, the data side)
-                let item: Song = list_item
-                    .downcast_ref::<ListItem>()
-                    .expect("Needs to be ListItem")
-                    .item()
-                    .and_downcast::<Song>()
-                    .expect("The item has to be a common::Song.");
+        factory.connect_bind(move |_, list_item| {
+            // Get `Song` from `ListItem` (that is, the data side)
+            let item: Song = list_item
+                .downcast_ref::<ListItem>()
+                .expect("Needs to be ListItem")
+                .item()
+                .and_downcast::<Song>()
+                .expect("The item has to be a common::Song.");
 
-                // Get `QueueRow` from `ListItem` (the UI widget)
-                let child: QueueRow = list_item
-                    .downcast_ref::<ListItem>()
-                    .expect("Needs to be ListItem")
-                    .child()
-                    .and_downcast::<QueueRow>()
-                    .expect("The child has to be a `QueueRow`.");
+            // Get `QueueRow` from `ListItem` (the UI widget)
+            let child: QueueRow = list_item
+                .downcast_ref::<ListItem>()
+                .expect("Needs to be ListItem")
+                .child()
+                .and_downcast::<QueueRow>()
+                .expect("The child has to be a `QueueRow`.");
 
-                // Within this binding fn is where the cached album art texture gets used.
-                child.bind(&item, cache.clone());
-            }
-        ));
+            // Within this binding fn is where the cached album art texture gets used.
+            child.bind(&item);
+        });
 
         // When row goes out of sight, unbind from item to allow reuse with another.
         // Remember to also unset the thumbnail widget's texture to potentially free it from memory.
-        factory.connect_unbind(clone!(
-            #[weak]
-            cache,
-            move |_, list_item| {
-                // Get `QueueRow` from `ListItem` (the UI widget)
-                let child: QueueRow = list_item
-                    .downcast_ref::<ListItem>()
-                    .expect("Needs to be ListItem")
-                    .child()
-                    .and_downcast::<QueueRow>()
-                    .expect("The child has to be a `QueueRow`.");
-                child.unbind(cache);
-            }
-        ));
+        factory.connect_unbind(move |_, list_item| {
+            // Get `QueueRow` from `ListItem` (the UI widget)
+            let child: QueueRow = list_item
+                .downcast_ref::<ListItem>()
+                .expect("Needs to be ListItem")
+                .child()
+                .and_downcast::<QueueRow>()
+                .expect("The child has to be a `QueueRow`.");
+            child.unbind();
+        });
 
         factory.connect_teardown(clone!(
             #[weak(rename_to = this)]
             self,
-            move |_, _| {
+            move |_, list_item| {
+                let child: QueueRow = list_item
+                    .downcast_ref::<ListItem>()
+                    .expect("Needs to be ListItem")
+                    .child()
+                    .and_downcast::<QueueRow>()
+                    .expect("The child has to be a `QueueRow`.");
+                child.teardown();
                 // The above scroll bug only manifests after this, so now is the best time to set
                 // the corresponding values.
                 this.imp().last_scroll_pos.set(this.imp().scrolled_window.vadjustment().value());

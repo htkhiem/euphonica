@@ -242,21 +242,35 @@ impl QueueRow {
                     closure_local!(
                         #[weak(rename_to = this)]
                         self,
-                        move |_: CacheState, folder_uri: String, tex: gdk::Texture| {
+                        move |_: CacheState, uri: String| {
                             // Match song URI first then folder URI. Only try to match by folder URI
                             // if we don't have a current thumbnail
                             if let Some(song) = this.imp().song.borrow().as_ref() {
-                                if folder_uri.as_str() == song.get_uri() {
-                                    this.update_thumbnail(Some(tex));
+                                if uri.as_str() == song.get_uri() {
+                                    let tex = this.imp().cache.get().unwrap().load_cached_embedded_cover(
+                                        song.get_info(),
+                                        true,
+                                        false,
+                                        false
+                                    );
+                                    if tex.is_some() {
+                                        this.update_thumbnail(tex);
+                                    }
                                 }
                                 else if let (false, Some(album)) = (this.imp().has_thumbnail.get(), song.get_album()) {
-                                    if album.uri == folder_uri {
-                                        this.update_thumbnail(Some(tex));
+                                    if album.uri == uri {
+                                        let tex = this.imp().cache.get().unwrap().load_cached_folder_cover(
+                                            song.get_info(),
+                                            true,
+                                            false,
+                                            false
+                                        );
+                                        if tex.is_some() {
+                                            this.update_thumbnail(tex);
+                                        }
                                     } else {
                                         this.update_thumbnail(None);
                                     }
-                                } else {
-                                    this.update_thumbnail(None);
                                 }
                             } else {
                                 this.update_thumbnail(None);
@@ -309,6 +323,7 @@ impl QueueRow {
 
     pub fn unbind(&self) {
         let _ = self.imp().song.take();
+        self.update_thumbnail(None);
     }
 
     pub fn teardown(&self) {

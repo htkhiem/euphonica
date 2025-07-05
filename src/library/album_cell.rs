@@ -220,7 +220,7 @@ impl AlbumCell {
             .cache
             .get()
             .unwrap()
-            .load_cached_cover(info, true, true)
+            .load_cached_folder_cover(info, true, true)
         {
             self.imp().cover.set_paintable(Some(&tex));
         } else {

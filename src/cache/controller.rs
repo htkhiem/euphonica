@@ -551,6 +551,49 @@ impl Cache {
         None
     }
 
+    /// Load the specified image, resize it, load into cache then send a message to frontend.
+    /// All of the above must be done in the background to avoid blocking UI.
+    pub fn set_cover(&self, folder_uri: &str, path: &str) {
+        let fg_sender = self.fg_sender.clone();
+        let folder_uri = folder_uri.to_owned();
+        let (hires_path, thumbnail_path) = get_new_image_paths();
+        // Assume ashpd always return filesystem spec
+        let filepath = urlencoding::decode(if path.starts_with("file://") {
+            &path[7..]
+        } else {
+            path
+        }).expect("UTF-8").into_owned();
+        println!("{:?}", filepath);
+        gio::spawn_blocking(move || {
+            let maybe_ptr = ImageReader::open(&filepath);
+            if let Ok(ptr) = maybe_ptr {
+                if let Ok(dyn_img) = ptr.decode() {
+                    let (hires, thumbnail) = resize_convert_image(dyn_img);
+                    let _ = hires.save(&hires_path);
+                    let _ = thumbnail.save(&thumbnail_path);
+                    sqlite::register_image_key(&folder_uri, hires_path.file_name().unwrap().to_str().unwrap(), false);
+                    sqlite::register_image_key(&folder_uri, thumbnail_path.file_name().unwrap().to_str().unwrap(), true);
+                    // TODO: Optimise to avoid reading back from disk
+                    IMAGE_CACHE.insert(
+                        hires_path.file_name().unwrap().to_str().unwrap().to_owned(),
+                        gdk::Texture::from_filename(&hires_path).unwrap(),
+                        16
+                    );
+                    IMAGE_CACHE.insert(
+                        hires_path.file_name().unwrap().to_str().unwrap().to_owned(),
+                        gdk::Texture::from_filename(&thumbnail_path).unwrap(),
+                        1
+                    );
+                    IMAGE_CACHE.wait().unwrap();
+                    let _ = fg_sender.send_blocking(ProviderMessage::CoverAvailable(folder_uri));
+                }
+            }
+            else {
+                println!("{:?}", maybe_ptr.err());
+            }
+        });
+   }
+
     /// Evict the album art from cache and delete from cache folder on disk.
     /// This does not by itself yeet the art from memory (UI elements will still hold refs to it).
     /// We'll need to signal to these elements to clear themselves.
@@ -596,6 +639,8 @@ impl Cache {
                     let (hires, thumbnail) = resize_convert_image(dyn_img);
                     let _ = hires.save(&hires_path);
                     let _ = thumbnail.save(&thumbnail_path);
+                    sqlite::register_image_key(&tag, hires_path.file_name().unwrap().to_str().unwrap(), false);
+                    sqlite::register_image_key(&tag, thumbnail_path.file_name().unwrap().to_str().unwrap(), true);
                     // TODO: Optimise to avoid reading back from disk
                     IMAGE_CACHE.insert(
                         hires_path.file_name().unwrap().to_str().unwrap().to_owned(),
