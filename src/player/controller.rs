@@ -1013,8 +1013,9 @@ impl Player {
                 .queue
                 .splice(new_len, old_len - new_len, &[] as &[Song; 0]);
         }
-
-        self.update_mpris_properties(mpris_changes);
+        if self.imp().mpris_enabled.get() {
+            self.update_mpris_properties(mpris_changes);
+        }
     }
 
     pub fn update_lyrics(&self, lyrics: Lyrics) {
