@@ -402,7 +402,7 @@ pub fn find_image_by_key(key: &str, is_thumbnail: bool) -> Result<Option<String>
 pub fn register_image_key(key: &str, filename: &str, is_thumbnail: bool) -> Result<(), Error> {
     let mut conn = SQLITE_POOL.get().unwrap();
     let tx = conn.transaction().map_err(|e| Error::DbError(e))?;
-    tx.execute("delete from images where key = ?1", params![key])
+    tx.execute("delete from images where key = ?1 and is_thumbnail = ?2", params![key, is_thumbnail as u32])
         .map_err(|e| Error::DbError(e))?;
     tx.execute(
         "insert into images (key, is_thumbnail, filename, last_modified) values (?1,?2,?3, ?4)",
@@ -415,5 +415,13 @@ pub fn register_image_key(key: &str, filename: &str, is_thumbnail: bool) -> Resu
     )
     .map_err(|e| Error::DbError(e))?;
     tx.commit().map_err(|e| Error::DbError(e))?;
+    Ok(())
+}
+
+pub fn unregister_image_key(key: &str, is_thumbnail: bool) -> Result<(), Error> {
+    let mut conn = SQLITE_POOL.get().unwrap();
+    let tx = conn.transaction().map_err(|e| Error::DbError(e))?;
+    tx.execute("delete from images where key = ?1 and is_thumbnail = ?2", params![key, is_thumbnail as u32])
+        .map_err(|e| Error::DbError(e))?;
     Ok(())
 }
