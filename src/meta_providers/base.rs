@@ -38,19 +38,6 @@ pub enum ProviderMessage {
     LyricsAvailable(String) // Only return full URI
 }
 
-pub enum MetadataType<'a> {
-    // URI (either folder or track level), true for thumbnail
-    Cover(&'a str, bool),
-    // folder-level URI
-    AlbumMeta(&'a str),
-    // Tag, true for thumbnail
-    ArtistAvatar(&'a str, bool),
-    // Tag
-    ArtistMeta(&'a str),
-    // Song URI
-    Lyrics(&'a str)
-}
-
 /// Common provider-agnostic utilities.
 pub mod utils {
     use super::*;

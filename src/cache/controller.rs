@@ -21,7 +21,6 @@ use uuid::Uuid;
 use std::{
     cell::OnceCell,
     fmt,
-    fs::create_dir_all,
     path::PathBuf,
     rc::Rc,
     sync::{Arc, RwLock},
@@ -32,7 +31,7 @@ use crate::{
     client::{BackgroundTask, MpdWrapper},
     common::{AlbumInfo, ArtistInfo},
     meta_providers::{
-        models, prelude::*, utils::get_best_image, MetadataChain, MetadataType, ProviderMessage,
+        models, prelude::*, utils::get_best_image, MetadataChain, ProviderMessage,
     },
     utils::{resize_convert_image, settings_manager},
 };
@@ -222,8 +221,8 @@ impl Cache {
                                                 if res.is_ok() {
                                                     let (hires, thumbnail) = resize_convert_image(res.unwrap());
                                                     if let (Ok(_), Ok(_)) = (
-                                                        hires.save(path),
-                                                        thumbnail.save(thumbnail_path)
+                                                        hires.save(&path),
+                                                        thumbnail.save(&thumbnail_path)
                                                     ) {
                                                         sqlite::register_image_key(&key.name, path.file_name().unwrap().to_str().unwrap(), false);
                                                         sqlite::register_image_key(&key.name, thumbnail_path.file_name().unwrap().to_str().unwrap(), true);
@@ -582,8 +581,7 @@ impl Cache {
     pub fn set_artist_avatar(&self, tag: &str, path: &str) {
         let fg_sender = self.fg_sender.clone();
         let tag = tag.to_owned();
-        let hires_path = self.get_path_for(&MetadataType::ArtistAvatar(&tag, false));
-        let thumbnail_path = self.get_path_for(&MetadataType::ArtistAvatar(&tag, true));
+        let (hires_path, thumbnail_path) = get_new_image_paths();
         // Assume ashpd always return filesystem spec
         let filepath = urlencoding::decode(if path.starts_with("file://") {
             &path[7..]
@@ -600,12 +598,12 @@ impl Cache {
                     let _ = thumbnail.save(&thumbnail_path);
                     // TODO: Optimise to avoid reading back from disk
                     IMAGE_CACHE.insert(
-                        (format!("uri:{}", &tag), false),
+                        hires_path.file_name().unwrap().to_str().unwrap().to_owned(),
                         gdk::Texture::from_filename(&hires_path).unwrap(),
                         16
                     );
                     IMAGE_CACHE.insert(
-                        (format!("uri:{}", &tag), true),
+                        hires_path.file_name().unwrap().to_str().unwrap().to_owned(),
                         gdk::Texture::from_filename(&thumbnail_path).unwrap(),
                         1
                     );
@@ -625,14 +623,21 @@ impl Cache {
     pub fn clear_artist_avatar(&self, tag: &str) {
         let fg_sender = self.fg_sender.clone();
         let tag = tag.to_owned();
-        let hires_path = self.get_path_for(&MetadataType::ArtistAvatar(&tag, false));
-        let thumbnail_path = self.get_path_for(&MetadataType::ArtistAvatar(&tag, true));
-
         gio::spawn_blocking(move || {
-            let _ = std::fs::remove_file(hires_path);
-            let _ = std::fs::remove_file(thumbnail_path);
-            IMAGE_CACHE.remove(&(format!("uri:{}", &tag), false));
-            IMAGE_CACHE.remove(&(format!("uri:{}", &tag), true));
+            if let Some(hires_name) = sqlite::find_image_by_key(&tag, false).unwrap() {
+                let mut hires_path = get_image_cache_path();
+                hires_path.push(&hires_name);
+                sqlite::unregister_image_key(&tag, false);
+                IMAGE_CACHE.remove(&hires_name);
+                let _ = std::fs::remove_file(hires_path);
+            }
+            if let Some(thumb_name) = sqlite::find_image_by_key(&tag, true).unwrap() {
+                let mut thumb_path = get_image_cache_path();
+                thumb_path.push(&thumb_name);
+                sqlite::unregister_image_key(&tag, true);
+                IMAGE_CACHE.remove(&thumb_name);
+                let _ = std::fs::remove_file(thumb_path);
+            }
             let _ = fg_sender.send_blocking(ProviderMessage::ClearArtistAvatar(tag));
         });
     }
@@ -640,7 +645,7 @@ impl Cache {
 
     pub fn load_cached_album_meta(&self, album: &AlbumInfo) -> Option<models::AlbumMeta> {
         // Check whether we have this album cached
-        let result = self.doc_cache.find_album_meta(album);
+        let result = sqlite::find_album_meta(album);
         if let Ok(res) = result {
             if let Some(info) = res {
                 println!("Album info cache hit!");
@@ -655,7 +660,7 @@ impl Cache {
 
     pub fn ensure_cached_album_meta(&self, album: &AlbumInfo) {
         // Check whether we have this album cached
-        let result = self.doc_cache.find_album_meta(album);
+        let result = sqlite::find_album_meta(album);
         if let Ok(response) = result {
             if response.is_none() {
                 self.bg_sender
@@ -668,7 +673,7 @@ impl Cache {
     }
 
     pub fn load_cached_artist_meta(&self, artist: &ArtistInfo) -> Option<ArtistMeta> {
-        let result = self.doc_cache.find_artist_meta(artist);
+        let result = sqlite::find_artist_meta(artist);
         if let Ok(res) = result {
             if let Some(info) = res {
                 println!("Artist info cache hit!");
@@ -683,17 +688,10 @@ impl Cache {
 
     pub fn ensure_cached_artist_meta(&self, artist: &ArtistInfo) {
         // Check whether we have this artist cached
-        let result = self.doc_cache.find_artist_meta(artist);
+        let result = sqlite::find_artist_meta(artist);
         if let Ok(response) = result {
             if response.is_none() {
-                let path = self.get_path_for(&MetadataType::ArtistAvatar(&artist.name, false));
-                let thumbnail_path =
-                    self.get_path_for(&MetadataType::ArtistAvatar(&artist.name, true));
-                let _ = self.bg_sender.send_blocking(ProviderMessage::ArtistMeta(
-                    artist.clone(),
-                    path,
-                    thumbnail_path,
-                ));
+                let _ = self.bg_sender.send_blocking(ProviderMessage::ArtistMeta(artist.clone()));
             }
         } else {
             println!("{:?}", result.err());
@@ -712,30 +710,32 @@ impl Cache {
     ) -> Option<Texture> {
         // First try to get from cache
         let name = &artist.name;
-        let stretto_key = (format!("artist:{}", name), thumbnail);
-        if let Some(tex) = IMAGE_CACHE.get(&stretto_key) {
-            // Cloning GObjects is cheap since they're just references
-            return Some(tex.value().clone());
-        }
-        // If missed, try loading from disk
-        let name = name.to_owned();
-        let fg_sender = self.fg_sender.clone();
-        let path = self.get_path_for(&MetadataType::ArtistAvatar(&name, thumbnail));
-        gio::spawn_blocking(move || {
-            // Try to load from disk. Do this using the threadpool to avoid blocking UI.
-            if path.exists() {
-                if let Ok(tex) = Texture::from_filename(&path) {
-                    IMAGE_CACHE.insert(stretto_key, tex.clone(), if thumbnail { 1 } else { 16 });
-                    IMAGE_CACHE.wait().unwrap();
-                    let _ = fg_sender.send_blocking(ProviderMessage::ArtistAvatarAvailable(name));
-                }
+        if let Some(filename) = sqlite::find_image_by_key(name, thumbnail).expect("Sqlite DB error") {
+            if let Some(tex) = IMAGE_CACHE.get(&filename) {
+                // Cloning GObjects is cheap since they're just references
+                return Some(tex.value().clone());
             }
-        });
+            // If missed, try loading from disk
+            let name = name.to_owned();
+            let fg_sender = self.fg_sender.clone();
+            gio::spawn_blocking(move || {
+                let mut path = get_image_cache_path();
+                path.push(&filename);
+                // Try to load from disk. Do this using the threadpool to avoid blocking UI.
+                if path.exists() {
+                    if let Ok(tex) = Texture::from_filename(&path) {
+                        IMAGE_CACHE.insert(filename, tex.clone(), if thumbnail { 1 } else { 16 });
+                        IMAGE_CACHE.wait().unwrap();
+                        let _ = fg_sender.send_blocking(ProviderMessage::ArtistAvatarAvailable(name));
+                    }
+                }
+            });
+        }
         None
     }
 
     pub fn load_cached_lyrics(&self, song: &SongInfo) -> Option<Lyrics> {
-        let result = self.doc_cache.find_lyrics(song);
+        let result = sqlite::find_lyrics(song);
         if let Ok(res) = result {
             if let Some(info) = res {
                 println!("Lyrics cache hit!");
@@ -750,7 +750,7 @@ impl Cache {
 
     pub fn ensure_cached_lyrics(&self, song: &SongInfo) {
         // Check whether we have this artist cached
-        let result = self.doc_cache.find_lyrics(song);
+        let result = sqlite::find_lyrics(song);
         if let Ok(response) = result {
             if response.is_none() {
                 let _ = self.bg_sender.send_blocking(ProviderMessage::Lyrics(
