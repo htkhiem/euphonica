@@ -630,6 +630,7 @@ impl AlbumContentView {
     }
 
     fn update_cover(&self, info: &AlbumInfo) {
+        let mut set: bool = false;
         match self.imp().cover_source.get() {
             // No scheduling (already called by the outside AlbumCell)
             CoverSource::Unknown => {
@@ -644,6 +645,7 @@ impl AlbumContentView {
                         self.imp().cover_source.set(
                             if is_embedded {CoverSource::Embedded} else {CoverSource::Folder}
                         );
+                        set = true;
                     }
             }
             CoverSource::Folder => {
@@ -654,6 +656,7 @@ impl AlbumContentView {
                     .unwrap()
                     .load_cached_folder_cover(info, false, false, false) {
                         self.imp().cover.set_paintable(Some(&tex));
+                        set = true;
                     }
             }
             CoverSource::Embedded => {
@@ -664,11 +667,16 @@ impl AlbumContentView {
                     .unwrap()
                     .load_cached_embedded_cover_for_album(info, false, false, false) {
                         self.imp().cover.set_paintable(Some(&tex));
+                        set = true;
                     }
             }
             CoverSource::None => {
                 self.imp().cover.set_paintable(Some(&*ALBUMART_PLACEHOLDER));
+                set = true;
             }
+        }
+        if !set {
+            self.imp().cover.set_paintable(Some(&*ALBUMART_PLACEHOLDER));
         }
     }
 

@@ -136,7 +136,6 @@ impl Cache {
     }
     /// Re-initialise list of providers when priority order is changed
     pub fn reinit_meta_providers(&self) {
-        println!("Reinitialising metadata providers");
         let mut curr_providers = self.meta_providers.write().unwrap();
         *curr_providers = init_meta_provider_chain();
     }
@@ -252,8 +251,10 @@ impl Cache {
                                 #[strong]
                                 fg_sender,
                                 move || {
+                                    let mut success: bool = false;
                                     if sqlite::find_image_by_key(&album.folder_uri, false).expect("Sqlite DB error").is_some() {
                                         let _ = fg_sender.send_blocking(ProviderMessage::CoverAvailable(album.folder_uri.to_owned()));
+                                        success = true;
                                     }
                                     else if let Ok(Some(meta)) = sqlite::find_album_meta(&album) {
                                         let res = get_best_image(&meta.image);
@@ -267,19 +268,18 @@ impl Cache {
                                                 let _ = sqlite::register_image_key(&album.folder_uri, Some(path.file_name().unwrap().to_str().unwrap()), false);
                                                 let _ = sqlite::register_image_key(&album.folder_uri, Some(thumbnail_path.file_name().unwrap().to_str().unwrap()), true);
                                                 let _ = fg_sender.send_blocking(ProviderMessage::CoverAvailable(album.folder_uri.to_owned()));
+                                                success = true;
                                             }
                                         }
                                         sleep_after_request();
                                     }
-                                    else {
-                                        println!("Cannot download cover: no local album meta could be found for {}", album.folder_uri);
+                                    if !success {
+                                        println!("Cannot download cover folder cover for {} externally", album.folder_uri);
+                                        // Write empty entries to prevent further (fruitless) lookups
+                                        let _ = sqlite::register_image_key(&album.folder_uri, None, false);
+                                        let _ = sqlite::register_image_key(&album.folder_uri, None, true);
                                         if fallback {
                                             let _ = fg_sender.send_blocking(ProviderMessage::FallbackToEmbeddedCover(album));
-                                        }
-                                        else {
-                                            // Write empty entries to prevent further (fruitless) lookups
-                                            let _ = sqlite::register_image_key(&album.folder_uri, None, false);
-                                            let _ = sqlite::register_image_key(&album.folder_uri, None, true);
                                         }
                                     }
                                 }
@@ -351,6 +351,16 @@ impl Cache {
                         let _ = this.bg_sender.send_blocking(ProviderMessage::AlbumMeta(album.clone()));
                         let _ = this.bg_sender.send_blocking(ProviderMessage::FolderCover(album, fallback));
                     }
+                    ProviderMessage::FallbackToEmbeddedCover(album) => {
+                        println!(
+                            "No folder-level cover could be found externally for {}. Falling back to looking for a random track's embedded cover.",
+                            &album.folder_uri
+                        );
+                        if this.load_cached_embedded_cover_for_album(&album, true, true, false).is_some() {
+                            // Already have it in-memory
+                            this.on_cover_downloaded(&album.example_uri);
+                        }
+                    }
                     ProviderMessage::ArtistAvatarAvailable(name) => {
                         this.on_artist_avatar_downloaded(&name)
                     }
@@ -419,13 +429,14 @@ impl Cache {
         schedule: bool,
         fallback: bool
     ) -> Option<(Texture, bool)> {
+        let mut past_failed = false;
         if let Some(filename) = sqlite::find_image_by_key(&song.uri, thumbnail).expect("Sqlite DB error") {
             if filename.len() == 0 {
                 // Tried fetching before, nothing found, don't try again.
                 println!("Won't fetch embedded cover for song {} again (failed before)", &song.uri);
-                return None;
+                past_failed = true;
             }
-            if let Some(tex) = IMAGE_CACHE.get(&filename) {
+            else if let Some(tex) = IMAGE_CACHE.get(&filename) {
                 // Cloning GObjects is cheap since they're just references
                 return Some((tex.value().clone(), true));
             }
@@ -447,13 +458,14 @@ impl Cache {
                                 fg_sender.send_blocking(ProviderMessage::CoverAvailable(song_uri));
                         }
                     });
+                    return None; // for now
                 } else {
                     // TODO: handle situation when Sqlite table is delusional more gracefully
                     panic!("Couldn't find file {} (cached embedded cover of song {})", filename, &song.uri);
                 }
             }
         }
-        else if schedule {
+        if schedule && !past_failed {
             if let Some(album) = song.album.as_ref() {
                 // Call MPD readpicture with optional fallback
                 self.mpd_client
@@ -496,13 +508,14 @@ impl Cache {
         schedule: bool,
         fallback: bool
     ) -> Option<(Texture, bool)> {
+        let mut past_failed = false;
         if let Some(filename) = sqlite::find_image_by_key(&album.example_uri, thumbnail).expect("Sqlite DB error") {
             if filename.len() == 0 {
                 // Tried fetching before, nothing found, don't try again.
                 println!("Won't fetch embedded cover for song {} again (failed before)", &album.example_uri);
-                return None;
+                past_failed = true;
             }
-            if let Some(tex) = IMAGE_CACHE.get(&filename) {
+            else if let Some(tex) = IMAGE_CACHE.get(&filename) {
                 // Cloning GObjects is cheap since they're just references
                 return Some((tex.value().clone(), true));
             }
@@ -524,13 +537,14 @@ impl Cache {
                                 fg_sender.send_blocking(ProviderMessage::CoverAvailable(song_uri));
                         }
                     });
+                    return None; // for now
                 } else {
                     // TODO: handle situation when Sqlite table is delusional more gracefully
                     panic!("Couldn't find file {} (cached embedded cover of song {})", filename, &album.example_uri);
                 }
             }
         }
-        else if schedule {
+        if schedule & !past_failed {
             // Call MPD readpicture
             self.mpd_client
                 .get()
@@ -559,14 +573,15 @@ impl Cache {
         fallback: bool
     ) -> Option<(Texture, bool)> {
         let folder_uri = &album.folder_uri;
+        let mut past_failed = false;
         if let Some(filename) = sqlite::find_image_by_key(folder_uri, thumbnail)
             .expect("Sqlite DB error") {
             if filename.len() == 0 {
                 // Tried fetching before, nothing found, don't try again.
-                println!("Won't fetch embedded cover for folder {} again (failed before)", &album.folder_uri);
-                return None;
+                println!("Won't fetch folder cover for folder {} again (failed before)", &album.folder_uri);
+                past_failed = true;
             }
-            if let Some(tex) = IMAGE_CACHE.get(&filename) {
+            else if let Some(tex) = IMAGE_CACHE.get(&filename) {
                 // Cloning GObjects is cheap since they're just references
                 return Some((tex.value().clone(), false));
             }
@@ -588,13 +603,14 @@ impl Cache {
                                 fg_sender.send_blocking(ProviderMessage::CoverAvailable(folder_uri));
                         }
                     });
+                    return None; // for now
                 } else {
                     // TODO: handle situation when Sqlite table is delusional more gracefully
                     panic!("Couldn't find file {} (cached embedded cover of album {})", filename, &folder_uri);
                 }
             }
         }
-        else if schedule {
+        if schedule && !past_failed {
             self.mpd_client
                 .get()
                 .unwrap()
@@ -625,14 +641,15 @@ impl Cache {
         fallback: bool
     ) -> Option<(Texture, bool)> {
         let folder_uri = strip_filename_linux(&song.uri);
+        let mut past_failed = false;
         if let Some(filename) = sqlite::find_image_by_key(folder_uri, thumbnail)
             .expect("Sqlite DB error") {
             if filename.len() == 0 {
                 // Tried fetching before, nothing found, don't try again.
-                println!("Won't fetch embedded cover for folder {} again (failed before)", &folder_uri);
-                return None;
+                println!("Won't fetch folder cover for folder {} again (failed before)", &folder_uri);
+                past_failed = true;
             }
-            if let Some(tex) = IMAGE_CACHE.get(&filename) {
+            else if let Some(tex) = IMAGE_CACHE.get(&filename) {
                 // Cloning GObjects is cheap since they're just references
                 return Some((tex.value().clone(), false));
             }
@@ -654,13 +671,14 @@ impl Cache {
                                 fg_sender.send_blocking(ProviderMessage::CoverAvailable(folder_uri));
                         }
                     });
+                    return None; // for now
                 } else {
                     // TODO: handle situation when Sqlite table is delusional more gracefully
                     panic!("Couldn't find file {} (cached embedded cover of album {})", filename, &folder_uri);
                 }
             }
         }
-        else if schedule {
+        if schedule & !past_failed {
             if let Some(album) = song.album.as_ref() {
                 self.mpd_client
                 .get()
@@ -698,7 +716,6 @@ impl Cache {
         } else {
             path
         }).expect("UTF-8").into_owned();
-        println!("{:?}", filepath);
         gio::spawn_blocking(move || {
             let maybe_ptr = ImageReader::open(&filepath);
             if let Ok(ptr) = maybe_ptr {
@@ -766,7 +783,6 @@ impl Cache {
         } else {
             path
         }).expect("UTF-8").into_owned();
-        println!("{:?}", filepath);
         gio::spawn_blocking(move || {
             let maybe_ptr = ImageReader::open(&filepath);
             if let Ok(ptr) = maybe_ptr {
@@ -828,10 +844,8 @@ impl Cache {
         let result = sqlite::find_album_meta(album);
         if let Ok(res) = result {
             if let Some(info) = res {
-                println!("Album info cache hit!");
                 return Some(info);
             }
-            println!("Album info cache miss");
             return None;
         }
         println!("{:?}", result.err());
@@ -856,10 +870,8 @@ impl Cache {
         let result = sqlite::find_artist_meta(artist);
         if let Ok(res) = result {
             if let Some(info) = res {
-                println!("Artist info cache hit!");
                 return Some(info);
             }
-            println!("Artist info cache miss");
             return None;
         }
         println!("{:?}", result.err());
@@ -918,10 +930,8 @@ impl Cache {
         let result = sqlite::find_lyrics(song);
         if let Ok(res) = result {
             if let Some(info) = res {
-                println!("Lyrics cache hit!");
                 return Some(info);
             }
-            println!("Lyrics cache miss");
             return None;
         }
         println!("{:?}", result.err());

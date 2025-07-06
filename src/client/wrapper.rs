@@ -152,8 +152,8 @@ mod background {
                     let (hires, thumb) = utils::resize_convert_image(dyn_img);
                     let (path, thumbnail_path) = get_new_image_paths();
                     if let (Ok(_), Ok(_)) = (hires.save(&path), thumb.save(&thumbnail_path)) {
-                        sqlite::register_image_key(&key.uri, Some(path.file_name().unwrap().to_str().unwrap()), false);
-                        sqlite::register_image_key(&key.uri, Some(thumbnail_path.file_name().unwrap().to_str().unwrap()), true);
+                        let _ = sqlite::register_image_key(&key.uri, Some(path.file_name().unwrap().to_str().unwrap()), false);
+                        let _ = sqlite::register_image_key(&key.uri, Some(thumbnail_path.file_name().unwrap().to_str().unwrap()), true);
                         sender_to_cache
                             .send_blocking(ProviderMessage::CoverAvailable(key.uri))
                             .expect("Cannot notify main cache of embedded cover download result.");
@@ -180,8 +180,8 @@ mod background {
                     let (hires, thumb) = utils::resize_convert_image(dyn_img);
                     let (path, thumbnail_path) = get_new_image_paths();
                     if let (Ok(_), Ok(_)) = (hires.save(&path), thumb.save(&thumbnail_path)) {
-                        sqlite::register_image_key(&key.example_uri, Some(path.file_name().unwrap().to_str().unwrap()), false);
-                        sqlite::register_image_key(&key.example_uri, Some(thumbnail_path.file_name().unwrap().to_str().unwrap()), true);
+                        let _ = sqlite::register_image_key(&key.example_uri, Some(path.file_name().unwrap().to_str().unwrap()), false);
+                        let _ = sqlite::register_image_key(&key.example_uri, Some(thumbnail_path.file_name().unwrap().to_str().unwrap()), true);
                         sender_to_cache
                             .send_blocking(ProviderMessage::CoverAvailable(key.example_uri))
                             .expect("Cannot notify main cache of embedded cover download result.");

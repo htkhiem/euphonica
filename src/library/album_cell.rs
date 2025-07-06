@@ -272,12 +272,12 @@ impl AlbumCell {
                     }
             }
             CoverSource::None => {
-                self.imp().cover.set_paintable(Some(&*ALBUMART_PLACEHOLDER));
+                self.imp().cover.set_paintable(Some(&*ALBUMART_THUMBNAIL_PLACEHOLDER));
                 set = true;
             }
         }
         if !set {
-            self.imp().cover.set_paintable(Some(&*ALBUMART_PLACEHOLDER));
+            self.imp().cover.set_paintable(Some(&*ALBUMART_THUMBNAIL_PLACEHOLDER));
         }
     }
 

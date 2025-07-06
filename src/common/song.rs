@@ -465,7 +465,7 @@ impl From<mpd::song::Song> for SongInfo {
                 "album" => {
                     if res.album.is_none() {
                         let _ = res.album.replace(AlbumInfo::new(
-                            strip_filename_linux(&res.uri),
+                            &res.uri,
                             &val,
                             None,
                             Vec::with_capacity(0),
