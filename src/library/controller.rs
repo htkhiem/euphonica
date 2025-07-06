@@ -231,7 +231,7 @@ impl Library {
     }
 
     /// Queue all songs in a given album by track order.
-    pub fn queue_album(&self, album: Album, replace: bool, play: bool) {
+    pub fn queue_album(&self, album: Album, replace: bool, play: bool, play_from: Option<u32>) {
         if replace {
             self.client().clear_queue();
         }
@@ -242,7 +242,7 @@ impl Library {
         );
         self.client().find_add(query);
         if replace && play {
-            self.client().play_at(0, false);
+            self.client().play_at(play_from.unwrap_or(0), false);
         }
     }
 

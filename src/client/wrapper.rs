@@ -243,8 +243,8 @@ mod background {
                     let (hires, thumb) = utils::resize_convert_image(dyn_img);
                     let (path, thumbnail_path) = get_new_image_paths();
                     if let (Ok(_), Ok(_)) = (hires.save(&path), thumb.save(&thumbnail_path)) {
-                        sqlite::register_image_key(&uri, Some(path.file_name().unwrap().to_str().unwrap()), false);
-                        sqlite::register_image_key(&uri, Some(thumbnail_path.file_name().unwrap().to_str().unwrap()), true);
+                        let _ = sqlite::register_image_key(&uri, Some(path.file_name().unwrap().to_str().unwrap()), false);
+                        let _ = sqlite::register_image_key(&uri, Some(thumbnail_path.file_name().unwrap().to_str().unwrap()), true);
                         sender_to_cache
                             .send_blocking(ProviderMessage::CoverAvailable(uri))
                             .expect("Cannot notify main cache of folder cover download result.");
