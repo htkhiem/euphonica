@@ -1,7 +1,7 @@
 extern crate bson;
 extern crate rusqlite;
 
-use std::{io::Cursor, path::Path};
+use std::io::Cursor;
 
 use once_cell::sync::Lazy;
 use r2d2_sqlite::SqliteConnectionManager;
@@ -10,7 +10,7 @@ use time::OffsetDateTime;
 
 use crate::{
     common::{AlbumInfo, ArtistInfo, SongInfo},
-    meta_providers::models::{AlbumMeta, ArtistMeta, Lyrics, LyricsParseError},
+    meta_providers::models::{AlbumMeta, ArtistMeta, Lyrics, LyricsParseError}, utils::strip_filename_linux,
 };
 
 use super::controller::get_doc_cache_path;
@@ -302,7 +302,7 @@ pub fn write_album_meta(album: &AlbumInfo, meta: &AlbumMeta) -> Result<(), Error
     tx.execute(
         "insert into albums (folder_uri, mbid, title, artist, last_modified, data) values (?1,?2,?3,?4,?5,?6)",
         params![
-            &album.uri,
+            &album.folder_uri,
             &album.mbid,
             &album.title,
             &album.get_artist_tag(),
@@ -399,7 +399,23 @@ pub fn find_image_by_key(key: &str, is_thumbnail: bool) -> Result<Option<String>
     }
 }
 
-pub fn register_image_key(key: &str, filename: &str, is_thumbnail: bool) -> Result<(), Error> {
+/// Convenience wrapper for looking up covers. Automatically falls back to folder-level cover if possible.
+pub fn find_cover_by_uri(track_uri: &str, is_thumbnail: bool) -> Result<Option<String>, Error> {
+    if let Some(filename) = find_image_by_key(track_uri, is_thumbnail)? {
+        Ok(Some(filename))
+    }
+    else {
+        let folder_uri = strip_filename_linux(track_uri);
+        if let Some(filename) = find_image_by_key(folder_uri, is_thumbnail)? {
+            Ok(Some(filename))
+        }
+        else {
+            Ok(None)
+        }
+    }
+}
+
+pub fn register_image_key(key: &str, filename: Option<&str>, is_thumbnail: bool) -> Result<(), Error> {
     let mut conn = SQLITE_POOL.get().unwrap();
     let tx = conn.transaction().map_err(|e| Error::DbError(e))?;
     tx.execute("delete from images where key = ?1 and is_thumbnail = ?2", params![key, is_thumbnail as u32])
@@ -409,7 +425,8 @@ pub fn register_image_key(key: &str, filename: &str, is_thumbnail: bool) -> Resu
         params![
             key,
             is_thumbnail as u32,
-            filename,
+            // Callers should interpret empty names as "tried but didn't find anything, don't try again"
+            if let Some(filename) = filename {filename} else {""},
             OffsetDateTime::now_utc()
         ],
     )

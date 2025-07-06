@@ -7,7 +7,7 @@ use crate::{
     config::APPLICATION_ID,
     meta_providers::models::Lyrics,
     player::fft_backends::fifo::FifoFftBackend,
-    utils::{prettify_audio_format, settings_manager, strip_filename_linux}
+    utils::{prettify_audio_format, settings_manager}
 };
 use async_lock::OnceCell as AsyncOnceCell;
 use mpris_server::{
@@ -390,7 +390,7 @@ mod imp {
                 "title" => obj.title().to_value(),
                 "artist" => obj.artist().to_value(),
                 "album" => obj.album().to_value(),
-                "album-art" => obj.current_song_album_art(false).to_value(), // High-res version
+                "album-art" => obj.current_song_cover(false).to_value(), // High-res version
                 "duration" => obj.duration().to_value(),
                 "queue-id" => obj.queue_id().to_value(),
                 "quality-grade" => obj.quality_grade().to_value(),
@@ -590,11 +590,18 @@ impl Player {
             closure_local!(
                 #[weak(rename_to = this)]
                 self,
-                move |_: CacheState, folder_uri: String| {
+                move |_: CacheState, uri: String| {
+                    // Update logic:
+                    // - Match by full URI first, then
+                    // - Match by folder URI only if there is no current cover.
                     if let Some(song) = this.imp().current_song.borrow().as_ref() {
-                        if let Some(album) = song.get_album() {
-                            if album.uri.as_str() == folder_uri.as_str() {
-                                this.notify("album-art");
+                        if song.get_uri() == &uri {
+                            this.notify("album-art");
+                        } else if this.current_song_cover(true).is_none() {
+                            if let Some(album) = song.get_album() {
+                                if &album.folder_uri == &uri {
+                                    this.notify("album-art");
+                                }
                             }
                         }
                     }
@@ -608,10 +615,13 @@ impl Player {
             closure_local!(
                 #[weak(rename_to = this)]
                 self,
-                move |_: CacheState, folder_uri: String| {
+                move |_: CacheState, uri: String| {
+                    // Exact match only
                     if let Some(song) = this.imp().current_song.borrow().as_ref() {
-                        if let Some(album) = song.get_album() {
-                            if album.uri.as_str() == folder_uri.as_str() {
+                        if song.get_uri() == &uri {
+                            this.notify("album-art");
+                        } else if let Some(album) = song.get_album() {
+                            if &album.folder_uri == &uri {
                                 this.notify("album-art");
                             }
                         }
@@ -927,7 +937,13 @@ impl Player {
             if let Some(old_song) = maybe_old_song {
                 if old_song.get_queue_id() != new_song.get_queue_id() {
                     old_song.set_is_playing(false);
-                    // There was nothing playing previously. Update the following now:
+                    // Trigger fetching if possible
+                    let _ = self.imp().cache.get().unwrap().load_cached_embedded_cover(
+                        new_song.get_info(),
+                        true,
+                        true,
+                        true
+                    );
                     self.notify("title");
                     self.notify("artist");
                     self.notify("duration");
@@ -941,7 +957,7 @@ impl Player {
                     // Update MPRIS side
                     if self.imp().mpris_enabled.get() {
                         mpris_changes.push(Property::Metadata(
-                            new_song.get_mpris_metadata(self.imp().cache.get().unwrap().clone()),
+                            new_song.get_mpris_metadata(),
                         ));
                     }
                 }
@@ -951,6 +967,13 @@ impl Player {
                 }
             } else {
                 // There was nothing playing previously. Update the following now:
+                // Trigger fetching if possible
+                let _ = self.imp().cache.get().unwrap().load_cached_embedded_cover(
+                    new_song.get_info(),
+                    true,
+                    true,
+                    true
+                );
                 self.notify("title");
                 self.notify("artist");
                 self.notify("duration");
@@ -1059,8 +1082,7 @@ impl Player {
     /// new queue length. The update_status() function will instead truncate the queue to the new
     /// length for us once called.
     /// If an MPRIS server is running, it will also emit property change signals.
-    pub fn update_queue(&self, songs: &[Song], replace: bool) { 
-        println!("RUNNING UPDATE_QUEUE");
+    pub fn update_queue(&self, songs: &[Song], replace: bool) {
         let queue = &self.imp().queue;
         if replace {
             if songs.len() == 0 {
@@ -1185,25 +1207,22 @@ impl Player {
         None
     }
 
-    pub fn current_song_album_art(&self, thumbnail: bool) -> Option<Texture> {
-        if let Some(song) = self.imp().current_song.borrow().as_ref() {
-            if let Some(cache) = self.imp().cache.get() {
-                return cache.load_cached_embedded_cover(song.get_info(), thumbnail, false, true);
+    pub fn current_song_cover(&self, thumbnail: bool) -> Option<Texture> {
+        if let Some(cache) = self.imp().cache.get() {
+            if let Some(song) = self.imp().current_song.borrow().as_ref() {
+                // Do not schedule again (already done once in update_status)
+                return cache.load_cached_embedded_cover(song.get_info(), thumbnail, false, true).map(|pair| pair.0);
             }
             return None;
         }
         None
     }
 
-    pub fn current_song_album_art_path(&self, thumbnail: bool) -> Option<PathBuf> {
+    pub fn current_song_cover_path(&self, thumbnail: bool) -> Option<PathBuf> {
         if let Some(song) = self.imp().current_song.borrow().as_ref() {
-            // Prioritise embedded version
             let mut path = get_image_cache_path();
-            if let Some(filename) = sqlite::find_image_by_key(&song.get_uri(), thumbnail).unwrap() {
-                path.push(filename);
-                Some(path)
-            }
-            else if let Some(filename) = sqlite::find_image_by_key(strip_filename_linux(&song.get_uri()), thumbnail).unwrap() {
+            if let Some(filename) = sqlite::find_cover_by_uri(&song.get_uri(), thumbnail).unwrap() {
+                // Will fall back to folder level cover if there is no embedded art
                 path.push(filename);
                 Some(path)
             }
@@ -1575,7 +1594,7 @@ impl LocalPlayerInterface for Player {
 
     async fn metadata(&self) -> fdo::Result<MprisMetadata> {
         if let Some(song) = self.imp().current_song.borrow().as_ref() {
-            Ok(song.get_mpris_metadata(self.imp().cache.get().unwrap().clone()))
+            Ok(song.get_mpris_metadata())
         } else {
             Ok(MprisMetadata::builder().trackid(TrackId::NO_TRACK).build())
         }

@@ -1,6 +1,5 @@
 use glib::{closure_local, signal::SignalHandlerId, Object};
 use gtk::{
-    gdk,
     glib::{self, clone},
     prelude::*,
     subclass::prelude::*,
@@ -9,16 +8,14 @@ use gtk::{
 use std::{cell::RefCell, rc::Rc};
 
 use crate::{
-    cache::{placeholders::ALBUMART_PLACEHOLDER, Cache, CacheState},
-    common::Song,
+    cache::{placeholders::ALBUMART_THUMBNAIL_PLACEHOLDER, Cache, CacheState},
+    common::{CoverSource, Marquee, Song, SongInfo},
 };
 
 use super::{controller::SwapDirection, Player};
 
 mod imp {
     use std::cell::{Cell, OnceCell};
-
-    use crate::common::Marquee;
     use glib::{ParamSpec, ParamSpecBoolean, ParamSpecString, ParamSpecUInt};
     use gtk::{Button, Revealer};
     use once_cell::sync::Lazy;
@@ -47,10 +44,10 @@ mod imp {
         #[template_child]
         pub remove: TemplateChild<Button>,
         pub queue_id: Cell<u32>,
-        pub has_thumbnail: Cell<bool>,
         pub thumbnail_signal_id: RefCell<Option<SignalHandlerId>>,
         pub song: RefCell<Option<Song>>,
         pub cache: OnceCell<Rc<Cache>>,
+        pub thumbnail_source: Cell<CoverSource>
     }
 
     // The central trait for subclassing a GObject
@@ -170,6 +167,7 @@ impl QueueRow {
 
     #[inline(always)]
     pub fn setup(&self, item: &gtk::ListItem, player: Player, cache: Rc<Cache>) {
+        let _ = self.imp().cache.set(cache.clone());
         // Bind controls
         self.imp().remove.connect_clicked(clone!(
             #[weak(rename_to = this)]
@@ -244,36 +242,21 @@ impl QueueRow {
                         self,
                         move |_: CacheState, uri: String| {
                             // Match song URI first then folder URI. Only try to match by folder URI
-                            // if we don't have a current thumbnail
+                            // if we don't have a current thumbnail.
                             if let Some(song) = this.imp().song.borrow().as_ref() {
                                 if uri.as_str() == song.get_uri() {
-                                    let tex = this.imp().cache.get().unwrap().load_cached_embedded_cover(
-                                        song.get_info(),
-                                        true,
-                                        false,
-                                        false
-                                    );
-                                    if tex.is_some() {
-                                        this.update_thumbnail(tex);
-                                    }
+                                    // Force update since we might have been using a folder cover
+                                    // temporarily
+                                    this.imp().thumbnail_source.set(CoverSource::Embedded);
+                                    this.update_thumbnail(song.get_info());
                                 }
-                                else if let (false, Some(album)) = (this.imp().has_thumbnail.get(), song.get_album()) {
-                                    if album.uri == uri {
-                                        let tex = this.imp().cache.get().unwrap().load_cached_folder_cover(
-                                            song.get_info(),
-                                            true,
-                                            false,
-                                            false
-                                        );
-                                        if tex.is_some() {
-                                            this.update_thumbnail(tex);
+                                else if this.imp().thumbnail_source.get() != CoverSource::Embedded {
+                                    if let Some(album) = song.get_album() {
+                                        if &album.folder_uri == &uri {
+                                            this.update_thumbnail(song.get_info());
                                         }
-                                    } else {
-                                        this.update_thumbnail(None);
                                     }
                                 }
-                            } else {
-                                this.update_thumbnail(None);
                             }
                         }
                     ),
@@ -298,32 +281,64 @@ impl QueueRow {
             }
         ));
         self.add_controller(hover_ctl);
-        let _ = self.imp().cache.set(cache);
     }
 
-    fn update_thumbnail(&self, tex: Option<gdk::Texture>) {
-        if tex.is_some() {
-            self.imp().thumbnail.set_paintable(tex.as_ref());
-            self.imp().has_thumbnail.set(true);
-        } else {
-            self.imp().thumbnail.set_paintable(Some(&*ALBUMART_PLACEHOLDER));
-            self.imp().has_thumbnail.set(false);
+    fn update_thumbnail(&self, info: &SongInfo) {
+        match self.imp().thumbnail_source.get() {
+            CoverSource::Unknown => {
+                // Schedule when in this mode
+                if let Some((tex, is_embedded)) = self
+                    .imp()
+                    .cache
+                    .get()
+                    .unwrap()
+                    .load_cached_embedded_cover(info, true, true, true) {
+                        self.imp().thumbnail.set_paintable(Some(&tex));
+                        self.imp().thumbnail_source.set(
+                            if is_embedded {CoverSource::Embedded} else {CoverSource::Folder}
+                        );
+                    }
+            }
+            CoverSource::Folder => {
+                if let Some((tex, _)) = self
+                    .imp()
+                    .cache
+                    .get()
+                    .unwrap()
+                    .load_cached_folder_cover_for_song(info, true, false, false) {
+                        self.imp().thumbnail.set_paintable(Some(&tex));
+                    }
+            }
+            CoverSource::Embedded => {
+                if let Some((tex, _)) = self
+                    .imp()
+                    .cache
+                    .get()
+                    .unwrap()
+                    .load_cached_embedded_cover(info, true, false, false) {
+                        self.imp().thumbnail.set_paintable(Some(&tex));
+                    }
+            }
+            CoverSource::None => {
+                self.imp().thumbnail.set_paintable(Some(&*ALBUMART_THUMBNAIL_PLACEHOLDER));
+            }
         }
     }
 
     pub fn bind(&self, song: &Song) {
         // The string properties are bound using property expressions in setup().
         // Here we only need to manually bind to the cache controller to fetch album art.
-        // Set once first (like sync_create)
-        // We need schedule = True here since the QueueView only requested caching the entire
-        // queue's worth of album arts once (at the beginning), and by now some might have been
-        // evicted from the cache.
+        // No need to fetch here as QueueView has already done once for us.
         self.imp().song.replace(Some(song.clone()));
+        self.imp().thumbnail_source.set(CoverSource::Unknown);
+        self.update_thumbnail(song.get_info());
     }
 
     pub fn unbind(&self) {
-        let _ = self.imp().song.take();
-        self.update_thumbnail(None);
+        if let Some(song) = self.imp().song.take() {
+            self.imp().thumbnail_source.set(CoverSource::None);
+            self.update_thumbnail(song.get_info());
+        }
     }
 
     pub fn teardown(&self) {

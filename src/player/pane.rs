@@ -443,7 +443,7 @@ impl PlayerPane {
             ),
         );
 
-        self.update_album_art(player.current_song_album_art(false));
+        self.update_album_art(player.current_song_cover(false));
         player.connect_notify_local(
             Some("album-art"),
             clone!(
@@ -452,7 +452,7 @@ impl PlayerPane {
                 #[weak]
                 player,
                 move |_, _| {
-                    this.update_album_art(player.current_song_album_art(false));
+                    this.update_album_art(player.current_song_cover(false));
                 }
             ),
         );

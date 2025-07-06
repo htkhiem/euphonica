@@ -12,7 +12,7 @@ use super::{AlbumSongRow, Library};
 use crate::{
     cache::{placeholders::ALBUMART_PLACEHOLDER, Cache, CacheState},
     client::ClientState,
-    common::{Album, AlbumInfo, Rating, Song},
+    common::{CoverSource, Album, AlbumInfo, Rating, Song},
     utils::format_secs_as_duration,
 };
 
@@ -91,7 +91,8 @@ mod imp {
         pub cover_signal_id: RefCell<Option<SignalHandlerId>>,
         pub cache: OnceCell<Rc<Cache>>,
         pub selecting_all: Cell<bool>, // Enables queuing the entire album efficiently
-        pub filepath_sender: OnceCell<Sender<String>>
+        pub filepath_sender: OnceCell<Sender<String>>,
+        pub cover_source: Cell<CoverSource>
     }
 
     impl Default for AlbumContentView {
@@ -129,7 +130,8 @@ mod imp {
                 cover_signal_id: RefCell::new(None),
                 cache: OnceCell::new(),
                 selecting_all: Cell::new(true), // When nothing is selected, default to select-all
-                filepath_sender: OnceCell::new()
+                filepath_sender: OnceCell::new(),
+                cover_source: Cell::default()
             }
         }
     }
@@ -274,7 +276,7 @@ mod imp {
                             obj.imp().album.borrow().as_ref(),
                             obj.imp().library.get()
                         ) {
-                            library.clear_album_art(album.get_uri());
+                            library.clear_cover(album.get_folder_uri());
                         }
                     }
                 ))
@@ -346,40 +348,65 @@ impl AlbumContentView {
             self.imp().album.borrow().as_ref(),
             self.imp().library.get()
         ) {
-            library.set_album_art(album.get_uri(), path);
+            library.set_cover(album.get_folder_uri(), path);
         }
     }
 
     pub fn setup(&self, library: Library, client_state: ClientState, cache: Rc<Cache>) {
+        let cache_state = cache.get_cache_state();
+        self.imp()
+           .cache
+           .set(cache)
+           .expect("AlbumContentView cannot bind to cache");
         self.imp()
             .add_to_playlist
             .setup(library.clone(), self.imp().sel_model.clone());
         self.imp().library.set(library).expect("Could not register album content view with library controller");
-        cache.get_cache_state().connect_closure(
+        cache_state.connect_closure(
             "album-art-downloaded",
             false,
             closure_local!(
                 #[weak(rename_to = this)]
                 self,
-                move |_: CacheState, folder_uri: String| {
+                move |_: CacheState, uri: String| {
                     if let Some(album) = this.imp().album.borrow().as_ref() {
-                        if folder_uri == album.get_uri() {
+                        if album.get_folder_uri() == &uri {
+                            // Force update since we might have been using an embedded cover
+                            // temporarily
+                            this.imp().cover_source.set(CoverSource::Folder);
                             this.update_cover(album.get_info());
+                        } else if this.imp().cover_source.get() != CoverSource::Folder {
+                            if album.get_example_uri() == &uri {
+                                this.imp().cover_source.set(CoverSource::Embedded);
+                                this.update_cover(album.get_info());
+                            }
                         }
                     }
                 }
             ),
         );
-        cache.get_cache_state().connect_closure(
+        cache_state.connect_closure(
             "album-art-cleared",
             false,
             closure_local!(
                 #[weak(rename_to = this)]
                 self,
-                move |_: CacheState, folder_uri: String| {
+                move |_: CacheState, uri: String| {
                     if let Some(album) = this.imp().album.borrow().as_ref() {
-                        if folder_uri == album.get_uri() {
-                            this.imp().cover.set_paintable(Some(&*ALBUMART_PLACEHOLDER));
+                        match this.imp().cover_source.get() {
+                            CoverSource::Folder => {
+                                if album.get_folder_uri() == &uri {
+                                    this.imp().cover_source.set(CoverSource::None);
+                                    this.update_cover(album.get_info());
+                                }
+                            }
+                            CoverSource::Embedded => {
+                                if album.get_example_uri() == &uri {
+                                    this.imp().cover_source.set(CoverSource::None);
+                                    this.update_cover(album.get_info());
+                                }
+                            }
+                            _ => {}
                         }
                     }
                 }
@@ -409,7 +436,7 @@ impl AlbumContentView {
                 )
             );
 
-        cache.get_cache_state().connect_closure(
+        cache_state.connect_closure(
             "album-meta-downloaded",
             false,
             closure_local!(
@@ -417,7 +444,7 @@ impl AlbumContentView {
                 self,
                 move |_: CacheState, folder_uri: String| {
                     if let Some(album) = this.imp().album.borrow().as_ref() {
-                        if folder_uri == album.get_uri() {
+                        if folder_uri == album.get_folder_uri() {
                             this.update_meta(album);
                         }
                     }
@@ -439,8 +466,6 @@ impl AlbumContentView {
                 }
             ),
         );
-
-        let _ = self.imp().cache.set(cache);
         let infobox_revealer = self.imp().infobox_revealer.get();
         let collapse_infobox = self.imp().collapse_infobox.get();
         collapse_infobox
@@ -590,19 +615,47 @@ impl AlbumContentView {
         self.imp().content.set_factory(Some(&factory));
     }
 
-    /// Returns true if an album art was successfully retrieved.
-    /// On false, we will want to call cache.ensure_local_album_art()
-    fn update_cover(&self, info: &AlbumInfo) -> bool {
-        if let Some(cache) = self.imp().cache.get() {
-            if let Some(tex) = cache.load_cached_cover(info, false, true) {
-                self.imp().cover.set_paintable(Some(&tex));
-                return true;
-            } else {
+    fn update_cover(&self, info: &AlbumInfo) {
+        match self.imp().cover_source.get() {
+            // No scheduling (already called by the outside AlbumCell)
+            CoverSource::Unknown => {
+                // Schedule when in this mode
+                if let Some((tex, is_embedded)) = self
+                    .imp()
+                    .cache
+                    .get()
+                    .unwrap()
+                    .load_cached_folder_cover(info, true, false, false) {
+                        self.imp().cover.set_paintable(Some(&tex));
+                        self.imp().cover_source.set(
+                            if is_embedded {CoverSource::Embedded} else {CoverSource::Folder}
+                        );
+                    }
+            }
+            CoverSource::Folder => {
+                if let Some((tex, _)) = self
+                    .imp()
+                    .cache
+                    .get()
+                    .unwrap()
+                    .load_cached_folder_cover(info, true, false, false) {
+                        self.imp().cover.set_paintable(Some(&tex));
+                    }
+            }
+            CoverSource::Embedded => {
+                if let Some((tex, _)) = self
+                    .imp()
+                    .cache
+                    .get()
+                    .unwrap()
+                    .load_cached_embedded_cover_for_album(info, true, false, false) {
+                        self.imp().cover.set_paintable(Some(&tex));
+                    }
+            }
+            CoverSource::None => {
                 self.imp().cover.set_paintable(Some(&*ALBUMART_PLACEHOLDER));
-                return false;
             }
         }
-        false
     }
 
     pub fn bind(&self, album: Album) {
@@ -664,6 +717,7 @@ impl AlbumContentView {
         bindings.push(release_date_viz_binding);
 
         let info = album.get_info();
+        self.imp().cover_source.set(CoverSource::Unknown);
         self.update_cover(info);
         self.imp().album.borrow_mut().replace(album);
     }
@@ -677,6 +731,12 @@ impl AlbumContentView {
                 cache.get_cache_state().disconnect(id);
             }
         }
+        if let Some(album) = self.imp().album.take() {
+            self.imp().cover_source.set(CoverSource::None);
+            self.update_cover(album.get_info());
+        }
+
+        
         // Unset metadata widgets
         self.imp().wiki_box.set_visible(false);
         self.imp().song_list.remove_all();

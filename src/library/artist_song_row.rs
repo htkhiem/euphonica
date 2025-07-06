@@ -7,13 +7,17 @@ use std::{
 
 use crate::{
     cache::{placeholders::ALBUMART_THUMBNAIL_PLACEHOLDER, Cache, CacheState},
-    common::{AlbumInfo, Song},
+    common::{AlbumInfo, CoverSource, Song, SongInfo},
     utils::format_secs_as_duration,
 };
 
 use super::Library;
 
 mod imp {
+    use std::cell::Cell;
+
+    use crate::common::CoverSource;
+
     use super::*;
     use glib::{ParamSpec, ParamSpecString};
     use once_cell::sync::Lazy;
@@ -40,6 +44,9 @@ mod imp {
         pub append_queue_id: RefCell<Option<SignalHandlerId>>,
         pub thumbnail_signal_id: RefCell<Option<SignalHandlerId>>,
         pub library: OnceCell<Library>,
+        pub song: RefCell<Option<Song>>,
+        pub cache: OnceCell<Rc<Cache>>,
+        pub thumbnail_source: Cell<CoverSource>
     }
 
     // The central trait for subclassing a GObject
@@ -133,14 +140,19 @@ glib::wrapper! {
 }
 
 impl ArtistSongRow {
-    pub fn new(library: Library, item: &gtk::ListItem) -> Self {
+    pub fn new(library: Library, item: &gtk::ListItem, cache: Rc<Cache>) -> Self {
         let res: Self = Object::builder().build();
-        res.setup(library, item);
+        res.setup(library, item, cache);
         res
     }
 
     #[inline(always)]
-    pub fn setup(&self, library: Library, item: &gtk::ListItem) {
+    pub fn setup(&self, library: Library, item: &gtk::ListItem, cache: Rc<Cache>) {
+        let cache_state = cache.get_cache_state();
+        self.imp()
+           .cache
+           .set(cache)
+           .expect("ArtistSongRow cannot bind to cache");
         let _ = self.imp().library.set(library);
         item.property_expression("item")
             .chain_property::<Song>("name")
@@ -160,43 +172,18 @@ impl ArtistSongRow {
         item.property_expression("item")
             .chain_property::<Song>("quality-grade")
             .bind(self, "quality-grade", gtk::Widget::NONE);
-    }
 
-    fn update_thumbnail(&self, info: Option<&AlbumInfo>, cache: Rc<Cache>, schedule: bool) {
-        if let Some(album) = info {
-            // Should already have been downloaded by the album view
-            if let Some(tex) = cache.load_cached_cover(album, true, schedule) {
-                self.imp().thumbnail.set_paintable(Some(&tex));
-                return;
-            }
-        }
-        self.imp()
-            .thumbnail
-            .set_paintable(Some(&*ALBUMART_THUMBNAIL_PLACEHOLDER));
-    }
-
-    pub fn bind(&self, song: &Song, cache: Rc<Cache>) {
-        // Bind album art listener. Set once first (like sync_create)
-        self.update_thumbnail(song.get_album(), cache.clone(), true);
-        let thumbnail_binding = cache.get_cache_state().connect_closure(
+        let _ = self.imp().thumbnail_signal_id.replace(Some(cache_state.connect_closure(
             "album-art-downloaded",
             false,
             closure_local!(
                 #[weak(rename_to = this)]
                 self,
-                #[strong]
-                song,
-                #[weak]
-                cache,
                 move |_: CacheState, folder_uri: String| {
-                    if let Some(album) = song.get_album() {
-                        if album.uri == folder_uri {
-                            this.update_thumbnail(Some(album), cache, false);
-                        }
-                    }
+                    // TODO
                 }
             ),
-        );
+        )));
         self.imp()
             .thumbnail_signal_id
             .replace(Some(thumbnail_binding));
@@ -238,6 +225,55 @@ impl ArtistSongRow {
             // Unbind old ID
             self.imp().append_queue.disconnect(old_id);
         }
+    }
+
+    fn update_thumbnail(&self, info: &SongInfo) {
+        match self.imp().thumbnail_source.get() {
+            CoverSource::Unknown => {
+                // Schedule when in this mode
+                if let Some((tex, is_embedded)) = self
+                    .imp()
+                    .cache
+                    .get()
+                    .unwrap()
+                    .load_cached_embedded_cover(info, true, true, true) {
+                        self.imp().thumbnail.set_paintable(Some(&tex));
+                        self.imp().thumbnail_source.set(
+                            if is_embedded {CoverSource::Embedded} else {CoverSource::Folder}
+                        );
+                    }
+            }
+            CoverSource::Folder => {
+                if let Some((tex, _)) = self
+                    .imp()
+                    .cache
+                    .get()
+                    .unwrap()
+                    .load_cached_folder_cover_for_song(info, true, false, false) {
+                        self.imp().thumbnail.set_paintable(Some(&tex));
+                    }
+            }
+            CoverSource::Embedded => {
+                if let Some((tex, _)) = self
+                    .imp()
+                    .cache
+                    .get()
+                    .unwrap()
+                    .load_cached_embedded_cover(info, true, false, false) {
+                        self.imp().thumbnail.set_paintable(Some(&tex));
+                    }
+            }
+            CoverSource::None => {
+                self.imp().thumbnail.set_paintable(Some(&*ALBUMART_THUMBNAIL_PLACEHOLDER));
+            }
+        }
+    }
+
+    pub fn bind(&self, song: &Song) {
+        // Bind album art listener. Set once first (like sync_create)
+        self.imp().song.replace(Some(song.clone()));
+        self.imp().thumbnail_source.set(CoverSource::Unknown);
+        self.update_thumbnail(song.get_info());
     }
 
     pub fn unbind(&self) {

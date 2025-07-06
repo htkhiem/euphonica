@@ -15,3 +15,13 @@ pub use inode::{INode, INodeType};
 pub use marquee::Marquee;
 pub use rating::Rating;
 pub use song::{QualityGrade, Song, SongInfo};
+
+
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
+pub enum CoverSource {
+    Unknown,
+    #[default]
+    None,
+    Folder,
+    Embedded
+}

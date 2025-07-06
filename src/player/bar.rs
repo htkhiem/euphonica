@@ -317,7 +317,7 @@ impl PlayerBar {
             ),
         );
 
-        self.update_album_art(player.current_song_album_art(true));
+        self.update_album_art(player.current_song_cover(true));
         player.connect_notify_local(
             Some("album-art"),
             clone!(
@@ -326,7 +326,7 @@ impl PlayerBar {
                 #[weak]
                 player,
                 move |_, _| {
-                    this.update_album_art(player.current_song_album_art(true));
+                    this.update_album_art(player.current_song_cover(true));
                 }
             ),
         );
@@ -349,7 +349,6 @@ impl PlayerBar {
     }
 
     fn update_album_art(&self, tex: Option<gdk::Texture>) {
-        // Use high-resolution version here
         // Update cover paintable
         if tex.is_some() {
             self.imp().albumart.set_paintable(tex.as_ref());

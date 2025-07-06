@@ -7,12 +7,13 @@ use mpris_server::{zbus::zvariant::ObjectPath, Time};
 use std::{
     cell::{Cell, OnceCell},
     ffi::OsStr,
-    path::Path,
-    rc::Rc,
+    path::Path
 };
 use time::{Date, Month};
 
-use crate::{cache::Cache, meta_providers::MetadataType, utils::strip_filename_linux};
+use crate::cache::get_image_cache_path;
+use crate::cache::sqlite;
+use crate::{meta_providers::MetadataType, utils::strip_filename_linux};
 
 use super::{artists_to_string, parse_mb_artist_tag, AlbumInfo, ArtistInfo};
 
@@ -348,7 +349,7 @@ impl Song {
         self.get_info().mbid.as_deref()
     }
 
-    pub fn get_mpris_metadata(&self, cache: Rc<Cache>) -> mpris_server::Metadata {
+    pub fn get_mpris_metadata(&self) -> mpris_server::Metadata {
         let mut meta = mpris_server::Metadata::builder()
             .title(self.get_name())
             .trackid(ObjectPath::from_string_unchecked(format!(
@@ -380,15 +381,16 @@ impl Song {
         }
 
         // Album art, if available
-        let thumbnail_path = cache.get_path_for(&MetadataType::Cover(
-            strip_filename_linux(self.get_uri()),
-            true,
-        ));
-        if thumbnail_path.exists() {
-            let path_string =
-                "file://".to_owned() + &thumbnail_path.into_os_string().into_string().unwrap();
-            meta.set_art_url(Some(path_string));
+        if let Some(thumbnail_name) = sqlite::find_cover_by_uri(self.get_uri(), true).expect("Sqlite DB error") {
+            let mut thumbnail_path = get_image_cache_path();
+            thumbnail_path.push(thumbnail_name);
+            if thumbnail_path.exists() {
+                let path_string =
+                    "file://".to_owned() + &thumbnail_path.into_os_string().into_string().unwrap();
+                meta.set_art_url(Some(path_string));
+            }
         }
+
         // TODO: disc & track num
         meta
     }

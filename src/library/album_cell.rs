@@ -6,8 +6,8 @@ use std::{
 };
 
 use crate::{
-    cache::{placeholders::ALBUMART_PLACEHOLDER, Cache, CacheState},
-    common::{Album, AlbumInfo},
+    cache::{placeholders::ALBUMART_THUMBNAIL_PLACEHOLDER, Cache, CacheState},
+    common::{Album, AlbumInfo, CoverSource},
 };
 
 mod imp {
@@ -37,6 +37,7 @@ mod imp {
         // Vector holding the bindings to properties of the Album GObject
         pub cover_signal_ids: RefCell<Option<(SignalHandlerId, SignalHandlerId)>>,
         pub cache: OnceCell<Rc<Cache>>,
+        pub cover_source: Cell<CoverSource>
     }
 
     // The central trait for subclassing a GObject
@@ -148,16 +149,12 @@ glib::wrapper! {
 impl AlbumCell {
     pub fn new(item: &gtk::ListItem, cache: Rc<Cache>) -> Self {
         let res: Self = Object::builder().build();
+        let cache_state = cache.get_cache_state();
         res.imp()
            .cache
            .set(cache)
            .expect("AlbumCell cannot bind to cache");
         res.setup(item);
-        let cache_state = res.imp()
-               .cache
-               .get()
-               .unwrap()
-               .get_cache_state();
         let _ = res.imp().cover_signal_ids.replace(Some((
             cache_state
                .connect_closure(
@@ -166,10 +163,18 @@ impl AlbumCell {
                    closure_local!(
                        #[weak(rename_to = this)]
                        res,
-                       move |_: CacheState, folder_uri: String| {
+                       move |_: CacheState, uri: String| {
                            if let Some(album) = this.imp().album.borrow().as_ref() {
-                               if album.get_uri() == &folder_uri {
-                                   this.update_album_art(album.get_info());
+                               if album.get_folder_uri() == &uri {
+                                   // Force update since we might have been using an embedded cover
+                                   // temporarily
+                                   this.imp().cover_source.set(CoverSource::Folder);
+                                   this.update_cover(album.get_info());
+                               } else if this.imp().cover_source.get() != CoverSource::Folder {
+                                   if album.get_example_uri() == &uri {
+                                       this.imp().cover_source.set(CoverSource::Embedded);
+                                       this.update_cover(album.get_info());
+                                   }
                                }
                            }
                        }
@@ -182,10 +187,22 @@ impl AlbumCell {
                    closure_local!(
                        #[weak(rename_to = this)]
                        res,
-                       move |_: CacheState, folder_uri: String| {
+                       move |_: CacheState, uri: String| {
                            if let Some(album) = this.imp().album.borrow().as_ref() {
-                               if album.get_uri() == &folder_uri {
-                                   this.imp().cover.set_paintable(Some(&*ALBUMART_PLACEHOLDER));
+                               match this.imp().cover_source.get() {
+                                   CoverSource::Folder => {
+                                       if album.get_folder_uri() == &uri {
+                                           this.imp().cover_source.set(CoverSource::None);
+                                           this.update_cover(album.get_info());
+                                       }
+                                   }
+                                   CoverSource::Embedded => {
+                                       if album.get_example_uri() == &uri {
+                                           this.imp().cover_source.set(CoverSource::None);
+                                           this.update_cover(album.get_info());
+                                       }
+                                   }
+                                   _ => {}
                                }
                            }
                        }
@@ -214,30 +231,64 @@ impl AlbumCell {
             .bind(self, "rating", gtk::Widget::NONE);
     }
 
-    fn update_album_art(&self, info: &AlbumInfo) {
-        if let Some(tex) = self
-            .imp()
-            .cache
-            .get()
-            .unwrap()
-            .load_cached_folder_cover(info, true, true)
-        {
-            self.imp().cover.set_paintable(Some(&tex));
-        } else {
-            self.imp().cover.set_paintable(Some(&*ALBUMART_PLACEHOLDER));
+    fn update_cover(&self, info: &AlbumInfo) {
+        match self.imp().cover_source.get() {
+            CoverSource::Unknown => {
+                // Schedule when in this mode
+                if let Some((tex, is_embedded)) = self
+                    .imp()
+                    .cache
+                    .get()
+                    .unwrap()
+                    .load_cached_folder_cover(info, true, true, true) {
+                        self.imp().cover.set_paintable(Some(&tex));
+                        self.imp().cover_source.set(
+                            if is_embedded {CoverSource::Embedded} else {CoverSource::Folder}
+                        );
+                    }
+            }
+            CoverSource::Folder => {
+                if let Some((tex, _)) = self
+                    .imp()
+                    .cache
+                    .get()
+                    .unwrap()
+                    .load_cached_folder_cover(info, true, false, false) {
+                        self.imp().cover.set_paintable(Some(&tex));
+                    }
+            }
+            CoverSource::Embedded => {
+                if let Some((tex, _)) = self
+                    .imp()
+                    .cache
+                    .get()
+                    .unwrap()
+                    .load_cached_embedded_cover_for_album(info, true, false, false) {
+                        self.imp().cover.set_paintable(Some(&tex));
+                    }
+            }
+            CoverSource::None => {
+                self.imp().cover.set_paintable(Some(&*ALBUMART_THUMBNAIL_PLACEHOLDER));
+            }
         }
     }
 
     pub fn bind(&self, album: &Album) {
         // The string properties are bound using property expressions in setup().
-        // Here we only need to manually bind to the cache controller to fetch album art.
+        // Fetch album cover once here.
         // Set once first (like sync_create)
-        self.update_album_art(album.get_info());
         let _ = self.imp().album.replace(Some(album.clone()));
+        self.imp().cover_source.set(CoverSource::Unknown);
+        self.update_cover(album.get_info());
     }
 
     pub fn unbind(&self) {
-        self.imp().album.replace(None).unwrap();
+        if let Some(album) = self.imp().album.take() {
+            // Clear cover reference
+            self.imp().cover_source.set(CoverSource::None);
+            self.update_cover(album.get_info());
+        }
+
     }
 
     pub fn teardown(&self) {

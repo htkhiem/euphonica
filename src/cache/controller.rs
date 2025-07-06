@@ -174,7 +174,7 @@ impl Cache {
                                 move || {
                                     // Check whether there is one already
                                     if key.mbid.is_some() || key.artist_tag.is_some() {
-                                        let folder_uri = key.uri.to_owned();
+                                        let folder_uri = key.folder_uri.to_owned();
                                         let existing = sqlite::find_album_meta(&key);
                                         if let Ok(None) = existing {
                                             let res = providers.read().unwrap().get_album_meta(&mut key, None);
@@ -224,8 +224,8 @@ impl Cache {
                                                         hires.save(&path),
                                                         thumbnail.save(&thumbnail_path)
                                                     ) {
-                                                        sqlite::register_image_key(&key.name, path.file_name().unwrap().to_str().unwrap(), false);
-                                                        sqlite::register_image_key(&key.name, thumbnail_path.file_name().unwrap().to_str().unwrap(), true);
+                                                        sqlite::register_image_key(&key.name, Some(path.file_name().unwrap().to_str().unwrap()), false);
+                                                        sqlite::register_image_key(&key.name, Some(thumbnail_path.file_name().unwrap().to_str().unwrap()), true);
                                                         let _ = fg_sender.send_blocking(ProviderMessage::ArtistAvatarAvailable(name.clone()));
                                                     }
                                                 }
@@ -246,76 +246,39 @@ impl Cache {
                                 }
                             )).await;
                         },
-                        ProviderMessage::EmbeddedCover(song) => {
+                        ProviderMessage::FolderCover(album, fallback) => {
                             let _ = gio::spawn_blocking(clone!(
                                 #[strong]
                                 fg_sender,
                                 move || {
-                                    if sqlite::find_image_by_key(&song.uri, false).expect("Sqlite DB error").is_some() {
-                                        let _ = fg_sender.send_blocking(ProviderMessage::CoverAvailable(song.uri.to_owned()));
-                                    } else if let Some(album) = song.album.as_ref() {
-                                        if let Ok(Some(meta)) = sqlite::find_album_meta(album) {
-                                            let res = get_best_image(&meta.image);
-                                            if res.is_ok() {
-                                                let (hires, thumbnail) = resize_convert_image(res.unwrap());
-                                                let (path, thumbnail_path) = get_new_image_paths();
-                                                if let (Ok(_), Ok(_)) = (
-                                                    hires.save(&path),
-                                                    thumbnail.save(&thumbnail_path)
-                                                ) {
-                                                    sqlite::register_image_key(&song.uri, path.file_name().unwrap().to_str().unwrap(), false);
-                                                    sqlite::register_image_key(&song.uri, thumbnail_path.file_name().unwrap().to_str().unwrap(), true);
-                                                    let _ = fg_sender.send_blocking(ProviderMessage::CoverAvailable(song.uri.to_owned()));
-                                                }
+                                    if sqlite::find_image_by_key(&album.folder_uri, false).expect("Sqlite DB error").is_some() {
+                                        let _ = fg_sender.send_blocking(ProviderMessage::CoverAvailable(album.folder_uri.to_owned()));
+                                    }
+                                    else if let Ok(Some(meta)) = sqlite::find_album_meta(&album) {
+                                        let res = get_best_image(&meta.image);
+                                        if res.is_ok() {
+                                            let (hires, thumbnail) = resize_convert_image(res.unwrap());
+                                            let (path, thumbnail_path) = get_new_image_paths();
+                                            if let (Ok(_), Ok(_)) = (
+                                                hires.save(&path),
+                                                thumbnail.save(&thumbnail_path)
+                                            ) {
+                                                sqlite::register_image_key(&album.folder_uri, Some(path.file_name().unwrap().to_str().unwrap()), false);
+                                                sqlite::register_image_key(&album.folder_uri, Some(thumbnail_path.file_name().unwrap().to_str().unwrap()), true);
+                                                let _ = fg_sender.send_blocking(ProviderMessage::CoverAvailable(album.folder_uri.to_owned()));
                                             }
-                                            sleep_after_request();
                                         }
-                                        else {
-                                            println!("Cannot download cover: no local album meta could be found for album of {}", song.uri);
-                                        }
+                                        sleep_after_request();
                                     }
                                     else {
-                                        println!("Cannot download cover: track {} does not have album tags", song.uri);
-                                    }
-                                }
-                            )).await;
-                        },
-                        ProviderMessage::FolderCover(song, fallback) => {
-                            let _ = gio::spawn_blocking(clone!(
-                                #[strong]
-                                fg_sender,
-                                move || {
-                                    if let Some(album) = song.album.as_ref() {
-                                        if sqlite::find_image_by_key(&album.uri, false).expect("Sqlite DB error").is_some() {
-                                            let _ = fg_sender.send_blocking(ProviderMessage::CoverAvailable(album.uri.to_owned()));
-                                        }
-                                        else if let Ok(Some(meta)) = sqlite::find_album_meta(&album) {
-                                            let res = get_best_image(&meta.image);
-                                            if res.is_ok() {
-                                                let (hires, thumbnail) = resize_convert_image(res.unwrap());
-                                                let (path, thumbnail_path) = get_new_image_paths();
-                                                if let (Ok(_), Ok(_)) = (
-                                                    hires.save(&path),
-                                                    thumbnail.save(&thumbnail_path)
-                                                ) {
-                                                    sqlite::register_image_key(&album.uri, path.file_name().unwrap().to_str().unwrap(), false);
-                                                    sqlite::register_image_key(&album.uri, thumbnail_path.file_name().unwrap().to_str().unwrap(), true);
-                                                    let _ = fg_sender.send_blocking(ProviderMessage::CoverAvailable(album.uri.to_owned()));
-                                                }
-                                            }
-                                            sleep_after_request();
-                                        }
-                                        else {
-                                            println!("Cannot download cover: no local album meta could be found for {}", album.uri);
-                                            if fallback {
-                                                let _ = fg_sender.send_blocking(ProviderMessage::FallbackToEmbeddedCover(song));
-                                            }
-                                        }
-                                    }
-                                    else {
-                                        println!("Cannot download cover: track {} does not have the necessary album tags", &song.uri);
+                                        println!("Cannot download cover: no local album meta could be found for {}", album.folder_uri);
                                         if fallback {
-                                            let _ = fg_sender.send_blocking(ProviderMessage::FallbackToEmbeddedCover(song));
+                                            let _ = fg_sender.send_blocking(ProviderMessage::FallbackToEmbeddedCover(album));
+                                        }
+                                        else {
+                                            // Write empty entries to prevent further (fruitless) lookups
+                                            sqlite::register_image_key(&album.folder_uri, None, false);
+                                            sqlite::register_image_key(&album.folder_uri, None, true);
                                         }
                                     }
                                 }
@@ -368,26 +331,24 @@ impl Cache {
                     ProviderMessage::ClearFolderCover(uri) => {
                         this.on_cover_cleared(&uri);
                     }
-                    ProviderMessage::FallbackToFolderCover(song) => {
+                    ProviderMessage::FallbackToFolderCover(album) => {
                         println!(
-                            "MPD does not have embedded cover for track {}, will try looking for a folder-level cover.",
-                            &song.uri
+                            "Falling back to looking for a cover image in folder {}.",
+                            &album.folder_uri
                         );
-                        if this.load_cached_folder_cover(&song, true, true, false).is_some() {
+                        if this.load_cached_folder_cover(&album, true, true, false).is_some() {
                             // Already have it in-memory
-                            this.on_cover_downloaded(strip_filename_linux(&song.uri));
+                            this.on_cover_downloaded(&album.folder_uri);
                         }
                     }
-                    ProviderMessage::FetchFolderCoverExternally(song, fallback) => {
-                        if let Some(album) = song.album.as_ref() {
-                            println!(
-                                "MPD does not have folder cover for track {}, will try fetching from external providers.",
-                                &song.uri
-                            );
-                            // Fill out metadata before attempting to fetch album art from external sources.
-                            let _ = this.bg_sender.send_blocking(ProviderMessage::AlbumMeta(album.clone()));
-                            let _ = this.bg_sender.send_blocking(ProviderMessage::FolderCover(song, fallback));
-                        }
+                    ProviderMessage::FetchFolderCoverExternally(album, fallback) => {
+                        println!(
+                            "MPD does not have cover for folder {}, will try fetching from external providers.",
+                            &album.folder_uri
+                        );
+                        // Fill out metadata before attempting to fetch album art from external sources.
+                        let _ = this.bg_sender.send_blocking(ProviderMessage::AlbumMeta(album.clone()));
+                        let _ = this.bg_sender.send_blocking(ProviderMessage::FolderCover(album, fallback));
                     }
                     ProviderMessage::ArtistAvatarAvailable(name) => {
                         this.on_artist_avatar_downloaded(&name)
@@ -446,18 +407,26 @@ impl Cache {
     /// Returns a gdk::Texture directly if one is currently cached in-memory.
     /// If not, it'll try to fetch from secondary storage and return asynchronously.
     /// Failing that, if schedule is set to true, it will try to get one from MPD.
-    /// If fallback is enabled, it will also look for folder-level covers in case no embedded art is available.
+    /// This version accepts a Song object only and works for songs without Album tags,
+    /// but in return it won't be able to query from external sources if said Song object
+    /// has no album tag.
+    /// Additionally returns a bool to indicate whether this cover is embedded or not, especially after fallbacks.
     pub fn load_cached_embedded_cover(
         &self,
         song: &SongInfo,
         thumbnail: bool,
         schedule: bool,
         fallback: bool
-    ) -> Option<Texture> {
+    ) -> Option<(Texture, bool)> {
         if let Some(filename) = sqlite::find_image_by_key(&song.uri, thumbnail).expect("Sqlite DB error") {
+            if filename.len() == 0 {
+                // Tried fetching before, nothing found, don't try again.
+                println!("Won't fetch embedded cover for song {} again (failed before)", &song.uri);
+                return None;
+            }
             if let Some(tex) = IMAGE_CACHE.get(&filename) {
                 // Cloning GObjects is cheap since they're just references
-                return Some(tex.value().clone());
+                return Some((tex.value().clone(), true));
             }
             else {
                 let mut cover_path = get_image_cache_path();
@@ -484,14 +453,94 @@ impl Cache {
             }
         }
         else if schedule {
+            if let Some(album) = song.album.as_ref() {
+                // Call MPD readpicture with optional fallback
+                self.mpd_client
+                    .get()
+                    .unwrap()
+                    .queue_background(
+                        BackgroundTask::DownloadEmbeddedCoverForAlbum(album.clone(), fallback),
+                        false
+                    );
+            }
+            else {
+                // Call MPD readpicture, without fallback
+                self.mpd_client
+                    .get()
+                    .unwrap()
+                    .queue_background(
+                        BackgroundTask::DownloadEmbeddedCover(song.clone()),
+                        false
+                    );
+            }
+        }
+        else if fallback {
+            if let Some(album) = song.album.as_ref() {
+                return self.load_cached_folder_cover(album, thumbnail, schedule, false);
+            }
+        }
+        None
+    }
+
+    /// Returns a gdk::Texture directly if one is currently cached in-memory.
+    /// If not, it'll try to fetch from secondary storage and return asynchronously.
+    /// Failing that, if schedule is set to true, it will try to get one from MPD.
+    /// If fallback is enabled, it will also look for folder-level covers in case no embedded art is available.
+    /// This version exists for widgets that don't keep references to a song, only to an album.
+    /// Additionally returns a bool to indicate whether this cover is embedded or not, especially after fallbacks.
+    pub fn load_cached_embedded_cover_for_album(
+        &self,
+        album: &AlbumInfo,
+        thumbnail: bool,
+        schedule: bool,
+        fallback: bool
+    ) -> Option<(Texture, bool)> {
+        if let Some(filename) = sqlite::find_image_by_key(&album.example_uri, thumbnail).expect("Sqlite DB error") {
+            if filename.len() == 0 {
+                // Tried fetching before, nothing found, don't try again.
+                println!("Won't fetch embedded cover for song {} again (failed before)", &album.example_uri);
+                return None;
+            }
+            if let Some(tex) = IMAGE_CACHE.get(&filename) {
+                // Cloning GObjects is cheap since they're just references
+                return Some((tex.value().clone(), true));
+            }
+            else {
+                let mut cover_path = get_image_cache_path();
+                let song_uri = album.example_uri.to_owned();
+                cover_path.push(&filename);
+                if cover_path.exists() {
+                    let fg_sender = self.fg_sender.clone();
+                    gio::spawn_blocking(move || {
+                        if let Ok(tex) = Texture::from_filename(&cover_path) {
+                            IMAGE_CACHE.insert(
+                                cover_path.to_str().unwrap().to_owned(),
+                                tex.clone(),
+                                if thumbnail { 1 } else { 16 },
+                            );
+                            IMAGE_CACHE.wait().unwrap();
+                            let _ =
+                                fg_sender.send_blocking(ProviderMessage::CoverAvailable(song_uri));
+                        }
+                    });
+                } else {
+                    // TODO: handle situation when Sqlite table is delusional more gracefully
+                    panic!("Couldn't find file {} (cached embedded cover of song {})", filename, &album.example_uri);
+                }
+            }
+        }
+        else if schedule {
             // Call MPD readpicture
             self.mpd_client
                 .get()
                 .unwrap()
                 .queue_background(
-                    BackgroundTask::DownloadEmbeddedCover(song.clone(), fallback),
+                    BackgroundTask::DownloadEmbeddedCoverForAlbum(album.clone(), fallback),
                     false
                 );
+        }
+        else if fallback {
+            return self.load_cached_folder_cover(album, thumbnail, schedule, false);
         }
         None
     }
@@ -500,20 +549,25 @@ impl Cache {
     /// If not, it'll try to fetch from secondary storage and return asynchronously.
     /// Failing that, if schedule is set to true, it will try to get one from MPD.
     /// If fallback is enabled, it will also look for embedded covers in case no folder-level cover is available.
+    /// Additionally returns a bool to indicate whether this cover is embedded or not, especially after fallbacks.
     pub fn load_cached_folder_cover(
         &self,
-        song: &SongInfo,
+        album: &AlbumInfo,
         thumbnail: bool,
         schedule: bool,
         fallback: bool
-    ) -> Option<Texture> {
-        // Try folder cover first, then embedded cover
-        let folder_uri = strip_filename_linux(&song.uri);
+    ) -> Option<(Texture, bool)> {
+        let folder_uri = &album.folder_uri;
         if let Some(filename) = sqlite::find_image_by_key(folder_uri, thumbnail)
             .expect("Sqlite DB error") {
+            if filename.len() == 0 {
+                // Tried fetching before, nothing found, don't try again.
+                println!("Won't fetch embedded cover for folder {} again (failed before)", &album.folder_uri);
+                return None;
+            }
             if let Some(tex) = IMAGE_CACHE.get(&filename) {
                 // Cloning GObjects is cheap since they're just references
-                return Some(tex.value().clone());
+                return Some((tex.value().clone(), false));
             }
             else {
                 let mut cover_path = get_image_cache_path();
@@ -544,9 +598,89 @@ impl Cache {
                 .get()
                 .unwrap()
                 .queue_background(
-                    BackgroundTask::DownloadFolderCover(song.clone(), fallback),
+                    BackgroundTask::DownloadFolderCover(album.clone(), fallback),
                     false
                 );
+        }
+        else if fallback {
+            return self.load_cached_embedded_cover_for_album(album, thumbnail, schedule, false);
+        }
+        None
+    }
+
+    /// Returns a gdk::Texture directly if one is currently cached in-memory.
+    /// If not, it'll try to fetch from secondary storage and return asynchronously.
+    /// Failing that, if schedule is set to true, it will try to get one from MPD.
+    /// If fallback is enabled, it will also look for embedded covers in case no folder-level cover is available.
+    /// Additionally returns a bool to indicate whether this cover is embedded or not, especially after fallbacks.
+    /// This version accepts a Song object only and works for songs without Album tags,
+    /// but in return it won't be able to query from external sources if said Song object
+    /// has no album tag.
+    pub fn load_cached_folder_cover_for_song(
+        &self,
+        song: &SongInfo,
+        thumbnail: bool,
+        schedule: bool,
+        fallback: bool
+    ) -> Option<(Texture, bool)> {
+        let folder_uri = strip_filename_linux(&song.uri);
+        if let Some(filename) = sqlite::find_image_by_key(folder_uri, thumbnail)
+            .expect("Sqlite DB error") {
+            if filename.len() == 0 {
+                // Tried fetching before, nothing found, don't try again.
+                println!("Won't fetch embedded cover for folder {} again (failed before)", &folder_uri);
+                return None;
+            }
+            if let Some(tex) = IMAGE_CACHE.get(&filename) {
+                // Cloning GObjects is cheap since they're just references
+                return Some((tex.value().clone(), false));
+            }
+            else {
+                let mut cover_path = get_image_cache_path();
+                let folder_uri = folder_uri.to_owned();
+                cover_path.push(&filename);
+                if cover_path.exists() {
+                    let fg_sender = self.fg_sender.clone();
+                    gio::spawn_blocking(move || {
+                        if let Ok(tex) = Texture::from_filename(&cover_path) {
+                            IMAGE_CACHE.insert(
+                                cover_path.to_str().unwrap().to_owned(),
+                                tex.clone(),
+                                if thumbnail { 1 } else { 16 },
+                            );
+                            IMAGE_CACHE.wait().unwrap();
+                            let _ =
+                                fg_sender.send_blocking(ProviderMessage::CoverAvailable(folder_uri));
+                        }
+                    });
+                } else {
+                    // TODO: handle situation when Sqlite table is delusional more gracefully
+                    panic!("Couldn't find file {} (cached embedded cover of album {})", filename, &folder_uri);
+                }
+            }
+        }
+        else if schedule {
+            if let Some(album) = song.album.as_ref() {
+                self.mpd_client
+                .get()
+                .unwrap()
+                .queue_background(
+                    BackgroundTask::DownloadFolderCover(album.clone(), fallback),
+                    false
+                );
+            }
+            else {
+                self.mpd_client
+                    .get()
+                    .unwrap()
+                    .queue_background(
+                        BackgroundTask::DownloadFolderCoverForSong(song.clone()),
+                        false
+                    );
+            }
+        }
+        else if fallback {
+            return self.load_cached_embedded_cover(song, thumbnail, schedule, false);
         }
         None
     }
@@ -571,8 +705,8 @@ impl Cache {
                     let (hires, thumbnail) = resize_convert_image(dyn_img);
                     let _ = hires.save(&hires_path);
                     let _ = thumbnail.save(&thumbnail_path);
-                    sqlite::register_image_key(&folder_uri, hires_path.file_name().unwrap().to_str().unwrap(), false);
-                    sqlite::register_image_key(&folder_uri, thumbnail_path.file_name().unwrap().to_str().unwrap(), true);
+                    sqlite::register_image_key(&folder_uri, Some(hires_path.file_name().unwrap().to_str().unwrap()), false);
+                    sqlite::register_image_key(&folder_uri, Some(thumbnail_path.file_name().unwrap().to_str().unwrap()), true);
                     // TODO: Optimise to avoid reading back from disk
                     IMAGE_CACHE.insert(
                         hires_path.file_name().unwrap().to_str().unwrap().to_owned(),
@@ -639,8 +773,8 @@ impl Cache {
                     let (hires, thumbnail) = resize_convert_image(dyn_img);
                     let _ = hires.save(&hires_path);
                     let _ = thumbnail.save(&thumbnail_path);
-                    sqlite::register_image_key(&tag, hires_path.file_name().unwrap().to_str().unwrap(), false);
-                    sqlite::register_image_key(&tag, thumbnail_path.file_name().unwrap().to_str().unwrap(), true);
+                    sqlite::register_image_key(&tag, Some(hires_path.file_name().unwrap().to_str().unwrap()), false);
+                    sqlite::register_image_key(&tag, Some(thumbnail_path.file_name().unwrap().to_str().unwrap()), true);
                     // TODO: Optimise to avoid reading back from disk
                     IMAGE_CACHE.insert(
                         hires_path.file_name().unwrap().to_str().unwrap().to_owned(),

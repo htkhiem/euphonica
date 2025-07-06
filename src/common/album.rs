@@ -5,6 +5,8 @@ use gtk::subclass::prelude::*;
 use std::cell::{OnceCell, RefCell};
 use time::Date;
 
+use crate::utils::strip_filename_linux;
+
 use super::{artists_to_string, parse_mb_artist_tag, ArtistInfo, QualityGrade, SongInfo, Stickers};
 
 // This is a model class for queue view displays.
@@ -14,8 +16,11 @@ use super::{artists_to_string, parse_mb_artist_tag, ArtistInfo, QualityGrade, So
 pub struct AlbumInfo {
     // TODO: Might want to refactor to Into<Cow<'a, str>>
     pub title: String,
-    // Folder-based URI, acquired from the first song found with this album's tag.
-    pub uri: String,
+    // Example track-level URI, acquired from the first song found with this album's tag.
+    // This facilitates falling back to embedded covers in case there's no cover file in the folder.
+    pub example_uri: String,
+    // The above but with filename removed, for looking up folder-level covers.
+    pub folder_uri: String,
     pub artists: Vec<ArtistInfo>, // parse from AlbumArtist tag please, not Artist.
     pub artist_tag: Option<String>,
     pub cover: Option<Texture>,
@@ -26,14 +31,15 @@ pub struct AlbumInfo {
 
 impl AlbumInfo {
     pub fn new(
-        uri: &str,
+        example_uri: &str,
         title: &str,
         artist_tag: Option<&str>,
         artists: Vec<ArtistInfo>,
-        quality_grade: QualityGrade,
+        quality_grade: QualityGrade
     ) -> Self {
         Self {
-            uri: uri.to_owned(),
+            example_uri: example_uri.to_owned(),
+            folder_uri: strip_filename_linux(example_uri).to_owned(),
             artists,
             artist_tag: artist_tag.map(str::to_owned),
             title: title.to_owned(),
@@ -65,7 +71,8 @@ impl Default for AlbumInfo {
     fn default() -> Self {
         AlbumInfo {
             title: "Untitled Album".to_owned(),
-            uri: "".to_owned(),
+            example_uri: "".to_owned(),
+            folder_uri: "".to_owned(),
             artists: Vec::with_capacity(0),
             artist_tag: None,
             cover: None,
@@ -95,6 +102,10 @@ mod imp {
     /// struct to a mutable variable, modify it, then create a new Song wrapper
     /// from the modified SongInfo struct (no copy required this time).
     /// This design also avoids a RefCell.
+    /// Album contains a SongInfo of a random song in that album, which in turn
+    /// contains a nested AlbumInfo.
+    /// In other words, an Album actually also contains a random song's information.
+    /// This is to facilitate fallback between folder cover and embedded track cover.
     #[derive(Default, Debug)]
     pub struct Album {
         pub info: OnceCell<AlbumInfo>,
@@ -136,7 +147,7 @@ mod imp {
         fn property(&self, _id: usize, pspec: &ParamSpec) -> glib::Value {
             let obj = self.obj();
             match pspec.name() {
-                "uri" => obj.get_uri().to_value(),
+                "uri" => obj.get_folder_uri().to_value(),
                 "title" => obj.get_title().to_value(),
                 "artist" => obj.get_artist_str().to_value(),
                 "rating" => obj.get_rating().unwrap_or(-1).to_value(),
@@ -179,8 +190,12 @@ impl Album {
         &self.imp().info.get().unwrap()
     }
 
-    pub fn get_uri(&self) -> &str {
-        &self.get_info().uri
+    pub fn get_folder_uri(&self) -> &str {
+        &self.get_info().folder_uri
+    }
+
+    pub fn get_example_uri(&self) -> &str {
+        &self.get_info().example_uri
     }
 
     pub fn get_title(&self) -> &str {
