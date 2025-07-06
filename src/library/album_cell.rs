@@ -6,7 +6,7 @@ use std::{
 };
 
 use crate::{
-    cache::{placeholders::ALBUMART_THUMBNAIL_PLACEHOLDER, Cache, CacheState},
+    cache::{placeholders::{ALBUMART_PLACEHOLDER, ALBUMART_THUMBNAIL_PLACEHOLDER}, Cache, CacheState},
     common::{Album, AlbumInfo, CoverSource},
 };
 
@@ -232,6 +232,7 @@ impl AlbumCell {
     }
 
     fn update_cover(&self, info: &AlbumInfo) {
+        let mut set: bool = false;
         match self.imp().cover_source.get() {
             CoverSource::Unknown => {
                 // Schedule when in this mode
@@ -245,6 +246,7 @@ impl AlbumCell {
                         self.imp().cover_source.set(
                             if is_embedded {CoverSource::Embedded} else {CoverSource::Folder}
                         );
+                        set = true;
                     }
             }
             CoverSource::Folder => {
@@ -255,6 +257,7 @@ impl AlbumCell {
                     .unwrap()
                     .load_cached_folder_cover(info, true, false, false) {
                         self.imp().cover.set_paintable(Some(&tex));
+                        set = true;
                     }
             }
             CoverSource::Embedded => {
@@ -265,11 +268,16 @@ impl AlbumCell {
                     .unwrap()
                     .load_cached_embedded_cover_for_album(info, true, false, false) {
                         self.imp().cover.set_paintable(Some(&tex));
+                        set = true;
                     }
             }
             CoverSource::None => {
-                self.imp().cover.set_paintable(Some(&*ALBUMART_THUMBNAIL_PLACEHOLDER));
+                self.imp().cover.set_paintable(Some(&*ALBUMART_PLACEHOLDER));
+                set = true;
             }
+        }
+        if !set {
+            self.imp().cover.set_paintable(Some(&*ALBUMART_PLACEHOLDER));
         }
     }
 

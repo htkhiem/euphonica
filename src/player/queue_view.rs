@@ -254,13 +254,13 @@ impl QueueView {
             #[weak(rename_to = this)]
             self,
             move |_, list_item| {
-                let child: QueueRow = list_item
-                    .downcast_ref::<ListItem>()
-                    .expect("Needs to be ListItem")
-                    .child()
-                    .and_downcast::<QueueRow>()
-                    .expect("The child has to be a `QueueRow`.");
-                child.teardown();
+                // let child: QueueRow = list_item
+                //     .downcast_ref::<ListItem>()
+                //     .expect("Needs to be ListItem")
+                //     .child()
+                //     .and_downcast::<QueueRow>()
+                //     .expect("The child has to be a `QueueRow`.");
+                // child.teardown();
                 // The above scroll bug only manifests after this, so now is the best time to set
                 // the corresponding values.
                 this.imp().last_scroll_pos.set(this.imp().scrolled_window.vadjustment().value());

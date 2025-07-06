@@ -65,15 +65,15 @@ create unique index if not exists `song_uri` on `songs` (`uri`);
 end;
 
 create table if not exists `images` (
-    `key` VARCHAR not null unique,
+    `key` VARCHAR not null,
     `is_thumbnail` INTEGER not null,
     `filename` VARCHAR not null,
     `last_modified` DATETIME not null,
-    primary key (`filename`)
+    primary key (`key`, `is_thumbnail`)
 );
 create unique index if not exists `image_key` on `images` (
     `key`,
-    `resolution`
+    `is_thumbnail`
 );
 ",
         )
@@ -385,7 +385,7 @@ pub fn find_image_by_key(key: &str, is_thumbnail: bool) -> Result<Option<String>
     query = conn
         .prepare("select filename from images where key = ?1 and is_thumbnail = ?2")
         .unwrap()
-        .query_row(params![key, is_thumbnail as u32], |r| Ok(r.get::<usize, String>(0)?));
+        .query_row(params![key, is_thumbnail as i32], |r| Ok(r.get::<usize, String>(0)?));
     match query {
         Ok(filename) => {
             return Ok(Some(filename));
@@ -418,13 +418,13 @@ pub fn find_cover_by_uri(track_uri: &str, is_thumbnail: bool) -> Result<Option<S
 pub fn register_image_key(key: &str, filename: Option<&str>, is_thumbnail: bool) -> Result<(), Error> {
     let mut conn = SQLITE_POOL.get().unwrap();
     let tx = conn.transaction().map_err(|e| Error::DbError(e))?;
-    tx.execute("delete from images where key = ?1 and is_thumbnail = ?2", params![key, is_thumbnail as u32])
+    tx.execute("delete from images where key = ?1 and is_thumbnail = ?2", params![key, is_thumbnail as i32])
         .map_err(|e| Error::DbError(e))?;
     tx.execute(
-        "insert into images (key, is_thumbnail, filename, last_modified) values (?1,?2,?3, ?4)",
+        "insert into images (key, is_thumbnail, filename, last_modified) values (?1,?2,?3,?4)",
         params![
             key,
-            is_thumbnail as u32,
+            is_thumbnail as i32,
             // Callers should interpret empty names as "tried but didn't find anything, don't try again"
             if let Some(filename) = filename {filename} else {""},
             OffsetDateTime::now_utc()
@@ -438,7 +438,7 @@ pub fn register_image_key(key: &str, filename: Option<&str>, is_thumbnail: bool)
 pub fn unregister_image_key(key: &str, is_thumbnail: bool) -> Result<(), Error> {
     let mut conn = SQLITE_POOL.get().unwrap();
     let tx = conn.transaction().map_err(|e| Error::DbError(e))?;
-    tx.execute("delete from images where key = ?1 and is_thumbnail = ?2", params![key, is_thumbnail as u32])
+    tx.execute("delete from images where key = ?1 and is_thumbnail = ?2", params![key, is_thumbnail as i32])
         .map_err(|e| Error::DbError(e))?;
     Ok(())
 }

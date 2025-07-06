@@ -19,11 +19,7 @@ use gtk::{gdk::{self, Texture}, gio, glib};
 use once_cell::sync::Lazy;
 use uuid::Uuid;
 use std::{
-    cell::OnceCell,
-    fmt,
-    path::PathBuf,
-    rc::Rc,
-    sync::{Arc, RwLock},
+    cell::OnceCell, fmt, fs::create_dir_all, path::PathBuf, rc::Rc, sync::{Arc, RwLock}
 };
 
 use crate::{common::SongInfo, meta_providers::{get_provider_with_priority, models::{ArtistMeta, Lyrics}}, utils::strip_filename_linux};
@@ -117,9 +113,13 @@ fn init_meta_provider_chain() -> MetadataChain {
 impl Cache {
     pub fn new() -> Rc<Self> {
         let (fg_sender, fg_receiver): (Sender<ProviderMessage>, Receiver<ProviderMessage>) =
-            async_channel::bounded(1);
+            async_channel::unbounded();
         let (bg_sender, bg_receiver): (Sender<ProviderMessage>, Receiver<ProviderMessage>) =
             async_channel::unbounded();
+
+        // Init folders
+        create_dir_all(get_app_cache_path()).expect("ERROR: cannot create cache folders");
+        create_dir_all(get_image_cache_path()).expect("ERROR: cannot create cache folders");
 
         let cache = Self {
             meta_providers: Arc::new(RwLock::new(init_meta_provider_chain())),
@@ -136,6 +136,7 @@ impl Cache {
     }
     /// Re-initialise list of providers when priority order is changed
     pub fn reinit_meta_providers(&self) {
+        println!("Reinitialising metadata providers");
         let mut curr_providers = self.meta_providers.write().unwrap();
         *curr_providers = init_meta_provider_chain();
     }
@@ -224,8 +225,8 @@ impl Cache {
                                                         hires.save(&path),
                                                         thumbnail.save(&thumbnail_path)
                                                     ) {
-                                                        sqlite::register_image_key(&key.name, Some(path.file_name().unwrap().to_str().unwrap()), false);
-                                                        sqlite::register_image_key(&key.name, Some(thumbnail_path.file_name().unwrap().to_str().unwrap()), true);
+                                                        let _ = sqlite::register_image_key(&key.name, Some(path.file_name().unwrap().to_str().unwrap()), false);
+                                                        let _ = sqlite::register_image_key(&key.name, Some(thumbnail_path.file_name().unwrap().to_str().unwrap()), true);
                                                         let _ = fg_sender.send_blocking(ProviderMessage::ArtistAvatarAvailable(name.clone()));
                                                     }
                                                 }
@@ -263,8 +264,8 @@ impl Cache {
                                                 hires.save(&path),
                                                 thumbnail.save(&thumbnail_path)
                                             ) {
-                                                sqlite::register_image_key(&album.folder_uri, Some(path.file_name().unwrap().to_str().unwrap()), false);
-                                                sqlite::register_image_key(&album.folder_uri, Some(thumbnail_path.file_name().unwrap().to_str().unwrap()), true);
+                                                let _ = sqlite::register_image_key(&album.folder_uri, Some(path.file_name().unwrap().to_str().unwrap()), false);
+                                                let _ = sqlite::register_image_key(&album.folder_uri, Some(thumbnail_path.file_name().unwrap().to_str().unwrap()), true);
                                                 let _ = fg_sender.send_blocking(ProviderMessage::CoverAvailable(album.folder_uri.to_owned()));
                                             }
                                         }
@@ -277,8 +278,8 @@ impl Cache {
                                         }
                                         else {
                                             // Write empty entries to prevent further (fruitless) lookups
-                                            sqlite::register_image_key(&album.folder_uri, None, false);
-                                            sqlite::register_image_key(&album.folder_uri, None, true);
+                                            let _ = sqlite::register_image_key(&album.folder_uri, None, false);
+                                            let _ = sqlite::register_image_key(&album.folder_uri, None, true);
                                         }
                                     }
                                 }
@@ -437,7 +438,7 @@ impl Cache {
                     gio::spawn_blocking(move || {
                         if let Ok(tex) = Texture::from_filename(&cover_path) {
                             IMAGE_CACHE.insert(
-                                cover_path.to_str().unwrap().to_owned(),
+                                filename,
                                 tex.clone(),
                                 if thumbnail { 1 } else { 16 },
                             );
@@ -514,7 +515,7 @@ impl Cache {
                     gio::spawn_blocking(move || {
                         if let Ok(tex) = Texture::from_filename(&cover_path) {
                             IMAGE_CACHE.insert(
-                                cover_path.to_str().unwrap().to_owned(),
+                                filename,
                                 tex.clone(),
                                 if thumbnail { 1 } else { 16 },
                             );
@@ -578,7 +579,7 @@ impl Cache {
                     gio::spawn_blocking(move || {
                         if let Ok(tex) = Texture::from_filename(&cover_path) {
                             IMAGE_CACHE.insert(
-                                cover_path.to_str().unwrap().to_owned(),
+                                filename,
                                 tex.clone(),
                                 if thumbnail { 1 } else { 16 },
                             );
@@ -644,7 +645,7 @@ impl Cache {
                     gio::spawn_blocking(move || {
                         if let Ok(tex) = Texture::from_filename(&cover_path) {
                             IMAGE_CACHE.insert(
-                                cover_path.to_str().unwrap().to_owned(),
+                                filename,
                                 tex.clone(),
                                 if thumbnail { 1 } else { 16 },
                             );
@@ -703,10 +704,10 @@ impl Cache {
             if let Ok(ptr) = maybe_ptr {
                 if let Ok(dyn_img) = ptr.decode() {
                     let (hires, thumbnail) = resize_convert_image(dyn_img);
-                    let _ = hires.save(&hires_path);
-                    let _ = thumbnail.save(&thumbnail_path);
-                    sqlite::register_image_key(&folder_uri, Some(hires_path.file_name().unwrap().to_str().unwrap()), false);
-                    sqlite::register_image_key(&folder_uri, Some(thumbnail_path.file_name().unwrap().to_str().unwrap()), true);
+                    if let (Ok(_), Ok(_)) = (hires.save(&hires_path), thumbnail.save(&thumbnail_path)) {
+                        let _ = sqlite::register_image_key(&folder_uri, Some(hires_path.file_name().unwrap().to_str().unwrap()), false);
+                        let _ = sqlite::register_image_key(&folder_uri, Some(thumbnail_path.file_name().unwrap().to_str().unwrap()), true);
+                    }
                     // TODO: Optimise to avoid reading back from disk
                     IMAGE_CACHE.insert(
                         hires_path.file_name().unwrap().to_str().unwrap().to_owned(),
@@ -738,14 +739,14 @@ impl Cache {
             if let Some(hires_name) = sqlite::find_image_by_key(&folder_uri, false).unwrap() {
                 let mut hires_path = get_image_cache_path();
                 hires_path.push(&hires_name);
-                sqlite::unregister_image_key(&folder_uri, false);
+                sqlite::unregister_image_key(&folder_uri, false).expect("Unable to unregister image key");
                 IMAGE_CACHE.remove(&hires_name);
                 let _ = std::fs::remove_file(hires_path);
             }
             if let Some(thumb_name) = sqlite::find_image_by_key(&folder_uri, true).unwrap() {
                 let mut thumb_path = get_image_cache_path();
                 thumb_path.push(&thumb_name);
-                sqlite::unregister_image_key(&folder_uri, true);
+                sqlite::unregister_image_key(&folder_uri, true).expect("Unable to unregister image key");
                 IMAGE_CACHE.remove(&thumb_name);
                 let _ = std::fs::remove_file(thumb_path);
             }
@@ -771,21 +772,21 @@ impl Cache {
             if let Ok(ptr) = maybe_ptr {
                 if let Ok(dyn_img) = ptr.decode() {
                     let (hires, thumbnail) = resize_convert_image(dyn_img);
-                    let _ = hires.save(&hires_path);
-                    let _ = thumbnail.save(&thumbnail_path);
-                    sqlite::register_image_key(&tag, Some(hires_path.file_name().unwrap().to_str().unwrap()), false);
-                    sqlite::register_image_key(&tag, Some(thumbnail_path.file_name().unwrap().to_str().unwrap()), true);
-                    // TODO: Optimise to avoid reading back from disk
-                    IMAGE_CACHE.insert(
-                        hires_path.file_name().unwrap().to_str().unwrap().to_owned(),
-                        gdk::Texture::from_filename(&hires_path).unwrap(),
-                        16
-                    );
-                    IMAGE_CACHE.insert(
-                        hires_path.file_name().unwrap().to_str().unwrap().to_owned(),
-                        gdk::Texture::from_filename(&thumbnail_path).unwrap(),
-                        1
-                    );
+                    if let (Ok(_), Ok(_)) = (hires.save(&hires_path), thumbnail.save(&thumbnail_path)) {
+                        let _ = sqlite::register_image_key(&tag, Some(hires_path.file_name().unwrap().to_str().unwrap()), false);
+                        let _ = sqlite::register_image_key(&tag, Some(thumbnail_path.file_name().unwrap().to_str().unwrap()), true);
+                        // TODO: Optimise to avoid reading back from disk
+                        IMAGE_CACHE.insert(
+                            hires_path.file_name().unwrap().to_str().unwrap().to_owned(),
+                            gdk::Texture::from_filename(&hires_path).unwrap(),
+                            16
+                        );
+                        IMAGE_CACHE.insert(
+                            hires_path.file_name().unwrap().to_str().unwrap().to_owned(),
+                            gdk::Texture::from_filename(&thumbnail_path).unwrap(),
+                            1
+                        );
+                    }
                     IMAGE_CACHE.wait().unwrap();
                     let _ = fg_sender.send_blocking(ProviderMessage::ArtistAvatarAvailable(tag));
                 }
@@ -806,14 +807,14 @@ impl Cache {
             if let Some(hires_name) = sqlite::find_image_by_key(&tag, false).unwrap() {
                 let mut hires_path = get_image_cache_path();
                 hires_path.push(&hires_name);
-                sqlite::unregister_image_key(&tag, false);
+                let _ = sqlite::unregister_image_key(&tag, false);
                 IMAGE_CACHE.remove(&hires_name);
                 let _ = std::fs::remove_file(hires_path);
             }
             if let Some(thumb_name) = sqlite::find_image_by_key(&tag, true).unwrap() {
                 let mut thumb_path = get_image_cache_path();
                 thumb_path.push(&thumb_name);
-                sqlite::unregister_image_key(&tag, true);
+                let _ = sqlite::unregister_image_key(&tag, true);
                 IMAGE_CACHE.remove(&thumb_name);
                 let _ = std::fs::remove_file(thumb_path);
             }

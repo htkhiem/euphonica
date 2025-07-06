@@ -639,7 +639,7 @@ impl AlbumContentView {
                     .cache
                     .get()
                     .unwrap()
-                    .load_cached_folder_cover(info, true, false, false) {
+                    .load_cached_folder_cover(info, false, true, true) {
                         self.imp().cover.set_paintable(Some(&tex));
                         self.imp().cover_source.set(
                             if is_embedded {CoverSource::Embedded} else {CoverSource::Folder}
@@ -652,7 +652,7 @@ impl AlbumContentView {
                     .cache
                     .get()
                     .unwrap()
-                    .load_cached_folder_cover(info, true, false, false) {
+                    .load_cached_folder_cover(info, false, false, false) {
                         self.imp().cover.set_paintable(Some(&tex));
                     }
             }
@@ -662,7 +662,7 @@ impl AlbumContentView {
                     .cache
                     .get()
                     .unwrap()
-                    .load_cached_embedded_cover_for_album(info, true, false, false) {
+                    .load_cached_embedded_cover_for_album(info, false, false, false) {
                         self.imp().cover.set_paintable(Some(&tex));
                     }
             }

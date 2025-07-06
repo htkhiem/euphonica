@@ -1,5 +1,5 @@
 project('euphonica', 'rust',
-          version: '0.94.1',
+          version: '0.95.0',
     meson_version: '>= 0.62.0',
   default_options: [ 'warning_level=2', 'werror=false', ],
 )

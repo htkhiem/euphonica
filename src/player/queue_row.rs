@@ -310,6 +310,7 @@ impl QueueRow {
     }
 
     fn update_thumbnail(&self, info: &SongInfo) {
+        let mut set: bool = false;
         match self.imp().thumbnail_source.get() {
             CoverSource::Unknown => {
                 // Schedule when in this mode
@@ -326,6 +327,7 @@ impl QueueRow {
                     } else {
                         CoverSource::Folder
                     });
+                    set = true;
                 }
             }
             CoverSource::Folder => {
@@ -337,6 +339,7 @@ impl QueueRow {
                     .load_cached_folder_cover_for_song(info, true, false, false)
                 {
                     self.imp().thumbnail.set_paintable(Some(&tex));
+                    set = true;
                 }
             }
             CoverSource::Embedded => {
@@ -348,13 +351,20 @@ impl QueueRow {
                     .load_cached_embedded_cover(info, true, false, false)
                 {
                     self.imp().thumbnail.set_paintable(Some(&tex));
+                    set = true;
                 }
             }
             CoverSource::None => {
                 self.imp()
                     .thumbnail
                     .set_paintable(Some(&*ALBUMART_THUMBNAIL_PLACEHOLDER));
+                set = true;
             }
+        }
+        if !set {
+            self.imp()
+                .thumbnail
+                .set_paintable(Some(&*ALBUMART_THUMBNAIL_PLACEHOLDER));
         }
     }
 
