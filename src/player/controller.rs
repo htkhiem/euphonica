@@ -3,11 +3,11 @@ use crate::{
     application::EuphonicaApplication,
     cache::{get_image_cache_path, sqlite, Cache, CacheState},
     client::{ClientState, ConnectionState, MpdWrapper},
-    common::{QualityGrade, Song},
+    common::{CoverSource, QualityGrade, Song, SongInfo},
     config::APPLICATION_ID,
     meta_providers::models::Lyrics,
     player::fft_backends::fifo::FifoFftBackend,
-    utils::{prettify_audio_format, settings_manager}
+    utils::{prettify_audio_format, settings_manager, strip_filename_linux}
 };
 use async_lock::OnceCell as AsyncOnceCell;
 use mpris_server::{
@@ -178,7 +178,7 @@ fn get_fft_backend() -> Rc<dyn FftBackend> {
 
 mod imp {
     use super::*;
-    use crate::{application::EuphonicaApplication, meta_providers::models::Lyrics};
+    use crate::{application::EuphonicaApplication, common::CoverSource, meta_providers::models::Lyrics};
     use glib::{
         ParamSpec, ParamSpecBoolean, ParamSpecDouble, ParamSpecEnum, ParamSpecFloat, ParamSpecInt, ParamSpecObject, ParamSpecString, ParamSpecUInt, ParamSpecUInt64
     };
@@ -227,6 +227,10 @@ mod imp {
         pub use_visualizer: Cell<bool>,
         pub fft_backend_idx: Cell<i32>,
         pub outputs: gio::ListStore,
+        // Player controller doesn't actually keep a reference to the texture itself.
+        // This enum is merely to help decide whether we should fire a notify signal
+        // to the bar & pane.
+        pub cover_source: Cell<CoverSource>,
     }
 
     #[glib::object_subclass]
@@ -282,6 +286,7 @@ mod imp {
                 use_visualizer: Cell::new(false),
                 fft_backend_idx: Cell::new(0),
                 outputs: gio::ListStore::new::<BoxedAnyObject>(),
+                cover_source: Cell::default()
             }
         }
     }
@@ -596,12 +601,13 @@ impl Player {
                     // - Match by folder URI only if there is no current cover.
                     if let Some(song) = this.imp().current_song.borrow().as_ref() {
                         if song.get_uri() == &uri {
+                            // Always do this to force upgrade to embedded cover from folder cover
+                            this.imp().cover_source.set(CoverSource::Embedded);
                             this.notify("album-art");
-                        } else if this.current_song_cover(true).is_none() {
-                            if let Some(album) = song.get_album() {
-                                if &album.folder_uri == &uri {
-                                    this.notify("album-art");
-                                }
+                        } else if this.imp().cover_source.get() != CoverSource::Embedded {
+                            if strip_filename_linux(song.get_uri()) == &uri {
+                                this.imp().cover_source.set(CoverSource::Folder);
+                                this.notify("album-art");
                             }
                         }
                     }
@@ -616,14 +622,21 @@ impl Player {
                 #[weak(rename_to = this)]
                 self,
                 move |_: CacheState, uri: String| {
-                    // Exact match only
                     if let Some(song) = this.imp().current_song.borrow().as_ref() {
-                        if song.get_uri() == &uri {
-                            this.notify("album-art");
-                        } else if let Some(album) = song.get_album() {
-                            if &album.folder_uri == &uri {
-                                this.notify("album-art");
+                        match this.imp().cover_source.get() {
+                            CoverSource::Embedded => {
+                                if song.get_uri() == &uri {
+                                    this.imp().cover_source.set(CoverSource::None);
+                                    this.notify("album-art");
+                                }
                             }
+                            CoverSource::Folder => {
+                                if strip_filename_linux(song.get_uri()) == &uri {
+                                    this.imp().cover_source.set(CoverSource::None);
+                                    this.notify("album-art");
+                                }
+                            }
+                            _ => {}
                         }
                     }
                 }
@@ -790,6 +803,22 @@ impl Player {
     // Signals will be sent for properties whose values have changed, even though
     // we will be receiving updates for many properties at once.
 
+    fn update_cover(&self, song: &SongInfo) {
+        if let Some((_, is_embedded)) = self.imp().cache.get().unwrap().load_cached_embedded_cover(
+            song,
+            true,
+            true,
+            true
+        ) {
+            self.imp().cover_source.set(
+                if is_embedded {CoverSource::Embedded} else {CoverSource::Folder}
+            );
+        } else {
+            // Unknown for now. Wait till cache responds via signal.
+            self.imp().cover_source.set(CoverSource::Unknown);
+        }
+    }
+
     /// Main update function. MPD's protocol has a single "status" commands
     /// that returns everything at once. This update function will take what's
     /// relevant and update the GObject properties accordingly.
@@ -916,7 +945,7 @@ impl Player {
 
         // Update playing status of songs in the queue
         if let Some(new_queue_place) = status.song {
-            let mut needs_new_lyrics = true;
+            let mut needs_refresh = true;
             // There is now a playing song.
             // Check if there was one and whether it is different from the one playing now.
             // let new_id: u32 = new_queue_place.id.0;
@@ -937,43 +966,13 @@ impl Player {
             if let Some(old_song) = maybe_old_song {
                 if old_song.get_queue_id() != new_song.get_queue_id() {
                     old_song.set_is_playing(false);
-                    // Trigger fetching if possible
-                    let _ = self.imp().cache.get().unwrap().load_cached_embedded_cover(
-                        new_song.get_info(),
-                        true,
-                        true,
-                        true
-                    );
-                    self.notify("title");
-                    self.notify("artist");
-                    self.notify("duration");
-                    self.notify("quality-grade");
-                    self.notify("format-desc");
-                    // Avoid needlessly changing album art as background blur updates are expensive.
-                    if new_song.get_album_title() != old_song.get_album_title() {
-                        self.notify("album");
-                        self.notify("album-art");
-                    }
-                    // Update MPRIS side
-                    if self.imp().mpris_enabled.get() {
-                        mpris_changes.push(Property::Metadata(
-                            new_song.get_mpris_metadata(),
-                        ));
-                    }
                 }
                 else {
                     // Same old song
-                    needs_new_lyrics = false;
+                    needs_refresh = false;
                 }
-            } else {
-                // There was nothing playing previously. Update the following now:
-                // Trigger fetching if possible
-                let _ = self.imp().cache.get().unwrap().load_cached_embedded_cover(
-                    new_song.get_info(),
-                    true,
-                    true,
-                    true
-                );
+            }
+            if needs_refresh {
                 self.notify("title");
                 self.notify("artist");
                 self.notify("duration");
@@ -981,8 +980,8 @@ impl Player {
                 self.notify("format-desc");
                 self.notify("album");
                 self.notify("album-art");
-            }
-            if needs_new_lyrics {
+                // Queue cover fetch task
+                self.update_cover(new_song.get_info());
                 // Get new lyrics
                 // First remove all current lines
                 self.imp().lyric_lines.splice(0, self.imp().lyric_lines.n_items(), &[]);
@@ -994,6 +993,12 @@ impl Player {
                 else {
                     // Schedule downloading
                     self.imp().cache.get().unwrap().ensure_cached_lyrics(new_song.get_info());
+                }
+                // Update MPRIS side
+                if self.imp().mpris_enabled.get() {
+                    mpris_changes.push(Property::Metadata(
+                        new_song.get_mpris_metadata(),
+                    ));
                 }
             }
         } else {

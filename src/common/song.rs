@@ -11,9 +11,8 @@ use std::{
 };
 use time::{Date, Month};
 
-use crate::cache::get_image_cache_path;
-use crate::cache::sqlite;
-use crate::{meta_providers::MetadataType, utils::strip_filename_linux};
+use crate::cache::{get_image_cache_path, sqlite};
+use crate::utils::strip_filename_linux;
 
 use super::{artists_to_string, parse_mb_artist_tag, AlbumInfo, ArtistInfo};
 

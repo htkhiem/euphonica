@@ -129,7 +129,7 @@ pub enum BackgroundTask {
 mod background {
     use std::ops::Range;
 
-    use crate::cache::sqlite;
+    use crate::{cache::sqlite, utils::strip_filename_linux};
 
     use super::*;
     pub fn update_mpd_database(client: &mut mpd::Client<StreamWrapper>,
@@ -226,6 +226,35 @@ mod background {
                 sender_to_cache
                     .send_blocking(ProviderMessage::FetchFolderCoverExternally(key, fallback))
                     .expect("Cannot signal main cache to fetch cover externally.");
+            }
+        }
+    }
+
+    pub fn download_folder_cover_for_song(
+        client: &mut mpd::Client<StreamWrapper>,
+        sender_to_cache: &Sender<ProviderMessage>,
+        key: SongInfo
+    ) {
+        // Re-check in case previous iterations have already downloaded these
+        let uri = strip_filename_linux(&key.uri).to_owned();
+        if sqlite::find_image_by_key(&uri, false).expect("Sqlite DB error").is_none() {
+            if let Ok(bytes) = client.albumart(&uri) {
+                if let Some(dyn_img) = utils::read_image_from_bytes(bytes) {
+                    let (hires, thumb) = utils::resize_convert_image(dyn_img);
+                    let (path, thumbnail_path) = get_new_image_paths();
+                    if let (Ok(_), Ok(_)) = (hires.save(&path), thumb.save(&thumbnail_path)) {
+                        sqlite::register_image_key(&uri, Some(path.file_name().unwrap().to_str().unwrap()), false);
+                        sqlite::register_image_key(&uri, Some(thumbnail_path.file_name().unwrap().to_str().unwrap()), true);
+                        sender_to_cache
+                            .send_blocking(ProviderMessage::CoverAvailable(uri))
+                            .expect("Cannot notify main cache of folder cover download result.");
+                    }
+                }
+            }
+            else {
+                sender_to_cache
+                    .send_blocking(ProviderMessage::CoverNotAvailable(uri))
+                    .expect("Cannot notify main cache of embedded cover download result.");
             }
         }
     }
@@ -583,6 +612,13 @@ impl MpdWrapper {
                                 key,
                                 fallback
                             )
+                        }
+                        BackgroundTask::DownloadFolderCoverForSong(key) => {
+                            background::download_folder_cover_for_song(
+                                &mut client,
+                                &meta_sender,
+                                key
+                           )
                         }
                         BackgroundTask::DownloadEmbeddedCover(key) => {
                             background::download_embedded_cover(

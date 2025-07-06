@@ -465,7 +465,7 @@ mod imp {
 glib::wrapper! {
     pub struct PlaylistContentView(ObjectSubclass<imp::PlaylistContentView>)
         @extends gtk::Widget,
-        @implements gio::ActionGroup, gio::ActionMap;
+    @implements gio::ActionGroup, gio::ActionMap;
 }
 
 impl Default for PlaylistContentView {
@@ -685,12 +685,14 @@ impl PlaylistContentView {
         factory.connect_setup(clone!(
             #[weak(rename_to = this)]
             self,
+            #[weak]
+            cache,
             move |_, list_item| {
                 let library = this.imp().library.get().unwrap();
                 let item = list_item
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
-                let row = PlaylistSongRow::new(library.clone(), this.clone(), &item);
+                let row = PlaylistSongRow::new(library.clone(), this.clone(), &item, cache);
                 row.set_queue_controls_visible(true);
                 item.set_child(Some(&row));
             }
@@ -698,60 +700,64 @@ impl PlaylistContentView {
         editing_factory.connect_setup(clone!(
             #[weak(rename_to = this)]
             self,
+            #[weak]
+            cache,
             move |_, list_item| {
                 let library = this.imp().library.get().unwrap();
                 let item = list_item
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
-                let row = PlaylistSongRow::new(library.clone(), this.clone(), &item);
+                let row = PlaylistSongRow::new(library.clone(), this.clone(), &item, cache);
                 row.set_edit_controls_visible(true);
                 item.set_child(Some(&row));
             }
         ));
 
         // Tell factory how to bind `PlaylistSongRow` to one of our Playlist GObjects
-        [&factory, &editing_factory].iter().for_each(clone!(
-            #[weak]
-            cache,
-            move |f| {
-                f.connect_bind(clone!(
-                    #[weak]
-                    cache,
-                    move |_, list_item| {
-                        // Get `Song` from `ListItem` (that is, the data side)
-                        let item: Song = list_item
-                            .downcast_ref::<ListItem>()
-                            .expect("Needs to be ListItem")
-                            .item()
-                            .and_downcast::<Song>()
-                            .expect("The item has to be a common::Song.");
+        [&factory, &editing_factory].iter().for_each(move |f| {
+            f.connect_bind(|_, list_item| {
+                // Get `Song` from `ListItem` (that is, the data side)
+                let item: Song = list_item
+                    .downcast_ref::<ListItem>()
+                    .expect("Needs to be ListItem")
+                    .item()
+                    .and_downcast::<Song>()
+                    .expect("The item has to be a common::Song.");
 
-                        // Get `PlaylistSongRow` from `ListItem` (the UI widget)
-                        let child: PlaylistSongRow = list_item
-                            .downcast_ref::<ListItem>()
-                            .expect("Needs to be ListItem")
-                            .child()
-                            .and_downcast::<PlaylistSongRow>()
-                            .expect("The child has to be an `PlaylistSongRow`.");
+                // Get `PlaylistSongRow` from `ListItem` (the UI widget)
+                let child: PlaylistSongRow = list_item
+                    .downcast_ref::<ListItem>()
+                    .expect("Needs to be ListItem")
+                    .child()
+                    .and_downcast::<PlaylistSongRow>()
+                    .expect("The child has to be an `PlaylistSongRow`.");
 
-                        // Within this binding fn is where the cached album art texture gets used.
-                        child.bind(&item, cache.clone());
-                    }
-                ));
+                // Within this binding fn is where the cached album art texture gets used.
+                child.bind(&item);
+            });
 
-                // When row goes out of sight, unbind from item to allow reuse with another.
-                f.connect_unbind(move |_, list_item| {
-                    // Get `PlaylistSongRow` from `ListItem` (the UI widget)
-                    let child: PlaylistSongRow = list_item
-                        .downcast_ref::<ListItem>()
-                        .expect("Needs to be ListItem")
-                        .child()
-                        .and_downcast::<PlaylistSongRow>()
-                        .expect("The child has to be an `PlaylistSongRow`.");
-                    child.unbind();
-                });
-            }
-        ));
+            // When row goes out of sight, unbind from item to allow reuse with another.
+            f.connect_unbind(|_, list_item| {
+                // Get `PlaylistSongRow` from `ListItem` (the UI widget)
+                let child: PlaylistSongRow = list_item
+                    .downcast_ref::<ListItem>()
+                    .expect("Needs to be ListItem")
+                    .child()
+                    .and_downcast::<PlaylistSongRow>()
+                    .expect("The child has to be an `PlaylistSongRow`.");
+                child.unbind();
+            });
+
+            f.connect_teardown(|_, list_item| {
+                let child: PlaylistSongRow = list_item
+                    .downcast_ref::<ListItem>()
+                    .expect("Needs to be ListItem")
+                    .child()
+                    .and_downcast::<PlaylistSongRow>()
+                    .expect("The child has to be an `PlaylistSongRow`.");
+                child.teardown();
+            });
+        });
 
         editing_factory.connect_teardown(clone!(
             #[weak(rename_to = this)]

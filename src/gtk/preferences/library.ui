@@ -118,20 +118,11 @@
 					</object>
 				</property>
 				<child>
-					<object class="AdwActionRow" id="albumart_cache_size">
+					<object class="AdwActionRow" id="image_cache_size">
 						<style>
 							<class name="property"/>
 						</style>
-						<property name="title" translatable="true">Album arts</property>
-						<property name="subtitle">Computing...</property>
-					</object>
-				</child>
-				<child>
-					<object class="AdwActionRow" id="avatar_cache_size">
-						<style>
-							<class name="property"/>
-						</style>
-						<property name="title" translatable="true">Artist avatars</property>
+						<property name="title" translatable="true">Images</property>
 						<property name="subtitle">Computing...</property>
 					</object>
 				</child>

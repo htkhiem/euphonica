@@ -141,7 +141,7 @@ mod imp {
                 // click on the desktop icon again, spawning another instance which should
                 // only live briefly to pass args to the primary one).
                 // Create cache controller
-                let cache = Cache::new(&self.cache_path);
+                let cache = Cache::new();
                 let meta_sender = cache.get_sender();
 
                 // Create client instance (not connected yet)

@@ -11,7 +11,7 @@ use super::{AlbumCell, ArtistSongRow, Library};
 use crate::{
     cache::{Cache, CacheState},
     client::ClientState,
-    common::{Album, AlbumInfo, Artist, ArtistInfo, Song},
+    common::{Album, Artist, ArtistInfo, Song},
 };
 
 mod imp {
@@ -509,39 +509,37 @@ impl ArtistContentView {
         factory.connect_setup(clone!(
             #[weak]
             library,
+            #[weak]
+            cache,
             move |_, list_item| {
                 let item = list_item
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
-                let song_row = ArtistSongRow::new(library, &item);
+                let song_row = ArtistSongRow::new(library, &item, cache);
                 item.set_child(Some(&song_row));
             }
         ));
         // Tell factory how to bind `ArtistSongRow` to one of our Artist GObjects
-        factory.connect_bind(clone!(
-            #[weak]
-            cache,
-            move |_, list_item| {
-                // Get `Song` from `ListItem` (that is, the data side)
-                let item: Song = list_item
-                    .downcast_ref::<ListItem>()
-                    .expect("Needs to be ListItem")
-                    .item()
-                    .and_downcast::<Song>()
-                    .expect("The item has to be a common::Song.");
+        factory.connect_bind(move |_, list_item| {
+            // Get `Song` from `ListItem` (that is, the data side)
+            let item: Song = list_item
+                .downcast_ref::<ListItem>()
+                .expect("Needs to be ListItem")
+                .item()
+                .and_downcast::<Song>()
+                .expect("The item has to be a common::Song.");
 
-                // Get `ArtistSongRow` from `ListItem` (the UI widget)
-                let child: ArtistSongRow = list_item
-                    .downcast_ref::<ListItem>()
-                    .expect("Needs to be ListItem")
-                    .child()
-                    .and_downcast::<ArtistSongRow>()
-                    .expect("The child has to be an `ArtistSongRow`.");
+            // Get `ArtistSongRow` from `ListItem` (the UI widget)
+            let child: ArtistSongRow = list_item
+                .downcast_ref::<ListItem>()
+                .expect("Needs to be ListItem")
+                .child()
+                .and_downcast::<ArtistSongRow>()
+                .expect("The child has to be an `ArtistSongRow`.");
 
-                // Within this binding fn is where the cached artist avatar texture gets used.
-                child.bind(&item, cache);
-            }
-        ));
+            // Within this binding fn is where the cached artist avatar texture gets used.
+            child.bind(&item);
+        });
 
         // When row goes out of sight, unbind from item to allow reuse with another.
         factory.connect_unbind(move |_, list_item| {
@@ -553,6 +551,19 @@ impl ArtistContentView {
                 .and_downcast::<ArtistSongRow>()
                 .expect("The child has to be an `ArtistSongRow`.");
             child.unbind();
+        });
+
+        factory.connect_teardown(|_, list_item| {
+            // Get `ArtistSongRow` from `ListItem` (the UI widget)
+            let child: ArtistSongRow = list_item
+                .downcast_ref::<ListItem>()
+                .expect("Needs to be ListItem")
+                .child()
+                .and_downcast::<ArtistSongRow>()
+                .expect("The child has to be an `ArtistSongRow`.");
+
+            // Within this binding fn is where the cached artist avatar texture gets used.
+            child.teardown();
         });
 
         // Set the factory of the list view
@@ -741,15 +752,6 @@ impl ArtistContentView {
 
     pub fn add_songs(&self, songs: &[Song]) {
         self.imp().song_list.extend_from_slice(songs);
-        let infos: Vec<&AlbumInfo> = songs
-            .into_iter()
-            .map(|song| song.get_album())
-            .filter(|ao| ao.is_some())
-            .map(|info| info.unwrap())
-            .collect();
-        // Might queue downloads, depending on user settings, but will not
-        // actually load anything into memory just yet.
-        self.imp().cache.get().unwrap().ensure_cached_covers(&infos);
         self.imp()
             .song_count
             .set_label(&self.imp().song_list.n_items().to_string());

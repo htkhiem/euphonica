@@ -6,10 +6,12 @@ use gtk::{glib, gio, CompositeTemplate};
 
 use glib::clone;
 
-use crate::{cache::Cache, utils};
+use crate::{cache::{get_doc_cache_path, get_image_cache_path, Cache}, utils};
 
 mod imp {
     use std::cell::{Cell, OnceCell};
+
+    use crate::cache::get_app_cache_path;
 
     use super::*;
 
@@ -33,9 +35,7 @@ mod imp {
         pub artist_excepts_apply: TemplateChild<gtk::Button>,
 
         #[template_child]
-        pub albumart_cache_size: TemplateChild<adw::ActionRow>,
-        #[template_child]
-        pub avatar_cache_size: TemplateChild<adw::ActionRow>,
+        pub image_cache_size: TemplateChild<adw::ActionRow>,
         #[template_child]
         pub info_db_size: TemplateChild<adw::ActionRow>,
         #[template_child]
@@ -80,7 +80,7 @@ mod imp {
                 self,
                 move |_| {
                     if let Some(cache) = this.cache.get() {
-                        let _ = open::that(cache.get_app_cache_path());
+                        let _ = open::that(get_app_cache_path());
                     }
                 }
             ));
@@ -214,12 +214,11 @@ impl LibraryPreferences {
         let cache = self.imp().cache.get().expect("refresh_cache_stats called before setup");
         // Avoid spawning additional tasks when current ones have not concluded yet
         if self.imp().n_async_in_progress.get() == 0 {
-            self.imp().albumart_cache_size.set_subtitle("Computing...");
-            self.imp().avatar_cache_size.set_subtitle("Computing...");
+            self.imp().image_cache_size.set_subtitle("Computing...");
             self.imp().info_db_size.set_subtitle("Computing...");
             self.imp().n_async_in_progress.set(3);
 
-            gio::File::for_path(cache.get_albumart_path()).measure_disk_usage_async(
+            gio::File::for_path(get_image_cache_path()).measure_disk_usage_async(
                 gio::FileMeasureFlags::NONE,
                 glib::source::Priority::DEFAULT,
                 Option::<&gio::Cancellable>::None,
@@ -230,7 +229,7 @@ impl LibraryPreferences {
                     move |res: Result<(u64, u64, u64), glib::error::Error>| {
                         if let Ok((bytes, _, n_files)) = res {
                             let size_str = glib::format_size(bytes);
-                            this.imp().albumart_cache_size.set_subtitle(
+                            this.imp().image_cache_size.set_subtitle(
                                 &format!("{n_files} file(s) ({size_str})")
                             );
                         }
@@ -239,27 +238,7 @@ impl LibraryPreferences {
                 )
             );
 
-            gio::File::for_path(cache.get_avatar_path()).measure_disk_usage_async(
-                gio::FileMeasureFlags::NONE,
-                glib::source::Priority::DEFAULT,
-                Option::<&gio::Cancellable>::None,
-                None,
-                clone!(
-                    #[weak(rename_to = this)]
-                    self,
-                    move |res: Result<(u64, u64, u64), glib::error::Error>| {
-                        if let Ok((bytes, _, n_files)) = res {
-                            let size_str = glib::format_size(bytes);
-                            this.imp().avatar_cache_size.set_subtitle(
-                                &format!("{n_files} file(s) ({size_str})")
-                            );
-                        }
-                        this.imp().n_async_in_progress.set(this.imp().n_async_in_progress.get() - 1);
-                    }
-                )
-            );
-
-            gio::File::for_path(cache.get_doc_cache_path()).measure_disk_usage_async(
+            gio::File::for_path(get_doc_cache_path()).measure_disk_usage_async(
                 gio::FileMeasureFlags::NONE,
                 glib::source::Priority::DEFAULT,
                 Option::<&gio::Cancellable>::None,

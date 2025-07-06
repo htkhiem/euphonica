@@ -7,8 +7,8 @@ use std::{
 
 use crate::{
     cache::{placeholders::ALBUMART_THUMBNAIL_PLACEHOLDER, Cache, CacheState},
-    common::{AlbumInfo, CoverSource, Song, SongInfo},
-    utils::format_secs_as_duration,
+    common::{CoverSource, Song, SongInfo},
+    utils::{format_secs_as_duration, strip_filename_linux},
 };
 
 use super::Library;
@@ -39,10 +39,7 @@ mod imp {
         pub album_name: TemplateChild<gtk::Label>,
         #[template_child]
         pub duration: TemplateChild<gtk::Label>,
-        // For unbinding the queue buttons when not bound to a song (i.e. being recycled)
-        pub replace_queue_id: RefCell<Option<SignalHandlerId>>,
-        pub append_queue_id: RefCell<Option<SignalHandlerId>>,
-        pub thumbnail_signal_id: RefCell<Option<SignalHandlerId>>,
+        pub thumbnail_signal_ids: RefCell<Option<(SignalHandlerId, SignalHandlerId)>>,
         pub library: OnceCell<Library>,
         pub song: RefCell<Option<Song>>,
         pub cache: OnceCell<Rc<Cache>>,
@@ -173,58 +170,80 @@ impl ArtistSongRow {
             .chain_property::<Song>("quality-grade")
             .bind(self, "quality-grade", gtk::Widget::NONE);
 
-        let _ = self.imp().thumbnail_signal_id.replace(Some(cache_state.connect_closure(
-            "album-art-downloaded",
-            false,
-            closure_local!(
-                #[weak(rename_to = this)]
-                self,
-                move |_: CacheState, folder_uri: String| {
-                    // TODO
-                }
+        let _ = self.imp().thumbnail_signal_ids.replace(Some((
+            cache_state.connect_closure(
+                "album-art-downloaded",
+                false,
+                closure_local!(
+                    #[weak(rename_to = this)]
+                    self,
+                    move |_: CacheState, uri: String| {
+                        // Match song URI first then folder URI. Only try to match by folder URI
+                        // if we don't have a current thumbnail.
+                        if let Some(song) = this.imp().song.borrow().as_ref() {
+                            if uri.as_str() == song.get_uri() {
+                                // Force update since we might have been using a folder cover
+                                // temporarily
+                                this.imp().thumbnail_source.set(CoverSource::Embedded);
+                                this.update_thumbnail(song.get_info());
+                            } else if this.imp().thumbnail_source.get() != CoverSource::Embedded {
+                                if strip_filename_linux(song.get_uri()) == uri {
+                                    this.imp().thumbnail_source.set(CoverSource::Folder);
+                                    this.update_thumbnail(song.get_info());
+                                }
+                            }
+                        }
+                    }
+                ),
+            ),
+            cache_state.connect_closure(
+                "album-art-cleared",
+                false,
+                closure_local!(
+                    #[weak(rename_to = this)]
+                    self,
+                    move |_: CacheState, uri: String| {
+                        if let Some(song) = this.imp().song.borrow().as_ref() {
+                            match this.imp().thumbnail_source.get() {
+                                CoverSource::Folder => {
+                                    if strip_filename_linux(song.get_uri()) == uri {
+                                        this.imp().thumbnail_source.set(CoverSource::None);
+                                        this.update_thumbnail(song.get_info());
+                                    }
+                                }
+                                CoverSource::Embedded => {
+                                    if song.get_uri() == &uri {
+                                        this.imp().thumbnail_source.set(CoverSource::None);
+                                        this.update_thumbnail(song.get_info());
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                ),
             ),
         )));
-        self.imp()
-            .thumbnail_signal_id
-            .replace(Some(thumbnail_binding));
-        // Bind the queue buttons
-        let uri = song.get_uri().to_owned();
-        if let Some(old_id) =
-            self.imp()
-                .replace_queue_id
-                .replace(Some(self.imp().replace_queue.connect_clicked(clone!(
-                    #[weak(rename_to = this)]
-                    self,
-                    #[strong]
-                    uri,
-                    move |_| {
-                        if let Some(library) = this.imp().library.get() {
-                            library.queue_uri(&uri, true, true, false);
-                        }
-                    }
-                ))))
-        {
-            // Unbind old ID
-            self.imp().replace_queue.disconnect(old_id);
-        }
-        if let Some(old_id) =
-            self.imp()
-                .append_queue_id
-                .replace(Some(self.imp().append_queue.connect_clicked(clone!(
-                    #[weak(rename_to = this)]
-                    self,
-                    #[strong]
-                    uri,
-                    move |_| {
-                        if let Some(library) = this.imp().library.get() {
-                            library.queue_uri(&uri, false, false, false);
-                        }
-                    }
-                ))))
-        {
-            // Unbind old ID
-            self.imp().append_queue.disconnect(old_id);
-        }
+
+        self.imp().replace_queue.connect_clicked(clone!(
+            #[strong(rename_to = this)]
+            self,
+            move |_| {
+                if let (Some(library), Some(song)) = (this.imp().library.get(), this.imp().song.borrow().as_ref()) {
+                    library.queue_uri(song.get_uri(), true, true, false);
+                }
+            }
+        ));
+
+        self.imp().append_queue.connect_clicked(clone!(
+            #[strong(rename_to = this)]
+            self,
+            move |_| {
+                if let (Some(library), Some(song)) = (this.imp().library.get(), this.imp().song.borrow().as_ref()) {
+                    library.queue_uri(song.get_uri(), false, false, false);
+                }
+            }
+        ));
     }
 
     fn update_thumbnail(&self, info: &SongInfo) {
@@ -277,11 +296,17 @@ impl ArtistSongRow {
     }
 
     pub fn unbind(&self) {
-        if let Some(id) = self.imp().replace_queue_id.borrow_mut().take() {
-            self.imp().replace_queue.disconnect(id);
+        if let Some(song) = self.imp().song.take() {
+            self.imp().thumbnail_source.set(CoverSource::None);
+            self.update_thumbnail(song.get_info());
         }
-        if let Some(id) = self.imp().append_queue_id.borrow_mut().take() {
-            self.imp().append_queue.disconnect(id);
+    }
+
+    pub fn teardown(&self) {
+        if let Some((set_id, clear_id)) = self.imp().thumbnail_signal_ids.take() {
+            let cache_state = self.imp().cache.get().unwrap().get_cache_state();
+            cache_state.disconnect(set_id);
+            cache_state.disconnect(clear_id);
         }
     }
 }

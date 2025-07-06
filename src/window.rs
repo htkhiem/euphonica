@@ -1068,7 +1068,7 @@ impl EuphonicaWindow {
     fn queue_new_background(&self) {
         if let Some(player) = self.imp().player.get() {
             if let Some(sender) = self.imp().sender_to_bg.get() {
-                if let Some(path) = player.current_song_album_art_path(true) {
+                if let Some(path) = player.current_song_cover_path(true) {
                     if path.exists() {
                         let settings = settings_manager().child("ui");
                         let config = BlurConfig {

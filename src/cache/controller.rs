@@ -326,7 +326,7 @@ impl Cache {
                         this.on_cover_downloaded(&uri)
                     }
                     ProviderMessage::CoverNotAvailable(_uri) => {
-                        // Do nothing for now
+                        // TODO: use this to implement loading spinners for cover widgets
                     }
                     ProviderMessage::ClearFolderCover(uri) => {
                         this.on_cover_cleared(&uri);
