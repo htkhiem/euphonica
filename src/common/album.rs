@@ -50,12 +50,22 @@ impl AlbumInfo {
         }
     }
 
-    pub fn set_artists_from_string(&mut self, tag: &str) {
-        self.artist_tag = Some(tag.to_owned());
-        self.artists = parse_mb_artist_tag(tag)
+    /// Add artists from more artist tags, separated from existing ones by simple commas.
+    pub fn add_artists_from_string(&mut self, tag: &str) {
+        if let Some(existing_tag) = &mut self.artist_tag {
+            existing_tag.push_str(", ");
+            existing_tag.push_str(tag);
+        }
+        else {
+            self.artist_tag = Some(tag.to_owned());
+        }
+
+        let mut new_artists: Vec<ArtistInfo> = parse_mb_artist_tag(tag)
             .iter()
             .map(|s| ArtistInfo::new(s, false))
             .collect();
+
+        self.artists.append(&mut new_artists);
     }
 
     pub fn get_artist_str(&self) -> Option<String> {

@@ -12,7 +12,6 @@ use std::{
 use time::{Date, Month};
 
 use crate::cache::{get_image_cache_path, sqlite};
-use crate::utils::strip_filename_linux;
 
 use super::{artists_to_string, parse_mb_artist_tag, AlbumInfo, ArtistInfo};
 
@@ -457,7 +456,7 @@ impl From<mpd::song::Song> for SongInfo {
             }
         }
         let mut artist_mbids: Vec<String> = Vec::new();
-        let mut album_artist_str: Option<String> = None;
+        let mut album_artist_strs: Vec<String> = Vec::new();
         let mut album_artist_mbids: Vec<String> = Vec::new();
         let mut album_mbid: Option<String> = None;
         for (tag, val) in song.tags.into_iter() {
@@ -476,11 +475,7 @@ impl From<mpd::song::Song> for SongInfo {
                     }
                 }
                 "albumartist" => {
-                    if album_artist_str.is_none() {
-                        let _ = album_artist_str.replace(val);
-                    } else {
-                        panic!("Multiple AlbumArtist tags found. Only one per song is supported (use MusicBrainz syntax to specify multiple artists).");
-                    }
+                    album_artist_strs.push(val);
                 }
                 // "date" => res.imp().release_date.replace(Some(val.clone())),
                 "format" => {
@@ -550,12 +545,12 @@ impl From<mpd::song::Song> for SongInfo {
             album.mbid = album_mbid;
             album.release_date = res.release_date.clone();
             // Assume the albumartist IDs are given in the same order as the albumartist tags
-            if let Some(s) = album_artist_str.as_mut() {
-                album.set_artists_from_string(s);
-                for (idx, id) in album_artist_mbids.drain(..).enumerate() {
-                    if idx < album.artists.len() {
-                        let _ = album.artists[idx].mbid.replace(id);
-                    }
+            for album_artist_str in album_artist_strs.iter() {
+                album.add_artists_from_string(album_artist_str);
+            }
+            for (idx, id) in album_artist_mbids.drain(..).enumerate() {
+                if idx < album.artists.len() {
+                    let _ = album.artists[idx].mbid.replace(id);
                 }
             }
         }
