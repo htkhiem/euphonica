@@ -97,6 +97,7 @@ mod imp {
 
         fn dispose(&self) {
             self.animation.get().unwrap().reset();
+            self.child.get().unparent();  // GtkWidget doesn't do this for us, leading to all the console warnings
         }
     }
 

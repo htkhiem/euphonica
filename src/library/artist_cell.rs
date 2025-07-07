@@ -71,6 +71,18 @@ mod imp {
                 _ => unimplemented!(),
             }
         }
+
+        fn dispose(&self) {
+            if let Some((update_id, clear_id)) = self.avatar_signal_ids.take() {
+                let cache = self
+                    .cache
+                    .get()
+                    .unwrap()
+                    .get_cache_state();
+                cache.disconnect(update_id);
+                cache.disconnect(clear_id);
+            }
+        }
     }
 
     // Trait shared by all widgets
@@ -172,17 +184,5 @@ impl ArtistCell {
 
     pub fn unbind(&self) {
         self.imp().artist.replace(None).unwrap();
-    }
-
-    pub fn teardown(&self) {
-        if let Some((update_id, clear_id)) = self.imp().avatar_signal_ids.take() {
-            let cache = self.imp()
-                .cache
-                .get()
-                .unwrap()
-                .get_cache_state();
-            cache.disconnect(update_id);
-            cache.disconnect(clear_id);
-        }
     }
 }

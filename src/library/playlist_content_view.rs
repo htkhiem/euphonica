@@ -747,16 +747,6 @@ impl PlaylistContentView {
                     .expect("The child has to be an `PlaylistSongRow`.");
                 child.unbind();
             });
-
-            f.connect_teardown(|_, list_item| {
-                let child: PlaylistSongRow = list_item
-                    .downcast_ref::<ListItem>()
-                    .expect("Needs to be ListItem")
-                    .child()
-                    .and_downcast::<PlaylistSongRow>()
-                    .expect("The child has to be an `PlaylistSongRow`.");
-                child.teardown();
-            });
         });
 
         editing_factory.connect_teardown(clone!(

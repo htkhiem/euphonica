@@ -550,20 +550,6 @@ impl FolderView {
             }
         ));
 
-        // factory.connect_teardown(
-        //     move |_, list_item| {
-        //         // Get `INodeCell` from `ListItem` (the UI widget)
-        //         let child: Option<GenericRow> = list_item
-        //             .downcast_ref::<ListItem>()
-        //             .expect("Needs to be ListItem")
-        //             .child()
-        //             .and_downcast::<GenericRow>();
-        //         if let Some(c) = child {
-        //             c.teardown();
-        //         }
-        //     }
-        // );
-
         // Set the factory of the list view
         self.imp().list_view.set_factory(Some(&factory));
 

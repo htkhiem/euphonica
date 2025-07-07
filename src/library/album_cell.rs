@@ -131,6 +131,19 @@ mod imp {
                 _ => unimplemented!(),
             }
         }
+
+        fn dispose(&self) {
+            if let Some((update_id, clear_id)) = self.cover_signal_ids.take() {
+                let cache_state = self
+                    .cache
+                    .get()
+                    .unwrap()
+                    .get_cache_state();
+
+                cache_state.disconnect(update_id);
+                cache_state.disconnect(clear_id);
+            }
+        }
     }
 
     // Trait shared by all widgets
@@ -297,18 +310,5 @@ impl AlbumCell {
             self.update_cover(album.get_info());
         }
 
-    }
-
-    pub fn teardown(&self) {
-        if let Some((update_id, clear_id)) = self.imp().cover_signal_ids.take() {
-            let cache_state = self.imp()
-                .cache
-                .get()
-                .unwrap()
-                .get_cache_state();
-
-            cache_state.disconnect(update_id);
-            cache_state.disconnect(clear_id);
-        }
     }
 }

@@ -395,18 +395,6 @@ impl ArtistView {
             }
         ));
 
-        factory.connect_teardown(|_, list_item| {
-            // Get `AlbumCell` from `ListItem` (the UI widget)
-            let child: Option<ArtistCell> = list_item
-                .downcast_ref::<ListItem>()
-                .expect("Needs to be ListItem")
-                .child()
-                .and_downcast::<ArtistCell>();
-            if let Some(c) = child {
-                c.teardown();
-            }
-        });
-
         // Artist name has already been taken care of by the above property expression.
         // Here we only need to start listening to the cache for artist images.
         factory.connect_bind(move |_, list_item| {

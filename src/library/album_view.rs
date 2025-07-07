@@ -558,18 +558,6 @@ impl AlbumView {
             }
         ));
 
-        factory.connect_teardown(move |_, list_item| {
-            // Get `AlbumCell` from `ListItem` (the UI widget)
-            let child: Option<AlbumCell> = list_item
-                .downcast_ref::<ListItem>()
-                .expect("Needs to be ListItem")
-                .child()
-                .and_downcast::<AlbumCell>();
-            if let Some(c) = child {
-                c.teardown();
-            }
-        });
-
         // Tell factory how to bind `AlbumCell` to one of our Album GObjects.
         // If this cell is being bound to an album, that means it might be displayed.
         // As such, we'll also make it listen to the cache controller for any new
