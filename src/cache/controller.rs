@@ -430,6 +430,7 @@ impl Cache {
         fallback: bool
     ) -> Option<(Texture, bool)> {
         let mut past_failed = false;
+        let mut past_fallback_failed = false;
         if let Some(filename) = sqlite::find_image_by_key(&song.uri, thumbnail).expect("Sqlite DB error") {
             if filename.len() == 0 {
                 // Tried fetching before, nothing found, don't try again.
@@ -465,6 +466,19 @@ impl Cache {
                 }
             }
         }
+        else if fallback {
+            if let Some(filename) = sqlite::find_image_by_key(strip_filename_linux(&song.uri), thumbnail).expect("Sqlite DB error") {
+                if filename.len() == 0 {
+                    // Tried fetching before, nothing found, don't try again.
+                    println!("Won't fetch fallback folder cover for song {} again (failed before)", &song.uri);
+                    past_fallback_failed = true;
+                }
+                else if let Some(tex) = IMAGE_CACHE.get(&filename) {
+                    // Note how we're returning false here since this isn't an embedded cover.
+                    return Some((tex.value().clone(), false));
+                }
+            }
+        }
         if schedule && !past_failed {
             if let Some(album) = song.album.as_ref() {
                 // Call MPD readpicture with optional fallback
@@ -487,7 +501,7 @@ impl Cache {
                     );
             }
         }
-        else if fallback {
+        else if fallback && !past_fallback_failed {
             if let Some(album) = song.album.as_ref() {
                 return self.load_cached_folder_cover(album, thumbnail, schedule, false);
             }
