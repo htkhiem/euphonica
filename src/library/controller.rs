@@ -230,6 +230,23 @@ impl Library {
         }
     }
 
+    pub fn insert_songs_next(&self, songs: &[Song]) {
+        let pos = if let Some(current_song) = self.client().get_current_song() {
+            // Insert after the position of the current song
+            current_song.get_queue_pos() + 1
+        } else {
+            // If no current song, insert at the start of the queue
+            0
+        };
+        self.client().insert_multi(
+                &songs
+                    .iter()
+                    .map(|s| s.get_uri().to_owned())
+                    .collect::<Vec<String>>(),
+                pos as usize,
+            );
+    }
+
     /// Queue all songs in a given album by track order.
     pub fn queue_album(&self, album: Album, replace: bool, play: bool, play_from: Option<u32>) {
         if replace {

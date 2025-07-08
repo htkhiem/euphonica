@@ -907,6 +907,14 @@ impl MpdWrapper {
         }
     }
 
+    pub fn insert_multi(&self, uris: &[String], pos: usize) {
+        if let Some(client) = self.main_client.borrow_mut().as_mut() {
+            
+            client.insert_multiple(uris, pos).expect("Could not add multiple songs into queue");
+            self.force_idle();
+        }
+    }
+
     pub fn volume(&self, vol: i8) {
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
             let _ = client.volume(vol);
@@ -1355,6 +1363,18 @@ impl MpdWrapper {
                         .map(|mpd_song| Song::from(std::mem::take(mpd_song)))
                         .collect(),
                 );
+            }
+            return None;
+        }
+        return None;
+    }
+
+    pub fn get_current_song(&self) -> Option<Song> {
+        if let Some(client) = self.main_client.borrow_mut().as_mut() {
+            if let Ok(song) = client.currentsong() {
+                if let Some(song) = song {
+                    return Some(Song::from(song));
+                }
             }
             return None;
         }

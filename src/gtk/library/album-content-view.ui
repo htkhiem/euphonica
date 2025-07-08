@@ -323,6 +323,26 @@
                           </object>
                         </child>
                         <child>
+                          <object class="GtkButton" id="insert_queue">
+                            <property name="tooltip-text" translatable="true">Addselected songs next in the queue</property>
+                            <child>
+                              <object class="GtkBox">
+                                <property name="spacing">6</property>
+                                <child>
+                                  <object class="GtkImage">
+                                    <property name="icon-name">list-add-symbolic</property>
+                                  </object>
+                                </child>
+                                <child>
+                                  <object class="GtkLabel" id="insert_queue_text">
+                                    <property name="label" translatable="true">Queue all next</property>
+                                  </object>
+                                </child>
+                              </object>
+                            </child>
+                          </object>
+                        </child>
+                        <child>
                           <object class="EuphonicaAddToPlaylistButton" id="add_to_playlist"/>
                         </child>
                       </object>

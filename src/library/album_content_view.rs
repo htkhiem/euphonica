@@ -76,6 +76,10 @@ mod imp {
         #[template_child]
         pub append_queue_text: TemplateChild<gtk::Label>,
         #[template_child]
+        pub insert_queue: TemplateChild<gtk::Button>,
+        #[template_child]
+        pub insert_queue_text: TemplateChild<gtk::Label>,
+        #[template_child]
         pub add_to_playlist: TemplateChild<AddToPlaylistButton>,
         #[template_child]
         pub sel_all: TemplateChild<gtk::Button>,
@@ -118,6 +122,8 @@ mod imp {
                 sel_model: gtk::MultiSelection::new(Option::<gio::ListStore>::None),
                 replace_queue: TemplateChild::default(),
                 append_queue: TemplateChild::default(),
+                insert_queue: TemplateChild::default(),
+                insert_queue_text: TemplateChild::default(),
                 replace_queue_text: TemplateChild::default(),
                 append_queue_text: TemplateChild::default(),
                 add_to_playlist: TemplateChild::default(),
@@ -177,6 +183,7 @@ mod imp {
                         this.selecting_all.replace(true);
                         this.replace_queue_text.set_label("Play all");
                         this.append_queue_text.set_label("Queue all");
+                        this.insert_queue_text.set_label("Queue all next");
                     } else {
                         // TODO: l10n
                         this.selecting_all.replace(false);
@@ -184,6 +191,8 @@ mod imp {
                             .set_label(format!("Play {}", n_sel).as_str());
                         this.append_queue_text
                             .set_label(format!("Queue {}", n_sel).as_str());
+                        this.insert_queue_text
+                            .set_label(format!("Queue {} next", n_sel).as_str());
                     }
                 }
             ));
@@ -510,6 +519,36 @@ impl AlbumContentView {
                             songs.push(store.item(idx).and_downcast::<Song>().unwrap())
                         });
                         library.queue_songs(&songs, false, false);
+                    }
+                }
+            }
+        ));
+        let insert_queue_btn = self.imp().insert_queue.get();
+        insert_queue_btn.connect_clicked(clone!(
+            #[strong(rename_to = this)]
+            self,
+            move |_| {
+                if let (Some(album), Some(library)) = (
+                    this.imp().album.borrow().as_ref(),
+                    this.get_library()
+                ) {
+                    let store = &this.imp().song_list;
+                    if this.imp().selecting_all.get() {
+                        let mut songs: Vec<Song> = Vec::with_capacity(store.n_items() as usize);
+                        for i in 0..store.n_items() {
+                            songs.push(store.item(i).and_downcast::<Song>().unwrap());
+                        }
+                        library.insert_songs_next(&songs);
+                    } else {
+                        // Get list of selected songs
+                        let sel = &this.imp().sel_model.selection();
+                        let mut songs: Vec<Song> = Vec::with_capacity(sel.size() as usize);
+                        let (iter, first_idx) = BitsetIter::init_first(sel).unwrap();
+                        songs.push(store.item(first_idx).and_downcast::<Song>().unwrap());
+                        iter.for_each(|idx| {
+                            songs.push(store.item(idx).and_downcast::<Song>().unwrap())
+                        });
+                        library.insert_songs_next(&songs);
                     }
                 }
             }
