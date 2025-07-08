@@ -483,9 +483,10 @@ impl ClientPreferences {
                 if let Ok(ref keyring_entry) = maybe_keyring_entry {
                     let password = this.imp().mpd_password.text();
                     if password.is_empty() {
-                        if let Err(KeyringError::NoEntry) = keyring_entry.delete_credential() {
-                        } else {
-                            panic!("Unable to clear MPD password from keyring");
+                        let res = keyring_entry.delete_credential();
+                        match res {
+                            Ok(()) | Err(KeyringError::NoEntry) => {}
+                            e => {println!("{:?}", e)}
                         }
                     } else {
                         keyring_entry

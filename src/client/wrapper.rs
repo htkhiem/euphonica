@@ -882,11 +882,10 @@ impl MpdWrapper {
                     self.state.set_stickers_support_level(StickersSupportLevel::All);
                 }
                 // If there is a password configured, use it to authenticate.
-                let password_access_failed: bool;
+                let mut password_access_failed = false;
                 let client_password: Option<String>;
                 match Entry::new("euphonica", "mpd-password") {
                     Ok(entry) => {
-                        password_access_failed = false;
                         match entry.get_password() {
                             Ok(password) => {
                                 let password_res = client.login(&password);
@@ -904,18 +903,15 @@ impl MpdWrapper {
                                 }
                             }
                             Err(e) => {
-                                client_password = None;
+                                println!("{:?}", &e);
                                 match e {
                                     KeyringError::NoEntry => {}
                                     _ => {
                                         println!("{:?}", e);
-                                        let _ = client.close();
-                                        self.state.set_connection_state(
-                                            ConnectionState::CredentialStoreError,
-                                        );
-                                        return;
+                                        password_access_failed = true;
                                     }
                                 }
+                                client_password = None;
                             }
                         }
                     }
@@ -936,11 +932,13 @@ impl MpdWrapper {
                 // Doubles as a litmus test to see if we are authenticated.
                 if let Err(MpdError::Server(se)) = client.subscribe(self.bg_channel.clone()) {
                     if se.code == MpdErrorCode::Permission {
-                        self.state.set_connection_state(if password_access_failed {
-                            ConnectionState::CredentialStoreError
-                        } else {
-                            ConnectionState::Unauthenticated
-                        });
+                        self.state.set_connection_state(
+                            if password_access_failed {
+                                ConnectionState::CredentialStoreError
+                            } else {
+                                ConnectionState::Unauthenticated
+                            }
+                        );
                     }
                 } else {
                     self.main_client.replace(Some(client));
