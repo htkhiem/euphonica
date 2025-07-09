@@ -461,8 +461,10 @@ impl Cache {
                     });
                     return None; // for now
                 } else {
-                    // TODO: handle situation when Sqlite table is delusional more gracefully
-                    panic!("Couldn't find file {} (cached embedded cover of song {})", filename, &song.uri);
+                    // File no longer exists (maybe user had removed it). Unregister it from DB
+                    // and repeat process.
+                    sqlite::unregister_image_key(&song.uri, thumbnail).expect("Sqlite DB error");
+                    return self.load_cached_embedded_cover(song, thumbnail, schedule, fallback);
                 }
             }
         }
@@ -553,8 +555,10 @@ impl Cache {
                     });
                     return None; // for now
                 } else {
-                    // TODO: handle situation when Sqlite table is delusional more gracefully
-                    panic!("Couldn't find file {} (cached embedded cover of song {})", filename, &album.example_uri);
+                    // File no longer exists (maybe user had removed it). Unregister it from DB
+                    // and repeat process.
+                    sqlite::unregister_image_key(&album.example_uri, thumbnail).expect("Sqlite DB error");
+                    return self.load_cached_embedded_cover_for_album(album, thumbnail, schedule, fallback);
                 }
             }
         }
@@ -619,8 +623,10 @@ impl Cache {
                     });
                     return None; // for now
                 } else {
-                    // TODO: handle situation when Sqlite table is delusional more gracefully
-                    panic!("Couldn't find file {} (cached embedded cover of album {})", filename, &folder_uri);
+                    // File no longer exists (maybe user had removed it). Unregister it from DB
+                    // and repeat process.
+                    sqlite::unregister_image_key(&folder_uri, thumbnail).expect("Sqlite DB error");
+                    return self.load_cached_folder_cover(album, thumbnail, schedule, fallback);
                 }
             }
         }
@@ -687,8 +693,10 @@ impl Cache {
                     });
                     return None; // for now
                 } else {
-                    // TODO: handle situation when Sqlite table is delusional more gracefully
-                    panic!("Couldn't find file {} (cached embedded cover of album {})", filename, &folder_uri);
+                    // File no longer exists (maybe user had removed it). Unregister it from DB
+                    // and repeat process.
+                    sqlite::unregister_image_key(&folder_uri, thumbnail).expect("Sqlite DB error");
+                    return self.load_cached_folder_cover_for_song(song, thumbnail, schedule, fallback);
                 }
             }
         }
