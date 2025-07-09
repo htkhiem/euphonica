@@ -337,9 +337,9 @@ impl EuphonicaApplication {
             .application_icon("io.github.htkhiem.Euphonica")
             .developer_name("htkhiem2000")
             .version(VERSION)
-            .developers(vec!["htkhiem2000"])
+            .developers(vec!["htkhiem2000", "sonicv6"])
             .license_type(gtk::License::Gpl30)
-            .copyright("© 2024 htkhiem2000")
+            .copyright("© 2025 htkhiem2000")
             .build();
 
         about.add_credit_section(
