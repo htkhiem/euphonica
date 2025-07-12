@@ -63,6 +63,13 @@
   </screenshots>
 
   <releases>
+    <release version="0.95.1-beta" date="2025-07-12">
+      <url type="details">https://github.com/htkhiem/euphonica/releases/tag/v0.95.1-beta</url>
+      <description>
+        <p>Fix: crash on duplicate metadata tags.</p>
+        <p>Fix: crash after exiting artist content page.</p>
+      </description>
+    </release>
     <release version="0.95.0-beta" date="2025-07-09">
       <url type="details">https://github.com/htkhiem/euphonica/releases/tag/v0.95.0-beta</url>
       <description>
