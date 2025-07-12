@@ -121,6 +121,14 @@ mod imp {
                 _ => unimplemented!(),
             }
         }
+
+        fn dispose(&self) {
+            if let Some((set_id, clear_id)) = self.thumbnail_signal_ids.take() {
+                let cache_state = self.cache.get().unwrap().get_cache_state();
+                cache_state.disconnect(set_id);
+                cache_state.disconnect(clear_id);
+            }
+        }
     }
 
     // Trait shared by all widgets
@@ -299,14 +307,6 @@ impl ArtistSongRow {
         if let Some(song) = self.imp().song.take() {
             self.imp().thumbnail_source.set(CoverSource::None);
             self.update_thumbnail(song.get_info());
-        }
-    }
-
-    pub fn teardown(&self) {
-        if let Some((set_id, clear_id)) = self.imp().thumbnail_signal_ids.take() {
-            let cache_state = self.imp().cache.get().unwrap().get_cache_state();
-            cache_state.disconnect(set_id);
-            cache_state.disconnect(clear_id);
         }
     }
 }

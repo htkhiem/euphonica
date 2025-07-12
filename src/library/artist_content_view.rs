@@ -553,19 +553,6 @@ impl ArtistContentView {
             child.unbind();
         });
 
-        factory.connect_teardown(|_, list_item| {
-            // Get `ArtistSongRow` from `ListItem` (the UI widget)
-            let child: ArtistSongRow = list_item
-                .downcast_ref::<ListItem>()
-                .expect("Needs to be ListItem")
-                .child()
-                .and_downcast::<ArtistSongRow>()
-                .expect("The child has to be an `ArtistSongRow`.");
-
-            // Within this binding fn is where the cached artist avatar texture gets used.
-            child.teardown();
-        });
-
         // Set the factory of the list view
         self.imp().song_subview.set_factory(Some(&factory));
     }
@@ -697,7 +684,6 @@ impl ArtistContentView {
     }
 
     pub fn bind(&self, artist: Artist) {
-        println!("Binding to artist: {:?}", &artist);
         self.update_meta(&artist);
         let info = artist.get_info();
         self.update_avatar(info);
@@ -717,7 +703,6 @@ impl ArtistContentView {
     }
 
     pub fn unbind(&self) {
-        println!("Artist content page hidden. Unbinding...");
         for binding in self.imp().bindings.borrow_mut().drain(..) {
             binding.unbind();
         }

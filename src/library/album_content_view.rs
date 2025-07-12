@@ -428,7 +428,6 @@ impl AlbumContentView {
                         ) {
                             let rating_val = rating.value();
                             let rating_opt = if rating_val > 0 { Some(rating_val)} else { None };
-                            println!("Writing rating {:?} as sticker...", &rating_opt);
                             album.set_rating(rating_opt);
                             library.rate_album(album, rating_opt);
                         }
