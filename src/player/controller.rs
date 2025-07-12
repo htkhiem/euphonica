@@ -231,6 +231,7 @@ mod imp {
         // This enum is merely to help decide whether we should fire a notify signal
         // to the bar & pane.
         pub cover_source: Cell<CoverSource>,
+        pub saved_to_history: Cell<bool>
     }
 
     #[glib::object_subclass]
@@ -286,7 +287,8 @@ mod imp {
                 use_visualizer: Cell::new(false),
                 fft_backend_idx: Cell::new(0),
                 outputs: gio::ListStore::new::<BoxedAnyObject>(),
-                cover_source: Cell::default()
+                cover_source: Cell::default(),
+                saved_to_history: Cell::new(false)
             }
         }
     }
@@ -959,9 +961,9 @@ impl Player {
                 .expect("Queue has to contain common::Song objects");
             // Set playing status
             new_song.set_is_playing(true); // this whole thing would only run if playback state is not Stopped
-                                           // Always replace current song to ensure we're pointing at something on the queue.
-                                           // This is because a partial queue update may replace the current song with another instance of the
-                                           // same song (for example, when deleting a song before it from the queue).
+            // Always replace current song to ensure we're pointing at something on the queue.
+            // This is because a partial queue update may replace the current song with another instance of the
+            // same song (for example, when deleting a song before it from the queue).
             let maybe_old_song = self.imp().current_song.replace(Some(new_song.clone()));
             if let Some(old_song) = maybe_old_song {
                 if old_song.get_queue_id() != new_song.get_queue_id() {
@@ -970,9 +972,20 @@ impl Player {
                 else {
                     // Same old song
                     needs_refresh = false;
+                    // Record into playback history
+                    let dur = new_song.get_duration() as f32;
+                    if dur >= 10.0 {
+                        if let Some(new_position_dur) = status.elapsed {
+                            if !self.imp().saved_to_history.get() && new_position_dur.as_secs_f32() / dur >= 0.5 {
+                                let _ = sqlite::add_to_history(new_song.get_info());
+                                self.imp().saved_to_history.set(true);
+                            }
+                        }
+                    }
                 }
             }
             if needs_refresh {
+                self.imp().saved_to_history.set(false);
                 self.notify("title");
                 self.notify("artist");
                 self.notify("duration");
@@ -1005,6 +1018,7 @@ impl Player {
             // No song is playing. Update state accordingly.
             let was_playing = self.imp().current_song.borrow().as_ref().is_some(); // end borrow
             if was_playing {
+                self.imp().saved_to_history.set(false);
                 let _ = self.imp().current_song.take();
                 self.notify("title");
                 self.notify("artist");
