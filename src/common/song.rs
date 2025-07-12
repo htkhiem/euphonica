@@ -81,7 +81,7 @@ pub struct SongInfo {
     pub uri: String,
     pub title: String, // Might just be filename
     // last_mod: RefCell<Option<u64>>,
-    artists: Vec<ArtistInfo>,
+    pub artists: Vec<ArtistInfo>,
     pub artist_tag: Option<String>, // Original tag, with all the linkages and formatting
     pub duration: Option<Duration>, // Default to 0 if somehow the option in mpd's Song is None
     queue_id: Option<u32>,

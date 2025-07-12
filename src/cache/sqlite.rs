@@ -10,7 +10,8 @@ use time::OffsetDateTime;
 
 use crate::{
     common::{AlbumInfo, ArtistInfo, SongInfo},
-    meta_providers::models::{AlbumMeta, ArtistMeta, Lyrics, LyricsParseError}, utils::strip_filename_linux,
+    meta_providers::models::{AlbumMeta, ArtistMeta, Lyrics, LyricsParseError},
+    utils::strip_filename_linux,
 };
 
 use super::controller::get_doc_cache_path;
@@ -57,11 +58,35 @@ create table if not exists `songs` (
     primary key(`uri`)
 );
 
+create table if not exists `songs_history` (
+    `id` INTEGER not null,
+    `uri` VARCHAR not null,
+    `timestamp` DATETIME not null,
+    primary key(`id`)
+);
+
+create table if not exists `artists_history` (
+    `id` INTEGER not null,
+    `name` VARCHAR not null,
+    `timestamp` DATETIME not null,
+    primary key(`id`)
+);
+
+create table if not exists `albums_history` (
+    `id` INTEGER not null,
+    `name` VARCHAR not null,
+    `timestamp` DATETIME not null,
+    primary key(`id`)
+);
+
 create unique index if not exists `artist_mbid` on `artists` (
     `mbid`
 );
 create unique index if not exists `artist_name` on `artists` (`name`);
 create unique index if not exists `song_uri` on `songs` (`uri`);
+create index if not exists `song_history_last` on `songs_history` (`uri`, `timestamp` desc);
+create index if not exists `artists_history_last` on `artists_history` (`name`, `timestamp` desc);
+create index if not exists `albums_history_last` on `artists_history` (`name`, `timestamp` desc);
 end;
 
 create table if not exists `images` (
@@ -75,6 +100,7 @@ create unique index if not exists `image_key` on `images` (
     `key`,
     `is_thumbnail`
 );
+
 ",
         )
         .expect("Unable to init metadata SQLite DB");
@@ -385,7 +411,9 @@ pub fn find_image_by_key(key: &str, is_thumbnail: bool) -> Result<Option<String>
     query = conn
         .prepare("select filename from images where key = ?1 and is_thumbnail = ?2")
         .unwrap()
-        .query_row(params![key, is_thumbnail as i32], |r| Ok(r.get::<usize, String>(0)?));
+        .query_row(params![key, is_thumbnail as i32], |r| {
+            Ok(r.get::<usize, String>(0)?)
+        });
     match query {
         Ok(filename) => {
             return Ok(Some(filename));
@@ -403,30 +431,39 @@ pub fn find_image_by_key(key: &str, is_thumbnail: bool) -> Result<Option<String>
 pub fn find_cover_by_uri(track_uri: &str, is_thumbnail: bool) -> Result<Option<String>, Error> {
     if let Some(filename) = find_image_by_key(track_uri, is_thumbnail)? {
         Ok(Some(filename))
-    }
-    else {
+    } else {
         let folder_uri = strip_filename_linux(track_uri);
         if let Some(filename) = find_image_by_key(folder_uri, is_thumbnail)? {
             Ok(Some(filename))
-        }
-        else {
+        } else {
             Ok(None)
         }
     }
 }
 
-pub fn register_image_key(key: &str, filename: Option<&str>, is_thumbnail: bool) -> Result<(), Error> {
+pub fn register_image_key(
+    key: &str,
+    filename: Option<&str>,
+    is_thumbnail: bool,
+) -> Result<(), Error> {
     let mut conn = SQLITE_POOL.get().unwrap();
     let tx = conn.transaction().map_err(|e| Error::DbError(e))?;
-    tx.execute("delete from images where key = ?1 and is_thumbnail = ?2", params![key, is_thumbnail as i32])
-        .map_err(|e| Error::DbError(e))?;
+    tx.execute(
+        "delete from images where key = ?1 and is_thumbnail = ?2",
+        params![key, is_thumbnail as i32],
+    )
+    .map_err(|e| Error::DbError(e))?;
     tx.execute(
         "insert into images (key, is_thumbnail, filename, last_modified) values (?1,?2,?3,?4)",
         params![
             key,
             is_thumbnail as i32,
             // Callers should interpret empty names as "tried but didn't find anything, don't try again"
-            if let Some(filename) = filename {filename} else {""},
+            if let Some(filename) = filename {
+                filename
+            } else {
+                ""
+            },
             OffsetDateTime::now_utc()
         ],
     )
@@ -438,7 +475,94 @@ pub fn register_image_key(key: &str, filename: Option<&str>, is_thumbnail: bool)
 pub fn unregister_image_key(key: &str, is_thumbnail: bool) -> Result<(), Error> {
     let mut conn = SQLITE_POOL.get().unwrap();
     let tx = conn.transaction().map_err(|e| Error::DbError(e))?;
-    tx.execute("delete from images where key = ?1 and is_thumbnail = ?2", params![key, is_thumbnail as i32])
-        .map_err(|e| Error::DbError(e))?;
+    tx.execute(
+        "delete from images where key = ?1 and is_thumbnail = ?2",
+        params![key, is_thumbnail as i32],
+    )
+    .map_err(|e| Error::DbError(e))?;
     Ok(())
+}
+
+pub fn add_to_history(song: &SongInfo) -> Result<(), Error> {
+    let mut conn = SQLITE_POOL.get().unwrap();
+    let tx = conn.transaction().map_err(|e| Error::DbError(e))?;
+    let ts = OffsetDateTime::now_utc();
+    tx.execute(
+        "insert into songs_history (uri, timestamp) values (?1, ?2)",
+        params![&song.uri, &ts],
+    )
+    .map_err(|e| Error::DbError(e))?;
+    if let Some(album) = song.album.as_ref() {
+        tx.execute(
+            "insert into albums_history (name, timestamp) values (?1, ?2)",
+            params![&album.title, &ts],
+        )
+        .map_err(|e| Error::DbError(e))?;
+    }
+    for artist in song.artists.iter() {
+        tx.execute(
+            "insert into artists_history(name, timestamp) values (?1, ?2)",
+            params![&artist.name, &ts],
+        )
+        .map_err(|e| Error::DbError(e))?;
+    }
+    tx.commit().map_err(|e| Error::DbError(e))?;
+    Ok(())
+}
+
+/// Get URIs of up to N last listened to songs.
+pub fn get_last_n_songs(n: usize) -> Result<Vec<String>, Error> {
+    let conn = SQLITE_POOL.get().unwrap();
+    let mut query = conn
+        .prepare(
+            "
+select uri, max(timestamp) as last_played
+from songs_history
+group by uri order by last_played desc limit ?1",
+        )
+        .unwrap();
+    let res = query
+        .query_map(params![n], |r| Ok(r.get::<usize, String>(0)?))
+        .map_err(|e| Error::DbError(e))?
+        .map(|r| r.unwrap());
+
+    return Ok(res.collect());
+}
+
+/// Get titles of up to N last listened to albums.
+pub fn get_last_n_albums(n: usize) -> Result<Vec<String>, Error> {
+    let conn = SQLITE_POOL.get().unwrap();
+    let mut query = conn
+        .prepare(
+            "
+select title, max(timestamp) as last_played
+from albums_history
+group by title order by last_played desc limit ?1",
+        )
+        .unwrap();
+    let res = query
+        .query_map(params![n], |r| Ok(r.get::<usize, String>(0)?))
+        .map_err(|e| Error::DbError(e))?
+        .map(|r| r.unwrap());
+
+    return Ok(res.collect());
+}
+
+/// Get names of up to N last listened to artists.
+pub fn get_last_n_artists(n: usize) -> Result<Vec<String>, Error> {
+    let conn = SQLITE_POOL.get().unwrap();
+    let mut query = conn
+        .prepare(
+            "
+select title, max(timestamp) as last_played
+from artists_history
+group by title order by last_played desc limit ?1",
+        )
+        .unwrap();
+    let res = query
+        .query_map(params![n], |r| Ok(r.get::<usize, String>(0)?))
+        .map_err(|e| Error::DbError(e))?
+        .map(|r| r.unwrap());
+
+    return Ok(res.collect());
 }
