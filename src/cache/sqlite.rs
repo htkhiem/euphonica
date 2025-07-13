@@ -74,7 +74,7 @@ create table if not exists `artists_history` (
 
 create table if not exists `albums_history` (
     `id` INTEGER not null,
-    `name` VARCHAR not null,
+    `title` VARCHAR not null,
     `timestamp` DATETIME not null,
     primary key(`id`)
 );
@@ -86,7 +86,7 @@ create unique index if not exists `artist_name` on `artists` (`name`);
 create unique index if not exists `song_uri` on `songs` (`uri`);
 create index if not exists `song_history_last` on `songs_history` (`uri`, `timestamp` desc);
 create index if not exists `artists_history_last` on `artists_history` (`name`, `timestamp` desc);
-create index if not exists `albums_history_last` on `artists_history` (`name`, `timestamp` desc);
+create index if not exists `albums_history_last` on `artists_history` (`title`, `timestamp` desc);
 end;
 
 create table if not exists `images` (
@@ -494,7 +494,7 @@ pub fn add_to_history(song: &SongInfo) -> Result<(), Error> {
     .map_err(|e| Error::DbError(e))?;
     if let Some(album) = song.album.as_ref() {
         tx.execute(
-            "insert into albums_history (name, timestamp) values (?1, ?2)",
+            "insert into albums_history (title, timestamp) values (?1, ?2)",
             params![&album.title, &ts],
         )
         .map_err(|e| Error::DbError(e))?;
@@ -554,9 +554,9 @@ pub fn get_last_n_artists(n: usize) -> Result<Vec<String>, Error> {
     let mut query = conn
         .prepare(
             "
-select title, max(timestamp) as last_played
+select name, max(timestamp) as last_played
 from artists_history
-group by title order by last_played desc limit ?1",
+group by name order by last_played desc limit ?1",
         )
         .unwrap();
     let res = query

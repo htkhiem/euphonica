@@ -12,21 +12,28 @@
 						<property name="orientation">1</property>
 						<property name="spacing">6</property>
 						<child>
+							<object class="EuphonicaSidebarButton" id="recent_btn">
+								<property name="label" translatable="true">Recent</property>
+								<property name="icon_name">recent-symbolic</property>
+							</object>
+						</child>
+						<child>
 							<object class="EuphonicaSidebarButton" id="albums_btn">
+								<property name="group">recent_btn</property>
 								<property name="label" translatable="true">Albums</property>
 								<property name="icon_name">library-music-symbolic</property>
 							</object>
 						</child>
 						<child>
 							<object class="EuphonicaSidebarButton" id="artists_btn">
-								<property name="group">albums_btn</property>
+								<property name="group">recent_btn</property>
 								<property name="label" translatable="true">Artists</property>
 								<property name="icon_name">music-artist-symbolic</property>
 							</object>
 						</child>
 						<child>
 							<object class="EuphonicaSidebarButton" id="folders_btn">
-								<property name="group">albums_btn</property>
+								<property name="group">recent_btn</property>
 								<property name="label" translatable="true">Folders</property>
 								<property name="icon_name">folder-symbolic</property>
 							</object>
@@ -43,7 +50,7 @@
 
 								<child>
 									<object class="EuphonicaSidebarButton" id="playlists_btn">
-										<property name="group">albums_btn</property>
+										<property name="group">recent_btn</property>
 										<property name="label" translatable="true">Saved Playlists</property>
 										<property name="icon_name">playlist-symbolic</property>
 									</object>
@@ -64,7 +71,7 @@
 
 						<child>
 							<object class="GtkToggleButton" id="queue_btn">
-								<property name="group">albums_btn</property>
+								<property name="group">recent_btn</property>
 								<property name="child">
 									<object class="GtkCenterBox">
 										<property name="start-widget">

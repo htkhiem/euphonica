@@ -279,7 +279,7 @@ impl Library {
     /// Get all the information available about an artist (won't block;
     /// UI will get notified of result later via signals).
     /// TODO: implement provider daisy-chaining on the cache side
-    pub fn init_artist(&self, artist: Artist) {
+    pub fn init_artist(&self, artist: &Artist) {
         if let Some(cache) = self.imp().cache.get() {
             cache.ensure_cached_artist_meta(artist.get_info());
         }

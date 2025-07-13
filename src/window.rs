@@ -21,8 +21,8 @@
 use crate::{
     application::EuphonicaApplication,
     client::{ClientState, ConnectionState},
-    common::{blend_mode::*, paintables::FadePaintable, Album},
-    library::{AlbumView, ArtistContentView, ArtistView, FolderView, PlaylistView},
+    common::{blend_mode::*, paintables::FadePaintable, Album, Artist},
+    library::{AlbumView, ArtistContentView, ArtistView, FolderView, PlaylistView, RecentView},
     player::{Player, PlayerBar, QueueView},
     sidebar::Sidebar,
     utils::{self, settings_manager},
@@ -127,6 +127,8 @@ mod imp {
         #[template_child]
         pub toast_overlay: TemplateChild<adw::ToastOverlay>,
         // Main views
+        #[template_child]
+        pub recent_view: TemplateChild<RecentView>,
         #[template_child]
         pub album_view: TemplateChild<AlbumView>,
         #[template_child]
@@ -857,6 +859,12 @@ impl EuphonicaWindow {
         win.imp()
             .queue_view
             .setup(app.get_player(), app.get_cache(), win.clone());
+        win.imp().recent_view.setup(
+            app.get_library(),
+            app.get_player(),
+            app.get_cache(),
+            &win
+        );
         win.imp().album_view.setup(
             app.get_library(),
             app.get_cache(),
@@ -918,6 +926,10 @@ impl EuphonicaWindow {
 
     pub fn get_split_view(&self) -> adw::OverlaySplitView {
         self.imp().split_view.get()
+    }
+
+    pub fn get_recent_view(&self) -> RecentView {
+        self.imp().recent_view.get()
     }
 
     pub fn get_album_view(&self) -> AlbumView {
@@ -1058,6 +1070,15 @@ impl EuphonicaWindow {
         self.imp().album_view.on_album_clicked(album);
         // self.imp().stack.set_visible_child_name("albums");
         self.imp().sidebar.set_view("albums");
+        if self.imp().split_view.shows_sidebar() {
+            self.imp().split_view.set_show_sidebar(!self.imp().split_view.is_collapsed());
+        }
+    }
+
+    pub fn goto_artist(&self, artist: &Artist) {
+        self.imp().artist_view.on_artist_clicked(artist);
+        // self.imp().stack.set_visible_child_name("artists");
+        self.imp().sidebar.set_view("artists");
         if self.imp().split_view.shows_sidebar() {
             self.imp().split_view.set_show_sidebar(!self.imp().split_view.is_collapsed());
         }

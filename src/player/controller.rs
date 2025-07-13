@@ -494,6 +494,8 @@ mod imp {
                     // emit this).
                     Signal::builder("volume-changed")
                         .param_types([i8::static_type()])
+                        .build(),
+                    Signal::builder("history-changed")
                         .build()
                 ]
             })
@@ -977,7 +979,9 @@ impl Player {
                     if dur >= 10.0 {
                         if let Some(new_position_dur) = status.elapsed {
                             if !self.imp().saved_to_history.get() && new_position_dur.as_secs_f32() / dur >= 0.5 {
-                                let _ = sqlite::add_to_history(new_song.get_info());
+                                if let Ok(()) = sqlite::add_to_history(new_song.get_info()) {
+                                    self.emit_by_name::<()>("history-changed", &[]);
+                                }
                                 self.imp().saved_to_history.set(true);
                             }
                         }

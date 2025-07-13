@@ -18,6 +18,7 @@
       <object class="AdwBreakpoint">
         <condition>max-width: 600</condition>
         <setter object="split_view" property="collapsed">true</setter>
+        <setter object="recent_view" property="collapsed">true</setter>
         <setter object="album_view" property="collapsed">true</setter>
         <setter object="artist_view" property="collapsed">true</setter>
         <setter object="folder_view" property="collapsed">true</setter>
@@ -81,6 +82,16 @@
                       <object class="GtkStack" id="stack">
                         <property name="transition-duration">200</property>
                         <property name="transition-type">7</property>
+                        <child>
+                          <object class="GtkStackPage">
+                            <property name="title" translatable="true">Recent</property>
+                            <property name="name">recent</property>
+                            <property name="child">
+                              <object class="EuphonicaRecentView" id="recent_view">
+															</object>
+                            </property>
+                          </object>
+                        </child>
                         <child>
                           <object class="GtkStackPage">
                             <property name="title" translatable="true">Albums</property>
