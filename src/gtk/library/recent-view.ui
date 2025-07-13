@@ -105,8 +105,7 @@
                                                 <style>
                                                   <class name="no-bg"/>
                                                 </style>
-                                                <!-- We'll display at most 10 items anyway -->
-                                                <property name="max-columns">15</property>
+                                                <property name="single-click-activate">true</property>
                                                 <property name="hscroll-policy">0</property>
                                                 <property name="orientation">0</property>
                                                 <property name="min-columns">1</property>
@@ -197,8 +196,7 @@
                                                 <style>
                                                   <class name="no-bg"/>
                                                 </style>
-                                                <!-- We'll display at most 10 items anyway -->
-                                                <property name="max-columns">15</property>
+                                                <property name="single-click-activate">true</property>
                                                 <property name="hscroll-policy">0</property>
                                                 <property name="orientation">0</property>
                                                 <property name="min-columns">1</property>
