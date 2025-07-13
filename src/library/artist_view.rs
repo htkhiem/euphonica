@@ -349,6 +349,7 @@ impl ArtistView {
         // once when adding this album to the ListStore for the GridView.
         //
         let content_view = self.imp().content_view.get();
+        content_view.unbind();
         content_view.bind(artist.clone());
         self.imp().nav_view.push_by_tag("content");
         self.imp().library.get().unwrap().init_artist(artist);

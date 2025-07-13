@@ -507,6 +507,7 @@ impl AlbumView {
         // NOTE: We do not ensure local album art again in the above steps, since we have already done so
         // once when adding this album to the ListStore for the GridView.
         let content_view = self.imp().content_view.get();
+        content_view.unbind();
         content_view.bind(album.clone());
         self.imp()
             .library
