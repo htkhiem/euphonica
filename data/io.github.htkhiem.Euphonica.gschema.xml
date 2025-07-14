@@ -33,6 +33,10 @@
 		<child schema="io.github.htkhiem.Euphonica.metaprovider" name="metaprovider"/>
 		<child schema="io.github.htkhiem.Euphonica.player" name="player"/>
 		<child schema="io.github.htkhiem.Euphonica.client" name="client"/>
+
+		<key name="background-portal-available" type="b">
+			<default>true</default>
+		</key>
 	</schema>
 
 	<schema id="io.github.htkhiem.Euphonica.client" path="/io/github/htkhiem/Euphonica/client/">

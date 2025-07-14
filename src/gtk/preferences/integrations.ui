@@ -34,6 +34,21 @@
 						<property name="subtitle" translatable="true">You may also launch Euphonica minimised using the --minimized command-line argument.</property>
 					</object>
 				</child>
+				<child>
+					<object class="AdwActionRow" id="xdg_warn_row">
+						<property name="visible">false</property>
+						<property name="title" translatable="true">XDG Background Portal not available</property>
+						<property name="subtitle" translatable="true">Required for shell integration.</property>
+						<child type="prefix">
+							<object class="GtkImage">
+								<style>
+									<class name="warning"/>
+								</style>
+								<property name="icon-name">content-loading-symbolic</property>
+							</object>
+						</child>
+					</object>
+				</child>
 			</object>
 		</child>
 
