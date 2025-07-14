@@ -182,8 +182,6 @@ mod imp {
         #[property(get, set)]
         pub visualizer_bottom_opacity: Cell<f64>,
         #[property(get, set)]
-        pub visualizer_gradient_height: Cell<f64>,
-        #[property(get, set)]
         pub visualizer_scale: Cell<f64>,
         #[property(get, set)]
         pub visualizer_blend_mode: Cell<u32>,
@@ -273,14 +271,6 @@ mod imp {
                     "visualizer-bottom-opacity",
                     obj,
                     "visualizer-bottom-opacity",
-                )
-                .build();
-
-            settings
-                .bind(
-                    "visualizer-gradient-height",
-                    obj,
-                    "visualizer-gradient-height",
                 )
                 .build();
 
@@ -643,6 +633,9 @@ mod imp {
             path_builder.move_to(0.0, height);
             path_builder.line_to(0.0, (height - data[0] * scale).max(0.0));
 
+            // y-axis is top-down so min-y is the highest point :)
+            let mut y_min = height;
+
             if self.visualizer_use_splines.get() {
                 // Spline mode. Since we can make 2 assumptions:
                 // - No two points share the same x-coordinate (duh), and
@@ -653,6 +646,7 @@ mod imp {
                 for i in 0..(data.len() - 1) {
                     let x = (i as f32 + 1.0) * band_width;
                     let y = (height - data[i] * scale * 1000000.0).max(0.0);
+                    y_min = y_min.min(y);
                     let x_next = x + band_width;
                     let y_next = (height - data[i + 1] * scale * 1000000.0).max(0.0);
                     // Midpoint
@@ -681,6 +675,8 @@ mod imp {
             } else {
                 // Straight segments mode
                 for (band_idx, level) in data[1..data.len()].iter().enumerate() {
+                    let y = (height - level * scale * 1000000.0).max(0.0);
+                    y_min = y_min.min(y);
                     path_builder.line_to(
                         (band_idx as f32 + 1.0) * band_width,
                         (height - level * scale * 1000000.0).max(0.0),
@@ -701,7 +697,7 @@ mod imp {
                 ),
             );
             let top_stop = gsk::ColorStop::new(
-                self.visualizer_gradient_height.get() as f32,
+                1.0,
                 gdk::RGBA::new(
                     color.red(),
                     color.green(),
@@ -710,9 +706,9 @@ mod imp {
                 ),
             );
             snapshot.append_linear_gradient(
-                &graphene::Rect::new(0.0, 0.0, width, height),
+                &graphene::Rect::new(0.0, y_min, width, height),
                 &graphene::Point::new(0.0, height),
-                &graphene::Point::new(0.0, 0.0),
+                &graphene::Point::new(0.0, y_min),
                 &[bottom_stop, top_stop],
             );
             // Fill node

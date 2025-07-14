@@ -44,8 +44,6 @@ mod imp {
         #[template_child]
         pub visualizer_top_opacity: TemplateChild<adw::SpinRow>,
         #[template_child]
-        pub visualizer_gradient_height: TemplateChild<adw::SpinRow>,
-        #[template_child]
         pub visualizer_use_log_bins: TemplateChild<adw::SwitchRow>,
         #[template_child]
         pub visualizer_scale: TemplateChild<adw::SpinRow>,
@@ -208,14 +206,6 @@ impl UIPreferences {
             .bind(
                 "visualizer-top-opacity",
                 &imp.visualizer_top_opacity.get(),
-                "value",
-            )
-            .build();
-
-        ui_settings
-            .bind(
-                "visualizer-gradient-height",
-                &imp.visualizer_gradient_height.get(),
                 "value",
             )
             .build();

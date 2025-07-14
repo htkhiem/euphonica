@@ -206,22 +206,6 @@
               </object>
             </child>
             <child>
-              <object class="AdwSpinRow" id="visualizer_gradient_height">
-                <property name="title" translatable="true">Top opacity height</property>
-                <property name="subtitle" translatable="true">How high up (relative to total window height) is the gradient stop for top opacity.</property>
-                <property name="digits">2</property>
-                <property name="adjustment">
-                  <object class="GtkAdjustment">
-                    <property name="lower">0.0</property>
-                    <property name="upper">1.0</property>
-                    <property name="value">0.35</property>
-                    <property name="page-increment">0.01</property>
-                    <property name="step-increment">0.05</property>
-                  </object>
-                </property>
-              </object>
-            </child>
-            <child>
               <object class="AdwSwitchRow" id="visualizer_use_splines">
                 <property name="title" translatable="true">Use splines</property>
                 <property name="subtitle" translatable="true">Draws the spectrum with smooth curves instead of straight lines.</property>
