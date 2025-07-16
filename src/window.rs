@@ -322,6 +322,7 @@ mod imp {
 
             let view = self.split_view.get();
             [
+                self.recent_view.upcast_ref::<gtk::Widget>(),
                 self.album_view.upcast_ref::<gtk::Widget>(),
                 self.artist_view.upcast_ref::<gtk::Widget>(),
                 self.folder_view.upcast_ref::<gtk::Widget>(),

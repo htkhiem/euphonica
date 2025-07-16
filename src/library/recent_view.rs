@@ -345,17 +345,24 @@ impl RecentView {
 
         // Set up factory
         let factory = SignalListItemFactory::new();
+        let adj = self.imp().album_row.hadjustment().unwrap();
 
-        // Create an empty `AlbumCell` during setup
+        // Create an empty `AlbumCell` during setup.
+        // Reset scroll position to zero every time a new item is created such that
+        // upon startup or insertion of a new just-listened album we'll be at the
+        // start of the row.
         factory.connect_setup(clone!(
             #[weak]
             cache,
+            #[weak]
+            adj,
             move |_, list_item| {
                 let item = list_item
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
                 let album_cell = AlbumCell::new(&item, cache);
                 item.set_child(Some(&album_cell));
+                adj.set_value(0.0);
             }
         ));
 
@@ -452,17 +459,23 @@ impl RecentView {
 
         // Set up factory
         let factory = SignalListItemFactory::new();
+        let adj = self.imp().artist_row.hadjustment().unwrap();
 
         // Create an empty `ArtistCell` during setup
         factory.connect_setup(clone!(
             #[weak]
             cache,
+            #[weak]
+            adj,
             move |_, list_item| {
                 let item = list_item
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
                 let artist_cell = ArtistCell::new(&item, cache);
                 item.set_child(Some(&artist_cell));
+                adj.set_value(0.0);
+                adj.set_value(0.0);
+                adj.set_value(0.0);
             }
         ));
 

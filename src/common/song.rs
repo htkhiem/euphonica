@@ -4,6 +4,7 @@ use gtk::prelude::*;
 use gtk::subclass::prelude::*;
 use mpd::status::AudioFormat;
 use mpris_server::{zbus::zvariant::ObjectPath, Time};
+use time::OffsetDateTime;
 use std::{
     cell::{Cell, OnceCell},
     ffi::OsStr,
@@ -137,10 +138,10 @@ impl Default for SongInfo {
 mod imp {
     use super::*;
     use glib::{
-        ParamSpec, ParamSpecBoolean, ParamSpecInt64, ParamSpecObject, ParamSpecString,
-        ParamSpecUInt, ParamSpecUInt64,
+        ParamSpec, ParamSpecBoolean, ParamSpecInt64, ParamSpecObject, ParamSpecString, ParamSpecUInt, ParamSpecUInt64
     };
     use once_cell::sync::Lazy;
+    use time::OffsetDateTime;
 
     /// The GObject Song wrapper.
     /// By nesting info inside another struct, we enforce tag editing to be
@@ -148,11 +149,12 @@ mod imp {
     /// struct to a mutable variable, modify it, then create a new Song wrapper
     /// from the modified SongInfo struct (no copy required this time).
     /// This design also avoids a RefCell.
-    #[derive(Default, Debug)]
+    #[derive(Debug)]
     pub struct Song {
         pub info: OnceCell<SongInfo>,
         pub pos: Cell<u32>, // stored at the wrapper level to allow easy local updating
         pub is_playing: Cell<bool>,
+        pub last_played: Cell<OffsetDateTime>
     }
 
     #[glib::object_subclass]
@@ -165,7 +167,14 @@ mod imp {
                 info: OnceCell::new(),
                 pos: Cell::new(0),
                 is_playing: Cell::new(false),
+                last_played: Cell::new(OffsetDateTime::now_utc())
             }
+        }
+    }
+
+    impl Default for Song {
+        fn default() -> Self {
+            Self::new()
         }
     }
 
@@ -194,6 +203,9 @@ mod imp {
                     ParamSpecString::builder("last-modified")
                         .read_only()
                         .build(),
+                    ParamSpecString::builder("last-played")
+                        .read_only()
+                        .build(),
                 ]
             });
             PROPERTIES.as_ref()
@@ -220,6 +232,7 @@ mod imp {
                 // "release_date" => obj.get_release_date.to_value(),
                 "quality-grade" => obj.get_quality_grade().to_icon_name().to_value(),
                 "last-modified" => obj.get_last_modified().to_value(),
+                "last-played" => obj.get_last_played_desc().to_value(),
                 _ => unimplemented!(),
             }
         }
@@ -257,6 +270,56 @@ impl Song {
 
     pub fn get_last_modified(&self) -> Option<&str> {
         self.get_info().last_modified.as_deref()
+    }
+
+    pub fn get_last_played_desc(&self) -> Option<String> {
+        // TODO: translations
+        let now = OffsetDateTime::now_utc();
+        let then = self.imp().last_played.get();
+        let diff_days = (
+            now.unix_timestamp() - then.unix_timestamp()
+        ) as f64 / 86400.0;
+        if diff_days <= 0.0 {
+            None
+        }
+        else {
+            if diff_days >= 365.0 {
+                let years = (diff_days / 365.0).floor() as u32;
+                if years == 1 {
+                    Some("last year".to_owned())
+                }
+                else {
+                    Some(format!("{years} years ago"))
+                }
+            }
+            else if diff_days >= 30.0 {
+                // Just let a month be 30 days long on average :)
+                let months = (diff_days / 30.0).floor() as u32;
+                if months == 1 {
+                    Some("last month".to_owned())
+                }
+                else {
+                    Some(format!("{months} years ago"))
+                }
+            }
+            else if diff_days > 1.0 {
+                Some(format!("{diff_days:.0} days ago"))
+            }
+            else if diff_days == 1.0 {
+                Some("yesterday".to_owned())
+            }
+            else {
+                Some("today".to_owned())
+            }
+        }
+    }
+
+    pub fn get_last_played(&self) -> OffsetDateTime {
+        self.imp().last_played.get()
+    }
+
+    pub fn set_last_played(&self, new: OffsetDateTime) {
+        self.imp().last_played.set(new);
     }
 
     pub fn get_duration(&self) -> u64 {

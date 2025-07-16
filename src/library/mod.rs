@@ -1,4 +1,5 @@
 mod recent_view;
+mod recent_song_row;
 
 mod album_cell;
 mod album_content_view;

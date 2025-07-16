@@ -11,7 +11,6 @@
               <object class="AdwToolbarView">
                 <child type="top">
 					        <object class="AdwHeaderBar">
-                    <property name="show-title" bind-source="EuphonicaRecentView" bind-property="collapsed" bind-flags="sync-create|invert-boolean"></property>
                     <child type="start">
                       <object class="GtkButton" id="show_sidebar">
                         <property name="icon-name">dock-left-symbolic</property>
@@ -32,15 +31,14 @@
                       <object class="GtkBox">
                         <property name="hexpand">true</property>
                         <property name="orientation">1</property>
-                        <property name="spacing">12px</property>
                         <child>
                           <object class="GtkBox">
                             <property name="hexpand">true</property>
                             <property name="orientation">1</property>
                             <child>
                               <object class="GtkCenterBox">
-                                <property name="margin-start">6</property>
-                                <property name="margin-end">6</property>
+                                <property name="margin-start">12</property>
+                                <property name="margin-end">12</property>
                                 <property name="start-widget">
                                   <object class="GtkBox">
                                     <property name="spacing">6</property>
@@ -122,16 +120,19 @@
                             </child>
                           </object>
                         </child>
-
-
+                        <child>
+                          <object class="GtkSeparator">
+                            <property name="margin-bottom">6px</property>
+                          </object>
+                        </child>
                         <child>
                           <object class="GtkBox">
                             <property name="hexpand">true</property>
                             <property name="orientation">1</property>
                             <child>
                               <object class="GtkCenterBox">
-                                <property name="margin-start">6</property>
-                                <property name="margin-end">6</property>
+                                <property name="margin-start">12</property>
+                                <property name="margin-end">12</property>
                                 <property name="start-widget">
                                   <object class="GtkBox">
                                     <property name="spacing">6</property>
@@ -139,7 +140,7 @@
                                       <object class="GtkImage">
                                         <property name="icon_name">music-artist-symbolic</property>
                                         <style>
-                                          <class name="title-2"/>
+                                          <class name="title-3"/>
                                         </style>
                                       </object>
                                     </child>
@@ -147,7 +148,7 @@
                                       <object class="GtkLabel">
                                         <property name="label" translatable="true">Artists</property>
                                         <style>
-                                          <class name="title-2"/>
+                                          <class name="title-3"/>
                                         </style>
                                       </object>
                                     </child>

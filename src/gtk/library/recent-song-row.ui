@@ -1,15 +1,23 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <interface>
-  <template class="EuphonicaAlbumSongRow" parent="GtkBox">
+  <template class="EuphonicaRecentSongRow" parent="GtkBox">
     <style>
       <class name="padding-6"/>
     </style>
     <child>
-      <object class="GtkLabel" id="track_index">
-        <property name="label">NaN</property>
+      <object class="GtkBox">
+        <property name="halign">3</property>
+        <property name="valign">3</property>
+        <property name="overflow">hidden</property>
         <style>
-          <class name="dim-label"/>
+          <class name="border-radius-6"/>
         </style>
+        <child>
+          <object class="GtkImage" id="thumbnail">
+            <property name="pixel-size">36</property>
+            <property name="resource">io/github/htkhiem/Euphonica/albumart-placeholder-thumb.png</property>
+          </object>
+        </child>
       </object>
     </child>
     <child>
@@ -41,6 +49,25 @@
               <object class="GtkBox">
                 <child>
                   <object class="GtkImage">
+                    <property name="icon-name">library-music-symbolic</property>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkLabel" id="album_name">
+                    <property name="margin-start">4</property>
+                    <property name="ellipsize">end</property>
+                    <property name="label">Unknown</property>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkSeparator">
+                    <style>
+                      <class name="spacer"/>
+                    </style>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkImage">
                     <property name="icon-name">music-artist-symbolic</property>
                   </object>
                 </child>
@@ -60,19 +87,16 @@
                 </child>
                 <child>
                   <object class="GtkImage">
-                    <property name="icon-name">hourglass-symbolic</property>
+                    <property name="icon-name">recent-symbolic</property>
                   </object>
                 </child>
                 <child>
-                  <object class="GtkLabel" id="duration">
+                  <object class="GtkLabel" id="last_played">
                     <property name="margin-start">4</property>
-                    <property name="label">0:00</property>
+                    <property name="ellipsize">end</property>
+                    <property name="label"></property>
                   </object>
                 </child>
-                <style>
-                  <class name="dim-label"/>
-                  <class name="caption"/>
-                </style>
               </object>
             </child>
           </object>
