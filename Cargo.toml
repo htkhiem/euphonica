@@ -1,6 +1,6 @@
 [package]
 name = "euphonica"
-version = "0.95.2"
+version = "0.96.0"
 edition = "2021"
 
 [dev-dependencies]
