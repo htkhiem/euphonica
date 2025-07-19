@@ -31,6 +31,8 @@ mod imp {
         #[template_child]
         pub show_sidebar: TemplateChild<gtk::Button>,
         #[template_child]
+        pub clear: TemplateChild<gtk::Button>,
+        #[template_child]
         pub stack: TemplateChild<gtk::Stack>,
 
         // Albums row
@@ -107,6 +109,15 @@ mod imp {
                 self,
                 move |_| {
                     this.obj().emit_by_name::<()>("show-sidebar-clicked", &[]);
+                }
+            ));
+
+            self.clear.connect_clicked(clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |_| {
+                    this.library.get().unwrap().clear_recent_songs();
+                    this.obj().on_history_changed();
                 }
             ));
 

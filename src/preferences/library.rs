@@ -42,8 +42,6 @@ mod imp {
         pub n_recent_songs: TemplateChild<adw::SpinRow>,
         #[template_child]
         pub pause_recent: TemplateChild<adw::SwitchRow>,
-        #[template_child]
-        pub clear_recent: TemplateChild<adw::ButtonRow>,
 
         #[template_child]
         pub image_cache_size: TemplateChild<adw::ActionRow>,
@@ -88,8 +86,6 @@ mod imp {
             self.open_cache_folder.connect_activated(|_| {
                 let _ = open::that(get_app_cache_path());
             });
-
-            self.clear_recent.connect_activated(|_| sqlite::clear_history().expect("Unable to clear history"));
         }
     }
     impl WidgetImpl for LibraryPreferences {}

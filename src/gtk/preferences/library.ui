@@ -162,15 +162,6 @@
 						<property name="title" translatable="true">Pause history</property>
 					</object>
 				</child>
-				<child>
-					<object class="AdwButtonRow" id="clear_recent">
-						<property name="title" translatable="true">Clear history</property>
-						<property name="start-icon-name">user-trash-symbolic</property>
-					</object>
-					<style>
-                        <class name="destructive-action"/>
-                    </style>
-				</child>
 			</object>
 		</child>
 		<child>

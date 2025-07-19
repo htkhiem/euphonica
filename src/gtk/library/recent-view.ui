@@ -18,6 +18,15 @@
                         <property name="visible">false</property>
                       </object>
                     </child>
+                    <child type="end">
+                      <object class="GtkButton" id="clear">
+                        <style>
+                          <class name="destructive-action"/>
+                        </style>
+                        <property name="icon-name">user-trash-symbolic</property>
+                        <property name="tooltip-text" translatable="true">Clear history</property>
+                      </object>
+                    </child>
                   </object>
                 </child>
                 <property name="content">

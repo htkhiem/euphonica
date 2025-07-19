@@ -1,5 +1,5 @@
 use crate::{
-    cache::Cache,
+    cache::{sqlite, Cache},
     client::{BackgroundTask, ClientState, ConnectionState, MpdWrapper},
     common::{Album, Artist, INode, Song, Stickers}, utils::settings_manager,
 };
@@ -383,6 +383,11 @@ impl Library {
     /// Get a reference to the local recent songs store
     pub fn recent_songs(&self) -> gio::ListStore {
         self.imp().recent_songs.clone()
+    }
+
+    pub fn clear_recent_songs(&self) {
+        self.imp().recent_songs.remove_all();  // Will make Recent View switch to the empty StatusPage
+        sqlite::clear_history().expect("Unable to clear history");
     }
 
     /// Get a reference to the local playlists store
