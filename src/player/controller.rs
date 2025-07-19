@@ -1401,6 +1401,12 @@ impl Player {
         if let Some(pos) = self.pos_of_id(id) {
             self.client().register_local_queue_changes(1);
             self.imp().queue.remove(pos);
+            if let Some(current_song) = self.imp().current_song.borrow().as_ref() {
+                let curr_pos = current_song.get_queue_pos();
+                if curr_pos > pos {
+                    current_song.set_queue_pos(curr_pos - 1);
+                }
+            }
             self.client().delete_at(id, true);
         }
     }
@@ -1409,20 +1415,47 @@ impl Player {
         // Find position of given queue_id
         if let Some(pos) = self.pos_of_id(id) {
             self.client().register_local_queue_changes(1);
+            let current_song = self.imp().current_song.borrow();
             match direction {
                 SwapDirection::Up => {
                     if pos > 0 {
-                        let target = self.imp().queue.item(pos).unwrap();
-                        let upper = self.imp().queue.item(pos - 1).unwrap();
-                        self.imp().queue.splice(pos - 1, 2, &[target, upper]);
+                        let target = self.imp().queue.item(pos).unwrap().downcast::<Song>().unwrap();
+                        let upper = self.imp().queue.item(pos - 1).unwrap().downcast::<Song>().unwrap();
+                        // As of right now we only need to keep the current song's queue pos updated for the Queue Next function.
+                        // Other songs' queue positions are not used.
+                        if let Some(current_song) = current_song.as_ref() {
+                            if current_song.get_queue_id() == target.get_queue_id() {
+                                current_song.set_queue_pos(current_song.get_queue_pos() - 1);
+                            }
+                            else if current_song.get_queue_id() == upper.get_queue_id() {
+                                current_song.set_queue_pos(current_song.get_queue_pos() + 1);
+                            }
+                        }
+                        self.imp().queue.splice(pos - 1, 2, &[
+                            target.upcast::<glib::Object>(),
+                            upper.upcast::<glib::Object>()
+                        ]);
                         self.client().swap(pos, pos - 1, false);
                     }
                 }
                 SwapDirection::Down => {
                     if pos < self.imp().queue.n_items() - 1 {
-                        let target = self.imp().queue.item(pos).unwrap();
-                        let lower = self.imp().queue.item(pos + 1).unwrap();
-                        self.imp().queue.splice(pos, 2, &[lower, target]);
+                        let target = self.imp().queue.item(pos).unwrap().downcast::<Song>().unwrap();
+                        let lower = self.imp().queue.item(pos + 1).unwrap().downcast::<Song>().unwrap();
+                        // As of right now we only need to keep the current song's queue pos updated for the Queue Next function.
+                        // Other songs' queue positions are not used.
+                        if let Some(current_song) = current_song.as_ref() {
+                            if current_song.get_queue_id() == target.get_queue_id() {
+                                current_song.set_queue_pos(current_song.get_queue_pos() + 1);
+                            }
+                            else if current_song.get_queue_id() == lower.get_queue_id() {
+                                current_song.set_queue_pos(current_song.get_queue_pos() - 1);
+                            }
+                        }
+                        self.imp().queue.splice(pos, 2, &[
+                            lower.upcast::<glib::Object>(),
+                            target.upcast::<glib::Object>()
+                        ]);
                         self.client().swap(pos, pos + 1, false);
                     }
                 }
