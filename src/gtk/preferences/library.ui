@@ -110,6 +110,71 @@
 		</child>
 		<child>
 			<object class="AdwPreferencesGroup">
+				<property name="title" translatable="true">Recent</property>
+				<child>
+					<object class="AdwSpinRow" id="n_recent_albums">
+						<property name="title" translatable="true">Number of recent albums</property>
+						<property name="subtitle" translatable="true">How many recently-played albums to show.</property>
+						<property name="adjustment">
+							<object class="GtkAdjustment">
+								<property name="lower">1</property>
+								<property name="upper">60</property>
+								<property name="value">20</property>
+								<property name="page-increment">1</property>
+								<property name="step-increment">10</property>
+							</object>
+						</property>
+
+					</object>
+				</child>
+				<child>
+					<object class="AdwSpinRow" id="n_recent_artists">
+						<property name="title" translatable="true">Number of recent artists</property>
+						<property name="subtitle" translatable="true">How many recently-played artists to show.</property>
+						<property name="adjustment">
+							<object class="GtkAdjustment">
+								<property name="lower">1</property>
+								<property name="upper">60</property>
+								<property name="value">20</property>
+								<property name="page-increment">1</property>
+								<property name="step-increment">10</property>
+							</object>
+						</property>
+					</object>
+				</child>
+				<child>
+					<object class="AdwSpinRow" id="n_recent_songs">
+						<property name="title" translatable="true">Number of recent songs</property>
+						<property name="subtitle" translatable="true">How many recently-played songs to show.</property>
+						<property name="adjustment">
+							<object class="GtkAdjustment">
+								<property name="lower">1</property>
+								<property name="upper">60</property>
+								<property name="value">20</property>
+								<property name="page-increment">1</property>
+								<property name="step-increment">10</property>
+							</object>
+						</property>
+					</object>
+				</child>
+				<child>
+					<object class="AdwSwitchRow" id="pause_recent">
+						<property name="title" translatable="true">Pause history</property>
+					</object>
+				</child>
+				<child>
+					<object class="AdwButtonRow" id="clear_recent">
+						<property name="title" translatable="true">Clear history</property>
+						<property name="start-icon-name">user-trash-symbolic</property>
+					</object>
+					<style>
+                        <class name="destructive-action"/>
+                    </style>
+				</child>
+			</object>
+		</child>
+		<child>
+			<object class="AdwPreferencesGroup">
 				<property name="title" translatable="true">Local storage usage</property>
 				<property name="header-suffix">
 					<object class="GtkButton" id="refresh_cache_stats_btn">

@@ -153,38 +153,33 @@ glib::wrapper! {
 }
 
 impl RecentSongRow {
-    pub fn new(library: Library, item: &gtk::ListItem, cache: Rc<Cache>) -> Self {
+    pub fn new(library: Library, item: &Song, cache: Rc<Cache>) -> Self {
         let res: Self = Object::builder().build();
         res.setup(library, item, cache);
         res
     }
 
     #[inline(always)]
-    pub fn setup(&self, library: Library, item: &gtk::ListItem, cache: Rc<Cache>) {
+    pub fn setup(&self, library: Library, item: &Song, cache: Rc<Cache>) {
         let cache_state = cache.get_cache_state();
         self.imp()
            .cache
            .set(cache)
            .expect("RecentSongRow cannot bind to cache");
         let _ = self.imp().library.set(library);
-        item.property_expression("item")
-            .chain_property::<Song>("name")
+        item.property_expression("name")
             .bind(self, "name", gtk::Widget::NONE);
 
-        item.property_expression("item")
-            .chain_property::<Song>("album")
+        item.property_expression("album")
             .bind(self, "album", gtk::Widget::NONE);
 
-        item.property_expression("item")
-            .chain_property::<Song>("artist")
+        item.property_expression("artist")
             .bind(self, "artist", gtk::Widget::NONE);
 
-        item.property_expression("item")
-            .chain_property::<Song>("last-played")
+        item.property_expression("last-played")
             .bind(self, "last-played", gtk::Widget::NONE);
 
-        item.property_expression("item")
-            .chain_property::<Song>("quality-grade")
+        item.property_expression("quality-grade")
             .bind(self, "quality-grade", gtk::Widget::NONE);
 
         let _ = self.imp().thumbnail_signal_ids.replace(Some((
@@ -261,6 +256,10 @@ impl RecentSongRow {
                 }
             }
         ));
+
+        self.imp().song.replace(Some(item.clone()));
+        self.imp().thumbnail_source.set(CoverSource::Unknown);
+        self.update_thumbnail(item.get_info());
     }
 
     fn update_thumbnail(&self, info: &SongInfo) {
@@ -302,20 +301,6 @@ impl RecentSongRow {
             CoverSource::None => {
                 self.imp().thumbnail.set_paintable(Some(&*ALBUMART_THUMBNAIL_PLACEHOLDER));
             }
-        }
-    }
-
-    pub fn bind(&self, song: &Song) {
-        // Bind album art listener. Set once first (like sync_create)
-        self.imp().song.replace(Some(song.clone()));
-        self.imp().thumbnail_source.set(CoverSource::Unknown);
-        self.update_thumbnail(song.get_info());
-    }
-
-    pub fn unbind(&self) {
-        if let Some(song) = self.imp().song.take() {
-            self.imp().thumbnail_source.set(CoverSource::None);
-            self.update_thumbnail(song.get_info());
         }
     }
 }

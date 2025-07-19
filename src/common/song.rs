@@ -4,13 +4,12 @@ use gtk::prelude::*;
 use gtk::subclass::prelude::*;
 use mpd::status::AudioFormat;
 use mpris_server::{zbus::zvariant::ObjectPath, Time};
-use time::OffsetDateTime;
 use std::{
     cell::{Cell, OnceCell},
     ffi::OsStr,
     path::Path
 };
-use time::{Date, Month};
+use time::{Date, Month, OffsetDateTime};
 
 use crate::cache::{get_image_cache_path, sqlite};
 
@@ -99,6 +98,7 @@ pub struct SongInfo {
     // MusicBrainz stuff
     mbid: Option<String>,
     last_modified: Option<String>,
+    pub last_played: Option<OffsetDateTime>
 }
 
 impl SongInfo {
@@ -131,6 +131,7 @@ impl Default for SongInfo {
             quality_grade: QualityGrade::Unknown,
             mbid: None,
             last_modified: None,
+            last_played: None
         }
     }
 }
@@ -141,7 +142,6 @@ mod imp {
         ParamSpec, ParamSpecBoolean, ParamSpecInt64, ParamSpecObject, ParamSpecString, ParamSpecUInt, ParamSpecUInt64
     };
     use once_cell::sync::Lazy;
-    use time::OffsetDateTime;
 
     /// The GObject Song wrapper.
     /// By nesting info inside another struct, we enforce tag editing to be
@@ -153,8 +153,7 @@ mod imp {
     pub struct Song {
         pub info: OnceCell<SongInfo>,
         pub pos: Cell<u32>, // stored at the wrapper level to allow easy local updating
-        pub is_playing: Cell<bool>,
-        pub last_played: Cell<OffsetDateTime>
+        pub is_playing: Cell<bool>
     }
 
     #[glib::object_subclass]
@@ -166,8 +165,7 @@ mod imp {
             Self {
                 info: OnceCell::new(),
                 pos: Cell::new(0),
-                is_playing: Cell::new(false),
-                last_played: Cell::new(OffsetDateTime::now_utc())
+                is_playing: Cell::new(false)
             }
         }
     }
@@ -274,52 +272,52 @@ impl Song {
 
     pub fn get_last_played_desc(&self) -> Option<String> {
         // TODO: translations
-        let now = OffsetDateTime::now_utc();
-        let then = self.imp().last_played.get();
-        let diff_days = (
-            now.unix_timestamp() - then.unix_timestamp()
-        ) as f64 / 86400.0;
-        if diff_days <= 0.0 {
-            None
-        }
-        else {
-            if diff_days >= 365.0 {
-                let years = (diff_days / 365.0).floor() as u32;
-                if years == 1 {
-                    Some("last year".to_owned())
-                }
-                else {
-                    Some(format!("{years} years ago"))
-                }
-            }
-            else if diff_days >= 30.0 {
-                // Just let a month be 30 days long on average :)
-                let months = (diff_days / 30.0).floor() as u32;
-                if months == 1 {
-                    Some("last month".to_owned())
-                }
-                else {
-                    Some(format!("{months} years ago"))
-                }
-            }
-            else if diff_days > 1.0 {
-                Some(format!("{diff_days:.0} days ago"))
-            }
-            else if diff_days == 1.0 {
-                Some("yesterday".to_owned())
+        if let Some(then) = self.get_last_played() {
+            let now = OffsetDateTime::now_utc();
+            let diff_days = (
+                now.unix_timestamp() - then.unix_timestamp()
+            ) as f64 / 86400.0;
+            if diff_days <= 0.0 {
+                None
             }
             else {
-                Some("today".to_owned())
+                if diff_days >= 365.0 {
+                    let years = (diff_days / 365.0).floor() as u32;
+                    if years == 1 {
+                        Some("last year".to_owned())
+                    }
+                    else {
+                        Some(format!("{years} years ago"))
+                    }
+                }
+                else if diff_days >= 30.0 {
+                    // Just let a month be 30 days long on average :)
+                    let months = (diff_days / 30.0).floor() as u32;
+                    if months == 1 {
+                        Some("last month".to_owned())
+                    }
+                    else {
+                        Some(format!("{months} years ago"))
+                    }
+                }
+                else if diff_days > 1.0 {
+                    Some(format!("{diff_days:.0} days ago"))
+                }
+                else if diff_days == 1.0 {
+                    Some("yesterday".to_owned())
+                }
+                else {
+                    Some("today".to_owned())
+                }
             }
+        }
+        else {
+            None
         }
     }
 
-    pub fn get_last_played(&self) -> OffsetDateTime {
-        self.imp().last_played.get()
-    }
-
-    pub fn set_last_played(&self, new: OffsetDateTime) {
-        self.imp().last_played.set(new);
+    pub fn get_last_played(&self) -> Option<OffsetDateTime> {
+        self.get_info().last_played.clone()
     }
 
     pub fn get_duration(&self) -> u64 {
@@ -499,6 +497,7 @@ impl From<mpd::song::Song> for SongInfo {
             quality_grade: QualityGrade::Unknown,
             mbid: None,
             last_modified: song.last_mod,
+            last_played: None
         };
 
         if let Some(place) = song.place {

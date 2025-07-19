@@ -11,7 +11,7 @@ use crate::{cache::{get_doc_cache_path, get_image_cache_path, Cache}, utils};
 mod imp {
     use std::cell::{Cell, OnceCell};
 
-    use crate::cache::get_app_cache_path;
+    use crate::cache::{get_app_cache_path, sqlite};
 
     use super::*;
 
@@ -35,6 +35,17 @@ mod imp {
         pub artist_excepts_apply: TemplateChild<gtk::Button>,
 
         #[template_child]
+        pub n_recent_albums: TemplateChild<adw::SpinRow>,
+        #[template_child]
+        pub n_recent_artists: TemplateChild<adw::SpinRow>,
+        #[template_child]
+        pub n_recent_songs: TemplateChild<adw::SpinRow>,
+        #[template_child]
+        pub pause_recent: TemplateChild<adw::SwitchRow>,
+        #[template_child]
+        pub clear_recent: TemplateChild<adw::ButtonRow>,
+
+        #[template_child]
         pub image_cache_size: TemplateChild<adw::ActionRow>,
         #[template_child]
         pub info_db_size: TemplateChild<adw::ActionRow>,
@@ -43,7 +54,6 @@ mod imp {
         #[template_child]
         pub refresh_cache_stats_btn: TemplateChild<gtk::Button>,
 
-        pub cache: OnceCell<Rc<Cache>>,
         pub n_async_in_progress: Cell<u8>
     }
 
@@ -75,15 +85,11 @@ mod imp {
                 }
             ));
 
-            self.open_cache_folder.connect_activated(clone!(
-                #[weak(rename_to = this)]
-                self,
-                move |_| {
-                    if let Some(cache) = this.cache.get() {
-                        let _ = open::that(get_app_cache_path());
-                    }
-                }
-            ));
+            self.open_cache_folder.connect_activated(|_| {
+                let _ = open::that(get_app_cache_path());
+            });
+
+            self.clear_recent.connect_activated(|_| sqlite::clear_history().expect("Unable to clear history"));
         }
     }
     impl WidgetImpl for LibraryPreferences {}
@@ -103,10 +109,8 @@ impl Default for LibraryPreferences {
 }
 
 impl LibraryPreferences {
-    pub fn setup(&self, cache: Rc<Cache>) {
+    pub fn setup(&self) {
         let imp = self.imp();
-        self.imp().cache.set(cache).expect("Cannot bind cache to preferences dialog");
-
         // Populate with current gsettings values
         let settings = utils::settings_manager();
         // Set up library settings
@@ -122,6 +126,18 @@ impl LibraryPreferences {
         let search_case_sensitive = imp.search_case_sensitive.get();
         library_settings
             .bind("search-case-sensitive", &search_case_sensitive, "active")
+            .build();
+        library_settings
+            .bind("n-recent-albums", &imp.n_recent_albums.get(), "value")
+            .build();
+        library_settings
+            .bind("n-recent-artists", &imp.n_recent_artists.get(), "value")
+            .build();
+        library_settings
+            .bind("n-recent-songs", &imp.n_recent_songs.get(), "value")
+            .build();
+        library_settings
+            .bind("pause-recent", &imp.pause_recent.get(), "value")
             .build();
 
         // Setup artist section
@@ -211,7 +227,6 @@ impl LibraryPreferences {
     }
 
     pub fn refresh_cache_stats(&self) {
-        let cache = self.imp().cache.get().expect("refresh_cache_stats called before setup");
         // Avoid spawning additional tasks when current ones have not concluded yet
         if self.imp().n_async_in_progress.get() == 0 {
             self.imp().image_cache_size.set_subtitle("Computing...");

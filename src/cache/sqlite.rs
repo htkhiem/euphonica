@@ -511,7 +511,7 @@ pub fn add_to_history(song: &SongInfo) -> Result<(), Error> {
 }
 
 /// Get URIs of up to N last listened to songs.
-pub fn get_last_n_songs(n: usize) -> Result<Vec<String>, Error> {
+pub fn get_last_n_songs(n: u32) -> Result<Vec<(String, OffsetDateTime)>, Error> {
     let conn = SQLITE_POOL.get().unwrap();
     let mut query = conn
         .prepare(
@@ -522,7 +522,7 @@ group by uri order by last_played desc limit ?1",
         )
         .unwrap();
     let res = query
-        .query_map(params![n], |r| Ok(r.get::<usize, String>(0)?))
+        .query_map(params![n], |r| Ok((r.get::<usize, String>(0)?, r.get::<usize, OffsetDateTime>(1)?)))
         .map_err(|e| Error::DbError(e))?
         .map(|r| r.unwrap());
 
@@ -530,7 +530,7 @@ group by uri order by last_played desc limit ?1",
 }
 
 /// Get titles of up to N last listened to albums.
-pub fn get_last_n_albums(n: usize) -> Result<Vec<String>, Error> {
+pub fn get_last_n_albums(n: u32) -> Result<Vec<String>, Error> {
     let conn = SQLITE_POOL.get().unwrap();
     let mut query = conn
         .prepare(
@@ -549,7 +549,7 @@ group by title order by last_played desc limit ?1",
 }
 
 /// Get names of up to N last listened to artists.
-pub fn get_last_n_artists(n: usize) -> Result<Vec<String>, Error> {
+pub fn get_last_n_artists(n: u32) -> Result<Vec<String>, Error> {
     let conn = SQLITE_POOL.get().unwrap();
     let mut query = conn
         .prepare(
@@ -565,4 +565,14 @@ group by name order by last_played desc limit ?1",
         .map(|r| r.unwrap());
 
     return Ok(res.collect());
+}
+
+pub fn clear_history() -> Result<(), Error> {
+    let mut conn = SQLITE_POOL.get().unwrap();
+    let tx = conn.transaction().map_err(|e| Error::DbError(e))?;
+    tx.execute("delete from songs_history", []).map_err(|e| Error::DbError(e))?;
+    tx.execute("delete from albums_history", []).map_err(|e| Error::DbError(e))?;
+    tx.execute("delete from artists_history", []).map_err(|e| Error::DbError(e))?;
+    tx.commit().map_err(|e| Error::DbError(e))?;
+    Ok(())
 }

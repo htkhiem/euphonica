@@ -1,7 +1,7 @@
 use crate::{
     cache::Cache,
     client::{BackgroundTask, ClientState, ConnectionState, MpdWrapper},
-    common::{Album, Artist, INode, Song, Stickers},
+    common::{Album, Artist, INode, Song, Stickers}, utils::settings_manager,
 };
 use glib::{clone, closure_local, subclass::Signal};
 use gtk::{gio, glib, prelude::*};
@@ -22,6 +22,7 @@ mod imp {
     #[derive(Debug)]
     pub struct Library {
         pub client: OnceCell<Rc<MpdWrapper>>,
+        pub recent_songs: gio::ListStore,
         // Album/Artist retrieval routine:
         // 1. Library places a background task to fetch albums.
         // 3. Background client gets list of unique album tags
@@ -51,6 +52,7 @@ mod imp {
 
         fn new() -> Self {
             Self {
+                recent_songs: gio::ListStore::new::<Song>(),
                 playlists: gio::ListStore::new::<INode>(),
                 albums: gio::ListStore::new::<Album>(),
                 artists: gio::ListStore::new::<Artist>(),
@@ -130,11 +132,13 @@ impl Library {
                 move |state, _| {
                     match state.get_connection_state() {
                         ConnectionState::Connected => {
+                            this.get_recent_songs();
                             this.init_albums();
                             this.init_artists(false);
                             this.get_folder_contents("");
                         }
                         ConnectionState::Connecting => {
+                            this.imp().recent_songs.remove_all();
                             this.imp().albums.remove_all();
                             this.imp().artists.remove_all();
                             this.imp().playlists.remove_all();
@@ -180,13 +184,27 @@ impl Library {
                 self,
                 move |_: ClientState, uri: String, entries: glib::BoxedAnyObject| {
                     // If original URI matches current URI, refresh current view
-                    println!("Requested URI: {}", &uri);
                     if uri == this.folder_path() {
                         this.imp().folder_inodes.remove_all();
                         this.imp()
                             .folder_inodes
                             .extend_from_slice(entries.borrow::<Vec<INode>>().as_ref());
                     }
+                }
+            ),
+        );
+
+        client_state.connect_closure(
+            "recent-songs-downloaded",
+            false,
+            closure_local!(
+                #[weak(rename_to = this)]
+                self,
+                move |_: ClientState, entries: glib::BoxedAnyObject| {
+                    this.imp().recent_songs.remove_all();
+                    this.imp()
+                        .recent_songs
+                        .extend_from_slice(entries.borrow::<Vec<Song>>().as_ref());
                 }
             ),
         );
@@ -362,6 +380,11 @@ impl Library {
             .extend_from_slice(&self.client().get_playlists());
     }
 
+    /// Get a reference to the local recent songs store
+    pub fn recent_songs(&self) -> gio::ListStore {
+        self.imp().recent_songs.clone()
+    }
+
     /// Get a reference to the local playlists store
     pub fn playlists(&self) -> gio::ListStore {
         self.imp().playlists.clone()
@@ -450,5 +473,11 @@ impl Library {
 
     pub fn clear_artist_avatar(&self, tag: &str) {
         self.cache().clear_artist_avatar(tag);
+    }
+
+    pub fn get_recent_songs(&self) {
+        let settings = settings_manager().child("library");
+        self.client()
+            .queue_background(BackgroundTask::FetchRecentSongs(settings.uint("n-recent-songs")), true);
     }
 }

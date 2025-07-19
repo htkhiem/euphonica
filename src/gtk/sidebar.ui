@@ -18,6 +18,9 @@
 							</object>
 						</child>
 						<child>
+							<object class="GtkSeparator"></object>
+						</child>
+						<child>
 							<object class="EuphonicaSidebarButton" id="albums_btn">
 								<property name="group">recent_btn</property>
 								<property name="label" translatable="true">Albums</property>

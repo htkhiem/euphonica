@@ -8,6 +8,7 @@
     <file preprocess="xml-stripblanks">gtk/marquee.ui</file>
     <file preprocess="xml-stripblanks">gtk/rating.ui</file>
     <file preprocess="xml-stripblanks">gtk/library/recent-view.ui</file>
+    <file preprocess="xml-stripblanks">gtk/library/recent-song-row.ui</file>
     <file preprocess="xml-stripblanks">gtk/library/album-view.ui</file>
     <file preprocess="xml-stripblanks">gtk/library/album-cell.ui</file>
     <file preprocess="xml-stripblanks">gtk/library/album-song-row.ui</file>

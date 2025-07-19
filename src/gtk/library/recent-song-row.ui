@@ -47,6 +47,10 @@
             </child>
             <child>
               <object class="GtkBox">
+                <style>
+                  <class name="caption"/>
+                  <class name="dim-label"/>
+                </style>
                 <child>
                   <object class="GtkImage">
                     <property name="icon-name">library-music-symbolic</property>

@@ -99,6 +99,18 @@
 		<key name="thumbnail-image-size" type="u">
 			<default>128</default>
 		</key>
+		<key name="n-recent-albums" type="u">
+			<default>20</default>
+		</key>
+		<key name="n-recent-artists" type="u">
+			<default>20</default>
+		</key>
+		<key name="n-recent-songs" type="u">
+			<default>20</default>
+		</key>
+		<key name="pause-recent" type="b">
+			<default>false</default>
+		</key>
 	</schema>
 
 	<schema id="io.github.htkhiem.Euphonica.metaprovider" path="/io/github/htkhiem/Euphonica/metaprovider/">
