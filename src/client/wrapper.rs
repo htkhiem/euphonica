@@ -55,6 +55,7 @@ enum AsyncClientMessage {
     ArtistAlbumBasicInfoDownloaded(String, AlbumInfo), // Return albums that had this artist in their AlbumArtist tag.
     FolderContentsDownloaded(String, Vec<LsInfoEntry>),
     PlaylistSongInfoDownloaded(String, Vec<SongInfo>),
+    RecentSongInfoDownloaded(Vec<SongInfo>),
     DBUpdated
 }
 
@@ -74,6 +75,7 @@ pub enum BackgroundTask {
     FetchArtistSongs(String), // Get all songs of an artist with given name
     FetchArtistAlbums(String), // Get all albums of an artist with given name
     FetchPlaylistSongs(String), // Get songs of playlist with given name
+    FetchRecentSongs(u32), // Get last n songs
 }
 // Thin wrapper around the blocking mpd::Client. It contains two separate client
 // objects connected to the same address. One lives on the main thread along
@@ -128,6 +130,8 @@ pub enum BackgroundTask {
 
 mod background {
     use std::ops::Range;
+
+    use time::OffsetDateTime;
 
     use crate::{cache::sqlite, utils::strip_filename_linux};
 
@@ -459,6 +463,49 @@ mod background {
             ));
         }
     }
+    pub fn fetch_songs_by_uri(client: &mut mpd::Client<StreamWrapper>, uris: &[&str]) -> Vec<SongInfo> {
+        uris.iter().map(move |uri| {
+            if let Ok(mut found_songs) = client.find(Query::new().and(Term::File, *uri), None) {
+                if found_songs.len() > 0 {
+                    Some(found_songs.remove(0))
+                }
+                else {
+                    None
+                }
+            }
+            else {
+                None
+            }
+        }).filter(|maybe_song| maybe_song.is_some())
+          .map(|mut mpd_song| SongInfo::from(std::mem::take(&mut mpd_song).unwrap())).collect()
+    }
+
+    pub fn fetch_last_n_songs(
+        client: &mut mpd::Client<StreamWrapper>,
+        sender_to_fg: &Sender<AsyncClientMessage>,
+        n: u32
+    ) {
+        let to_fetch: Vec<(String, OffsetDateTime)> = sqlite::get_last_n_songs(n).expect("Sqlite DB error");
+        let songs: Vec<SongInfo> = fetch_songs_by_uri(
+            client,
+            &to_fetch.iter().map(|tup| tup.0.as_str()).collect::<Vec<&str>>()
+        )
+            .into_iter()
+            .zip(
+                to_fetch.iter().map(|r| r.1).collect::<Vec<OffsetDateTime>>()
+            )
+            .map(|mut tup| {
+                tup.0.last_played = Some(tup.1);
+                std::mem::take(&mut tup.0)
+            })
+            .collect();
+
+        if !songs.is_empty() {
+            let _ = sender_to_fg.send_blocking(AsyncClientMessage::RecentSongInfoDownloaded(
+                songs
+            ));
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -660,6 +707,9 @@ impl MpdWrapper {
                         BackgroundTask::FetchPlaylistSongs(name) => {
                             background::fetch_playlist_songs(&mut client, &sender_to_fg, name)
                         }
+                        BackgroundTask::FetchRecentSongs(count) => {
+                            background::fetch_last_n_songs(&mut client, &sender_to_fg, count);
+                        }
                     }
                 } else {
                     // If not, go into idle mode
@@ -752,13 +802,13 @@ impl MpdWrapper {
                 self.on_album_downloaded("album-basic-info-downloaded", None, info)
             }
             AsyncClientMessage::AlbumSongInfoDownloaded(tag, songs) => {
-                self.on_songs_downloaded("album-songs-downloaded", tag, songs)
+                self.on_songs_downloaded("album-songs-downloaded", Some(tag), songs)
             }
             AsyncClientMessage::ArtistBasicInfoDownloaded(info) => self
                 .state
                 .emit_result("artist-basic-info-downloaded", Artist::from(info)),
             AsyncClientMessage::ArtistSongInfoDownloaded(name, songs) => {
-                self.on_songs_downloaded("artist-songs-downloaded", name, songs)
+                self.on_songs_downloaded("artist-songs-downloaded", Some(name), songs)
             }
             AsyncClientMessage::ArtistAlbumBasicInfoDownloaded(artist_name, song_info) => self
                 .on_album_downloaded(
@@ -770,10 +820,12 @@ impl MpdWrapper {
                 self.on_folder_contents_downloaded(uri, contents)
             }
             AsyncClientMessage::PlaylistSongInfoDownloaded(name, songs) => {
-                self.on_songs_downloaded("playlist-songs-downloaded", name, songs)
+                self.on_songs_downloaded("playlist-songs-downloaded", Some(name), songs)
             }
             AsyncClientMessage::DBUpdated => {}
             AsyncClientMessage::Busy(busy) => self.state.set_busy(busy),
+            AsyncClientMessage::RecentSongInfoDownloaded(songs) => self
+                .on_songs_downloaded("recent-songs-downloaded", None, songs),
         }
         glib::ControlFlow::Continue
     }
@@ -1439,16 +1491,25 @@ impl MpdWrapper {
         return None;
     }
 
-    fn on_songs_downloaded(&self, signal_name: &str, tag: String, songs: Vec<SongInfo>) {
+    fn on_songs_downloaded(&self, signal_name: &str, tag: Option<String>, songs: Vec<SongInfo>) {
         if !songs.is_empty() {
-            // Append to listener lists
-            self.state.emit_by_name::<()>(
-                signal_name,
-                &[
-                    &tag,
-                    &BoxedAnyObject::new(songs.into_iter().map(Song::from).collect::<Vec<Song>>()),
-                ],
-            );
+            if let Some(tag) = tag {
+                self.state.emit_by_name::<()>(
+                    signal_name,
+                    &[
+                        &tag,
+                        &BoxedAnyObject::new(songs.into_iter().map(Song::from).collect::<Vec<Song>>()),
+                    ]
+                );
+            }
+            else {
+                self.state.emit_by_name::<()>(
+                    signal_name,
+                    &[
+                        &BoxedAnyObject::new(songs.into_iter().map(Song::from).collect::<Vec<Song>>()),
+                    ]
+                );
+            }
         }
     }
 

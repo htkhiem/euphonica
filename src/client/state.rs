@@ -154,6 +154,11 @@ mod imp {
                             BoxedAnyObject::static_type(), // Vec<Song>
                         ])
                         .build(),
+                    Signal::builder("recent-songs-downloaded")
+                        .param_types([
+                            BoxedAnyObject::static_type(), // Vec<Song>
+                        ])
+                        .build(),
                 ]
             })
         }

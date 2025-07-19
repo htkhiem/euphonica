@@ -9,7 +9,7 @@ use std::{
     ffi::OsStr,
     path::Path
 };
-use time::{Date, Month};
+use time::{Date, Month, OffsetDateTime};
 
 use crate::cache::{get_image_cache_path, sqlite};
 
@@ -81,7 +81,7 @@ pub struct SongInfo {
     pub uri: String,
     pub title: String, // Might just be filename
     // last_mod: RefCell<Option<u64>>,
-    artists: Vec<ArtistInfo>,
+    pub artists: Vec<ArtistInfo>,
     pub artist_tag: Option<String>, // Original tag, with all the linkages and formatting
     pub duration: Option<Duration>, // Default to 0 if somehow the option in mpd's Song is None
     queue_id: Option<u32>,
@@ -98,6 +98,7 @@ pub struct SongInfo {
     // MusicBrainz stuff
     mbid: Option<String>,
     last_modified: Option<String>,
+    pub last_played: Option<OffsetDateTime>
 }
 
 impl SongInfo {
@@ -130,6 +131,7 @@ impl Default for SongInfo {
             quality_grade: QualityGrade::Unknown,
             mbid: None,
             last_modified: None,
+            last_played: None
         }
     }
 }
@@ -137,8 +139,7 @@ impl Default for SongInfo {
 mod imp {
     use super::*;
     use glib::{
-        ParamSpec, ParamSpecBoolean, ParamSpecInt64, ParamSpecObject, ParamSpecString,
-        ParamSpecUInt, ParamSpecUInt64,
+        ParamSpec, ParamSpecBoolean, ParamSpecInt64, ParamSpecObject, ParamSpecString, ParamSpecUInt, ParamSpecUInt64
     };
     use once_cell::sync::Lazy;
 
@@ -148,11 +149,11 @@ mod imp {
     /// struct to a mutable variable, modify it, then create a new Song wrapper
     /// from the modified SongInfo struct (no copy required this time).
     /// This design also avoids a RefCell.
-    #[derive(Default, Debug)]
+    #[derive(Debug)]
     pub struct Song {
         pub info: OnceCell<SongInfo>,
         pub pos: Cell<u32>, // stored at the wrapper level to allow easy local updating
-        pub is_playing: Cell<bool>,
+        pub is_playing: Cell<bool>
     }
 
     #[glib::object_subclass]
@@ -164,8 +165,14 @@ mod imp {
             Self {
                 info: OnceCell::new(),
                 pos: Cell::new(0),
-                is_playing: Cell::new(false),
+                is_playing: Cell::new(false)
             }
+        }
+    }
+
+    impl Default for Song {
+        fn default() -> Self {
+            Self::new()
         }
     }
 
@@ -194,6 +201,9 @@ mod imp {
                     ParamSpecString::builder("last-modified")
                         .read_only()
                         .build(),
+                    ParamSpecString::builder("last-played")
+                        .read_only()
+                        .build(),
                 ]
             });
             PROPERTIES.as_ref()
@@ -220,6 +230,7 @@ mod imp {
                 // "release_date" => obj.get_release_date.to_value(),
                 "quality-grade" => obj.get_quality_grade().to_icon_name().to_value(),
                 "last-modified" => obj.get_last_modified().to_value(),
+                "last-played" => obj.get_last_played_desc().to_value(),
                 _ => unimplemented!(),
             }
         }
@@ -257,6 +268,56 @@ impl Song {
 
     pub fn get_last_modified(&self) -> Option<&str> {
         self.get_info().last_modified.as_deref()
+    }
+
+    pub fn get_last_played_desc(&self) -> Option<String> {
+        // TODO: translations
+        if let Some(then) = self.get_last_played() {
+            let now = OffsetDateTime::now_utc();
+            let diff_days = (
+                now.unix_timestamp() - then.unix_timestamp()
+            ) as f64 / 86400.0;
+            if diff_days <= 0.0 {
+                None
+            }
+            else {
+                if diff_days >= 365.0 {
+                    let years = (diff_days / 365.0).floor() as u32;
+                    if years == 1 {
+                        Some("last year".to_owned())
+                    }
+                    else {
+                        Some(format!("{years} years ago"))
+                    }
+                }
+                else if diff_days >= 30.0 {
+                    // Just let a month be 30 days long on average :)
+                    let months = (diff_days / 30.0).floor() as u32;
+                    if months == 1 {
+                        Some("last month".to_owned())
+                    }
+                    else {
+                        Some(format!("{months} years ago"))
+                    }
+                }
+                else if diff_days > 1.0 {
+                    Some(format!("{diff_days:.0} days ago"))
+                }
+                else if diff_days == 1.0 {
+                    Some("yesterday".to_owned())
+                }
+                else {
+                    Some("today".to_owned())
+                }
+            }
+        }
+        else {
+            None
+        }
+    }
+
+    pub fn get_last_played(&self) -> Option<OffsetDateTime> {
+        self.get_info().last_played.clone()
     }
 
     pub fn get_duration(&self) -> u64 {
@@ -436,6 +497,7 @@ impl From<mpd::song::Song> for SongInfo {
             quality_grade: QualityGrade::Unknown,
             mbid: None,
             last_modified: song.last_mod,
+            last_played: None
         };
 
         if let Some(place) = song.place {
