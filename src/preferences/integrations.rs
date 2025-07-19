@@ -23,6 +23,8 @@ mod imp {
         pub autostart: TemplateChild<adw::SwitchRow>,
         #[template_child]
         pub start_minimized: TemplateChild<adw::SwitchRow>,
+        #[template_child]
+        pub xdg_warn_row: TemplateChild<adw::ActionRow>,
 
         #[template_child]
         pub lastfm_key: TemplateChild<adw::EntryRow>,
@@ -88,6 +90,7 @@ impl IntegrationsPreferences {
         let run_in_background = imp.run_in_background.get();
         let autostart = imp.autostart.get();
         let start_minimized = imp.start_minimized.get();
+        let xdg_warn = imp.xdg_warn_row.get();
 
         // Init background & autostart toggle states
         // Do NOT bind the widgets directly to the settings to avoid an infinite loo
@@ -116,6 +119,10 @@ impl IntegrationsPreferences {
             let _ = settings.set_boolean("start-minimized", sw.is_active());
             update_xdg_background_request();
         });
+
+        if !settings.boolean("background-portal-available") {
+            xdg_warn.set_visible(true);
+        }
 
         // Set up Last.fm settings
         let lastfm_settings = utils::meta_provider_settings("lastfm");

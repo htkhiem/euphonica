@@ -58,20 +58,24 @@ pub fn update_xdg_background_request() {
             }
         }
 
-        let response = request
-            .send()
-            .await
-            .expect("ashpd background await failure")
-            .response();
+        match request.send().await {
+            Ok(request) => {
+                let settings = utils::settings_manager();
+                if let Ok(response) = request.response() {
+                    let _ = settings.set_boolean("background-portal-available", true);
+                    let state_settings = settings.child("state");
 
-        if let Ok(response) = response {
-            let state_settings = utils::settings_manager().child("state");
-
-            // Might have to turn them off if system replies negatively
-            let _ = state_settings.set_boolean("autostart", response.auto_start());
-            // Since we call the above regardless of whether we wish to run in background
-            // or not (to update autostart) we need to do an AND here.
-            let _ = state_settings.set_boolean("run-in-background", run_in_background && response.run_in_background());
+                    // Might have to turn them off if system replies negatively
+                    let _ = state_settings.set_boolean("autostart", response.auto_start());
+                    // Since we call the above regardless of whether we wish to run in background
+                    // or not (to update autostart) we need to do an AND here.
+                    let _ = state_settings.set_boolean("run-in-background", run_in_background && response.run_in_background());
+                }
+            }
+            Err(_) => {
+                let settings = utils::settings_manager();
+                let _ = settings.set_boolean("background-portal-available", false);
+            }
         }
     });
 }

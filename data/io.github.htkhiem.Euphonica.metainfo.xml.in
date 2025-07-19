@@ -63,6 +63,12 @@
   </screenshots>
 
   <releases>
+    <release version="0.95.2-beta" date="2025-07-14">
+      <url type="details">https://github.com/htkhiem/euphonica/releases/tag/v0.95.2-beta</url>
+      <description>
+        <p>Fix: crash on systems without XDG Background support.</p>
+      </description>
+    </release>
     <release version="0.95.1-beta" date="2025-07-12">
       <url type="details">https://github.com/htkhiem/euphonica/releases/tag/v0.95.1-beta</url>
       <description>
