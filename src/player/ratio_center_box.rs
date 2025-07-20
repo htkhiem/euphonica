@@ -38,7 +38,13 @@ mod imp {
     }
 
     #[glib::derived_properties]
-    impl ObjectImpl for RatioCenterBox {}
+    impl ObjectImpl for RatioCenterBox {
+        fn dispose(&self) {
+            while let Some(child) = self.obj().first_child() {
+                child.unparent();
+            }
+        }
+    }
 
     impl WidgetImpl for RatioCenterBox {
         fn request_mode(&self) -> gtk::SizeRequestMode {

@@ -1,27 +1,27 @@
-use glib::{closure_local, signal::SignalHandlerId, Object};
+use glib::{
+    closure_local, signal::SignalHandlerId, Object,
+    ParamSpec, ParamSpecChar, ParamSpecString, ParamSpecInt
+};
 use gtk::{glib, prelude::*, subclass::prelude::*, CompositeTemplate, Image, Label};
 use std::{
-    cell::{OnceCell, RefCell},
+    cell::{OnceCell, RefCell, Cell},
     rc::Rc,
 };
+use once_cell::sync::Lazy;
 
 use crate::{
     cache::{placeholders::ALBUMART_THUMBNAIL_PLACEHOLDER, Cache, CacheState},
-    common::{Album, AlbumInfo, CoverSource},
+    common::{Album, AlbumInfo, CoverSource, Rating},
 };
 
 mod imp {
-    use std::cell::Cell;
-
-    use crate::common::Rating;
-
     use super::*;
-    use glib::{ParamSpec, ParamSpecChar, ParamSpecString};
-    use once_cell::sync::Lazy;
 
-    #[derive(Default, CompositeTemplate)]
+    #[derive(CompositeTemplate)]
     #[template(resource = "/io/github/htkhiem/Euphonica/gtk/library/album-cell.ui")]
     pub struct AlbumCell {
+        #[template_child]
+        pub inner: TemplateChild<gtk::Box>,
         #[template_child]
         pub cover: TemplateChild<gtk::Picture>, // Use high-resolution version
         #[template_child]
@@ -32,6 +32,8 @@ mod imp {
         pub quality_grade: TemplateChild<Image>,
         #[template_child]
         pub rating: TemplateChild<Rating>,
+        pub image_size: Cell<i32>,
+        pub lines: Cell<i32>,
         pub rating_val: Cell<i8>,
         pub album: RefCell<Option<Album>>,
         // Vector holding the bindings to properties of the Album GObject
@@ -46,7 +48,7 @@ mod imp {
         // `NAME` needs to match `class` attribute of template
         const NAME: &'static str = "EuphonicaAlbumCell";
         type Type = super::AlbumCell;
-        type ParentType = gtk::Box;
+        type ParentType = gtk::Widget;
 
         fn class_init(klass: &mut Self::Class) {
             klass.bind_template();
@@ -57,8 +59,44 @@ mod imp {
         }
     }
 
-    // Trait shared by all GObjects
+    impl Default for AlbumCell {
+        fn default() -> Self {
+            Self {
+                inner: TemplateChild::default(),
+                cover: TemplateChild::default(),
+                title: TemplateChild::default(),
+                artist: TemplateChild::default(),
+                quality_grade: TemplateChild::default(),
+                rating: TemplateChild::default(),
+                image_size: Cell::new(128),
+                lines: Cell::new(3),
+                rating_val: Cell::default(),
+                album: RefCell::default(),
+                cover_signal_ids: RefCell::default(),
+                cache: OnceCell::new(),
+                cover_source: Cell::default()
+            }
+        }
+    }
+
     impl ObjectImpl for AlbumCell {
+        fn dispose(&self) {
+            while let Some(child) = self.obj().first_child() {
+                child.unparent();
+            }
+
+            if let Some((update_id, clear_id)) = self.cover_signal_ids.take() {
+                let cache_state = self
+                    .cache
+                    .get()
+                    .unwrap()
+                    .get_cache_state();
+
+                cache_state.disconnect(update_id);
+                cache_state.disconnect(clear_id);
+            }
+        }
+
         fn constructed(&self) {
             self.parent_constructed();
 
@@ -72,6 +110,21 @@ mod imp {
                 .transform_to(|_, r: i8| {Some(r >= 0)})
                 .sync_create()
                 .build();
+
+            self.obj()
+                .bind_property("image-size", &self.cover.get(), "width-request")
+                .sync_create()
+                .build();
+
+            self.obj()
+                .bind_property("image-size", &self.cover.get(), "height-request")
+                .sync_create()
+                .build();
+
+            self.obj()
+                .bind_property("lines", &self.title.get(), "lines")
+                .sync_create()
+                .build();
         }
 
         fn properties() -> &'static [ParamSpec] {
@@ -80,7 +133,9 @@ mod imp {
                     ParamSpecString::builder("title").build(),
                     ParamSpecString::builder("artist").build(),
                     ParamSpecString::builder("quality-grade").build(),
-                    ParamSpecChar::builder("rating").build()
+                    ParamSpecChar::builder("rating").build(),
+                    ParamSpecInt::builder("image-size").build(),
+                    ParamSpecInt::builder("lines").build()
                 ]
             });
             PROPERTIES.as_ref()
@@ -92,6 +147,8 @@ mod imp {
                 "artist" => self.artist.label().to_value(),
                 "quality-grade" => self.quality_grade.icon_name().to_value(),
                 "rating" => self.rating_val.get().to_value(),
+                "image-size" => self.image_size.get().to_value(),
+                "lines" => self.lines.get().to_value(),
                 _ => unimplemented!(),
             }
         }
@@ -128,35 +185,63 @@ mod imp {
                         }
                     }
                 },
+                "image-size" => {
+                    if let Ok(new) = value.get::<i32>() {
+                        obj.set_image_size(new);
+                    }
+                },
+                "lines" => {
+                    if let Ok(new) = value.get::<i32>() {
+                        obj.set_lines(new);
+                    }
+                }
                 _ => unimplemented!(),
-            }
-        }
-
-        fn dispose(&self) {
-            if let Some((update_id, clear_id)) = self.cover_signal_ids.take() {
-                let cache_state = self
-                    .cache
-                    .get()
-                    .unwrap()
-                    .get_cache_state();
-
-                cache_state.disconnect(update_id);
-                cache_state.disconnect(clear_id);
             }
         }
     }
 
-    // Trait shared by all widgets
-    impl WidgetImpl for AlbumCell {}
+    impl WidgetImpl for AlbumCell {
+        // AlbumCell width is limited by the width of its image.
+        // Here we use custom measurement & alloc logic to force ellipsis/line breaks.
+        // Without these, AlbumCells can get arbitrarily wide when in a horizontal
+        // layout (like the RecentView's recent albums row).
+        fn request_mode(&self) -> gtk::SizeRequestMode {
+            gtk::SizeRequestMode::HeightForWidth
+        }
 
-    // Trait shared by all boxes
-    impl BoxImpl for AlbumCell {}
+        fn measure(&self, orientation: gtk::Orientation, for_size: i32) -> (i32, i32, i32, i32) {
+            let image_size = self.image_size.get();
+            if orientation == gtk::Orientation::Horizontal {
+                (
+                    image_size,
+                    image_size, // Always as wide as the image, no matter how long the title is
+                    -1,
+                    -1
+                )
+            } else {
+                // Depend on the parent Box's measurements for height
+                let res = self.inner.get().measure(gtk::Orientation::Vertical, for_size);
+                res
+            }
+        }
+
+        fn size_allocate(&self, w: i32, h: i32, baseline: i32) {
+            self.inner.get().size_allocate(&gtk::Allocation::new(
+                0, 0, w, h
+            ), baseline);
+        }
+
+        fn snapshot(&self, snapshot: &gtk::Snapshot) {
+            let obj = self.obj();
+            obj.snapshot_child(&self.inner.get(), snapshot);
+        }
+    }
 }
 
 glib::wrapper! {
     pub struct AlbumCell(ObjectSubclass<imp::AlbumCell>)
-        @extends gtk::Box, gtk::Widget,
-    @implements gtk::Accessible, gtk::Buildable, gtk::ConstraintTarget, gtk::Orientable;
+        @extends gtk::Widget,
+        @implements gtk::Accessible, gtk::Buildable, gtk::ConstraintTarget;
 }
 
 impl AlbumCell {
@@ -309,6 +394,23 @@ impl AlbumCell {
             self.imp().cover_source.set(CoverSource::None);
             self.update_cover(album.get_info());
         }
+    }
 
+    pub fn image_size(&self) -> i32 {
+        self.imp().image_size.get()
+    }
+
+    pub fn set_image_size(&self, new: i32) {
+        let old = self.imp().image_size.replace(new);
+        if old != new {
+            self.notify("image-size");
+        }
+    }
+
+    pub fn set_lines(&self, new: i32) {
+        let old = self.imp().lines.replace(new);
+        if old != new {
+            self.notify("lines");
+        }
     }
 }

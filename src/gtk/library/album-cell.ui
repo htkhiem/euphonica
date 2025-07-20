@@ -1,80 +1,82 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <interface>
-	<template class="EuphonicaAlbumCell" parent="GtkBox">
-		<!-- Use 1 outer box to centre the inner box. This way we
-			 can force content to stay within the album art's width.-->
-		<property name="halign">3</property>
-		<property name="valign">1</property>
+  <template class="EuphonicaAlbumCell" parent="GtkWidget">
 		<property name="margin-start">6</property>
-		<property name="margin-end">6</property>
-		<property name="margin-top">6</property>
-		<property name="margin-bottom">6</property>
-		<property name="orientation">1</property>
-		<property name="spacing">6</property>
-		<child>
-			<object class="GtkBox">
-				<property name="halign">3</property>
-				<property name="valign">3</property>
-				<property name="overflow">hidden</property>
-				<style>
-					<class name="border-radius-6" />
-				</style>
-				<child>
-					<object class="GtkPicture" id="cover">
-						<property name="height-request">128</property>
-						<property name="width-request">128</property>
-						<property name="hexpand">true</property>
-						<property name="vexpand">true</property>
-						<property name="content-fit">2</property>
-					</object>
-				</child>
-			</object>
-		</child>
-		<child>
-			<object class="GtkBox">
-				<property name="orientation">1</property>
-				<child>
-					<object class="GtkLabel" id="title">
-						<property name="halign">1</property>
-						<property name="justify">0</property>
-						<property name="wrap">true</property>
-						<property name="lines">3</property>
-						<property name="ellipsize">3</property>
-						<style>
-							<class name="caption-heading"/>
-						</style>
-					</object>
-				</child>
-				<child>
-					<object class="GtkCenterBox">
-						<property name="start-widget">
-							<object class="GtkLabel" id="artist">
-								<property name="ellipsize">3</property>
-								<property name="justify">0</property>
-								<style>
-									<class name="caption"/>
-								</style>
-							</object>
-						</property>
-						<property name="end-widget">
-							<object class="GtkImage" id="quality_grade">
-								<property name="icon-name">format-base-symbolic</property>
-							</object>
-						</property>
-					</object>
-				</child>
-				<child>
-					<object class="EuphonicaRating" id="rating">
-						<property name="editable">false</property>
-						<style>
-							<class name="dim-label"/>
-						</style>
-					</object>
-				</child>
-				<style>
-					<class name="flat" />
-				</style>
-			</object>
-		</child>
-	</template>
+    <property name="margin-end">6</property>
+    <property name="margin-top">6</property>
+    <property name="margin-bottom">6</property>
+    <child>
+      <object class="GtkBox" id="inner">
+        <property name="halign">3</property>
+        <property name="valign">1</property>
+        <property name="orientation">1</property>
+        <property name="spacing">6</property>
+        <child>
+          <object class="GtkBox">
+            <property name="halign">3</property>
+            <property name="valign">3</property>
+            <property name="overflow">hidden</property>
+            <style>
+              <class name="border-radius-6"/>
+            </style>
+            <child>
+              <object class="GtkPicture" id="cover">
+                <property name="height-request">128</property>
+                <property name="width-request">128</property>
+                <property name="hexpand">true</property>
+                <property name="vexpand">true</property>
+                <property name="content-fit">2</property>
+              </object>
+            </child>
+          </object>
+        </child>
+        <child>
+          <object class="GtkBox">
+            <property name="orientation">1</property>
+            <child>
+              <object class="GtkLabel" id="title">
+                <property name="halign">1</property>
+                <property name="justify">0</property>
+                <property name="wrap">true</property>
+                <property name="lines">3</property>
+                <property name="ellipsize">3</property>
+                <style>
+                  <class name="caption-heading"/>
+                </style>
+              </object>
+            </child>
+            <child>
+              <object class="GtkCenterBox">
+                <property name="start-widget">
+                  <object class="GtkLabel" id="artist">
+                    <property name="ellipsize">3</property>
+                    <property name="justify">0</property>
+                    <style>
+                      <class name="caption"/>
+                    </style>
+                  </object>
+                </property>
+                <property name="end-widget">
+                  <object class="GtkImage" id="quality_grade">
+                    <property name="icon-name">format-base-symbolic</property>
+                  </object>
+                </property>
+              </object>
+            </child>
+            <child>
+              <object class="EuphonicaRating" id="rating">
+                <property name="editable">false</property>
+                <style>
+                  <class name="dim-label"/>
+                </style>
+              </object>
+            </child>
+            <style>
+              <class name="flat"/>
+            </style>
+          </object>
+        </child>
+      </object>
+    </child>
+  </template>
 </interface>
