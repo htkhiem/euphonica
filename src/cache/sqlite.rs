@@ -19,107 +19,31 @@ use super::controller::get_doc_cache_path;
 static SQLITE_POOL: Lazy<r2d2::Pool<SqliteConnectionManager>> = Lazy::new(|| {
     let manager = SqliteConnectionManager::file(get_doc_cache_path());
     let pool = r2d2::Pool::new(manager).unwrap();
-    // let conn = Connection::open(path)?;
-    // Init schema & indices
     let conn = pool.get().unwrap();
-    conn
-        .execute_batch(
-            "begin;
-create table if not exists `albums` (
-    `folder_uri` VARCHAR not null,
-    `mbid` VARCHAR null unique,
-    `title` VARCHAR not null,
-    `artist` VARCHAR null,
-    `last_modified` DATETIME not null,
-    `data` BLOB not null
-);
-create unique index if not exists `album_mbid` on `albums` (
-    `mbid`
-);
-create unique index if not exists `album_name` on `albums` (
-    `title`, `artist`
-);
-
-create table if not exists `artists` (
-    `name` VARCHAR not null unique,
-    `mbid` VARCHAR null unique,
-    `last_modified` DATETIME not null,
-    `data` BLOB not null,
-    primary key (`name`)
-);
-
-create table if not exists `songs` (
-    `uri` VARCHAR not null unique,
-    `lyrics` VARCHAR not null,
-    `synced` BOOL not null,
-    `last_modified` DATETIME not null,
-    primary key(`uri`)
-);
-
-create table if not exists `songs_history` (
-    `id` INTEGER not null,
-    `uri` VARCHAR not null,
-    `timestamp` DATETIME not null,
-    primary key(`id`)
-);
-
-create table if not exists `artists_history` (
-    `id` INTEGER not null,
-    `name` VARCHAR not null,
-    `timestamp` DATETIME not null,
-    primary key(`id`)
-);
-
-create table if not exists `albums_history` (
-    `id` INTEGER not null,
-    `title` VARCHAR not null,
-    `timestamp` DATETIME not null,
-    primary key(`id`)
-);
-
-create unique index if not exists `artist_mbid` on `artists` (
-    `mbid`
-);
-create unique index if not exists `artist_name` on `artists` (`name`);
-create unique index if not exists `song_uri` on `songs` (`uri`);
-create index if not exists `song_history_last` on `songs_history` (`uri`, `timestamp` desc);
-create index if not exists `artists_history_last` on `artists_history` (`name`, `timestamp` desc);
-create index if not exists `albums_history_last` on `artists_history` (`title`, `timestamp` desc);
-end;
-
-create table if not exists `images` (
-    `key` VARCHAR not null,
-    `is_thumbnail` INTEGER not null,
-    `filename` VARCHAR not null,
-    `last_modified` DATETIME not null,
-    primary key (`key`, `is_thumbnail`)
-);
-create unique index if not exists `image_key` on `images` (
-    `key`,
-    `is_thumbnail`
-);
-
-",
-        )
-        .expect("Unable to init metadata SQLite DB");
-
+    // Init schema & indices
     // Migrations
     loop {
         let user_version = conn
-        .prepare("pragma user_version")
-        .unwrap()
-        .query_row([], |r| Ok(r.get::<usize, i32>(0)))
-        .unwrap().unwrap();
+            .prepare("pragma user_version")
+            .unwrap()
+            .query_row([], |r| Ok(r.get::<usize, i32>(0)))
+            .unwrap().unwrap();
 
-        println!("Local DB version: {user_version}");
+        println!("Local metadata DB version: {user_version}");
         match user_version {
             1 => {break;},
             0 => {
-                // Migrate album table schema
-                conn.execute_batch("
--- SQLite doesn't allow dropping a constraint so...back up old table
+                // Check if we're starting from nothing
+                match conn.query_row(
+                    "select name from sqlite_master where type='table' and name='albums'",
+                    [], |row| row.get::<usize, String>(0)
+                ) {
+                    Ok(_) => {
+                        println!("Upgrading local metadata DB to version 1...");
+                        // Migrate album table schema: album table now accepts non-unique folder URIs
+                        conn.execute_batch("begin;
+-- SQLite doesn't allow dropping a constraint so, so we'll have to recreate the table
 alter table albums rename to old_albums;
-
 -- Note: the 'folder_uri' no longer has the primary key or unique constraint here.
 create table if not exists `albums` (
     `folder_uri` varchar not null,
@@ -147,9 +71,117 @@ create unique index if not exists `album_mbid` on `albums` (
 create unique index if not exists `album_name` on `albums` (
     `title`, `artist`
 );
+
+-- Create new tables
+create table if not exists `songs_history` (
+    `id` INTEGER not null,
+    `uri` VARCHAR not null,
+    `timestamp` DATETIME not null,
+    primary key(`id`)
+);
+create index if not exists `song_history_last` on `songs_history` (`uri`, `timestamp` desc);
+
+create table if not exists `artists_history` (
+    `id` INTEGER not null,
+    `name` VARCHAR not null,
+    `timestamp` DATETIME not null,
+    primary key(`id`)
+);
+create index if not exists `artists_history_last` on `artists_history` (`name`, `timestamp` desc);
+
+create table if not exists `albums_history` (
+    `id` INTEGER not null,
+    `title` VARCHAR not null,
+    `timestamp` DATETIME not null,
+    primary key(`id`)
+);
+create index if not exists `albums_history_last` on `artists_history` (`title`, `timestamp` desc);
+
 pragma user_version = 1;
-"
-                ).expect("Unable to migrate DB version 0 to 1");
+end;").expect("Unable to migrate DB version 0 to 1");
+                    }
+                    Err(SqliteError::QueryReturnedNoRows) => {
+                        // Starting from scratch
+                        println!("Initialising local metadata DB...");
+                        conn.execute_batch("begin;
+create table if not exists `albums` (
+    `folder_uri` VARCHAR not null,
+    `mbid` VARCHAR null unique,
+    `title` VARCHAR not null,
+    `artist` VARCHAR null,
+    `last_modified` DATETIME not null,
+    `data` BLOB not null
+);
+create unique index if not exists `album_mbid` on `albums` (
+    `mbid`
+);
+create unique index if not exists `album_name` on `albums` (
+    `title`, `artist`
+);
+
+create table if not exists `artists` (
+    `name` VARCHAR not null unique,
+    `mbid` VARCHAR null unique,
+    `last_modified` DATETIME not null,
+    `data` BLOB not null,
+    primary key (`name`)
+);
+create unique index if not exists `artist_mbid` on `artists` (
+    `mbid`
+);
+create unique index if not exists `artist_name` on `artists` (`name`);
+
+create table if not exists `songs` (
+    `uri` VARCHAR not null unique,
+    `lyrics` VARCHAR not null,
+    `synced` BOOL not null,
+    `last_modified` DATETIME not null,
+    primary key(`uri`)
+);
+create unique index if not exists `song_uri` on `songs` (`uri`);
+
+create table if not exists `songs_history` (
+    `id` INTEGER not null,
+    `uri` VARCHAR not null,
+    `timestamp` DATETIME not null,
+    primary key(`id`)
+);
+create index if not exists `song_history_last` on `songs_history` (`uri`, `timestamp` desc);
+
+create table if not exists `artists_history` (
+    `id` INTEGER not null,
+    `name` VARCHAR not null,
+    `timestamp` DATETIME not null,
+    primary key(`id`)
+);
+create index if not exists `artists_history_last` on `artists_history` (`name`, `timestamp` desc);
+
+create table if not exists `albums_history` (
+    `id` INTEGER not null,
+    `title` VARCHAR not null,
+    `timestamp` DATETIME not null,
+    primary key(`id`)
+);
+create index if not exists `albums_history_last` on `artists_history` (`title`, `timestamp` desc);
+
+create table if not exists `images` (
+    `key` VARCHAR not null,
+    `is_thumbnail` INTEGER not null,
+    `filename` VARCHAR not null,
+    `last_modified` DATETIME not null,
+    primary key (`key`, `is_thumbnail`)
+);
+create unique index if not exists `image_key` on `images` (
+    `key`,
+    `is_thumbnail`
+);
+
+pragma user_version = 1;
+end;
+").expect("Unable to init metadata SQLite DB");
+                    }
+                    e => {panic!("SQLite database error: {e:?}");}
+                }
             }
             _ => {}
         }
