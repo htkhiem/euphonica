@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <template class="EuphonicaArtistTag" parent="GtkButton">
+    <!-- The below assumes that a LibAdwaita button is 34px tall. -->
+    <style>
+      <class name="circular"/>
+    </style>
+    <child>
+      <object class="GtkBox">
+        <style>
+          <class name="avatar-tag"/>
+        </style>
+        <property name="spacing">6</property>
+        <child>
+          <object class="AdwAvatar" id="avatar">
+          <property name="size">28</property>
+          </object>
+        </child>
+        <child>
+          <object class="GtkLabel" id="name">
+            <property name="ellipsize">3</property>
+          </object>
+        </child>
+      </object>
+    </child>
+  </template>
+</interface>

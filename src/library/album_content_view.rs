@@ -8,11 +8,11 @@ use std::{
 };
 use time::{format_description, Date};
 
-use super::{AlbumSongRow, Library};
+use super::{artist_tag::ArtistTag, AlbumSongRow, Library};
 use crate::{
     cache::{placeholders::ALBUMART_PLACEHOLDER, Cache, CacheState},
     client::ClientState,
-    common::{CoverSource, Album, AlbumInfo, Rating, Song},
+    common::{Album, AlbumInfo, Artist, CoverSource, Rating, Song},
     utils::format_secs_as_duration,
 };
 
@@ -21,6 +21,7 @@ mod imp {
 
     use ashpd::desktop::file_chooser::SelectedFiles;
     use async_channel::Sender;
+    use gio::ListStore;
 
     use crate::{common::Rating, library::add_to_playlist::AddToPlaylistButton, utils};
 
@@ -45,7 +46,7 @@ mod imp {
         #[template_child]
         pub title: TemplateChild<gtk::Label>,
         #[template_child]
-        pub artist: TemplateChild<gtk::Label>,
+        pub artists_box: TemplateChild<adw::WrapBox>,
         #[template_child]
         pub rating: TemplateChild<Rating>,
         #[template_child]
@@ -84,6 +85,7 @@ mod imp {
 
         pub song_list: gio::ListStore,
         pub sel_model: gtk::MultiSelection,
+        pub artist_tags: ListStore,
 
         pub library: OnceCell<Library>,
         pub album: RefCell<Option<Album>>,
@@ -100,7 +102,7 @@ mod imp {
             Self {
                 cover: TemplateChild::default(),
                 title: TemplateChild::default(),
-                artist: TemplateChild::default(),
+                artists_box: TemplateChild::default(),
                 rating: TemplateChild::default(),
                 rating_readout: TemplateChild::default(),
                 release_date: TemplateChild::default(),
@@ -126,6 +128,7 @@ mod imp {
                 sel_none: TemplateChild::default(),
                 library: OnceCell::new(),
                 album: RefCell::new(None),
+                artist_tags: ListStore::new::<ArtistTag>(),
                 bindings: RefCell::new(Vec::new()),
                 cover_signal_id: RefCell::new(None),
                 cache: OnceCell::new(),
@@ -681,7 +684,7 @@ impl AlbumContentView {
 
     pub fn bind(&self, album: Album) {
         let title_label = self.imp().title.get();
-        let artist_label = self.imp().artist.get();
+        let artists_box = self.imp().artists_box.get();
         let rating = self.imp().rating.get();
         let release_date_label = self.imp().release_date.get();
         let mut bindings = self.imp().bindings.borrow_mut();
@@ -693,12 +696,17 @@ impl AlbumContentView {
         // Save binding
         bindings.push(title_binding);
 
-        let artist_binding = album
-            .bind_property("artist", &artist_label, "label")
-            .sync_create()
-            .build();
-        // Save binding
-        bindings.push(artist_binding);
+        // Populate artist tags
+        let artist_tags = album.get_artists().iter().map(
+            |info| ArtistTag::new(
+                Artist::from(info.clone()),
+                self.imp().cache.get().unwrap().clone()
+            )
+        ).collect::<Vec<ArtistTag>>();
+        self.imp().artist_tags.extend_from_slice(&artist_tags);
+        for tag in artist_tags {
+            artists_box.append(&tag);
+        }
 
         let rating_binding = album
             .bind_property("rating", &rating, "value")
@@ -747,6 +755,13 @@ impl AlbumContentView {
         for binding in self.imp().bindings.borrow_mut().drain(..) {
             binding.unbind();
         }
+
+        // Clear artists wrapbox. TODO: when adw 1.8 drops as stable please use remove_all() instead.
+        for tag in self.imp().artist_tags.iter::<gtk::Widget>() {
+            self.imp().artists_box.remove(&tag.unwrap());
+        }
+        self.imp().artist_tags.remove_all();
+
         if let Some(id) = self.imp().cover_signal_id.take() {
             if let Some(cache) = self.imp().cache.get() {
                 cache.get_cache_state().disconnect(id);

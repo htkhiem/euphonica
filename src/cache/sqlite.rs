@@ -21,25 +21,23 @@ static SQLITE_POOL: Lazy<r2d2::Pool<SqliteConnectionManager>> = Lazy::new(|| {
     let pool = r2d2::Pool::new(manager).unwrap();
     // let conn = Connection::open(path)?;
     // Init schema & indices
-    pool.get()
-        .unwrap()
+    let conn = pool.get().unwrap();
+    conn
         .execute_batch(
             "begin;
 create table if not exists `albums` (
-    `folder_uri` VARCHAR not null unique,
+    `folder_uri` VARCHAR not null,
     `mbid` VARCHAR null unique,
     `title` VARCHAR not null,
     `artist` VARCHAR null,
     `last_modified` DATETIME not null,
-    `data` BLOB not null,
-    primary key (`folder_uri`)
+    `data` BLOB not null
 );
 create unique index if not exists `album_mbid` on `albums` (
     `mbid`
 );
 create unique index if not exists `album_name` on `albums` (
-    `folder_uri`,
-    `title`
+    `title`, `artist`
 );
 
 create table if not exists `artists` (
@@ -104,6 +102,59 @@ create unique index if not exists `image_key` on `images` (
 ",
         )
         .expect("Unable to init metadata SQLite DB");
+
+    // Migrations
+    loop {
+        let user_version = conn
+        .prepare("pragma user_version")
+        .unwrap()
+        .query_row([], |r| Ok(r.get::<usize, i32>(0)))
+        .unwrap().unwrap();
+
+        println!("Local DB version: {user_version}");
+        match user_version {
+            1 => {break;},
+            0 => {
+                // Migrate album table schema
+                conn.execute_batch("
+-- SQLite doesn't allow dropping a constraint so...back up old table
+alter table albums rename to old_albums;
+
+-- Note: the 'folder_uri' no longer has the primary key or unique constraint here.
+create table if not exists `albums` (
+    `folder_uri` varchar not null,
+    `mbid` varchar null unique,
+    `title` varchar not null,
+    `artist` varchar null,
+    `last_modified` datetime not null,
+    `data` blob not null
+);
+
+-- Copy
+insert into albums (folder_uri, mbid, title, artist, last_modified, data)
+select folder_uri, mbid, title, artist, last_modified, data
+from old_albums;
+
+-- Drop old table and both indices
+drop table old_albums;
+drop index if exists album_mbid;
+drop index if exists album_name;
+
+-- Reindex
+create unique index if not exists `album_mbid` on `albums` (
+    `mbid`
+);
+create unique index if not exists `album_name` on `albums` (
+    `title`, `artist`
+);
+pragma user_version = 1;
+"
+                ).expect("Unable to migrate DB version 0 to 1");
+            }
+            _ => {}
+        }
+    }
+
     pool
 });
 

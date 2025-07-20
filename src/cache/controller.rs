@@ -179,14 +179,12 @@ impl Cache {
                                         if let Ok(None) = existing {
                                             let res = providers.read().unwrap().get_album_meta(&mut key, None);
                                             if let Some(album) = res {
-                                                sqlite::write_album_meta(&key, &album)
-                                                    .expect("Unable to store downloaded album meta");
+                                                let _ = sqlite::write_album_meta(&key, &album);
                                             }
                                             else {
                                                 // Push an empty AlbumMeta to block further calls for this album.
                                                 println!("No album meta could be found for {}. Pushing empty document...", &folder_uri);
-                                                sqlite::write_album_meta(&key, &models::AlbumMeta::from_key(&key))
-                                                    .expect("Unable to store placeholder album meta");
+                                                let _ = sqlite::write_album_meta(&key, &models::AlbumMeta::from_key(&key));
                                             }
                                             let _ = fg_sender.send_blocking(ProviderMessage::AlbumMetaAvailable(folder_uri));
                                             sleep_after_request();

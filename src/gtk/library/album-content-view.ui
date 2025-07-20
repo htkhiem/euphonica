@@ -98,7 +98,8 @@
                                     </child>
                                     <child>
                                       <object class="AdwWrapBox" id="artists_box">
-
+                                        <property name="child-spacing">3</property>
+                                        <property name="line-spacing">3</property>
                                       </object>
                                     </child>
                                     <child>

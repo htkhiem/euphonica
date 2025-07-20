@@ -25,6 +25,11 @@ listview > row {
     padding: 6px;
 }
 
+.avatar-tag {
+    padding: 3px;
+    padding-right: 6px;
+}
+
 .padding-0 {
     padding: 0px;
 }

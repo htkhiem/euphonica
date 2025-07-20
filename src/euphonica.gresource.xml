@@ -11,6 +11,7 @@
     <file preprocess="xml-stripblanks">gtk/library/recent-song-row.ui</file>
     <file preprocess="xml-stripblanks">gtk/library/album-view.ui</file>
     <file preprocess="xml-stripblanks">gtk/library/album-cell.ui</file>
+    <file preprocess="xml-stripblanks">gtk/library/artist-tag.ui</file>
     <file preprocess="xml-stripblanks">gtk/library/album-song-row.ui</file>
     <file preprocess="xml-stripblanks">gtk/library/album-content-view.ui</file>
     <file preprocess="xml-stripblanks">gtk/library/artist-view.ui</file>
