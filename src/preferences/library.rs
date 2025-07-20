@@ -133,7 +133,7 @@ impl LibraryPreferences {
             .bind("n-recent-songs", &imp.n_recent_songs.get(), "value")
             .build();
         library_settings
-            .bind("pause-recent", &imp.pause_recent.get(), "value")
+            .bind("pause-recent", &imp.pause_recent.get(), "active")
             .build();
 
         // Setup artist section

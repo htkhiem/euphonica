@@ -176,7 +176,7 @@ impl RecentSongRow {
         item.property_expression("artist")
             .bind(self, "artist", gtk::Widget::NONE);
 
-        item.property_expression("last-played")
+        item.property_expression("last-played-desc")
             .bind(self, "last-played", gtk::Widget::NONE);
 
         item.property_expression("quality-grade")

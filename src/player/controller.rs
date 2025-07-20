@@ -981,15 +981,17 @@ impl Player {
                     // Same old song
                     needs_refresh = false;
                     // Record into playback history
-                    let dur = new_song.get_duration() as f32;
-                    if dur >= 10.0 {
-                        if let Some(new_position_dur) = status.elapsed {
-                            if !self.imp().saved_to_history.get() && new_position_dur.as_secs_f32() / dur >= 0.5 {
-                                if let Ok(()) = sqlite::add_to_history(new_song.get_info()) {
-                                    self.get_recent_songs();
-                                    self.emit_by_name::<()>("history-changed", &[]);
+                    if !settings_manager().child("library").boolean("pause-recent") {
+                        let dur = new_song.get_duration() as f32;
+                        if dur >= 10.0 {
+                            if let Some(new_position_dur) = status.elapsed {
+                                if !self.imp().saved_to_history.get() && new_position_dur.as_secs_f32() / dur >= 0.5 {
+                                    if let Ok(()) = sqlite::add_to_history(new_song.get_info()) {
+                                        self.get_recent_songs();
+                                        self.emit_by_name::<()>("history-changed", &[]);
+                                    }
+                                    self.imp().saved_to_history.set(true);
                                 }
-                                self.imp().saved_to_history.set(true);
                             }
                         }
                     }

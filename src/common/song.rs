@@ -201,7 +201,7 @@ mod imp {
                     ParamSpecString::builder("last-modified")
                         .read_only()
                         .build(),
-                    ParamSpecString::builder("last-played")
+                    ParamSpecString::builder("last-played-desc")
                         .read_only()
                         .build(),
                 ]
@@ -230,7 +230,7 @@ mod imp {
                 // "release_date" => obj.get_release_date.to_value(),
                 "quality-grade" => obj.get_quality_grade().to_icon_name().to_value(),
                 "last-modified" => obj.get_last_modified().to_value(),
-                "last-played" => obj.get_last_played_desc().to_value(),
+                "last-played-desc" => obj.get_last_played_desc().to_value(),
                 _ => unimplemented!(),
             }
         }
