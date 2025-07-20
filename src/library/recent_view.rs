@@ -1,7 +1,6 @@
 use adw::prelude::*;
 use adw::subclass::prelude::*;
 use gtk::{
-    gio,
     glib::{self},
     CompositeTemplate, ListItem, Ordering, SignalListItemFactory, SingleSelection,
 };
@@ -188,7 +187,7 @@ mod imp {
 glib::wrapper! {
     pub struct RecentView(ObjectSubclass<imp::RecentView>)
         @extends gtk::Widget,
-        @implements gio::ActionGroup, gio::ActionMap;
+        @implements gtk::Accessible, gtk::Buildable, gtk::ConstraintTarget;
 }
 
 impl Default for RecentView {

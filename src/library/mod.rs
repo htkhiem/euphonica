@@ -3,6 +3,7 @@ mod recent_song_row;
 
 mod album_cell;
 mod album_content_view;
+mod artist_tag;
 mod album_song_row;
 mod album_view;
 

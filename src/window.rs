@@ -32,12 +32,21 @@ use glib::signal::SignalHandlerId;
 use gtk::{
     gdk, gio,
     glib::{self, clone, closure_local, BoxedAnyObject},
+    graphene, gsk, CssProvider
 };
 use image::{imageops::FilterType, DynamicImage};
 use libblur::{stack_blur, FastBlurChannels, ThreadingPolicy};
 use mpd::Subsystem;
 use std::{cell::RefCell, ops::Deref, path::PathBuf, thread, time::Duration};
 use auto_palette::{ImageData, Palette, Theme, color::RGB};
+use std::{
+    cell::{Cell, OnceCell},
+    sync::{Arc, Mutex},
+};
+
+use async_channel::Sender;
+use glib::Properties;
+use image::ImageReader as Reader;
 
 #[derive(Debug)]
 pub struct BlurConfig {
@@ -102,17 +111,6 @@ pub enum WindowMessage {
 // will not result in a rapidly-changing background - it will only change as quickly as it
 // can fade or the CPU can blur, whichever is slower.
 mod imp {
-    use std::{
-        cell::{Cell, OnceCell},
-        sync::{Arc, Mutex},
-    };
-
-    use async_channel::Sender;
-    use glib::Properties;
-    use gtk::{gdk, graphene, gsk, CssProvider};
-    use image::io::Reader;
-    use utils::settings_manager;
-
     use super::*;
 
     #[derive(Debug, Default, Properties, gtk::CompositeTemplate)]
@@ -793,7 +791,9 @@ glib::wrapper! {
     pub struct EuphonicaWindow(ObjectSubclass<imp::EuphonicaWindow>)
         @extends gtk::Widget, gtk::Window, gtk::ApplicationWindow,
     adw::ApplicationWindow,
-    @implements gio::ActionGroup, gio::ActionMap;
+    @implements gio::ActionGroup, gio::ActionMap, gtk::Accessible,
+    gtk::Buildable, gtk::ConstraintTarget, gtk::Native, gtk::Root,
+    gtk::ShortcutManager;
 }
 
 impl EuphonicaWindow {

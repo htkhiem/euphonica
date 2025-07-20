@@ -1,3 +1,4 @@
+use std::cell::Cell;
 use adw::subclass::prelude::*;
 use glib::{clone, Properties};
 use gtk::{glib, prelude::*, CompositeTemplate};
@@ -7,8 +8,6 @@ use crate::{application::EuphonicaApplication, common::INode, utils, window::Eup
 use super::SidebarButton;
 
 mod imp {
-    use std::cell::Cell;
-
     use super::*;
 
     #[derive(Debug, Properties, Default, CompositeTemplate)]

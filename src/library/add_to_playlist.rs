@@ -1,7 +1,9 @@
 use glib::{clone, Properties};
 use gtk::{glib, prelude::*, subclass::prelude::*, CompositeTemplate};
+use std::cell::{Cell, OnceCell};
 
-use crate::{common::INode, utils};
+use crate::{common::{Song, INode}, utils};
+use mpd::SaveMode;
 
 use super::Library;
 
@@ -9,12 +11,6 @@ use super::Library;
 // It allows adding to an existing playlist, or creating a new
 // one if the given name does not match any existing playlist.
 mod imp {
-    use std::cell::{Cell, OnceCell};
-
-    use mpd::SaveMode;
-
-    use crate::common::Song;
-
     use super::*;
 
     #[derive(Properties, Default, CompositeTemplate)]
@@ -294,7 +290,7 @@ mod imp {
 
 glib::wrapper! {
     pub struct AddToPlaylistButton(ObjectSubclass<imp::AddToPlaylistButton>)
-    @extends gtk::ToggleButton, gtk::Widget,
+    @extends gtk::Box, gtk::Widget,
     @implements gtk::Accessible, gtk::Buildable, gtk::ConstraintTarget, gtk::Orientable;
 }
 

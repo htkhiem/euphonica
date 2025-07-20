@@ -1,4 +1,3 @@
-use std::rc::Rc;
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
@@ -6,12 +5,12 @@ use gtk::{glib, gio, CompositeTemplate};
 
 use glib::clone;
 
-use crate::{cache::{get_doc_cache_path, get_image_cache_path, Cache}, utils};
+use crate::{cache::{get_doc_cache_path, get_image_cache_path}, utils};
 
 mod imp {
-    use std::cell::{Cell, OnceCell};
+    use std::cell::Cell;
 
-    use crate::cache::{get_app_cache_path, sqlite};
+    use crate::cache::get_app_cache_path;
 
     use super::*;
 

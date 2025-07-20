@@ -1,7 +1,7 @@
 [package]
 name = "euphonica"
 version = "0.96.0"
-edition = "2021"
+edition = "2024"
 
 [dev-dependencies]
 rustls = "0.23.18" # GHSA ID GHSA-qg5g-gv98-5ffh
@@ -32,9 +32,9 @@ mpris-server = "0.8.1"
 async-lock = "3.4.0"
 libblur = "0.14.4"
 keyring = { version = "3", features = ["linux-native-sync-persistent"] }
-gio = { version = "0.20.7", features = ["v2_74"] }
+gio = { version = "0.21.0", features = ["v2_80"] }
 rustls = "0.23.18" # GHSA ID GHSA-qg5g-gv98-5ffh
-glib = "0.20.0"    # GHSA ID GHSA-wrw7-89jp-8q8g
+glib = { version = "0.21.0", features = ["v2_80"] }  # GHSA ID GHSA-wrw7-89jp-8q8g
 idna = "1.0.0"     # CVE-2024-12242
 libc = "0.2.169"
 spectrum-analyzer = "=0.5.2"

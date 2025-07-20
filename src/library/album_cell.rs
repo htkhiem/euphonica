@@ -6,7 +6,7 @@ use std::{
 };
 
 use crate::{
-    cache::{placeholders::{ALBUMART_PLACEHOLDER, ALBUMART_THUMBNAIL_PLACEHOLDER}, Cache, CacheState},
+    cache::{placeholders::ALBUMART_THUMBNAIL_PLACEHOLDER, Cache, CacheState},
     common::{Album, AlbumInfo, CoverSource},
 };
 

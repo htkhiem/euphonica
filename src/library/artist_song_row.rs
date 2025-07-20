@@ -1,4 +1,4 @@
-use glib::{clone, closure_local, Object, SignalHandlerId};
+use glib::{clone, closure_local, Object, SignalHandlerId, ParamSpec, ParamSpecString};
 use gtk::{glib, prelude::*, subclass::prelude::*, CompositeTemplate};
 use std::{
     cell::{OnceCell, RefCell},
@@ -19,7 +19,6 @@ mod imp {
     use crate::common::CoverSource;
 
     use super::*;
-    use glib::{ParamSpec, ParamSpecString};
     use once_cell::sync::Lazy;
 
     #[derive(Default, CompositeTemplate)]

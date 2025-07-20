@@ -299,7 +299,7 @@ mod imp {
 glib::wrapper! {
     pub struct AlbumContentView(ObjectSubclass<imp::AlbumContentView>)
         @extends gtk::Widget,
-    @implements gio::ActionGroup, gio::ActionMap;
+        @implements gtk::Accessible, gtk::Buildable, gtk::ConstraintTarget;
 }
 
 impl Default for AlbumContentView {

@@ -1,7 +1,6 @@
 use adw::prelude::*;
 use adw::subclass::prelude::*;
 use gtk::{
-    gio,
     glib,
     CompositeTemplate, ListItem, SignalListItemFactory, SingleSelection,
 };
@@ -164,7 +163,7 @@ mod imp {
 glib::wrapper! {
     pub struct ArtistView(ObjectSubclass<imp::ArtistView>)
         @extends gtk::Widget,
-        @implements gio::ActionGroup, gio::ActionMap;
+        @implements gtk::Accessible, gtk::Buildable, gtk::ConstraintTarget;
 }
 
 impl Default for ArtistView {

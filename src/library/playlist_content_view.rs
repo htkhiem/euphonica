@@ -465,7 +465,7 @@ mod imp {
 glib::wrapper! {
     pub struct PlaylistContentView(ObjectSubclass<imp::PlaylistContentView>)
         @extends gtk::Widget,
-    @implements gio::ActionGroup, gio::ActionMap;
+        @implements gtk::Accessible, gtk::Buildable, gtk::ConstraintTarget;
 }
 
 impl Default for PlaylistContentView {

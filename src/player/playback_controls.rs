@@ -1,6 +1,5 @@
 use glib::{clone, Object};
 use gtk::{
-    gio,
     glib::{self},
     prelude::*,
     subclass::prelude::*,
@@ -69,8 +68,8 @@ mod imp {
 
 glib::wrapper! {
     pub struct PlaybackControls(ObjectSubclass<imp::PlaybackControls>)
-    @extends gtk::Widget,
-    @implements gio::ActionGroup, gio::ActionMap;
+    @extends gtk::Box, gtk::Widget,
+    @implements gtk::Accessible, gtk::Buildable, gtk::ConstraintTarget, gtk::Orientable;
 }
 
 impl Default for PlaybackControls {

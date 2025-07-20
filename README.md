@@ -142,13 +142,14 @@ Euphonica is still in very early development, and so far has only been tested on
   It is the most lightweight option, but has only been tested on Arch Linux.
   
   1. Make sure you have these dependencies installed beforehand:
-    - `gtk4` >= 4.16
-    - `libadwaita` >= 1.6
-    - `cargo` >= 1.27
+    - `gtk4` >= 4.18
+    - `libadwaita` >= 1.7
     - `meson` >= 1.5
     - `gettext` >= 0.23
     - `mpd` >= 0.24 (Euphonica relies on the new filter syntax and expanded tagging)
     - `sqlite` (metadata store dependency)
+    - An `xdg-desktop-portal` provider
+    - The latest stable Rust toolchain. I highly recommend using `rustup` to manage them. Using it, you can install the latest stable toolchain using `rustup default stable` or update your existing one with `rustup update`. Ensure that `rustc` and `cargo` are of at least version `1.88.0`.
     
       If you are on Arch Linux, `gettext` should have been installed as part of the `base-devel` metapackage, which also includes `git` (to clone this repo :) ).
   

@@ -8,7 +8,7 @@ use std::{
 use crate::{
     cache::{placeholders::ALBUMART_THUMBNAIL_PLACEHOLDER, Cache, CacheState},
     common::{CoverSource, Song, SongInfo},
-    utils::{format_secs_as_duration, strip_filename_linux},
+    utils::strip_filename_linux,
 };
 
 use super::Library;

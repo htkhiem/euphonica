@@ -1,6 +1,13 @@
 use cairo::LineCap;
-use glib::{clone, Object};
-use gtk::{cairo, glib, prelude::*, subclass::prelude::*, CompositeTemplate};
+use glib::{
+    prelude::*, subclass::prelude::*, ParamSpec, ParamSpecBoolean, ParamSpecDouble,
+    clone, Object
+};
+use gtk::{
+    cairo,
+    prelude::*, subclass::prelude::*,
+    CompositeTemplate
+};
 use std::{cell::Cell, f64::consts::PI};
 
 fn convert_to_dbfs(pct: f64) -> Result<f64, ()> {
@@ -13,7 +20,6 @@ fn convert_to_dbfs(pct: f64) -> Result<f64, ()> {
 
 mod imp {
     use super::*;
-    use glib::{ParamSpec, ParamSpecBoolean, ParamSpecDouble};
     use once_cell::sync::Lazy;
 
     #[derive(Default, CompositeTemplate)]

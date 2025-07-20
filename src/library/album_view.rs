@@ -1,7 +1,6 @@
 use adw::prelude::*;
 use adw::subclass::prelude::*;
 use gtk::{
-    gio,
     glib::{self},
     CompositeTemplate, ListItem, SignalListItemFactory, SingleSelection,
 };
@@ -174,7 +173,7 @@ mod imp {
 glib::wrapper! {
     pub struct AlbumView(ObjectSubclass<imp::AlbumView>)
         @extends gtk::Widget,
-        @implements gio::ActionGroup, gio::ActionMap;
+        @implements gtk::Accessible, gtk::Buildable, gtk::ConstraintTarget;
 }
 
 impl Default for AlbumView {

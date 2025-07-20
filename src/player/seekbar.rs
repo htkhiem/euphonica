@@ -1,5 +1,5 @@
 use glib::{clone, closure_local, Object};
-use gtk::{gio, glib, prelude::*, subclass::prelude::*, CompositeTemplate};
+use gtk::{glib, prelude::*, subclass::prelude::*, CompositeTemplate};
 use std::cell::Cell;
 
 use crate::{common::QualityGrade, utils};
@@ -172,8 +172,8 @@ mod imp {
 
 glib::wrapper! {
     pub struct Seekbar(ObjectSubclass<imp::Seekbar>)
-    @extends gtk::Widget,
-    @implements gio::ActionGroup, gio::ActionMap;
+    @extends gtk::Box, gtk::Widget,
+    @implements gtk::Accessible, gtk::Buildable, gtk::ConstraintTarget, gtk::Orientable;
 }
 
 impl Default for Seekbar {

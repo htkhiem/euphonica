@@ -1,17 +1,19 @@
 use glib::{clone, closure_local};
 use gtk::{
     gdk,
-    glib::{self, Variant},
+    glib::{self, Variant, subclass::Signal, Properties},
     prelude::*,
     subclass::prelude::*,
     CompositeTemplate,
 };
 use std::cell::{Cell, RefCell};
+use std::sync::OnceLock;
 
 use crate::{
     cache::placeholders::ALBUMART_PLACEHOLDER,
     common::Marquee,
     utils::settings_manager,
+    player::{ratio_center_box::RatioCenterBox, seekbar::Seekbar}
 };
 
 use super::{
@@ -23,12 +25,6 @@ use super::{
 };
 
 mod imp {
-    use std::sync::OnceLock;
-
-    use glib::{subclass::Signal, Properties};
-
-    use crate::player::{ratio_center_box::RatioCenterBox, seekbar::Seekbar};
-
     use super::*;
 
     #[derive(Default, Properties, CompositeTemplate)]

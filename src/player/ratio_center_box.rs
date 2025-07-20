@@ -1,9 +1,7 @@
-use gtk::{glib, prelude::*, subclass::prelude::*};
+use gtk::{glib::{Properties}, prelude::*, subclass::prelude::*};
 use std::cell::{Cell, RefCell};
 
 mod imp {
-    use glib::Properties;
-
     use super::*;
 
     /// A version of GtkCenterBox that tries to keep the centre widget always centered
@@ -164,7 +162,7 @@ mod imp {
 glib::wrapper! {
     pub struct RatioCenterBox(ObjectSubclass<imp::RatioCenterBox>)
         @extends gtk::Widget,
-        @implements gio::ActionGroup, gio::ActionMap, gtk::Buildable;
+        @implements gtk::Accessible, gtk::Buildable, gtk::ConstraintTarget;
 }
 
 impl Default for RatioCenterBox {

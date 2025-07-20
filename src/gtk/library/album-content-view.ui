@@ -97,22 +97,8 @@
                                       </object>
                                     </child>
                                     <child>
-                                      <object class="GtkBox">
-                                        <property name="spacing">6</property>
-                                        <child>
-                                          <object class="GtkImage">
-                                            <property name="icon-name">music-artist-symbolic</property>
-                                          </object>
-                                        </child>
-                                        <child>
-                                          <object class="GtkLabel" id="artist">
-                                            <property name="wrap">true</property>
-                                            <property name="label">Unknown Artist</property>
-                                          </object>
-                                        </child>
-                                        <style>
-                                          <class name="accent"/>
-                                        </style>
+                                      <object class="AdwWrapBox" id="artists_box">
+
                                       </object>
                                     </child>
                                     <child>

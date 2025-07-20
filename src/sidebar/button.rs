@@ -61,8 +61,8 @@ mod imp {
 
 glib::wrapper! {
     pub struct SidebarButton(ObjectSubclass<imp::SidebarButton>)
-    @extends gtk::ToggleButton, gtk::Widget,
-    @implements gtk::Accessible, gtk::Buildable, gtk::ConstraintTarget, gtk::Orientable;
+    @extends gtk::ToggleButton, gtk::Button, gtk::Widget,
+    @implements gtk::Accessible, gtk::Buildable, gtk::ConstraintTarget, gtk::Actionable;
 }
 
 impl SidebarButton {
