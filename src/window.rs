@@ -866,6 +866,7 @@ impl EuphonicaWindow {
             app.get_library(),
             app.get_cache(),
             app.get_client().get_client_state(),
+            &win
         );
         win.imp().artist_view.setup(
             app.get_library(),

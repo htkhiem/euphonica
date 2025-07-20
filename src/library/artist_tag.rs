@@ -1,4 +1,4 @@
-use glib::{closure_local, signal::SignalHandlerId, Object, ParamSpec, ParamSpecString};
+use glib::{closure_local, signal::SignalHandlerId, Object, ParamSpec, ParamSpecString, clone};
 use gtk::{gdk, glib, prelude::*, subclass::prelude::*, CompositeTemplate};
 use std::{
     cell::{OnceCell, RefCell},
@@ -7,7 +7,7 @@ use std::{
 
 use crate::{
     cache::{Cache, CacheState},
-    common::{Artist, ArtistInfo},
+    common::{Artist, ArtistInfo}, window::EuphonicaWindow,
 };
 
 mod imp {
@@ -96,7 +96,7 @@ glib::wrapper! {
 }
 
 impl ArtistTag {
-    pub fn new(artist: Artist, cache: Rc<Cache>) -> Self {
+    pub fn new(artist: Artist, cache: Rc<Cache>, window: &EuphonicaWindow) -> Self {
         let res: Self = Object::builder().build();
         let cache_state = cache.get_cache_state();
         res.imp()
@@ -143,6 +143,17 @@ impl ArtistTag {
                ),
         )));
         res.update_artist_avatar(res.imp().artist.get().unwrap().get_info());
+
+        res.connect_clicked(clone!(
+            #[weak(rename_to = this)]
+            res,
+            #[weak]
+            window,
+            move |_| {
+                window.goto_artist(this.imp().artist.get().unwrap());
+            }
+        ));
+
         res
     }
 

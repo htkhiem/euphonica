@@ -13,7 +13,7 @@ use crate::{
     cache::Cache,
     client::ClientState,
     common::Album,
-    utils::{g_cmp_options, g_cmp_str_options, g_search_substr, settings_manager},
+    utils::{g_cmp_options, g_cmp_str_options, g_search_substr, settings_manager}, window::EuphonicaWindow,
 };
 
 mod imp {
@@ -189,7 +189,7 @@ impl AlbumView {
         res
     }
 
-    pub fn setup(&self, library: Library, cache: Rc<Cache>, client_state: ClientState) {
+    pub fn setup(&self, library: Library, cache: Rc<Cache>, client_state: ClientState, window: &EuphonicaWindow) {
         self.setup_sort();
         self.setup_search();
         self.imp()
@@ -199,7 +199,7 @@ impl AlbumView {
         self.setup_gridview(cache.clone());
 
         let content_view = self.imp().content_view.get();
-        content_view.setup(library.clone(), client_state, cache);
+        content_view.setup(library.clone(), client_state, cache, window);
         self.imp().content_page.connect_hidden(move |_| {
             content_view.unbind();
         });

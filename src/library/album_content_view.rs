@@ -13,7 +13,7 @@ use crate::{
     cache::{placeholders::ALBUMART_PLACEHOLDER, Cache, CacheState},
     client::ClientState,
     common::{Album, AlbumInfo, Artist, CoverSource, Rating, Song},
-    utils::format_secs_as_duration,
+    utils::format_secs_as_duration, window::EuphonicaWindow,
 };
 
 mod imp {
@@ -89,6 +89,7 @@ mod imp {
 
         pub library: OnceCell<Library>,
         pub album: RefCell<Option<Album>>,
+        pub window: OnceCell<EuphonicaWindow>,
         pub bindings: RefCell<Vec<Binding>>,
         pub cover_signal_id: RefCell<Option<SignalHandlerId>>,
         pub cache: OnceCell<Rc<Cache>>,
@@ -128,6 +129,7 @@ mod imp {
                 sel_none: TemplateChild::default(),
                 library: OnceCell::new(),
                 album: RefCell::new(None),
+                window: OnceCell::new(),
                 artist_tags: ListStore::new::<ArtistTag>(),
                 bindings: RefCell::new(Vec::new()),
                 cover_signal_id: RefCell::new(None),
@@ -355,12 +357,16 @@ impl AlbumContentView {
         }
     }
 
-    pub fn setup(&self, library: Library, client_state: ClientState, cache: Rc<Cache>) {
+    pub fn setup(&self, library: Library, client_state: ClientState, cache: Rc<Cache>, window: &EuphonicaWindow) {
         let cache_state = cache.get_cache_state();
         self.imp()
            .cache
            .set(cache)
            .expect("AlbumContentView cannot bind to cache");
+        self.imp()
+           .window
+           .set(window.clone())
+           .expect("AlbumContentView cannot bind to window");
         self.imp()
             .add_to_playlist
             .setup(library.clone(), self.imp().sel_model.clone());
@@ -700,7 +706,8 @@ impl AlbumContentView {
         let artist_tags = album.get_artists().iter().map(
             |info| ArtistTag::new(
                 Artist::from(info.clone()),
-                self.imp().cache.get().unwrap().clone()
+                self.imp().cache.get().unwrap().clone(),
+                self.imp().window.get().unwrap()
             )
         ).collect::<Vec<ArtistTag>>();
         self.imp().artist_tags.extend_from_slice(&artist_tags);
