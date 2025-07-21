@@ -1,7 +1,9 @@
 use crate::{
     cache::{sqlite, Cache},
     client::{BackgroundTask, ClientState, ConnectionState, MpdWrapper},
-    common::{Album, Artist, INode, Song, Stickers}, utils::settings_manager,
+    common::{Album, Artist, INode, Song, Stickers}, 
+    utils::settings_manager,
+    player::Player,
 };
 use glib::{clone, closure_local, subclass::Signal};
 use gtk::{gio, glib, prelude::*};
@@ -43,6 +45,7 @@ mod imp {
         pub folder_inodes: gio::ListStore,
 
         pub cache: OnceCell<Rc<Cache>>,
+        pub player: OnceCell<Player>,
     }
 
     #[glib::object_subclass]
@@ -58,6 +61,7 @@ mod imp {
                 artists: gio::ListStore::new::<Artist>(),
                 client: OnceCell::new(),
                 cache: OnceCell::new(),
+                player: OnceCell::new(),
 
                 folder_history: RefCell::new(Vec::new()),
                 folder_curr_idx: Cell::new(0),
@@ -116,10 +120,11 @@ impl Default for Library {
 }
 
 impl Library {
-    pub fn setup(&self, client: Rc<MpdWrapper>, cache: Rc<Cache>) {
+    pub fn setup(&self, client: Rc<MpdWrapper>, cache: Rc<Cache>, player: Player) {
         let client_state = client.get_client_state();
         let _ = self.imp().cache.set(cache);
         let _ = self.imp().client.set(client);
+        let _ = self.imp().player.set(player);
 
         // Refresh upon reconnection.
         // User-initiated refreshes will also trigger a reconnection, which will
@@ -218,6 +223,10 @@ impl Library {
         self.imp().cache.get().unwrap()
     }
 
+    fn player(&self) -> &Player {
+        self.imp().player.get().unwrap()
+    }
+
     /// Get all the information available about an album & its contents (won't block;
     /// UI will get notified of result later if one does arrive late).
     /// TODO: implement provider daisy-chaining on the cache side
@@ -246,6 +255,23 @@ impl Library {
         if replace && play {
             self.client().play_at(0, false);
         }
+    }
+
+    pub fn insert_songs_next(&self, songs: &[Song]) {
+        let pos = if let Some(current_pos) = self.player().queue_pos() {
+            // Insert after the position of the current song
+            current_pos + 1
+        } else {
+            // If no current song, insert at the start of the queue
+            0
+        };
+        self.client().insert_multi(
+                &songs
+                    .iter()
+                    .map(|s| s.get_uri().to_owned())
+                    .collect::<Vec<String>>(),
+                pos as usize,
+            );
     }
 
     /// Queue all songs in a given album by track order.

@@ -1304,6 +1304,13 @@ impl Player {
         u32::MAX
     }
 
+    pub fn queue_pos(&self) -> Option<u32> {
+        if let Some(song) = &*self.imp().current_song.borrow() {
+            return Some(song.get_queue_pos());
+        }
+        return None;
+    }
+
     pub fn position(&self) -> f64 {
         self.imp().position.get()
     }

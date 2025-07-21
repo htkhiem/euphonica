@@ -168,6 +168,7 @@ mod imp {
                 self.library.get().unwrap().setup(
                     self.client.get().unwrap().clone(),
                     self.cache.get().unwrap().clone(),
+                    self.player.get().unwrap().clone(),
                 );
                 self.player.get().unwrap().setup(
                     self.obj().clone(),
