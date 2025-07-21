@@ -26,6 +26,12 @@
 		<value nick="decibels" value="1"/>  <!-- Works as boolean too -->
 	</enum>
 
+	<enum id="io.github.htkhiem.Euphonica.titlewrapmode">
+		<value nick="ellipsis" value="0"/>
+		<value nick="scroll" value="1"/>
+		<value nick="wrap" value="2"/>
+	</enum>
+
 	<schema id="io.github.htkhiem.Euphonica" path="/io/github/htkhiem/Euphonica/">
 		<child schema="io.github.htkhiem.Euphonica.ui" name="ui"/>
 		<child schema="io.github.htkhiem.Euphonica.state" name="state"/>
@@ -254,6 +260,9 @@
 		</key>
 		<key name="auto-accent" type='b'>
 			<default>true</default>
+		</key>
+		<key name="title-wrap-mode" enum='io.github.htkhiem.Euphonica.titlewrapmode'>
+			<default>'ellipsis'</default>
 		</key>
 	</schema>
 

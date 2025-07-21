@@ -139,8 +139,6 @@ mod imp {
         }
 
         fn snapshot(&self, snapshot: &gtk::Snapshot) {
-            let allocated_width = self.obj().width();
-            let left_align_offset = (self.child_width.get() - allocated_width) as f32 / 2.0;
             snapshot.push_clip(&graphene::Rect::new(
                 0.0,
                 0.0,
@@ -148,14 +146,10 @@ mod imp {
                 self.obj().height() as f32,
             ));
             snapshot.translate(&graphene::Point::new(
-                left_align_offset + self.curr_offset.get() as f32,
+                self.curr_offset.get() as f32,
                 0.0,
             )); // Apply horizontal translation for sliding effect
             self.parent_snapshot(snapshot);
-            snapshot.translate(&graphene::Point::new(
-                left_align_offset + -self.curr_offset.get() as f32,
-                0.0,
-            ));
             snapshot.pop();
         }
     }

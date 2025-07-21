@@ -29,6 +29,22 @@
             </property>
           </object>
         </child>
+        <child>
+          <object class="AdwComboRow" id="title_wrap_mode">
+            <property name="title" translatable="true">Title wrap mode</property>
+            <property name="subtitle" translatable="true">How to display long titles</property>
+            <property name="model">
+              <object class="GtkStringList">
+                <items>
+                  <item>Ellipsis</item>
+                  <item>Scroll</item>
+                  <item>Wrap</item>
+                </items>
+              </object>
+            </property>
+            <property name="selected">1</property>
+          </object>
+        </child>
       </object>
     </child>
     <child>

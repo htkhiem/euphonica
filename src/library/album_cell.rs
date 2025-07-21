@@ -1,5 +1,5 @@
 use glib::{closure_local, signal::SignalHandlerId, Object};
-use gtk::{glib, prelude::*, subclass::prelude::*, CompositeTemplate, Image, Label};
+use gtk::{glib, pango::EllipsizeMode, prelude::*, subclass::prelude::*, CompositeTemplate, Image, Label};
 use std::{
     cell::{OnceCell, RefCell},
     rc::Rc,
@@ -8,12 +8,13 @@ use std::{
 use crate::{
     cache::{placeholders::{ALBUMART_PLACEHOLDER, ALBUMART_THUMBNAIL_PLACEHOLDER}, Cache, CacheState},
     common::{Album, AlbumInfo, CoverSource},
+    utils::{settings_manager},
 };
 
 mod imp {
     use std::cell::Cell;
 
-    use crate::common::Rating;
+    use crate::common::{Marquee, Rating};
 
     use super::*;
     use glib::{ParamSpec, ParamSpecChar, ParamSpecString};
@@ -25,7 +26,7 @@ mod imp {
         #[template_child]
         pub cover: TemplateChild<gtk::Picture>, // Use high-resolution version
         #[template_child]
-        pub title: TemplateChild<Label>,
+        pub title: TemplateChild<Marquee>,
         #[template_child]
         pub artist: TemplateChild<Label>,
         #[template_child]
@@ -101,7 +102,7 @@ mod imp {
             match pspec.name() {
                 "title" => {
                     if let Ok(title) = value.get::<&str>() {
-                        self.title.set_label(title);
+                        self.title.label().set_label(title);
                         obj.notify("title");
                     }
                 }
@@ -230,6 +231,13 @@ impl AlbumCell {
         item.property_expression("item")
             .chain_property::<Album>("title")
             .bind(self, "title", gtk::Widget::NONE);
+        let title_wrap_mode = settings_manager().child("ui").string("title-wrap-mode");
+        match title_wrap_mode.as_str() {
+            "ellipsis" => self.imp().title.label().set_ellipsize(EllipsizeMode::End),
+            "wrap" => self.imp().title.label().set_wrap(true),
+            // Default to scrolling
+            _ => self.imp().title.set_should_run_and_check(true)
+        }
 
         item.property_expression("item")
             .chain_property::<Album>("artist")

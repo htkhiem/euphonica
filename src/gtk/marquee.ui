@@ -5,6 +5,7 @@
     <property name="width-request">10</property>
     <child>
       <object class="GtkLabel" id="child">
+        <property name="xalign">0.0</property>
       </object>
     </child>
   </template>
