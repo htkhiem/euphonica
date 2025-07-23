@@ -34,9 +34,9 @@
       <li>Browse your library by album, artist and folders with multiselection support. Browsing by genre and other criteria are planned.</li>
       <li>Sort albums by name, AlbumArtist or release date (provided you have the tags)</li>
       <li>Asynchronous search for large collections</li>
-      <li>Configurable multi-artist tag syntax, works with anything you throw at it. In other words, your artist tags can be pretty messy and Euphonica will still be able to correctly split them into individual artists.</li>
+      <li>Configurable multi-artist tag splitting</li>
       <li>Performant album art fetching &amp; display (cached with Stretto)</li>
-      <li>Super-fast, multithreaded, statically-cached background blur powered by libblur.</li>
+      <li>Super-fast, multithreaded, statically-cached background blur powered by libblur</li>
       <li>Volume knob with dBFS readout support ('cuz why not?)</li>
       <li>User-friendly configuration UI &amp; GSettings backend</li>
       <li>MPD passwords are securely stored in your user's login keyring</li>
@@ -52,17 +52,39 @@
   <launchable type="desktop-id">io.github.htkhiem.Euphonica.desktop</launchable>
   <screenshots>
     <screenshot type="default">
-      <image>https://i.ibb.co/VcYYDhSx/Screenshot-From-2025-04-12-10-59-44.png</image>
+      <image>https://i.ibb.co/ZztBGwWp/Screenshot-From-2025-07-23-20-36-09.png</image>
     </screenshot>
     <screenshot>
-      <image>https://i.ibb.co/XZgkbHbB/Screenshot-From-2025-04-12-10-44-28.png</image>
+      <image>https://i.ibb.co/27g2D2Ph/Screenshot-From-2025-07-23-20-49-49.png</image>
     </screenshot>
     <screenshot>
-      <image>https://i.ibb.co/KjSgKP4Q/Screenshot-From-2025-04-12-10-48-37.png</image>
+      <image>https://i.ibb.co/DHtsRQB9/Screenshot-From-2025-07-23-20-46-02.png</image>
+    </screenshot>
+    <screenshot>
+      <image>https://i.ibb.co/zTSZhPMp/Screenshot-From-2025-07-23-20-42-43.png</image>
+    </screenshot>
+    <screenshot>
+      <image>https://i.ibb.co/fGxfq60N/Screenshot-From-2025-07-23-20-40-22.png</image>
+    </screenshot>
+    <screenshot>
+      <image>https://i.ibb.co/84bYWgJF/Screenshot-From-2025-06-21-20-15-05.png</image>
+    </screenshot>
+    <screenshot>
+      <image>https://i.ibb.co/1tDQsrPT/mini-layouts-v2.png</image>
     </screenshot>
   </screenshots>
 
   <releases>
+    <release version="0.96.0-beta" date="2025-07-23">
+      <url type="details">https://github.com/htkhiem/euphonica/releases/tag/v0.96.0-beta</url>
+      <description>
+        <p>New: Recent View. Shows recently-played albums, artists and songs. History can be paused and cleared.</p>
+        <p>New: "Queue Next" option that inserts selected songs after the current song in the queue. Currently available in the album content view only.</p>
+        <p>New: Artist names in the album content view are now clickable (opens the corresponding artist content view).</p>
+        <p>Fix: Current song position in queue desynced from daemon.</p>
+        <p>Refactor: Updated to build against GTK 4.18 and LibAdwaita 1.7+.</p>
+      </description>
+    </release>
     <release version="0.95.2-beta" date="2025-07-14">
       <url type="details">https://github.com/htkhiem/euphonica/releases/tag/v0.95.2-beta</url>
       <description>
