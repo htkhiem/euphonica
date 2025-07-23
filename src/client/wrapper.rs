@@ -1037,6 +1037,14 @@ impl MpdWrapper {
         }
     }
 
+    pub fn insert_multi(&self, uris: &[String], pos: usize) {
+        if let Some(client) = self.main_client.borrow_mut().as_mut() {
+            
+            client.insert_multiple(uris, pos).expect("Could not add multiple songs into queue");
+            self.force_idle();
+        }
+    }
+
     pub fn volume(&self, vol: i8) {
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
             let _ = client.volume(vol);

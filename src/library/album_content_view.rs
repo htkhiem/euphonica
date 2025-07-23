@@ -1,5 +1,5 @@
 use adw::subclass::prelude::*;
-use gio::{ActionEntry, SimpleActionGroup};
+use gio::{ActionEntry, SimpleActionGroup, Menu};
 use glib::{clone, closure_local, signal::SignalHandlerId, Binding};
 use gtk::{gio, glib, prelude::*, BitsetIter, CompositeTemplate, ListItem, SignalListItemFactory};
 use std::{
@@ -73,9 +73,9 @@ mod imp {
         #[template_child]
         pub replace_queue_text: TemplateChild<gtk::Label>,
         #[template_child]
-        pub append_queue: TemplateChild<gtk::Button>,
+        pub queue_split_button: TemplateChild<adw::SplitButton>,
         #[template_child]
-        pub append_queue_text: TemplateChild<gtk::Label>,
+        pub queue_split_button_content: TemplateChild<adw::ButtonContent>,
         #[template_child]
         pub add_to_playlist: TemplateChild<AddToPlaylistButton>,
         #[template_child]
@@ -121,9 +121,9 @@ mod imp {
                 song_list: gio::ListStore::new::<Song>(),
                 sel_model: gtk::MultiSelection::new(Option::<gio::ListStore>::None),
                 replace_queue: TemplateChild::default(),
-                append_queue: TemplateChild::default(),
+                queue_split_button: TemplateChild::default(),
                 replace_queue_text: TemplateChild::default(),
-                append_queue_text: TemplateChild::default(),
+                queue_split_button_content: TemplateChild::default(),
                 add_to_playlist: TemplateChild::default(),
                 sel_all: TemplateChild::default(),
                 sel_none: TemplateChild::default(),
@@ -183,14 +183,20 @@ mod imp {
                     if n_sel == 0 || (n_sel as u32) == sel_model.model().unwrap().n_items() {
                         this.selecting_all.replace(true);
                         this.replace_queue_text.set_label("Play all");
-                        this.append_queue_text.set_label("Queue all");
+                        this.queue_split_button_content.set_label("Queue all");
+                        let queue_split_menu = Menu::new();
+                        queue_split_menu.append(Some("Queue all next"), Some("album-content-view.insert-queue"));
+                        this.queue_split_button.set_menu_model(Some(&queue_split_menu));
                     } else {
                         // TODO: l10n
                         this.selecting_all.replace(false);
                         this.replace_queue_text
                             .set_label(format!("Play {}", n_sel).as_str());
-                        this.append_queue_text
+                        this.queue_split_button_content
                             .set_label(format!("Queue {}", n_sel).as_str());
+                        let queue_split_menu = Menu::new();
+                        queue_split_menu.append(Some(format!("Queue {} next", n_sel).as_str()), Some("album-content-view.insert-queue"));
+                        this.queue_split_button.set_menu_model(Some(&queue_split_menu));
                     }
                 }
             ));
@@ -287,12 +293,45 @@ mod imp {
                 ))
                 .build();
 
+            let action_insert_queue = ActionEntry::builder("insert-queue")
+                .activate(clone!(
+                    #[strong]
+                    obj,
+                    move |_, _, _| {
+                        if let (_, Some(library)) = (
+                            obj.imp().album.borrow().as_ref(),
+                            obj.get_library()
+                        ) {
+                            let store = &obj.imp().song_list;
+                            if obj.imp().selecting_all.get() {
+                                let mut songs: Vec<Song> = Vec::with_capacity(store.n_items() as usize);
+                                for i in 0..store.n_items() {
+                                    songs.push(store.item(i).and_downcast::<Song>().unwrap());
+                                }
+                                library.insert_songs_next(&songs);
+                            } else {
+                                // Get list of selected songs
+                                let sel = &obj.imp().sel_model.selection();
+                                let mut songs: Vec<Song> = Vec::with_capacity(sel.size() as usize);
+                                let (iter, first_idx) = BitsetIter::init_first(sel).unwrap();
+                                songs.push(store.item(first_idx).and_downcast::<Song>().unwrap());
+                                iter.for_each(|idx| {
+                                    songs.push(store.item(idx).and_downcast::<Song>().unwrap())
+                                });
+                                library.insert_songs_next(&songs);
+                            }
+                        }
+                    }
+                ))
+                .build();
+
             // Create a new action group and add actions to it
             let actions = SimpleActionGroup::new();
             actions.add_action_entries([
                 action_clear_rating,
                 action_set_album_art,
-                action_clear_album_art
+                action_clear_album_art,
+                action_insert_queue,
             ]);
             self.obj().insert_action_group("album-content-view", Some(&actions));
         }
@@ -521,7 +560,7 @@ impl AlbumContentView {
                 }
             }
         ));
-        let append_queue_btn = self.imp().append_queue.get();
+        let append_queue_btn = self.imp().queue_split_button.get();
         append_queue_btn.connect_clicked(clone!(
             #[strong(rename_to = this)]
             self,

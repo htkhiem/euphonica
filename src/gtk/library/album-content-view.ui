@@ -290,21 +290,12 @@
                           </object>
                         </child>
                         <child>
-                          <object class="GtkButton" id="append_queue">
-                            <property name="tooltip-text" translatable="true">Add selected songs to the end of the queue</property>
+                          <object class="AdwSplitButton" id="queue_split_button">
+                            <property name="menu-model">queue_menu_model</property>
                             <child>
-                              <object class="GtkBox">
-                                <property name="spacing">6</property>
-                                <child>
-                                  <object class="GtkImage">
-                                    <property name="icon-name">list-add-symbolic</property>
-                                  </object>
-                                </child>
-                                <child>
-                                  <object class="GtkLabel" id="append_queue_text">
-                                    <property name="label" translatable="true">Queue all</property>
-                                  </object>
-                                </child>
+                              <object class="AdwButtonContent" id="queue_split_button_content">
+                                <property name="icon-name">list-add-symbolic</property>
+                                <property name="label">Queue all</property>
                               </object>
                             </child>
                           </object>
@@ -402,6 +393,12 @@
           <attribute name="action">album-content-view.clear-album-art</attribute>
         </item>
       </section>
+    </menu>
+    <menu id="queue_menu_model">
+      <item>
+        <attribute name="label" translatable="true">Queue all next</attribute>
+        <attribute name="action">album-content-view.insert-queue</attribute>
+      </item>
     </menu>
   </template>
 </interface>

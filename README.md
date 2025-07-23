@@ -37,8 +37,11 @@ It exists to sate my need for something that's got the bling and the features to
 
 The below were captured with a mix of dark and light modes.
 
+- Recent View[^1]
+  <img width="1122" height="822" alt="Screenshot From 2025-07-23 20-36-09" src="https://github.com/user-attachments/assets/026e0fcf-2988-4b26-8407-4d29e03b99e5" />
+
 - Album View[^1]
-  ![album-view](https://github.com/user-attachments/assets/26f9f3bb-3032-4ae5-ba46-15e4ece680ef)
+  <img width="1122" height="822" alt="Screenshot From 2025-07-23 20-49-49" src="https://github.com/user-attachments/assets/df429e18-fba2-421a-b114-3dd40dbb0c0c" />
 
 - UI at different sizes (v0.12+)[^1]
   ![mini-layouts-v2](https://github.com/user-attachments/assets/b41f5b50-013f-4c3e-952c-4e858f4cc1fa)
@@ -47,14 +50,13 @@ The below were captured with a mix of dark and light modes.
   ![queue-view](https://github.com/user-attachments/assets/b4d213db-13c0-4a33-85b6-cdf227c93d61)
 
 - Visualiser & synced lyrics in action
-
   ![lyrics-animation](https://github.com/user-attachments/assets/1de89a90-90bd-4aa2-9775-5c1845d4dcf4)
   
 - Artist bio as fetched from Last.fm[^1][^2][^3]
   ![artist-content-view](https://github.com/user-attachments/assets/54161399-1f16-490f-91b9-89b581b28839)
 
 - Album wiki as fetched from Last.fm[^1][^2]
-  ![album-content-view](https://github.com/user-attachments/assets/f3246730-3ad1-4056-a414-37807a145dc2)
+  <img width="1122" height="822" alt="Screenshot From 2025-07-23 20-46-02" src="https://github.com/user-attachments/assets/6b030124-7c46-4ac5-8558-d323d3a40d12" />
   
 - Playlist Content View[^1]
   ![playlist-content-view](https://github.com/user-attachments/assets/be9913e7-2378-4374-9a8a-d08512fc1e09)
@@ -64,7 +66,7 @@ The below were captured with a mix of dark and light modes.
   ![image](https://github.com/user-attachments/assets/f1277d5c-d0c4-40c0-81e2-201c581d4e44)
 
 
-[^1]: Actual album arts have been replaced with random pictures from [Pexels](https://www.pexels.com/). All credits go to the original authors.
+[^1]: Actual album arts and artist images have been replaced with random pictures from [Pexels](https://www.pexels.com/). All credits go to the original authors.
 [^2]: Artist bios and album wikis are user-contributed and licensed by Last.fm under CC-BY-SA.
 [^3]: The displayed image has been released into the public domain. More information at [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Johann_Sebastian_Bach.jpg).
 
