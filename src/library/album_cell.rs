@@ -1,4 +1,4 @@
-use glib::{closure_local, signal::SignalHandlerId, Object};
+use glib::{clone, closure_local, signal::SignalHandlerId, Object};
 use gtk::{glib, pango::EllipsizeMode, prelude::*, subclass::prelude::*, CompositeTemplate, Image, Label};
 use std::{
     cell::{OnceCell, RefCell},
@@ -259,6 +259,28 @@ impl AlbumCell {
         item.property_expression("item")
             .chain_property::<Album>("rating")
             .bind(self, "rating", gtk::Widget::NONE);
+
+        // Run only while hovered
+        let hover_ctl = gtk::EventControllerMotion::new();
+        hover_ctl.set_propagation_phase(gtk::PropagationPhase::Capture);
+        hover_ctl.connect_enter(clone!(
+            #[weak(rename_to = this)]
+            self,
+            move |_, _, _| {
+                if this.imp().title.wrap_mode() == MarqueeWrapMode::Scroll {
+                    this.imp().title.set_should_run_and_check(true);
+                }
+
+            }
+        ));
+        hover_ctl.connect_leave(clone!(
+            #[weak(rename_to = this)]
+            self,
+            move |_| {
+                this.imp().title.set_should_run_and_check(false);
+            }
+        ));
+        self.add_controller(hover_ctl);
     }
 
     fn update_cover(&self, info: &AlbumInfo) {

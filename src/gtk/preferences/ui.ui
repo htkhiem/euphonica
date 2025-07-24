@@ -37,7 +37,7 @@
               <object class="GtkStringList">
                 <items>
                   <item>Ellipsis</item>
-                  <item>Scroll</item>
+                  <item>Scroll on hover</item>
                   <item>Wrap</item>
                 </items>
               </object>

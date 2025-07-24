@@ -7,8 +7,8 @@ use std::cell::Cell;
 #[enum_type(name="EuphonicaMarqueeWrapMode")]
 pub enum MarqueeWrapMode {
     #[default]
-    Ellipsis,
     Scroll,
+    Ellipsis,
     Wrap
 }
 
@@ -63,7 +63,7 @@ mod imp {
     use super::*;
     use adw::TimedAnimation;
     use glib::{clone, Properties};
-    use gtk::CompositeTemplate;
+    use gtk::{pango, CompositeTemplate};
     use std::cell::OnceCell;
 
     #[derive(Default, CompositeTemplate, Properties)]
@@ -161,6 +161,10 @@ mod imp {
     }
 
     impl WidgetImpl for Marquee {
+        fn request_mode(&self) -> gtk::SizeRequestMode {
+            gtk::SizeRequestMode::HeightForWidth
+        }
+
         fn size_allocate(&self, width: i32, height: i32, baseline: i32) {
             let child = self.child.get();
             let preferred_size = child.preferred_size().1;
@@ -203,37 +207,44 @@ mod imp {
         }
 
         fn snapshot(&self, snapshot: &gtk::Snapshot) {
-            snapshot.push_clip(&graphene::Rect::new(
-                0.0,
-                0.0,
-                self.obj().width() as f32,
-                self.obj().height() as f32,
-            ));
-            snapshot.translate(&graphene::Point::new(
-                self.curr_offset.get() as f32,
-                0.0,
-            )); // Apply horizontal translation for sliding effect
-            self.parent_snapshot(snapshot);
-            snapshot.pop();
+            if self.wrap_mode.get() == MarqueeWrapMode::Wrap {
+                self.parent_snapshot(snapshot);
+            }
+            else {
+                snapshot.push_clip(&graphene::Rect::new(
+                    0.0,
+                    0.0,
+                    self.obj().width() as f32,
+                    self.obj().height() as f32,
+                ));
+                snapshot.translate(&graphene::Point::new(
+                    self.curr_offset.get() as f32,
+                    0.0,
+                )); // Apply horizontal translation for sliding effect
+                self.parent_snapshot(snapshot);
+                snapshot.pop();
+            }
         }
     }
 
     impl Marquee {
         pub fn set_wrap_mode(&self, new: MarqueeWrapMode) {
-            println!("Setting wrap mode");
             let old = self.wrap_mode.replace(new);
             match new {
                 MarqueeWrapMode::Ellipsis => {
                     self.child.set_wrap(false);
-                    self.obj().set_should_run_and_check(false);
+                    self.child.set_lines(1);
+                    self.child.set_ellipsize(pango::EllipsizeMode::End);
                 }
                 MarqueeWrapMode::Wrap => {
                     self.child.set_wrap(true);
-                    self.obj().set_should_run_and_check(false);
+                    self.child.set_lines(3);
+                    self.child.set_ellipsize(pango::EllipsizeMode::End);
                 }
                 MarqueeWrapMode::Scroll => {
                     self.child.set_wrap(false);
-                    self.obj().set_should_run_and_check(true);
+                    self.child.set_lines(1);
+                    self.child.set_ellipsize(pango::EllipsizeMode::None);
                 }
             }
             if old != new {
