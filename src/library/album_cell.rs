@@ -7,8 +7,8 @@ use std::{
 
 use crate::{
     cache::{placeholders::{ALBUMART_PLACEHOLDER, ALBUMART_THUMBNAIL_PLACEHOLDER}, Cache, CacheState},
-    common::{Album, AlbumInfo, CoverSource},
-    utils::{settings_manager},
+    common::{marquee::MarqueeWrapMode, Album, AlbumInfo, CoverSource},
+    utils::settings_manager,
 };
 
 mod imp {
@@ -231,13 +231,22 @@ impl AlbumCell {
         item.property_expression("item")
             .chain_property::<Album>("title")
             .bind(self, "title", gtk::Widget::NONE);
-        let title_wrap_mode = settings_manager().child("ui").string("title-wrap-mode");
-        match title_wrap_mode.as_str() {
-            "ellipsis" => self.imp().title.label().set_ellipsize(EllipsizeMode::End),
-            "wrap" => self.imp().title.label().set_wrap(true),
-            // Default to scrolling
-            _ => self.imp().title.set_should_run_and_check(true)
-        }
+        settings_manager().child("ui")
+            .bind(
+                "title-wrap-mode",
+                &self.imp().title.get(),
+                "wrap-mode"
+            )
+            .mapping(|var, _| {
+                Some(
+                    MarqueeWrapMode
+                        ::try_from(var.get::<String>().unwrap().as_ref())
+                        .expect("Invalid title-wrap-mode setting value")
+                        .into()
+                )
+            })
+            .get_only()
+            .build();
 
         item.property_expression("item")
             .chain_property::<Album>("artist")

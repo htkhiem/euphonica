@@ -2,6 +2,63 @@ use adw::prelude::*;
 use gtk::{gio, glib, graphene, subclass::prelude::*};
 use std::cell::Cell;
 
+
+#[derive(Default, Clone, Copy, Debug, glib::Enum, glib::Variant, Eq, PartialEq)]
+#[enum_type(name="EuphonicaMarqueeWrapMode")]
+pub enum MarqueeWrapMode {
+    #[default]
+    Ellipsis,
+    Scroll,
+    Wrap
+}
+
+impl TryFrom<&str> for MarqueeWrapMode {
+    type Error = ();
+    /// For mapping from GSettings
+    fn try_from(s: &str) -> Result<Self, Self::Error> {
+        match s {
+            "ellipsis" => Ok(Self::Ellipsis),
+            "scroll" => Ok(Self::Scroll),
+            "wrap" => Ok(Self::Wrap),
+            _ => Err(())
+        }
+    }
+}
+
+impl TryFrom<u32> for MarqueeWrapMode {
+    type Error = ();
+    /// For mapping from UI selection
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Self::Ellipsis),
+            1 => Ok(Self::Scroll),
+            2 => Ok(Self::Wrap),
+            _ => Err(())
+        }
+    }
+}
+
+impl MarqueeWrapMode {
+    /// For setting into GSettings
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Ellipsis => "ellipsis",
+            Self::Scroll => "scroll",
+            Self::Wrap => "wrap"
+        }
+    }
+
+    /// For mapping to UI menu selection
+    pub fn as_idx(&self) -> u32 {
+        match self {
+            Self::Ellipsis => 0,
+            Self::Scroll => 1,
+            Self::Wrap => 2
+        }
+    }
+}
+
+
 mod imp {
     use super::*;
     use adw::TimedAnimation;
@@ -22,6 +79,8 @@ mod imp {
         child_width: Cell<i32>,
         #[property(get, set)]
         should_run: Cell<bool>,
+        #[property(get, set = Self::set_wrap_mode, builder(MarqueeWrapMode::Ellipsis))]
+        wrap_mode: Cell<MarqueeWrapMode>
     }
     impl Marquee {
         pub fn check_animation(&self) {
@@ -114,27 +173,32 @@ mod imp {
         }
 
         fn measure(&self, orientation: gtk::Orientation, for_size: i32) -> (i32, i32, i32, i32) {
-            let min_width = self.obj().width_request();
-            let child = self.child.get();
-            // Measure the child's natural size in the given orientation
-            let (min_size, natural_size, min_baseline, natural_baseline) =
-                child.measure(orientation, for_size);
+            if self.wrap_mode.get() == MarqueeWrapMode::Wrap {
+                self.child.get().measure(orientation, for_size)
+            }
+            else {
+                let min_width = self.obj().width_request();
+                let child = self.child.get();
+                // Measure the child's natural size in the given orientation
+                let (min_size, natural_size, min_baseline, natural_baseline) =
+                    child.measure(orientation, for_size);
 
-            // For horizontal orientation, override the label's min width
-            if orientation == gtk::Orientation::Horizontal {
-                return (
-                    min_width,
-                    natural_size.max(min_width),
-                    min_baseline,
-                    natural_baseline,
-                );
-            } else {
-                return (
-                    min_size,
-                    natural_size.max(min_width),
-                    min_baseline,
-                    natural_baseline,
-                );
+                // For horizontal orientation, override the label's min width
+                if orientation == gtk::Orientation::Horizontal {
+                    (
+                        min_width,
+                        natural_size.max(min_width),
+                        min_baseline,
+                        natural_baseline,
+                    )
+                } else {
+                    (
+                        min_size,
+                        natural_size.max(min_width),
+                        min_baseline,
+                        natural_baseline,
+                    )
+                }
             }
         }
 
@@ -151,6 +215,30 @@ mod imp {
             )); // Apply horizontal translation for sliding effect
             self.parent_snapshot(snapshot);
             snapshot.pop();
+        }
+    }
+
+    impl Marquee {
+        pub fn set_wrap_mode(&self, new: MarqueeWrapMode) {
+            println!("Setting wrap mode");
+            let old = self.wrap_mode.replace(new);
+            match new {
+                MarqueeWrapMode::Ellipsis => {
+                    self.child.set_wrap(false);
+                    self.obj().set_should_run_and_check(false);
+                }
+                MarqueeWrapMode::Wrap => {
+                    self.child.set_wrap(true);
+                    self.obj().set_should_run_and_check(false);
+                }
+                MarqueeWrapMode::Scroll => {
+                    self.child.set_wrap(false);
+                    self.obj().set_should_run_and_check(true);
+                }
+            }
+            if old != new {
+                self.obj().notify("wrap-mode");
+            }
         }
     }
 }

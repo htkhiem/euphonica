@@ -6,6 +6,7 @@
     <child>
       <object class="GtkLabel" id="child">
         <property name="xalign">0.0</property>
+        <property names="lines">3</property>
       </object>
     </child>
   </template>

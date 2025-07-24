@@ -5,7 +5,10 @@ use gtk::{
     CompositeTemplate,
 };
 
-use crate::utils;
+use crate::{
+    utils,
+    common::marquee::MarqueeWrapMode
+};
 
 mod imp {
     use super::*;
@@ -109,18 +112,18 @@ impl UIPreferences {
         let title_wrap_mode = imp.title_wrap_mode.get();
         ui_settings
             .bind("title-wrap-mode", &title_wrap_mode, "selected")
-            .mapping(|v: &Variant, _| match v.get::<String>().unwrap().as_str() {
-                "ellipsis" => Some(0.to_value()),
-                "scroll" => Some(1.to_value()),
-                "wrap" => Some(2.to_value()),
-                _ => unreachable!(),
-            })
-            .set_mapping(|v: &Value, _| match v.get::<u32>().ok() {
-                Some(0) => Some("ellipsis".to_variant()),
-                Some(1) => Some("scroll".to_variant()),
-                Some(2) => Some("wrap".to_variant()),
-                _ => unreachable!(),
-            })
+            .mapping(|v: &Variant, _| Some(
+                MarqueeWrapMode
+                    ::try_from(v.get::<String>().unwrap().as_str())
+                    .unwrap_or_default()
+                    .as_idx().to_value()
+            ))
+            .set_mapping(|v: &Value, _| Some(
+                MarqueeWrapMode
+                    ::try_from(v.get::<u32>().unwrap())
+                    .unwrap_or_default()
+                    .into()
+            ))
             .build();
         let use_album_art_as_bg = imp.use_album_art_as_bg.get();
         let bg_blur_radius = imp.bg_blur_radius.get();
