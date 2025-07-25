@@ -2,7 +2,7 @@ use glib::{
     closure_local, signal::SignalHandlerId, Object,
     ParamSpec, ParamSpecChar, ParamSpecString, ParamSpecInt
 };
-use gtk::{glib, prelude::*, subclass::prelude::*, CompositeTemplate, Image, Label};
+use gtk::{pango::EllipsizeMode, prelude::*, subclass::prelude::*, CompositeTemplate, Image, Label};
 use std::{
     cell::{OnceCell, RefCell, Cell},
     rc::Rc,
@@ -11,7 +11,8 @@ use once_cell::sync::Lazy;
 
 use crate::{
     cache::{placeholders::ALBUMART_THUMBNAIL_PLACEHOLDER, Cache, CacheState},
-    common::{Album, AlbumInfo, CoverSource, Rating},
+    common::{marquee::{Marquee, MarqueeWrapMode}, Album, AlbumInfo, CoverSource, Rating},
+  utils::settings_manager,
 };
 
 mod imp {
@@ -25,7 +26,7 @@ mod imp {
         #[template_child]
         pub cover: TemplateChild<gtk::Picture>, // Use high-resolution version
         #[template_child]
-        pub title: TemplateChild<Label>,
+        pub title: TemplateChild<Marquee>,
         #[template_child]
         pub artist: TemplateChild<Label>,
         #[template_child]
@@ -158,7 +159,7 @@ mod imp {
             match pspec.name() {
                 "title" => {
                     if let Ok(title) = value.get::<&str>() {
-                        self.title.set_label(title);
+                        self.title.label().set_label(title);
                         obj.notify("title");
                     }
                 }
@@ -315,6 +316,22 @@ impl AlbumCell {
         item.property_expression("item")
             .chain_property::<Album>("title")
             .bind(self, "title", gtk::Widget::NONE);
+        settings_manager().child("ui")
+            .bind(
+                "title-wrap-mode",
+                &self.imp().title.get(),
+                "wrap-mode"
+            )
+            .mapping(|var, _| {
+                Some(
+                    MarqueeWrapMode
+                        ::try_from(var.get::<String>().unwrap().as_ref())
+                        .expect("Invalid title-wrap-mode setting value")
+                        .into()
+                )
+            })
+            .get_only()
+            .build();
 
         item.property_expression("item")
             .chain_property::<Album>("artist")
@@ -327,6 +344,28 @@ impl AlbumCell {
         item.property_expression("item")
             .chain_property::<Album>("rating")
             .bind(self, "rating", gtk::Widget::NONE);
+
+        // Run only while hovered
+        let hover_ctl = gtk::EventControllerMotion::new();
+        hover_ctl.set_propagation_phase(gtk::PropagationPhase::Capture);
+        hover_ctl.connect_enter(clone!(
+            #[weak(rename_to = this)]
+            self,
+            move |_, _, _| {
+                if this.imp().title.wrap_mode() == MarqueeWrapMode::Scroll {
+                    this.imp().title.set_should_run_and_check(true);
+                }
+
+            }
+        ));
+        hover_ctl.connect_leave(clone!(
+            #[weak(rename_to = this)]
+            self,
+            move |_| {
+                this.imp().title.set_should_run_and_check(false);
+            }
+        ));
+        self.add_controller(hover_ctl);
     }
 
     fn update_cover(&self, info: &AlbumInfo) {

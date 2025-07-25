@@ -5,7 +5,10 @@ use gtk::{
     CompositeTemplate,
 };
 
-use crate::utils;
+use crate::{
+    utils,
+    common::marquee::MarqueeWrapMode
+};
 
 mod imp {
     use super::*;
@@ -17,6 +20,8 @@ mod imp {
         pub recent_playlists_count: TemplateChild<adw::SpinRow>,
         #[template_child]
         pub auto_accent: TemplateChild<adw::SwitchRow>,
+        #[template_child]
+        pub title_wrap_mode: TemplateChild<adw::ComboRow>,
 
         #[template_child]
         pub use_album_art_as_bg: TemplateChild<adw::ExpanderRow>,
@@ -101,6 +106,22 @@ impl UIPreferences {
         let auto_accent = imp.auto_accent.get();
         ui_settings
             .bind("auto-accent", &auto_accent, "active")
+            .build();
+        let title_wrap_mode = imp.title_wrap_mode.get();
+        ui_settings
+            .bind("title-wrap-mode", &title_wrap_mode, "selected")
+            .mapping(|v: &Variant, _| Some(
+                MarqueeWrapMode
+                    ::try_from(v.get::<String>().unwrap().as_str())
+                    .unwrap_or_default()
+                    .as_idx().to_value()
+            ))
+            .set_mapping(|v: &Value, _| Some(
+                MarqueeWrapMode
+                    ::try_from(v.get::<u32>().unwrap())
+                    .unwrap_or_default()
+                    .into()
+            ))
             .build();
         let use_album_art_as_bg = imp.use_album_art_as_bg.get();
         let bg_blur_radius = imp.bg_blur_radius.get();
