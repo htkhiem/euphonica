@@ -100,22 +100,42 @@
                                       <object class="GtkRevealer" id="album_revealer">
                                         <property name="transition-type">5</property>
                                         <child>
-                                          <object class="GtkScrolledWindow">
-                                            <property name="hscrollbar-policy">automatic</property>
-                                            <property name="vscrollbar-policy">never</property>
-                                            <property name="propagate-natural-width">true</property>
-                                            <property name="has-frame">false</property>
-                                            <property name="hexpand">true</property>
+                                          <object class="GtkStack" id="album_row_stack">
                                             <child>
-                                              <object class="GtkGridView" id="album_row">
-                                                <style>
-                                                  <class name="no-bg"/>
-                                                </style>
-                                                <property name="single-click-activate">true</property>
-                                                <property name="hscroll-policy">0</property>
-                                                <property name="orientation">0</property>
-                                                <property name="min-columns">1</property>
-                                                <property name="max-columns">1</property>
+                                              <object class="GtkStackPage">
+                                                <property name="name">loading</property>
+                                                <property name="child">
+                                                  <object class="AdwSpinner">
+                                                    <property name="width-request">48</property>
+                                                    <property name="height-request">48</property>
+                                                  </object>
+                                                </property>
+                                              </object>
+                                            </child>
+                                            <child>
+                                              <object class="GtkStackPage">
+                                                <property name="name">content</property>
+                                                <property name="child">
+                                                  <object class="GtkScrolledWindow">
+                                                    <property name="hscrollbar-policy">automatic</property>
+                                                    <property name="vscrollbar-policy">never</property>
+                                                    <property name="propagate-natural-width">true</property>
+                                                    <property name="has-frame">false</property>
+                                                    <property name="hexpand">true</property>
+                                                    <child>
+                                                      <object class="GtkGridView" id="album_row">
+                                                        <style>
+                                                          <class name="no-bg"/>
+                                                        </style>
+                                                        <property name="single-click-activate">true</property>
+                                                        <property name="hscroll-policy">0</property>
+                                                        <property name="orientation">0</property>
+                                                        <property name="min-columns">1</property>
+                                                        <property name="max-columns">1</property>
+                                                      </object>
+                                                    </child>
+                                                  </object>
+                                                </property>
                                               </object>
                                             </child>
                                           </object>
@@ -172,22 +192,42 @@
                                       <object class="GtkRevealer" id="artist_revealer">
                                         <property name="transition-type">5</property>
                                         <child>
-                                          <object class="GtkScrolledWindow">
-                                            <property name="hscrollbar-policy">automatic</property>
-                                            <property name="vscrollbar-policy">never</property>
-                                            <property name="propagate-natural-width">true</property>
-                                            <property name="has-frame">false</property>
-                                            <property name="hexpand">true</property>
+                                          <object class="GtkStack" id="artist_row_stack">
                                             <child>
-                                              <object class="GtkGridView" id="artist_row">
-                                                <style>
-                                                  <class name="no-bg"/>
-                                                </style>
-                                                <property name="single-click-activate">true</property>
-                                                <property name="hscroll-policy">0</property>
-                                                <property name="orientation">0</property>
-                                                <property name="min-columns">1</property>
-                                                <property name="max-columns">1</property>
+                                              <object class="GtkStackPage">
+                                                <property name="name">loading</property>
+                                                <property name="child">
+                                                  <object class="AdwSpinner">
+                                                    <property name="width-request">48</property>
+                                                    <property name="height-request">48</property>
+                                                  </object>
+                                                </property>
+                                              </object>
+                                            </child>
+                                            <child>
+                                              <object class="GtkStackPage">
+                                                <property name="name">content</property>
+                                                <property name="child">
+                                                  <object class="GtkScrolledWindow">
+                                                    <property name="hscrollbar-policy">automatic</property>
+                                                    <property name="vscrollbar-policy">never</property>
+                                                    <property name="propagate-natural-width">true</property>
+                                                    <property name="has-frame">false</property>
+                                                    <property name="hexpand">true</property>
+                                                    <child>
+                                                      <object class="GtkGridView" id="artist_row">
+                                                        <style>
+                                                          <class name="no-bg"/>
+                                                        </style>
+                                                        <property name="single-click-activate">true</property>
+                                                        <property name="hscroll-policy">0</property>
+                                                        <property name="orientation">0</property>
+                                                        <property name="min-columns">1</property>
+                                                        <property name="max-columns">1</property>
+                                                      </object>
+                                                    </child>
+                                                  </object>
+                                                </property>
                                               </object>
                                             </child>
                                           </object>

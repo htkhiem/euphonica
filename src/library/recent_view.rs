@@ -1,5 +1,6 @@
 use adw::prelude::*;
 use adw::subclass::prelude::*;
+use futures::TryFutureExt;
 use gtk::{
     glib::{self},
     CompositeTemplate, ListItem, Ordering, SignalListItemFactory, SingleSelection,
@@ -40,6 +41,8 @@ mod imp {
         #[template_child]
         pub album_revealer: TemplateChild<gtk::Revealer>,
         #[template_child]
+        pub album_row_stack: TemplateChild<gtk::Stack>,
+        #[template_child]
         pub album_row: TemplateChild<gtk::GridView>,
 
         // Artists row
@@ -47,6 +50,8 @@ mod imp {
         pub collapse_artists: TemplateChild<gtk::ToggleButton>,
         #[template_child]
         pub artist_revealer: TemplateChild<gtk::Revealer>,
+        #[template_child]
+        pub artist_row_stack: TemplateChild<gtk::Stack>,
         #[template_child]
         pub artist_row: TemplateChild<gtk::GridView>,
 
@@ -234,111 +239,132 @@ impl RecentView {
     }
 
     pub fn on_history_changed(&self) {
-        let settings = settings_manager().child("library");
-        // Albums
-        let recent_albums =
-            sqlite::get_last_n_albums(settings.uint("n-recent-albums")).expect("Sqlite DB error");
-        println!("Recent albums: {:?}", &recent_albums);
-        if recent_albums.len() > 0 {
-            let mut albums_map: FxHashMap<String, usize> = FxHashMap::default();
-            for tup in recent_albums.iter().enumerate() {
-                albums_map.insert(tup.1.clone(), tup.0);
-            }
-            let albums_map_cloned = albums_map.clone();
-            self.imp().album_filter.set_filter_func(move |obj| {
-                let album = obj
-                    .downcast_ref::<Album>()
-                    .expect("Search obj has to be a common::Album.");
+        self.imp().album_row_stack.set_visible_child_name("loading");
+        self.imp().artist_row_stack.set_visible_child_name("loading");
+        // Runs on another thread to avoid stuttering on startup
+        glib::spawn_future_local(clone!(
+            #[weak(rename_to = this)]
+            self,
+            async move {
+                // Albums
+                let _ = gio::spawn_blocking(|| {
+                    let settings = settings_manager().child("library");
+                    return sqlite::get_last_n_albums(settings.uint("n-recent-albums")).expect("Sqlite DB error");
+                }).map_ok(clone!(
+                    #[weak]
+                    this,
+                    move |recent_albums| {
+                        this.imp().album_row_stack.set_visible_child_name("content");
+                        if recent_albums.len() > 0 {
+                            let mut albums_map: FxHashMap<String, usize> = FxHashMap::default();
+                            for tup in recent_albums.iter().enumerate() {
+                                albums_map.insert(tup.1.clone(), tup.0);
+                            }
+                            let albums_map_cloned = albums_map.clone();
+                            this.imp().album_filter.set_filter_func(move |obj| {
+                                let album = obj
+                                    .downcast_ref::<Album>()
+                                    .expect("Search obj has to be a common::Album.");
 
-                albums_map_cloned.contains_key(album.get_title())
-            });
-            self.imp()
-                .album_filter
-                .changed(gtk::FilterChange::Different);
+                                albums_map_cloned.contains_key(album.get_title())
+                            });
+                            this.imp()
+                                .album_filter
+                                .changed(gtk::FilterChange::Different);
 
-            self.imp().album_sorter.set_sort_func(
-                move |obj1: &glib::Object, obj2: &glib::Object| -> Ordering {
-                    let album1 = obj1
-                        .downcast_ref::<Album>()
-                        .expect("Sort obj has to be a common::Album.");
+                            this.imp().album_sorter.set_sort_func(
+                                move |obj1: &glib::Object, obj2: &glib::Object| -> Ordering {
+                                    let album1 = obj1
+                                        .downcast_ref::<Album>()
+                                        .expect("Sort obj has to be a common::Album.");
 
-                    let album2 = obj2
-                        .downcast_ref::<Album>()
-                        .expect("Sort obj has to be a common::Album.");
+                                    let album2 = obj2
+                                        .downcast_ref::<Album>()
+                                        .expect("Sort obj has to be a common::Album.");
 
-                    if let (Some(order1), Some(order2)) = (
-                        albums_map.get(album1.get_title()),
-                        albums_map.get(album2.get_title()),
-                    ) {
-                        Ordering::from(order1.cmp(order2))
-                    } else {
-                        Ordering::Equal
+                                    if let (Some(order1), Some(order2)) = (
+                                        albums_map.get(album1.get_title()),
+                                        albums_map.get(album2.get_title()),
+                                    ) {
+                                        Ordering::from(order1.cmp(order2))
+                                    } else {
+                                        Ordering::Equal
+                                    }
+                                },
+                            );
+                            this.imp()
+                                .album_sorter
+                                .changed(gtk::SorterChange::Different);
+                        } else {
+                            // Don't show anything.
+                            this.imp().album_filter.set_filter_func(|_| false);
+                            this.imp()
+                                .album_filter
+                                .changed(gtk::FilterChange::Different);
+                        }
                     }
-                },
-            );
-            self.imp()
-                .album_sorter
-                .changed(gtk::SorterChange::Different);
-        } else {
-            // Don't show anything.
-            self.imp().album_filter.set_filter_func(|_| false);
-            self.imp()
-                .album_filter
-                .changed(gtk::FilterChange::Different);
-        }
+                )).await;
 
-        // Artists
-        let recent_artists =
-            sqlite::get_last_n_artists(settings.uint("n-recent-artists")).expect("Sqlite DB error");
-        println!("Recent artists: {:?}", &recent_artists);
-        if recent_artists.len() > 0 {
-            let mut artists_map: FxHashMap<String, usize> = FxHashMap::default();
-            for tup in recent_artists.iter().enumerate() {
-                artists_map.insert(tup.1.clone(), tup.0);
-            }
-            let artists_map_cloned = artists_map.clone();
-            self.imp().artist_filter.set_filter_func(move |obj| {
-                let artist = obj
-                    .downcast_ref::<Artist>()
-                    .expect("Search obj has to be a common::Artist.");
+                // Artists
+                let _ = gio::spawn_blocking(|| {
+                    let settings = settings_manager().child("library");
+                    return sqlite::get_last_n_artists(settings.uint("n-recent-artists")).expect("Sqlite DB error");
+                }).map_ok(clone!(
+                    #[weak]
+                    this,
+                    move |recent_artists| {
+                        this.imp().artist_row_stack.set_visible_child_name("content");
+                        if recent_artists.len() > 0 {
+                            let mut artists_map: FxHashMap<String, usize> = FxHashMap::default();
+                            for tup in recent_artists.iter().enumerate() {
+                                artists_map.insert(tup.1.clone(), tup.0);
+                            }
+                            let artists_map_cloned = artists_map.clone();
+                            this.imp().artist_filter.set_filter_func(move |obj| {
+                                let artist = obj
+                                    .downcast_ref::<Artist>()
+                                    .expect("Search obj has to be a common::Artist.");
 
-                artists_map_cloned.contains_key(artist.get_name())
-            });
-            self.imp()
-                .artist_filter
-                .changed(gtk::FilterChange::Different);
+                                artists_map_cloned.contains_key(artist.get_name())
+                            });
+                            this.imp()
+                                .artist_filter
+                                .changed(gtk::FilterChange::Different);
 
-            self.imp().artist_sorter.set_sort_func(
-                move |obj1: &glib::Object, obj2: &glib::Object| -> Ordering {
-                    let artist1 = obj1
-                        .downcast_ref::<Artist>()
-                        .expect("Sort obj has to be a common::Artist.");
+                            this.imp().artist_sorter.set_sort_func(
+                                move |obj1: &glib::Object, obj2: &glib::Object| -> Ordering {
+                                    let artist1 = obj1
+                                        .downcast_ref::<Artist>()
+                                        .expect("Sort obj has to be a common::Artist.");
 
-                    let artist2 = obj2
-                        .downcast_ref::<Artist>()
-                        .expect("Sort obj has to be a common::Artist.");
+                                    let artist2 = obj2
+                                        .downcast_ref::<Artist>()
+                                        .expect("Sort obj has to be a common::Artist.");
 
-                    if let (Some(order1), Some(order2)) = (
-                        artists_map.get(artist1.get_name()),
-                        artists_map.get(artist2.get_name()),
-                    ) {
-                        Ordering::from(order1.cmp(order2))
-                    } else {
-                        Ordering::Equal
+                                    if let (Some(order1), Some(order2)) = (
+                                        artists_map.get(artist1.get_name()),
+                                        artists_map.get(artist2.get_name()),
+                                    ) {
+                                        Ordering::from(order1.cmp(order2))
+                                    } else {
+                                        Ordering::Equal
+                                    }
+                                },
+                            );
+                            this.imp()
+                                .artist_sorter
+                                .changed(gtk::SorterChange::Different);
+                        } else {
+                            // Don't show anything.
+                            this.imp().artist_filter.set_filter_func(|_| false);
+                            this.imp()
+                                .artist_filter
+                                .changed(gtk::FilterChange::Different);
+                        }
                     }
-                },
-            );
-            self.imp()
-                .artist_sorter
-                .changed(gtk::SorterChange::Different);
-        } else {
-            // Don't show anything.
-            self.imp().artist_filter.set_filter_func(|_| false);
-            self.imp()
-                .artist_filter
-                .changed(gtk::FilterChange::Different);
-        }
-
+                )).await;
+            }
+        ));
         // Songs are fetched by either the library (upon startup) or player (upon song change)
     }
 
