@@ -563,6 +563,7 @@ pub fn unregister_image_key(key: &str, is_thumbnail: bool) -> Result<(), Error> 
         params![key, is_thumbnail as i32],
     )
     .map_err(|e| Error::DbError(e))?;
+    tx.commit().map_err(|e| Error::DbError(e))?;
     Ok(())
 }
 

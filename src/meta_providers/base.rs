@@ -18,13 +18,13 @@ pub fn sleep_after_request() {
 pub enum ProviderMessage {
     ClearFolderCover(String),
     // EmbeddedCover(SongInfo),
-    FolderCover(AlbumInfo, bool), // Pass through the fallback parameter
+    FolderCover(AlbumInfo), // Pass through the fallback parameter
     CoverAvailable(String), // URI can be track or folder
     /// Negative responses (currently only used by MpdWrapper)
     CoverNotAvailable(String), // URI can be track or folder
     FallbackToFolderCover(AlbumInfo),
     FallbackToEmbeddedCover(AlbumInfo),
-    FetchFolderCoverExternally(AlbumInfo, bool), // Pass through the fallback parameter
+    FetchFolderCoverExternally(AlbumInfo), // Pass through the fallback parameter
     AlbumMeta(AlbumInfo),
     AlbumMetaAvailable(String), // Only return URI
     ClearArtistAvatar(String), // Only need name

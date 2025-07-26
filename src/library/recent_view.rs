@@ -11,7 +11,7 @@ use glib::{clone, closure_local, Properties};
 
 use super::{AlbumCell, ArtistCell, Library};
 use crate::{
-    cache::{sqlite, Cache}, common::{Album, Artist, Song}, library::recent_song_row::RecentSongRow, player::Player, utils::settings_manager, window::EuphonicaWindow
+    cache::{sqlite, Cache}, common::{marquee::MarqueeWrapMode, Album, Artist, Song}, library::recent_song_row::RecentSongRow, player::Player, utils::settings_manager, window::EuphonicaWindow
 };
 
 mod imp {
@@ -376,8 +376,7 @@ impl RecentView {
                 let item = list_item
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
-                let album_cell = AlbumCell::new(&item, cache);
-                album_cell.set_lines(1);  // Currently having problems with GridView not
+                let album_cell = AlbumCell::new(&item, cache, Some(MarqueeWrapMode::Scroll));
                 // propagating the tallest cell's height to the revealer if said row wasn't
                 // the first initialised.
                 item.set_child(Some(&album_cell));

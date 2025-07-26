@@ -812,11 +812,13 @@ impl Player {
             song,
             true,
             true,
-            true
         ) {
-            self.imp().cover_source.set(
-                if is_embedded {CoverSource::Embedded} else {CoverSource::Folder}
-            );
+            if is_embedded {
+                self.imp().cover_source.set(CoverSource::Embedded);
+            }
+            else if self.imp().cover_source.get() != CoverSource::Embedded {
+                self.imp().cover_source.set(CoverSource::Folder);
+            }
         } else {
             // Unknown for now. Wait till cache responds via signal.
             self.imp().cover_source.set(CoverSource::Unknown);
@@ -998,6 +1000,8 @@ impl Player {
                 }
             }
             if needs_refresh {
+                // Queue cover fetch task before notifying widgets
+                self.update_cover(new_song.get_info());
                 self.imp().saved_to_history.set(false);
                 self.notify("title");
                 self.notify("artist");
@@ -1006,8 +1010,6 @@ impl Player {
                 self.notify("format-desc");
                 self.notify("album");
                 self.notify("album-art");
-                // Queue cover fetch task
-                self.update_cover(new_song.get_info());
                 // Get new lyrics
                 // First remove all current lines
                 self.imp().lyric_lines.splice(0, self.imp().lyric_lines.n_items(), &[]);
@@ -1244,7 +1246,7 @@ impl Player {
         if let Some(cache) = self.imp().cache.get() {
             if let Some(song) = self.imp().current_song.borrow().as_ref() {
                 // Do not schedule again (already done once in update_status)
-                return cache.load_cached_embedded_cover(song.get_info(), thumbnail, false, true).map(|pair| pair.0);
+                return cache.load_cached_embedded_cover(song.get_info(), thumbnail, false).map(|pair| pair.0);
             }
             return None;
         }

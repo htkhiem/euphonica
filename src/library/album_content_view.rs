@@ -421,11 +421,9 @@ impl AlbumContentView {
                         if album.get_folder_uri() == &uri {
                             // Force update since we might have been using an embedded cover
                             // temporarily
-                            this.imp().cover_source.set(CoverSource::Folder);
                             this.update_cover(album.get_info());
                         } else if this.imp().cover_source.get() != CoverSource::Folder {
                             if album.get_example_uri() == &uri {
-                                this.imp().cover_source.set(CoverSource::Embedded);
                                 this.update_cover(album.get_info());
                             }
                         }
@@ -444,14 +442,12 @@ impl AlbumContentView {
                         match this.imp().cover_source.get() {
                             CoverSource::Folder => {
                                 if album.get_folder_uri() == &uri {
-                                    this.imp().cover_source.set(CoverSource::None);
-                                    this.update_cover(album.get_info());
+                                    this.clear_cover();
                                 }
                             }
                             CoverSource::Embedded => {
                                 if album.get_example_uri() == &uri {
-                                    this.imp().cover_source.set(CoverSource::None);
-                                    this.update_cover(album.get_info());
+                                    this.clear_cover();
                                 }
                             }
                             _ => {}
@@ -676,55 +672,41 @@ impl AlbumContentView {
         ));
     }
 
+    fn clear_cover(&self) {
+        self.imp().cover_source.set(CoverSource::None);
+        self.imp().cover.set_paintable(Some(&*ALBUMART_PLACEHOLDER));
+    }
+
+    fn schedule_cover(&self, info: &AlbumInfo) {
+        self.imp().cover_source.set(CoverSource::Unknown);
+        self.imp().cover.set_paintable(Some(&*ALBUMART_PLACEHOLDER));
+        if let Some((tex, is_embedded)) = self
+            .imp()
+            .cache
+            .get()
+            .unwrap()
+            .load_cached_folder_cover(info, false, true) {
+                self.imp().cover.set_paintable(Some(&tex));
+                self.imp().cover_source.set(
+                    if is_embedded {CoverSource::Embedded} else {CoverSource::Folder}
+                );
+            }
+    }
+
     fn update_cover(&self, info: &AlbumInfo) {
-        let mut set: bool = false;
-        match self.imp().cover_source.get() {
-            // No scheduling (already called by the outside AlbumCell)
-            CoverSource::Unknown => {
-                // Schedule when in this mode
-                if let Some((tex, is_embedded)) = self
-                    .imp()
-                    .cache
-                    .get()
-                    .unwrap()
-                    .load_cached_folder_cover(info, false, true, true) {
-                        self.imp().cover.set_paintable(Some(&tex));
-                        self.imp().cover_source.set(
-                            if is_embedded {CoverSource::Embedded} else {CoverSource::Folder}
-                        );
-                        set = true;
-                    }
+        if let Some((tex, is_embedded)) = self
+            .imp()
+            .cache
+            .get()
+            .unwrap()
+            .load_cached_folder_cover(info, false, false) {
+                let curr_src = self.imp().cover_source.get();
+                // Only use embedded if we currently have nothing
+                if curr_src != CoverSource::Folder {
+                    self.imp().cover.set_paintable(Some(&tex));
+                    self.imp().cover_source.set(if is_embedded {CoverSource::Embedded} else {CoverSource::Folder});
+                }
             }
-            CoverSource::Folder => {
-                if let Some((tex, _)) = self
-                    .imp()
-                    .cache
-                    .get()
-                    .unwrap()
-                    .load_cached_folder_cover(info, false, false, false) {
-                        self.imp().cover.set_paintable(Some(&tex));
-                        set = true;
-                    }
-            }
-            CoverSource::Embedded => {
-                if let Some((tex, _)) = self
-                    .imp()
-                    .cache
-                    .get()
-                    .unwrap()
-                    .load_cached_embedded_cover_for_album(info, false, false, false) {
-                        self.imp().cover.set_paintable(Some(&tex));
-                        set = true;
-                    }
-            }
-            CoverSource::None => {
-                self.imp().cover.set_paintable(Some(&*ALBUMART_PLACEHOLDER));
-                set = true;
-            }
-        }
-        if !set {
-            self.imp().cover.set_paintable(Some(&*ALBUMART_PLACEHOLDER));
-        }
     }
 
     pub fn bind(&self, album: Album) {
@@ -792,8 +774,7 @@ impl AlbumContentView {
         bindings.push(release_date_viz_binding);
 
         let info = album.get_info();
-        self.imp().cover_source.set(CoverSource::Unknown);
-        self.update_cover(info);
+        self.schedule_cover(info);
         self.imp().album.borrow_mut().replace(album);
     }
 
@@ -813,9 +794,8 @@ impl AlbumContentView {
                 cache.get_cache_state().disconnect(id);
             }
         }
-        if let Some(album) = self.imp().album.take() {
-            self.imp().cover_source.set(CoverSource::None);
-            self.update_cover(album.get_info());
+        if let Some(_) = self.imp().album.take() {
+            self.clear_cover();
         }
 
         

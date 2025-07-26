@@ -64,10 +64,8 @@ enum AsyncClientMessage {
 #[derive(Debug)]
 pub enum BackgroundTask {
     Update,
-    DownloadFolderCover(AlbumInfo, bool), // album info, cache basepath, optionally allow fallback to embedded track art
-    DownloadFolderCoverForSong(SongInfo), // album info, cache basepath, does not allow fallback
-    DownloadEmbeddedCover(SongInfo), // song info, cache basepath, does not allow fallback
-    DownloadEmbeddedCoverForAlbum(AlbumInfo, bool), // song info, cache basepath, optionally allow fallback to folder art
+    DownloadFolderCover(AlbumInfo),
+    DownloadEmbeddedCover(SongInfo),
     FetchFolderContents(String), // Gradually get all inodes in folder at path
     FetchAlbums,                 // Gradually get all albums
     FetchAlbumSongs(String),     // Get songs of album with given tag
@@ -149,116 +147,110 @@ mod background {
         sender_to_cache: &Sender<ProviderMessage>,
         key: SongInfo
     ) {
-        // Re-check in case previous iterations have already downloaded these
-        if sqlite::find_image_by_key(&key.uri, false).expect("Sqlite DB error").is_none() {
-            if let Ok(bytes) = client.readpicture(&key.uri) {
+        // Still prioritise folder-level art if allowed to
+        let folder_uri = strip_filename_linux(&key.uri).to_owned();
+        // Re-check in case previous iterations have already downloaded these.
+        // Check using thumbnail = true to quickly refresh cache after a deletion of the entire
+        // images folder. This is because upon startup we'll mass-schedule thumbnail fetches, so
+        // in case the folder has been deleted, only thumbnail records in the SQLite DB will be
+        // dropped. Checking with thumbnail=true will still return a path even though that
+        // path has already been deleted, preventing downloading from proceeding.
+        if sqlite::find_image_by_key(&folder_uri, true).expect("Sqlite DB error").is_none() {
+            if let Ok(bytes) = client.albumart(&folder_uri) {
                 if let Some(dyn_img) = utils::read_image_from_bytes(bytes) {
                     let (hires, thumb) = utils::resize_convert_image(dyn_img);
                     let (path, thumbnail_path) = get_new_image_paths();
-                    if let (Ok(_), Ok(_)) = (hires.save(&path), thumb.save(&thumbnail_path)) {
-                        let _ = sqlite::register_image_key(&key.uri, Some(path.file_name().unwrap().to_str().unwrap()), false);
-                        let _ = sqlite::register_image_key(&key.uri, Some(thumbnail_path.file_name().unwrap().to_str().unwrap()), true);
-                        sender_to_cache
-                            .send_blocking(ProviderMessage::CoverAvailable(key.uri))
-                            .expect("Cannot notify main cache of embedded cover download result.");
-                    }
-                }
-            } else {
-                sender_to_cache
-                    .send_blocking(ProviderMessage::CoverNotAvailable(key.uri))
-                    .expect("Cannot notify main cache of embedded cover download result.");
-            }
+                    hires.save(&path)
+                         .expect(&format!("Couldn't save downloaded cover to {:?}", &path));
+                    thumb.save(&thumbnail_path)
+                         .expect(&format!("Couldn't save downloaded thumbnail cover to {:?}", &thumbnail_path));
+                    sqlite::register_image_key(
+                        &folder_uri, Some(path.file_name().unwrap().to_str().unwrap()), false
+                    );
+                    sqlite::register_image_key(
+                        &folder_uri, Some(thumbnail_path.file_name().unwrap().to_str().unwrap()), true
+                    );
+                    sender_to_cache
+                        .send_blocking(ProviderMessage::CoverAvailable(folder_uri))
+                        .expect("Cannot notify main cache of folder cover download result.");
+                    return;
+                } // Unreadable image format. Proceed to actually fetch embedded art instead.
+            } // No folder-level art was available. Proceed to actually fetch embedded art.
+        } else {
+            // Nothing to do, as there's already a path in the DB.
+            return;
         }
-    }
-
-    pub fn download_embedded_cover_for_album(
-        client: &mut mpd::Client<StreamWrapper>,
-        sender_to_cache: &Sender<ProviderMessage>,
-        key: AlbumInfo,
-        fallback: bool
-    ) {
-        // Re-check in case previous iterations have already downloaded these
-        if sqlite::find_image_by_key(&key.example_uri, false).expect("Sqlite DB error").is_none() {
-            if let Ok(bytes) = client.readpicture(&key.example_uri) {
+        // Re-check in case previous iterations have already downloaded these.
+        let uri = key.uri.to_owned();
+        if sqlite::find_image_by_key(&uri, true).expect("Sqlite DB error").is_none() {
+            if let Ok(bytes) = client.readpicture(&uri) {
                 if let Some(dyn_img) = utils::read_image_from_bytes(bytes) {
                     let (hires, thumb) = utils::resize_convert_image(dyn_img);
                     let (path, thumbnail_path) = get_new_image_paths();
-                    if let (Ok(_), Ok(_)) = (hires.save(&path), thumb.save(&thumbnail_path)) {
-                        let _ = sqlite::register_image_key(&key.example_uri, Some(path.file_name().unwrap().to_str().unwrap()), false);
-                        let _ = sqlite::register_image_key(&key.example_uri, Some(thumbnail_path.file_name().unwrap().to_str().unwrap()), true);
-                        sender_to_cache
-                            .send_blocking(ProviderMessage::CoverAvailable(key.example_uri))
-                            .expect("Cannot notify main cache of embedded cover download result.");
-                    }
-                }
-            } else if fallback {
-                sender_to_cache
-                    .send_blocking(ProviderMessage::FallbackToFolderCover(key))
-                    .expect("Cannot signal main cache to run fallback folder cover logic.");
-            } else {
-                sender_to_cache
-                    .send_blocking(ProviderMessage::CoverNotAvailable(key.example_uri))
-                    .expect("Cannot notify main cache of embedded cover download result.");
-            }
+                    hires.save(&path)
+                         .expect(&format!("Couldn't save downloaded cover to {:?}", &path));
+                    thumb.save(&thumbnail_path)
+                         .expect(&format!("Couldn't save downloaded thumbnail cover to {:?}", &thumbnail_path));
+                    let _ = sqlite::register_image_key(
+                        &uri, Some(path.file_name().unwrap().to_str().unwrap()), false
+                    );
+                    let _ = sqlite::register_image_key(
+                        &uri, Some(thumbnail_path.file_name().unwrap().to_str().unwrap()), true
+                    );
+                    sender_to_cache
+                        .send_blocking(ProviderMessage::CoverAvailable(uri))
+                        .expect("Cannot notify main cache of embedded cover download result.");
+                    return;
+                } // Unreadable embedded art format. If allowed, try other sources.
+            } // No embedded art was available. If allowed, try other sources.
+        } else {
+            // Nothing to do, as there's already a path in the DB
+            return;
+        }
+        if let Some(album) = &key.album {
+            // Go straight to external metadata providers since we've already
+            // failed to fetch folder-level cover from MPD at this point.
+            sender_to_cache
+                .send_blocking(ProviderMessage::FetchFolderCoverExternally(album.clone()))
+                .expect("Cannot signal main cache to run fallback folder cover logic.");
+            return;
+        }
+        else {
+            sender_to_cache
+                .send_blocking(ProviderMessage::CoverNotAvailable(uri))
+                .expect("Cannot notify main cache of embedded cover download result.");
         }
     }
 
     pub fn download_folder_cover(
         client: &mut mpd::Client<StreamWrapper>,
         sender_to_cache: &Sender<ProviderMessage>,
-        key: AlbumInfo,
-        fallback: bool
+        key: AlbumInfo
     ) {
         // Re-check in case previous iterations have already downloaded these
-        if sqlite::find_image_by_key(&key.folder_uri, false).expect("Sqlite DB error").is_none() {
+        if sqlite::find_image_by_key(&key.folder_uri, true).expect("Sqlite DB error").is_none() {
             if let Ok(bytes) = client.albumart(&key.folder_uri) {
                 if let Some(dyn_img) = utils::read_image_from_bytes(bytes) {
                     let (hires, thumb) = utils::resize_convert_image(dyn_img);
                     let (path, thumbnail_path) = get_new_image_paths();
-                    if let (Ok(_), Ok(_)) = (hires.save(&path), thumb.save(&thumbnail_path)) {
-                        sqlite::register_image_key(&key.folder_uri, Some(path.file_name().unwrap().to_str().unwrap()), false);
-                        sqlite::register_image_key(&key.folder_uri, Some(thumbnail_path.file_name().unwrap().to_str().unwrap()), true);
-                        sender_to_cache
-                            .send_blocking(ProviderMessage::CoverAvailable(key.folder_uri))
-                            .expect("Cannot notify main cache of folder cover download result.");
-                    }
+                    hires.save(&path)
+                         .expect(&format!("Couldn't save downloaded cover to {:?}", &path));
+                    thumb.save(&thumbnail_path)
+                         .expect(&format!("Couldn't save downloaded thumbnail cover to {:?}", &thumbnail_path));
+                    let _ = sqlite::register_image_key(
+                        &key.folder_uri, Some(path.file_name().unwrap().to_str().unwrap()), false
+                    );
+                    let _ = sqlite::register_image_key(
+                        &key.folder_uri, Some(thumbnail_path.file_name().unwrap().to_str().unwrap()), true
+                    );
+                    sender_to_cache
+                        .send_blocking(ProviderMessage::CoverAvailable(key.folder_uri))
+                        .expect("Cannot notify main cache of folder cover download result.");
                 }
             } else {
-                // Unlike with embedded covers, we need to return control to the cache thread
-                // to run metadata providers.
-                // For this reason the fallback handling is not done here.
                 sender_to_cache
-                    .send_blocking(ProviderMessage::FetchFolderCoverExternally(key, fallback))
+                    .send_blocking(ProviderMessage::FetchFolderCoverExternally(key))
                     .expect("Cannot signal main cache to fetch cover externally.");
-            }
-        }
-    }
-
-    pub fn download_folder_cover_for_song(
-        client: &mut mpd::Client<StreamWrapper>,
-        sender_to_cache: &Sender<ProviderMessage>,
-        key: SongInfo
-    ) {
-        // Re-check in case previous iterations have already downloaded these
-        let uri = strip_filename_linux(&key.uri).to_owned();
-        if sqlite::find_image_by_key(&uri, false).expect("Sqlite DB error").is_none() {
-            if let Ok(bytes) = client.albumart(&uri) {
-                if let Some(dyn_img) = utils::read_image_from_bytes(bytes) {
-                    let (hires, thumb) = utils::resize_convert_image(dyn_img);
-                    let (path, thumbnail_path) = get_new_image_paths();
-                    if let (Ok(_), Ok(_)) = (hires.save(&path), thumb.save(&thumbnail_path)) {
-                        let _ = sqlite::register_image_key(&uri, Some(path.file_name().unwrap().to_str().unwrap()), false);
-                        let _ = sqlite::register_image_key(&uri, Some(thumbnail_path.file_name().unwrap().to_str().unwrap()), true);
-                        sender_to_cache
-                            .send_blocking(ProviderMessage::CoverAvailable(uri))
-                            .expect("Cannot notify main cache of folder cover download result.");
-                    }
-                }
-            }
-            else {
-                sender_to_cache
-                    .send_blocking(ProviderMessage::CoverNotAvailable(uri))
-                    .expect("Cannot notify main cache of embedded cover download result.");
             }
         }
     }
@@ -652,34 +644,18 @@ impl MpdWrapper {
                         BackgroundTask::Update => {
                             background::update_mpd_database(&mut client, &sender_to_fg)
                         }
-                        BackgroundTask::DownloadFolderCover(key, fallback) => {
+                        BackgroundTask::DownloadFolderCover(key) => {
                             background::download_folder_cover(
                                 &mut client,
                                 &meta_sender,
-                                key,
-                                fallback
-                            )
-                        }
-                        BackgroundTask::DownloadFolderCoverForSong(key) => {
-                            background::download_folder_cover_for_song(
-                                &mut client,
-                                &meta_sender,
                                 key
-                           )
+                            )
                         }
                         BackgroundTask::DownloadEmbeddedCover(key) => {
                             background::download_embedded_cover(
                                 &mut client,
                                 &meta_sender,
                                 key
-                            )
-                        }
-                        BackgroundTask::DownloadEmbeddedCoverForAlbum(key, fallback) => {
-                            background::download_embedded_cover_for_album(
-                                &mut client,
-                                &meta_sender,
-                                key,
-                                fallback
                             )
                         }
                         BackgroundTask::FetchAlbums => {

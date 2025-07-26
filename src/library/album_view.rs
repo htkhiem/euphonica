@@ -553,7 +553,7 @@ impl AlbumView {
                 let item = list_item
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
-                let album_cell = AlbumCell::new(&item, cache);
+                let album_cell = AlbumCell::new(&item, cache, None);
                 item.set_child(Some(&album_cell));
             }
         ));
