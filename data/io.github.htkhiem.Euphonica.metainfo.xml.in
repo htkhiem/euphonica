@@ -69,20 +69,20 @@
     <screenshot>
       <image>https://i.ibb.co/84bYWgJF/Screenshot-From-2025-06-21-20-15-05.png</image>
     </screenshot>
-    <screenshot>
-      <image>https://i.ibb.co/1tDQsrPT/mini-layouts-v2.png</image>
-    </screenshot>
   </screenshots>
 
   <releases>
-    <release version="0.96.0-beta" date="2025-07-23">
+    <release version="0.96.0-beta" date="2025-07-26">
       <url type="details">https://github.com/htkhiem/euphonica/releases/tag/v0.96.0-beta</url>
       <description>
         <p>New: Recent View. Shows recently-played albums, artists and songs. History can be paused and cleared.</p>
+        <p>New: Animated marquees for long album titles in grid views. Exact behaviour is customisable (wrap/ellipsise/marquee-scroll on hover).</p>
         <p>New: "Queue Next" option that inserts selected songs after the current song in the queue. Currently available in the album content view only.</p>
         <p>New: Artist names in the album content view are now clickable (opens the corresponding artist content view).</p>
         <p>Fix: Current song position in queue desynced from daemon.</p>
-        <p>Refactor: Updated to build against GTK 4.18 and LibAdwaita 1.7+.</p>
+        <p>Fix: Crash after deleting cached images from .cache/euphonica</p>
+        <p>Fix: Embedded art still being downloaded even with folder cover present</p>
+        <p>Refactor: Updated to build against GTK 4.18 and LibAdwaita 1.7+</p>
       </description>
     </release>
     <release version="0.95.2-beta" date="2025-07-14">
