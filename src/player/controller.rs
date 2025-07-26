@@ -1256,7 +1256,10 @@ impl Player {
     pub fn current_song_cover_path(&self, thumbnail: bool) -> Option<PathBuf> {
         if let Some(song) = self.imp().current_song.borrow().as_ref() {
             let mut path = get_image_cache_path();
-            if let Some(filename) = sqlite::find_cover_by_uri(&song.get_uri(), thumbnail).unwrap() {
+            if let Some(filename) = sqlite::find_cover_by_uri(&song.get_uri(), thumbnail)
+                .expect("Sqlite DB error")
+                .map_or(None, |name| if name.len() > 0 {Some(name)} else {None})
+            {
                 // Will fall back to folder level cover if there is no embedded art
                 path.push(filename);
                 Some(path)

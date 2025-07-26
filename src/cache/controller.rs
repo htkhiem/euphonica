@@ -401,15 +401,11 @@ impl Cache {
         thumbnail: bool,
         schedule: bool
     ) -> Option<(Texture, bool)> {
-        if let Some(filename) = sqlite::find_image_by_key(&song.uri, thumbnail).expect("Sqlite DB error") {
-            if filename.len() == 0 {
-                // Tried fetching before, nothing found, don't try again.
-                // From v0.96 onwards we fall back to folder art first by default so new embedded art entries
-                // should no longer have this case.
-                println!("Won't fetch embedded cover for song {} again (failed before)", &song.uri);
-                return None; // Without doing anything further
-            }
-            else if let Some(tex) = IMAGE_CACHE.get(&filename) {
+        if let Some(filename) = sqlite::find_image_by_key(&song.uri, thumbnail)
+            .expect("Sqlite DB error")
+            .map_or(None, |name| if name.len() > 0 {Some(name)} else {None})
+        {
+            if let Some(tex) = IMAGE_CACHE.get(&filename) {
                 // Cloning GObjects is cheap since they're just references
                 return Some((tex.value().clone(), true));
             }
@@ -443,13 +439,11 @@ impl Cache {
         }
         // Failed to get embedded art locally. Try falling back to folder art first.
         let folder_uri = strip_filename_linux(&song.uri);
-        if let Some(filename) = sqlite::find_image_by_key(folder_uri, thumbnail).expect("Sqlite DB error") {
-            if filename.len() == 0 {
-                // Tried fetching before, nothing found, don't try again.
-                println!("Won't fetch fallback folder cover for song {} again (failed before)", &song.uri);
-                return None; // Without doing anything further
-            }
-            else if let Some(tex) = IMAGE_CACHE.get(&filename) {
+        if let Some(filename) = sqlite::find_image_by_key(folder_uri, thumbnail)
+            .expect("Sqlite DB error")
+            .map_or(None, |name| if name.len() > 0 {Some(name)} else {None})
+        {
+            if let Some(tex) = IMAGE_CACHE.get(&filename) {
                 // Note how we're returning false here since this isn't an embedded cover.
                 return Some((tex.value().clone(), false));
             } else {
@@ -505,13 +499,10 @@ impl Cache {
         let folder_uri = &album.folder_uri;
         // Try folder cover first
         if let Some(filename) = sqlite::find_image_by_key(folder_uri, thumbnail)
-            .expect("Sqlite DB error") {
-            if filename.len() == 0 {
-                // Tried fetching before, nothing found, don't try again.
-                println!("Won't fetch folder cover for folder {} again (failed before)", &album.folder_uri);
-                return None; // Without doing anything further
-            }
-            else if let Some(tex) = IMAGE_CACHE.get(&filename) {
+            .expect("Sqlite DB error")
+            .map_or(None, |name| if name.len() > 0 {Some(name)} else {None})
+        {
+            if let Some(tex) = IMAGE_CACHE.get(&filename) {
                 // Cloning GObjects is cheap since they're just references
                 return Some((tex.value().clone(), false));
             }
@@ -545,48 +536,43 @@ impl Cache {
         // Failed to get folder cover locally. Try looking for a locally cached embedded
         // cover of a song in this folder.
         let uri = &album.example_uri;
-        if let Some(filename) = sqlite::find_image_by_key(uri, thumbnail).expect("Sqlite DB error") {
-            if filename.len() == 0 {
-                // Tried fetching before, nothing found, don't try again.
-                // From v0.96 onwards we fall back to folder art first by default so new embedded art entries
-                // should no longer have this case.
-                println!("Won't fetch embedded cover for song {} again (failed before)", uri);
-                return None; // Without doing anything further
-            }
-            else if let Some(tex) = IMAGE_CACHE.get(&filename) {
-                // Cloning GObjects is cheap since they're just references
-                // Note the "true" here. We're returning an embedded cover instead due to fallback.
-                return Some((tex.value().clone(), true));
-            }
-            else {
-                let mut cover_path = get_image_cache_path();
-                let uri = uri.to_owned();
-                cover_path.push(&filename);
-                if cover_path.exists() {
-                    let fg_sender = self.fg_sender.clone();
-                    gio::spawn_blocking(move || {
-                        if let Ok(tex) = Texture::from_filename(&cover_path) {
-                            IMAGE_CACHE.insert(
-                                filename,
-                                tex,
-                                if thumbnail { 1 } else { 16 },
-                            );
-                            IMAGE_CACHE.wait().unwrap();
-                            let _ =
+        if let Some(filename) = sqlite::find_image_by_key(uri, thumbnail)
+            .expect("Sqlite DB error")
+            .map_or(None, |name| if name.len() > 0 {Some(name)} else {None}) {
+                if let Some(tex) = IMAGE_CACHE.get(&filename) {
+                    // Cloning GObjects is cheap since they're just references
+                    // Note the "true" here. We're returning an embedded cover instead due to fallback.
+                    return Some((tex.value().clone(), true));
+                }
+                else {
+                    let mut cover_path = get_image_cache_path();
+                    let uri = uri.to_owned();
+                    cover_path.push(&filename);
+                    if cover_path.exists() {
+                        let fg_sender = self.fg_sender.clone();
+                        gio::spawn_blocking(move || {
+                            if let Ok(tex) = Texture::from_filename(&cover_path) {
+                                IMAGE_CACHE.insert(
+                                    filename,
+                                    tex,
+                                    if thumbnail { 1 } else { 16 },
+                                );
+                                IMAGE_CACHE.wait().unwrap();
+                                let _ =
                                 // Notify for this song. Albums whose folder contains this song should
                                 // catch wind of this too.
-                                fg_sender.send_blocking(ProviderMessage::CoverAvailable(uri));
-                        }
-                    });
-                    return None; // For now. Widgets will receive a signal later.
-                } else {
-                    // File no longer exists (maybe user had removed it). Unregister it from DB
-                    // and repeat process.
-                    sqlite::unregister_image_key(&uri, thumbnail).expect("Sqlite DB error");
-                    println!("Unregistered image. Retrying...");
-                    return self.load_cached_folder_cover(album, thumbnail, schedule);
+                                    fg_sender.send_blocking(ProviderMessage::CoverAvailable(uri));
+                            }
+                        });
+                        return None; // For now. Widgets will receive a signal later.
+                    } else {
+                        // File no longer exists (maybe user had removed it). Unregister it from DB
+                        // and repeat process.
+                        sqlite::unregister_image_key(&uri, thumbnail).expect("Sqlite DB error");
+                        println!("Unregistered image. Retrying...");
+                        return self.load_cached_folder_cover(album, thumbnail, schedule);
+                    }
                 }
-            }
         }
         if schedule {
             self.mpd_client

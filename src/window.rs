@@ -1087,20 +1087,18 @@ impl EuphonicaWindow {
     fn queue_new_background(&self) {
         if let Some(player) = self.imp().player.get() {
             if let Some(sender) = self.imp().sender_to_bg.get() {
-                if let Some(path) = player.current_song_cover_path(true) {
-                    if path.exists() {
-                        let settings = settings_manager().child("ui");
-                        let config = BlurConfig {
-                            width: self.width() as u32,
-                            height: self.height() as u32,
-                            radius: settings.uint("bg-blur-radius"),
-                            fade: true, // new image, must fade
-                        };
-                        let _ = sender.send_blocking(WindowMessage::NewBackground(path, config));
-                    } else {
-                        let _ = sender.send_blocking(WindowMessage::ClearBackground);
-                        self.imp().push_tex(None, true);
-                    }
+                if let Some(path) = player
+                    .current_song_cover_path(true)
+                    .map_or(None, |path| if path.exists() {Some(path)} else {None})
+                {
+                    let settings = settings_manager().child("ui");
+                    let config = BlurConfig {
+                        width: self.width() as u32,
+                        height: self.height() as u32,
+                        radius: settings.uint("bg-blur-radius"),
+                        fade: true, // new image, must fade
+                    };
+                    let _ = sender.send_blocking(WindowMessage::NewBackground(path, config));
                 } else {
                     let _ = sender.send_blocking(WindowMessage::ClearBackground);
                     self.imp().push_tex(None, true);
