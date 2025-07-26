@@ -195,7 +195,7 @@
 		</key>
 
 		<key name="visualizer-fft-samples" type="u">
-			<default>1024</default>
+			<default>512</default>
 		</key>
 
 		<key name="visualizer-fps" type="u">
@@ -203,7 +203,7 @@
 		</key>
 
 		<key name="visualizer-spectrum-bins" type="u">
-			<default>10</default>
+			<default>5</default>
 		</key>
 
 		<key name="visualizer-spectrum-use-log-bins" type='b'>
@@ -211,7 +211,7 @@
 		</key>
 
 		<key name="visualizer-spectrum-min-hz" type="u">
-			<default>40</default>
+			<default>150</default>
 		</key>
 
 		<key name="visualizer-spectrum-max-hz" type="u">
@@ -246,13 +246,13 @@
 			<default>'percents'</default>
 		</key>
 		<key name="use-visualizer" type="b">
-			<default>false</default>
+			<default>true</default>
 		</key>
 		<key name="visualizer-top-opacity" type="d">
 			<default>0.9</default>
 		</key>
 		<key name="visualizer-scale" type="d">
-			<default>5.0</default>
+			<default>1.0</default>
 		</key>
 		<key name="visualizer-blend-mode" type="u">
 			<default>6</default>
@@ -265,7 +265,7 @@
 			<default>true</default>
 		</key>
 		<key name="visualizer-stroke-width" type='d'>
-			<default>1.0</default>
+			<default>0.0</default>
 		</key>
 		<key name="auto-accent" type='b'>
 			<default>true</default>
