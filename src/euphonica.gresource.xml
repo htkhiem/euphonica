@@ -109,5 +109,7 @@
     <file preprocess="xml-stripblanks" alias="lyrics-on-symbolic.svg">gtk/icons/lyrics-on-symbolic.svg</file>
     <file preprocess="xml-stripblanks" alias="lyrics-off-symbolic.svg">gtk/icons/lyrics-off-symbolic.svg</file>
     <file preprocess="xml-stripblanks" alias="recent-symbolic.svg">gtk/icons/recent-symbolic.svg</file>
+    <file preprocess="xml-stripblanks" alias="arrow-pointing-at-line-down-symbolic.svg">gtk/icons/arrow-pointing-at-line-down-symbolic.svg</file>
+    <file preprocess="xml-stripblanks" alias="arrow-pointing-away-from-line-up-symbolic.svg">gtk/icons/arrow-pointing-away-from-line-up-symbolic.svg</file>
   </gresource>
 </gresources>

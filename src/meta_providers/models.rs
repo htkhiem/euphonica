@@ -266,26 +266,29 @@ impl Lyrics {
     pub fn try_from_synced_lrclib_str(lrclib: &str) -> LyricsResult {
         let raw_lines: Vec<&str> = lrclib.split('\n').collect();
         let mut lines: Vec<(f32, String)> = Vec::with_capacity(raw_lines.len());
-        for line in raw_lines.iter() {
-            // Extract timestamp
-            let ts_end_pos: usize = line
-                .find(']')
-                .ok_or(LyricsParseError::TimestampNotFoundError)?;
-            let ts_str: &str = &line[1..ts_end_pos];
-            let ts_parts: Vec<&str> = ts_str.split(':').collect();
-            if ts_parts.len() != 2 {
-                Err(LyricsParseError::TimestampFormatError)?;
-            }
-            let ts: f32 = ts_parts[0]
-                .parse::<f32>()
-                .map_err(|_| LyricsParseError::TimestampFormatError)? * 60.0
-                + ts_parts[1]
+        for raw_line in raw_lines.iter() {
+            let line = raw_line.trim();
+            if line.len() > 0 {
+                // Extract timestamp
+                let ts_end_pos: usize = line
+                    .find(']')
+                    .ok_or(LyricsParseError::TimestampNotFoundError)?;
+                let ts_str: &str = &line[1..ts_end_pos];
+                let ts_parts: Vec<&str> = ts_str.split(':').collect();
+                if ts_parts.len() != 2 {
+                    Err(LyricsParseError::TimestampFormatError)?;
+                }
+                let ts: f32 = ts_parts[0]
+                    .parse::<f32>()
+                    .map_err(|_| LyricsParseError::TimestampFormatError)? * 60.0
+                    + ts_parts[1]
                     .parse::<f32>()
                     .map_err(|_| LyricsParseError::TimestampFormatError)?;
-            if line.len() <= ts_end_pos + 1 {
-                lines.push((ts, "".to_owned()));
-            } else {
-                lines.push((ts, line[ts_end_pos + 1..].to_owned()));
+                if line.len() <= ts_end_pos + 1 {
+                    lines.push((ts, "".to_owned()));
+                } else {
+                    lines.push((ts, line[ts_end_pos + 1..].to_owned()));
+                }
             }
         }
 

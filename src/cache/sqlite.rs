@@ -469,8 +469,13 @@ pub fn find_lyrics(song: &SongInfo) -> Result<Option<Lyrics>, Error> {
         .query_row(params![&song.uri], |r| LyricsRow::try_from(r));
     match query {
         Ok(row) => {
-            let res = row.try_into().map_err(|_| Error::DocToMetaError)?;
-            return Ok(Some(res));
+            if row.lyrics.len() > 0 {
+                let res = row.try_into().map_err(|_| Error::DocToMetaError)?;
+                return Ok(Some(res));
+            }
+            else {
+                return Ok(None);
+            }
         }
         Err(SqliteError::QueryReturnedNoRows) => {
             return Ok(None);
@@ -481,21 +486,35 @@ pub fn find_lyrics(song: &SongInfo) -> Result<Option<Lyrics>, Error> {
     }
 }
 
-pub fn write_lyrics(song: &SongInfo, lyrics: &Lyrics) -> Result<(), Error> {
+pub fn write_lyrics(song: &SongInfo, lyrics: Option<&Lyrics>) -> Result<(), Error> {
     let mut conn = SQLITE_POOL.get().unwrap();
     let tx = conn.transaction().map_err(|e| Error::DbError(e))?;
     tx.execute("delete from songs where uri = ?1", params![&song.uri])
         .map_err(|e| Error::DbError(e))?;
-    tx.execute(
-        "insert into songs (uri, lyrics, synced, last_modified) values (?1,?2,?3,?4)",
-        params![
-            &song.uri,
-            &lyrics.to_string(),
-            lyrics.synced,
-            OffsetDateTime::now_utc()
-        ],
-    )
-    .map_err(|e| Error::DbError(e))?;
+    if let Some(lyrics) = lyrics {
+        tx.execute(
+            "insert into songs (uri, lyrics, synced, last_modified) values (?1,?2,?3,?4)",
+            params![
+                &song.uri,
+                &lyrics.to_string(),
+                lyrics.synced,
+                OffsetDateTime::now_utc()
+            ],
+        )
+          .map_err(|e| Error::DbError(e))?;
+    }
+    else {
+        tx.execute(
+            "insert into songs (uri, lyrics, synced, last_modified) values (?1,?2,?3,?4)",
+            params![
+                &song.uri,
+                "",
+                false,
+                OffsetDateTime::now_utc()
+            ],
+        )
+          .map_err(|e| Error::DbError(e))?;
+    }
     tx.commit().map_err(|e| Error::DbError(e))?;
     Ok(())
 }

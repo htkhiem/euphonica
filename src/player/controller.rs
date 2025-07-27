@@ -28,11 +28,8 @@ use mpd::{
 };
 use std::{
     cell::{Cell, OnceCell, RefCell},
-    ops::Deref,
-    path::PathBuf,
-    rc::Rc,
-    sync::{Arc, Mutex, OnceLock},
-    vec::Vec,
+    ops::Deref, path::PathBuf,
+    rc::Rc, sync::{Arc, Mutex, OnceLock}, vec::Vec
 };
 
 use super::fft_backends::{backend::{FftBackend, FftStatus}, PipeWireFftBackend};
@@ -182,7 +179,7 @@ mod imp {
     use glib::{
         ParamSpec, ParamSpecBoolean, ParamSpecDouble, ParamSpecEnum, ParamSpecFloat, ParamSpecInt, ParamSpecObject, ParamSpecString, ParamSpecUInt, ParamSpecUInt64
     };
-    
+
     use once_cell::sync::Lazy;
 
     pub struct Player {
@@ -717,7 +714,7 @@ impl Player {
                             if let Some(outs) = this.client().get_outputs() {
                                 this.update_outputs(outs);
                             }
-                        } 
+                        }
                         _ => {}
                     }
                 }
@@ -1517,6 +1514,34 @@ impl Player {
 
     pub fn unblock_polling(&self) {
         let _ = self.imp().poll_blocked.replace(false);
+    }
+
+    pub fn export_lyrics(&self) -> Option<String> {
+        self.imp().lyrics.borrow().as_ref().map(|lyrics| lyrics.to_string())
+    }
+
+    pub fn import_lyrics(&self, text: &str) {
+        if let Some(curr_song) = self.imp().current_song.borrow().as_ref() {
+            if let Ok(lyrics) = Lyrics::try_from_synced_lrclib_str(&text)
+                // .map_err(|res| {
+                //     println!("Synced lyrics parse error: {:?}", &res);
+                //     return res;
+                // })
+                .or_else(|_| Lyrics::try_from_plain_lrclib_str(&text))
+            {
+                sqlite::write_lyrics(curr_song.get_info(), Some(&lyrics))
+                    .expect("Unable to import lyrics into SQLite DB");
+                self.update_lyrics(lyrics);
+            }
+        }
+    }
+
+    pub fn clear_lyrics(&self) {
+        if let Some(curr_song) = self.imp().current_song.borrow().as_ref() {
+            sqlite::write_lyrics(&curr_song.get_info(), None).expect("Unable to clear lyrics from DB");
+            self.imp().lyric_lines.splice(0, self.imp().lyric_lines.n_items(), &[]);
+            let _ = self.imp().lyrics.take();
+        }
     }
 }
 
