@@ -78,7 +78,7 @@
                         </child>
                         <child>
                           <object class="GtkMenuButton" id="save">
-                            <property name="icon-name">document-save-symbolic</property>
+                            <property name="icon-name">arrow-pointing-at-line-down-symbolic</property>
                             <property name="tooltip-text" translatable="true">Save current queue as playlist</property>
                             <property name="visible">false</property>
                             <property name="popover">save_popover</property>
