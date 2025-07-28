@@ -198,7 +198,7 @@
         <p>First public tagged release for Euphonica.</p>
         <ul>
           <li>New: customisable spectrum visualiser (reads from MPD FIFO output)</li>
-          <li>Refactor: prefernces panel reorganisation</li>
+          <li>Refactor: preferences panel reorganisation</li>
           <li>Fix: crash when connecting without a prior password entry in keyring</li>
         </ul>
       </description>

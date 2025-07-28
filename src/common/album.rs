@@ -217,7 +217,7 @@ impl Album {
     }
 
     /// Get albumartist names separated by commas. If the first artist listed is a composer,
-    /// the next separator will be a semicolon insead. The quality of this output depends
+    /// the next separator will be a semicolon instead. The quality of this output depends
     /// on whether all delimiters are specified by the user.
     pub fn get_artist_str(&self) -> Option<String> {
         artists_to_string(&self.get_info().artists)
