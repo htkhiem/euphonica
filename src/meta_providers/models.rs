@@ -266,6 +266,7 @@ impl Lyrics {
     pub fn try_from_synced_lrclib_str(lrclib: &str) -> LyricsResult {
         let raw_lines: Vec<&str> = lrclib.split('\n').collect();
         let mut lines: Vec<(f32, String)> = Vec::with_capacity(raw_lines.len());
+        let mut offset: f32 = 0.0;
         for raw_line in raw_lines.iter() {
             let line = raw_line.trim();
             if line.len() > 0 {
@@ -278,16 +279,36 @@ impl Lyrics {
                 if ts_parts.len() != 2 {
                     Err(LyricsParseError::TimestampFormatError)?;
                 }
-                let ts: f32 = ts_parts[0]
-                    .parse::<f32>()
-                    .map_err(|_| LyricsParseError::TimestampFormatError)? * 60.0
-                    + ts_parts[1]
-                    .parse::<f32>()
-                    .map_err(|_| LyricsParseError::TimestampFormatError)?;
-                if line.len() <= ts_end_pos + 1 {
-                    lines.push((ts, "".to_owned()));
-                } else {
-                    lines.push((ts, line[ts_end_pos + 1..].to_owned()));
+                match ts_parts[0] {
+                    "offset" => {
+                        if let Ok(ms_offset) = ts_parts[1].parse::<f32>() {
+                            offset = ms_offset / 1000.0;
+                        }
+                    }
+                    "#" => {
+                        // Comment. Do nothing on these tags
+                    }
+                    _ => {
+                        // Only accept timestamp for now. Other tags are ignored
+                        if !ts_parts[0]
+                            .chars()
+                            .map(|c|c.is_numeric())
+                            .collect::<Vec<bool>>()
+                            .contains(&false)
+                        {
+                            let ts: f32 = (ts_parts[0]
+                                .parse::<f32>()
+                                .map_err(|_| LyricsParseError::TimestampFormatError)? * 60.0
+                                + ts_parts[1]
+                                .parse::<f32>()
+                                .map_err(|_| LyricsParseError::TimestampFormatError)? - offset).max(0.0);
+                            if line.len() <= ts_end_pos + 1 {
+                                lines.push((ts, "".to_owned()));
+                            } else {
+                                lines.push((ts, line[ts_end_pos + 1..].to_owned()));
+                            }
+                        }
+                    }
                 }
             }
         }
