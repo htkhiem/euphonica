@@ -1,3 +1,4 @@
+use ashpd::desktop::file_chooser::{FileFilter, SelectedFiles};
 use glib::{clone, closure_local};
 use gtk::{
     gdk,
@@ -6,12 +7,12 @@ use gtk::{
     subclass::prelude::*,
     CompositeTemplate,
 };
-use std::cell::{Cell, RefCell};
+use std::{cell::{Cell, RefCell}, fs::{self, File}, io::Write};
 
 use crate::{
     cache::placeholders::ALBUMART_PLACEHOLDER,
     common::paintables::FadePaintable,
-    utils::settings_manager,
+    utils::{self, settings_manager},
 };
 
 use super::{MpdOutput, PlaybackControls, PlaybackState, Player, VolumeKnob};
@@ -67,6 +68,12 @@ mod imp {
         pub show_lyrics: TemplateChild<gtk::Switch>,
         #[template_child]
         pub use_synced_lyrics: TemplateChild<gtk::Switch>,
+        #[template_child]
+        pub import_lyrics: TemplateChild<gtk::Button>,
+        #[template_child]
+        pub export_lyrics: TemplateChild<gtk::Button>,
+        #[template_child]
+        pub clear_lyrics: TemplateChild<gtk::Button>,
         #[template_child]
         pub output_btn: TemplateChild<gtk::MenuButton>,
         #[template_child]
@@ -198,8 +205,11 @@ impl PlayerPane {
         Self::default()
     }
 
-    pub fn update_lyrics_window_visibility(&self, player: &Player) {
-        self.imp().lyrics_window.set_visible(player.n_lyric_lines() > 0 && self.imp().show_lyrics.is_active());
+    pub fn update_lyrics_availability(&self, player: &Player) {
+        let has_lyrics = player.n_lyric_lines() > 0;
+        self.imp().lyrics_window.set_visible(has_lyrics && self.imp().show_lyrics.is_active());
+        self.imp().export_lyrics.set_sensitive(has_lyrics);
+        self.imp().clear_lyrics.set_sensitive(has_lyrics);
     }
 
     pub fn update_lyrics_state(&self, player: &Player) {
@@ -393,7 +403,7 @@ impl PlayerPane {
             #[weak]
             player,
             move |_, _| {
-                this.update_lyrics_window_visibility(&player);
+                this.update_lyrics_availability(&player);
             }
         ));
 
@@ -482,7 +492,7 @@ impl PlayerPane {
                 player,
                 move |_, _| {
                     println!("show-lyrics changed");
-                    this.update_lyrics_window_visibility(&player);
+                    this.update_lyrics_availability(&player);
                 }
             )
         );
@@ -501,7 +511,106 @@ impl PlayerPane {
             )
         );
 
-        self.update_lyrics_window_visibility(&player);
+        imp.import_lyrics.connect_clicked(clone!(
+            #[weak]
+            player,
+            move |_| {
+                let (sender, receiver) = async_channel::bounded(1);
+                utils::tokio_runtime().spawn(
+                    async move {
+                        sender.send(
+                            SelectedFiles::open_file()
+                                .title("Import a .lrc file")
+                                .modal(true)
+                                .multiple(false)
+                                .filter(FileFilter::new("LRC files").glob("*.lrc"))
+                                .send()
+                                .await
+                                .expect("ashpd file open await failure")
+                                .response()
+                        ).await.expect("Unable to send response from ashpd back to main thread");
+                    });
+                glib::spawn_future_local(clone!(
+                    #[weak]
+                    player,
+                    async move {
+                        if let Some(uri) = receiver
+                            .recv().await
+                                   .unwrap().ok()  // Once for receiver result and once for ashpd's
+                                   .map(|sel_files| {
+                                       let uris = sel_files.uris();
+                                       if uris.len() == 0 {None} else {Some(uris[0].to_string())}
+                                   })
+                                   .flatten()
+                        {
+                            let uri = urlencoding::decode(if uri.starts_with("file://") {
+                                &uri[7..]
+                            } else {
+                                &uri
+                            }).expect("UTF-8").into_owned();
+                            let text = fs::read_to_string(uri).expect("Unable to read given .lrc file");
+                            player.import_lyrics(&text);
+                        }
+                    }
+                ));
+            }
+        ));
+
+        imp.export_lyrics.connect_clicked(clone!(
+            #[weak]
+            player,
+            move |_| {
+                let (sender, receiver) = async_channel::bounded(1);
+                if let Some(text) = player.export_lyrics() {
+                    utils::tokio_runtime().spawn(
+                        async move {
+                            sender.send(
+                                SelectedFiles::save_file()
+                                    .title("Save lyrics to .lrc file")
+                                    .accept_label("Save")
+                                    .current_name("lyrics.lrc")
+                                    .modal(true)
+                                    .filter(FileFilter::new("LRC files").glob("*.lrc"))
+                                    .send()
+                                    .await
+                                    .expect("ashpd file open await failure")
+                                    .response()
+                            ).await.expect("Unable to send response from ashpd back to main thread");
+                        });
+                    glib::spawn_future_local(
+                        async move {
+                            if let Some(uri) = receiver
+                                .recv().await
+                                       .unwrap().ok()  // Once for receiver result and once for ashpd's
+                                       .map(|sel_files| {
+                                           let uris = sel_files.uris();
+                                           if uris.len() == 0 {None} else {Some(uris[0].to_string())}
+                                       })
+                                       .flatten()
+                            {
+                                let uri = urlencoding::decode(if uri.starts_with("file://") {
+                                    &uri[7..]
+                                } else {
+                                    &uri
+                                }).expect("UTF-8").into_owned();
+                                let mut output = File::create(uri).expect("Unable to open a file for exporting lyrics");
+                                output.write_all(text.as_bytes()).expect("Unable to write to opened file");
+                            }
+                        }
+                    );
+                }
+            }
+        ));
+
+        imp.clear_lyrics.connect_clicked(clone!(
+            #[weak]
+            player,
+            move |_| {
+                player.clear_lyrics();
+            }
+        ));
+
+        self.update_lyrics_availability(&player);
         self.update_lyrics_state(&player);
     }
 

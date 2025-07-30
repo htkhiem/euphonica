@@ -153,49 +153,86 @@
       <property name="has-arrow">true</property>
       <property name="name">lyrics_popover</property>
       <property name="child">
-        <object class="GtkGrid">
-          <style>
-            <class name="padding-6"/>
-          </style>
-          <property name="row-spacing">6</property>
-          <property name="column-spacing">6</property>
+        <object class="GtkBox">
+          <property name="orientation">1</property>
+          <property name="spacing">6</property>
           <child>
-            <object class="GtkLabel">
-              <property name="label" translatable="true">Show lyrics</property>
-              <property name="justify">left</property>
-              <property name="hexpand">true</property>
-              <layout>
-                <property name="column">0</property>
-                <property name="row">0</property>
-              </layout>
-            </object>
-          </child>
-          <child>
-            <object class="GtkSwitch" id="show_lyrics">
-              <layout>
-                <property name="column">1</property>
-                <property name="row">0</property>
-              </layout>
-            </object>
-          </child>
+            <object class="GtkGrid">
+              <style>
+                <class name="padding-6"/>
+              </style>
+              <property name="row-spacing">6</property>
+              <property name="column-spacing">6</property>
+              <child>
+                <object class="GtkLabel">
+                  <property name="label" translatable="true">Show lyrics</property>
+                  <property name="justify">left</property>
+                  <property name="hexpand">true</property>
+                  <layout>
+                    <property name="column">0</property>
+                    <property name="row">0</property>
+                  </layout>
+                </object>
+              </child>
+              <child>
+                <object class="GtkSwitch" id="show_lyrics">
+                  <layout>
+                    <property name="column">1</property>
+                    <property name="row">0</property>
+                  </layout>
+                </object>
+              </child>
 
-          <child>
-            <object class="GtkLabel">
-              <property name="label" translatable="true">Use synced if available</property>
-              <property name="justify">left</property>
-              <property name="hexpand">true</property>
-              <layout>
-                <property name="column">0</property>
-                <property name="row">1</property>
-              </layout>
+              <child>
+                <object class="GtkLabel">
+                  <property name="label" translatable="true">Use synced if available</property>
+                  <property name="justify">left</property>
+                  <property name="hexpand">true</property>
+                  <layout>
+                    <property name="column">0</property>
+                    <property name="row">1</property>
+                  </layout>
+                </object>
+              </child>
+              <child>
+                <object class="GtkSwitch" id="use_synced_lyrics">
+                  <layout>
+                    <property name="column">1</property>
+                    <property name="row">1</property>
+                  </layout>
+                </object>
+              </child>
             </object>
           </child>
           <child>
-            <object class="GtkSwitch" id="use_synced_lyrics">
-              <layout>
-                <property name="column">1</property>
-                <property name="row">1</property>
-              </layout>
+            <object class="GtkBox">
+              <property name="spacing">6</property>
+              <child>
+                <object class="GtkButton" id="import_lyrics">
+                  <property name="icon-name">arrow-pointing-at-line-down-symbolic</property>
+                  <property name="tooltip-text" translatable="true">Import .lrc lyrics</property>
+                  <property name="hexpand">true</property>
+                  <style>
+                    <class name="suggested-action"/>
+                  </style>
+                </object>
+              </child>
+              <child>
+                <object class="GtkButton" id="export_lyrics">
+                  <property name="icon-name">arrow-pointing-away-from-line-up-symbolic</property>
+                  <property name="tooltip-text" translatable="true">Export lyrics as .lrc</property>
+                  <property name="hexpand">true</property>
+                </object>
+              </child>
+              <child>
+                <object class="GtkButton" id="clear_lyrics">
+                  <property name="icon-name">user-trash-symbolic</property>
+                  <property name="tooltip-text" translatable="true">Clear lyrics</property>
+                  <style>
+                    <class name="destructive-action"/>
+                  </style>
+                </object>
+              </child>
             </object>
           </child>
         </object>
@@ -358,7 +395,7 @@
                           <class name="flat"/>
                         </style>
                         <property name="icon-name">lyrics-off-symbolic</property>
-                        <property name="tooltip-text" translatable="true">Crossfade</property>
+                        <property name="tooltip-text" translatable="true">Lyrics</property>
                         <property name="popover">lyrics_popover</property>
                       </object>
                     </child>

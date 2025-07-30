@@ -292,7 +292,7 @@ impl Cache {
                                     // Guaranteed to have this field so just unwrap it
                                     let res = providers.read().unwrap().get_lyrics(&key);
                                     if let Some(lyrics) = res {
-                                        sqlite::write_lyrics(&key, &lyrics)
+                                        sqlite::write_lyrics(&key, Some(&lyrics))
                                                  .expect("Unable to write downloaded lyrics");
                                         let _ = fg_sender.send_blocking(ProviderMessage::LyricsAvailable(key.uri));
                                     }

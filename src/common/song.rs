@@ -300,10 +300,10 @@ impl Song {
                         Some(format!("{months} years ago"))
                     }
                 }
-                else if diff_days > 1.0 {
+                else if diff_days >= 2.0 {
                     Some(format!("{diff_days:.0} days ago"))
                 }
-                else if diff_days == 1.0 {
+                else if diff_days >= 1.0 {
                     Some("yesterday".to_owned())
                 }
                 else {
