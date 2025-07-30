@@ -11,7 +11,7 @@ use super::{AlbumCell, ArtistSongRow, Library};
 use crate::{
     cache::{Cache, CacheState},
     client::ClientState,
-    common::{Album, Artist, ArtistInfo, Song},
+    common::{Album, Artist, ArtistInfo, Song}, utils::settings_manager,
 };
 
 mod imp {
@@ -558,7 +558,7 @@ impl ArtistContentView {
     }
 
     fn setup_album_subview(&self, client_state: ClientState) {
-        // TODO: handle click (switch to album tab & push album content page)
+        let settings = settings_manager().child("ui");
         // Unlike songs, we receive albums one by one.
         client_state.connect_closure(
             "artist-album-basic-info-downloaded",
@@ -619,8 +619,16 @@ impl ArtistContentView {
             child.unbind();
         });
 
-        // Set the factory of the list view
-        self.imp().album_subview.set_factory(Some(&factory));
+        // Set the factory of the grid view
+        let grid_view = self.imp().album_subview.get();
+        grid_view.set_factory(Some(&factory));
+        settings
+            .bind(
+                "max-columns",
+                &grid_view,
+                "max-columns"
+            )
+            .build();
     }
 
     pub fn setup(&self, library: Library, cache: Rc<Cache>, client_state: ClientState) {
