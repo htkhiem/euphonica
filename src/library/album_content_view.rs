@@ -1,7 +1,7 @@
 use adw::subclass::prelude::*;
 use gio::{ActionEntry, SimpleActionGroup, Menu};
 use glib::{clone, closure_local, signal::SignalHandlerId, Binding};
-use gtk::{gio, glib, prelude::*, BitsetIter, CompositeTemplate, ListItem, SignalListItemFactory};
+use gtk::{gio, glib, gdk, prelude::*, BitsetIter, CompositeTemplate, ListItem, SignalListItemFactory};
 use std::{
     cell::{OnceCell, RefCell},
     rc::Rc,
@@ -416,15 +416,18 @@ impl AlbumContentView {
             closure_local!(
                 #[weak(rename_to = this)]
                 self,
-                move |_: CacheState, uri: String| {
+                move |_: CacheState, uri: String, thumb: bool, tex: gdk::Texture| {
+                    if thumb {
+                        return;
+                    }
                     if let Some(album) = this.imp().album.borrow().as_ref() {
                         if album.get_folder_uri() == &uri {
                             // Force update since we might have been using an embedded cover
                             // temporarily
-                            this.update_cover(album.get_info());
+                            this.update_cover(tex, CoverSource::Folder);
                         } else if this.imp().cover_source.get() != CoverSource::Folder {
                             if album.get_example_uri() == &uri {
-                                this.update_cover(album.get_info());
+                                this.update_cover(tex, CoverSource::Embedded);
                             }
                         }
                     }
@@ -693,20 +696,9 @@ impl AlbumContentView {
             }
     }
 
-    fn update_cover(&self, info: &AlbumInfo) {
-        if let Some((tex, is_embedded)) = self
-            .imp()
-            .cache
-            .get()
-            .unwrap()
-            .load_cached_folder_cover(info, false, false) {
-                let curr_src = self.imp().cover_source.get();
-                // Only use embedded if we currently have nothing
-                if curr_src != CoverSource::Folder {
-                    self.imp().cover.set_paintable(Some(&tex));
-                    self.imp().cover_source.set(if is_embedded {CoverSource::Embedded} else {CoverSource::Folder});
-                }
-            }
+    fn update_cover(&self, tex: gdk::Texture, src: CoverSource) {
+        self.imp().cover.set_paintable(Some(&tex));
+        self.imp().cover_source.set(src);
     }
 
     pub fn bind(&self, album: Album) {

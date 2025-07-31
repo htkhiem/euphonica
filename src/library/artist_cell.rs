@@ -7,7 +7,7 @@ use std::{
 
 use crate::{
     cache::{Cache, CacheState},
-    common::{Artist, ArtistInfo},
+    common::Artist,
 };
 
 mod imp {
@@ -119,10 +119,13 @@ impl ArtistCell {
                     closure_local!(
                         #[weak(rename_to = this)]
                         res,
-                        move |_: CacheState, name: String| {
+                        move |_: CacheState, name: String, thumb: bool, tex: gdk::Texture| {
+                            if !thumb {
+                                return;
+                            }
                             if let Some(artist) = this.imp().artist.borrow().as_ref() {
                                 if artist.get_name() == &name {
-                                    this.update_artist_avatar(artist.get_info());
+                                    this.update_avatar(Some(&tex));
                                 }
                             }
                         }
@@ -155,15 +158,8 @@ impl ArtistCell {
             .bind(self, "name", gtk::Widget::NONE);
     }
 
-    fn update_artist_avatar(&self, info: &ArtistInfo) {
-        self.imp().avatar.set_custom_image(
-            self.imp()
-                .cache
-                .get()
-                .unwrap()
-                .load_cached_artist_avatar(info, false)
-                .as_ref(),
-        );
+    fn update_avatar(&self, tex: Option<&gdk::Texture>) {
+        self.imp().avatar.set_custom_image(tex);
     }
 
     pub fn get_name(&self) -> glib::GString {
@@ -177,9 +173,15 @@ impl ArtistCell {
 
     pub fn bind(&self, artist: &Artist) {
         let _ = self.imp().artist.replace(Some(artist.clone()));
-        // Get state
-        // Set once first (like sync_create)
-        self.update_artist_avatar(artist.get_info());
+        // Try to get from cache (or from disk asynchronously)
+        if let Some(tex) = self
+            .imp()
+            .cache
+            .get()
+            .unwrap()
+            .load_cached_artist_avatar(artist.get_info(), true) {
+                self.imp().avatar.set_custom_image(Some(&tex));
+            }
     }
 
     pub fn unbind(&self) {

@@ -2,7 +2,7 @@ use glib::{
     closure_local, signal::SignalHandlerId, Object, clone,
     ParamSpec, ParamSpecChar, ParamSpecString, ParamSpecInt
 };
-use gtk::{prelude::*, subclass::prelude::*, CompositeTemplate, Image, Label};
+use gtk::{prelude::*, subclass::prelude::*, gdk, CompositeTemplate, Image, Label};
 use std::{
     cell::{OnceCell, RefCell, Cell},
     rc::Rc,
@@ -302,53 +302,56 @@ impl AlbumCell {
         res.add_controller(hover_ctl);
         let _ = res.imp().cover_signal_ids.replace(Some((
             cache_state
-               .connect_closure(
-                   "album-art-downloaded",
-                   false,
-                   closure_local!(
-                       #[weak(rename_to = this)]
-                       res,
-                       move |_: CacheState, uri: String| {
-                           if let Some(album) = this.imp().album.borrow().as_ref() {
-                               if album.get_folder_uri() == &uri {
-                                   // Force update since we might have been using an embedded cover
-                                   // temporarily
-                                   this.update_cover(album.get_info());
-                               } else if this.imp().cover_source.get() != CoverSource::Folder {
-                                   if album.get_example_uri() == &uri {
-                                       this.update_cover(album.get_info());
-                                   }
-                               }
-                           }
-                       }
-                   ),
-               ),
+                .connect_closure(
+                    "album-art-downloaded",
+                    false,
+                    closure_local!(
+                        #[weak(rename_to = this)]
+                        res,
+                        move |_: CacheState, uri: String, thumb: bool, tex: gdk::Texture| {
+                            if !thumb {
+                                return;
+                            }
+                            if let Some(album) = this.imp().album.borrow().as_ref() {
+                                if album.get_folder_uri() == &uri {
+                                    // Force update since we might have been using an embedded cover
+                                    // temporarily
+                                    this.update_cover(tex, CoverSource::Folder);
+                                } else if this.imp().cover_source.get() != CoverSource::Folder {
+                                    if album.get_example_uri() == &uri {
+                                        this.update_cover(tex, CoverSource::Embedded);
+                                    }
+                                }
+                            }
+                        }
+                    ),
+                ),
             cache_state
-               .connect_closure(
-                   "album-art-cleared",
-                   false,
-                   closure_local!(
-                       #[weak(rename_to = this)]
-                       res,
-                       move |_: CacheState, uri: String| {
-                           if let Some(album) = this.imp().album.borrow().as_ref() {
-                               match this.imp().cover_source.get() {
-                                   CoverSource::Folder => {
-                                       if album.get_folder_uri() == &uri {
-                                           this.clear_cover();
-                                       }
-                                   }
-                                   CoverSource::Embedded => {
-                                       if album.get_example_uri() == &uri {
-                                           this.clear_cover();
-                                       }
-                                   }
-                                   _ => {}
-                               }
-                           }
-                       }
-                   ),
-               ),
+                .connect_closure(
+                    "album-art-cleared",
+                    false,
+                    closure_local!(
+                        #[weak(rename_to = this)]
+                        res,
+                        move |_: CacheState, uri: String| {
+                            if let Some(album) = this.imp().album.borrow().as_ref() {
+                                match this.imp().cover_source.get() {
+                                    CoverSource::Folder => {
+                                        if album.get_folder_uri() == &uri {
+                                            this.clear_cover();
+                                        }
+                                    }
+                                    CoverSource::Embedded => {
+                                        if album.get_example_uri() == &uri {
+                                            this.clear_cover();
+                                        }
+                                    }
+                                    _ => {}
+                                }
+                            }
+                        }
+                    ),
+                ),
         )));
         res
     }
@@ -374,20 +377,9 @@ impl AlbumCell {
             }
     }
 
-    fn update_cover(&self, info: &AlbumInfo) {
-        if let Some((tex, is_embedded)) = self
-            .imp()
-            .cache
-            .get()
-            .unwrap()
-            .load_cached_folder_cover(info, true, false) {
-                let curr_src = self.imp().cover_source.get();
-                // Only use embedded if we currently have nothing
-                if curr_src != CoverSource::Folder {
-                    self.imp().cover.set_paintable(Some(&tex));
-                    self.imp().cover_source.set(if is_embedded {CoverSource::Embedded} else {CoverSource::Folder});
-                }
-            }
+    fn update_cover(&self, tex: gdk::Texture, src: CoverSource) {
+        self.imp().cover.set_paintable(Some(&tex));
+        self.imp().cover_source.set(src);
     }
 
     pub fn bind(&self, album: &Album) {

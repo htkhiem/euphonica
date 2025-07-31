@@ -129,6 +129,7 @@ pub enum BackgroundTask {
 mod background {
     use std::ops::Range;
 
+    use gtk::gdk;
     use time::OffsetDateTime;
 
     use crate::{cache::sqlite, utils::strip_filename_linux};
@@ -173,8 +174,13 @@ mod background {
                 let _ = sqlite::register_image_key(
                     &folder_uri, Some(thumbnail_path.file_name().unwrap().to_str().unwrap()), true
                 );
+                let hires_tex = gdk::Texture::from_filename(&path).unwrap();
+                let thumb_tex = gdk::Texture::from_filename(&thumbnail_path).unwrap();
                 sender_to_cache
-                    .send_blocking(ProviderMessage::CoverAvailable(folder_uri))
+                    .send_blocking(ProviderMessage::CoverAvailable(folder_uri.clone(), false, hires_tex))
+                    .expect("Cannot notify main cache of folder cover download result.");
+                sender_to_cache
+                    .send_blocking(ProviderMessage::CoverAvailable(folder_uri, true, thumb_tex))
                     .expect("Cannot notify main cache of folder cover download result.");
                 return;
             } // No folder-level art was available. Proceed to actually fetch embedded art.
@@ -201,9 +207,14 @@ mod background {
                 let _ = sqlite::register_image_key(
                     &uri, Some(thumbnail_path.file_name().unwrap().to_str().unwrap()), true
                 );
+                let hires_tex = gdk::Texture::from_filename(&path).unwrap();
+                let thumb_tex = gdk::Texture::from_filename(&thumbnail_path).unwrap();
                 sender_to_cache
-                    .send_blocking(ProviderMessage::CoverAvailable(uri))
-                    .expect("Cannot notify main cache of embedded cover download result.");
+                    .send_blocking(ProviderMessage::CoverAvailable(uri.clone(), false, hires_tex))
+                    .expect("Cannot notify main cache of folder cover download result.");
+                sender_to_cache
+                    .send_blocking(ProviderMessage::CoverAvailable(uri, true, thumb_tex))
+                    .expect("Cannot notify main cache of folder cover download result.");
                 return;
             }
             if let Some(album) = &key.album {
@@ -249,8 +260,13 @@ mod background {
                 let _ = sqlite::register_image_key(
                     &key.folder_uri, Some(thumbnail_path.file_name().unwrap().to_str().unwrap()), true
                 );
+                let hires_tex = gdk::Texture::from_filename(&path).unwrap();
+                let thumb_tex = gdk::Texture::from_filename(&thumbnail_path).unwrap();
                 sender_to_cache
-                    .send_blocking(ProviderMessage::CoverAvailable(key.folder_uri))
+                    .send_blocking(ProviderMessage::CoverAvailable(key.folder_uri.clone(), false, hires_tex))
+                    .expect("Cannot notify main cache of folder cover download result.");
+                sender_to_cache
+                    .send_blocking(ProviderMessage::CoverAvailable(key.folder_uri, true, thumb_tex))
                     .expect("Cannot notify main cache of folder cover download result.");
             } else {
                 sender_to_cache

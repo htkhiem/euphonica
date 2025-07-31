@@ -313,18 +313,17 @@ impl PlayerBar {
             ),
         );
 
-        self.update_album_art(player.current_song_cover(true));
-        player.connect_notify_local(
-            Some("album-art"),
-            clone!(
-                #[weak(rename_to = this)]
+        self.update_album_art(player.current_song_cover());
+        player.connect_closure(
+            "cover-changed",
+            false,
+            closure_local!(
+                #[strong(rename_to = this)]
                 self,
-                #[weak]
-                player,
-                move |_, _| {
-                    this.update_album_art(player.current_song_cover(true));
+                move |_: Player, tex: Option<gdk::Texture>| {
+                    this.update_album_art(tex);
                 }
-            ),
+            )
         );
 
         self.imp().prev_output.connect_clicked(clone!(

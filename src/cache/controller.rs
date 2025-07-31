@@ -77,10 +77,16 @@ pub fn get_new_image_paths() -> (PathBuf, PathBuf) {
 // around when no widget using them are being displayed, so as to reduce disk
 // thrashing while quickly scrolling through like a million albums.
 // This cache's keys are the filenames themselves.
-// TODO: figure out max cost based on user-selectable RAM limit
-// TODO: figure out cost of textures based on user-selectable resolution
+
+// Currently we allow at most 15 columns in GridViews, which results in a maximum
+// of 15 * (30 + 2) = 480 widgets being bound at any one time for each GridView.
+// There are two big GridViews always kept in memory: the Album and Artist Views.
+// To be safe, allow 960 textures to be kept in the cache at any one time. This
+// should be fine because:
+// - The number of actually-visible textures will likely be much lower than 960,
+// - Currently-shown textures won't be
 static IMAGE_CACHE: Lazy<stretto::Cache<String, Texture>> =
-    Lazy::new(|| stretto::Cache::new(327680, 32768).unwrap());
+    Lazy::new(|| stretto::Cache::new(960, 24).unwrap());
 
 pub struct Cache {
     mpd_client: OnceCell<Rc<MpdWrapper>>,
@@ -209,10 +215,7 @@ impl Cache {
                                         if let Some(artist) = res {
                                             sqlite::write_artist_meta(&key, &artist)
                                                 .expect("Unable to write downloaded artist meta");
-                                            if sqlite::find_image_by_key(&key.name, false).expect("Sqlite DB error").is_some() {
-                                                let _ = fg_sender.send_blocking(ProviderMessage::ArtistAvatarAvailable(name.clone()));
-                                            }
-                                            else {
+                                            if !sqlite::find_image_by_key(&key.name, false).expect("Sqlite DB error").is_some() {
                                                 // Try to download artist avatar too
                                                 let res = get_best_image(&artist.image);
                                                 let (path, thumbnail_path) = get_new_image_paths();
@@ -224,7 +227,10 @@ impl Cache {
                                                     ) {
                                                         let _ = sqlite::register_image_key(&key.name, Some(path.file_name().unwrap().to_str().unwrap()), false);
                                                         let _ = sqlite::register_image_key(&key.name, Some(thumbnail_path.file_name().unwrap().to_str().unwrap()), true);
-                                                        let _ = fg_sender.send_blocking(ProviderMessage::ArtistAvatarAvailable(name.clone()));
+                                                        let hires_tex = gdk::Texture::from_filename(&path).unwrap();
+                                                        let thumbnail_tex = gdk::Texture::from_filename(&thumbnail_path).unwrap();
+                                                        let _ = fg_sender.send_blocking(ProviderMessage::ArtistAvatarAvailable(name.clone(), false, hires_tex));
+                                                        let _ = fg_sender.send_blocking(ProviderMessage::ArtistAvatarAvailable(name.clone(), true, thumbnail_tex));
                                                     }
                                                 }
                                                 else {
@@ -251,7 +257,6 @@ impl Cache {
                                 move || {
                                     let mut success: bool = false;
                                     if sqlite::find_image_by_key(&album.folder_uri, false).expect("Sqlite DB error").is_some() {
-                                        let _ = fg_sender.send_blocking(ProviderMessage::CoverAvailable(album.folder_uri.to_owned()));
                                         success = true;
                                     }
                                     else if let Ok(Some(meta)) = sqlite::find_album_meta(&album) {
@@ -265,7 +270,10 @@ impl Cache {
                                             ) {
                                                 let _ = sqlite::register_image_key(&album.folder_uri, Some(path.file_name().unwrap().to_str().unwrap()), false);
                                                 let _ = sqlite::register_image_key(&album.folder_uri, Some(thumbnail_path.file_name().unwrap().to_str().unwrap()), true);
-                                                let _ = fg_sender.send_blocking(ProviderMessage::CoverAvailable(album.folder_uri.to_owned()));
+                                                let hires_tex = gdk::Texture::from_filename(&path).unwrap();
+                                                let thumbnail_tex = gdk::Texture::from_filename(&thumbnail_path).unwrap();
+                                                let _ = fg_sender.send_blocking(ProviderMessage::CoverAvailable(album.folder_uri.to_owned(), false, hires_tex));
+                                                let _ = fg_sender.send_blocking(ProviderMessage::CoverAvailable(album.folder_uri.to_owned(), true, thumbnail_tex));
                                                 success = true;
                                             }
                                         }
@@ -320,8 +328,8 @@ impl Cache {
                     ProviderMessage::ArtistMetaAvailable(name) => {
                         this.on_artist_meta_downloaded(&name)
                     }
-                    ProviderMessage::CoverAvailable(uri) => {
-                        this.on_cover_downloaded(&uri)
+                    ProviderMessage::CoverAvailable(uri, thumb, tex) => {
+                        this.on_cover_downloaded(&uri, thumb, &tex)
                     }
                     ProviderMessage::CoverNotAvailable(_uri) => {
                         // TODO: use this to implement loading spinners for cover widgets
@@ -338,8 +346,8 @@ impl Cache {
                         let _ = this.bg_sender.send_blocking(ProviderMessage::AlbumMeta(album.clone()));
                         let _ = this.bg_sender.send_blocking(ProviderMessage::FolderCover(album));
                     }
-                    ProviderMessage::ArtistAvatarAvailable(name) => {
-                        this.on_artist_avatar_downloaded(&name)
+                    ProviderMessage::ArtistAvatarAvailable(name, thumb, tex) => {
+                        this.on_artist_avatar_downloaded(&name, thumb, &tex)
                     }
                     ProviderMessage::ClearArtistAvatar(name) => {
                         this.on_artist_avatar_cleared(&name)
@@ -362,9 +370,9 @@ impl Cache {
         self.state.emit_with_param("artist-meta-downloaded", name);
     }
 
-    fn on_cover_downloaded(&self, folder_uri: &str) {
+    fn on_cover_downloaded(&self, folder_uri: &str, is_thumbnail: bool, tex: &gdk::Texture) {
         self.state
-            .emit_with_param("album-art-downloaded", folder_uri);
+            .emit_texture("album-art-downloaded", folder_uri, is_thumbnail, tex);
     }
 
     fn on_cover_cleared(&self, folder_uri: &str) {
@@ -372,8 +380,8 @@ impl Cache {
             .emit_with_param("album-art-cleared", folder_uri);
     }
 
-    fn on_artist_avatar_downloaded(&self, name: &str) {
-        self.state.emit_with_param("artist-avatar-downloaded", name);
+    fn on_artist_avatar_downloaded(&self, name: &str, is_thumbnail: bool, tex: &gdk::Texture) {
+        self.state.emit_texture("artist-avatar-downloaded", name, is_thumbnail, tex);
     }
 
     fn on_artist_avatar_cleared(&self, name: &str) {
@@ -410,6 +418,7 @@ impl Cache {
                 return Some((tex.value().clone(), true));
             }
             else {
+                println!("load_cached_embedded_cover: cache miss");
                 let mut cover_path = get_image_cache_path();
                 let song_uri = song.uri.to_owned();
                 cover_path.push(&filename);
@@ -419,12 +428,12 @@ impl Cache {
                         if let Ok(tex) = Texture::from_filename(&cover_path) {
                             IMAGE_CACHE.insert(
                                 filename,
-                                tex,
+                                tex.clone(),
                                 if thumbnail { 1 } else { 16 },
                             );
                             IMAGE_CACHE.wait().unwrap();
                             let _ =
-                                fg_sender.send_blocking(ProviderMessage::CoverAvailable(song_uri));
+                                fg_sender.send_blocking(ProviderMessage::CoverAvailable(song_uri, thumbnail, tex));
                         }
                     });
                     return None; // For now. Widgets will receive a signal later.
@@ -456,12 +465,12 @@ impl Cache {
                         if let Ok(tex) = Texture::from_filename(&cover_path) {
                             IMAGE_CACHE.insert(
                                 filename,
-                                tex,
+                                tex.clone(),
                                 if thumbnail { 1 } else { 16 },
                             );
                             IMAGE_CACHE.wait().unwrap();
                             let _ =
-                                fg_sender.send_blocking(ProviderMessage::CoverAvailable(folder_uri));
+                                fg_sender.send_blocking(ProviderMessage::CoverAvailable(folder_uri, thumbnail, tex));
                         }
                     });
                     return None; // For now. Widgets will receive a signal later.
@@ -507,6 +516,7 @@ impl Cache {
                 return Some((tex.value().clone(), false));
             }
             else {
+                println!("load_cached_folder_cover: cache miss");
                 let mut cover_path = get_image_cache_path();
                 let folder_uri = folder_uri.to_owned();
                 cover_path.push(&filename);
@@ -516,12 +526,12 @@ impl Cache {
                         if let Ok(tex) = Texture::from_filename(&cover_path) {
                             IMAGE_CACHE.insert(
                                 filename,
-                                tex,
+                                tex.clone(),
                                 if thumbnail { 1 } else { 16 },
                             );
                             IMAGE_CACHE.wait().unwrap();
                             let _ =
-                                fg_sender.send_blocking(ProviderMessage::CoverAvailable(folder_uri));
+                                fg_sender.send_blocking(ProviderMessage::CoverAvailable(folder_uri, thumbnail, tex));
                         }
                     });
                     return None; // For now. Widgets will receive a signal later.
@@ -554,14 +564,14 @@ impl Cache {
                             if let Ok(tex) = Texture::from_filename(&cover_path) {
                                 IMAGE_CACHE.insert(
                                     filename,
-                                    tex,
+                                    tex.clone(),
                                     if thumbnail { 1 } else { 16 },
                                 );
                                 IMAGE_CACHE.wait().unwrap();
                                 let _ =
                                 // Notify for this song. Albums whose folder contains this song should
                                 // catch wind of this too.
-                                    fg_sender.send_blocking(ProviderMessage::CoverAvailable(uri));
+                                    fg_sender.send_blocking(ProviderMessage::CoverAvailable(uri, thumbnail, tex));
                             }
                         });
                         return None; // For now. Widgets will receive a signal later.
@@ -608,18 +618,21 @@ impl Cache {
                         let _ = sqlite::register_image_key(&folder_uri, Some(thumbnail_path.file_name().unwrap().to_str().unwrap()), true);
                     }
                     // TODO: Optimise to avoid reading back from disk
+                    let hires_tex = gdk::Texture::from_filename(&hires_path).unwrap();
                     IMAGE_CACHE.insert(
                         hires_path.file_name().unwrap().to_str().unwrap().to_owned(),
-                        gdk::Texture::from_filename(&hires_path).unwrap(),
+                        hires_tex.clone(),
                         16
                     );
+                    let thumbnail_tex = gdk::Texture::from_filename(&thumbnail_path).unwrap();
                     IMAGE_CACHE.insert(
                         hires_path.file_name().unwrap().to_str().unwrap().to_owned(),
-                        gdk::Texture::from_filename(&thumbnail_path).unwrap(),
+                        thumbnail_tex.clone(),
                         1
                     );
                     IMAGE_CACHE.wait().unwrap();
-                    let _ = fg_sender.send_blocking(ProviderMessage::CoverAvailable(folder_uri));
+                    let _ = fg_sender.send_blocking(ProviderMessage::CoverAvailable(folder_uri.clone(), false, hires_tex));
+                    let _ = fg_sender.send_blocking(ProviderMessage::CoverAvailable(folder_uri, true, thumbnail_tex));
                 }
             }
             else {
@@ -673,20 +686,23 @@ impl Cache {
                     if let (Ok(_), Ok(_)) = (hires.save(&hires_path), thumbnail.save(&thumbnail_path)) {
                         let _ = sqlite::register_image_key(&tag, Some(hires_path.file_name().unwrap().to_str().unwrap()), false);
                         let _ = sqlite::register_image_key(&tag, Some(thumbnail_path.file_name().unwrap().to_str().unwrap()), true);
+                        let hires_tex = gdk::Texture::from_filename(&hires_path).unwrap();
                         // TODO: Optimise to avoid reading back from disk
                         IMAGE_CACHE.insert(
                             hires_path.file_name().unwrap().to_str().unwrap().to_owned(),
-                            gdk::Texture::from_filename(&hires_path).unwrap(),
+                            hires_tex.clone(),
                             16
                         );
+                        let thumbnail_tex = gdk::Texture::from_filename(&thumbnail_path).unwrap();
                         IMAGE_CACHE.insert(
                             hires_path.file_name().unwrap().to_str().unwrap().to_owned(),
-                            gdk::Texture::from_filename(&thumbnail_path).unwrap(),
+                            thumbnail_tex.clone(),
                             1
                         );
+                        IMAGE_CACHE.wait().unwrap();
+                        let _ = fg_sender.send_blocking(ProviderMessage::ArtistAvatarAvailable(tag.clone(), false, hires_tex));
+                        let _ = fg_sender.send_blocking(ProviderMessage::ArtistAvatarAvailable(tag, false, thumbnail_tex));
                     }
-                    IMAGE_CACHE.wait().unwrap();
-                    let _ = fg_sender.send_blocking(ProviderMessage::ArtistAvatarAvailable(tag));
                 }
             }
             else {
@@ -800,7 +816,7 @@ impl Cache {
                     if let Ok(tex) = Texture::from_filename(&path) {
                         IMAGE_CACHE.insert(filename, tex.clone(), if thumbnail { 1 } else { 16 });
                         IMAGE_CACHE.wait().unwrap();
-                        let _ = fg_sender.send_blocking(ProviderMessage::ArtistAvatarAvailable(name));
+                        let _ = fg_sender.send_blocking(ProviderMessage::ArtistAvatarAvailable(name, thumbnail, tex));
                     }
                 }
             });

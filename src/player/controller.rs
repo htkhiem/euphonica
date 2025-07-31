@@ -19,7 +19,7 @@ use mpris_server::{
 
 use adw::subclass::prelude::*;
 use glib::{clone, closure_local, subclass::Signal, BoxedAnyObject};
-use gtk::gdk::Texture;
+use gtk::gdk::{self, Texture};
 use gtk::{gio, glib, prelude::*};
 use mpd::{
     error::Error as MpdError,
@@ -358,9 +358,6 @@ mod imp {
                     ParamSpecString::builder("title").read_only().build(),
                     ParamSpecString::builder("artist").read_only().build(),
                     ParamSpecString::builder("album").read_only().build(),
-                    ParamSpecObject::builder::<Texture>("album-art")
-                        .read_only()
-                        .build(), // Will use high-resolution version
                     ParamSpecUInt64::builder("duration").read_only().build(),
                     ParamSpecUInt::builder("queue-id").read_only().build(),
                     ParamSpecEnum::builder::<QualityGrade>("quality-grade")
@@ -398,7 +395,6 @@ mod imp {
                 "title" => obj.title().to_value(),
                 "artist" => obj.artist().to_value(),
                 "album" => obj.album().to_value(),
-                "album-art" => obj.current_song_cover(false).to_value(), // High-res version
                 "duration" => obj.duration().to_value(),
                 "queue-id" => obj.queue_id().to_value(),
                 "quality-grade" => obj.quality_grade().to_value(),
@@ -497,6 +493,10 @@ mod imp {
                         .param_types([i8::static_type()])
                         .build(),
                     Signal::builder("history-changed")
+                        .build(),
+                    // For simplicity we'll always use the hires version
+                    Signal::builder("cover-changed")
+                        .param_types([Option::<gdk::Texture>::static_type()])
                         .build()
                 ]
             })
@@ -600,28 +600,26 @@ impl Player {
         let client_state = client.clone().get_client_state();
         let _ = self.imp().client.set(client);
 
-        // Signal once for current songs in case the UI is initialised too quickly,
-        // causing the player pane & bar to be stuck without album art for the
-        // song playing at startup.
         cache.get_cache_state().connect_closure(
             "album-art-downloaded",
             false,
             closure_local!(
                 #[weak(rename_to = this)]
                 self,
-                move |_: CacheState, uri: String| {
+                move |_: CacheState, uri: String, thumb: bool, tex: gdk::Texture| {
                     // Update logic:
                     // - Match by full URI first, then
                     // - Match by folder URI only if there is no current cover.
+                    if thumb {return;}
                     if let Some(song) = this.imp().current_song.borrow().as_ref() {
                         if song.get_uri() == &uri {
                             // Always do this to force upgrade to embedded cover from folder cover
                             this.imp().cover_source.set(CoverSource::Embedded);
-                            this.notify("album-art");
+                            this.emit_by_name::<()>("cover-changed", &[&Some(tex)]);
                         } else if this.imp().cover_source.get() != CoverSource::Embedded {
                             if strip_filename_linux(song.get_uri()) == &uri {
                                 this.imp().cover_source.set(CoverSource::Folder);
-                                this.notify("album-art");
+                                this.emit_by_name::<()>("cover-changed", &[&Some(tex)]);
                             }
                         }
                     }
@@ -641,13 +639,13 @@ impl Player {
                             CoverSource::Embedded => {
                                 if song.get_uri() == &uri {
                                     this.imp().cover_source.set(CoverSource::None);
-                                    this.notify("album-art");
+                                    this.emit_by_name::<()>("cover-changed", &[&Option::<gdk::Texture>::None]);
                                 }
                             }
                             CoverSource::Folder => {
                                 if strip_filename_linux(song.get_uri()) == &uri {
                                     this.imp().cover_source.set(CoverSource::None);
-                                    this.notify("album-art");
+                                    this.emit_by_name::<()>("cover-changed", &[&Option::<gdk::Texture>::None]);
                                 }
                             }
                             _ => {}
@@ -816,24 +814,6 @@ impl Player {
     // GObject properties, which in turn are read from this struct's fields.
     // Signals will be sent for properties whose values have changed, even though
     // we will be receiving updates for many properties at once.
-
-    fn update_cover(&self, song: &SongInfo) {
-        if let Some((_, is_embedded)) = self.imp().cache.get().unwrap().load_cached_embedded_cover(
-            song,
-            true,
-            true,
-        ) {
-            if is_embedded {
-                self.imp().cover_source.set(CoverSource::Embedded);
-            }
-            else if self.imp().cover_source.get() != CoverSource::Embedded {
-                self.imp().cover_source.set(CoverSource::Folder);
-            }
-        } else {
-            // Unknown for now. Wait till cache responds via signal.
-            self.imp().cover_source.set(CoverSource::Unknown);
-        }
-    }
 
     pub fn get_recent_songs(&self) {
         let settings = settings_manager().child("library");
@@ -1010,8 +990,6 @@ impl Player {
                 }
             }
             if needs_refresh {
-                // Queue cover fetch task before notifying widgets
-                self.update_cover(new_song.get_info());
                 self.imp().saved_to_history.set(false);
                 self.notify("title");
                 self.notify("artist");
@@ -1019,7 +997,16 @@ impl Player {
                 self.notify("quality-grade");
                 self.notify("format-desc");
                 self.notify("album");
-                self.notify("album-art");
+                // Get album art. Start with CoverSource::Unknown.
+                // We might also get an asynchronous reply later via a cache state signal.
+                if let Some((tex, is_fallback)) = self.imp().cache.get().unwrap().load_cached_embedded_cover(new_song.get_info(), false, true) {
+                    self.imp().cover_source.set(if is_fallback {CoverSource::Folder} else {CoverSource::Embedded});
+                    self.emit_by_name::<()>("cover-changed", &[&Some(tex)]);
+                }
+                else {
+                    self.imp().cover_source.set(CoverSource::Unknown);
+                    self.emit_by_name::<()>("cover-changed", &[&Option::<gdk::Texture>::None]);
+                }
                 // Get new lyrics
                 // First remove all current lines
                 self.imp().lyric_lines.splice(0, self.imp().lyric_lines.n_items(), &[]);
@@ -1048,8 +1035,9 @@ impl Player {
                 self.notify("title");
                 self.notify("artist");
                 self.notify("album");
-                self.notify("album-art");
                 self.notify("duration");
+                self.imp().cover_source.set(CoverSource::Unknown);
+                self.emit_by_name::<()>("cover-changed", &[&Option::<gdk::Texture>::None]);
                 // Update MPRIS side
                 if self.imp().mpris_enabled.get() {
                     mpris_changes.push(Property::Metadata(
@@ -1252,11 +1240,11 @@ impl Player {
         None
     }
 
-    pub fn current_song_cover(&self, thumbnail: bool) -> Option<Texture> {
+    pub fn current_song_cover(&self) -> Option<Texture> {
         if let Some(cache) = self.imp().cache.get() {
             if let Some(song) = self.imp().current_song.borrow().as_ref() {
                 // Do not schedule again (already done once in update_status)
-                return cache.load_cached_embedded_cover(song.get_info(), thumbnail, false).map(|pair| pair.0);
+                return cache.load_cached_embedded_cover(song.get_info(), false, false).map(|pair| pair.0);
             }
             return None;
         }

@@ -1,9 +1,6 @@
 use glib::{closure_local, signal::SignalHandlerId, Object};
 use gtk::{
-    glib::{self, clone},
-    prelude::*,
-    subclass::prelude::*,
-    CompositeTemplate, Image, Label,
+    gdk, glib::{self, clone}, prelude::*, subclass::prelude::*, CompositeTemplate, Image, Label
 };
 use std::{cell::RefCell, rc::Rc};
 
@@ -248,17 +245,20 @@ impl QueueRow {
                 closure_local!(
                     #[weak(rename_to = this)]
                     self,
-                    move |_: CacheState, uri: String| {
+                    move |_: CacheState, uri: String, thumb: bool, tex: gdk::Texture| {
+                        if !thumb {
+                            return;
+                        }
                         // Match song URI first then folder URI. Only try to match by folder URI
                         // if we don't have a current thumbnail.
                         if let Some(song) = this.imp().song.borrow().as_ref() {
                             if uri.as_str() == song.get_uri() {
                                 // Force update since we might have been using a folder cover
                                 // temporarily
-                                this.update_thumbnail(song.get_info());
+                                this.update_thumbnail(tex, CoverSource::Embedded);
                             } else if this.imp().thumbnail_source.get() != CoverSource::Embedded {
                                 if strip_filename_linux(song.get_uri()) == uri {
-                                    this.update_thumbnail(song.get_info());
+                                    this.update_thumbnail(tex, CoverSource::Folder);
                                 }
                             }
                         }
@@ -334,20 +334,9 @@ impl QueueRow {
             }
     }
 
-    fn update_thumbnail(&self, info: &SongInfo) {
-        if let Some((tex, is_embedded)) = self
-            .imp()
-            .cache
-            .get()
-            .unwrap()
-            .load_cached_embedded_cover(info, true, false) {
-                let curr_src = self.imp().thumbnail_source.get();
-                // Only use embedded if we currently have nothing
-                if curr_src != CoverSource::Embedded {
-                    self.imp().thumbnail.set_paintable(Some(&tex));
-                    self.imp().thumbnail_source.set(if is_embedded {CoverSource::Embedded} else {CoverSource::Folder});
-                }
-            }
+    fn update_thumbnail(&self, tex: gdk::Texture, src: CoverSource) {
+        self.imp().thumbnail.set_paintable(Some(&tex));
+        self.imp().thumbnail_source.set(src);
     }
 
     pub fn bind(&self, song: &Song) {

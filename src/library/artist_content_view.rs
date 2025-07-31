@@ -11,7 +11,7 @@ use super::{AlbumCell, ArtistSongRow, Library};
 use crate::{
     cache::{Cache, CacheState},
     client::ClientState,
-    common::{Album, Artist, ArtistInfo, Song}, utils::settings_manager,
+    common::{Album, Artist, Song}, utils::settings_manager,
 };
 
 mod imp {
@@ -372,10 +372,13 @@ impl ArtistContentView {
             closure_local!(
                 #[weak(rename_to = this)]
                 self,
-                move |_: CacheState, name: String| {
+                move |_: CacheState, name: String, thumb: bool, tex: gdk::Texture| {
+                    if thumb {
+                        return;
+                    }
                     if let Some(artist) = this.imp().artist.borrow().as_ref() {
                         if name == artist.get_name() {
-                            this.update_avatar(artist.get_info());
+                            this.update_avatar(Some(&tex));
                         }
                     }
                 }
@@ -672,29 +675,24 @@ impl ArtistContentView {
         }
     }
 
-    /// Returns true if an avatar was successfully retrieved.
-    /// On false, we will want to call cache.ensure_cached_album_art()
-    fn update_avatar(&self, info: &ArtistInfo) -> bool {
+    fn update_avatar(&self, tex: Option<&gdk::Texture>) {
         // Set text in case there is no image
-        self.imp().avatar.set_text(Some(&info.name));
-        if let Some(cache) = self.imp().cache.get() {
-            if let Some(tex) = cache.load_cached_artist_avatar(info, false) {
-                self.imp().avatar.set_custom_image(Some(&tex));
-                return true;
-            } else {
-                self.imp()
-                    .avatar
-                    .set_custom_image(Option::<&gdk::Texture>::None);
-                return false;
-            }
-        }
-        false
+        self.imp().avatar.set_custom_image(tex);
     }
 
     pub fn bind(&self, artist: Artist) {
         self.update_meta(&artist);
         let info = artist.get_info();
-        self.update_avatar(info);
+        self.imp().avatar.set_text(Some(&info.name));
+        self.update_avatar(
+            self
+                .imp()
+                .cache
+                .get()
+                .unwrap()
+                .load_cached_artist_avatar(info, true)
+                .as_ref()
+        );
 
         let name_label = self.imp().name.get();
         let mut bindings = self.imp().bindings.borrow_mut();

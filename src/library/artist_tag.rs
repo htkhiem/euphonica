@@ -119,10 +119,12 @@ impl ArtistTag {
                     closure_local!(
                         #[weak(rename_to = this)]
                         res,
-                        move |_: CacheState, name: String| {
-                            let artist = this.imp().artist.get().unwrap();
-                            if artist.get_name() == &name {
-                                this.update_artist_avatar(artist.get_info());
+                        move |_: CacheState, name: String, thumb: bool, tex: gdk::Texture| {
+                            if !thumb {
+                                return;
+                            }
+                            if this.imp().artist.get().unwrap().get_name() == &name {
+                                this.imp().avatar.set_custom_image(Some(&tex));
                             }
                         }
                     ),

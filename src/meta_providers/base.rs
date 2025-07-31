@@ -1,5 +1,5 @@
 extern crate bson;
-use gtk::prelude::*;
+use gtk::{prelude::*, gdk};
 use std::{thread, time::Duration};
 
 use crate::{common::{AlbumInfo, ArtistInfo, SongInfo}, utils::settings_manager};
@@ -19,7 +19,7 @@ pub enum ProviderMessage {
     ClearFolderCover(String),
     // EmbeddedCover(SongInfo),
     FolderCover(AlbumInfo), // Pass through the fallback parameter
-    CoverAvailable(String), // URI can be track or folder
+    CoverAvailable(String, bool, gdk::Texture), // URI (can be track or folder), is_thumbnail, the texture itself
     /// Negative responses (currently only used by MpdWrapper)
     CoverNotAvailable(String), // URI can be track or folder
     FallbackToFolderCover(AlbumInfo),
@@ -30,7 +30,7 @@ pub enum ProviderMessage {
     ClearArtistAvatar(String), // Only need name
     /// Both request and positive response
     ArtistAvatar(ArtistInfo), // With cache basepath
-    ArtistAvatarAvailable(String), // Name
+    ArtistAvatarAvailable(String, bool, gdk::Texture), // Name, is_thumbnail, the texture itself
     /// Both request and positive response. Includes downloading artist avatar.
     ArtistMeta(ArtistInfo), // With cache basepath (for passthrough to artist avatar)
     ArtistMetaAvailable(String), // Only return name

@@ -2,7 +2,7 @@ use glib::{
     prelude::*,
     subclass::{prelude::*, Signal},
 };
-use gtk::glib;
+use gtk::{glib, gdk};
 use std::sync::OnceLock;
 
 mod imp {
@@ -60,7 +60,9 @@ mod imp {
                     // Only emitted when a new album art becomes locally available.
                     Signal::builder("album-art-downloaded")
                         .param_types([
-                            String::static_type(), // folder URI
+                            String::static_type(), // folder or file URI
+                            bool::static_type(),   // is_thumbnail
+                            gdk::Texture::static_type()
                         ])
                         .build(),
                     Signal::builder("album-art-cleared")
@@ -81,6 +83,8 @@ mod imp {
                     Signal::builder("artist-avatar-downloaded")
                         .param_types([
                             String::static_type(), // artist tag
+                            bool::static_type(),   // is_thumbnail
+                            gdk::Texture::static_type()
                         ])
                         .build(),
                     Signal::builder("artist-avatar-cleared")
@@ -113,5 +117,9 @@ impl CacheState {
     // Convenience emit wrapper
     pub fn emit_with_param(&self, name: &str, tag: &str) {
         self.emit_by_name::<()>(name, &[&tag]);
+    }
+
+    pub fn emit_texture(&self, name: &str, tag: &str, thumb: bool, tex: &gdk::Texture) {
+        self.emit_by_name::<()>(name, &[&tag, &thumb, tex]);
     }
 }
