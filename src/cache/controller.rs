@@ -81,12 +81,9 @@ pub fn get_new_image_paths() -> (PathBuf, PathBuf) {
 // Currently we allow at most 15 columns in GridViews, which results in a maximum
 // of 15 * (30 + 2) = 480 widgets being bound at any one time for each GridView.
 // There are two big GridViews always kept in memory: the Album and Artist Views.
-// To be safe, allow 960 textures to be kept in the cache at any one time. This
-// should be fine because:
-// - The number of actually-visible textures will likely be much lower than 960,
-// - Currently-shown textures won't be
+// To be safe, allow 960 textures to be kept in the cache at any one time.
 static IMAGE_CACHE: Lazy<stretto::Cache<String, Texture>> =
-    Lazy::new(|| stretto::Cache::new(960, 24).unwrap());
+    Lazy::new(|| stretto::Cache::new(15360, 960).unwrap());
 
 pub struct Cache {
     mpd_client: OnceCell<Rc<MpdWrapper>>,
