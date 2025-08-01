@@ -10,7 +10,8 @@
 //   of artist tags instead of the full tags.
 // - Text data is stored as BSON blobs in SQLite.
 extern crate bson;
-extern crate stretto;
+use lru::LruCache;
+use std::{num::NonZeroUsize, sync::Mutex};
 use async_channel::{Receiver, Sender};
 use image::io::Reader as ImageReader;
 use gio::prelude::*;
@@ -68,8 +69,7 @@ pub fn get_new_image_paths() -> (PathBuf, PathBuf) {
     (path, thumbnail_path)
 }
 
-// In-memory image cache. Declared here to ease usage between threads as Stretto
-// is already internally-mutable.
+// In-memory image cache.
 // gdk::Textures are GObjects, which by themselves are boxed reference-counted.
 // This means that even if a texture is evicted from this cache, as long as there
 // is a widget on screen still using it, it will not actually leave RAM.
@@ -82,8 +82,8 @@ pub fn get_new_image_paths() -> (PathBuf, PathBuf) {
 // of 15 * (30 + 2) = 480 widgets being bound at any one time for each GridView.
 // There are two big GridViews always kept in memory: the Album and Artist Views.
 // To be safe, allow 960 textures to be kept in the cache at any one time.
-static IMAGE_CACHE: Lazy<stretto::Cache<String, Texture>> =
-    Lazy::new(|| stretto::Cache::new(15360, 960).unwrap());
+static IMAGE_CACHE: Lazy<Mutex<LruCache<String, Texture>>> =
+    Lazy::new(|| Mutex::new(LruCache::new(NonZeroUsize::new(960).unwrap())));
 
 pub struct Cache {
     mpd_client: OnceCell<Rc<MpdWrapper>>,
@@ -410,9 +410,9 @@ impl Cache {
             .expect("Sqlite DB error")
             .map_or(None, |name| if name.len() > 0 {Some(name)} else {None})
         {
-            if let Some(tex) = IMAGE_CACHE.get(&filename) {
+            if let Some(tex) = IMAGE_CACHE.lock().unwrap().get(&filename) {
                 // Cloning GObjects is cheap since they're just references
-                return Some((tex.value().clone(), true));
+                return Some((tex.clone(), true));
             }
             else {
                 println!("load_cached_embedded_cover: cache miss");
@@ -423,12 +423,10 @@ impl Cache {
                     let fg_sender = self.fg_sender.clone();
                     gio::spawn_blocking(move || {
                         if let Ok(tex) = Texture::from_filename(&cover_path) {
-                            IMAGE_CACHE.insert(
+                            IMAGE_CACHE.lock().unwrap().put(
                                 filename,
-                                tex.clone(),
-                                if thumbnail { 1 } else { 16 },
+                                tex.clone()
                             );
-                            IMAGE_CACHE.wait().unwrap();
                             let _ =
                                 fg_sender.send_blocking(ProviderMessage::CoverAvailable(song_uri, thumbnail, tex));
                         }
@@ -449,9 +447,9 @@ impl Cache {
             .expect("Sqlite DB error")
             .map_or(None, |name| if name.len() > 0 {Some(name)} else {None})
         {
-            if let Some(tex) = IMAGE_CACHE.get(&filename) {
+            if let Some(tex) = IMAGE_CACHE.lock().unwrap().get(&filename) {
                 // Note how we're returning false here since this isn't an embedded cover.
-                return Some((tex.value().clone(), false));
+                return Some((tex.clone(), false));
             } else {
                 let mut cover_path = get_image_cache_path();
                 let folder_uri = folder_uri.to_owned();
@@ -460,12 +458,10 @@ impl Cache {
                     let fg_sender = self.fg_sender.clone();
                     gio::spawn_blocking(move || {
                         if let Ok(tex) = Texture::from_filename(&cover_path) {
-                            IMAGE_CACHE.insert(
+                            IMAGE_CACHE.lock().unwrap().put(
                                 filename,
-                                tex.clone(),
-                                if thumbnail { 1 } else { 16 },
+                                tex.clone()
                             );
-                            IMAGE_CACHE.wait().unwrap();
                             let _ =
                                 fg_sender.send_blocking(ProviderMessage::CoverAvailable(folder_uri, thumbnail, tex));
                         }
@@ -508,9 +504,9 @@ impl Cache {
             .expect("Sqlite DB error")
             .map_or(None, |name| if name.len() > 0 {Some(name)} else {None})
         {
-            if let Some(tex) = IMAGE_CACHE.get(&filename) {
+            if let Some(tex) = IMAGE_CACHE.lock().unwrap().get(&filename) {
                 // Cloning GObjects is cheap since they're just references
-                return Some((tex.value().clone(), false));
+                return Some((tex.clone(), false));
             }
             else {
                 println!("load_cached_folder_cover: cache miss");
@@ -521,12 +517,10 @@ impl Cache {
                     let fg_sender = self.fg_sender.clone();
                     gio::spawn_blocking(move || {
                         if let Ok(tex) = Texture::from_filename(&cover_path) {
-                            IMAGE_CACHE.insert(
+                            IMAGE_CACHE.lock().unwrap().put(
                                 filename,
-                                tex.clone(),
-                                if thumbnail { 1 } else { 16 },
+                                tex.clone()
                             );
-                            IMAGE_CACHE.wait().unwrap();
                             let _ =
                                 fg_sender.send_blocking(ProviderMessage::CoverAvailable(folder_uri, thumbnail, tex));
                         }
@@ -546,10 +540,10 @@ impl Cache {
         if let Some(filename) = sqlite::find_image_by_key(uri, thumbnail)
             .expect("Sqlite DB error")
             .map_or(None, |name| if name.len() > 0 {Some(name)} else {None}) {
-                if let Some(tex) = IMAGE_CACHE.get(&filename) {
+                if let Some(tex) = IMAGE_CACHE.lock().unwrap().get(&filename) {
                     // Cloning GObjects is cheap since they're just references
                     // Note the "true" here. We're returning an embedded cover instead due to fallback.
-                    return Some((tex.value().clone(), true));
+                    return Some((tex.clone(), true));
                 }
                 else {
                     let mut cover_path = get_image_cache_path();
@@ -559,12 +553,10 @@ impl Cache {
                         let fg_sender = self.fg_sender.clone();
                         gio::spawn_blocking(move || {
                             if let Ok(tex) = Texture::from_filename(&cover_path) {
-                                IMAGE_CACHE.insert(
+                                IMAGE_CACHE.lock().unwrap().put(
                                     filename,
-                                    tex.clone(),
-                                    if thumbnail { 1 } else { 16 },
+                                    tex.clone()
                                 );
-                                IMAGE_CACHE.wait().unwrap();
                                 let _ =
                                 // Notify for this song. Albums whose folder contains this song should
                                 // catch wind of this too.
@@ -616,18 +608,18 @@ impl Cache {
                     }
                     // TODO: Optimise to avoid reading back from disk
                     let hires_tex = gdk::Texture::from_filename(&hires_path).unwrap();
-                    IMAGE_CACHE.insert(
-                        hires_path.file_name().unwrap().to_str().unwrap().to_owned(),
-                        hires_tex.clone(),
-                        16
-                    );
                     let thumbnail_tex = gdk::Texture::from_filename(&thumbnail_path).unwrap();
-                    IMAGE_CACHE.insert(
-                        hires_path.file_name().unwrap().to_str().unwrap().to_owned(),
-                        thumbnail_tex.clone(),
-                        1
-                    );
-                    IMAGE_CACHE.wait().unwrap();
+                    {
+                        let mut cache = IMAGE_CACHE.lock().unwrap();
+                        cache.put(
+                            hires_path.file_name().unwrap().to_str().unwrap().to_owned(),
+                            hires_tex.clone()
+                        );
+                        cache.put(
+                            hires_path.file_name().unwrap().to_str().unwrap().to_owned(),
+                            thumbnail_tex.clone(),
+                        );
+                    }
                     let _ = fg_sender.send_blocking(ProviderMessage::CoverAvailable(folder_uri.clone(), false, hires_tex));
                     let _ = fg_sender.send_blocking(ProviderMessage::CoverAvailable(folder_uri, true, thumbnail_tex));
                 }
@@ -649,14 +641,14 @@ impl Cache {
                 let mut hires_path = get_image_cache_path();
                 hires_path.push(&hires_name);
                 sqlite::unregister_image_key(&folder_uri, false).expect("Unable to unregister image key");
-                IMAGE_CACHE.remove(&hires_name);
+                IMAGE_CACHE.lock().unwrap().pop(&hires_name);
                 let _ = std::fs::remove_file(hires_path);
             }
             if let Some(thumb_name) = sqlite::find_image_by_key(&folder_uri, true).unwrap() {
                 let mut thumb_path = get_image_cache_path();
                 thumb_path.push(&thumb_name);
                 sqlite::unregister_image_key(&folder_uri, true).expect("Unable to unregister image key");
-                IMAGE_CACHE.remove(&thumb_name);
+                IMAGE_CACHE.lock().unwrap().pop(&thumb_name);
                 let _ = std::fs::remove_file(thumb_path);
             }
             let _ = fg_sender.send_blocking(ProviderMessage::ClearFolderCover(folder_uri));
@@ -683,20 +675,20 @@ impl Cache {
                     if let (Ok(_), Ok(_)) = (hires.save(&hires_path), thumbnail.save(&thumbnail_path)) {
                         let _ = sqlite::register_image_key(&tag, Some(hires_path.file_name().unwrap().to_str().unwrap()), false);
                         let _ = sqlite::register_image_key(&tag, Some(thumbnail_path.file_name().unwrap().to_str().unwrap()), true);
-                        let hires_tex = gdk::Texture::from_filename(&hires_path).unwrap();
                         // TODO: Optimise to avoid reading back from disk
-                        IMAGE_CACHE.insert(
-                            hires_path.file_name().unwrap().to_str().unwrap().to_owned(),
-                            hires_tex.clone(),
-                            16
-                        );
+                        let hires_tex = gdk::Texture::from_filename(&hires_path).unwrap();
                         let thumbnail_tex = gdk::Texture::from_filename(&thumbnail_path).unwrap();
-                        IMAGE_CACHE.insert(
-                            hires_path.file_name().unwrap().to_str().unwrap().to_owned(),
-                            thumbnail_tex.clone(),
-                            1
-                        );
-                        IMAGE_CACHE.wait().unwrap();
+                        {
+                            let mut cache = IMAGE_CACHE.lock().unwrap();
+                            cache.put(
+                                hires_path.file_name().unwrap().to_str().unwrap().to_owned(),
+                                hires_tex.clone()
+                            );
+                            cache.put(
+                                hires_path.file_name().unwrap().to_str().unwrap().to_owned(),
+                                thumbnail_tex.clone(),
+                            );
+                        }
                         let _ = fg_sender.send_blocking(ProviderMessage::ArtistAvatarAvailable(tag.clone(), false, hires_tex));
                         let _ = fg_sender.send_blocking(ProviderMessage::ArtistAvatarAvailable(tag, false, thumbnail_tex));
                     }
@@ -719,14 +711,14 @@ impl Cache {
                 let mut hires_path = get_image_cache_path();
                 hires_path.push(&hires_name);
                 let _ = sqlite::unregister_image_key(&tag, false);
-                IMAGE_CACHE.remove(&hires_name);
+                IMAGE_CACHE.lock().unwrap().pop(&hires_name);
                 let _ = std::fs::remove_file(hires_path);
             }
             if let Some(thumb_name) = sqlite::find_image_by_key(&tag, true).unwrap() {
                 let mut thumb_path = get_image_cache_path();
                 thumb_path.push(&thumb_name);
                 let _ = sqlite::unregister_image_key(&tag, true);
-                IMAGE_CACHE.remove(&thumb_name);
+                IMAGE_CACHE.lock().unwrap().pop(&thumb_name);
                 let _ = std::fs::remove_file(thumb_path);
             }
             let _ = fg_sender.send_blocking(ProviderMessage::ClearArtistAvatar(tag));
@@ -798,9 +790,9 @@ impl Cache {
         // First try to get from cache
         let name = &artist.name;
         if let Some(filename) = sqlite::find_image_by_key(name, thumbnail).expect("Sqlite DB error") {
-            if let Some(tex) = IMAGE_CACHE.get(&filename) {
+            if let Some(tex) = IMAGE_CACHE.lock().unwrap().get(&filename) {
                 // Cloning GObjects is cheap since they're just references
-                return Some(tex.value().clone());
+                return Some(tex.clone());
             }
             // If missed, try loading from disk
             let name = name.to_owned();
@@ -811,8 +803,7 @@ impl Cache {
                 // Try to load from disk. Do this using the threadpool to avoid blocking UI.
                 if path.exists() {
                     if let Ok(tex) = Texture::from_filename(&path) {
-                        IMAGE_CACHE.insert(filename, tex.clone(), if thumbnail { 1 } else { 16 });
-                        IMAGE_CACHE.wait().unwrap();
+                        IMAGE_CACHE.lock().unwrap().put(filename, tex.clone());
                         let _ = fg_sender.send_blocking(ProviderMessage::ArtistAvatarAvailable(name, thumbnail, tex));
                     }
                 }
