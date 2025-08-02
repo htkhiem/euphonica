@@ -19,6 +19,8 @@ mod imp {
         #[template_child]
         pub recent_playlists_count: TemplateChild<adw::SpinRow>,
         #[template_child]
+        pub max_columns: TemplateChild<adw::SpinRow>,
+        #[template_child]
         pub auto_accent: TemplateChild<adw::SwitchRow>,
         #[template_child]
         pub title_wrap_mode: TemplateChild<adw::ComboRow>,
@@ -103,6 +105,12 @@ impl UIPreferences {
         ui_settings
             .bind("recent-playlists-count", &recent_playlists_count, "value")
             .build();
+
+        let max_columns = imp.max_columns.get();
+        ui_settings
+            .bind("max-columns", &max_columns, "value")
+            .build();
+
         let auto_accent = imp.auto_accent.get();
         ui_settings
             .bind("auto-accent", &auto_accent, "active")

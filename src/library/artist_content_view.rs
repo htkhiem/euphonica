@@ -11,7 +11,7 @@ use super::{AlbumCell, ArtistSongRow, Library};
 use crate::{
     cache::{Cache, CacheState},
     client::ClientState,
-    common::{Album, Artist, ArtistInfo, Song},
+    common::{Album, Artist, Song}, utils::settings_manager,
 };
 
 mod imp {
@@ -372,10 +372,13 @@ impl ArtistContentView {
             closure_local!(
                 #[weak(rename_to = this)]
                 self,
-                move |_: CacheState, name: String| {
+                move |_: CacheState, name: String, thumb: bool, tex: gdk::Texture| {
+                    if thumb {
+                        return;
+                    }
                     if let Some(artist) = this.imp().artist.borrow().as_ref() {
                         if name == artist.get_name() {
-                            this.update_avatar(artist.get_info());
+                            this.update_avatar(Some(&tex));
                         }
                     }
                 }
@@ -558,7 +561,7 @@ impl ArtistContentView {
     }
 
     fn setup_album_subview(&self, client_state: ClientState) {
-        // TODO: handle click (switch to album tab & push album content page)
+        let settings = settings_manager().child("ui");
         // Unlike songs, we receive albums one by one.
         client_state.connect_closure(
             "artist-album-basic-info-downloaded",
@@ -619,8 +622,16 @@ impl ArtistContentView {
             child.unbind();
         });
 
-        // Set the factory of the list view
-        self.imp().album_subview.set_factory(Some(&factory));
+        // Set the factory of the grid view
+        let grid_view = self.imp().album_subview.get();
+        grid_view.set_factory(Some(&factory));
+        settings
+            .bind(
+                "max-columns",
+                &grid_view,
+                "max-columns"
+            )
+            .build();
     }
 
     pub fn setup(&self, library: Library, cache: Rc<Cache>, client_state: ClientState) {
@@ -664,29 +675,25 @@ impl ArtistContentView {
         }
     }
 
-    /// Returns true if an avatar was successfully retrieved.
-    /// On false, we will want to call cache.ensure_cached_album_art()
-    fn update_avatar(&self, info: &ArtistInfo) -> bool {
+    fn update_avatar(&self, tex: Option<&gdk::Texture>) {
         // Set text in case there is no image
-        self.imp().avatar.set_text(Some(&info.name));
-        if let Some(cache) = self.imp().cache.get() {
-            if let Some(tex) = cache.load_cached_artist_avatar(info, false) {
-                self.imp().avatar.set_custom_image(Some(&tex));
-                return true;
-            } else {
-                self.imp()
-                    .avatar
-                    .set_custom_image(Option::<&gdk::Texture>::None);
-                return false;
-            }
-        }
-        false
+        self.imp().avatar.set_custom_image(tex);
     }
 
     pub fn bind(&self, artist: Artist) {
         self.update_meta(&artist);
         let info = artist.get_info();
-        self.update_avatar(info);
+        self.imp().avatar.set_text(Some(&info.name));
+        self.update_avatar(
+            self
+                .imp()
+                .cache
+                .get()
+                .unwrap()
+                .clone()
+                .load_cached_artist_avatar(info, true)
+                .as_ref()
+        );
 
         let name_label = self.imp().name.get();
         let mut bindings = self.imp().bindings.borrow_mut();

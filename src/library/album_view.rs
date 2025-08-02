@@ -517,6 +517,7 @@ impl AlbumView {
     }
 
     fn setup_gridview(&self, cache: Rc<Cache>) {
+        let settings = settings_manager().child("ui");
         // Setup search bar
         let album_list = self.imp().library.get().unwrap().albums();
         let search_bar = self.imp().search_bar.get();
@@ -540,7 +541,15 @@ impl AlbumView {
         sort_model.set_incremental(true);
         let sel_model = SingleSelection::new(Some(sort_model));
 
-        self.imp().grid_view.set_model(Some(&sel_model));
+        let grid_view = self.imp().grid_view.get();
+        grid_view.set_model(Some(&sel_model));
+        settings
+            .bind(
+                "max-columns",
+                &grid_view,
+                "max-columns"
+            )
+            .build();
 
         // Set up factory
         let factory = SignalListItemFactory::new();

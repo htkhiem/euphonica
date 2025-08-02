@@ -128,8 +128,6 @@
                       <object class="GtkGridView" id="grid_view">
                         <property name="orientation">1</property>
                         <property name="min-columns">1</property>
-                        <!-- Allow any (reasonable) number of columns, don't know why GTK defaults to 7-->
-                        <property name="max-columns">9999</property>
                         <property name="single-click-activate">true</property>
                         <style>
                           <class name="no-bg"/>

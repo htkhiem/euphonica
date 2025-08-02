@@ -443,18 +443,17 @@ impl PlayerPane {
             ),
         );
 
-        self.update_album_art(player.current_song_cover(false));
-        player.connect_notify_local(
-            Some("album-art"),
-            clone!(
-                #[weak(rename_to = this)]
+        self.update_album_art(player.current_song_cover());
+        player.connect_closure(
+            "cover-changed",
+            false,
+            closure_local!(
+                #[strong(rename_to = this)]
                 self,
-                #[weak]
-                player,
-                move |_, _| {
-                    this.update_album_art(player.current_song_cover(false));
+                move |_: Player, tex: Option<gdk::Texture>| {
+                    this.update_album_art(tex);
                 }
-            ),
+            )
         );
 
         imp.prev_output.connect_clicked(clone!(

@@ -9,6 +9,22 @@
       <object class="AdwPreferencesGroup">
         <property name="title" translatable="true">General</property>
         <child>
+          <object class="AdwSpinRow" id="max_columns">
+            <property name="title" translatable="true">Maximum number of grid columns</property>
+            <property name="subtitle" translatable="true">Higher settings will impact performance.</property>
+            <property name="digits">0</property>
+            <property name="adjustment">
+              <object class="GtkAdjustment">
+                <property name="lower">1</property>
+                <property name="upper">15</property>
+                <property name="value">7</property>
+                <property name="page-increment">1</property>
+                <property name="step-increment">2</property>
+              </object>
+            </property>
+          </object>
+        </child>
+        <child>
           <object class="AdwSwitchRow" id="auto_accent">
             <property name="title" translatable="true">Recolour accent to album art</property>
           </object>

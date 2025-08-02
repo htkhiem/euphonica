@@ -219,7 +219,6 @@
 		</key>
 		<key name="visualizer-spectrum-curr-step-weight" type="d">
 			<default>0.09</default>
-
 		</key>
 	</schema>
 
@@ -272,6 +271,9 @@
 		</key>
 		<key name="title-wrap-mode" enum='io.github.htkhiem.Euphonica.titlewrapmode'>
 			<default>'ellipsis'</default>
+		</key>
+		<key name="max-columns" type="u">
+			<default>7</default>
 		</key>
 	</schema>
 

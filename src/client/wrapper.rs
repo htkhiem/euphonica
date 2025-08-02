@@ -38,6 +38,7 @@ use crate::{
 
 use super::state::{ClientState, ConnectionState, StickersSupportLevel};
 use super::stream::StreamWrapper;
+use super::ClientError;
 
 const BATCH_SIZE: u32 = 1024;
 const FETCH_LIMIT: usize = 10000000; // Fetch at most ten million songs at once (same
@@ -129,6 +130,7 @@ pub enum BackgroundTask {
 mod background {
     use std::ops::Range;
 
+    use gtk::gdk;
     use time::OffsetDateTime;
 
     use crate::{cache::sqlite, utils::strip_filename_linux};
@@ -155,7 +157,7 @@ mod background {
         // in case the folder has been deleted, only thumbnail records in the SQLite DB will be
         // dropped. Checking with thumbnail=true will still return a path even though that
         // path has already been deleted, preventing downloading from proceeding.
-        let folder_path = sqlite::find_image_by_key(&folder_uri, true).expect("Sqlite DB error");
+        let folder_path = sqlite::find_cover_by_key(&folder_uri, true).expect("Sqlite DB error");
         if folder_path.is_none() {
             if let Some(dyn_img) = client
                 .albumart(&folder_uri)
@@ -167,14 +169,19 @@ mod background {
                      .expect(&format!("Couldn't save downloaded cover to {:?}", &path));
                 thumb.save(&thumbnail_path)
                      .expect(&format!("Couldn't save downloaded thumbnail cover to {:?}", &thumbnail_path));
-                let _ = sqlite::register_image_key(
+                sqlite::register_cover_key(
                     &folder_uri, Some(path.file_name().unwrap().to_str().unwrap()), false
-                );
-                let _ = sqlite::register_image_key(
+                ).join().unwrap().expect("Sqlite DB error");
+                sqlite::register_cover_key(
                     &folder_uri, Some(thumbnail_path.file_name().unwrap().to_str().unwrap()), true
-                );
+                ).join().unwrap().expect("Sqlite DB error");
+                let hires_tex = gdk::Texture::from_filename(&path).unwrap();
+                let thumb_tex = gdk::Texture::from_filename(&thumbnail_path).unwrap();
                 sender_to_cache
-                    .send_blocking(ProviderMessage::CoverAvailable(folder_uri))
+                    .send_blocking(ProviderMessage::CoverAvailable(folder_uri.clone(), false, hires_tex))
+                    .expect("Cannot notify main cache of folder cover download result.");
+                sender_to_cache
+                    .send_blocking(ProviderMessage::CoverAvailable(folder_uri, true, thumb_tex))
                     .expect("Cannot notify main cache of folder cover download result.");
                 return;
             } // No folder-level art was available. Proceed to actually fetch embedded art.
@@ -184,7 +191,7 @@ mod background {
         }
         // Re-check in case previous iterations have already downloaded these.
         let uri = key.uri.to_owned();
-        if sqlite::find_image_by_key(&uri, true).expect("Sqlite DB error").is_none() {
+        if sqlite::find_cover_by_key(&uri, true).expect("Sqlite DB error").is_none() {
             if let Some(dyn_img) = client
                 .readpicture(&uri)
                 .map_or(None, |bytes| utils::read_image_from_bytes(bytes))
@@ -195,15 +202,20 @@ mod background {
                      .expect(&format!("Couldn't save downloaded cover to {:?}", &path));
                 thumb.save(&thumbnail_path)
                      .expect(&format!("Couldn't save downloaded thumbnail cover to {:?}", &thumbnail_path));
-                let _ = sqlite::register_image_key(
+                sqlite::register_cover_key(
                     &uri, Some(path.file_name().unwrap().to_str().unwrap()), false
-                );
-                let _ = sqlite::register_image_key(
+                ).join().unwrap().expect("Sqlite DB error");
+                sqlite::register_cover_key(
                     &uri, Some(thumbnail_path.file_name().unwrap().to_str().unwrap()), true
-                );
+                ).join().unwrap().expect("Sqlite DB error");
+                let hires_tex = gdk::Texture::from_filename(&path).unwrap();
+                let thumb_tex = gdk::Texture::from_filename(&thumbnail_path).unwrap();
                 sender_to_cache
-                    .send_blocking(ProviderMessage::CoverAvailable(uri))
-                    .expect("Cannot notify main cache of embedded cover download result.");
+                    .send_blocking(ProviderMessage::CoverAvailable(uri.clone(), false, hires_tex))
+                    .expect("Cannot notify main cache of folder cover download result.");
+                sender_to_cache
+                    .send_blocking(ProviderMessage::CoverAvailable(uri, true, thumb_tex))
+                    .expect("Cannot notify main cache of folder cover download result.");
                 return;
             }
             if let Some(album) = &key.album {
@@ -232,7 +244,7 @@ mod background {
         key: AlbumInfo
     ) {
         // Re-check in case previous iterations have already downloaded these.
-        if sqlite::find_image_by_key(&key.folder_uri, true).expect("Sqlite DB error").is_none() {
+        if sqlite::find_cover_by_key(&key.folder_uri, true).expect("Sqlite DB error").is_none() {
             if let Some(dyn_img) = client
                 .albumart(&key.folder_uri)
                 .map_or(None, |bytes| utils::read_image_from_bytes(bytes))
@@ -243,14 +255,19 @@ mod background {
                      .expect(&format!("Couldn't save downloaded cover to {:?}", &path));
                 thumb.save(&thumbnail_path)
                      .expect(&format!("Couldn't save downloaded thumbnail cover to {:?}", &thumbnail_path));
-                let _ = sqlite::register_image_key(
+                sqlite::register_cover_key(
                     &key.folder_uri, Some(path.file_name().unwrap().to_str().unwrap()), false
-                );
-                let _ = sqlite::register_image_key(
+                ).join().unwrap().expect("Sqlite DB error");
+                sqlite::register_cover_key(
                     &key.folder_uri, Some(thumbnail_path.file_name().unwrap().to_str().unwrap()), true
-                );
+                ).join().unwrap().expect("Sqlite DB error");
+                let hires_tex = gdk::Texture::from_filename(&path).unwrap();
+                let thumb_tex = gdk::Texture::from_filename(&thumbnail_path).unwrap();
                 sender_to_cache
-                    .send_blocking(ProviderMessage::CoverAvailable(key.folder_uri))
+                    .send_blocking(ProviderMessage::CoverAvailable(key.folder_uri.clone(), false, hires_tex))
+                    .expect("Cannot notify main cache of folder cover download result.");
+                sender_to_cache
+                    .send_blocking(ProviderMessage::CoverAvailable(key.folder_uri, true, thumb_tex))
                     .expect("Cannot notify main cache of folder cover download result.");
             } else {
                 sender_to_cache
@@ -1005,7 +1022,9 @@ impl MpdWrapper {
                 let _ = client.findadd(Query::new().and(Term::Base, uri));
 
             } else {
-                let _ = client.push(uri);
+                if client.push(uri).is_err() {
+                    self.state.emit_error(ClientError::QueueError);
+                }
             }
             self.force_idle();
         }
@@ -1013,7 +1032,9 @@ impl MpdWrapper {
 
     pub fn add_multi(&self, uris: &[String]) {
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
-            client.push_multiple(uris).expect("Could not add multiple songs into queue");
+            if client.push_multiple(uris).is_err() {
+                self.state.emit_error(ClientError::QueueError);
+            }
             self.force_idle();
         }
     }
@@ -1021,7 +1042,9 @@ impl MpdWrapper {
     pub fn insert_multi(&self, uris: &[String], pos: usize) {
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
             
-            client.insert_multiple(uris, pos).expect("Could not add multiple songs into queue");
+            if client.insert_multiple(uris, pos).is_err() {
+                self.state.emit_error(ClientError::QueueError);
+            }
             self.force_idle();
         }
     }
@@ -1535,7 +1558,9 @@ impl MpdWrapper {
             // for term in terms.into_iter() {
             //     query.and(term.0.into(), term.1);
             // }
-            client.findadd(&query).expect("Failed to run query!");
+            if client.findadd(&query).is_err() {
+                self.state.emit_error(ClientError::QueueError);
+            }
             self.force_idle();
         }
     }

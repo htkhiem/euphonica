@@ -1,5 +1,5 @@
 extern crate bson;
-use gtk::prelude::*;
+use gtk::{prelude::*, gdk};
 use std::{thread, time::Duration};
 
 use crate::{common::{AlbumInfo, ArtistInfo, SongInfo}, utils::settings_manager};
@@ -16,10 +16,10 @@ pub fn sleep_after_request() {
 /// Enum for communication with provider threads from the cache controller living on the main thread.
 /// Can be used for both request and response.
 pub enum ProviderMessage {
-    ClearFolderCover(String),
+    FolderCoverCleared(String),
     // EmbeddedCover(SongInfo),
     FolderCover(AlbumInfo), // Pass through the fallback parameter
-    CoverAvailable(String), // URI can be track or folder
+    CoverAvailable(String, bool, gdk::Texture), // URI (can be track or folder), is_thumbnail, the texture itself
     /// Negative responses (currently only used by MpdWrapper)
     CoverNotAvailable(String), // URI can be track or folder
     FallbackToFolderCover(AlbumInfo),
@@ -27,10 +27,10 @@ pub enum ProviderMessage {
     FetchFolderCoverExternally(AlbumInfo), // Pass through the fallback parameter
     AlbumMeta(AlbumInfo),
     AlbumMetaAvailable(String), // Only return URI
-    ClearArtistAvatar(String), // Only need name
+    ArtistAvatarCleared(String), // Only need name
     /// Both request and positive response
     ArtistAvatar(ArtistInfo), // With cache basepath
-    ArtistAvatarAvailable(String), // Name
+    ArtistAvatarAvailable(String, bool, gdk::Texture), // Name, is_thumbnail, the texture itself
     /// Both request and positive response. Includes downloading artist avatar.
     ArtistMeta(ArtistInfo), // With cache basepath (for passthrough to artist avatar)
     ArtistMetaAvailable(String), // Only return name
