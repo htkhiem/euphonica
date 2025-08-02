@@ -840,15 +840,16 @@ impl EuphonicaWindow {
             )
         );
 
-        player.connect_notify_local(
-            Some("album-art"),
-            clone!(
+        player.connect_closure(
+            "cover-changed",
+            false,
+            closure_local!(
                 #[weak(rename_to = this)]
                 win,
-                move |_, _| {
+                move |_: Player, _: Option<gdk::Texture>| {
                     this.queue_new_background();
                 }
-            ),
+            )
         );
         let _ = win.imp().player.set(player);
 
