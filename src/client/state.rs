@@ -31,6 +31,13 @@ pub enum StickersSupportLevel {
     All // MPD 0.24+ also supports attaching stickers to tags
 }
 
+#[non_exhaustive]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, glib::Enum)]
+#[enum_type(name = "EuphonicaClientError")]
+pub enum ClientError {
+    QueueError
+}
+
 mod imp {
     use glib::{ParamSpec, ParamSpecBoolean, ParamSpecEnum};
 
@@ -159,6 +166,11 @@ mod imp {
                             BoxedAnyObject::static_type(), // Vec<Song>
                         ])
                         .build(),
+                    Signal::builder("client-error")
+                        .param_types([
+                            ClientError::static_type()
+                        ])
+                        .build()
                 ]
             })
         }
@@ -206,6 +218,10 @@ impl ClientState {
     pub fn emit_boxed_result<T: 'static>(&self, signal_name: &str, to_box: T) {
         // T must be owned or static
         self.emit_by_name::<()>(signal_name, &[&BoxedAnyObject::new(to_box)]);
+    }
+
+    pub fn emit_error(&self, err: ClientError) {
+        self.emit_by_name::<()>("client-error", &[&err]);
     }
 
     pub fn get_stickers_support_level(&self) -> StickersSupportLevel {

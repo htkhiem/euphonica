@@ -20,7 +20,7 @@
 
 use crate::{
     application::EuphonicaApplication,
-    client::{ClientState, ConnectionState},
+    client::{ClientError, ClientState, ConnectionState},
     common::{blend_mode::*, paintables::FadePaintable, Album, Artist},
     library::{AlbumView, ArtistContentView, ArtistView, FolderView, PlaylistView, RecentView},
     player::{Player, PlayerBar, QueueView},
@@ -1031,6 +1031,15 @@ impl EuphonicaWindow {
                     "Your MPD instance requires a password, but Euphonica could not access your default credential store to retrieve it. Please ensure that it has been unlocked before starting Euphonica.",
                     false
                 );
+            }
+            _ => {}
+        }
+    }
+
+    pub fn handle_client_error(&self, err: ClientError) {
+        match err {
+            ClientError::QueueError => {
+                self.send_simple_toast("Some songs could not be queued", 3);
             }
             _ => {}
         }

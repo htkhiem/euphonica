@@ -38,6 +38,7 @@ use crate::{
 
 use super::state::{ClientState, ConnectionState, StickersSupportLevel};
 use super::stream::StreamWrapper;
+use super::ClientError;
 
 const BATCH_SIZE: u32 = 1024;
 const FETCH_LIMIT: usize = 10000000; // Fetch at most ten million songs at once (same
@@ -1021,7 +1022,9 @@ impl MpdWrapper {
                 let _ = client.findadd(Query::new().and(Term::Base, uri));
 
             } else {
-                let _ = client.push(uri);
+                if client.push(uri).is_err() {
+                    self.state.emit_error(ClientError::QueueError);
+                }
             }
             self.force_idle();
         }
@@ -1029,7 +1032,9 @@ impl MpdWrapper {
 
     pub fn add_multi(&self, uris: &[String]) {
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
-            client.push_multiple(uris).expect("Could not add multiple songs into queue");
+            if client.push_multiple(uris).is_err() {
+                self.state.emit_error(ClientError::QueueError);
+            }
             self.force_idle();
         }
     }
@@ -1037,7 +1042,9 @@ impl MpdWrapper {
     pub fn insert_multi(&self, uris: &[String], pos: usize) {
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
             
-            client.insert_multiple(uris, pos).expect("Could not add multiple songs into queue");
+            if client.insert_multiple(uris, pos).is_err() {
+                self.state.emit_error(ClientError::QueueError);
+            }
             self.force_idle();
         }
     }
@@ -1551,7 +1558,9 @@ impl MpdWrapper {
             // for term in terms.into_iter() {
             //     query.and(term.0.into(), term.1);
             // }
-            client.findadd(&query).expect("Failed to run query!");
+            if client.findadd(&query).is_err() {
+                self.state.emit_error(ClientError::QueueError);
+            }
             self.force_idle();
         }
     }
