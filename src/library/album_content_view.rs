@@ -688,6 +688,7 @@ impl AlbumContentView {
             .cache
             .get()
             .unwrap()
+            .clone()
             .load_cached_folder_cover(info, false, true) {
                 self.imp().cover.set_paintable(Some(&tex));
                 self.imp().cover_source.set(

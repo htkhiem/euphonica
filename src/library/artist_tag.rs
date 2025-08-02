@@ -172,6 +172,7 @@ impl ArtistTag {
                 .cache
                 .get()
                 .unwrap()
+                .clone()
                 .load_cached_artist_avatar(info, false)
                 .as_ref(),
         );

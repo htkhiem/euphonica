@@ -500,13 +500,18 @@ pub fn write_lyrics(song: &SongInfo, lyrics: &Lyrics) -> Result<(), Error> {
     Ok(())
 }
 
-pub fn find_image_by_key(key: &str, is_thumbnail: bool) -> Result<Option<String>, Error> {
+fn find_image_by_key(key: &str, prefix: Option<&str>, is_thumbnail: bool) -> Result<Option<String>, Error> {
     let query: Result<String, SqliteError>;
     let conn = SQLITE_POOL.get().unwrap();
+    let final_key = if let Some(prefix) = prefix {
+        &format!("{prefix}:{key}")
+    } else {
+        key
+    };
     query = conn
         .prepare("select filename from images where key = ?1 and is_thumbnail = ?2")
         .unwrap()
-        .query_row(params![key, is_thumbnail as i32], |r| {
+        .query_row(params![final_key, is_thumbnail as i32], |r| {
             Ok(r.get::<usize, String>(0)?)
         });
     match query {
@@ -522,13 +527,21 @@ pub fn find_image_by_key(key: &str, is_thumbnail: bool) -> Result<Option<String>
     }
 }
 
+pub fn find_cover_by_key(key: &str, is_thumbnail: bool) -> Result<Option<String>, Error> {
+    find_image_by_key(key, None, is_thumbnail)
+}
+
+pub fn find_avatar_by_key(key: &str, is_thumbnail: bool) -> Result<Option<String>, Error> {
+    find_image_by_key(key, Some("avatar"), is_thumbnail)
+}
+
 /// Convenience wrapper for looking up covers. Automatically falls back to folder-level cover if possible.
 pub fn find_cover_by_uri(track_uri: &str, is_thumbnail: bool) -> Result<Option<String>, Error> {
-    if let Some(filename) = find_image_by_key(track_uri, is_thumbnail)? {
+    if let Some(filename) = find_image_by_key(track_uri, None, is_thumbnail)? {
         Ok(Some(filename))
     } else {
         let folder_uri = strip_filename_linux(track_uri);
-        if let Some(filename) = find_image_by_key(folder_uri, is_thumbnail)? {
+        if let Some(filename) = find_image_by_key(folder_uri, None, is_thumbnail)? {
             Ok(Some(filename))
         } else {
             Ok(None)
@@ -536,10 +549,11 @@ pub fn find_cover_by_uri(track_uri: &str, is_thumbnail: bool) -> Result<Option<S
     }
 }
 
-pub fn register_image_key(
+fn register_image_key(
     key: &str,
+    prefix: Option<&str>,
     filename: Option<&str>,
-    is_thumbnail: bool,
+    is_thumbnail: bool
 ) -> Result<(), Error> {
     let mut conn = SQLITE_POOL.get().unwrap();
     let tx = conn.transaction().map_err(|e| Error::DbError(e))?;
@@ -548,10 +562,15 @@ pub fn register_image_key(
         params![key, is_thumbnail as i32],
     )
     .map_err(|e| Error::DbError(e))?;
+    let final_key = if let Some(prefix) = prefix {
+        &format!("{prefix}:{key}")
+    } else {
+        key
+    };
     tx.execute(
         "insert into images (key, is_thumbnail, filename, last_modified) values (?1,?2,?3,?4)",
         params![
-            key,
+            final_key,
             is_thumbnail as i32,
             // Callers should interpret empty names as "tried but didn't find anything, don't try again"
             if let Some(filename) = filename {
@@ -567,16 +586,53 @@ pub fn register_image_key(
     Ok(())
 }
 
-pub fn unregister_image_key(key: &str, is_thumbnail: bool) -> Result<(), Error> {
+pub fn register_cover_key(
+    key: &str,
+    filename: Option<&str>,
+    is_thumbnail: bool,
+) -> Result<(), Error> {
+    register_image_key(
+        key, None, filename, is_thumbnail
+    )
+}
+
+pub fn register_avatar_key(
+    key: &str,
+    filename: Option<&str>,
+    is_thumbnail: bool,
+) -> Result<(), Error> {
+    register_image_key(
+        key, Some("avatar"), filename, is_thumbnail
+    )
+}
+
+fn unregister_image_key(
+    key: &str,
+    prefix: Option<&str>,
+    is_thumbnail: bool
+) -> Result<(), Error> {
     let mut conn = SQLITE_POOL.get().unwrap();
     let tx = conn.transaction().map_err(|e| Error::DbError(e))?;
+    let final_key = if let Some(prefix) = prefix {
+        &format!("{prefix}:{key}")
+    } else {
+        key
+    };
     tx.execute(
         "delete from images where key = ?1 and is_thumbnail = ?2",
-        params![key, is_thumbnail as i32],
+        params![final_key, is_thumbnail as i32],
     )
     .map_err(|e| Error::DbError(e))?;
     tx.commit().map_err(|e| Error::DbError(e))?;
     Ok(())
+}
+
+pub fn unregister_cover_key(key: &str, is_thumbnail: bool) -> Result<(), Error> {
+    unregister_image_key(key, None, is_thumbnail)
+}
+
+pub fn unregister_avatar_key(key: &str, is_thumbnail: bool) -> Result<(), Error> {
+    unregister_image_key(key, Some("avatar"), is_thumbnail)
 }
 
 pub fn add_to_history(song: &SongInfo) -> Result<(), Error> {

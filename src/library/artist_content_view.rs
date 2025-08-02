@@ -690,6 +690,7 @@ impl ArtistContentView {
                 .cache
                 .get()
                 .unwrap()
+                .clone()
                 .load_cached_artist_avatar(info, true)
                 .as_ref()
         );

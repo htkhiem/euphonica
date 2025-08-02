@@ -999,7 +999,14 @@ impl Player {
                 self.notify("album");
                 // Get album art. Start with CoverSource::Unknown.
                 // We might also get an asynchronous reply later via a cache state signal.
-                if let Some((tex, is_fallback)) = self.imp().cache.get().unwrap().load_cached_embedded_cover(new_song.get_info(), false, true) {
+                if let Some((tex, is_fallback)) = self
+                    .imp()
+                    .cache
+                    .get()
+                    .unwrap()
+                    .clone()
+                    .load_cached_embedded_cover(new_song.get_info(), false, true)
+                {
                     self.imp().cover_source.set(if is_fallback {CoverSource::Folder} else {CoverSource::Embedded});
                     self.emit_by_name::<()>("cover-changed", &[&Some(tex)]);
                 }
@@ -1244,7 +1251,7 @@ impl Player {
         if let Some(cache) = self.imp().cache.get() {
             if let Some(song) = self.imp().current_song.borrow().as_ref() {
                 // Do not schedule again (already done once in update_status)
-                return cache.load_cached_embedded_cover(song.get_info(), false, false).map(|pair| pair.0);
+                return cache.clone().load_cached_embedded_cover(song.get_info(), false, false).map(|pair| pair.0);
             }
             return None;
         }

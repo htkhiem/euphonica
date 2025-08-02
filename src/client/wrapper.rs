@@ -156,7 +156,7 @@ mod background {
         // in case the folder has been deleted, only thumbnail records in the SQLite DB will be
         // dropped. Checking with thumbnail=true will still return a path even though that
         // path has already been deleted, preventing downloading from proceeding.
-        let folder_path = sqlite::find_image_by_key(&folder_uri, true).expect("Sqlite DB error");
+        let folder_path = sqlite::find_cover_by_key(&folder_uri, true).expect("Sqlite DB error");
         if folder_path.is_none() {
             if let Some(dyn_img) = client
                 .albumart(&folder_uri)
@@ -168,10 +168,10 @@ mod background {
                      .expect(&format!("Couldn't save downloaded cover to {:?}", &path));
                 thumb.save(&thumbnail_path)
                      .expect(&format!("Couldn't save downloaded thumbnail cover to {:?}", &thumbnail_path));
-                let _ = sqlite::register_image_key(
+                let _ = sqlite::register_cover_key(
                     &folder_uri, Some(path.file_name().unwrap().to_str().unwrap()), false
                 );
-                let _ = sqlite::register_image_key(
+                let _ = sqlite::register_cover_key(
                     &folder_uri, Some(thumbnail_path.file_name().unwrap().to_str().unwrap()), true
                 );
                 let hires_tex = gdk::Texture::from_filename(&path).unwrap();
@@ -190,7 +190,7 @@ mod background {
         }
         // Re-check in case previous iterations have already downloaded these.
         let uri = key.uri.to_owned();
-        if sqlite::find_image_by_key(&uri, true).expect("Sqlite DB error").is_none() {
+        if sqlite::find_cover_by_key(&uri, true).expect("Sqlite DB error").is_none() {
             if let Some(dyn_img) = client
                 .readpicture(&uri)
                 .map_or(None, |bytes| utils::read_image_from_bytes(bytes))
@@ -201,10 +201,10 @@ mod background {
                      .expect(&format!("Couldn't save downloaded cover to {:?}", &path));
                 thumb.save(&thumbnail_path)
                      .expect(&format!("Couldn't save downloaded thumbnail cover to {:?}", &thumbnail_path));
-                let _ = sqlite::register_image_key(
+                let _ = sqlite::register_cover_key(
                     &uri, Some(path.file_name().unwrap().to_str().unwrap()), false
                 );
-                let _ = sqlite::register_image_key(
+                let _ = sqlite::register_cover_key(
                     &uri, Some(thumbnail_path.file_name().unwrap().to_str().unwrap()), true
                 );
                 let hires_tex = gdk::Texture::from_filename(&path).unwrap();
@@ -243,7 +243,7 @@ mod background {
         key: AlbumInfo
     ) {
         // Re-check in case previous iterations have already downloaded these.
-        if sqlite::find_image_by_key(&key.folder_uri, true).expect("Sqlite DB error").is_none() {
+        if sqlite::find_cover_by_key(&key.folder_uri, true).expect("Sqlite DB error").is_none() {
             if let Some(dyn_img) = client
                 .albumart(&key.folder_uri)
                 .map_or(None, |bytes| utils::read_image_from_bytes(bytes))
@@ -254,10 +254,10 @@ mod background {
                      .expect(&format!("Couldn't save downloaded cover to {:?}", &path));
                 thumb.save(&thumbnail_path)
                      .expect(&format!("Couldn't save downloaded thumbnail cover to {:?}", &thumbnail_path));
-                let _ = sqlite::register_image_key(
+                let _ = sqlite::register_cover_key(
                     &key.folder_uri, Some(path.file_name().unwrap().to_str().unwrap()), false
                 );
-                let _ = sqlite::register_image_key(
+                let _ = sqlite::register_cover_key(
                     &key.folder_uri, Some(thumbnail_path.file_name().unwrap().to_str().unwrap()), true
                 );
                 let hires_tex = gdk::Texture::from_filename(&path).unwrap();

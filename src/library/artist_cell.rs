@@ -179,6 +179,7 @@ impl ArtistCell {
             .cache
             .get()
             .unwrap()
+            .clone()
             .load_cached_artist_avatar(artist.get_info(), true) {
                 self.imp().avatar.set_custom_image(Some(&tex));
             }

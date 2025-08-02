@@ -326,6 +326,7 @@ impl QueueRow {
             .cache
             .get()
             .unwrap()
+            .clone()
             .load_cached_embedded_cover(info, true, true) {
                 self.imp().thumbnail.set_paintable(Some(&tex));
                 self.imp().thumbnail_source.set(
