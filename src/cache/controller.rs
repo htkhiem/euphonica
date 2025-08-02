@@ -332,7 +332,7 @@ impl Cache {
                     ProviderMessage::CoverNotAvailable(_uri) => {
                         // TODO: use this to implement loading spinners for cover widgets
                     }
-                    ProviderMessage::ClearFolderCover(uri) => {
+                    ProviderMessage::FolderCoverCleared(uri) => {
                         this.on_cover_cleared(&uri);
                     }
                     ProviderMessage::FetchFolderCoverExternally(album) => {
@@ -347,7 +347,7 @@ impl Cache {
                     ProviderMessage::ArtistAvatarAvailable(name, thumb, tex) => {
                         this.on_artist_avatar_downloaded(&name, thumb, &tex)
                     }
-                    ProviderMessage::ClearArtistAvatar(name) => {
+                    ProviderMessage::ArtistAvatarCleared(name) => {
                         this.on_artist_avatar_cleared(&name)
                     }
                     ProviderMessage::LyricsAvailable(key) => {
@@ -439,7 +439,8 @@ impl Cache {
                             } else {
                                 // File no longer exists (maybe user had removed it). Unregister it from DB
                                 // and repeat process.
-                                sqlite::unregister_cover_key(&song.uri, thumbnail).expect("Sqlite DB error");
+                                sqlite::unregister_cover_key(&song.uri, thumbnail)
+                                    .join().unwrap().expect("Sqlite DB error");
                                 println!("Unregistered image. Retrying...");
                                 // Return song info object to facilitate recursive retry
                                 return Some(song);
@@ -491,7 +492,8 @@ impl Cache {
                             } else {
                                 // File no longer exists (maybe user had removed it). Unregister it from DB
                                 // and repeat process.
-                                sqlite::unregister_cover_key(&folder_uri, thumbnail).expect("Sqlite DB error");
+                                sqlite::unregister_cover_key(&folder_uri, thumbnail)
+                                    .join().unwrap().expect("Sqlite DB error");
                                 println!("Unregistered image. Retrying...");
                                 // Return song info object to facilitate recursive retry
                                 return Some(song);
@@ -562,7 +564,8 @@ impl Cache {
                             else {
                                 // File no longer exists (maybe user had removed it). Unregister it from DB
                                 // and repeat process.
-                                sqlite::unregister_cover_key(&folder_uri, thumbnail).expect("Sqlite DB error");
+                                sqlite::unregister_cover_key(&folder_uri, thumbnail)
+                                    .join().unwrap().expect("Sqlite DB error");
                                 return Some(album);
                             }
                         }).map_ok(move |album_to_retry| {
@@ -610,7 +613,8 @@ impl Cache {
                                 } else {
                                     // File no longer exists (maybe user had removed it). Unregister it from DB
                                     // and repeat process.
-                                    sqlite::unregister_cover_key(&uri, thumbnail).expect("Sqlite DB error");
+                                    sqlite::unregister_cover_key(&uri, thumbnail)
+                                        .join().unwrap().expect("Sqlite DB error");
                                     println!("Unregistered image. Retrying...");
                                     return Some(album);
                                 }
@@ -691,18 +695,20 @@ impl Cache {
             if let Some(hires_name) = sqlite::find_cover_by_key(&folder_uri, false).unwrap() {
                 let mut hires_path = get_image_cache_path();
                 hires_path.push(&hires_name);
-                sqlite::unregister_cover_key(&folder_uri, false).expect("Unable to unregister image key");
+                sqlite::unregister_cover_key(&folder_uri, false)
+                    .join().unwrap().expect("Unable to unregister image key");
                 IMAGE_CACHE.lock().unwrap().pop(&hires_name);
                 let _ = std::fs::remove_file(hires_path);
             }
             if let Some(thumb_name) = sqlite::find_cover_by_key(&folder_uri, true).unwrap() {
                 let mut thumb_path = get_image_cache_path();
                 thumb_path.push(&thumb_name);
-                sqlite::unregister_cover_key(&folder_uri, true).expect("Unable to unregister image key");
+                sqlite::unregister_cover_key(&folder_uri, true)
+                    .join().unwrap().expect("Unable to unregister image key");
                 IMAGE_CACHE.lock().unwrap().pop(&thumb_name);
                 let _ = std::fs::remove_file(thumb_path);
             }
-            let _ = fg_sender.send_blocking(ProviderMessage::ClearFolderCover(folder_uri));
+            let _ = fg_sender.send_blocking(ProviderMessage::FolderCoverCleared(folder_uri));
         });
     }
 
@@ -772,7 +778,7 @@ impl Cache {
                 IMAGE_CACHE.lock().unwrap().pop(&thumb_name);
                 let _ = std::fs::remove_file(thumb_path);
             }
-            let _ = fg_sender.send_blocking(ProviderMessage::ClearArtistAvatar(tag));
+            let _ = fg_sender.send_blocking(ProviderMessage::ArtistAvatarCleared(tag));
         });
     }
 
@@ -863,7 +869,8 @@ impl Cache {
                         } else {
                             // File no longer exists (maybe user had removed it). Unregister it from DB
                             // and repeat process.
-                            sqlite::unregister_avatar_key(&artist.name, thumbnail).expect("Sqlite DB error");
+                            sqlite::unregister_avatar_key(&artist.name, thumbnail)
+                                .join().unwrap().expect("Sqlite DB error");
                             println!("Unregistered image. Retrying...");
                             // Return song info object to facilitate recursive retry
                             return Some(artist);

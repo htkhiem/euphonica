@@ -7,6 +7,7 @@ use once_cell::sync::Lazy;
 use r2d2_sqlite::SqliteConnectionManager;
 use rusqlite::{params, Error as SqliteError, Result, Row};
 use time::OffsetDateTime;
+use glib::{ThreadPool, ThreadHandle};
 
 use crate::{
     common::{AlbumInfo, ArtistInfo, SongInfo},
@@ -16,6 +17,11 @@ use crate::{
 
 use super::controller::get_doc_cache_path;
 
+// Limit writes to a single thread to avoid DatabaseBusy races.
+// Thread will be parked when idle.
+static SQLITE_WRITE_THREADPOOL: Lazy<glib::ThreadPool> = Lazy::new(|| {
+    ThreadPool::shared(Some(1)).expect("Failed to spawn Sqlite write threadpool")
+});
 static SQLITE_POOL: Lazy<r2d2::Pool<SqliteConnectionManager>> = Lazy::new(|| {
     let manager = SqliteConnectionManager::file(get_doc_cache_path());
     let pool = r2d2::Pool::new(manager).unwrap();
@@ -404,7 +410,7 @@ pub fn find_artist_meta(artist: &ArtistInfo) -> Result<Option<ArtistMeta>, Error
     }
 }
 
-pub fn write_album_meta(album: &AlbumInfo, meta: &AlbumMeta) -> Result<(), Error> {
+pub async fn write_album_meta(album: &AlbumInfo, meta: &AlbumMeta) -> Result<(), Error> {
     let mut conn = SQLITE_POOL.get().unwrap();
     let tx = conn.transaction().map_err(|e| Error::DbError(e))?;
     if let Some(mbid) = album.mbid.as_deref() {
@@ -550,49 +556,51 @@ pub fn find_cover_by_uri(track_uri: &str, is_thumbnail: bool) -> Result<Option<S
 }
 
 fn register_image_key(
-    key: &str,
-    prefix: Option<&str>,
-    filename: Option<&str>,
+    key: String,
+    prefix: Option<&'static str>,
+    filename: Option<String>,
     is_thumbnail: bool
-) -> Result<(), Error> {
-    let mut conn = SQLITE_POOL.get().unwrap();
-    let tx = conn.transaction().map_err(|e| Error::DbError(e))?;
-    tx.execute(
-        "delete from images where key = ?1 and is_thumbnail = ?2",
-        params![key, is_thumbnail as i32],
-    )
-    .map_err(|e| Error::DbError(e))?;
-    let final_key = if let Some(prefix) = prefix {
-        &format!("{prefix}:{key}")
-    } else {
-        key
-    };
-    tx.execute(
-        "insert into images (key, is_thumbnail, filename, last_modified) values (?1,?2,?3,?4)",
-        params![
-            final_key,
-            is_thumbnail as i32,
-            // Callers should interpret empty names as "tried but didn't find anything, don't try again"
-            if let Some(filename) = filename {
-                filename
-            } else {
-                ""
-            },
-            OffsetDateTime::now_utc()
-        ],
-    )
-    .map_err(|e| Error::DbError(e))?;
-    tx.commit().map_err(|e| Error::DbError(e))?;
-    Ok(())
+) -> ThreadHandle<Result<(), Error>> {
+    SQLITE_WRITE_THREADPOOL.push(move || {
+        let mut conn = SQLITE_POOL.get().unwrap();
+        let tx = conn.transaction().map_err(|e| Error::DbError(e))?;
+        tx.execute(
+            "delete from images where key = ?1 and is_thumbnail = ?2",
+            params![key, is_thumbnail as i32],
+        )
+          .map_err(|e| Error::DbError(e))?;
+        let final_key = if let Some(prefix) = prefix {
+            &format!("{prefix}:{key}")
+        } else {
+            &key
+        };
+        tx.execute(
+            "insert into images (key, is_thumbnail, filename, last_modified) values (?1,?2,?3,?4)",
+            params![
+                final_key,
+                is_thumbnail as i32,
+                // Callers should interpret empty names as "tried but didn't find anything, don't try again"
+                if let Some(filename) = filename {
+                    filename
+                } else {
+                    "".to_owned()
+                },
+                OffsetDateTime::now_utc()
+            ],
+        )
+          .map_err(|e| Error::DbError(e))?;
+        tx.commit().map_err(|e| Error::DbError(e))?;
+        Ok(())
+    }).expect("register_image_key: Failed to schedule transaction with threadpool")
 }
 
 pub fn register_cover_key(
     key: &str,
     filename: Option<&str>,
     is_thumbnail: bool,
-) -> Result<(), Error> {
+) -> ThreadHandle<Result<(), Error>> {
     register_image_key(
-        key, None, filename, is_thumbnail
+        key.to_owned(), None, filename.map(str::to_owned), is_thumbnail
     )
 }
 
@@ -600,39 +608,41 @@ pub fn register_avatar_key(
     key: &str,
     filename: Option<&str>,
     is_thumbnail: bool,
-) -> Result<(), Error> {
+) -> ThreadHandle<Result<(), Error>> {
     register_image_key(
-        key, Some("avatar"), filename, is_thumbnail
+        key.to_owned(), Some("avatar"), filename.map(str::to_owned), is_thumbnail
     )
 }
 
 fn unregister_image_key(
-    key: &str,
-    prefix: Option<&str>,
+    key: String,
+    prefix: Option<&'static str>,
     is_thumbnail: bool
-) -> Result<(), Error> {
-    let mut conn = SQLITE_POOL.get().unwrap();
-    let tx = conn.transaction().map_err(|e| Error::DbError(e))?;
-    let final_key = if let Some(prefix) = prefix {
-        &format!("{prefix}:{key}")
-    } else {
-        key
-    };
-    tx.execute(
-        "delete from images where key = ?1 and is_thumbnail = ?2",
-        params![final_key, is_thumbnail as i32],
-    )
-    .map_err(|e| Error::DbError(e))?;
-    tx.commit().map_err(|e| Error::DbError(e))?;
-    Ok(())
+) -> ThreadHandle<Result<(), Error>> {
+    SQLITE_WRITE_THREADPOOL.push(move || {
+        let mut conn = SQLITE_POOL.get().unwrap();
+        let tx = conn.transaction().map_err(|e| Error::DbError(e))?;
+        let final_key = if let Some(prefix) = prefix {
+            &format!("{prefix}:{key}")
+        } else {
+            &key
+        };
+        tx.execute(
+            "delete from images where key = ?1 and is_thumbnail = ?2",
+            params![final_key, is_thumbnail as i32],
+        )
+          .map_err(|e| Error::DbError(e))?;
+        tx.commit().map_err(|e| Error::DbError(e))?;
+        Ok(())
+    }).expect("register_image_key: Failed to schedule transaction with threadpool")
 }
 
-pub fn unregister_cover_key(key: &str, is_thumbnail: bool) -> Result<(), Error> {
-    unregister_image_key(key, None, is_thumbnail)
+pub fn unregister_cover_key(key: &str, is_thumbnail: bool) -> ThreadHandle<Result<(), Error>> {
+    unregister_image_key(key.to_owned(), None, is_thumbnail)
 }
 
-pub fn unregister_avatar_key(key: &str, is_thumbnail: bool) -> Result<(), Error> {
-    unregister_image_key(key, Some("avatar"), is_thumbnail)
+pub fn unregister_avatar_key(key: &str, is_thumbnail: bool) -> ThreadHandle<Result<(), Error>> {
+    unregister_image_key(key.to_owned(), Some("avatar"), is_thumbnail)
 }
 
 pub fn add_to_history(song: &SongInfo) -> Result<(), Error> {

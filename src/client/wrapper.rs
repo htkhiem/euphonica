@@ -168,12 +168,12 @@ mod background {
                      .expect(&format!("Couldn't save downloaded cover to {:?}", &path));
                 thumb.save(&thumbnail_path)
                      .expect(&format!("Couldn't save downloaded thumbnail cover to {:?}", &thumbnail_path));
-                let _ = sqlite::register_cover_key(
+                sqlite::register_cover_key(
                     &folder_uri, Some(path.file_name().unwrap().to_str().unwrap()), false
-                );
-                let _ = sqlite::register_cover_key(
+                ).join().unwrap().expect("Sqlite DB error");
+                sqlite::register_cover_key(
                     &folder_uri, Some(thumbnail_path.file_name().unwrap().to_str().unwrap()), true
-                );
+                ).join().unwrap().expect("Sqlite DB error");
                 let hires_tex = gdk::Texture::from_filename(&path).unwrap();
                 let thumb_tex = gdk::Texture::from_filename(&thumbnail_path).unwrap();
                 sender_to_cache
@@ -201,12 +201,12 @@ mod background {
                      .expect(&format!("Couldn't save downloaded cover to {:?}", &path));
                 thumb.save(&thumbnail_path)
                      .expect(&format!("Couldn't save downloaded thumbnail cover to {:?}", &thumbnail_path));
-                let _ = sqlite::register_cover_key(
+                sqlite::register_cover_key(
                     &uri, Some(path.file_name().unwrap().to_str().unwrap()), false
-                );
-                let _ = sqlite::register_cover_key(
+                ).join().unwrap().expect("Sqlite DB error");
+                sqlite::register_cover_key(
                     &uri, Some(thumbnail_path.file_name().unwrap().to_str().unwrap()), true
-                );
+                ).join().unwrap().expect("Sqlite DB error");
                 let hires_tex = gdk::Texture::from_filename(&path).unwrap();
                 let thumb_tex = gdk::Texture::from_filename(&thumbnail_path).unwrap();
                 sender_to_cache
@@ -254,12 +254,12 @@ mod background {
                      .expect(&format!("Couldn't save downloaded cover to {:?}", &path));
                 thumb.save(&thumbnail_path)
                      .expect(&format!("Couldn't save downloaded thumbnail cover to {:?}", &thumbnail_path));
-                let _ = sqlite::register_cover_key(
+                sqlite::register_cover_key(
                     &key.folder_uri, Some(path.file_name().unwrap().to_str().unwrap()), false
-                );
-                let _ = sqlite::register_cover_key(
+                ).join().unwrap().expect("Sqlite DB error");
+                sqlite::register_cover_key(
                     &key.folder_uri, Some(thumbnail_path.file_name().unwrap().to_str().unwrap()), true
-                );
+                ).join().unwrap().expect("Sqlite DB error");
                 let hires_tex = gdk::Texture::from_filename(&path).unwrap();
                 let thumb_tex = gdk::Texture::from_filename(&thumbnail_path).unwrap();
                 sender_to_cache
