@@ -37,7 +37,12 @@ static SQLITE_POOL: Lazy<r2d2::Pool<SqliteConnectionManager>> = Lazy::new(|| {
 
         println!("Local metadata DB version: {user_version}");
         match user_version {
-            1 => {break;},
+            2 => {break;},
+            1 => {
+                conn.execute_batch("pragma journal_mode=WAL;
+pragma user_version = 2;"
+                ).expect("Unable to migrate DB version 1 to 2");
+            },
             0 => {
                 // Check if we're starting from nothing
                 match conn.query_row(
@@ -194,7 +199,8 @@ create unique index if not exists `image_key` on `images` (
     `is_thumbnail`
 );
 
-pragma user_version = 1;
+pragma journal_mode=WAL;
+pragma user_version = 2;
 end;
 ").expect("Unable to init metadata SQLite DB");
                     }
