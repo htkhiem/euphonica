@@ -1023,7 +1023,7 @@ impl MpdWrapper {
 
             } else {
                 if client.push(uri).is_err() {
-                    self.state.emit_error(ClientError::QueueError);
+                    self.state.emit_error(ClientError::Queuing);
                 }
             }
             self.force_idle();
@@ -1033,7 +1033,7 @@ impl MpdWrapper {
     pub fn add_multi(&self, uris: &[String]) {
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
             if client.push_multiple(uris).is_err() {
-                self.state.emit_error(ClientError::QueueError);
+                self.state.emit_error(ClientError::Queuing);
             }
             self.force_idle();
         }
@@ -1043,7 +1043,7 @@ impl MpdWrapper {
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
             
             if client.insert_multiple(uris, pos).is_err() {
-                self.state.emit_error(ClientError::QueueError);
+                self.state.emit_error(ClientError::Queuing);
             }
             self.force_idle();
         }
@@ -1192,7 +1192,8 @@ impl MpdWrapper {
                             }
                         }
                         _ => {
-                            // Not handled yet
+                            // Emit to UI
+                            self.state.emit_error(ClientError::Queuing);
                         }
                     }
                     return Err(Some(e));
@@ -1559,7 +1560,7 @@ impl MpdWrapper {
             //     query.and(term.0.into(), term.1);
             // }
             if client.findadd(&query).is_err() {
-                self.state.emit_error(ClientError::QueueError);
+                self.state.emit_error(ClientError::Queuing);
             }
             self.force_idle();
         }

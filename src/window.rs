@@ -813,6 +813,17 @@ impl EuphonicaWindow {
 
         win.queue_new_background();
         client_state.connect_closure(
+            "client-error",
+            false,
+            closure_local!(
+                #[weak(rename_to = this)]
+                win,
+                move |_: ClientState, err: ClientError| {
+                    this.handle_client_error(err);
+                }
+            ),
+        );
+        client_state.connect_closure(
             "idle",
             false,
             closure_local!(
@@ -1038,7 +1049,7 @@ impl EuphonicaWindow {
 
     pub fn handle_client_error(&self, err: ClientError) {
         match err {
-            ClientError::QueueError => {
+            ClientError::Queuing => {
                 self.send_simple_toast("Some songs could not be queued", 3);
             }
             _ => {}

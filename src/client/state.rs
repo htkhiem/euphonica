@@ -35,7 +35,7 @@ pub enum StickersSupportLevel {
 #[derive(Debug, Copy, Clone, PartialEq, Eq, glib::Enum)]
 #[enum_type(name = "EuphonicaClientError")]
 pub enum ClientError {
-    QueueError
+    Queuing
 }
 
 mod imp {
