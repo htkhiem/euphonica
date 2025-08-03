@@ -72,6 +72,14 @@
   </screenshots>
 
   <releases>
+    <release version="0.96.2-beta" date="2025-08-03">
+      <url type="details">https://github.com/htkhiem/euphonica/releases/tag/v0.96.2-beta</url>
+      <description>
+        <p>Fix: Hangups and performance issues on larger libraries.</p>
+        <p>Fix: Crash trying to queue inaccessible song files (will show a toast instead).</p>
+        <p>Fix: Artists and albums with the same names using each other's images. <b>NOTE:</b> existing artist avatars will have to be re-downloaded or set again after this update.</p>
+      </description>
+    </release>
     <release version="0.96.0-beta" date="2025-07-26">
       <url type="details">https://github.com/htkhiem/euphonica/releases/tag/v0.96.0-beta</url>
       <description>
