@@ -7,7 +7,7 @@ use crate::{common::QualityGrade, utils};
 use super::Player;
 
 mod imp {
-    use std::sync::OnceLock;
+    use std::{cell::OnceCell, sync::OnceLock};
 
     use crate::utils::format_secs_as_duration;
     use glib::{subclass::Signal, ParamSpec, ParamSpecDouble};
@@ -18,7 +18,6 @@ mod imp {
     #[derive(Default, CompositeTemplate)]
     #[template(resource = "/io/github/htkhiem/Euphonica/gtk/player/seekbar.ui")]
     pub struct Seekbar {
-        pub position: Cell<f64>,
         #[template_child]
         pub seekbar: TemplateChild<gtk::Scale>,
         #[template_child]
@@ -32,6 +31,7 @@ mod imp {
         #[template_child]
         pub bitrate: TemplateChild<gtk::Label>,
         pub seekbar_clicked: Cell<bool>,
+        pub player: OnceCell<Player>
     }
 
     // The central trait for subclassing a GObject
@@ -58,7 +58,7 @@ mod imp {
             let obj = self.obj();
             // Capture mouse button release action for seekbar
             // Funny story: gtk::Scale has its own GestureClick controller which eats up mouse button events.
-            // Workaround: capture mouse button release event at window level in capture phase, using a bool
+            // Workaround: capture mouse button release event at a higher level in capture phase, using a bool
             // set by the seekbar's change-value signal to determine whether it is related to the seekbar or not.
             let seekbar_gesture = gtk::GestureClick::new();
             seekbar_gesture.set_propagation_phase(gtk::PropagationPhase::Capture);
@@ -68,15 +68,10 @@ mod imp {
                 move |gesture, _, _, _| {
                     gesture.set_state(gtk::EventSequenceState::None); // allow propagating to seekbar
                     if this.seekbar_clicked.get() {
-                        this.obj().emit_by_name::<()>("released", &[]);
+                        if let Some(player) = this.player.get() {
+                            player.send_seek(this.seekbar.value());
+                        }
                         this.seekbar_clicked.replace(false);
-                        // let _ = sender.send_blocking(
-                        //     MpdMessage::SeekCur(
-                        //         this.imp().seekbar.adjustment().value()
-                        //     )
-                        // );
-                        //
-                        // this.maybe_start_polling(player.clone(), sender.clone());
                     }
                 }
             ));
@@ -91,9 +86,7 @@ mod imp {
                     // Only emit this once
                     if !this.seekbar_clicked.get() {
                         let _ = this.seekbar_clicked.replace(true);
-                        this.obj().emit_by_name::<()>("pressed", &[]);
                     }
-                    this.obj().set_position(this.seekbar.adjustment().value());
                     glib::signal::Propagation::Proceed
                 }
             ));
@@ -137,16 +130,6 @@ mod imp {
             }
         }
 
-        fn signals() -> &'static [Signal] {
-            static SIGNALS: OnceLock<Vec<Signal>> = OnceLock::new();
-            SIGNALS.get_or_init(|| {
-                vec![
-                    Signal::builder("pressed").build(),
-                    Signal::builder("released").build(),
-                ]
-            })
-        }
-
         fn set_property(&self, _id: usize, value: &glib::Value, pspec: &ParamSpec) {
             let obj = self.obj();
             match pspec.name() {
@@ -188,18 +171,13 @@ impl Seekbar {
     }
 
     pub fn position(&self) -> f64 {
-        self.imp().position.get()
+        self.imp().seekbar.value()
     }
 
-    /// While the internal position property will always be successfully set, the seekbar
-    /// might still display 0.0 if its duration is less than the new position.
-    /// Upon setting a sufficiently long duration, the stored position property will take
-    /// effect.
+    /// Will have no effect while seekbar is being held by the user
     pub fn set_position(&self, new: f64) {
-        let old = self.imp().position.replace(new);
-        if old != new {
+        if !self.imp().seekbar_clicked.get() {
             self.imp().seekbar.set_value(new);
-            self.notify("position");
         }
     }
 
@@ -209,55 +187,12 @@ impl Seekbar {
 
     pub fn set_duration(&self, new: f64) {
         self.imp().seekbar.set_range(0.0, new);
-        // Re-apply position
-        self.imp().seekbar.set_value(self.imp().position.get());
-        self.notify("duration");
     }
 
     pub fn setup(&self, player: &Player) {
-        self.connect_closure(
-            "pressed",
-            false,
-            closure_local!(
-                #[weak]
-                player,
-                move |_: Seekbar| {
-                    player.block_polling();
-                    player.stop_polling();
-                }
-            ),
-        );
-
-        self.connect_closure(
-            "released",
-            false,
-            closure_local!(
-                #[weak]
-                player,
-                move |_: Self| {
-                    player.unblock_polling();
-                    player.send_seek();
-                    // Player will start polling again on next status update,
-                    // which should be triggered by us seeking.
-                }
-            ),
-        );
-
-        self.set_duration(player.duration() as f64);
-        player.connect_notify_local(
-            Some("duration"),
-            clone!(
-                #[weak(rename_to = this)]
-                self,
-                move |player, _| {
-                    this.set_duration(player.duration() as f64);
-                }
-            ),
-        );
         player
             .bind_property("position", self, "position")
             .sync_create()
-            .bidirectional()
             .build();
 
         player
@@ -281,5 +216,7 @@ impl Seekbar {
             .transform_to(|_, val: u32| Some(utils::format_bitrate(val))) 
             .sync_create()
             .build();
+
+        self.imp().player.set(player.clone());
     }
 }

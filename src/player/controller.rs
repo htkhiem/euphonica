@@ -3,7 +3,7 @@ use crate::{
     application::EuphonicaApplication,
     cache::{get_image_cache_path, sqlite, Cache, CacheState},
     client::{BackgroundTask, ClientState, ConnectionState, MpdWrapper},
-    common::{CoverSource, QualityGrade, Song, SongInfo},
+    common::{CoverSource, QualityGrade, Song},
     config::APPLICATION_ID,
     meta_providers::models::Lyrics,
     player::fft_backends::fifo::FifoFftBackend,
@@ -178,7 +178,7 @@ mod imp {
     use super::*;
     use crate::{application::EuphonicaApplication, common::CoverSource, meta_providers::models::Lyrics};
     use glib::{
-        ParamSpec, ParamSpecBoolean, ParamSpecDouble, ParamSpecEnum, ParamSpecFloat, ParamSpecInt, ParamSpecObject, ParamSpecString, ParamSpecUInt, ParamSpecUInt64
+        ParamSpec, ParamSpecBoolean, ParamSpecDouble, ParamSpecEnum, ParamSpecFloat, ParamSpecInt, ParamSpecString, ParamSpecUInt, ParamSpecUInt64
     };
 
     use once_cell::sync::Lazy;
@@ -212,9 +212,6 @@ mod imp {
         pub cache: OnceCell<Rc<Cache>>,
         // Handle to seekbar polling task
         pub poller_handle: RefCell<Option<glib::JoinHandle<()>>>,
-        // Set this to true to pause polling even if PlaybackState is Playing.
-        // Used by seekbar widgets.
-        pub poll_blocked: Cell<bool>,
         pub mpris_server: AsyncOnceCell<LocalServer<super::Player>>,
         pub mpris_enabled: Cell<bool>,
         pub app: OnceCell<EuphonicaApplication>,
@@ -263,7 +260,6 @@ mod imp {
                 cache: OnceCell::new(),
                 volume: Cell::new(0),
                 poller_handle: RefCell::new(None),
-                poll_blocked: Cell::new(false),
                 mpris_server: AsyncOnceCell::new(),
                 mpris_enabled: Cell::new(false),
                 app: OnceCell::new(),
@@ -1334,9 +1330,8 @@ impl Player {
     }
 
     /// Seek to current position. Called when the seekbar is released.
-    pub fn send_seek(&self) {
-        self.client().seek_current_song(self.position());
-
+    pub fn send_seek(&self, new_pos: f64) {
+        self.client().seek_current_song(new_pos);
     }
 
     pub fn queue(&self) -> gio::ListStore {
@@ -1488,7 +1483,7 @@ impl Player {
     pub fn maybe_start_polling(&self) {
         let this = self.clone();
         let client = self.client().clone();
-        if self.imp().poller_handle.borrow().is_none() && !self.imp().poll_blocked.get() {
+        if self.imp().poller_handle.borrow().is_none() {
             let poller_handle = glib::MainContext::default().spawn_local(async move {
                 loop {
                     // Don't poll if not playing
@@ -1501,8 +1496,6 @@ impl Player {
                 }
             });
             self.imp().poller_handle.replace(Some(poller_handle));
-        } else if self.imp().poll_blocked.get() {
-            println!("Polling blocked");
         }
     }
 
@@ -1511,14 +1504,6 @@ impl Player {
         if let Some(handle) = self.imp().poller_handle.take() {
             handle.abort();
         }
-    }
-
-    pub fn block_polling(&self) {
-        let _ = self.imp().poll_blocked.replace(true);
-    }
-
-    pub fn unblock_polling(&self) {
-        let _ = self.imp().poll_blocked.replace(false);
     }
 
     pub fn export_lyrics(&self) -> Option<String> {
@@ -1639,8 +1624,7 @@ impl LocalPlayerInterface for Player {
     async fn seek(&self, offset: Time) -> fdo::Result<()> {
         let curr_pos = self.imp().position.get();
         let new_pos = curr_pos + (offset.as_millis() as f64 / 1000.0);
-        let _ = self.imp().position.replace(new_pos);
-        self.send_seek();
+        self.send_seek(new_pos);
         Ok(())
     }
 
@@ -1649,11 +1633,7 @@ impl LocalPlayerInterface for Player {
     async fn set_position(&self, track_id: TrackId, position: Time) -> fdo::Result<()> {
         if let Some(song) = self.imp().current_song.borrow().as_ref() {
             if track_id.as_str().split("/").last().unwrap() == &song.get_queue_id().to_string() {
-                let _ = self
-                    .imp()
-                    .position
-                    .replace(position.as_millis() as f64 / 1000.0);
-                self.send_seek();
+                self.send_seek(position.as_millis() as f64 / 1000.0);
                 return Ok(());
             }
             return Err(fdo::Error::Failed("Song has already changed".to_owned()));

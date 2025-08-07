@@ -1490,6 +1490,7 @@ impl MpdWrapper {
     }
 
     pub fn get_current_queue(&self) -> Option<Vec<Song>> {
+        // TODO: move to background thread with batched reads
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
             if let Ok(mut queue) = client.queue() {
                 return Some(
