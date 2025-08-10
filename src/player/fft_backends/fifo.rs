@@ -1,25 +1,53 @@
 use gio::{self, prelude::*};
+use glib::{subclass::prelude::*, clone};
 use std::{
-    cell::RefCell, str::FromStr, sync::{Arc, Mutex, RwLock}, thread, time::Duration
+    cell::RefCell, str::FromStr, sync::{atomic::{AtomicBool, Ordering}, Arc, Mutex}, thread, time::Duration
 };
 
 use mpd::status::AudioFormat;
 
-use crate::utils::settings_manager;
-use super::backend::{FftStatus, FftBackend};
+use crate::{player::Player, utils::settings_manager};
+use super::backend::{FftBackendImpl, FftStatus, FftBackendExt};
 
-#[derive(Default, Debug)]
+#[derive(Debug)]
 pub struct FifoFftBackend {
-    fft_status: Arc<RwLock<FftStatus>>,
-    fft_handle: RefCell<Option<gio::JoinHandle<()>>>
+    fft_handle: RefCell<Option<gio::JoinHandle<()>>>,
+    fg_handle: RefCell<Option<glib::JoinHandle<()>>>,
+    player: Player,
+    stop_flag: Arc<AtomicBool>
 }
 
-impl FftBackend for FifoFftBackend {
+impl FifoFftBackend {
+    pub fn new(player: Player) -> Self {
+        Self {
+            fft_handle: RefCell::default(),
+            fg_handle: RefCell::default(),
+            player,
+            stop_flag: Arc::new(AtomicBool::new(false))
+        }
+    }
+}
+
+impl FftBackendImpl for FifoFftBackend {
+    fn player(&self) -> &Player {
+        &self.player
+    }
+
+    /// FIFO backend does not make use of runtime configuration
+    fn get_param(&self, _key: &str) -> Option<glib::Variant> {
+        None
+    }
+
+    /// FIFO backend does not make use of runtime configuration
+    fn set_param(&self, _key: &str, _val: glib::Variant) {}
+
     fn start(&self, output: Arc<Mutex<(Vec<f32>, Vec<f32>)>>) -> Result<(), ()> {
-        let curr_status: FftStatus = *self.fft_status.read().unwrap();
+        self.stop_flag.store(false, Ordering::Relaxed);
+        let curr_status = self.status();
         println!("Current status: {:?}", curr_status);
         if curr_status != FftStatus::Reading && curr_status != FftStatus::Stopping {
-            let fft_status = self.fft_status.clone();
+            let stop_flag = self.stop_flag.clone();
+            let (sender, receiver) = async_channel::unbounded::<FftStatus>();
             let fft_handle = gio::spawn_blocking(move || {
                 println!("Starting FIFO backend");
                 let settings = settings_manager();
@@ -41,6 +69,7 @@ impl FftBackend for FifoFftBackend {
                         let mut fft_buf_right: Vec<f32> = vec![0.0; n_samples];
                         let mut curr_step_left: Vec<f32> = vec![0.0; n_bins];
                         let mut curr_step_right: Vec<f32> = vec![0.0; n_bins];
+                        let mut was_reading: bool = false;
                         'outer: loop {
                             // These should be applied on-the-fly
                             let bin_mode =
@@ -111,9 +140,10 @@ impl FftBackend for FifoFftBackend {
                                 }
                                 Err(e) => match e.kind() {
                                     std::io::ErrorKind::UnexpectedEof
-                                    | std::io::ErrorKind::WouldBlock => {
-                                        *fft_status.write().unwrap() = FftStatus::ValidNotReading;
-                                    }
+                                        | std::io::ErrorKind::WouldBlock => {
+                                            was_reading = false;
+                                            sender.send_blocking(FftStatus::ValidNotReading);
+                                        }
                                     _ => {
                                         println!("FFT ERR: {:?}", &e);
                                         break 'outer;
@@ -122,12 +152,12 @@ impl FftBackend for FifoFftBackend {
                             }
                             // Placed here such that we can use the first iteration to verify
                             // that the settings are correct.
-                            let curr_status = *fft_status.read().unwrap();
-                            if curr_status == FftStatus::Stopping {
+                            if stop_flag.load(Ordering::Relaxed) {
                                 println!("Stopping thread...");
                                 return;
-                            } else if curr_status != FftStatus::Reading {
-                                *fft_status.write().unwrap() = FftStatus::Reading;
+                            } else if !was_reading {
+                                was_reading = true;
+                                sender.send_blocking(FftStatus::Reading);
                             }
                             thread::sleep(Duration::from_millis((1000.0 / fps).floor() as u64));
                         }
@@ -135,9 +165,27 @@ impl FftBackend for FifoFftBackend {
                 }
                 // All graceful thread shutdowns are inside the loop. If we've reached here then
                 // it's an error.
-                *fft_status.write().unwrap() = FftStatus::Invalid;
+                sender.send_blocking(FftStatus::Invalid);
             });
             self.fft_handle.replace(Some(fft_handle));
+
+            let player = self.player();
+            if let Some(old_handle) = self.fg_handle.replace(Some(glib::MainContext::default().spawn_local(clone!(
+                #[weak]
+                player,
+                async move {
+                    use futures::prelude::*;
+                    // Allow receiver to be mutated, but keep it at the same memory address.
+                    // See Receiver::next doc for why this is needed.
+                    let mut receiver = std::pin::pin!(receiver);
+                    while let Some(new_status) = receiver.next().await {
+                        player.set_fft_status(new_status);
+                    }
+                }
+            )))) {
+                old_handle.abort();
+            }
+
             return Ok(());
         }
         else {
@@ -147,20 +195,17 @@ impl FftBackend for FifoFftBackend {
     }
 
     fn stop(&self) {
+        self.stop_flag.store(true, Ordering::Relaxed);
         if let Some(handle) = self.fft_handle.take() {
-            *self.fft_status.write().unwrap() = FftStatus::Stopping;
-            let stop_future = glib::MainContext::default().spawn_local(
-                async move {
-                    let _ = handle.await;
-                }
-            );
+            let stop_future = glib::MainContext::default().spawn_local(async move {
+                let _ = handle.await;
+            });
             let _ = glib::MainContext::default().block_on(stop_future);
-            // In case the thread is dead to begin with
-            *self.fft_status.write().unwrap() = FftStatus::ValidNotReading;
         }
-    }
-
-    fn status(&self) -> FftStatus {
-        *self.fft_status.read().unwrap()
+        // In case the thread is dead to begin with
+        self.player().set_fft_status(FftStatus::ValidNotReading);
+        if let Some(old_handle) = self.fg_handle.take() {
+            old_handle.abort();
+        }
     }
 }

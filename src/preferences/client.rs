@@ -337,10 +337,6 @@ impl ClientPreferences {
         }
     }
 
-    fn on_fifo_changed(&self, state: FftStatus) {
-        self.imp().fifo_status.set_subtitle(state.get_description());
-    }
-
     fn on_playlists_status_changed(&self, cs: &ClientState) {
         // TODO: translatable
         let row = self.imp().playlists_status.get();
@@ -503,17 +499,16 @@ impl ClientPreferences {
             .build();
 
         // Visualiser
-        self.on_fifo_changed(player.fft_status());
-        player.connect_notify_local(
-            Some("fft-status"),
-            clone!(
-                #[weak(rename_to = this)]
-                self,
-                move |player, _| {
-                    this.on_fifo_changed(player.fft_status());
-                }
-            ),
-        );
+        player
+            .bind_property(
+                "fft-status",
+                &self.imp().fifo_status.get(),
+                "subtitle"
+            )
+            .transform_to(|_, status: FftStatus| Some(status.get_description()))
+            .sync_create()
+            .build();
+
         let player_settings = settings.child("player");
         imp.fifo_format
             .set_text(&conn_settings.string("mpd-fifo-format"));

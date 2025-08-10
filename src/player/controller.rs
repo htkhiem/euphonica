@@ -6,7 +6,6 @@ use crate::{
     common::{CoverSource, QualityGrade, Song},
     config::APPLICATION_ID,
     meta_providers::models::Lyrics,
-    player::fft_backends::fifo::FifoFftBackend,
     utils::{prettify_audio_format, settings_manager, strip_filename_linux}
 };
 use async_lock::OnceCell as AsyncOnceCell;
@@ -32,7 +31,9 @@ use std::{
     rc::Rc, sync::{Arc, Mutex, OnceLock}, vec::Vec
 };
 
-use super::fft_backends::{backend::{FftBackend, FftStatus}, PipeWireFftBackend};
+use super::fft_backends::{
+    backend::{FftBackendImpl, FftStatus}, PipeWireFftBackend, FifoFftBackend
+};
 
 #[derive(Clone, Copy, Debug, glib::Enum, PartialEq, Default)]
 #[enum_type(name = "EuphonicaPlaybackState")]
@@ -164,19 +165,9 @@ fn get_replaygain_icon_name(mode: ReplayGain) -> &'static str {
     }
 }
 
-fn get_fft_backend() -> Rc<dyn FftBackend> {
-    let client_settings = settings_manager().child("client");
-    match client_settings.enum_("mpd-visualizer-pcm-source") {
-        0 => Rc::new(FifoFftBackend::default()),
-        1 => Rc::new(PipeWireFftBackend::default()),
-        _ => unimplemented!(),
-    }
-
-}
-
 mod imp {
     use super::*;
-    use crate::{application::EuphonicaApplication, common::CoverSource, meta_providers::models::Lyrics};
+    use crate::{application::EuphonicaApplication, common::CoverSource, meta_providers::models::Lyrics, player::fft_backends::backend::FftBackendImpl};
     use glib::{
         ParamSpec, ParamSpecBoolean, ParamSpecDouble, ParamSpecEnum, ParamSpecFloat, ParamSpecInt, ParamSpecString, ParamSpecUInt, ParamSpecUInt64
     };
@@ -217,7 +208,8 @@ mod imp {
         pub app: OnceCell<EuphonicaApplication>,
         pub supports_playlists: Cell<bool>,
         // For receiving frequency levels from FFT thread
-        pub fft_backend: RefCell<Rc<dyn FftBackend>>,
+        pub fft_backend: RefCell<Option<Rc<dyn FftBackendImpl>>>,
+        pub fft_status: Cell<FftStatus>,
         pub fft_data: Arc<Mutex<(Vec<f32>, Vec<f32>)>>, // Binned magnitudes, in stereo
         pub use_visualizer: Cell<bool>,
         pub fft_backend_idx: Cell<i32>,
@@ -237,8 +229,8 @@ mod imp {
         fn new() -> Self {
             // 0 = fifo
             // 1 = pipewire
-            let fft_backend: RefCell<Rc<dyn FftBackend>> = RefCell::new(get_fft_backend());
-            Self {
+
+            let res = Self {
                 state: Cell::new(PlaybackState::Stopped),
                 position: Cell::new(0.0),
                 lyric_lines: gtk::StringList::new(&[]),
@@ -263,7 +255,8 @@ mod imp {
                 mpris_server: AsyncOnceCell::new(),
                 mpris_enabled: Cell::new(false),
                 app: OnceCell::new(),
-                fft_backend,
+                fft_backend: RefCell::new(None),
+                fft_status: Cell::default(),
                 fft_data: Arc::new(Mutex::new((
                     vec![
                         0.0;
@@ -283,7 +276,8 @@ mod imp {
                 outputs: gio::ListStore::new::<BoxedAnyObject>(),
                 cover_source: Cell::default(),
                 saved_to_history: Cell::new(false)
-            }
+            };
+            res
         }
     }
 
@@ -296,7 +290,7 @@ mod imp {
     impl ObjectImpl for Player {
         fn constructed(&self) {
             self.parent_constructed();
-
+            self.fft_backend.replace(Some(self.obj().init_fft_backend()));
             let settings = settings_manager();
             settings
                 .child("client")
@@ -363,7 +357,7 @@ mod imp {
                         .read_only()
                         .build(),
                     ParamSpecString::builder("format-desc").read_only().build(),
-                    ParamSpecInt::builder("fft-backend-idx").build()
+                    ParamSpecInt::builder("fft-backend-idx").build(),
                 ]
             });
             PROPERTIES.as_ref()
@@ -464,7 +458,7 @@ mod imp {
                         if old != new {
                             println!("Switching FFT backend...");
                             self.obj().maybe_stop_fft_thread();
-                            self.fft_backend.replace(get_fft_backend());
+                            self.fft_backend.replace(Some(self.obj().init_fft_backend()));
                             self.obj().maybe_start_fft_thread();
                             self.obj().notify("fft-backend-idx");
                         }
@@ -490,6 +484,9 @@ mod imp {
                     // For simplicity we'll always use the hires version
                     Signal::builder("cover-changed")
                         .param_types([Option::<gdk::Texture>::static_type()])
+                        .build(),
+                    Signal::builder("fft-param-changed")
+                        .param_types([String::static_type(), glib::Variant::static_type()])
                         .build()
                 ]
             })
@@ -508,6 +505,15 @@ impl Default for Player {
 }
 
 impl Player {
+    fn init_fft_backend(&self) -> Rc<dyn FftBackendImpl> {
+        let client_settings = settings_manager().child("client");
+        match client_settings.enum_("mpd-visualizer-pcm-source") {
+            0 => Rc::new(FifoFftBackend::new(self.clone())),
+            1 => Rc::new(PipeWireFftBackend::new(self.clone())),
+            _ => unimplemented!(),
+        }
+
+    }
     /// Lazily get an MPRIS server. This will always be invoked near the start anyway
     /// by the initial call to update_status().
     async fn get_mpris(&self) -> zbus::Result<&LocalServer<Self>> {
@@ -551,24 +557,16 @@ impl Player {
     fn maybe_start_fft_thread(&self) {
         if self.imp().use_visualizer.get() {
             let output = self.imp().fft_data.clone();
-            if let Ok(()) = self.imp().fft_backend.borrow().start(output) {
-                // Dirty hack: wait 1 second for status to stabilise
-                // This is because I'm too lazy to use proper signals
-                glib::spawn_future_local(clone!(
-                    #[strong(rename_to = this)]
-                    self,
-                    async move {
-                        glib::timeout_future_seconds(1).await;
-                        this.notify("fft-status");
-                    }
-                ));
+            if let Some(backend) = self.imp().fft_backend.borrow().as_ref() {
+                let _ = backend.start(output);
             }
         }
     }
 
     fn maybe_stop_fft_thread(&self) {
-        self.imp().fft_backend.borrow().stop();
-        self.notify("fft-status");
+        if let Some(backend) = self.imp().fft_backend.borrow().as_ref() {
+            backend.stop();
+        }
     }
 
     pub fn restart_fft_thread(&self) {
@@ -1278,7 +1276,14 @@ impl Player {
     }
 
     pub fn fft_status(&self) -> FftStatus {
-        self.imp().fft_backend.borrow().status()
+        self.imp().fft_status.get()
+    }
+
+    pub fn set_fft_status(&self, new: FftStatus) {
+        let old = self.imp().fft_status.replace(new);
+        if old != new {
+            self.notify("fft-status");
+        }
     }
 
     pub fn format_desc(&self) -> Option<String> {

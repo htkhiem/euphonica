@@ -217,6 +217,6 @@ impl Seekbar {
             .sync_create()
             .build();
 
-        self.imp().player.set(player.clone());
+        let _ = self.imp().player.set(player.clone());
     }
 }
