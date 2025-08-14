@@ -72,7 +72,7 @@
                                               <object class="GtkImage">
                                                 <property name="icon_name">library-music-symbolic</property>
                                                 <style>
-                                                  <class name="title-2"/>
+                                                  <class name="title-3"/>
                                                 </style>
                                               </object>
                                             </child>
@@ -80,7 +80,7 @@
                                               <object class="GtkLabel">
                                                 <property name="label" translatable="true">Albums</property>
                                                 <style>
-                                                  <class name="title-2"/>
+                                                  <class name="title-3"/>
                                                 </style>
                                               </object>
                                             </child>
