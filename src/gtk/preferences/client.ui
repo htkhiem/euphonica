@@ -117,6 +117,11 @@
           </object>
         </child>
         <child>
+          <object class="AdwComboRow" id="pipewire_devices">
+            <property name="title">Monitor device</property>
+          </object>
+        </child>
+        <child>
           <object class="AdwActionRow" id="fifo_path">
             <property name="title" translatable="true">FIFO file</property>
             <property name="subtitle">(none)</property>
@@ -187,7 +192,7 @@
             <property name="title" translatable="true">Status</property>
             <property name="subtitle">Invalid</property>
             <child type="suffix">
-              <object class="GtkButton" id="fifo_reconnect">
+              <object class="GtkButton" id="fft_reconnect">
                 <property name="label" translatable="true">Apply</property>
                 <property name="valign">center</property>
                 <style>

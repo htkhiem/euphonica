@@ -1,7 +1,7 @@
 use gio::{self, prelude::*};
 use glib::{subclass::prelude::*, clone};
 use std::{
-    cell::RefCell, str::FromStr, sync::{atomic::{AtomicBool, Ordering}, Arc, Mutex}, thread, time::Duration
+    cell::RefCell, rc::Rc, str::FromStr, sync::{atomic::{AtomicBool, Ordering}, Arc, Mutex}, thread, time::Duration
 };
 
 use mpd::status::AudioFormat;
@@ -29,6 +29,10 @@ impl FifoFftBackend {
 }
 
 impl FftBackendImpl for FifoFftBackend {
+    fn name(&self) -> &'static str {
+        "fifo"
+    }
+
     fn player(&self) -> &Player {
         &self.player
     }
@@ -41,7 +45,7 @@ impl FftBackendImpl for FifoFftBackend {
     /// FIFO backend does not make use of runtime configuration
     fn set_param(&self, _key: &str, _val: glib::Variant) {}
 
-    fn start(&self, output: Arc<Mutex<(Vec<f32>, Vec<f32>)>>) -> Result<(), ()> {
+    fn start(self: Rc<Self>, output: Arc<Mutex<(Vec<f32>, Vec<f32>)>>) -> Result<(), ()> {
         self.stop_flag.store(false, Ordering::Relaxed);
         let curr_status = self.status();
         println!("Current status: {:?}", curr_status);

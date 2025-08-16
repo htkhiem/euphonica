@@ -1,8 +1,7 @@
 use std::{
-    cell::Cell,
-    sync::{Arc, Mutex, OnceLock}
+    rc::Rc, sync::{Arc, Mutex}
 };
-use glib::{Properties, prelude::*, subclass::{prelude::*, Signal}, Class};
+use glib::{prelude::*};
 
 use crate::player::Player;
 
@@ -17,11 +16,13 @@ pub enum FftStatus {
 }
 
 pub trait FftBackendImpl {
+    /// Name as used in GSettings
+    fn name(&self) -> &'static str;
     fn player(&self) -> &Player;
     fn get_param(&self, key: &str) -> Option<glib::Variant>;
     fn set_param(&self, key: &str, val: glib::Variant);
 
-    fn start(&self, output: Arc<Mutex<(Vec<f32>, Vec<f32>)>>) -> Result<(), ()>;
+    fn start(self: Rc<Self>, output: Arc<Mutex<(Vec<f32>, Vec<f32>)>>) -> Result<(), ()>;
     fn stop(&self);
 }
 
@@ -35,7 +36,7 @@ pub trait FftBackendExt: FftBackendImpl {
     }
 
     fn emit_param_changed(&self, key: &str, val: &glib::Variant) {
-        self.player().emit_by_name::<()>("fft-param-changed", &[&key, val]);
+        self.player().emit_by_name::<()>("fft-param-changed", &[&self.name(), &key, val]);
     }
 }
 

@@ -1,4 +1,4 @@
-use std::{cell::RefCell, sync::{atomic::{AtomicBool, Ordering}, Arc, Mutex}, thread, time::Duration};
+use std::{cell::RefCell, rc::Rc, sync::{atomic::{AtomicBool, Ordering}, Arc, Mutex}, thread, time::Duration};
 use gio::{self, prelude::*};
 use glib::clone;
 use mpd::status::AudioFormat;
@@ -53,8 +53,15 @@ struct UserData {
     cursor_move: bool,
 }
 
+#[derive(Debug, Clone, Copy)]
+enum PipeWireMsg {
+    Status(FftStatus),
+    DevicesChanged,
+    CurrentDeviceChanged
+}
+
 #[derive(Debug, Clone)]
-struct PipeWireDevice {
+struct OutputNode {
     pub node_name: String,
     pub display_name: String
 }
@@ -64,7 +71,7 @@ pub struct PipeWireFftBackend {
     pw_sender: RefCell<Option<pw::channel::Sender<Terminate>>>,
     fft_handle: RefCell<Option<gio::JoinHandle<()>>>,
     fg_handle: RefCell<Option<glib::JoinHandle<()>>>,
-    devices: Arc<Mutex<Vec<PipeWireDevice>>>,
+    devices: Arc<Mutex<Vec<OutputNode>>>,
     curr_device: Arc<Mutex<i32>>,
     player: Player,
     stop_flag: Arc<AtomicBool>,
@@ -86,6 +93,10 @@ impl PipeWireFftBackend {
 }
 
 impl FftBackendImpl for PipeWireFftBackend {
+    fn name(&self) -> &'static str {
+        "pipewire"
+    }
+
     fn player(&self) -> &Player {
         &self.player
     }
@@ -102,7 +113,7 @@ impl FftBackendImpl for PipeWireFftBackend {
                     .to_variant()
             ),
             "current-device" => Some((*self.curr_device.lock().unwrap()).to_variant()),
-            _ => unimplemented!()
+            _ => None
         }
     }
 
@@ -126,14 +137,22 @@ impl FftBackendImpl for PipeWireFftBackend {
                     let max_idx = self.devices.lock().unwrap().len() as i32 - 1;
                     let final_val = max_idx.min(new_idx);
                     *self.curr_device.lock().unwrap() = final_val;
-                    self.emit_param_changed("current-device", &final_val.to_variant());
+                    let settings = settings_manager().child("client");
+                    if final_val < 0 {
+                        let _ = settings.set_string("pipewire-last-device", "");
+                    } else {
+                        let _ = settings.set_string(
+                            "pipewire-last-device",
+                            &(*self.devices.lock().unwrap())[final_val as usize].node_name
+                        );
+                    }
                 }
             },
-            _ => unimplemented!()
+            _ => {}
         }
     }
 
-    fn start(&self, output: Arc<Mutex<(Vec<f32>, Vec<f32>)>>) -> Result<(), ()> {
+    fn start(self: Rc<Self>, output: Arc<Mutex<(Vec<f32>, Vec<f32>)>>) -> Result<(), ()> {
         let stop_flag = self.stop_flag.clone();
         stop_flag.store(false, Ordering::Relaxed);
         let should_start = {
@@ -146,7 +165,7 @@ impl FftBackendImpl for PipeWireFftBackend {
             let player_settings = settings_manager().child("player");
             let n_samples = player_settings.uint("visualizer-fft-samples") as usize;
             let n_bins = player_settings.uint("visualizer-spectrum-bins") as usize;
-            let (fg_sender, fg_receiver) = async_channel::unbounded::<FftStatus>();
+            let (fg_sender, fg_receiver) = async_channel::unbounded::<PipeWireMsg>();
             let (pw_sender, pw_receiver) = pw::channel::channel::<Terminate>();
             let samples = {
                 let mut samples: (AllocRingBuffer<f32>, AllocRingBuffer<f32>) = (
@@ -180,13 +199,21 @@ impl FftBackendImpl for PipeWireFftBackend {
                             .add_listener_local()
                             .global(move |global| {
                                 println!("{:?}", global.type_);
-                                if global.type_ == pw::types::ObjectType::Device {
+                                if global.type_ == pw::types::ObjectType::Node {
                                     let props = global.props.as_ref().unwrap();
-                                    if let (Some(node_name), Some(display_name)) = (props.get("device.name"), props.get("device.nick")) {
-                                        println!("Found new PipeWire device: {} ({})", &node_name, &display_name);
-                                        devices_clone.lock().unwrap().push(PipeWireDevice{
+                                    let node_name = props.get("node.name").unwrap();
+                                    if props.get("application.name").is_some_and(|name| name == "Music Player Daemon") {
+                                        println!("Found MPD's own PipeWire output: {}", &node_name);
+                                        devices_clone.lock().unwrap().push(OutputNode{
                                             node_name: node_name.to_owned(),
-                                            display_name: display_name.to_owned()
+                                            display_name: format!("MPD PipeWire ({})", node_name)
+                                        });
+                                    } else if props.get("media.class").is_some_and(|mclass| mclass == "Audio/Sink" || mclass == "Stream/Output/Audio") {
+                                        println!("Found new PipeWire output node: {}", &node_name);
+                                        devices_clone.lock().unwrap().push(OutputNode{
+                                            node_name: node_name.to_owned(),
+                                            display_name: props.get("node.description").unwrap_or(
+                                                node_name).to_owned()
                                         });
                                     }
                                 }
@@ -237,11 +264,15 @@ impl FftBackendImpl for PipeWireFftBackend {
                         }
                     }
 
+                    // Notify main thread of param changes
+                    let _ = fg_sender.send_blocking(PipeWireMsg::DevicesChanged);
+                    let _ = fg_sender.send_blocking(PipeWireMsg::CurrentDeviceChanged);
+
                     // Now we can finally start the capture stream & FFT thread
 
                     // PipeWire capture thread
                     let Ok(pw_loop) = pw::main_loop::MainLoop::new(None) else {
-                        let _ = fg_sender.send_blocking(FftStatus::Invalid);
+                        let _ = fg_sender.send_blocking(PipeWireMsg::Status(FftStatus::Invalid));
                         return;
                     };
                     let _receiver = pw_receiver.attach(pw_loop.loop_(), {
@@ -250,11 +281,11 @@ impl FftBackendImpl for PipeWireFftBackend {
                     });
 
                     let Ok(context) = pw::context::Context::new(&pw_loop) else {
-                        let _ = fg_sender.send_blocking(FftStatus::Invalid);
+                        let _ = fg_sender.send_blocking(PipeWireMsg::Status(FftStatus::Invalid));
                         return;
                     };
                     let Ok(core) = context.connect(None) else {
-                        let _ = fg_sender.send_blocking(FftStatus::Invalid);
+                        let _ = fg_sender.send_blocking(PipeWireMsg::Status(FftStatus::Invalid));
                         return;
                     };
 
@@ -275,24 +306,35 @@ impl FftBackendImpl for PipeWireFftBackend {
                      * the data.
                      */
 
-                    let props = if *curr_device.lock().unwrap() >= 0 {
-                        let node_name = devices.lock().unwrap()[*curr_device.lock().unwrap() as usize].node_name.to_owned();
-                        println!("Connecting PipeWire stream to node '{}'", &node_name);
-                        properties! {
-                            *pw::keys::TARGET_OBJECT => node_name
-                        }
-                    } else {
-                        println!("Autoconnecting PipeWire stream");
-                        properties! {
-                            *pw::keys::MEDIA_TYPE => "Audio",
-                            *pw::keys::MEDIA_CATEGORY => "Capture",
-                            *pw::keys::MEDIA_ROLE => "Music",
-                            *pw::keys::MEDIA_CLASS => "Stream/Input/Audio"
-                        }
-                    };
+                    let props: pw::properties::Properties;
+                    {
+                        let curr_device_lock = curr_device.lock().unwrap();
+                        let devices = devices.lock().unwrap();
+                        if *curr_device_lock >= 0 {
+                            let node_name = devices[*curr_device_lock as usize].node_name.to_owned();
+                            println!("Connecting PipeWire stream to node '{}'", &node_name);
+                            props = properties! {
+                                *pw::keys::MEDIA_TYPE => "Audio",
+                                *pw::keys::MEDIA_CATEGORY => "Capture",
+                                *pw::keys::MEDIA_ROLE => "Music",
+                                *pw::keys::TARGET_OBJECT => node_name,
+                                *pw::keys::STREAM_CAPTURE_SINK => "true",
+                                *pw::keys::STREAM_MONITOR => "true",
+                            };
+                        } else {
+                            println!("Autoconnecting PipeWire stream");
+                            props = properties! {
+                                *pw::keys::MEDIA_TYPE => "Audio",
+                                *pw::keys::MEDIA_CATEGORY => "Capture",
+                                *pw::keys::MEDIA_ROLE => "Music",
+                                *pw::keys::STREAM_CAPTURE_SINK => "true",
+                                *pw::keys::STREAM_MONITOR => "true",
+                            };
+                        };
+                    }
 
                     let Ok(pw_stream) = pw::stream::Stream::new(&core, "audio-capture", props) else {
-                        let _ = fg_sender.send_blocking(FftStatus::Invalid);
+                        let _ = fg_sender.send_blocking(PipeWireMsg::Status(FftStatus::Invalid));
                         return;
                     };
 
@@ -323,12 +365,13 @@ impl FftBackendImpl for PipeWireFftBackend {
                                     return;
                                 }
 
+                                println!("Setting up stream format");
                                 let Ok(_) = user_data
                                     .format
                                     .parse(param)
                                 else {
                                     println!("Failed to parse format");
-                                    let _ = fg_sender.send_blocking(FftStatus::Invalid);
+                                    let _ = fg_sender.send_blocking(PipeWireMsg::Status(FftStatus::Invalid));
                                     return;
                                 };
                             }
@@ -386,8 +429,11 @@ impl FftBackendImpl for PipeWireFftBackend {
                                 // println!("Unlocked buffer");
                             }
                         })
+                        .state_changed(|stream, user_data, state1, state2| {
+                            println!("Steam state changed: {state1:?} -> {state2:?}");
+                        })
                         .register() else {
-                            let _ = fg_sender.send_blocking(FftStatus::Invalid);
+                            let _ = fg_sender.send_blocking(PipeWireMsg::Status(FftStatus::Invalid));
                             return;
                         };
 
@@ -414,6 +460,7 @@ impl FftBackendImpl for PipeWireFftBackend {
 
                     /* Now connect this stream. We ask that our process function is
                      * called in a realtime thread. */
+
                     let Ok(_) = pw_stream.connect(
                         spa::utils::Direction::Input,
                         None,
@@ -423,9 +470,10 @@ impl FftBackendImpl for PipeWireFftBackend {
                         &mut params,
                     ) else {
                         println!("Failed to connect PipeWire stream");
-                        let _ = fg_sender.send_blocking(FftStatus::Invalid);
+                        let _ = fg_sender.send_blocking(PipeWireMsg::Status(FftStatus::Invalid));
                         return;
                     };
+                    println!("Stream connected");
                     pw_loop.run();
                 })
             );
@@ -448,7 +496,7 @@ impl FftBackendImpl for PipeWireFftBackend {
                     {
                         let Ok(format_lock) = format.lock() else {
                             println!("PipeWire FFT: unable to lock format");
-                            let _ = fg_sender.send_blocking(FftStatus::Invalid);
+                            let _ = fg_sender.send_blocking(PipeWireMsg::Status(FftStatus::Invalid));
                             return;
                         };
                         // Skip processing until format is nonzero
@@ -520,7 +568,7 @@ impl FftBackendImpl for PipeWireFftBackend {
                             // println!("FFT L: {:?}\tR: {:?}", &output_lock.0, &output_lock.1);
                         } else {
                             println!("FFT: Failed to lock output for writing");
-                            let _ = fg_sender.send_blocking(FftStatus::Invalid);
+                            let _ = fg_sender.send_blocking(PipeWireMsg::Status(FftStatus::Invalid));
                             return;
                         }
                     }
@@ -532,17 +580,32 @@ impl FftBackendImpl for PipeWireFftBackend {
             self.fft_handle.replace(Some(fft_handle));
             self.set_status(FftStatus::Reading);
 
-            let player = self.player();
             if let Some(old_handle) = self.fg_handle.replace(Some(glib::MainContext::default().spawn_local(clone!(
-                #[weak]
-                player,
+                #[weak(rename_to = this)]
+                self,
                 async move {
                     use futures::prelude::*;
                     // Allow receiver to be mutated, but keep it at the same memory address.
                     // See Receiver::next doc for why this is needed.
                     let mut receiver = std::pin::pin!(fg_receiver);
-                    while let Some(new_status) = receiver.next().await {
-                        player.set_fft_status(new_status);
+                    let player = this.player();
+                    while let Some(msg) = receiver.next().await {
+                        match msg {
+                            PipeWireMsg::Status(new_status) => {
+                                player.set_fft_status(new_status);
+                            }
+                            PipeWireMsg::DevicesChanged => {
+                                this.emit_param_changed(
+                                    "devices", &this.get_param("devices").unwrap()
+                                );
+                            }
+                            PipeWireMsg::CurrentDeviceChanged => {
+                                this.emit_param_changed(
+                                    "current-device", &this.get_param("current-device").unwrap()
+                                );
+                            }
+                        }
+
                     }
                 }
             )))) {
@@ -570,5 +633,7 @@ impl FftBackendImpl for PipeWireFftBackend {
             }
         }
         self.set_status(FftStatus::ValidNotReading);
+        self.devices.lock().unwrap().clear();
+        *self.curr_device.lock().unwrap() = -1;
     }
 }

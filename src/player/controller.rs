@@ -486,7 +486,7 @@ mod imp {
                         .param_types([Option::<gdk::Texture>::static_type()])
                         .build(),
                     Signal::builder("fft-param-changed")
-                        .param_types([String::static_type(), glib::Variant::static_type()])
+                        .param_types([String::static_type(), String::static_type(), glib::Variant::static_type()])
                         .build()
                 ]
             })
@@ -512,8 +512,36 @@ impl Player {
             1 => Rc::new(PipeWireFftBackend::new(self.clone())),
             _ => unimplemented!(),
         }
-
     }
+
+    /// If a backend name is specified, will only get the parameter from that backend. If that
+    /// backend is not the currently-active one, returns None.
+    /// If no backend name is specified, will try to fetch the parameter from the currently-active backend.
+    /// This is useful for universal parameters shared by all backends, though there aren't any (yet).
+    pub fn get_fft_param(&self, backend_name: Option<&str>, key: &str) -> Option<glib::Variant> {
+        if let Some(backend) = self.imp().fft_backend.borrow().as_ref() {
+            if backend_name.is_some_and(|name| backend.name() == name) || backend_name.is_none() {
+                backend.get_param(key)
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    }
+
+    /// If a backend name is specified, will only set the parameter for that backend. If that
+    /// backend is not the currently-active one, this is a noop.
+    /// If no backend name is specified, will try to set the parameter for the currently-active backend.
+    /// This is useful for universal parameters shared by all backends, though there aren't any (yet).
+    pub fn set_fft_param(&self, backend_name: Option<&str>, key: &str, val: glib::Variant) {
+        if let Some(backend) = self.imp().fft_backend.borrow().as_ref() {
+            if backend_name.is_some_and(|name| backend.name() == name) || backend_name.is_none() {
+                backend.set_param(key, val);
+            }
+        }
+    }
+
     /// Lazily get an MPRIS server. This will always be invoked near the start anyway
     /// by the initial call to update_status().
     async fn get_mpris(&self) -> zbus::Result<&LocalServer<Self>> {
@@ -558,7 +586,7 @@ impl Player {
         if self.imp().use_visualizer.get() {
             let output = self.imp().fft_data.clone();
             if let Some(backend) = self.imp().fft_backend.borrow().as_ref() {
-                let _ = backend.start(output);
+                let _ = backend.clone().start(output);
             }
         }
     }

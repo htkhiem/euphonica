@@ -1,4 +1,5 @@
 use duplicate::duplicate;
+use ::glib::closure_local;
 use keyring::{Entry, Error as KeyringError};
 use std::{rc::Rc, str::FromStr};
 
@@ -111,7 +112,10 @@ mod imp {
         // Visualiser data source
         #[template_child]
         pub viz_source: TemplateChild<adw::ComboRow>,
-        // FIFO output
+        // PipeWire
+        #[template_child]
+        pub pipewire_devices: TemplateChild<adw::ComboRow>,
+        // FIFO
         #[template_child]
         pub fifo_path: TemplateChild<adw::ActionRow>,
         #[template_child]
@@ -127,7 +131,7 @@ mod imp {
         #[template_child]
         pub fifo_status: TemplateChild<adw::ActionRow>,
         #[template_child]
-        pub fifo_reconnect: TemplateChild<gtk::Button>,
+        pub fft_reconnect: TemplateChild<gtk::Button>,
     }
 
     #[glib::object_subclass]
@@ -242,15 +246,20 @@ mod imp {
                     }
                 })
                 .build();
-            // Disable FIFO-specific rows when PipeWire is selected as data source
+            // Hide FIFO-specific rows when PipeWire is selected as data source
             duplicate!{
                 [name; [fifo_path]; [fifo_format];]
                 viz_source
-                    .bind_property("selected", &self.name.get(), "sensitive")
+                    .bind_property("selected", &self.name.get(), "visible")
                     .transform_to(|_, val: u32| Some(val == 0))
                     .sync_create()
                     .build();
             }
+            // Hide PipeWire-specific rows when FIFO is selected as data source
+            viz_source.bind_property("selected", &self.pipewire_devices.get(), "visible")
+                .transform_to(|_, val: u32| Some(val == 1))
+                .sync_create()
+                .build();
         }
     }
     impl WidgetImpl for ClientPreferences {}
@@ -509,6 +518,37 @@ impl ClientPreferences {
             .sync_create()
             .build();
 
+        // Get PipeWire devices, if the PipeWire backend is running
+        self.update_pipewire_devices(
+            player
+                .get_fft_param(Some("pipewire"), "devices")
+                .and_then(|variant| variant.get::<Vec<String>>())
+        );
+        self.update_pipewire_current_device(
+            player
+                .get_fft_param(Some("pipewire"), "current-device")
+                .and_then(|variant| variant.get::<i32>())
+        );
+
+        player.connect_closure(
+            "fft-param-changed",
+            false,
+            closure_local!(
+                #[weak(rename_to = this)]
+                self,
+                move |_: Player, name: String, key: String, new_val: glib::Variant| {
+                    // Currently only need to handle PipeWire
+                    if name == "pipewire" {
+                        match key.as_str() {
+                            "devices" => {this.update_pipewire_devices(new_val.get::<Vec<String>>());}
+                            "current-device" => {this.update_pipewire_current_device(new_val.get::<i32>());}
+                            _ => {}
+                        }
+                    }
+                }
+            )
+        );
+
         let player_settings = settings.child("player");
         imp.fifo_format
             .set_text(&conn_settings.string("mpd-fifo-format"));
@@ -522,11 +562,11 @@ impl ClientPreferences {
                 if let Err(_) = AudioFormat::from_str(entry.text().as_str()) {
                     if !entry.has_css_class("error") {
                         entry.add_css_class("error");
-                        this.imp().fifo_reconnect.set_sensitive(false);
+                        this.imp().fft_reconnect.set_sensitive(false);
                     }
                 } else if entry.has_css_class("error") {
                     entry.remove_css_class("error");
-                    this.imp().fifo_reconnect.set_sensitive(true);
+                    this.imp().fft_reconnect.set_sensitive(true);
                 }
             }
         ));
@@ -544,7 +584,7 @@ impl ClientPreferences {
             });
         imp.fft_n_bins
             .set_value(player_settings.uint("visualizer-spectrum-bins") as f64);
-        imp.fifo_reconnect.connect_clicked(clone!(
+        imp.fft_reconnect.connect_clicked(clone!(
             #[weak(rename_to = this)]
             self,
             #[strong]
@@ -556,6 +596,10 @@ impl ClientPreferences {
             move |_| {
                 println!("Restarting FFT thread...");
                 let imp = this.imp();
+                let pw_dev_idx = imp.pipewire_devices.selected();
+                if pw_dev_idx != gtk::INVALID_LIST_POSITION {
+                    player.set_fft_param(Some("pipewire"), "current-device", (pw_dev_idx as i32 - 1).to_variant());
+                }
                 conn_settings
                     .set_string("mpd-fifo-format", &imp.fifo_format.text())
                     .expect("Cannot save FIFO settings");
@@ -577,5 +621,22 @@ impl ClientPreferences {
                 player.restart_fft_thread();
             }
         ));
+    }
+
+    fn update_pipewire_devices(&self, maybe_devices: Option<Vec<String>>) {
+        self.imp().pipewire_devices.set_model(
+            maybe_devices.and_then(|devices: Vec<String>| {
+                let mut device_list = vec!["(auto)"];
+                device_list.append(&mut devices.iter().map(String::as_ref).collect::<Vec<&str>>());
+                Some(gtk::StringList::new(&device_list))
+            }).as_ref()
+        );
+    }
+
+    fn update_pipewire_current_device(&self, curr_device: Option<i32>) {
+        // Position -1 means auto.
+        if let Some(curr_device) = curr_device {
+            self.imp().pipewire_devices.set_selected((curr_device + 1) as u32);
+        }
     }
 }
