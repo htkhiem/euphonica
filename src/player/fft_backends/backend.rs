@@ -1,4 +1,9 @@
-use std::sync::{Arc, Mutex};
+use std::{
+    rc::Rc, sync::{Arc, Mutex}
+};
+use glib::{prelude::*};
+
+use crate::player::Player;
 
 #[derive(Clone, Copy, Debug, glib::Enum, PartialEq, Default)]
 #[enum_type(name = "EuphonicaFftStatus")]
@@ -10,13 +15,29 @@ pub enum FftStatus {
     Reading,
 }
 
-pub trait FftBackend {
-    /// Start a new FFT thread reading from a particular data source.
-    /// This function must not block the main thread.
-    fn start(&self, output: Arc<Mutex<(Vec<f32>, Vec<f32>)>>) -> Result<(), ()>;
+pub trait FftBackendImpl {
+    /// Name as used in GSettings
+    fn name(&self) -> &'static str;
+    fn player(&self) -> &Player;
+    fn get_param(&self, key: &str) -> Option<glib::Variant>;
+    fn set_param(&self, key: &str, val: glib::Variant);
 
-    /// Stop the FFT thread of this backend.
+    fn start(self: Rc<Self>, output: Arc<Mutex<(Vec<f32>, Vec<f32>)>>) -> Result<(), ()>;
     fn stop(&self);
-
-    fn status(&self) -> FftStatus;
 }
+
+pub trait FftBackendExt: FftBackendImpl {
+    fn status(&self) -> FftStatus {
+        self.player().fft_status()
+    }
+
+    fn set_status(&self, new: FftStatus) {
+        self.player().set_fft_status(new);
+    }
+
+    fn emit_param_changed(&self, key: &str, val: &glib::Variant) {
+        self.player().emit_by_name::<()>("fft-param-changed", &[&self.name(), &key, val]);
+    }
+}
+
+impl<O: FftBackendImpl> FftBackendExt for O {}
