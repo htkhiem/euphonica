@@ -1,4 +1,4 @@
-use std::{cell::{Cell, RefCell}, sync::{atomic::{AtomicBool, Ordering}, Arc, Mutex}, thread, time::Duration};
+use std::{cell::RefCell, sync::{atomic::{AtomicBool, Ordering}, Arc, Mutex}, thread, time::Duration};
 use gio::{self, prelude::*};
 use glib::clone;
 use mpd::status::AudioFormat;
@@ -20,6 +20,30 @@ use crate::{player::Player, utils::settings_manager};
 // The capture thread writes into ring buffers to decouple FPS and window size
 // from PipeWire configuration, similar to the FIFO backend, except that in
 // the FIFO backend, the ringbuffer is implemented internally by BufReader.
+//
+// The PipeWire backend makes use of runtime-configurable parameters.
+//
+// Stream connection flow:
+// 1. Start a new thread for PipeWire
+// 2. Get the last-connected device name from our GSettings backend. A Device node in PipeWire has two
+// "names", a unique node name that we'll use to connect the stream, and a friendly (user-facing) nickname.
+// In GSettings we'll store the unique node name.
+// 3. Query all currently-connected devices.
+// 4. If the last-connected device name is not blank and exists in the list of devices from step 3,
+// connect the stream to it, then set current_device to its index in the list.
+// 5. If such device does not exist or the name is an empty string, set GSettings key to empty string
+// (signifying "auto"), the current_device to -1, then autoconnect the stream using media category.
+// This usually happens with removable playback devices like USB DACs.
+//
+// To implement device selection in UI:
+// 1. After the stream has already been connected, save the device list (both unique and friendly names) plus the current
+// device into the backend struct, then fire a param-changed signal with key "devices".
+// 2. If the preferences UI is already open, it will receive this signal and get the "devices" and "current-device"
+// params. The acquired param values will be used to initialise the device dropdown.
+// 3. If there is no preferences UI open yet, the signal will be ignored. When the UI is opened later, it will
+// try to fetch the params by itself upon creation. If by this time the backend has not finished connecting the stream,
+// simply return Nones and disable the corresponding UI elements, until notified otherwise by the signal in step 1.
+
 use super::backend::{FftBackendImpl, FftBackendExt, FftStatus};
 
 struct Terminate;
@@ -29,13 +53,19 @@ struct UserData {
     cursor_move: bool,
 }
 
+#[derive(Debug, Clone)]
+struct PipeWireDevice {
+    pub node_name: String,
+    pub display_name: String
+}
+
 pub struct PipeWireFftBackend {
     pw_handle: RefCell<Option<gio::JoinHandle<()>>>,
     pw_sender: RefCell<Option<pw::channel::Sender<Terminate>>>,
     fft_handle: RefCell<Option<gio::JoinHandle<()>>>,
     fg_handle: RefCell<Option<glib::JoinHandle<()>>>,
-    devices: RefCell<Vec<String>>,
-    curr_device: Cell<i32>,
+    devices: Arc<Mutex<Vec<PipeWireDevice>>>,
+    curr_device: Arc<Mutex<i32>>,
     player: Player,
     stop_flag: Arc<AtomicBool>,
 }
@@ -47,8 +77,8 @@ impl PipeWireFftBackend {
             pw_sender: RefCell::default(),
             fft_handle: RefCell::default(),
             fg_handle: RefCell::default(),
-            devices: RefCell::new(Vec::new()),
-            curr_device: Cell::new(0),
+            devices: Arc::new(Mutex::new(Vec::new())),
+            curr_device: Arc::new(Mutex::new(-1)),
             player,
             stop_flag: Arc::new(AtomicBool::new(false))
         }
@@ -62,33 +92,40 @@ impl FftBackendImpl for PipeWireFftBackend {
 
     fn get_param(&self, key: &str) -> Option<glib::Variant> {
         match key {
-            "devices" => Some(self.devices.borrow().to_variant()),
-            "current-device" => Some(self.curr_device.get().to_variant()),
+            "devices" => Some(
+                self.devices
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .map(|dev| dev.display_name.clone())
+                    .collect::<Vec<String>>()
+                    .to_variant()
+            ),
+            "current-device" => Some((*self.curr_device.lock().unwrap()).to_variant()),
             _ => unimplemented!()
         }
     }
 
-    /// FIFO backend does not make use of runtime configuration
     fn set_param(&self, key: &str, val: glib::Variant) {
         match key {
-            "devices" => {
-                if let Some(devices) = val.get::<Vec<String>>() {
-                    let new_len = devices.len() as i32;
-                    self.devices.replace(devices);
-                    self.curr_device.set(0);
-                    self.emit_param_changed("devices", &val);
-                    if self.curr_device.get() >= new_len {
-                        let new_val = new_len - 1;
-                        self.curr_device.set(new_val);
-                        self.emit_param_changed("current-device", &new_val.to_variant());
-                    }
-                }
-            },
+            // "devices" => {
+            //     if let Some(devices) = val.get::<Vec<String>>() {
+            //         let new_len = devices.len() as i32;
+            //         self.devices.replace(devices);
+            //         self.curr_device.set(0);
+            //         self.emit_param_changed("devices", &val);
+            //         if self.curr_device.get() >= new_len {
+            //             let new_val = new_len - 1;
+            //             self.curr_device.set(new_val);
+            //             self.emit_param_changed("current-device", &new_val.to_variant());
+            //         }
+            //     }
+            // },
             "current-device" => {
                 if let Some(new_idx) = val.get::<i32>() {
-                    let max_idx = self.devices.borrow().len() as i32 - 1;
+                    let max_idx = self.devices.lock().unwrap().len() as i32 - 1;
                     let final_val = max_idx.min(new_idx);
-                    self.curr_device.set(final_val);
+                    *self.curr_device.lock().unwrap() = final_val;
                     self.emit_param_changed("current-device", &final_val.to_variant());
                 }
             },
@@ -103,9 +140,10 @@ impl FftBackendImpl for PipeWireFftBackend {
             self.pw_handle.borrow().is_none() && self.fft_handle.borrow().is_none()
         };
         if should_start {
-            // println!("Starting a new PipeWire listener...");
-            let settings = settings_manager();
-            let player_settings = settings.child("player");
+            let devices = self.devices.clone();
+            let curr_device = self.curr_device.clone();
+
+            let player_settings = settings_manager().child("player");
             let n_samples = player_settings.uint("visualizer-fft-samples") as usize;
             let n_bins = player_settings.uint("visualizer-spectrum-bins") as usize;
             let (fg_sender, fg_receiver) = async_channel::unbounded::<FftStatus>();
@@ -123,11 +161,85 @@ impl FftBackendImpl for PipeWireFftBackend {
             let pw_samples = samples.clone();
             let pw_format = format.clone();
             self.pw_sender.replace(Some(pw_sender));
-            // Start the PipeWire capture thread
+
             let pw_handle = gio::spawn_blocking(clone!(
                 #[strong]
                 fg_sender,
                 move || {
+                    // Get list of devices
+                    println!("PipeWire: getting list of devices");
+                    {
+                        let mainloop = pw::main_loop::MainLoop::new(None).expect("get_devices: Unable to create a new PipeWire mainloop");
+                        let context = pw::context::Context::new(&mainloop).expect("get_devices: Unable to get PipeWire context");
+                        let mainloop: Arc<pipewire::main_loop::MainLoop> = Arc::new(mainloop);
+                        let core = context.connect(None).unwrap();
+                        let registry = core.get_registry().unwrap();
+
+                        let devices_clone = devices.clone();
+                        let _listener = registry
+                            .add_listener_local()
+                            .global(move |global| {
+                                println!("{:?}", global.type_);
+                                if global.type_ == pw::types::ObjectType::Device {
+                                    let props = global.props.as_ref().unwrap();
+                                    if let (Some(node_name), Some(display_name)) = (props.get("device.name"), props.get("device.nick")) {
+                                        println!("Found new PipeWire device: {} ({})", &node_name, &display_name);
+                                        devices_clone.lock().unwrap().push(PipeWireDevice{
+                                            node_name: node_name.to_owned(),
+                                            display_name: display_name.to_owned()
+                                        });
+                                    }
+                                }
+                            })
+                            .register();
+
+                        // Force roundtrip to return results once all globals have been received
+                        let mainloop_clone = mainloop.clone();
+
+                        // Queue a sync signal after processing all of the above so the loop knows when to stop.
+                        let target_seq = core.sync(0).expect("Cannot force PipeWire object enumeration roundtrip");
+
+                        let roundtrip_listener = core
+                            .add_listener_local()
+                            .done(move |id, seq| {
+                                println!("Sync done signal received with seq: {}", seq.seq());
+                                if id == pw::core::PW_ID_CORE && seq.seq() == target_seq.seq() {
+                                    println!("All globalobjects have been received, quitting get_devices mainloop");
+                                    mainloop_clone.quit();
+                                }
+                            })
+                            .register();
+
+
+                        // Will block until all objects have been enumerated
+                        println!("Running mainloop");
+                        mainloop.run();
+                        roundtrip_listener.unregister();
+                        {
+                            let mut device_lock = devices.lock().unwrap();
+                            device_lock.truncate(64);
+                            println!("All devices found: {:?}", &device_lock);
+                        }
+                        // devices.lock().unwrap().truncate(64);  // Only show first 64 devices
+                    }
+                    let settings = settings_manager().child("client");
+                    let _last_device = settings.string("pipewire-last-device");
+                    let last_device = _last_device.as_str();
+                    {
+                        let devices_lock = devices.lock().unwrap();
+                        let mut curr_device = curr_device.lock().unwrap();
+                        if devices_lock.len() > 0 {
+                            if let Some(device_idx) = devices_lock.iter().position(|elem| elem.node_name == last_device) {
+                                *curr_device = device_idx as i32;
+                            } else {
+                                *curr_device = -1;
+                            }
+                        }
+                    }
+
+                    // Now we can finally start the capture stream & FFT thread
+
+                    // PipeWire capture thread
                     let Ok(pw_loop) = pw::main_loop::MainLoop::new(None) else {
                         let _ = fg_sender.send_blocking(FftStatus::Invalid);
                         return;
@@ -162,10 +274,21 @@ impl FftBackendImpl for PipeWireFftBackend {
                      * you need to listen to is the process event where you need to produce
                      * the data.
                      */
-                    let props = properties! {
-                        *pw::keys::MEDIA_TYPE => "Audio",
-                        *pw::keys::MEDIA_CATEGORY => "Capture",
-                        *pw::keys::MEDIA_ROLE => "Music",
+
+                    let props = if *curr_device.lock().unwrap() >= 0 {
+                        let node_name = devices.lock().unwrap()[*curr_device.lock().unwrap() as usize].node_name.to_owned();
+                        println!("Connecting PipeWire stream to node '{}'", &node_name);
+                        properties! {
+                            *pw::keys::TARGET_OBJECT => node_name
+                        }
+                    } else {
+                        println!("Autoconnecting PipeWire stream");
+                        properties! {
+                            *pw::keys::MEDIA_TYPE => "Audio",
+                            *pw::keys::MEDIA_CATEGORY => "Capture",
+                            *pw::keys::MEDIA_ROLE => "Music",
+                            *pw::keys::MEDIA_CLASS => "Stream/Input/Audio"
+                        }
                     };
 
                     let Ok(pw_stream) = pw::stream::Stream::new(&core, "audio-capture", props) else {
@@ -304,7 +427,8 @@ impl FftBackendImpl for PipeWireFftBackend {
                         return;
                     };
                     pw_loop.run();
-                }));
+                })
+            );
             self.pw_handle.replace(Some(pw_handle));
 
             // Run FFT thread
@@ -424,7 +548,6 @@ impl FftBackendImpl for PipeWireFftBackend {
             )))) {
                 old_handle.abort();
             }
-
             Ok(())
         }
         else {

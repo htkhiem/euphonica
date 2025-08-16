@@ -1,4 +1,4 @@
-// use duplicate::duplicate_item;
+use duplicate::duplicate_item;
 
 pub mod fft;
 pub mod backend;
@@ -9,9 +9,9 @@ use backend::*;
 pub use fifo::FifoFftBackend;
 pub use pipewire::PipeWireFftBackend;
 
-// #[duplicate_item(name; [FifoFftBackend]; [PipeWireFftBackend])]
-// impl Drop for name {
-//     fn drop(&mut self) {
-//         self.stop();
-//     }
-// }
+#[duplicate_item(name; [FifoFftBackend]; [PipeWireFftBackend])]
+impl Drop for name {
+    fn drop(&mut self) {
+        self.stop();
+    }
+}
