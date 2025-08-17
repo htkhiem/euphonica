@@ -12,6 +12,6 @@ pub use pipewire::PipeWireFftBackend;
 #[duplicate_item(name; [FifoFftBackend]; [PipeWireFftBackend])]
 impl Drop for name {
     fn drop(&mut self) {
-        self.stop();
+        self.stop(true);
     }
 }

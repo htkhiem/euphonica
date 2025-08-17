@@ -115,6 +115,8 @@ mod imp {
         // PipeWire
         #[template_child]
         pub pipewire_devices: TemplateChild<adw::ComboRow>,
+        #[template_child]
+        pub pipewire_restart_between_songs: TemplateChild<adw::SwitchRow>,
         // FIFO
         #[template_child]
         pub fifo_path: TemplateChild<adw::ActionRow>,
@@ -189,6 +191,9 @@ mod imp {
                 .bind("mpd-fifo-path", &fifo_path_row, "subtitle")
                 .get_only()
                 .build();
+            viz_settings
+                .bind("pipewire-restart-between-songs", &self.pipewire_restart_between_songs.get(), "active")
+                .build();
             self.fifo_browse.connect_clicked(|_| {
                 utils::tokio_runtime().spawn(async move {
                     let maybe_files = SelectedFiles::open_file()
@@ -256,10 +261,14 @@ mod imp {
                     .build();
             }
             // Hide PipeWire-specific rows when FIFO is selected as data source
-            viz_source.bind_property("selected", &self.pipewire_devices.get(), "visible")
-                .transform_to(|_, val: u32| Some(val == 1))
-                .sync_create()
-                .build();
+            duplicate!{
+                [name; [pipewire_devices]; [pipewire_restart_between_songs];]
+                viz_source
+                    .bind_property("selected", &self.name.get(), "visible")
+                    .transform_to(|_, val: u32| Some(val == 1))
+                    .sync_create()
+                    .build();
+            }
         }
     }
     impl WidgetImpl for ClientPreferences {}

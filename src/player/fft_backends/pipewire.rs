@@ -466,7 +466,8 @@ impl FftBackendImpl for PipeWireFftBackend {
                         None,
                         pw::stream::StreamFlags::AUTOCONNECT
                             | pw::stream::StreamFlags::MAP_BUFFERS
-                            | pw::stream::StreamFlags::RT_PROCESS,
+                            | pw::stream::StreamFlags::RT_PROCESS
+                            | pw::stream::StreamFlags::NO_CONVERT,
                         &mut params,
                     ) else {
                         println!("Failed to connect PipeWire stream");
@@ -618,17 +619,21 @@ impl FftBackendImpl for PipeWireFftBackend {
         }
     }
 
-    fn stop(&self) {
+    fn stop(&self, block: bool) {
         let fft_stop = self.stop_flag.clone();
         fft_stop.store(true, Ordering::Relaxed);
         if let Some(sender) = self.pw_sender.take() {
             println!("Stopping PipeWire thread...");
             if sender.send(Terminate).is_ok() {
                 if let Some(handle) = self.pw_handle.take() {
-                    let _ = glib::MainContext::default().block_on(handle);
+                    if block {
+                        let _ = glib::MainContext::default().block_on(handle);
+                    }
                 }
                 if let Some(handle) = self.fft_handle.take() {
-                    let _ = glib::MainContext::default().block_on(handle);
+                    if block {
+                        let _ = glib::MainContext::default().block_on(handle);
+                    }
                 }
             }
         }

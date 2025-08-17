@@ -118,7 +118,14 @@
         </child>
         <child>
           <object class="AdwComboRow" id="pipewire_devices">
-            <property name="title">Monitor device</property>
+            <property name="title" translatable="true">Monitor device</property>
+            <property name="subtitle" translatable="true">The visualiser captures audio from all source devices by default. This may turn microphones on and degrade sound quality of Bluetooth headsets. In that case, please select a specific device to capture from.</property>
+          </object>
+        </child>
+        <child>
+          <object class="AdwSwitchRow" id="pipewire_restart_between_songs">
+            <property name="title" translatable="true">Restart monitor thread between songs (experimental)</property>
+            <property name="subtitle" translatable="true">Allow PipeWire to vary sample rate and bit depth between songs by temporarily stopping the monitor thread ahead of song changes. Only works when songs are changed via Euphonica or by normal queue playback.</property>
           </object>
         </child>
         <child>

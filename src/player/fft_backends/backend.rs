@@ -23,7 +23,7 @@ pub trait FftBackendImpl {
     fn set_param(&self, key: &str, val: glib::Variant);
 
     fn start(self: Rc<Self>, output: Arc<Mutex<(Vec<f32>, Vec<f32>)>>) -> Result<(), ()>;
-    fn stop(&self);
+    fn stop(&self, block: bool);
 }
 
 pub trait FftBackendExt: FftBackendImpl {

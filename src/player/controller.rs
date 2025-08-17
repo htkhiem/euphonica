@@ -32,7 +32,7 @@ use std::{
 };
 
 use super::fft_backends::{
-    backend::{FftBackendImpl, FftStatus}, PipeWireFftBackend, FifoFftBackend
+    backend::{FftBackendExt, FftStatus}, FifoFftBackend, PipeWireFftBackend
 };
 
 #[derive(Clone, Copy, Debug, glib::Enum, PartialEq, Default)]
@@ -167,9 +167,10 @@ fn get_replaygain_icon_name(mode: ReplayGain) -> &'static str {
 
 mod imp {
     use super::*;
-    use crate::{application::EuphonicaApplication, common::CoverSource, meta_providers::models::Lyrics, player::fft_backends::backend::FftBackendImpl};
+    use crate::{application::EuphonicaApplication, common::CoverSource, meta_providers::models::Lyrics};
     use glib::{
-        ParamSpec, ParamSpecBoolean, ParamSpecDouble, ParamSpecEnum, ParamSpecFloat, ParamSpecInt, ParamSpecString, ParamSpecUInt, ParamSpecUInt64
+        ParamSpec, ParamSpecBoolean, ParamSpecDouble, ParamSpecEnum, ParamSpecFloat, ParamSpecInt,
+        ParamSpecString, ParamSpecUInt, ParamSpecUInt64
     };
 
     use once_cell::sync::Lazy;
@@ -205,10 +206,11 @@ mod imp {
         pub poller_handle: RefCell<Option<glib::JoinHandle<()>>>,
         pub mpris_server: AsyncOnceCell<LocalServer<super::Player>>,
         pub mpris_enabled: Cell<bool>,
+        pub pipewire_restart_between_songs: Cell<bool>,
         pub app: OnceCell<EuphonicaApplication>,
         pub supports_playlists: Cell<bool>,
         // For receiving frequency levels from FFT thread
-        pub fft_backend: RefCell<Option<Rc<dyn FftBackendImpl>>>,
+        pub fft_backend: RefCell<Option<Rc<dyn FftBackendExt>>>,
         pub fft_status: Cell<FftStatus>,
         pub fft_data: Arc<Mutex<(Vec<f32>, Vec<f32>)>>, // Binned magnitudes, in stereo
         pub use_visualizer: Cell<bool>,
@@ -254,6 +256,7 @@ mod imp {
                 poller_handle: RefCell::new(None),
                 mpris_server: AsyncOnceCell::new(),
                 mpris_enabled: Cell::new(false),
+                pipewire_restart_between_songs: Cell::new(false),
                 app: OnceCell::new(),
                 fft_backend: RefCell::new(None),
                 fft_status: Cell::default(),
@@ -316,11 +319,17 @@ mod imp {
                 .get_only()
                 .build();
 
+            settings
+                .child("client")
+                .bind("pipewire-restart-between-songs", self.obj().as_ref(), "pipewire-restart-between-songs")
+                .get_only()
+                .build();
+
             self.obj().maybe_start_fft_thread();
         }
 
         fn dispose(&self) {
-            self.obj().maybe_stop_fft_thread();
+            self.obj().maybe_stop_fft_thread(true);
         }
 
         fn properties() -> &'static [ParamSpec] {
@@ -358,6 +367,7 @@ mod imp {
                         .build(),
                     ParamSpecString::builder("format-desc").read_only().build(),
                     ParamSpecInt::builder("fft-backend-idx").build(),
+                    ParamSpecBoolean::builder("pipewire-restart-between-songs").build()
                 ]
             });
             PROPERTIES.as_ref()
@@ -389,6 +399,7 @@ mod imp {
                 "fft-status" => obj.fft_status().to_value(),
                 "format-desc" => obj.format_desc().to_value(),
                 "fft-backend-idx" => self.fft_backend_idx.get().to_value(),
+                "pipewire-restart-between-songs" => self.pipewire_restart_between_songs.get().to_value(),
                 _ => unimplemented!(),
             }
         }
@@ -447,7 +458,7 @@ mod imp {
                         } else {
                             // Visualiser turned off. FFT thread should
                             // have stopped by itself. Join & yeet handle.
-                            self.obj().maybe_stop_fft_thread();
+                            self.obj().maybe_stop_fft_thread(false);
                         }
                     }
                 }
@@ -457,10 +468,18 @@ mod imp {
 
                         if old != new {
                             println!("Switching FFT backend...");
-                            self.obj().maybe_stop_fft_thread();
+                            self.obj().maybe_stop_fft_thread(true);
                             self.fft_backend.replace(Some(self.obj().init_fft_backend()));
                             self.obj().maybe_start_fft_thread();
                             self.obj().notify("fft-backend-idx");
+                        }
+                    }
+                }
+                "pipewire-restart-between-songs" => {
+                    if let Ok(state) = value.get::<bool>() {
+                        let old = self.pipewire_restart_between_songs.replace(state);
+                        if old != state {
+                            self.obj().notify("pipewire-restart-between-songs");
                         }
                     }
                 }
@@ -505,7 +524,7 @@ impl Default for Player {
 }
 
 impl Player {
-    fn init_fft_backend(&self) -> Rc<dyn FftBackendImpl> {
+    fn init_fft_backend(&self) -> Rc<dyn FftBackendExt> {
         let client_settings = settings_manager().child("client");
         match client_settings.enum_("mpd-visualizer-pcm-source") {
             0 => Rc::new(FifoFftBackend::new(self.clone())),
@@ -568,7 +587,7 @@ impl Player {
             println!("Player controller: entering background mode");
             // self.block_polling();
             // self.stop_polling();
-            self.maybe_stop_fft_thread();
+            self.maybe_stop_fft_thread(true);
         }
     }
 
@@ -591,14 +610,14 @@ impl Player {
         }
     }
 
-    fn maybe_stop_fft_thread(&self) {
+    fn maybe_stop_fft_thread(&self, block: bool) {
         if let Some(backend) = self.imp().fft_backend.borrow().as_ref() {
-            backend.stop();
+            backend.stop(block);
         }
     }
 
     pub fn restart_fft_thread(&self) {
-        self.maybe_stop_fft_thread();
+        self.maybe_stop_fft_thread(true);
         self.maybe_start_fft_thread();
     }
 
@@ -987,6 +1006,15 @@ impl Player {
             if let Some(old_song) = maybe_old_song {
                 if old_song.get_queue_id() != new_song.get_queue_id() {
                     old_song.set_is_playing(false);
+                    // If using PipeWire visualiser, might need to restart it
+                    if self.imp().pipewire_restart_between_songs.get()
+                        && self.imp().fft_backend.borrow().as_ref().is_some_and(
+                            |backend| backend.name() == "pipewire"
+                        )
+                    {
+                        println!("Starting PipeWire backend again after song change...");
+                        self.maybe_start_fft_thread();
+                    }
                 }
                 else {
                     // Same old song
@@ -1078,6 +1106,19 @@ impl Player {
             let old = self.set_position(new);
             if new != old && self.imp().mpris_enabled.get() {
                 self.seek_mpris(new);
+            }
+            // If using PipeWire visualiser and auto-restart is enabled, stop the thread
+            // just before song ends. As we poll once every second, we can't use a threshold
+            // shorter than 1s.
+            let secs_to_end = self.duration() as f64 - new;
+            if self.imp().pipewire_restart_between_songs.get()
+                && self.imp().fft_backend.borrow().as_ref().is_some_and(
+                    |backend| backend.name() == "pipewire" && backend.status() != FftStatus::ValidNotReading
+                )
+                && secs_to_end >= 0.0 && secs_to_end < 1.5
+            {
+                println!("Stopping PipeWire backend to allow samplerate change...");
+                self.maybe_stop_fft_thread(false); // FIXME: we can't block while runnin in an async loop
             }
         } else {
             self.set_position(0.0);
@@ -1409,10 +1450,26 @@ impl Player {
     }
 
     pub fn prev_song(&self) {
+        if self.imp().pipewire_restart_between_songs.get()
+            && self.imp().fft_backend.borrow().as_ref().is_some_and(
+                |backend| backend.name() == "pipewire" && backend.status() != FftStatus::ValidNotReading
+            )
+        {
+            println!("Stopping PipeWire backend to allow samplerate change...");
+            self.maybe_stop_fft_thread(true);
+        }
         self.client().prev();
     }
 
     pub fn next_song(&self) {
+        if self.imp().pipewire_restart_between_songs.get()
+            && self.imp().fft_backend.borrow().as_ref().is_some_and(
+                |backend| backend.name() == "pipewire" && backend.status() != FftStatus::ValidNotReading
+            )
+        {
+            println!("Stopping PipeWire backend to allow samplerate change...");
+            self.maybe_stop_fft_thread(true);
+        }
         self.client().next();
     }
 
@@ -1428,6 +1485,14 @@ impl Player {
     }
 
     pub fn on_song_clicked(&self, song: Song) {
+        if self.imp().pipewire_restart_between_songs.get()
+            && self.imp().fft_backend.borrow().as_ref().is_some_and(
+                |backend| backend.name() == "pipewire" && backend.status() != FftStatus::ValidNotReading
+            )
+        {
+            println!("Stopping PipeWire backend to allow samplerate change...");
+            self.maybe_stop_fft_thread(true);
+        }
         self.client().play_at(song.get_queue_id(), true);
     }
 

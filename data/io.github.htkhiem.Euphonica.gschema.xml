@@ -89,6 +89,10 @@
 		<key name="pipewire-last-device" type="s">
 			<default>''</default>
 		</key>
+
+		<key name="pipewire-restart-between-songs" type="b">
+			<default>true</default>
+		</key>
 	</schema>
 
 	<schema id="io.github.htkhiem.Euphonica.library" path="/io/github/htkhiem/Euphonica/library/">
