@@ -144,6 +144,62 @@ mod background {
         }
     }
 
+    fn download_embedded_cover_inner(
+        client: &mut mpd::Client<StreamWrapper>,
+        uri: String
+    ) -> Option<(gdk::Texture, gdk::Texture)> {
+        if let Some(dyn_img) = client
+            .readpicture(&uri)
+            .map_or(None, |bytes| utils::read_image_from_bytes(bytes))
+        {
+            let (hires, thumb) = utils::resize_convert_image(dyn_img);
+            let (path, thumbnail_path) = get_new_image_paths();
+            hires.save(&path)
+                 .expect(&format!("Couldn't save downloaded cover to {:?}", &path));
+            thumb.save(&thumbnail_path)
+                 .expect(&format!("Couldn't save downloaded thumbnail cover to {:?}", &thumbnail_path));
+            sqlite::register_cover_key(
+                &uri, Some(path.file_name().unwrap().to_str().unwrap()), false
+            ).join().unwrap().expect("Sqlite DB error");
+            sqlite::register_cover_key(
+                &uri, Some(thumbnail_path.file_name().unwrap().to_str().unwrap()), true
+            ).join().unwrap().expect("Sqlite DB error");
+            let hires_tex = gdk::Texture::from_filename(&path).unwrap();
+            let thumb_tex = gdk::Texture::from_filename(&thumbnail_path).unwrap();
+            Some((hires_tex, thumb_tex))
+        } else {
+            None
+        }
+    }
+
+    fn download_folder_cover_inner(
+        client: &mut mpd::Client<StreamWrapper>,
+        folder_uri: String
+    ) -> Option<(gdk::Texture, gdk::Texture)> {
+        if let Some(dyn_img) = client
+            .albumart(&folder_uri)
+            .map_or(None, |bytes| utils::read_image_from_bytes(bytes))
+        {
+            let (hires, thumb) = utils::resize_convert_image(dyn_img);
+            let (path, thumbnail_path) = get_new_image_paths();
+            hires.save(&path)
+                 .expect(&format!("Couldn't save downloaded cover to {:?}", &path));
+            thumb.save(&thumbnail_path)
+                 .expect(&format!("Couldn't save downloaded thumbnail cover to {:?}", &thumbnail_path));
+            sqlite::register_cover_key(
+                &folder_uri, Some(path.file_name().unwrap().to_str().unwrap()), false
+            ).join().unwrap().expect("Sqlite DB error");
+            sqlite::register_cover_key(
+                &folder_uri, Some(thumbnail_path.file_name().unwrap().to_str().unwrap()), true
+            ).join().unwrap().expect("Sqlite DB error");
+            let hires_tex = gdk::Texture::from_filename(&path).unwrap();
+            let thumb_tex = gdk::Texture::from_filename(&thumbnail_path).unwrap();
+            Some((hires_tex, thumb_tex))
+        } else {
+            None
+        }
+    }
+
     pub fn download_embedded_cover(
         client: &mut mpd::Client<StreamWrapper>,
         sender_to_cache: &Sender<ProviderMessage>,
@@ -159,24 +215,7 @@ mod background {
         // path has already been deleted, preventing downloading from proceeding.
         let folder_path = sqlite::find_cover_by_key(&folder_uri, true).expect("Sqlite DB error");
         if folder_path.is_none() {
-            if let Some(dyn_img) = client
-                .albumart(&folder_uri)
-                .map_or(None, |bytes| utils::read_image_from_bytes(bytes))
-            {
-                let (hires, thumb) = utils::resize_convert_image(dyn_img);
-                let (path, thumbnail_path) = get_new_image_paths();
-                hires.save(&path)
-                     .expect(&format!("Couldn't save downloaded cover to {:?}", &path));
-                thumb.save(&thumbnail_path)
-                     .expect(&format!("Couldn't save downloaded thumbnail cover to {:?}", &thumbnail_path));
-                sqlite::register_cover_key(
-                    &folder_uri, Some(path.file_name().unwrap().to_str().unwrap()), false
-                ).join().unwrap().expect("Sqlite DB error");
-                sqlite::register_cover_key(
-                    &folder_uri, Some(thumbnail_path.file_name().unwrap().to_str().unwrap()), true
-                ).join().unwrap().expect("Sqlite DB error");
-                let hires_tex = gdk::Texture::from_filename(&path).unwrap();
-                let thumb_tex = gdk::Texture::from_filename(&thumbnail_path).unwrap();
+            if let Some((hires_tex, thumb_tex)) = download_folder_cover_inner(client, folder_uri.clone()) {
                 sender_to_cache
                     .send_blocking(ProviderMessage::CoverAvailable(folder_uri.clone(), false, hires_tex))
                     .expect("Cannot notify main cache of folder cover download result.");
@@ -192,30 +231,13 @@ mod background {
         // Re-check in case previous iterations have already downloaded these.
         let uri = key.uri.to_owned();
         if sqlite::find_cover_by_key(&uri, true).expect("Sqlite DB error").is_none() {
-            if let Some(dyn_img) = client
-                .readpicture(&uri)
-                .map_or(None, |bytes| utils::read_image_from_bytes(bytes))
-            {
-                let (hires, thumb) = utils::resize_convert_image(dyn_img);
-                let (path, thumbnail_path) = get_new_image_paths();
-                hires.save(&path)
-                     .expect(&format!("Couldn't save downloaded cover to {:?}", &path));
-                thumb.save(&thumbnail_path)
-                     .expect(&format!("Couldn't save downloaded thumbnail cover to {:?}", &thumbnail_path));
-                sqlite::register_cover_key(
-                    &uri, Some(path.file_name().unwrap().to_str().unwrap()), false
-                ).join().unwrap().expect("Sqlite DB error");
-                sqlite::register_cover_key(
-                    &uri, Some(thumbnail_path.file_name().unwrap().to_str().unwrap()), true
-                ).join().unwrap().expect("Sqlite DB error");
-                let hires_tex = gdk::Texture::from_filename(&path).unwrap();
-                let thumb_tex = gdk::Texture::from_filename(&thumbnail_path).unwrap();
+            if let Some((hires_tex, thumb_tex)) = download_embedded_cover_inner(client, uri.clone()) {
                 sender_to_cache
                     .send_blocking(ProviderMessage::CoverAvailable(uri.clone(), false, hires_tex))
-                    .expect("Cannot notify main cache of folder cover download result.");
+                    .expect("Cannot notify main cache of embedded cover download result.");
                 sender_to_cache
                     .send_blocking(ProviderMessage::CoverAvailable(uri, true, thumb_tex))
-                    .expect("Cannot notify main cache of folder cover download result.");
+                    .expect("Cannot notify main cache of embedded cover download result.");
                 return;
             }
             if let Some(album) = &key.album {
@@ -245,24 +267,8 @@ mod background {
     ) {
         // Re-check in case previous iterations have already downloaded these.
         if sqlite::find_cover_by_key(&key.folder_uri, true).expect("Sqlite DB error").is_none() {
-            if let Some(dyn_img) = client
-                .albumart(&key.folder_uri)
-                .map_or(None, |bytes| utils::read_image_from_bytes(bytes))
-            {
-                let (hires, thumb) = utils::resize_convert_image(dyn_img);
-                let (path, thumbnail_path) = get_new_image_paths();
-                hires.save(&path)
-                     .expect(&format!("Couldn't save downloaded cover to {:?}", &path));
-                thumb.save(&thumbnail_path)
-                     .expect(&format!("Couldn't save downloaded thumbnail cover to {:?}", &thumbnail_path));
-                sqlite::register_cover_key(
-                    &key.folder_uri, Some(path.file_name().unwrap().to_str().unwrap()), false
-                ).join().unwrap().expect("Sqlite DB error");
-                sqlite::register_cover_key(
-                    &key.folder_uri, Some(thumbnail_path.file_name().unwrap().to_str().unwrap()), true
-                ).join().unwrap().expect("Sqlite DB error");
-                let hires_tex = gdk::Texture::from_filename(&path).unwrap();
-                let thumb_tex = gdk::Texture::from_filename(&thumbnail_path).unwrap();
+            let folder_uri = key.folder_uri.to_owned();
+            if let Some((hires_tex, thumb_tex)) = download_folder_cover_inner(client, folder_uri.clone()) {
                 sender_to_cache
                     .send_blocking(ProviderMessage::CoverAvailable(key.folder_uri.clone(), false, hires_tex))
                     .expect("Cannot notify main cache of folder cover download result.");
@@ -270,9 +276,23 @@ mod background {
                     .send_blocking(ProviderMessage::CoverAvailable(key.folder_uri, true, thumb_tex))
                     .expect("Cannot notify main cache of folder cover download result.");
             } else {
-                sender_to_cache
-                    .send_blocking(ProviderMessage::FetchFolderCoverExternally(key))
-                    .expect("Cannot signal main cache to fetch cover externally.");
+                // Fall back to embedded art.
+                let uri = key.example_uri.to_owned();
+                if sqlite::find_cover_by_key(&uri, true).expect("Sqlite DB error").is_none() {
+                    if let Some((hires_tex, thumb_tex)) = download_embedded_cover_inner(client, uri.clone()) {
+                        sender_to_cache
+                            .send_blocking(ProviderMessage::CoverAvailable(uri.clone(), false, hires_tex))
+                            .expect("Cannot notify main cache of embedded fallback download result.");
+                        sender_to_cache
+                            .send_blocking(ProviderMessage::CoverAvailable(uri, true, thumb_tex))
+                            .expect("Cannot notify main cache of embedded fallback download result.");
+                        return;
+                    }
+                } else {
+                    sender_to_cache
+                        .send_blocking(ProviderMessage::FetchFolderCoverExternally(key))
+                        .expect("Cannot signal main cache to fetch cover externally.");
+                }
             }
         }
     }
