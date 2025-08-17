@@ -278,7 +278,8 @@ mod background {
             } else {
                 // Fall back to embedded art.
                 let uri = key.example_uri.to_owned();
-                if sqlite::find_cover_by_key(&uri, true).expect("Sqlite DB error").is_none() {
+                let sqlite_path = sqlite::find_cover_by_key(&uri, true).expect("Sqlite DB error");
+                if sqlite_path.is_none() {
                     if let Some((hires_tex, thumb_tex)) = download_embedded_cover_inner(client, uri.clone()) {
                         sender_to_cache
                             .send_blocking(ProviderMessage::CoverAvailable(uri.clone(), false, hires_tex))
@@ -288,11 +289,13 @@ mod background {
                             .expect("Cannot notify main cache of embedded fallback download result.");
                         return;
                     }
-                } else {
-                    sender_to_cache
-                        .send_blocking(ProviderMessage::FetchFolderCoverExternally(key))
-                        .expect("Cannot signal main cache to fetch cover externally.");
+                } else if sqlite_path.as_ref().map_or(false, |p| p.len() > 0) {
+                    // Nothing to do, as there's already a path in the DB.
+                    return;
                 }
+                sender_to_cache
+                    .send_blocking(ProviderMessage::FetchFolderCoverExternally(key))
+                    .expect("Cannot signal main cache to fetch cover externally.");
             }
         }
     }
