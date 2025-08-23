@@ -481,7 +481,7 @@ impl From<mpd::song::Song> for SongInfo {
         else if let Some(stem) = Path::new(&song.file).file_stem() {
             name = String::from(stem.to_str().unwrap());
         } else {
-            name = String::from("Untitled Song");
+            name = String::from("");
         }
         let mut res = Self {
             uri: song.file,

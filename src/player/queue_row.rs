@@ -18,6 +18,8 @@ mod imp {
     use once_cell::sync::Lazy;
     use std::cell::{Cell, OnceCell};
 
+    use crate::cache::placeholders::{EMPTY_ALBUM_STRING, EMPTY_ARTIST_STRING};
+
     use super::*;
 
     #[derive(Default, CompositeTemplate)]
@@ -106,11 +108,15 @@ mod imp {
                 "album" => {
                     if let Ok(name) = value.get::<&str>() {
                         self.album_name.set_label(name);
+                    } else {
+                        self.album_name.set_label(*EMPTY_ALBUM_STRING);
                     }
                 }
                 "artist" => {
                     if let Ok(name) = value.get::<&str>() {
                         self.artist_name.set_label(name);
+                    } else {
+                        self.artist_name.set_label(*EMPTY_ARTIST_STRING);
                     }
                 }
                 "is-playing" => {

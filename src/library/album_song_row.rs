@@ -7,6 +7,8 @@ use crate::{common::Song, utils::format_secs_as_duration};
 use super::Library;
 
 mod imp {
+    use crate::cache::placeholders::EMPTY_ARTIST_STRING;
+
     use super::*;
     use glib::{ParamSpec, ParamSpecInt64, ParamSpecString};
     use once_cell::sync::Lazy;
@@ -111,6 +113,8 @@ mod imp {
                 "artist" => {
                     if let Ok(tag) = value.get::<&str>() {
                         self.artist_name.set_label(tag);
+                    } else {
+                        self.artist_name.set_label(*EMPTY_ARTIST_STRING);
                     }
                 }
                 "duration" => {

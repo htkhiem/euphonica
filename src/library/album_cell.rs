@@ -10,7 +10,7 @@ use std::{
 use once_cell::sync::Lazy;
 
 use crate::{
-    cache::{placeholders::ALBUMART_THUMBNAIL_PLACEHOLDER, Cache, CacheState},
+    cache::{placeholders::{ALBUMART_THUMBNAIL_PLACEHOLDER, EMPTY_ALBUM_STRING, EMPTY_ARTIST_STRING}, Cache, CacheState},
     common::{marquee::{Marquee, MarqueeWrapMode}, Album, AlbumInfo, CoverSource, Rating},
   utils::settings_manager,
 };
@@ -241,6 +241,13 @@ impl AlbumCell {
            .expect("AlbumCell cannot bind to cache");
         item.property_expression("item")
             .chain_property::<Album>("title")
+            .chain_closure::<String>(closure_local!(|_: Option<glib::Object>, title: Option<&str>| {
+                String::from(if title.is_none_or(|t| t.is_empty()) {
+                    *EMPTY_ALBUM_STRING
+                } else {
+                    title.unwrap()
+                })
+            }))
             .bind(&res, "title", gtk::Widget::NONE);
         if let Some(wrap_mode) = wrap_mode {
             // Some views, like the Recent View, requires a specific mode due to UI constraints.
@@ -269,6 +276,13 @@ impl AlbumCell {
 
         item.property_expression("item")
             .chain_property::<Album>("artist")
+            .chain_closure::<String>(closure_local!(|_: Option<glib::Object>, artist: Option<&str>| {
+                String::from(if artist.is_none_or(|a| a.is_empty()) {
+                    *EMPTY_ARTIST_STRING
+                } else {
+                    artist.unwrap()
+                })
+            }))
             .bind(&res, "artist", gtk::Widget::NONE);
 
         item.property_expression("item")

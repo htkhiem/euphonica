@@ -198,12 +198,10 @@ impl FftBackendImpl for PipeWireFftBackend {
                         let _listener = registry
                             .add_listener_local()
                             .global(move |global| {
-                                println!("{:?}", global.type_);
                                 if global.type_ == pw::types::ObjectType::Node {
                                     let props = global.props.as_ref().unwrap();
                                     let node_name = props.get("node.name").unwrap();
                                     if props.get("application.name").is_some_and(|name| name == "Music Player Daemon") {
-                                        println!("Found MPD's own PipeWire output: {}", &node_name);
                                         devices_clone.lock().unwrap().push(OutputNode{
                                             node_name: node_name.to_owned(),
                                             display_name: format!("MPD PipeWire ({})", node_name)
@@ -231,7 +229,7 @@ impl FftBackendImpl for PipeWireFftBackend {
                             .done(move |id, seq| {
                                 println!("Sync done signal received with seq: {}", seq.seq());
                                 if id == pw::core::PW_ID_CORE && seq.seq() == target_seq.seq() {
-                                    println!("All globalobjects have been received, quitting get_devices mainloop");
+                                    // println!("All globalobjects have been received, quitting get_devices mainloop");
                                     mainloop_clone.quit();
                                 }
                             })
@@ -239,15 +237,12 @@ impl FftBackendImpl for PipeWireFftBackend {
 
 
                         // Will block until all objects have been enumerated
-                        println!("Running mainloop");
                         mainloop.run();
                         roundtrip_listener.unregister();
                         {
                             let mut device_lock = devices.lock().unwrap();
                             device_lock.truncate(64);
-                            println!("All devices found: {:?}", &device_lock);
                         }
-                        // devices.lock().unwrap().truncate(64);  // Only show first 64 devices
                     }
                     let settings = settings_manager().child("client");
                     let _last_device = settings.string("pipewire-last-device");
@@ -429,9 +424,9 @@ impl FftBackendImpl for PipeWireFftBackend {
                                 // println!("Unlocked buffer");
                             }
                         })
-                        .state_changed(|stream, user_data, state1, state2| {
-                            println!("Steam state changed: {state1:?} -> {state2:?}");
-                        })
+                        // .state_changed(|stream, user_data, state1, state2| {
+                        //     println!("Steam state changed: {state1:?} -> {state2:?}");
+                        // })
                         .register() else {
                             let _ = fg_sender.send_blocking(PipeWireMsg::Status(FftStatus::Invalid));
                             return;

@@ -6,7 +6,7 @@ use std::{
 };
 
 use crate::{
-    cache::{Cache, CacheState},
+    cache::{placeholders::EMPTY_ARTIST_STRING, Cache, CacheState},
     common::Artist,
 };
 
@@ -155,6 +155,13 @@ impl ArtistCell {
     pub fn setup(&self, item: &gtk::ListItem) {
         item.property_expression("item")
             .chain_property::<Artist>("name")
+            .chain_closure::<String>(closure_local!(|_: Option<glib::Object>, artist: Option<&str>| {
+                String::from(if artist.is_none_or(|a| a.is_empty()) {
+                    *EMPTY_ARTIST_STRING
+                } else {
+                    artist.unwrap()
+                })
+            }))
             .bind(self, "name", gtk::Widget::NONE);
     }
 

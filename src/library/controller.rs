@@ -164,6 +164,7 @@ impl Library {
                 #[strong(rename_to = this)]
                 self,
                 move |_: ClientState, album: Album| {
+                    println!("{:?}", &album);
                     this.imp().albums.append(&album);
                 }
             ),
@@ -176,6 +177,7 @@ impl Library {
                 #[strong(rename_to = this)]
                 self,
                 move |_: ClientState, artist: Artist| {
+                    println!("{:?}", &artist);
                     this.imp().artists.append(&artist);
                 }
             ),

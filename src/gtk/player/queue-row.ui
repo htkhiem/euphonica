@@ -63,7 +63,6 @@
               <object class="GtkLabel" id="artist_name">
                 <property name="ellipsize">end</property>
                 <property name="margin-start">4</property>
-                <property name="label">Unknown</property>
               </object>
             </child>
 
@@ -84,7 +83,6 @@
               <object class="GtkLabel" id="album_name">
                 <property name="ellipsize">end</property>
                 <property name="margin-start">4</property>
-                <property name="label">Unknown</property>
               </object>
             </child>
 

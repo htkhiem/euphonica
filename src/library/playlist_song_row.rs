@@ -16,7 +16,7 @@ use super::{Library, PlaylistContentView};
 mod imp {
     use std::cell::Cell;
 
-    use crate::library::PlaylistContentView;
+    use crate::{cache::placeholders::{EMPTY_ALBUM_STRING, EMPTY_ARTIST_STRING}, library::PlaylistContentView};
     use glib::{ParamSpec, ParamSpecBoolean, ParamSpecString};
     use once_cell::sync::Lazy;
 
@@ -151,11 +151,15 @@ mod imp {
                 "artist" => {
                     if let Ok(tag) = value.get::<&str>() {
                         self.artist_name.set_label(tag);
+                    } else {
+                        self.artist_name.set_label(*EMPTY_ARTIST_STRING);
                     }
                 }
                 "album" => {
                     if let Ok(name) = value.get::<&str>() {
                         self.album_name.set_label(name);
+                    } else {
+                        self.album_name.set_label(*EMPTY_ALBUM_STRING);
                     }
                 }
                 "duration" => {

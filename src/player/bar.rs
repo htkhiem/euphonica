@@ -10,10 +10,7 @@ use std::cell::{Cell, RefCell};
 use std::sync::OnceLock;
 
 use crate::{
-    cache::placeholders::ALBUMART_PLACEHOLDER,
-    common::Marquee,
-    utils::settings_manager,
-    player::{ratio_center_box::RatioCenterBox, seekbar::Seekbar}
+    cache::placeholders::{ALBUMART_PLACEHOLDER, EMPTY_ALBUM_STRING, EMPTY_ARTIST_STRING}, common::Marquee, player::{ratio_center_box::RatioCenterBox, seekbar::Seekbar}, utils::settings_manager
 };
 
 use super::{
@@ -291,12 +288,26 @@ impl PlayerBar {
         let album = imp.album.get();
         player
             .bind_property("album", &album, "label")
+            .transform_to(|_, s: Option<&str>| {
+                Some(if s.is_none_or(|s| s.is_empty()) {
+                    (*EMPTY_ALBUM_STRING).to_value()
+                } else {
+                    s.to_value()
+                })
+            })
             .sync_create()
             .build();
 
         let artist = imp.artist.get();
         player
             .bind_property("artist", &artist, "label")
+            .transform_to(|_, s: Option<&str>| {
+                Some(if s.is_none_or(|s| s.is_empty()) {
+                    (*EMPTY_ARTIST_STRING).to_value()
+                } else {
+                    s.to_value()
+                })
+            })
             .sync_create()
             .build();
 

@@ -16,7 +16,7 @@ use super::Library;
 mod imp {
     use std::cell::Cell;
 
-    use crate::common::CoverSource;
+    use crate::{cache::placeholders::EMPTY_ALBUM_STRING, common::CoverSource};
 
     use super::*;
     use once_cell::sync::Lazy;
@@ -100,6 +100,8 @@ mod imp {
                 "album" => {
                     if let Ok(name) = value.get::<&str>() {
                         self.album_name.set_label(name);
+                    } else {
+                        self.album_name.set_label(*EMPTY_ALBUM_STRING);
                     }
                 }
                 "duration" => {

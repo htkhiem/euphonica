@@ -6,7 +6,7 @@ use std::{
 };
 
 use crate::{
-    cache::{placeholders::ALBUMART_THUMBNAIL_PLACEHOLDER, Cache, CacheState},
+    cache::{placeholders::{ALBUMART_THUMBNAIL_PLACEHOLDER, EMPTY_ALBUM_STRING, EMPTY_ARTIST_STRING}, Cache, CacheState},
     common::{CoverSource, Song, SongInfo},
     utils::strip_filename_linux,
 };
@@ -171,9 +171,23 @@ impl RecentSongRow {
             .bind(self, "name", gtk::Widget::NONE);
 
         item.property_expression("album")
+            .chain_closure::<String>(closure_local!(|_: Option<glib::Object>, title: Option<&str>| {
+                String::from(if title.is_none_or(|t| t.is_empty()) {
+                    *EMPTY_ALBUM_STRING
+                } else {
+                    title.unwrap()
+                })
+            }))
             .bind(self, "album", gtk::Widget::NONE);
 
         item.property_expression("artist")
+            .chain_closure::<String>(closure_local!(|_: Option<glib::Object>, artist: Option<&str>| {
+                String::from(if artist.is_none_or(|a| a.is_empty()) {
+                    *EMPTY_ARTIST_STRING
+                } else {
+                    artist.unwrap()
+                })
+            }))
             .bind(self, "artist", gtk::Widget::NONE);
 
         item.property_expression("last-played-desc")

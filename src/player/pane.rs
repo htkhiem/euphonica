@@ -10,7 +10,7 @@ use gtk::{
 use std::{cell::{Cell, RefCell}, fs::{self, File}, io::Write};
 
 use crate::{
-    cache::placeholders::ALBUMART_PLACEHOLDER,
+    cache::placeholders::{ALBUMART_PLACEHOLDER, EMPTY_ALBUM_STRING, EMPTY_ARTIST_STRING},
     common::paintables::FadePaintable,
     utils::{self, settings_manager},
 };
@@ -387,12 +387,26 @@ impl PlayerPane {
         let album = imp.album.get();
         player
             .bind_property("album", &album, "label")
+            .transform_to(|_, s: Option<&str>| {
+                Some(if s.is_none_or(|s| s.is_empty()) {
+                    (*EMPTY_ALBUM_STRING).to_value()
+                } else {
+                    s.to_value()
+                })
+            })
             .sync_create()
             .build();
 
         let artist = imp.artist.get();
         player
             .bind_property("artist", &artist, "label")
+            .transform_to(|_, s: Option<&str>| {
+                Some(if s.is_none_or(|s| s.is_empty()) {
+                    (*EMPTY_ARTIST_STRING).to_value()
+                } else {
+                    s.to_value()
+                })
+            })
             .sync_create()
             .build();
 

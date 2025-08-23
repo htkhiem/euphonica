@@ -80,7 +80,7 @@ impl AlbumInfo {
 impl Default for AlbumInfo {
     fn default() -> Self {
         AlbumInfo {
-            title: "Untitled Album".to_owned(),
+            title: "".to_owned(),
             example_uri: "".to_owned(),
             folder_uri: "".to_owned(),
             artists: Vec::with_capacity(0),
