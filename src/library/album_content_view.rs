@@ -10,7 +10,7 @@ use time::{format_description, Date};
 
 use super::{artist_tag::ArtistTag, AlbumSongRow, Library};
 use crate::{
-    cache::{placeholders::ALBUMART_PLACEHOLDER, Cache, CacheState},
+    cache::{placeholders::{ALBUMART_PLACEHOLDER, EMPTY_ALBUM_STRING}, Cache, CacheState},
     client::ClientState,
     common::{Album, AlbumInfo, Artist, CoverSource, Rating, Song},
     utils::format_secs_as_duration, window::EuphonicaWindow,
@@ -358,31 +358,40 @@ impl AlbumContentView {
     }
 
     fn update_meta(&self, album: &Album) {
-        let cache = self.imp().cache.get().unwrap().clone();
         let wiki_box = self.imp().wiki_box.get();
-        let wiki_text = self.imp().wiki_text.get();
-        let wiki_link = self.imp().wiki_link.get();
-        let wiki_attrib = self.imp().wiki_attrib.get();
-        if let Some(meta) = cache.load_cached_album_meta(album.get_info()) {
-            if let Some(wiki) = meta.wiki {
-                wiki_box.set_visible(true);
-                wiki_text.set_label(&wiki.content);
-                if let Some(url) = wiki.url.as_ref() {
-                    wiki_link.set_visible(true);
-                    wiki_link.set_uri(url);
-                } else {
-                    wiki_link.set_visible(false);
-                }
-                wiki_attrib.set_label(&wiki.attribution);
-            } else {
-                wiki_box.set_visible(false);
-            }
-            let infobox_spinner = self.imp().infobox_spinner.get();
+        let infobox_spinner = self.imp().infobox_spinner.get();
+        // If the current album is the "untitled" one (i.e. for songs without an album tag),
+        // don't attempt to update metadata.
+        if album.get_title().is_empty() {
+            wiki_box.set_visible(false);
             if infobox_spinner.visible_child_name().unwrap() != "content" {
                 infobox_spinner.set_visible_child_name("content");
             }
         } else {
-            wiki_box.set_visible(false);
+            let cache = self.imp().cache.get().unwrap().clone();
+            let wiki_text = self.imp().wiki_text.get();
+            let wiki_link = self.imp().wiki_link.get();
+            let wiki_attrib = self.imp().wiki_attrib.get();
+            if let Some(meta) = cache.load_cached_album_meta(album.get_info()) {
+                if let Some(wiki) = meta.wiki {
+                    wiki_box.set_visible(true);
+                    wiki_text.set_label(&wiki.content);
+                    if let Some(url) = wiki.url.as_ref() {
+                        wiki_link.set_visible(true);
+                        wiki_link.set_uri(url);
+                    } else {
+                        wiki_link.set_visible(false);
+                    }
+                    wiki_attrib.set_label(&wiki.attribution);
+                } else {
+                    wiki_box.set_visible(false);
+                }
+                if infobox_spinner.visible_child_name().unwrap() != "content" {
+                    infobox_spinner.set_visible_child_name("content");
+                }
+            } else {
+                wiki_box.set_visible(false);
+            }
         }
     }
 
@@ -711,6 +720,13 @@ impl AlbumContentView {
 
         let title_binding = album
             .bind_property("title", &title_label, "label")
+            .transform_to(|_, s: Option<&str>| {
+                Some(if s.is_none_or(|s| s.is_empty()) {
+                    (*EMPTY_ALBUM_STRING).to_value()
+                } else {
+                    s.to_value()
+                })
+            })
             .sync_create()
             .build();
         // Save binding

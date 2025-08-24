@@ -9,7 +9,7 @@ use std::{
 
 use super::{AlbumCell, ArtistSongRow, Library};
 use crate::{
-    cache::{Cache, CacheState},
+    cache::{placeholders::EMPTY_ARTIST_STRING, Cache, CacheState},
     client::ClientState,
     common::{Album, Artist, Song}, utils::settings_manager,
 };
@@ -335,31 +335,40 @@ impl Default for ArtistContentView {
 
 impl ArtistContentView {
     fn update_meta(&self, artist: &Artist) {
-        let cache = self.imp().cache.get().unwrap().clone();
         let bio_box = self.imp().bio_box.get();
-        let bio_text = self.imp().bio_text.get();
-        let bio_link = self.imp().bio_link.get();
-        let bio_attrib = self.imp().bio_attrib.get();
-        if let Some(meta) = cache.load_cached_artist_meta(artist.get_info()) {
-            if let Some(bio) = meta.bio {
-                bio_box.set_visible(true);
-                bio_text.set_label(&bio.content);
-                if let Some(url) = bio.url.as_ref() {
-                    bio_link.set_visible(true);
-                    bio_link.set_uri(url);
-                } else {
-                    bio_link.set_visible(false);
-                }
-                bio_attrib.set_label(&bio.attribution);
-            } else {
-                bio_box.set_visible(false);
-            }
-            let stack = self.imp().infobox_spinner.get();
+        let stack = self.imp().infobox_spinner.get();
+        // If the current album is the "untitled" one (i.e. for songs without an album tag),
+        // don't attempt to update metadata.
+        let cache = self.imp().cache.get().unwrap().clone();
+        if artist.get_name().is_empty() {
+            bio_box.set_visible(false);
             if stack.visible_child_name().unwrap() != "content" {
                 stack.set_visible_child_name("content");
             }
         } else {
-            bio_box.set_visible(false);
+            let bio_text = self.imp().bio_text.get();
+            let bio_link = self.imp().bio_link.get();
+            let bio_attrib = self.imp().bio_attrib.get();
+            if let Some(meta) = cache.load_cached_artist_meta(artist.get_info()) {
+                if let Some(bio) = meta.bio {
+                    bio_box.set_visible(true);
+                    bio_text.set_label(&bio.content);
+                    if let Some(url) = bio.url.as_ref() {
+                        bio_link.set_visible(true);
+                        bio_link.set_uri(url);
+                    } else {
+                        bio_link.set_visible(false);
+                    }
+                    bio_attrib.set_label(&bio.attribution);
+                } else {
+                    bio_box.set_visible(false);
+                }
+                if stack.visible_child_name().unwrap() != "content" {
+                    stack.set_visible_child_name("content");
+                }
+            } else {
+                bio_box.set_visible(false);
+            }
         }
     }
 
@@ -700,6 +709,13 @@ impl ArtistContentView {
 
         let name_binding = artist
             .bind_property("name", &name_label, "label")
+            .transform_to(|_, s: Option<&str>| {
+                Some(if s.is_none_or(|s| s.is_empty()) {
+                    (*EMPTY_ARTIST_STRING).to_value()
+                } else {
+                    s.to_value()
+                })
+            })
             .sync_create()
             .build();
         // Save binding

@@ -291,6 +291,7 @@ impl Sidebar {
             .queue()
             .bind_property("n-items", &self.imp().queue_len.get(), "label")
             .transform_to(|_, size: u32| Some(size.to_string()))
+            .sync_create()
             .build();
     }
 
