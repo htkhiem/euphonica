@@ -9,6 +9,7 @@ use crate::{
     utils::{prettify_audio_format, settings_manager, strip_filename_linux}
 };
 use async_lock::OnceCell as AsyncOnceCell;
+use ::glib::WeakRef;
 use mpris_server::{
     zbus::{self, fdo},
     LocalPlayerInterface, LocalRootInterface, LocalServer, LoopStatus, Metadata as MprisMetadata,
@@ -172,6 +173,7 @@ mod imp {
 
     use super::*;
     use crate::{application::EuphonicaApplication, common::CoverSource, meta_providers::models::Lyrics};
+    use ::glib::WeakRef;
     use glib::{
         ParamSpec, ParamSpecBoolean, ParamSpecDouble, ParamSpecEnum, ParamSpecFloat, ParamSpecInt,
         ParamSpecString, ParamSpecUInt, ParamSpecUInt64
@@ -797,6 +799,24 @@ impl Player {
                     let mut song_cache = this.imp().song_cache.borrow_mut();
                     for song in songs.iter() {
                         song_cache.push(song.get_queue_id(), song.clone());
+                    }
+                }
+            )
+        );
+
+        client_state.connect_closure(
+            "queue-songs-downloaded",
+            false,
+            closure_local!(
+                #[weak(rename_to = this)]
+                self,
+                move |_: ClientState, songs: glib::BoxedAnyObject| {
+                    let songs = songs.borrow::<Vec<Song>>();
+                    this.imp().queue.extend_from_slice(&songs);
+                    for song in songs.iter() {
+                        let weak_ref = WeakRef::new();
+                        weak_ref.set(Some(song));
+                        this.imp().queue_map.borrow_mut().insert(song.get_queue_id(), weak_ref);
                     }
                 }
             )
