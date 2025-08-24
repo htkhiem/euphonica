@@ -43,9 +43,9 @@ mod imp {
         pub quality_grade: TemplateChild<gtk::Image>,
         #[template_child]
         pub remove: TemplateChild<Button>,
-        pub queue_id: Cell<u32>,
-        pub thumbnail_signal_ids: RefCell<Option<(SignalHandlerId, SignalHandlerId)>>,
+        pub signal_ids: RefCell<Option<(SignalHandlerId, SignalHandlerId, SignalHandlerId)>>,
         pub song: RefCell<Option<Song>>,
+        pub player: OnceCell<Player>,
         pub cache: OnceCell<Rc<Cache>>,
         pub thumbnail_source: Cell<CoverSource>,
     }
@@ -76,7 +76,6 @@ mod imp {
                     ParamSpecString::builder("artist").build(),
                     ParamSpecString::builder("album").build(),
                     ParamSpecBoolean::builder("is-playing").build(),
-                    ParamSpecUInt::builder("queue-id").build(),
                     // ParamSpecString::builder("duration").build(),
                     ParamSpecString::builder("quality-grade").build(),
                 ]
@@ -90,7 +89,6 @@ mod imp {
                 "artist" => self.artist_name.label().to_value(),
                 "album" => self.album_name.label().to_value(),
                 "is-playing" => self.playing_indicator.is_child_revealed().to_value(),
-                "queue-id" => self.queue_id.get().to_value(),
                 // "duration" => self.duration.label().to_value(),
                 "quality-grade" => self.quality_grade.icon_name().to_value(),
                 _ => unimplemented!(),
@@ -124,11 +122,6 @@ mod imp {
                         self.playing_indicator.set_reveal_child(p);
                     }
                 }
-                "queue-id" => {
-                    if let Ok(id) = value.get::<u32>() {
-                        self.queue_id.replace(id);
-                    }
-                }
                 // "duration" => {
                 //     // Pre-formatted please
                 //     if let Ok(dur) = value.get::<&str>() {
@@ -149,7 +142,8 @@ mod imp {
         }
 
         fn dispose(&self) {
-            if let Some((set_id, clear_id)) = self.thumbnail_signal_ids.take() {
+            if let Some((playing_id, set_id, clear_id)) = self.signal_ids.take() {
+                self.player.get().unwrap().disconnect(playing_id);
                 let cache_state = self.cache.get().unwrap().get_cache_state();
                 cache_state.disconnect(set_id);
                 cache_state.disconnect(clear_id);
@@ -177,10 +171,22 @@ impl QueueRow {
         res
     }
 
+    fn update_playing_status(&self, maybe_queue_id: Option<u32>) {
+        if let (Some(id), Some(own_id)) = (
+            maybe_queue_id,
+            self.imp().song.borrow().as_ref().map(|s| s.get_queue_id())
+        ) {
+            self.imp().playing_indicator.set_reveal_child(id == own_id);
+        } else {
+            self.imp().playing_indicator.set_reveal_child(false);
+        }
+    }
+
     #[inline(always)]
     pub fn setup(&self, item: &gtk::ListItem, player: Player, cache: Rc<Cache>) {
         let cache_state = cache.get_cache_state();
         let _ = self.imp().cache.set(cache.clone());
+        let _ = self.imp().player.set(player.clone());
         // Bind controls
         self.imp().remove.connect_clicked(clone!(
             #[weak(rename_to = this)]
@@ -188,7 +194,9 @@ impl QueueRow {
             #[weak]
             player,
             move |_| {
-                player.remove_song_id(this.imp().queue_id.get());
+                if let Some(song) = this.imp().song.borrow().as_ref() {
+                    player.remove_song_pos(song.get_queue_pos());
+                }
             }
         ));
 
@@ -198,7 +206,9 @@ impl QueueRow {
             #[weak]
             player,
             move |_| {
-                player.swap_dir(this.imp().queue_id.get(), SwapDirection::Up);
+                if let Some(song) = this.imp().song.borrow().as_ref() {
+                    player.swap_dir(song.get_queue_pos(), SwapDirection::Up);
+                }
             }
         ));
 
@@ -208,7 +218,9 @@ impl QueueRow {
             #[weak]
             player,
             move |_| {
-                player.swap_dir(this.imp().queue_id.get(), SwapDirection::Down);
+                if let Some(song) = this.imp().song.borrow().as_ref() {
+                    player.swap_dir(song.get_queue_pos(), SwapDirection::Down);
+                }
             }
         ));
 
@@ -240,11 +252,17 @@ impl QueueRow {
             .chain_property::<Song>("is-playing")
             .bind(self, "is-playing", gtk::Widget::NONE);
 
-        item.property_expression("item")
-            .chain_property::<Song>("queue-id")
-            .bind(self, "queue-id", gtk::Widget::NONE);
-
-        let _ = self.imp().thumbnail_signal_ids.replace(Some((
+        let _ = self.imp().signal_ids.replace(Some((
+            player.connect_notify_local(
+                Some("queue-id"),
+                clone!(
+                    #[weak(rename_to = this)]
+                    self,
+                    move |player, _| {
+                        this.update_playing_status(player.queue_id());
+                    }
+                )
+            ),
             cache_state.connect_closure(
                 "album-art-downloaded",
                 false,
@@ -351,6 +369,7 @@ impl QueueRow {
         // Here we only need to manually bind to the cache controller to fetch album art.
         // No need to fetch here as QueueView has already done once for us.
         self.imp().song.replace(Some(song.clone()));
+        self.update_playing_status(self.imp().player.get().unwrap().queue_id());
         self.schedule_thumbnail(song.get_info());
     }
 

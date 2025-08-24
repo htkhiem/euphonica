@@ -182,6 +182,7 @@ mod imp {
 
                 // If this is the main instance, respect the minimized flag
                 if !self.start_minimized.get() {
+                    self.player.get().unwrap().set_is_foreground(true);
                     self.obj().raise_window();
                 }
             }
