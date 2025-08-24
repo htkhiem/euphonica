@@ -85,6 +85,7 @@ pub struct SongInfo {
     pub artist_tag: Option<String>, // Original tag, with all the linkages and formatting
     pub duration: Option<Duration>, // Default to 0 if somehow the option in mpd's Song is None
     queue_id: Option<u32>,
+    original_queue_pos: Option<u32>,  // Only set once at creation. Subsequent updates are kept in the Song GObject.
     // range: Option<Range>,
     pub album: Option<AlbumInfo>,
     track: Cell<i64>,
@@ -124,6 +125,7 @@ impl Default for SongInfo {
             artist_tag: None,
             duration: None,
             queue_id: None,
+            original_queue_pos: None,
             album: None,
             track: Cell::new(-1), // negative values indicate no track index
             disc: Cell::new(-1),
@@ -344,10 +346,7 @@ impl Song {
     }
 
     pub fn get_queue_id(&self) -> u32 {
-        if let Some(id) = self.get_info().queue_id {
-            return id;
-        }
-        0
+        self.get_info().queue_id.unwrap_or(0)
     }
 
     pub fn get_queue_pos(&self) -> u32 {
@@ -490,6 +489,7 @@ impl From<mpd::song::Song> for SongInfo {
             artist_tag: song.artist,
             duration: song.duration,
             queue_id: None,
+            original_queue_pos: None,
             album: None,
             track: Cell::new(-1),
             disc: Cell::new(-1),
@@ -502,6 +502,7 @@ impl From<mpd::song::Song> for SongInfo {
 
         if let Some(place) = song.place {
             let _ = res.queue_id.replace(place.id.0);
+            let _ = res.original_queue_pos.replace(place.pos);
         }
 
         // Search tags vector for additional fields we can use.
@@ -624,9 +625,6 @@ impl From<mpd::song::Song> for SongInfo {
 impl From<mpd::song::Song> for Song {
     fn from(song: mpd::song::Song) -> Self {
         let res = glib::Object::new::<Self>();
-        if let Some(place) = song.place {
-            res.set_queue_pos(place.pos);
-        }
         let info = SongInfo::from(song);
         let _ = res.imp().info.set(info);
         res
@@ -636,6 +634,7 @@ impl From<mpd::song::Song> for Song {
 impl From<SongInfo> for Song {
     fn from(info: SongInfo) -> Self {
         let res = glib::Object::new::<Self>();
+        res.imp().pos.set(info.original_queue_pos.unwrap_or(0));
         let _ = res.imp().info.set(info);
         res
     }

@@ -4,6 +4,7 @@ use glib::clone;
 use gtk::{gio, glib};
 use gtk::{gio::prelude::*, glib::BoxedAnyObject};
 use keyring::{error::Error as KeyringError, Entry};
+use mpd::song::PosIdChange;
 use resolve_path::PathResolveExt;
 use mpd::error::ServerError;
 use mpd::{
@@ -40,7 +41,7 @@ use super::state::{ClientState, ConnectionState, StickersSupportLevel};
 use super::stream::StreamWrapper;
 use super::ClientError;
 
-const BATCH_SIZE: u32 = 1024;
+const BATCH_SIZE: usize = 1024;
 const FETCH_LIMIT: usize = 10000000; // Fetch at most ten million songs at once (same
                                      // folder, same tag, etc)
 
@@ -49,6 +50,8 @@ enum AsyncClientMessage {
     Connect, // Host and port are always read from gsettings
     Busy(bool), // A true will be sent when the work queue starts having tasks, and a false when it is empty again.
     Idle(Vec<Subsystem>), // Will only be sent from the child thread
+    QueueSongsDownloaded(Vec<SongInfo>),
+    QueueChangesReceived(Vec<PosIdChange>),
     AlbumBasicInfoDownloaded(AlbumInfo), // Return new album to be added to the list model (as SongInfo of a random song in it).
     AlbumSongInfoDownloaded(String, Vec<SongInfo>), // Return songs in the album with the given tag (batched)
     ArtistBasicInfoDownloaded(ArtistInfo), // Return new artist to be added to the list model.
@@ -67,6 +70,8 @@ pub enum BackgroundTask {
     Update,
     DownloadFolderCover(AlbumInfo),
     DownloadEmbeddedCover(SongInfo),
+    FetchQueue,  // Full fetch
+    FetchQueueChanges(u32),  // From given version
     FetchFolderContents(String), // Gradually get all inodes in folder at path
     FetchAlbums,                 // Gradually get all albums
     FetchAlbumSongs(String),     // Get songs of album with given tag
@@ -136,11 +141,56 @@ mod background {
     use crate::{cache::sqlite, utils::strip_filename_linux};
 
     use super::*;
-    pub fn update_mpd_database(client: &mut mpd::Client<StreamWrapper>,
+    pub fn update_mpd_database(
+        client: &mut mpd::Client<StreamWrapper>,
         sender_to_fg: &Sender<AsyncClientMessage>,
     ) {
         if let Ok(_) = client.update() {
             let _ = sender_to_fg.send_blocking(AsyncClientMessage::DBUpdated);
+        }
+    }
+
+    pub fn get_current_queue(
+        client: &mut mpd::Client<StreamWrapper>,
+        sender_to_fg: &Sender<AsyncClientMessage>
+    ) {
+        // TODO: batched reads to avoid blocking MPD server
+        // For now we're fetching the entire thing at once in the background, then
+        // sending batches of it to the UI to allow the UI thread some slack.
+        if let Ok(mut queue) = client.queue() {
+            let mut idx: usize = 0;
+            let len = queue.len();
+            while idx < len {
+                let end = std::cmp::min(idx + BATCH_SIZE, len);
+                let _ = sender_to_fg.send_blocking(AsyncClientMessage::QueueSongsDownloaded(
+                    queue[idx..end]
+                    .iter_mut()
+                    .map(|mpd_song| SongInfo::from(std::mem::take(mpd_song)))
+                    .collect()
+                ));
+                idx += BATCH_SIZE;
+            }
+        }
+    }
+
+    pub fn get_queue_changes(
+        client: &mut mpd::Client<StreamWrapper>,
+        sender_to_fg: &Sender<AsyncClientMessage>,
+        curr_version: u32
+    ) {
+        // TODO: batched reads to avoid blocking MPD server
+        // For now we're fetching the entire thing at once in the background, then
+        // sending batches of it to the UI to allow the UI thread some slack.
+        if let Ok(changes) = client.changesposid(curr_version) {
+            let mut idx: usize = 0;
+            let len = changes.len();
+            while idx < len {
+                let end = std::cmp::min(idx + BATCH_SIZE, len);
+                let _ = sender_to_fg.send_blocking(AsyncClientMessage::QueueChangesReceived(
+                    changes[idx..end].to_owned()
+                ));
+                idx += BATCH_SIZE;
+            }
         }
     }
 
@@ -328,11 +378,11 @@ mod background {
     where
         F: Fn(Vec<SongInfo>) -> Result<(), SendError<AsyncClientMessage>>,
     {
-        let mut curr_len: u32 = 0;
+        let mut curr_len: usize = 0;
         let mut more: bool = true;
-        while more && (curr_len as usize) < FETCH_LIMIT {
+        while more && (curr_len) < FETCH_LIMIT {
             let songs: Vec<SongInfo> = client
-                .find(query, Window::from((curr_len, curr_len + BATCH_SIZE)))
+                .find(query, Window::from((curr_len as u32, (curr_len + BATCH_SIZE) as u32)))
                 .unwrap()
                 .iter_mut()
                 .map(|mpd_song| SongInfo::from(std::mem::take(mpd_song)))
@@ -689,6 +739,12 @@ impl MpdWrapper {
                         BackgroundTask::Update => {
                             background::update_mpd_database(&mut client, &sender_to_fg)
                         }
+                        BackgroundTask::FetchQueue => {
+                            background::get_current_queue(&mut client, &sender_to_fg);
+                        }
+                        BackgroundTask::FetchQueueChanges(version) => {
+                            background::get_queue_changes(&mut client, &sender_to_fg, version);
+                        }
                         BackgroundTask::DownloadFolderCover(key) => {
                             background::download_folder_cover(
                                 &mut client,
@@ -819,6 +875,12 @@ impl MpdWrapper {
             AsyncClientMessage::Connect => self.connect_async().await,
             // AsyncClientMessage::Disconnect => self.disconnect_async().await,
             AsyncClientMessage::Idle(changes) => self.handle_idle_changes(changes).await,
+            AsyncClientMessage::QueueSongsDownloaded(songs) => {
+                self.on_songs_downloaded("queue-songs-downloaded", None, songs)
+            }
+            AsyncClientMessage::QueueChangesReceived(changes) => {
+                self.state.emit_boxed_result("queue-changed", changes);
+            }
             AsyncClientMessage::AlbumBasicInfoDownloaded(info) => {
                 self.on_album_downloaded("album-basic-info-downloaded", None, info)
             }
@@ -1308,16 +1370,20 @@ impl MpdWrapper {
         }
         match res {
             Some(Ok(status)) => {
-                // Check whether we need to perform a full queue reload (inefficient)
+                // Check whether we need to sync queue with server side (inefficient)
                 let old_version = self.queue_version.replace(status.queue_version);
                 if status.queue_version > old_version {
                     if status.queue_version > self.expected_queue_version.get() {
                         self.expected_queue_version.set(status.queue_version);
-                        if let Some(changes) = self.get_queue_changes(old_version) {
-                            self.state.emit_by_name::<()>("queue-changed", &[
-                                &BoxedAnyObject::new(changes).to_value(),
-                            ]);
-                        }
+                        self.queue_background(
+                            if old_version == 0 {
+                                BackgroundTask::FetchQueue
+                            } else {
+                                BackgroundTask::FetchQueueChanges(old_version)
+                            }
+                            ,
+                            true
+                        );
                     }
                 }
                 Some(status)
@@ -1327,6 +1393,19 @@ impl MpdWrapper {
                 None
             }
         }
+    }
+
+    pub fn get_song_at_queue_id(&self, id: u32) -> Option<Song> {
+        if let Some(client) = self.main_client.borrow_mut().as_mut() {
+            if let Ok(mut songs) = client.songs(mpd::Id(id)) {
+                if songs.len() > 0 {
+                    return Some(Song::from(std::mem::take(&mut songs[0])));
+                }
+                return None;
+            }
+            return None;
+        }
+        return None;
     }
 
     pub fn set_playback_flow(&self, flow: PlaybackFlow) {
@@ -1510,22 +1589,6 @@ impl MpdWrapper {
             client.rewind(position).expect("Failed to seek song");
             self.force_idle();
         }
-    }
-
-    pub fn get_current_queue(&self) -> Option<Vec<Song>> {
-        // TODO: move to background thread with batched reads
-        if let Some(client) = self.main_client.borrow_mut().as_mut() {
-            if let Ok(mut queue) = client.queue() {
-                return Some(
-                    queue
-                        .iter_mut()
-                        .map(|mpd_song| Song::from(std::mem::take(mpd_song)))
-                        .collect(),
-                );
-            }
-            return None;
-        }
-        return None;
     }
 
     fn on_songs_downloaded(&self, signal_name: &str, tag: Option<String>, songs: Vec<SongInfo>) {

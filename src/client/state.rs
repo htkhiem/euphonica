@@ -109,7 +109,7 @@ mod imp {
                         .build(),
                     Signal::builder("queue-changed")
                         .param_types([
-                            BoxedAnyObject::static_type(), // Vec<Song> (diff only)
+                            BoxedAnyObject::static_type(), // Vec<PosIdChange> (diff only)
                         ])
                         .build(),
                     Signal::builder("album-art-downloaded")
@@ -170,7 +170,12 @@ mod imp {
                         .param_types([
                             ClientError::static_type()
                         ])
-                        .build()
+                        .build(),
+                    Signal::builder("queue-songs-downloaded")
+                        .param_types([
+                            BoxedAnyObject::static_type(), // Vec<Song>
+                        ])
+                        .build(),
                 ]
             })
         }
