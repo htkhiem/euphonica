@@ -626,8 +626,7 @@ impl From<mpd::song::Song> for Song {
     fn from(song: mpd::song::Song) -> Self {
         let res = glib::Object::new::<Self>();
         let info = SongInfo::from(song);
-        let _ = res.imp().info.set(info);
-        res
+        Self::from(info)
     }
 }
 
