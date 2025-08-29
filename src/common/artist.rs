@@ -87,7 +87,7 @@ pub fn parse_mb_artist_tag<'a>(input: &'a str) -> Vec<&'a str> {
             for i in 1..(matched_delims.len()) {
                 let between_range = matched_delims[i - 1].end()..matched_delims[i].start();
                 // println!("Between: `{between_range:?}`");
-                if let buffer.get(between_range.clone()).is_some_and(|substr| substr.trim().len() > 0) {
+                if buffer.get(between_range.clone()).is_some_and(|substr| substr.trim().len() > 0) {
                     if let Some(artist) = input.get(between_range).map(|name| name.trim()) {
                         found_artists.push(artist);
                     }
