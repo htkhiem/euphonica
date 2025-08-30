@@ -1,4 +1,4 @@
-use glib::{clone, closure_local, Object};
+use glib::{clone, Object};
 use gtk::{glib, prelude::*, subclass::prelude::*, CompositeTemplate};
 use std::cell::Cell;
 
@@ -7,10 +7,10 @@ use crate::{common::QualityGrade, utils};
 use super::Player;
 
 mod imp {
-    use std::{cell::OnceCell, sync::OnceLock};
+    use std::{cell::OnceCell};
 
     use crate::utils::format_secs_as_duration;
-    use glib::{subclass::Signal, ParamSpec, ParamSpecDouble};
+    use glib::{ParamSpec, ParamSpecDouble};
     use once_cell::sync::Lazy;
 
     use super::*;

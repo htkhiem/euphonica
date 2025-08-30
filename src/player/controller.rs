@@ -9,7 +9,6 @@ use crate::{
     utils::{prettify_audio_format, settings_manager, strip_filename_linux}
 };
 use async_lock::OnceCell as AsyncOnceCell;
-use ::glib::WeakRef;
 use mpris_server::{
     zbus::{self, fdo},
     LocalPlayerInterface, LocalRootInterface, LocalServer, LoopStatus, Metadata as MprisMetadata,
@@ -24,9 +23,10 @@ use gtk::{gio, glib, prelude::*};
 use mpd::{
     error::Error as MpdError, song::PosIdChange, status::{AudioFormat, State, Status}, ReplayGain, SaveMode, Subsystem
 };
+use lru::LruCache;
 use nohash_hasher::NoHashHasher;
 use std::{
-    collections::HashMap, hash::BuildHasherDefault,
+    hash::BuildHasherDefault,
     cell::{Cell, OnceCell, RefCell},
     ops::Deref, path::PathBuf,
     rc::Rc, sync::{Arc, Mutex, OnceLock}, vec::Vec,
@@ -168,9 +168,10 @@ fn get_replaygain_icon_name(mode: ReplayGain) -> &'static str {
 }
 
 mod imp {
+    use std::num::NonZero;
+
     use super::*;
     use crate::{application::EuphonicaApplication, common::CoverSource, meta_providers::models::Lyrics};
-    use ::glib::WeakRef;
     use glib::{
         ParamSpec, ParamSpecBoolean, ParamSpecDouble, ParamSpecEnum, ParamSpecFloat, ParamSpecInt,
         ParamSpecString, ParamSpecUInt, ParamSpecUInt64
@@ -182,10 +183,10 @@ mod imp {
         pub state: Cell<PlaybackState>,
         pub position: Cell<f64>,
         pub queue: gio::ListStore,
-        // Keep a mapping from song ID to their latest position in the queue.
+        // Cache song infos so we can reuse them on queue updates.
         // Song IDs are u32s anyway, and I don't think there's any risk of a HashDoS attack
         // from a self-hosted music server so we'll just use identity hash for speed.
-        pub queue_map: RefCell<HashMap::<u32, WeakRef<Song>, BuildHasherDefault<NoHashHasher<u32>>>>,
+        pub song_cache: RefCell<LruCache::<u32, Song, BuildHasherDefault<NoHashHasher<u32>>>>,
         pub lyric_lines: gtk::StringList,  // Line by line for display. May be empty.
         pub lyrics: RefCell<Option<Lyrics>>,
         pub current_song: RefCell<Option<Song>>,
@@ -253,7 +254,7 @@ mod imp {
                 mixramp_db: Cell::new(0.0),
                 mixramp_delay: Cell::new(0.0),
                 queue: gio::ListStore::new::<Song>(),
-                queue_map: RefCell::new(HashMap::with_capacity_and_hasher(15, BuildHasherDefault::default())),
+                song_cache: RefCell::new(LruCache::with_hasher(NonZero::new(1024).unwrap(), BuildHasherDefault::default())),
                 current_song: RefCell::new(None),
                 current_lyric_line: Cell::default(),
                 format: RefCell::new(None),
@@ -744,7 +745,7 @@ impl Player {
                         }
                         ConnectionState::Connecting => {
                             this.imp().queue.remove_all();
-                            this.imp().queue_map.borrow_mut().clear();
+                            this.imp().song_cache.borrow_mut().clear();
                             this.imp().outputs.remove_all();
                             this.update_status(&mpd::Status::default());
                         }
@@ -783,6 +784,7 @@ impl Player {
             ),
         );
 
+        // Only used at init time
         client_state.connect_closure(
             "queue-songs-downloaded",
             false,
@@ -792,10 +794,9 @@ impl Player {
                 move |_: ClientState, songs: glib::BoxedAnyObject| {
                     let songs = songs.borrow::<Vec<Song>>();
                     this.imp().queue.extend_from_slice(&songs);
+                    let mut song_cache = this.imp().song_cache.borrow_mut();
                     for song in songs.iter() {
-                        let weak_ref = WeakRef::new();
-                        weak_ref.set(Some(song));
-                        this.imp().queue_map.borrow_mut().insert(song.get_queue_id(), weak_ref);
+                        song_cache.push(song.get_queue_id(), song.clone());
                     }
                 }
             )
@@ -1036,7 +1037,9 @@ impl Player {
                         }
                     }
                 } else if let Some(curr_song) = local_curr_song.as_ref() {
-                    // Same old song
+                    // Same old song. Just update its queue position.
+                    println!("Updating queue pos of current song");
+                    curr_song.set_queue_pos(new_queue_place.pos);
                     // Record into playback history
                     if !settings_manager().child("library").boolean("pause-recent") {
                         let dur = curr_song.get_duration() as f32;
@@ -1220,7 +1223,7 @@ impl Player {
 
             // Reconstruct the queue within that range.
             let mut new_segment: Vec<glib::Object> = Vec::with_capacity((max_pos - min_pos + 1) as usize);
-            let mut queue_map = self.imp().queue_map.borrow_mut();
+            let mut song_cache = self.imp().song_cache.borrow_mut();
             let mut change_idx: usize = 0;
             for pos in min_pos..=max_pos {
                 // If this position did not change, then simply use the current GObject.
@@ -1234,22 +1237,13 @@ impl Player {
                         panic!("New queue is longer than current queue, but no corresponding diff info was received");
                     }
                 } else {
-                    // This position changed. Check if it's now occupied by a song that's also
-                    // in the current queue. If yes, reuse the GObject.
-                    let mut found_existing: bool = false;
+                    // This position changed. Check if it's a song we already have locally.
                     let id = changes[change_idx].id.0;
-                    if let Some(weak_ref) = queue_map.get(&id) {
-                        if let Some(obj) = weak_ref.upgrade() {
-                            // Update its position in the queue.
-                            obj.downcast_ref::<Song>().unwrap().set_queue_pos(pos);
-                            found_existing = true;
-                            new_segment.push(obj.into());
-                        }
-                         else {
-                             queue_map.remove(&id);
-                         }
-                    }
-                    if !found_existing {
+                    if let Some(existing) = song_cache.get(&id) {
+                        existing.set_queue_pos(changes[change_idx].pos);
+                        new_segment.push(existing.clone().into());
+                    } else {
+                        println!("update_queue(): Song cache miss");
                         // New song. Fetch info.
                         // On very slow connections this might be called after the queue has changed
                         // once more, potentially removing the song with this ID from the server-side
@@ -1258,9 +1252,7 @@ impl Player {
                         let song = self.client()
                                 .get_song_at_queue_id(id)
                                 .unwrap_or_default();
-                        let weak_ref = WeakRef::new();
-                        weak_ref.set(Some(&song));
-                        queue_map.insert(id, weak_ref);
+                        song_cache.push(id, song.clone());
                         new_segment.push(song.into());
                     }
                     change_idx += 1;
@@ -1446,8 +1438,8 @@ impl Player {
         self.client().seek_current_song(new_pos);
     }
 
-    pub fn queue(&self) -> gio::ListStore {
-        self.imp().queue.clone()
+    pub fn queue(&self) -> &gio::ListStore {
+        &self.imp().queue
     }
 
     pub fn lyrics(&self) -> gtk::StringList {
@@ -1534,35 +1526,23 @@ impl Player {
         self.client().play_at(song.get_queue_id(), true);
     }
 
-    pub fn remove_song_pos(&self, delete_pos: u32) {
-        {
-            let id = self.imp().queue.item(delete_pos).and_downcast_ref::<Song>().unwrap().get_queue_pos();
-            self.imp().queue_map.borrow_mut().remove(&id);
-            self.imp().queue.remove(delete_pos);
-            self.client().register_local_queue_changes(1);
-            for (_, song) in self.imp().queue_map.borrow().iter() {
-                if let Some(song) = song.upgrade() {
-                    let curr_pos = song.get_queue_pos();
-                    if curr_pos > delete_pos {
-                        song.set_queue_pos(curr_pos - 1);
-                    }
-                }
-            }
-        }
-        self.client().delete_at(delete_pos, false);
+    /// Remove given song from queue. Will cause an asynchronous server-side sync
+    /// to update all subsequent songs' queue positions.
+    pub fn remove_song(&self, song: &Song) {
+        self.client().delete_at(song.get_queue_id(), true);
     }
 
-    pub fn swap_dir(&self, pos: u32, direction: SwapDirection) {
+    pub fn swap_dir(&self, target: &Song, direction: SwapDirection) {
         self.client().register_local_queue_changes(1);
+        let pos = target.get_queue_pos();
         match direction {
             SwapDirection::Up => {
                 if pos > 0 {
-                    let target = self.imp().queue.item(pos).unwrap().downcast::<Song>().unwrap();
-                    let upper = self.imp().queue.item(pos - 1).unwrap().downcast::<Song>().unwrap();
+                    let upper = self.imp().queue.item(pos - 1).and_downcast::<Song>().unwrap();
                     target.set_queue_pos(pos - 1);
                     upper.set_queue_pos(pos);
                     self.imp().queue.splice(pos - 1, 2, &[
-                        target.upcast::<glib::Object>(),
+                        target.clone().upcast::<glib::Object>(),
                         upper.upcast::<glib::Object>()
                     ]);
                     self.client().swap(pos, pos - 1, false);
@@ -1570,13 +1550,12 @@ impl Player {
             }
             SwapDirection::Down => {
                 if pos < self.imp().queue.n_items() - 1 {
-                    let target = self.imp().queue.item(pos).unwrap().downcast::<Song>().unwrap();
-                    let lower = self.imp().queue.item(pos + 1).unwrap().downcast::<Song>().unwrap();
+                    let lower = self.imp().queue.item(pos + 1).and_downcast::<Song>().unwrap();
                     target.set_queue_pos(pos + 1);
                     lower.set_queue_pos(pos);
                     self.imp().queue.splice(pos, 2, &[
                         lower.upcast::<glib::Object>(),
-                        target.upcast::<glib::Object>()
+                        target.clone().upcast::<glib::Object>()
                     ]);
                     self.client().swap(pos, pos + 1, false);
                 }

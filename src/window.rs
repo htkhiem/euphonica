@@ -1052,7 +1052,7 @@ impl EuphonicaWindow {
             ClientError::Queuing => {
                 self.send_simple_toast("Some songs could not be queued", 3);
             }
-            _ => {}
+            // _ => {}
         }
     }
 

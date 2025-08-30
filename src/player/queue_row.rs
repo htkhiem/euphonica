@@ -13,7 +13,7 @@ use crate::{
 use super::{controller::SwapDirection, Player};
 
 mod imp {
-    use glib::{ParamSpec, ParamSpecBoolean, ParamSpecString, ParamSpecUInt};
+    use glib::{ParamSpec, ParamSpecBoolean, ParamSpecString};
     use gtk::{Button, Revealer};
     use once_cell::sync::Lazy;
     use std::cell::{Cell, OnceCell};
@@ -195,7 +195,7 @@ impl QueueRow {
             player,
             move |_| {
                 if let Some(song) = this.imp().song.borrow().as_ref() {
-                    player.remove_song_pos(song.get_queue_pos());
+                    player.remove_song(song);
                 }
             }
         ));
@@ -207,7 +207,7 @@ impl QueueRow {
             player,
             move |_| {
                 if let Some(song) = this.imp().song.borrow().as_ref() {
-                    player.swap_dir(song.get_queue_pos(), SwapDirection::Up);
+                    player.swap_dir(song, SwapDirection::Up);
                 }
             }
         ));
@@ -219,7 +219,7 @@ impl QueueRow {
             player,
             move |_| {
                 if let Some(song) = this.imp().song.borrow().as_ref() {
-                    player.swap_dir(song.get_queue_pos(), SwapDirection::Down);
+                    player.swap_dir(song, SwapDirection::Down);
                 }
             }
         ));

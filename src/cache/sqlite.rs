@@ -225,11 +225,11 @@ pub enum Error {
 }
 
 pub struct AlbumMetaRow {
-    folder_uri: String,
-    mbid: Option<String>,
-    title: String,
-    artist: Option<String>,
-    last_modified: OffsetDateTime,
+    // folder_uri: String,
+    // mbid: Option<String>,
+    // title: String,
+    // artist: Option<String>,
+    // last_modified: OffsetDateTime,
     data: Vec<u8>, // BSON
 }
 
@@ -248,42 +248,20 @@ impl TryFrom<&Row<'_>> for AlbumMetaRow {
     type Error = SqliteError;
     fn try_from(row: &Row) -> std::result::Result<Self, Self::Error> {
         Ok(Self {
-            folder_uri: row.get(0)?,
-            mbid: row.get(1)?,
-            title: row.get(2)?,
-            artist: row.get(3)?,
-            last_modified: row.get(4)?,
-            data: row.get(5)?,
+            // folder_uri: row.get(0)?,
+            // mbid: row.get(1)?,
+            // title: row.get(2)?,
+            // artist: row.get(3)?,
+            // last_modified: row.get(4)?,
+            data: row.get(0)?,
         })
     }
 }
 
-impl AlbumMetaRow {
-    pub fn new(
-        folder_uri: String,
-        mbid: Option<String>,
-        title: String,
-        artist: Option<String>,
-        last_modified: OffsetDateTime,
-        meta: &AlbumMeta,
-    ) -> Result<Self, Error> {
-        let res = Self {
-            folder_uri,
-            mbid,
-            title,
-            artist,
-            last_modified,
-            data: bson::to_vec(&bson::to_document(meta).map_err(|_| Error::MetaToDocError)?)
-                .map_err(|_| Error::DocToBytesError)?,
-        };
-        Ok(res)
-    }
-}
-
 pub struct ArtistMetaRow {
-    name: String,
-    mbid: Option<String>,
-    last_modified: OffsetDateTime,
+    // name: String,
+    // mbid: Option<String>,
+    // last_modified: OffsetDateTime,
     data: Vec<u8>, // BSON
 }
 
@@ -298,41 +276,23 @@ impl TryInto<ArtistMeta> for ArtistMetaRow {
     }
 }
 
-impl ArtistMetaRow {
-    pub fn new(
-        name: String,
-        mbid: Option<String>,
-        last_modified: OffsetDateTime,
-        meta: &ArtistMeta,
-    ) -> Result<Self, Error> {
-        let res = Self {
-            name,
-            mbid,
-            last_modified,
-            data: bson::to_vec(&bson::to_document(meta).map_err(|_| Error::MetaToDocError)?)
-                .map_err(|_| Error::DocToBytesError)?,
-        };
-        Ok(res)
-    }
-}
-
 impl TryFrom<&Row<'_>> for ArtistMetaRow {
     type Error = SqliteError;
     fn try_from(row: &Row) -> std::result::Result<Self, Self::Error> {
         Ok(Self {
-            name: row.get(0)?,
-            mbid: row.get(1)?,
-            last_modified: row.get(2)?,
-            data: row.get(3)?,
+            // name: row.get(0)?,
+            // mbid: row.get(1)?,
+            // last_modified: row.get(2)?,
+            data: row.get(0)?,
         })
     }
 }
 
 pub struct LyricsRow {
-    uri: String,
+    // uri: String,
     lyrics: String,
     synced: bool,
-    last_modified: OffsetDateTime,
+    // last_modified: OffsetDateTime,
 }
 
 impl TryInto<Lyrics> for LyricsRow {
@@ -350,10 +310,10 @@ impl TryFrom<&Row<'_>> for LyricsRow {
     type Error = SqliteError;
     fn try_from(row: &Row) -> std::result::Result<Self, Self::Error> {
         Ok(Self {
-            uri: row.get(0)?,
-            lyrics: row.get(1)?,
-            synced: row.get(2)?,
-            last_modified: row.get(3)?,
+            // uri: row.get(0)?,
+            lyrics: row.get(0)?,
+            synced: row.get(1)?,
+            // last_modified: row.get(3)?,
         })
     }
 }
@@ -363,12 +323,12 @@ pub fn find_album_meta(album: &AlbumInfo) -> Result<Option<AlbumMeta>, Error> {
     let conn = SQLITE_POOL.get().unwrap();
     if let Some(mbid) = album.mbid.as_deref() {
         query = conn
-            .prepare("select * from albums where mbid = ?1")
+            .prepare("select meta from albums where mbid = ?1")
             .unwrap()
             .query_row(params![mbid], |r| AlbumMetaRow::try_from(r));
     } else if let (title, Some(artist)) = (&album.title, album.get_artist_tag()) {
         query = conn
-            .prepare("select * from albums where title = ?1 and artist = ?2")
+            .prepare("select meta from albums where title = ?1 and artist = ?2")
             .unwrap()
             .query_row(params![title, artist], |r| AlbumMetaRow::try_from(r));
     } else {
@@ -393,12 +353,12 @@ pub fn find_artist_meta(artist: &ArtistInfo) -> Result<Option<ArtistMeta>, Error
     let conn = SQLITE_POOL.get().unwrap();
     if let Some(mbid) = artist.mbid.as_deref() {
         query = conn
-            .prepare("select * from artists where mbid = ?1")
+            .prepare("select meta from artists where mbid = ?1")
             .unwrap()
             .query_row(params![mbid], |r| ArtistMetaRow::try_from(r));
     } else {
         query = conn
-            .prepare("select * from artists where name = ?1")
+            .prepare("select meta from artists where name = ?1")
             .unwrap()
             .query_row(params![&artist.name], |r| ArtistMetaRow::try_from(r));
     }
@@ -476,7 +436,7 @@ pub fn find_lyrics(song: &SongInfo) -> Result<Option<Lyrics>, Error> {
     let query: Result<LyricsRow, SqliteError>;
     let conn = SQLITE_POOL.get().unwrap();
     query = conn
-        .prepare("select * from songs where uri = ?1")
+        .prepare("select lyrics, synced from songs where uri = ?1")
         .unwrap()
         .query_row(params![&song.uri], |r| LyricsRow::try_from(r));
     match query {

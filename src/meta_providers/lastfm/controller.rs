@@ -1,7 +1,5 @@
 extern crate bson;
 
-use std::sync::RwLock;
-
 use gtk::prelude::*;
 use reqwest::{
     blocking::{Client, Response},
@@ -19,8 +17,7 @@ use super::{
 pub const API_ROOT: &str = "http://ws.audioscrobbler.com/2.0";
 
 pub struct LastfmWrapper {
-    client: Client,
-    priority: RwLock<u32>,
+    client: Client
 }
 
 impl LastfmWrapper {
@@ -51,24 +48,10 @@ impl LastfmWrapper {
 }
 
 impl MetadataProvider for LastfmWrapper {
-    fn new(prio: u32) -> Self {
+    fn new() -> Self {
         Self {
-            client: Client::new(),
-            priority: RwLock::new(prio),
+            client: Client::new()
         }
-    }
-
-    fn key(&self) -> &'static str {
-        PROVIDER_KEY
-    }
-
-    fn priority(&self) -> u32 {
-        *self.priority.read().expect("Poisoned RwLock")
-    }
-
-    fn set_priority(&self, prio: u32) {
-        let mut this_prio = self.priority.write().expect("Poisoned RwLock");
-        *this_prio = prio;
     }
 
     /// Schedule getting album metadata from Last.fm.

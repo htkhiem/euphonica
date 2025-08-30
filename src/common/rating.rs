@@ -120,7 +120,7 @@ mod imp {
             click_ctl.connect_released(clone!(
                 #[weak(rename_to = this)]
                 self,
-                move |_, _, x, y| {
+                move |_, _, _, _| {
                     if this.editable.get() {
                         this.obj().set_value(this.preview_value.get());
                         // Further yell to let parent widgets know this change is user-initiated

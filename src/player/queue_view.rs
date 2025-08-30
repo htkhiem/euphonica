@@ -182,7 +182,7 @@ impl QueueView {
         // Enable/disable clear queue button depending on whether the queue is empty or not
         // Set selection mode
         // TODO: Allow click to jump to song
-        let queue_model = player.queue();
+        let queue_model = player.queue().clone();
         let stack = self.imp().content_stack.get();
         queue_model
             .bind_property("n-items", &stack, "visible-child-name")
