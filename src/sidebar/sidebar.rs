@@ -206,7 +206,9 @@ impl Sidebar {
                         move |btn| {
                             if btn.is_active() {
                                 playlist_view.on_playlist_clicked(&playlist);
-                                stack.set_visible_child_name("playlists");
+                                if stack.visible_child_name().is_none_or(|name| name.as_str() != "playlists") {
+                                    stack.set_visible_child_name("playlists");
+                                }
                                 split_view.set_show_sidebar(!split_view.is_collapsed());
                             }
                         }
@@ -239,7 +241,9 @@ impl Sidebar {
             move |btn| {
                 if btn.is_active() {
                     playlist_view.pop();
-                    stack.set_visible_child_name("playlists");
+                    if stack.visible_child_name().is_none_or(|name| name.as_str() != "playlists") {
+                        stack.set_visible_child_name("playlists");
+                    }
                 }
             }
         ));

@@ -1038,7 +1038,6 @@ impl Player {
                     }
                 } else if let Some(curr_song) = local_curr_song.as_ref() {
                     // Same old song. Just update its queue position.
-                    println!("Updating queue pos of current song");
                     curr_song.set_queue_pos(new_queue_place.pos);
                     // Record into playback history
                     if !settings_manager().child("library").boolean("pause-recent") {

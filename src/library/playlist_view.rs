@@ -447,7 +447,9 @@ impl PlaylistView {
         let content_view = self.imp().content_view.get();
         content_view.unbind(true);
         content_view.bind(inode.clone());
-        self.imp().nav_view.push_by_tag("content");
+        if self.imp().nav_view.visible_page_tag().is_none_or(|tag| tag.as_str() != "content") {
+            self.imp().nav_view.push_by_tag("content");
+        }
         self.imp()
             .library
             .get()

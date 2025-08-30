@@ -513,7 +513,9 @@ impl AlbumView {
             .get()
             .expect("AlbumView is incorrectly set up (no Library reference)")
             .init_album(album);
-        self.imp().nav_view.push_by_tag("content");
+        if self.imp().nav_view.visible_page_tag().is_none_or(|tag| tag.as_str() != "content") {
+            self.imp().nav_view.push_by_tag("content");
+        }
     }
 
     fn setup_gridview(&self, cache: Rc<Cache>) {

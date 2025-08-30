@@ -133,8 +133,6 @@ pub enum BackgroundTask {
 // unblocking the child thread and allowing it to check the flag.
 
 mod background {
-    use std::ops::Range;
-
     use gtk::gdk;
     use time::OffsetDateTime;
 
@@ -517,37 +515,23 @@ mod background {
         sender_to_fg: &Sender<AsyncClientMessage>,
         name: String,
     ) {
-        // Uncomment these once MPD 0.24 is released
-        // let mut curr_len: u32 = 0;
-        // let mut more: bool = true;
-        // while more && (curr_len as usize) < FETCH_LIMIT {
-        //     let songs: Vec<SongInfo> = client
-        //         .playlist(&name, curr_len..(curr_len + BATCH_SIZE))
-        //         .unwrap()
-        //         .iter_mut()
-        //         .map(|mpd_song| SongInfo::from(std::mem::take(mpd_song)))
-        //         .collect();
-        //     more = songs.len() >= BATCH_SIZE as usize;
-        //     if !songs.is_empty() {
-        //         curr_len += songs.len() as u32;
-        //         let _ = sender_to_fg.send_blocking(AsyncClientMessage::PlaylistSongInfoDownloaded(
-        //             name.clone(),
-        //             songs,
-        //         ));
-        //     }
-        // }
-        // For now download all songs at once before sending to main thread
-        let songs: Vec<SongInfo> = client
-            .playlist(&name, Option::<Range<u32>>::None)
-            .unwrap()
-            .iter_mut()
-            .map(|mpd_song| SongInfo::from(std::mem::take(mpd_song)))
-            .collect();
-        if !songs.is_empty() {
-            let _ = sender_to_fg.send_blocking(AsyncClientMessage::PlaylistSongInfoDownloaded(
-                name.clone(),
-                songs,
-            ));
+        let mut curr_len: u32 = 0;
+        let mut more: bool = true;
+        while more && (curr_len as usize) < FETCH_LIMIT {
+            let songs: Vec<SongInfo> = client
+                .playlist(&name, Some(curr_len..(curr_len + BATCH_SIZE as u32)))
+                .unwrap()
+                .iter_mut()
+                .map(|mpd_song| SongInfo::from(std::mem::take(mpd_song)))
+                .collect();
+            more = songs.len() >= BATCH_SIZE as usize;
+            if !songs.is_empty() {
+                curr_len += songs.len() as u32;
+                let _ = sender_to_fg.send_blocking(AsyncClientMessage::PlaylistSongInfoDownloaded(
+                    name.clone(),
+                    songs,
+                ));
+            }
         }
     }
     pub fn fetch_songs_by_uri(client: &mut mpd::Client<StreamWrapper>, uris: &[&str]) -> Vec<SongInfo> {
@@ -1498,23 +1482,17 @@ impl MpdWrapper {
 
     pub fn prev(&self) {
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
-            // TODO: Make it stop/play base on toggle
             if client.prev().is_ok() {
                 self.force_idle();
             }
-        } else {
-            // TODO: handle error
         }
     }
 
     pub fn next(&self) {
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
-            // TODO: Make it stop/play base on toggle
             if client.next().is_ok() {
                 self.force_idle();
             }
-        } else {
-            // TODO: handle error
         }
     }
 
@@ -1566,22 +1544,6 @@ impl MpdWrapper {
 
     pub fn register_local_queue_changes(&self, n_changes: u32) {
         self.expected_queue_version.set(self.expected_queue_version.get() + n_changes);
-    }
-
-    pub fn get_queue_changes(&self, from_version: u32) -> Option<Vec<Song>> {
-        if let Some(client) = self.main_client.borrow_mut().as_mut() {
-            // TODO: move to background thread
-            if let Ok(mut changes) = client.changes(from_version) {
-                return Some(
-                    changes
-                        .iter_mut()
-                        .map(|mpd_song| Song::from(std::mem::take(mpd_song)))
-                        .collect(),
-                );
-            }
-            return None;
-        }
-        return None;
     }
 
     pub fn seek_current_song(&self, position: f64) {

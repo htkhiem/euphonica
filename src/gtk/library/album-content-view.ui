@@ -30,7 +30,6 @@
                 <setter object="infobox_text" property="margin-start">12</setter>
                 <setter object="cover" property="pixel-size">128</setter>
                 <setter object="replace_queue_text" property="visible">false</setter>
-                <setter object="append_queue_text" property="visible">false</setter>
                 <setter object="add_to_playlist" property="collapsed">true</setter>
               </object>
             </child>
