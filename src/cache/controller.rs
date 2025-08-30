@@ -14,7 +14,7 @@ extern crate bson;
 use lru::LruCache;
 use std::{num::NonZeroUsize, sync::Mutex};
 use async_channel::{Receiver, Sender};
-use image::io::Reader as ImageReader;
+use image::ImageReader;
 use gio::prelude::*;
 use glib::clone;
 use gtk::{gdk::{self, Texture}, gio, glib};
@@ -24,7 +24,7 @@ use std::{
     cell::OnceCell, fmt, fs::create_dir_all, path::PathBuf, rc::Rc, sync::{Arc, RwLock}
 };
 
-use crate::{common::SongInfo, meta_providers::{get_provider_with_priority, models::{ArtistMeta, Lyrics}}, utils::strip_filename_linux};
+use crate::{common::SongInfo, meta_providers::{get_provider, models::{ArtistMeta, Lyrics}}, utils::strip_filename_linux};
 use crate::{
     client::{BackgroundTask, MpdWrapper},
     common::{AlbumInfo, ArtistInfo},
@@ -102,14 +102,13 @@ impl fmt::Debug for Cache {
 }
 
 fn init_meta_provider_chain() -> MetadataChain {
-    let mut providers = MetadataChain::new(0);
+    let mut providers = MetadataChain::new();
     providers.providers = settings_manager()
         .child("metaprovider")
         .value("order")
         .array_iter_str()
         .unwrap()
-        .enumerate()
-        .map(|(prio, key)| get_provider_with_priority(key, prio as u32))
+        .map(|key| get_provider(key))
         .collect();
     providers
 }

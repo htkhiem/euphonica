@@ -13,7 +13,7 @@ pub struct MetadataChain {
 
 impl MetadataProvider for MetadataChain {
     /// The priority argument exists only for compatibility and is always ignored.
-    fn new(_prio: u32) -> Self
+    fn new() -> Self
     where
         Self: Sized,
     {
@@ -21,18 +21,6 @@ impl MetadataProvider for MetadataChain {
             providers: Vec::new(),
         }
     }
-
-    fn key(&self) -> &'static str {
-        "chain"
-    }
-
-    /// Will always return 0, since MetadataChain is not meant to be nested in another chain.
-    fn priority(&self) -> u32 {
-        0
-    }
-
-    /// Does nothing, since MetadataChain is not meant to be nested in another chain.
-    fn set_priority(&self, _prio: u32) {}
 
     fn get_album_meta(
         self: &Self,
@@ -83,11 +71,11 @@ impl MetadataProvider for MetadataChain {
 
 /// Convenience method to construct a metadata provider instance by key with the given priority.
 /// When implementing a new provider, you must manually add it to this function too.
-pub fn get_provider_with_priority(key: &str, prio: u32) -> Box<dyn MetadataProvider> {
+pub fn get_provider(key: &str) -> Box<dyn MetadataProvider> {
     match key {
-        "musicbrainz" => Box::new(MusicBrainzWrapper::new(prio)),
-        "lastfm" => Box::new(LastfmWrapper::new(prio)),
-        "lrclib" => Box::new(LrcLibWrapper::new(prio)),
+        "musicbrainz" => Box::new(MusicBrainzWrapper::new()),
+        "lastfm" => Box::new(LastfmWrapper::new()),
+        "lrclib" => Box::new(LrcLibWrapper::new()),
         _ => unimplemented!(),
     }
 }

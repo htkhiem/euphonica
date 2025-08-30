@@ -1,8 +1,6 @@
 use gtk::prelude::*;
 extern crate bson;
 
-use std::sync::RwLock;
-
 use musicbrainz_rs::{
     entity::{artist::*, release::*},
     prelude::*,
@@ -15,28 +13,11 @@ use super::{
     PROVIDER_KEY,
 };
 
-pub struct MusicBrainzWrapper {
-    priority: RwLock<u32>,
-}
+pub struct MusicBrainzWrapper {}
 
 impl MetadataProvider for MusicBrainzWrapper {
-    fn new(prio: u32) -> Self {
-        Self {
-            priority: RwLock::new(prio),
-        }
-    }
-
-    fn key(&self) -> &'static str {
-        PROVIDER_KEY
-    }
-
-    fn priority(&self) -> u32 {
-        *self.priority.read().expect("Poisoned RwLock")
-    }
-
-    fn set_priority(&self, prio: u32) {
-        let mut this_prio = self.priority.write().expect("Poisoned RwLock");
-        *this_prio = prio;
+    fn new() -> Self {
+        Self {}
     }
 
     /// Schedule getting album metadata from MusicBrainz.
@@ -187,7 +168,7 @@ impl MetadataProvider for MusicBrainzWrapper {
     /// MusicBrainz does not provide lyrics.
     fn get_lyrics(
         &self,
-        key: &crate::common::SongInfo
+        _key: &crate::common::SongInfo
     ) -> Option<models::Lyrics> {
         None
     }

@@ -182,7 +182,7 @@ impl ArtistView {
         self.imp().library.set(library.clone()).expect("Unable to register library with Artist View");
         self.setup_sort();
         self.setup_search();
-        self.setup_gridview(client_state.clone(), cache.clone());
+        self.setup_gridview(cache.clone());
 
         let content_view = self.imp().content_view.get();
         content_view.setup(library, cache, client_state);
@@ -350,11 +350,13 @@ impl ArtistView {
         let content_view = self.imp().content_view.get();
         content_view.unbind();
         content_view.bind(artist.clone());
-        self.imp().nav_view.push_by_tag("content");
+        if self.imp().nav_view.visible_page_tag().is_none_or(|tag| tag.as_str() != "content") {
+            self.imp().nav_view.push_by_tag("content");
+        }
         self.imp().library.get().unwrap().init_artist(artist);
     }
 
-    fn setup_gridview(&self, client_state: ClientState, cache: Rc<Cache>) {
+    fn setup_gridview(&self, cache: Rc<Cache>) {
         let settings = settings_manager().child("ui");
         // Refresh upon reconnection.
         // User-initiated refreshes will also trigger a reconnection, which will

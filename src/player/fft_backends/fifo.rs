@@ -1,5 +1,5 @@
 use gio::{self, prelude::*};
-use glib::{subclass::prelude::*, clone};
+use glib::{clone};
 use std::{
     cell::RefCell, rc::Rc, str::FromStr, sync::{atomic::{AtomicBool, Ordering}, Arc, Mutex}, thread, time::Duration
 };
@@ -146,7 +146,7 @@ impl FftBackendImpl for FifoFftBackend {
                                     std::io::ErrorKind::UnexpectedEof
                                         | std::io::ErrorKind::WouldBlock => {
                                             was_reading = false;
-                                            sender.send_blocking(FftStatus::ValidNotReading);
+                                            let _ = sender.send_blocking(FftStatus::ValidNotReading);
                                         }
                                     _ => {
                                         println!("FFT ERR: {:?}", &e);
@@ -161,7 +161,7 @@ impl FftBackendImpl for FifoFftBackend {
                                 return;
                             } else if !was_reading {
                                 was_reading = true;
-                                sender.send_blocking(FftStatus::Reading);
+                                let _ = sender.send_blocking(FftStatus::Reading);
                             }
                             thread::sleep(Duration::from_millis((1000.0 / fps).floor() as u64));
                         }
@@ -169,7 +169,7 @@ impl FftBackendImpl for FifoFftBackend {
                 }
                 // All graceful thread shutdowns are inside the loop. If we've reached here then
                 // it's an error.
-                sender.send_blocking(FftStatus::Invalid);
+                let _ = sender.send_blocking(FftStatus::Invalid);
             });
             self.fft_handle.replace(Some(fft_handle));
 

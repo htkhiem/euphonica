@@ -1,5 +1,3 @@
-use std::sync::RwLock;
-
 use crate::{
     common::{AlbumInfo, ArtistInfo, SongInfo},
     config::APPLICATION_USER_AGENT,
@@ -20,8 +18,7 @@ use super::{
 pub const API_ROOT: &str = "https://lrclib.net/api/";
 
 pub struct LrcLibWrapper {
-    client: Client,
-    priority: RwLock<u32>,
+    client: Client
 }
 
 impl LrcLibWrapper {
@@ -40,24 +37,10 @@ impl LrcLibWrapper {
 }
 
 impl MetadataProvider for LrcLibWrapper {
-    fn new(prio: u32) -> Self {
+    fn new() -> Self {
         Self {
-            client: Client::new(),
-            priority: RwLock::new(prio),
+            client: Client::new()
         }
-    }
-
-    fn key(&self) -> &'static str {
-        "lrclib"
-    }
-
-    fn priority(&self) -> u32 {
-        *self.priority.read().expect("Poisoned RwLock")
-    }
-
-    fn set_priority(&self, prio: u32) {
-        let mut this_prio = self.priority.write().expect("Poisoned RwLock");
-        *this_prio = prio;
     }
 
     /// LRCLIB only provides song lyrics.

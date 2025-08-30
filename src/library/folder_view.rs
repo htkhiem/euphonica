@@ -497,7 +497,7 @@ impl FolderView {
         }
     }
 
-    fn setup_listview(&self, cache: Rc<Cache>, library: Library) {
+    fn setup_listview(&self, _cache: Rc<Cache>, library: Library) {
         // client_state.connect_closure(
         //     "inode-basic-info-downloaded",
         //     false,

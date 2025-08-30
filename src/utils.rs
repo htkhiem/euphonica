@@ -3,7 +3,7 @@ use aho_corasick::AhoCorasick;
 use gio::prelude::*;
 use gtk::gio;
 use gtk::Ordering;
-use image::{imageops::FilterType, io::Reader as ImageReader, DynamicImage, RgbImage};
+use image::{imageops::FilterType, ImageReader, DynamicImage, RgbImage};
 use mpd::status::AudioFormat;
 use once_cell::sync::Lazy;
 use std::sync::OnceLock;

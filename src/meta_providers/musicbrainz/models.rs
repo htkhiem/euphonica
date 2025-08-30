@@ -12,7 +12,7 @@ use musicbrainz_rs::entity::{
 };
 
 use super::{
-    super::{models, prelude::*},
+    super::{models},
     PROVIDER_KEY,
 };
 

@@ -182,7 +182,7 @@ impl QueueView {
         // Enable/disable clear queue button depending on whether the queue is empty or not
         // Set selection mode
         // TODO: Allow click to jump to song
-        let queue_model = player.queue();
+        let queue_model = player.queue().clone();
         let stack = self.imp().content_stack.get();
         queue_model
             .bind_property("n-items", &stack, "visible-child-name")
@@ -216,26 +216,32 @@ impl QueueView {
             }
         ));
         // Tell factory how to bind `QueueRow` to one of our Song GObjects
-        factory.connect_bind(move |_, list_item| {
-            // Get `Song` from `ListItem` (that is, the data side)
-            let item: Song = list_item
-                .downcast_ref::<ListItem>()
-                .expect("Needs to be ListItem")
-                .item()
-                .and_downcast::<Song>()
-                .expect("The item has to be a common::Song.");
+        factory.connect_bind(clone!(
+            #[weak(rename_to = this)]
+            self,
+            move |_, list_item| {
+                // Get `Song` from `ListItem` (that is, the data side)
+                let item: Song = list_item
+                    .downcast_ref::<ListItem>()
+                    .expect("Needs to be ListItem")
+                    .item()
+                    .and_downcast::<Song>()
+                    .expect("The item has to be a common::Song.");
 
-            // Get `QueueRow` from `ListItem` (the UI widget)
-            let child: QueueRow = list_item
-                .downcast_ref::<ListItem>()
-                .expect("Needs to be ListItem")
-                .child()
-                .and_downcast::<QueueRow>()
-                .expect("The child has to be a `QueueRow`.");
+                // Get `QueueRow` from `ListItem` (the UI widget)
+                let child: QueueRow = list_item
+                    .downcast_ref::<ListItem>()
+                    .expect("Needs to be ListItem")
+                    .child()
+                    .and_downcast::<QueueRow>()
+                    .expect("The child has to be a `QueueRow`.");
 
-            // Within this binding fn is where the cached album art texture gets used.
-            child.bind(&item);
-        });
+                // Within this binding fn is where the cached album art texture gets used.
+                child.bind(&item);
+
+                this.imp().last_scroll_pos.set(this.imp().scrolled_window.vadjustment().value());
+                this.imp().restore_last_pos.set(2);
+            }));
 
         // When row goes out of sight, unbind from item to allow reuse with another.
         // Remember to also unset the thumbnail widget's texture to potentially free it from memory.
@@ -254,7 +260,7 @@ impl QueueView {
             #[weak(rename_to = this)]
             self,
             move |_, _| {
-                // The above scroll bug only manifests after this, so now is the best time to set
+                // The above scroll bug also manifests after this, so now is the best time to set
                 // the corresponding values.
                 this.imp().last_scroll_pos.set(this.imp().scrolled_window.vadjustment().value());
                 this.imp().restore_last_pos.set(2);
