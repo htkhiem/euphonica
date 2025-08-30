@@ -55,9 +55,11 @@ pub fn parse_mb_artist_tag<'a>(input: &'a str) -> Vec<&'a str> {
             // using any extra storage.
             let start = mat.start();
             let end = mat.end();
-            found_artists.push(&input[start..end]);
-            let len = end - start;
-            buffer.replace_range(start..end, &" ".repeat(len));
+            if let Some(name) = input.get(start..end) {
+                found_artists.push(name);
+                let len = end - start;
+                buffer.replace_range(start..end, &" ".repeat(len));
+            }
             // println!("Buffer is now: {buffer}");
         }
 
@@ -77,14 +79,18 @@ pub fn parse_mb_artist_tag<'a>(input: &'a str) -> Vec<&'a str> {
             // Take note to check for "blankness" using the buffer, but return slices
             // of input, since buffer will go out of scope after this function concludes.
             let first_range = 0..matched_delims[0].start();
-            if buffer[first_range.clone()].trim().len() > 0 {
-                found_artists.push(input[first_range].trim());
+            if buffer.get(first_range.clone()).is_some_and(|substr| substr.trim().len() > 0) {
+                if let Some(artist) = input.get(first_range).map(|name| name.trim()) {
+                    found_artists.push(artist);
+                }
             }
             for i in 1..(matched_delims.len()) {
                 let between_range = matched_delims[i - 1].end()..matched_delims[i].start();
                 // println!("Between: `{between_range:?}`");
-                if buffer[between_range.clone()].trim().len() > 0 {
-                    found_artists.push(input[between_range].trim());
+                if buffer.get(between_range.clone()).is_some_and(|substr| substr.trim().len() > 0) {
+                    if let Some(artist) = input.get(between_range).map(|name| name.trim()) {
+                        found_artists.push(artist);
+                    }
                 }
             }
             let last_range = matched_delims.last().unwrap().end().min(buffer.len())..;
