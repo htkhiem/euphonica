@@ -442,6 +442,15 @@ impl PlayerPane {
                 widget.into()
             }
         ));
+
+        lyrics_box.connect_row_activated(clone!(
+            #[strong]
+            player,
+            move |_, row: &gtk::ListBoxRow| {
+                player.seek_to_lyric_line(row.index());
+            }
+        ));
+
         // - After having repopulated lyric_lines, player controller will then
         // trigger a current-lyric-line notification (with current_lyric_line
         // at zero), which in turn runs this callback to highlight the initial

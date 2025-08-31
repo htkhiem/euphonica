@@ -1440,6 +1440,15 @@ impl Player {
         self.client().seek_current_song(new_pos);
     }
 
+    /// Seek to the timestamp of a lyric line
+    pub fn seek_to_lyric_line(&self, line: i32) {
+        if let Some(lyrics) = self.imp().lyrics.borrow().as_ref() {
+            if lyrics.synced && line >= 0 && line < lyrics.lines.len() as i32 {
+                self.client().seek_current_song(lyrics.lines[line as usize].0 as f64);
+            }
+        }
+    }
+
     pub fn queue(&self) -> &gio::ListStore {
         &self.imp().queue
     }
