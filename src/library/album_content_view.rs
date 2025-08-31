@@ -177,28 +177,7 @@ mod imp {
             self.sel_model.connect_selection_changed(clone!(
                 #[weak(rename_to = this)]
                 self,
-                move |sel_model, _, _| {
-                    // TODO: this can be slow, might consider redesigning
-                    let n_sel = sel_model.selection().size();
-                    if n_sel == 0 || (n_sel as u32) == sel_model.model().unwrap().n_items() {
-                        this.selecting_all.replace(true);
-                        this.replace_queue_text.set_label("Play all");
-                        this.queue_split_button_content.set_label("Queue all");
-                        let queue_split_menu = Menu::new();
-                        queue_split_menu.append(Some("Queue all next"), Some("album-content-view.insert-queue"));
-                        this.queue_split_button.set_menu_model(Some(&queue_split_menu));
-                    } else {
-                        // TODO: l10n
-                        this.selecting_all.replace(false);
-                        this.replace_queue_text
-                            .set_label(format!("Play {}", n_sel).as_str());
-                        this.queue_split_button_content
-                            .set_label(format!("Queue {}", n_sel).as_str());
-                        let queue_split_menu = Menu::new();
-                        queue_split_menu.append(Some(format!("Queue {} next", n_sel).as_str()), Some("album-content-view.insert-queue"));
-                        this.queue_split_button.set_menu_model(Some(&queue_split_menu));
-                    }
-                }
+                move |_, _, _| this.on_selection_changed()
             ));
 
             let sel_model = self.sel_model.clone();
@@ -338,6 +317,32 @@ mod imp {
     }
 
     impl WidgetImpl for AlbumContentView {}
+
+    impl AlbumContentView {
+        pub fn on_selection_changed(&self) {
+            let sel_model = &self.sel_model;
+            // TODO: this can be slow, might consider redesigning
+            let n_sel = sel_model.selection().size(); println!("Selection changed. New size: {n_sel}");
+            if n_sel == 0 || (n_sel as u32) == sel_model.model().unwrap().n_items() {
+                self.selecting_all.replace(true);
+                self.replace_queue_text.set_label("Play all");
+                self.queue_split_button_content.set_label("Queue all");
+                let queue_split_menu = Menu::new();
+                queue_split_menu.append(Some("Queue all next"), Some("album-content-view.insert-queue"));
+                self.queue_split_button.set_menu_model(Some(&queue_split_menu));
+            } else {
+                // TODO: l10n
+                self.selecting_all.replace(false);
+                self.replace_queue_text
+                    .set_label(format!("Play {}", n_sel).as_str());
+                self.queue_split_button_content
+                    .set_label(format!("Queue {}", n_sel).as_str());
+                let queue_split_menu = Menu::new();
+                queue_split_menu.append(Some(format!("Queue {} next", n_sel).as_str()), Some("album-content-view.insert-queue"));
+                self.queue_split_button.set_menu_model(Some(&queue_split_menu));
+            }
+        }
+    }
 }
 
 glib::wrapper! {
@@ -712,6 +717,7 @@ impl AlbumContentView {
     }
 
     pub fn bind(&self, album: Album) {
+        self.imp().on_selection_changed();
         let title_label = self.imp().title.get();
         let artists_box = self.imp().artists_box.get();
         let rating = self.imp().rating.get();

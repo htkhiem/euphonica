@@ -323,12 +323,12 @@ pub fn find_album_meta(album: &AlbumInfo) -> Result<Option<AlbumMeta>, Error> {
     let conn = SQLITE_POOL.get().unwrap();
     if let Some(mbid) = album.mbid.as_deref() {
         query = conn
-            .prepare("select meta from albums where mbid = ?1")
+            .prepare("select data from albums where mbid = ?1")
             .unwrap()
             .query_row(params![mbid], |r| AlbumMetaRow::try_from(r));
     } else if let (title, Some(artist)) = (&album.title, album.get_artist_tag()) {
         query = conn
-            .prepare("select meta from albums where title = ?1 and artist = ?2")
+            .prepare("select data from albums where title = ?1 and artist = ?2")
             .unwrap()
             .query_row(params![title, artist], |r| AlbumMetaRow::try_from(r));
     } else {
@@ -353,12 +353,12 @@ pub fn find_artist_meta(artist: &ArtistInfo) -> Result<Option<ArtistMeta>, Error
     let conn = SQLITE_POOL.get().unwrap();
     if let Some(mbid) = artist.mbid.as_deref() {
         query = conn
-            .prepare("select meta from artists where mbid = ?1")
+            .prepare("select data from artists where mbid = ?1")
             .unwrap()
             .query_row(params![mbid], |r| ArtistMetaRow::try_from(r));
     } else {
         query = conn
-            .prepare("select meta from artists where name = ?1")
+            .prepare("select data from artists where name = ?1")
             .unwrap()
             .query_row(params![&artist.name], |r| ArtistMetaRow::try_from(r));
     }

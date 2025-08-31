@@ -180,22 +180,7 @@ mod imp {
             self.song_sel_model.connect_selection_changed(clone!(
                 #[weak(rename_to = this)]
                 self,
-                move |sel_model, _, _| {
-                    // TODO: this can be slow, might consider redesigning
-                    let n_sel = sel_model.selection().size();
-                    if n_sel == 0 || (n_sel as u32) == sel_model.model().unwrap().n_items() {
-                        this.selecting_all.replace(true);
-                        this.replace_queue_text.set_label("Play all");
-                        this.append_queue_text.set_label("Queue all");
-                    } else {
-                        // TODO: l10n
-                        this.selecting_all.replace(false);
-                        this.replace_queue_text
-                            .set_label(format!("Play {}", n_sel).as_str());
-                        this.append_queue_text
-                            .set_label(format!("Queue {}", n_sel).as_str());
-                    }
-                }
+                move |_, _, _| this.on_song_selection_changed()
             ));
 
             let song_sel_model = self.song_sel_model.clone();
@@ -319,6 +304,26 @@ mod imp {
     }
 
     impl WidgetImpl for ArtistContentView {}
+
+    impl ArtistContentView {
+        pub fn on_song_selection_changed(&self) {
+            let sel_model = &self.song_sel_model;
+            // TODO: self can be slow, might consider redesigning
+            let n_sel = sel_model.selection().size();
+            if n_sel == 0 || (n_sel as u32) == sel_model.model().unwrap().n_items() {
+                self.selecting_all.replace(true);
+                self.replace_queue_text.set_label("Play all");
+                self.append_queue_text.set_label("Queue all");
+            } else {
+                // TODO: l10n
+                self.selecting_all.replace(false);
+                self.replace_queue_text
+                    .set_label(format!("Play {}", n_sel).as_str());
+                self.append_queue_text
+                    .set_label(format!("Queue {}", n_sel).as_str());
+            }
+        }
+    }
 }
 
 glib::wrapper! {
@@ -690,6 +695,7 @@ impl ArtistContentView {
     }
 
     pub fn bind(&self, artist: Artist) {
+        self.imp().on_song_selection_changed();
         self.update_meta(&artist);
         let info = artist.get_info();
         self.imp().avatar.set_text(Some(&info.name));
