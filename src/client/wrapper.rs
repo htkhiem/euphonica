@@ -133,6 +133,8 @@ pub enum BackgroundTask {
 // unblocking the child thread and allowing it to check the flag.
 
 mod background {
+    use std::ops::Range;
+
     use gtk::gdk;
     use time::OffsetDateTime;
 
@@ -515,22 +517,38 @@ mod background {
         sender_to_fg: &Sender<AsyncClientMessage>,
         name: String,
     ) {
-        let mut curr_len: u32 = 0;
-        let mut more: bool = true;
-        while more && (curr_len as usize) < FETCH_LIMIT {
+        if client.version.1 < 24 {
             let songs: Vec<SongInfo> = client
-                .playlist(&name, Some(curr_len..(curr_len + BATCH_SIZE as u32)))
+                .playlist(&name, Option::<Range<u32>>::None)
                 .unwrap()
                 .iter_mut()
                 .map(|mpd_song| SongInfo::from(std::mem::take(mpd_song)))
                 .collect();
-            more = songs.len() >= BATCH_SIZE as usize;
             if !songs.is_empty() {
-                curr_len += songs.len() as u32;
                 let _ = sender_to_fg.send_blocking(AsyncClientMessage::PlaylistSongInfoDownloaded(
                     name.clone(),
                     songs,
                 ));
+            }
+        } else {
+            // For MPD 0.24+, use the new paged loading
+            let mut curr_len: u32 = 0;
+            let mut more: bool = true;
+            while more && (curr_len as usize) < FETCH_LIMIT {
+                let songs: Vec<SongInfo> = client
+                    .playlist(&name, Some(curr_len..(curr_len + BATCH_SIZE as u32)))
+                    .unwrap()
+                    .iter_mut()
+                    .map(|mpd_song| SongInfo::from(std::mem::take(mpd_song)))
+                    .collect();
+                more = songs.len() >= BATCH_SIZE as usize;
+                if !songs.is_empty() {
+                    curr_len += songs.len() as u32;
+                    let _ = sender_to_fg.send_blocking(AsyncClientMessage::PlaylistSongInfoDownloaded(
+                        name.clone(),
+                        songs,
+                    ));
+                }
             }
         }
     }
