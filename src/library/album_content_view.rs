@@ -322,7 +322,7 @@ mod imp {
         pub fn on_selection_changed(&self) {
             let sel_model = &self.sel_model;
             // TODO: this can be slow, might consider redesigning
-            let n_sel = sel_model.selection().size(); println!("Selection changed. New size: {n_sel}");
+            let n_sel = sel_model.selection().size();
             if n_sel == 0 || (n_sel as u32) == sel_model.model().unwrap().n_items() {
                 self.selecting_all.replace(true);
                 self.replace_queue_text.set_label("Play all");
