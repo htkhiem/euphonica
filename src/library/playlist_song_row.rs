@@ -229,8 +229,7 @@ impl PlaylistSongRow {
            .expect("ArtistSongRow cannot bind to cache");
         let _ = self.imp().library.set(library);
         let _ = self.imp().content_view.set(view);
-        item.property_expression("item")
-            .chain_property::<Song>("queue-pos")
+        item.property_expression("position")
             .chain_closure::<String>(closure_local!(|_: Option<Object>, val: u32| {
                 val.to_string()
             }))

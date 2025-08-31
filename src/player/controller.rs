@@ -1037,9 +1037,7 @@ impl Player {
                         }
                     }
                 } else if let Some(curr_song) = local_curr_song.as_ref() {
-                    // Same old song. Just update its queue position.
-                    curr_song.set_queue_pos(new_queue_place.pos);
-                    // Record into playback history
+                    // Same old song. Might want to record into playback history.
                     if !settings_manager().child("library").boolean("pause-recent") {
                         let dur = curr_song.get_duration() as f32;
                         if dur >= 10.0 {
@@ -1242,7 +1240,6 @@ impl Player {
                     // This position changed. Check if it's a song we already have locally.
                     let id = changes[change_idx].id.0;
                     if let Some(existing) = song_cache.get(&id) {
-                        existing.set_queue_pos(changes[change_idx].pos);
                         new_segment.push(existing.clone().into());
                     } else {
                         println!("update_queue(): Song cache miss");
@@ -1542,8 +1539,6 @@ impl Player {
             SwapDirection::Up => {
                 if pos > 0 {
                     let upper = self.imp().queue.item(pos - 1).and_downcast::<Song>().unwrap();
-                    target.set_queue_pos(pos - 1);
-                    upper.set_queue_pos(pos);
                     self.imp().queue.splice(pos - 1, 2, &[
                         target.clone().upcast::<glib::Object>(),
                         upper.upcast::<glib::Object>()
@@ -1554,8 +1549,6 @@ impl Player {
             SwapDirection::Down => {
                 if pos < self.imp().queue.n_items() - 1 {
                     let lower = self.imp().queue.item(pos + 1).and_downcast::<Song>().unwrap();
-                    target.set_queue_pos(pos + 1);
-                    lower.set_queue_pos(pos);
                     self.imp().queue.splice(pos, 2, &[
                         lower.upcast::<glib::Object>(),
                         target.clone().upcast::<glib::Object>()

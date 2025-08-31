@@ -85,7 +85,7 @@ pub struct SongInfo {
     pub artist_tag: Option<String>, // Original tag, with all the linkages and formatting
     pub duration: Option<Duration>, // Default to 0 if somehow the option in mpd's Song is None
     queue_id: Option<u32>,
-    original_queue_pos: Option<u32>,  // Only set once at creation. Subsequent updates are kept in the Song GObject.
+    queue_pos: Option<u32>,  // Only set once at creation. Subsequent updates are kept in the Song GObject.
     // range: Option<Range>,
     pub album: Option<AlbumInfo>,
     track: Cell<i64>,
@@ -125,7 +125,7 @@ impl Default for SongInfo {
             artist_tag: None,
             duration: None,
             queue_id: None,
-            original_queue_pos: None,
+            queue_pos: None,
             album: None,
             track: Cell::new(-1), // negative values indicate no track index
             disc: Cell::new(-1),
@@ -154,7 +154,6 @@ mod imp {
     #[derive(Debug)]
     pub struct Song {
         pub info: OnceCell<SongInfo>,
-        pub pos: Cell<u32>, // stored at the wrapper level to allow easy local updating
         pub is_playing: Cell<bool>
     }
 
@@ -166,7 +165,6 @@ mod imp {
         fn new() -> Self {
             Self {
                 info: OnceCell::new(),
-                pos: Cell::new(0),
                 is_playing: Cell::new(false)
             }
         }
@@ -222,7 +220,7 @@ mod imp {
                 "artist" => obj.get_artist_tag().to_value(),
                 "duration" => obj.get_duration().to_value(),
                 "queue-id" => obj.get_queue_id().to_value(),
-                "queue-pos" => self.pos.get().to_value(),
+                "queue-pos" => obj.get_queue_pos().to_value(),
                 "is-queued" => obj.is_queued().to_value(),
                 "is-playing" => obj.is_playing().to_value(),
                 "album" => obj.get_album_title().to_value(),
@@ -350,14 +348,7 @@ impl Song {
     }
 
     pub fn get_queue_pos(&self) -> u32 {
-        self.imp().pos.get()
-    }
-
-    pub fn set_queue_pos(&self, new: u32) {
-        let old = self.imp().pos.replace(new);
-        if old != new {
-            self.notify("queue-pos");
-        }
+        self.get_info().queue_pos.unwrap_or(0)
     }
 
     pub fn is_queued(&self) -> bool {
@@ -489,7 +480,7 @@ impl From<mpd::song::Song> for SongInfo {
             artist_tag: song.artist,
             duration: song.duration,
             queue_id: None,
-            original_queue_pos: None,
+            queue_pos: None,
             album: None,
             track: Cell::new(-1),
             disc: Cell::new(-1),
@@ -502,7 +493,7 @@ impl From<mpd::song::Song> for SongInfo {
 
         if let Some(place) = song.place {
             let _ = res.queue_id.replace(place.id.0);
-            let _ = res.original_queue_pos.replace(place.pos);
+            let _ = res.queue_pos.replace(place.pos);
         }
 
         // Search tags vector for additional fields we can use.
@@ -632,7 +623,6 @@ impl From<mpd::song::Song> for Song {
 impl From<SongInfo> for Song {
     fn from(info: SongInfo) -> Self {
         let res = glib::Object::new::<Self>();
-        res.imp().pos.set(info.original_queue_pos.unwrap_or(0));
         let _ = res.imp().info.set(info);
         res
     }
