@@ -221,17 +221,13 @@ impl QueueView {
             self,
             move |_, list_item| {
                 // Get `Song` from `ListItem` (that is, the data side)
-                let item: Song = list_item
+                let item: &ListItem = list_item
                     .downcast_ref::<ListItem>()
-                    .expect("Needs to be ListItem")
-                    .item()
-                    .and_downcast::<Song>()
-                    .expect("The item has to be a common::Song.");
+                    .expect("Needs to be ListItem");
+
 
                 // Get `QueueRow` from `ListItem` (the UI widget)
-                let child: QueueRow = list_item
-                    .downcast_ref::<ListItem>()
-                    .expect("Needs to be ListItem")
+                let child: QueueRow = item
                     .child()
                     .and_downcast::<QueueRow>()
                     .expect("The child has to be a `QueueRow`.");

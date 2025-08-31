@@ -1528,15 +1528,16 @@ impl Player {
         self.client().play_at(song.get_queue_id(), true);
     }
 
-    /// Remove given song from queue. Will cause an asynchronous server-side sync
-    /// to update all subsequent songs' queue positions.
-    pub fn remove_song(&self, song: &Song) {
-        self.client().delete_at(song.get_queue_id(), true);
+    /// Remove given song from queue.
+    pub fn remove_pos(&self, pos: u32) {
+        self.client().register_local_queue_changes(1);
+        self.queue().remove(pos);
+        self.client().delete_at(pos, false);
     }
 
-    pub fn swap_dir(&self, target: &Song, direction: SwapDirection) {
+    pub fn swap_dir(&self, pos: u32, direction: SwapDirection) {
         self.client().register_local_queue_changes(1);
-        let pos = target.get_queue_pos();
+        let target = self.imp().queue.item(pos).and_downcast::<Song>().unwrap();
         match direction {
             SwapDirection::Up => {
                 if pos > 0 {

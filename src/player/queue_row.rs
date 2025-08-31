@@ -1,4 +1,4 @@
-use glib::{closure_local, signal::SignalHandlerId, Object};
+use glib::{closure_local, signal::SignalHandlerId, Object, WeakRef};
 use gtk::{
     gdk, glib::{self, clone}, prelude::*, subclass::prelude::*, CompositeTemplate, Image, Label
 };
@@ -44,7 +44,7 @@ mod imp {
         #[template_child]
         pub remove: TemplateChild<Button>,
         pub signal_ids: RefCell<Option<(SignalHandlerId, SignalHandlerId, SignalHandlerId)>>,
-        pub song: RefCell<Option<Song>>,
+        pub item: WeakRef<gtk::ListItem>,
         pub player: OnceCell<Player>,
         pub cache: OnceCell<Rc<Cache>>,
         pub thumbnail_source: Cell<CoverSource>,
@@ -174,7 +174,7 @@ impl QueueRow {
     fn update_playing_status(&self, maybe_queue_id: Option<u32>) {
         if let (Some(id), Some(own_id)) = (
             maybe_queue_id,
-            self.imp().song.borrow().as_ref().map(|s| s.get_queue_id())
+            self.song().map(|s| s.get_queue_id())
         ) {
             self.imp().playing_indicator.set_reveal_child(id == own_id);
         } else {
@@ -194,8 +194,8 @@ impl QueueRow {
             #[weak]
             player,
             move |_| {
-                if let Some(song) = this.imp().song.borrow().as_ref() {
-                    player.remove_song(song);
+                if let Some(item) = this.imp().item.upgrade() {
+                    player.remove_pos(item.position());
                 }
             }
         ));
@@ -206,8 +206,8 @@ impl QueueRow {
             #[weak]
             player,
             move |_| {
-                if let Some(song) = this.imp().song.borrow().as_ref() {
-                    player.swap_dir(song, SwapDirection::Up);
+                if let Some(item) = this.imp().item.upgrade() {
+                    player.swap_dir(item.position(), SwapDirection::Up);
                 }
             }
         ));
@@ -218,8 +218,8 @@ impl QueueRow {
             #[weak]
             player,
             move |_| {
-                if let Some(song) = this.imp().song.borrow().as_ref() {
-                    player.swap_dir(song, SwapDirection::Down);
+                if let Some(item) = this.imp().item.upgrade() {
+                    player.swap_dir(item.position(), SwapDirection::Down);
                 }
             }
         ));
@@ -275,7 +275,7 @@ impl QueueRow {
                         }
                         // Match song URI first then folder URI. Only try to match by folder URI
                         // if we don't have a current thumbnail.
-                        if let Some(song) = this.imp().song.borrow().as_ref() {
+                        if let Some(song) = this.song() {
                             if uri.as_str() == song.get_uri() {
                                 // Force update since we might have been using a folder cover
                                 // temporarily
@@ -296,7 +296,7 @@ impl QueueRow {
                     #[weak(rename_to = this)]
                     self,
                     move |_: CacheState, uri: String| {
-                        if let Some(song) = this.imp().song.borrow().as_ref() {
+                        if let Some(song) = this.song() {
                             match this.imp().thumbnail_source.get() {
                                 CoverSource::Folder => {
                                     if strip_filename_linux(song.get_uri()) == uri {
@@ -364,18 +364,25 @@ impl QueueRow {
         self.imp().thumbnail_source.set(src);
     }
 
-    pub fn bind(&self, song: &Song) {
+    fn song(&self) -> Option<Song> {
+        self.imp().item.upgrade().map(|item| item
+            .item()
+            .and_downcast::<Song>()
+            .expect("The item has to be a common::Song."))
+    }
+
+    pub fn bind(&self, item: &gtk::ListItem) {
         // The string properties are bound using property expressions in setup().
         // Here we only need to manually bind to the cache controller to fetch album art.
         // No need to fetch here as QueueView has already done once for us.
-        self.imp().song.replace(Some(song.clone()));
+        self.imp().item.set(Some(item));
+        let song = self.song().unwrap();
         self.update_playing_status(self.imp().player.get().unwrap().queue_id());
         self.schedule_thumbnail(song.get_info());
     }
 
     pub fn unbind(&self) {
-        if let Some(_) = self.imp().song.take() {
-            self.clear_thumbnail();
-        }
+        self.imp().item.set(Option::<&gtk::ListItem>::None);
+        self.clear_thumbnail();
     }
 }
