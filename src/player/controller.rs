@@ -1103,16 +1103,19 @@ impl Player {
                     }
                 }
             }
-        } else {
+        }
+        // status responses after a "stop" command will still come with the ID of the last-played
+        // song, which is not what we want.
+        if status.song.is_none() || status.state == State::Stop {
+            println!("No song playing right now");
             // No song is playing. Update state accordingly.
-            let was_playing = self.imp().current_song.borrow().as_ref().is_some(); // end borrow
-            if was_playing {
+            if let Some(_) = self.imp().current_song.take() {
                 self.imp().saved_to_history.set(false);
-                let _ = self.imp().current_song.take();
                 self.notify("title");
                 self.notify("artist");
                 self.notify("album");
                 self.notify("duration");
+                self.notify("queue-id");
                 self.imp().cover_source.set(CoverSource::Unknown);
                 self.emit_by_name::<()>("cover-changed", &[&Option::<gdk::Texture>::None]);
                 // Update MPRIS side
@@ -1478,26 +1481,26 @@ impl Player {
         }
     }
 
-    pub fn prev_song(&self) {
+    pub fn prev_song(&self, block: bool) {
         if self.imp().pipewire_restart_between_songs.get()
             && self.imp().fft_backend.borrow().as_ref().is_some_and(
                 |backend| backend.name() == "pipewire" && backend.status() != FftStatus::ValidNotReading
             )
         {
             println!("Stopping PipeWire backend to allow samplerate change...");
-            self.maybe_stop_fft_thread(true);
+            self.maybe_stop_fft_thread(block);
         }
         self.client().prev();
     }
 
-    pub fn next_song(&self) {
+    pub fn next_song(&self, block: bool) {
         if self.imp().pipewire_restart_between_songs.get()
             && self.imp().fft_backend.borrow().as_ref().is_some_and(
                 |backend| backend.name() == "pipewire" && backend.status() != FftStatus::ValidNotReading
             )
         {
             println!("Stopping PipeWire backend to allow samplerate change...");
-            self.maybe_stop_fft_thread(true);
+            self.maybe_stop_fft_thread(block);
         }
         self.client().next();
     }
@@ -1680,12 +1683,12 @@ impl LocalRootInterface for Player {
 
 impl LocalPlayerInterface for Player {
     async fn next(&self) -> fdo::Result<()> {
-        self.next_song();
+        self.next_song(false);
         Ok(())
     }
 
     async fn previous(&self) -> fdo::Result<()> {
-        self.prev_song();
+        self.prev_song(false);
         Ok(())
     }
 

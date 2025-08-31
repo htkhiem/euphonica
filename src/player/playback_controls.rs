@@ -118,7 +118,7 @@ impl PlaybackControls {
         self.imp().prev_btn.connect_clicked(clone!(
             #[strong]
             player,
-            move |_| player.prev_song()
+            move |_| player.prev_song(true)
         ));
         self.imp().play_pause_btn.connect_clicked(clone!(
             #[weak]
@@ -128,7 +128,7 @@ impl PlaybackControls {
         self.imp().next_btn.connect_clicked(clone!(
             #[strong]
             player,
-            move |_| player.next_song()
+            move |_| player.next_song(true)
         ));
         let shuffle_btn = imp.random_btn.get();
         shuffle_btn
