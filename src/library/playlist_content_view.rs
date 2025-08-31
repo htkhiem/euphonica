@@ -59,10 +59,6 @@ impl HistoryStep {
             }
             InternalEditAction::Remove(idx) => {
                 list.remove(idx);
-                let len = list.n_items();
-                if len > 0 && idx <= len - 1 {
-                    self.update_queue_pos(list, idx, len - 1);
-                }
             }
         }
     }
@@ -717,23 +713,18 @@ impl PlaylistContentView {
         [&factory, &editing_factory].iter().for_each(move |f| {
             f.connect_bind(|_, list_item| {
                 // Get `Song` from `ListItem` (that is, the data side)
-                let item: Song = list_item
+                let item: &ListItem = list_item
                     .downcast_ref::<ListItem>()
-                    .expect("Needs to be ListItem")
-                    .item()
-                    .and_downcast::<Song>()
-                    .expect("The item has to be a common::Song.");
+                    .expect("Needs to be ListItem");
 
                 // Get `PlaylistSongRow` from `ListItem` (the UI widget)
-                let child: PlaylistSongRow = list_item
-                    .downcast_ref::<ListItem>()
-                    .expect("Needs to be ListItem")
+                let child: PlaylistSongRow = item
                     .child()
                     .and_downcast::<PlaylistSongRow>()
                     .expect("The child has to be an `PlaylistSongRow`.");
 
                 // Within this binding fn is where the cached album art texture gets used.
-                child.bind(&item);
+                child.bind(item);
             });
 
             // When row goes out of sight, unbind from item to allow reuse with another.

@@ -1,4 +1,4 @@
-use glib::{clone, closure_local, Object, SignalHandlerId};
+use glib::{clone, closure_local, Object, SignalHandlerId, WeakRef};
 use gtk::{gdk, glib, prelude::*, subclass::prelude::*, CompositeTemplate};
 use std::{
     cell::{OnceCell, RefCell},
@@ -57,7 +57,7 @@ mod imp {
         pub lower_signal_id: RefCell<Option<SignalHandlerId>>,
         pub remove_signal_id: RefCell<Option<SignalHandlerId>>,
         pub library: OnceCell<Library>,
-        pub song: RefCell<Option<Song>>,
+        pub item: WeakRef<gtk::ListItem>,
         pub cache: OnceCell<Rc<Cache>>,
         pub content_view: OnceCell<PlaylistContentView>,
         pub queue_controls_visible: Cell<bool>,
@@ -271,7 +271,7 @@ impl PlaylistSongRow {
                         }
                         // Match song URI first then folder URI. Only try to match by folder URI
                         // if we don't have a current thumbnail.
-                        if let Some(song) = this.imp().song.borrow().as_ref() {
+                        if let Some(song) = this.song() {
                             if uri.as_str() == song.get_uri() {
                                 // Force update since we might have been using a folder cover
                                 // temporarily
@@ -292,7 +292,7 @@ impl PlaylistSongRow {
                     #[weak(rename_to = this)]
                     self,
                     move |_: CacheState, uri: String| {
-                        if let Some(song) = this.imp().song.borrow().as_ref() {
+                        if let Some(song) = this.song() {
                             match this.imp().thumbnail_source.get() {
                                 CoverSource::Folder => {
                                     if strip_filename_linux(song.get_uri()) == uri {
@@ -316,7 +316,7 @@ impl PlaylistSongRow {
             #[strong(rename_to = this)]
             self,
             move |_| {
-                if let (Some(library), Some(song)) = (this.imp().library.get(), this.imp().song.borrow().as_ref()) {
+                if let (Some(library), Some(song)) = (this.imp().library.get(), this.song()) {
                     library.queue_uri(song.get_uri(), true, true, false);
                 }
             }
@@ -326,7 +326,7 @@ impl PlaylistSongRow {
             #[strong(rename_to = this)]
             self,
             move |_| {
-                if let (Some(library), Some(song)) = (this.imp().library.get(), this.imp().song.borrow().as_ref()) {
+                if let (Some(library), Some(song)) = (this.imp().library.get(), this.song()) {
                     library.queue_uri(song.get_uri(), false, false, false);
                 }
             }
@@ -336,8 +336,8 @@ impl PlaylistSongRow {
             #[strong(rename_to = this)]
             self,
             move |_| {
-                if let Some(song) = this.imp().song.borrow().as_ref() {
-                    this.imp().content_view.get().unwrap().shift_backward(song.get_queue_pos());
+                if let Some(item) = this.imp().item.upgrade() {
+                    this.imp().content_view.get().unwrap().shift_backward(item.position());
                 }
             }
         ));
@@ -346,8 +346,8 @@ impl PlaylistSongRow {
             #[strong(rename_to = this)]
             self,
             move |_| {
-                if let Some(song) = this.imp().song.borrow().as_ref() {
-                    this.imp().content_view.get().unwrap().shift_forward(song.get_queue_pos());
+                if let Some(item) = this.imp().item.upgrade() {
+                    this.imp().content_view.get().unwrap().shift_forward(item.position());
                 }
             }
         ));
@@ -356,8 +356,8 @@ impl PlaylistSongRow {
             #[strong(rename_to = this)]
             self,
             move |_| {
-                if let Some(song) = this.imp().song.borrow().as_ref() {
-                    this.imp().content_view.get().unwrap().remove(song.get_queue_pos());
+                if let Some(item) = this.imp().item.upgrade() {
+                    this.imp().content_view.get().unwrap().remove(item.position());
                 }
             }
         ));
@@ -390,15 +390,22 @@ impl PlaylistSongRow {
         self.imp().thumbnail_source.set(src);
     }
 
-    pub fn bind(&self, song: &Song) {
-        self.imp().song.replace(Some(song.clone()));
+    fn song(&self) -> Option<Song> {
+        self.imp().item.upgrade().map(|item| item
+            .item()
+            .and_downcast::<Song>()
+            .expect("The item has to be a common::Song."))
+    }
+
+    pub fn bind(&self, item: &gtk::ListItem) {
+        self.imp().item.set(Some(item));
+        let song = self.song().unwrap();
         self.schedule_thumbnail(song.get_info());
     }
 
     pub fn unbind(&self) {
-        if let Some(_) = self.imp().song.take() {
-            self.clear_thumbnail();
-        }
+        self.imp().item.set(Option::<&gtk::ListItem>::None);
+        self.clear_thumbnail();
     }
 
     pub fn get_queue_controls_visible(&self) -> bool {
