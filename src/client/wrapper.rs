@@ -1103,6 +1103,15 @@ impl MpdWrapper {
         }
     }
 
+    pub fn get_volume(&self) -> Option<i8> {
+        if let Some(client) = self.main_client.borrow_mut().as_mut() {
+            client.getvol().ok()
+        }
+        else {
+            None
+        }
+    }
+
     pub fn add(&self, uri: String, recursive: bool) {
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
             if recursive {

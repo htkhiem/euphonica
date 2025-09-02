@@ -778,6 +778,11 @@ impl Player {
                                 this.update_outputs(outs);
                             }
                         }
+                        Subsystem::Mixer => {
+                            if let Some(vol) = this.client().get_volume() {
+                                this.emit_by_name::<()>("volume-changed", &[&vol]);
+                            }
+                        }
                         _ => {}
                     }
                 }
@@ -1696,7 +1701,7 @@ impl LocalPlayerInterface for Player {
     }
 
     async fn play(&self) -> fdo::Result<()> {
-        self.send_play();
+        self.toggle_playback();
         Ok(())
     }
 

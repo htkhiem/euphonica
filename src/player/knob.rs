@@ -275,6 +275,7 @@ impl VolumeKnob {
         if old_rounded != new_rounded {
             let _ = self.imp().value.replace(new_rounded as f64);
             self.notify("value");
+            self.imp().draw_area.queue_draw();
             // Will not emit a signal (doing so would result in an infinite loop
             // between parent widget and this one).
         }
