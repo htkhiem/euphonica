@@ -1,6 +1,5 @@
 use duplicate::duplicate;
 use ::glib::closure_local;
-use keyring::{Entry, Error as KeyringError};
 use std::{rc::Rc, str::FromStr};
 
 use adw::prelude::*;
@@ -12,7 +11,7 @@ use glib::clone;
 use mpd::status::AudioFormat;
 
 use crate::{
-    client::{state::StickersSupportLevel, ClientState, ConnectionState, MpdWrapper},
+    client::{password::{get_mpd_password, set_mpd_password}, state::StickersSupportLevel, ClientState, ConnectionState, MpdWrapper},
     player::{FftStatus, Player},
     utils,
 };
@@ -399,19 +398,25 @@ impl ClientPreferences {
         imp.mpd_unix_socket.set_text(&conn_settings.string("mpd-unix-socket"));
         imp.mpd_port
             .set_text(&conn_settings.uint("mpd-port").to_string());
-        let maybe_keyring_entry = Entry::new("euphonica", "mpd-password");
-        if let Ok(ref keyring_entry) = maybe_keyring_entry {
-            // At startup the password entry is disabled with a tooltip stating that
-            // the credential store is not available.
-            imp.mpd_password.set_sensitive(true);
-            imp.mpd_password.set_tooltip_text(None);
-            match keyring_entry.get_password() {
-                Ok(password) => {
-                    imp.mpd_password.set_text(&password);
+        let password_field = imp.mpd_password.get();
+        reconnect_btn.set_sensitive(false);
+        glib::spawn_future_local(async move {
+            match get_mpd_password().await {
+                Ok(maybe_password) => {
+                    // At startup the password entry is disabled with a tooltip stating that
+                    // the credential store is not available.
+                    password_field.set_sensitive(true);
+                    password_field.set_tooltip_text(None);
+                    if let Some(password) = maybe_password {
+                        password_field.set_text(&password);
+                    }
                 }
-                _ => {}
+                Err(e) => {
+                    println!("{:?}", e);
+                }
             }
-        }
+        });
+
 
         // TODO: more input validation
         // Prevent entering anything other than digits into the port entry row
@@ -494,21 +499,20 @@ impl ClientPreferences {
                     );
                 }
 
-                if let Ok(ref keyring_entry) = maybe_keyring_entry {
-                    let password = this.imp().mpd_password.text();
-                    if password.is_empty() {
-                        let res = keyring_entry.delete_credential();
-                        match res {
-                            Ok(()) | Err(KeyringError::NoEntry) => {}
-                            e => {println!("{:?}", e)}
+                let password_val = this.imp().mpd_password.text();
+                glib::spawn_future_local(clone!(
+                    #[weak]
+                    client,
+                    async move {
+                        let password: Option<&str> = if password_val.is_empty() { None } else { Some(password_val.as_str()) };
+                        match set_mpd_password(password).await {
+                            Ok(()) => {
+                                client.connect_async().await;
+                            }
+                            Err(msg) => {println!("{}", msg);}
                         }
-                    } else {
-                        keyring_entry
-                            .set_password(password.as_str())
-                            .expect("Unable to save MPD password to keyring");
                     }
-                }
-                let _ = client.queue_connect();
+                ));
             }
         ));
         let mpd_download_album_art = imp.mpd_download_album_art.get();

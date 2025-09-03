@@ -53,21 +53,27 @@
   <screenshots>
     <screenshot type="default">
       <image>https://i.ibb.co/ZztBGwWp/Screenshot-From-2025-07-23-20-36-09.png</image>
+      <caption>Recent View</caption>
     </screenshot>
     <screenshot>
       <image>https://i.ibb.co/27g2D2Ph/Screenshot-From-2025-07-23-20-49-49.png</image>
+      <caption>Album View</caption>
     </screenshot>
     <screenshot>
       <image>https://i.ibb.co/DHtsRQB9/Screenshot-From-2025-07-23-20-46-02.png</image>
+      <caption>Album Content View</caption>
     </screenshot>
     <screenshot>
       <image>https://i.ibb.co/zTSZhPMp/Screenshot-From-2025-07-23-20-42-43.png</image>
+      <caption>Playlist Content View</caption>
     </screenshot>
     <screenshot>
       <image>https://i.ibb.co/fGxfq60N/Screenshot-From-2025-07-23-20-40-22.png</image>
+      <caption>Artist Content View</caption>
     </screenshot>
     <screenshot>
       <image>https://i.ibb.co/84bYWgJF/Screenshot-From-2025-06-21-20-15-05.png</image>
+      <caption>Queue View</caption>
     </screenshot>
   </screenshots>
 

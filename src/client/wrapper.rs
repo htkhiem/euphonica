@@ -3,7 +3,7 @@ use futures::executor;
 use glib::clone;
 use gtk::{gio, glib};
 use gtk::{gio::prelude::*, glib::BoxedAnyObject};
-use keyring::{error::Error as KeyringError, Entry};
+use libsecret::*;
 use mpd::song::PosIdChange;
 use resolve_path::PathResolveExt;
 use mpd::error::ServerError;
@@ -39,6 +39,7 @@ use crate::{
 
 use super::state::{ClientState, ConnectionState, StickersSupportLevel};
 use super::stream::StreamWrapper;
+use super::password::get_mpd_password;
 use super::ClientError;
 
 const BATCH_SIZE: usize = 1024;
@@ -974,7 +975,7 @@ impl MpdWrapper {
             .set_connection_state(ConnectionState::NotConnected);
     }
 
-    async fn connect_async(&self) {
+    pub async fn connect_async(&self) {
         // Close current clients
         self.disconnect_async().await;
 
@@ -1021,12 +1022,12 @@ impl MpdWrapper {
                 // If there is a password configured, use it to authenticate.
                 let mut password_access_failed = false;
                 let client_password: Option<String>;
-                match Entry::new("euphonica", "mpd-password") {
-                    Ok(entry) => {
-                        match entry.get_password() {
-                            Ok(password) => {
-                                let password_res = client.login(&password);
-                                client_password = Some(password);
+                match get_mpd_password().await {
+                    Ok(maybe_password) => {
+                        match maybe_password {
+                            Some(password) => {
+                                let password_res = client.login(password.as_str());
+                                client_password = Some(password.as_str().to_owned());
                                 if let Err(MpdError::Server(se)) = password_res {
                                     let _ = client.close();
                                     if se.code == MpdErrorCode::Password {
@@ -1039,31 +1040,15 @@ impl MpdWrapper {
                                     return;
                                 }
                             }
-                            Err(e) => {
-                                println!("{:?}", &e);
-                                match e {
-                                    KeyringError::NoEntry => {}
-                                    _ => {
-                                        println!("{:?}", e);
-                                        password_access_failed = true;
-                                    }
-                                }
+                            None => {
                                 client_password = None;
                             }
                         }
                     }
                     Err(e) => {
                         client_password = None;
-                        match e {
-                            KeyringError::NoStorageAccess(_) | KeyringError::PlatformFailure(_) => {
-                                // Note this down in case we really needed a password (different error
-                                // message).
-                                password_access_failed = true;
-                            }
-                            _ => {
-                                password_access_failed = false;
-                            }
-                        }
+                        println!("{:?}", &e);
+                        password_access_failed = true;
                     }
                 }
                 // Doubles as a litmus test to see if we are authenticated.

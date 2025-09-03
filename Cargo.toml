@@ -30,7 +30,6 @@ musicbrainz_rs = { version = "0.5.0", features = ["blocking"], default-features 
 mpris-server = "0.8.1"
 async-lock = "3.4.0"
 libblur = "0.14.4"
-keyring = { version = "3", features = ["linux-native-sync-persistent"] }
 gio = { version = "0.21.0", features = ["v2_80"] }
 rustls = "0.23.18" # GHSA ID GHSA-qg5g-gv98-5ffh
 glib = { version = "0.21.0", features = ["v2_80"] }  # GHSA ID GHSA-wrw7-89jp-8q8g
@@ -52,6 +51,7 @@ open = "5.3.2"
 resolve-path = "0.1.0"
 lru = "0.16.0"
 nohash-hasher = "0.2.0"
+libsecret = "0.7.0"
 
 [dependencies.gtk]
 package = "gtk4"
