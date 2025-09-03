@@ -124,7 +124,7 @@ Euphonica is still in very early development, and so far has only been tested on
   3. Run `flatpak-builder` as follows:
      
   ```bash
-  cd /path/to/flatpak/manifest
+  cd flatpak/
   flatpak-builder --force-clean --user --install-deps-from=flathub --repo=repo --install build-flatpak io.github.htkhiem.Euphonica.json
   ```
   4. Once the above has completed, you can run Euphonica using:
