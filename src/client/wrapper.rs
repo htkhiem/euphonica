@@ -49,7 +49,7 @@ const FETCH_LIMIT: usize = 10000000; // Fetch at most ten million songs at once 
 // Messages to be sent from child thread or synchronous methods
 enum AsyncClientMessage {
     Connect, // Host and port are always read from gsettings
-    Busy(bool), // A true will be sent when the work queue starts having tasks, and a false when it is empty again.
+    Status(usize), // Number of pending background tasks
     Idle(Vec<Subsystem>), // Will only be sent from the child thread
     QueueSongsDownloaded(Vec<SongInfo>),
     QueueChangesReceived(Vec<PosIdChange>),
@@ -710,11 +710,12 @@ impl MpdWrapper {
                 .subscribe(bg_channel)
                 .expect("Background client could not subscribe to inter-client channel");
 
-            let mut busy: bool = false;
             'outer: loop {
                 let skip_to_idle = pending_idle.load(Ordering::Relaxed);
 
                 let mut curr_task: Option<BackgroundTask> = None;
+                let n_tasks = bg_receiver_high.len() + bg_receiver.len();
+                let _ = sender_to_fg.send_blocking(AsyncClientMessage::Status(n_tasks));
                 if !skip_to_idle {
                     if !bg_receiver_high.is_empty() {
                         curr_task = Some(
@@ -733,11 +734,6 @@ impl MpdWrapper {
 
                 if !skip_to_idle && curr_task.is_some() {
                     let task = curr_task.unwrap();
-                    if !busy {
-                        // We have tasks now, set state to busy
-                        busy = true;
-                        let _ = sender_to_fg.send_blocking(AsyncClientMessage::Busy(true));
-                    }
                     match task {
                         BackgroundTask::Update => {
                             background::update_mpd_database(&mut client, &sender_to_fg)
@@ -793,10 +789,6 @@ impl MpdWrapper {
                     }
                 } else {
                     // If not, go into idle mode
-                    if busy {
-                        busy = false;
-                        let _ = sender_to_fg.send_blocking(AsyncClientMessage::Busy(false));
-                    }
                     if skip_to_idle {
                         // println!("Background MPD thread skipping to idle mode as there are pending messages");
                         pending_idle.store(false, Ordering::Relaxed);
@@ -909,7 +901,7 @@ impl MpdWrapper {
                 self.on_songs_downloaded("playlist-songs-downloaded", Some(name), songs)
             }
             AsyncClientMessage::DBUpdated => {}
-            AsyncClientMessage::Busy(busy) => self.state.set_busy(busy),
+            AsyncClientMessage::Status(n_tasks) => self.state.set_n_background_tasks(n_tasks as u64),
             AsyncClientMessage::RecentSongInfoDownloaded(songs) => self
                 .on_songs_downloaded("recent-songs-downloaded", None, songs),
         }

@@ -144,7 +144,7 @@ mod imp {
         // Sidebar
         // TODO: Replace with Libadwaita spinner when v1.6 hits stable
         #[template_child]
-        pub busy_spinner: TemplateChild<gtk::Spinner>,
+        pub busy_spinner: TemplateChild<adw::Spinner>,
         #[template_child]
         pub title: TemplateChild<adw::WindowTitle>,
         #[template_child]
@@ -1186,7 +1186,14 @@ impl EuphonicaWindow {
             .build();
 
         state
-            .bind_property("busy", &spinner, "visible")
+            .bind_property("n-background-tasks", &spinner, "visible")
+            .transform_to(|_, val: u64| Some((val > 0).to_value()))
+            .sync_create()
+            .build();
+
+        state
+            .bind_property("n-background-tasks", &spinner, "tooltip-text")
+            .transform_to(|_, val: u64| Some(format!("Background task(s): {val}").to_value()))
             .sync_create()
             .build();
     }

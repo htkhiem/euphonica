@@ -48,7 +48,8 @@
                         <child type="top">
                           <object class="AdwHeaderBar">
                             <child type="start">
-                              <object class="GtkSpinner" id="busy_spinner">
+                              <object class="AdwSpinner" id="busy_spinner">
+                                <property name="margin-start">12</property>
                                 <property name="visible">false</property>
                               </object>
                             </child>
