@@ -1032,7 +1032,14 @@ impl EuphonicaWindow {
             ConnectionState::Unauthenticated => {
                 self.show_error_dialog(
                     "Authentication Failed",
-                    "Your MPD instance requires a password, which was either not provided or lacks the necessary privileges for Euphonica to function correctly.",
+                    "The current password lacks the necessary privileges for Euphonica to function.",
+                    true
+                );
+            }
+            ConnectionState::PasswordNotAvailable => {
+                self.show_error_dialog(
+                    "No password available",
+                    "Your MPD instance requires a password, but Euphonica could not find one from the default keyring. If the keyring is still locked, please unlock it first.",
                     true
                 );
             }
@@ -1170,6 +1177,7 @@ impl EuphonicaWindow {
                 ConnectionState::Connecting => Some("Connecting"),
                 ConnectionState::Unauthenticated
                 | ConnectionState::WrongPassword
+                | ConnectionState::PasswordNotAvailable
                 | ConnectionState::CredentialStoreError => Some("Unauthenticated"),
                 ConnectionState::Connected => Some("Connected"),
                 _ => Some("Not connected")

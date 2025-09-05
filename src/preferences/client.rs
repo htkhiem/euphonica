@@ -303,7 +303,7 @@ impl ClientPreferences {
                 set_status_icon(&self.imp().mpd_status_icon.get(), StatusIconState::Loading);
                 self.imp().reconnect.set_sensitive(false);
             }
-            ConnectionState::Unauthenticated => {
+            ConnectionState::Unauthenticated | ConnectionState::PasswordNotAvailable => {
                 self.imp().mpd_status.set_subtitle("Authentication failed");
                 self.imp().mpd_status.set_enable_expansion(false);
                 set_status_icon(&self.imp().mpd_status_icon.get(), StatusIconState::Disabled);
@@ -399,7 +399,6 @@ impl ClientPreferences {
         imp.mpd_port
             .set_text(&conn_settings.uint("mpd-port").to_string());
         let password_field = imp.mpd_password.get();
-        reconnect_btn.set_sensitive(false);
         glib::spawn_future_local(async move {
             match get_mpd_password().await {
                 Ok(maybe_password) => {

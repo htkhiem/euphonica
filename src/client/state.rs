@@ -16,8 +16,9 @@ pub enum ConnectionState {
     ConnectionRefused,
     SocketNotFound,
     Connecting,
-    Unauthenticated, // Either no password is provided or the one provided is insufficiently privileged
-    CredentialStoreError, // Cannot access underlying credential store to fetch or save password
+    Unauthenticated, // The provided password is incorrect or insufficiently privileged
+    PasswordNotAvailable, // No password was provided but we need one
+    CredentialStoreError, // Internal error
     WrongPassword,   // The provided password does not match any of the configured passwords
     Connected,
 }

@@ -1041,11 +1041,13 @@ impl MpdWrapper {
                                 }
                             }
                             None => {
+                                // We'll also reach here if denied keyring access.
                                 client_password = None;
                             }
                         }
                     }
                     Err(e) => {
+                        // Only reachable by glib async runner errors
                         client_password = None;
                         println!("{:?}", &e);
                         password_access_failed = true;
@@ -1057,6 +1059,8 @@ impl MpdWrapper {
                         self.state.set_connection_state(
                             if password_access_failed {
                                 ConnectionState::CredentialStoreError
+                            } else if client_password.is_none() {
+                                ConnectionState::PasswordNotAvailable
                             } else {
                                 ConnectionState::Unauthenticated
                             }
