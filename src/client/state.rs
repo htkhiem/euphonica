@@ -16,8 +16,9 @@ pub enum ConnectionState {
     ConnectionRefused,
     SocketNotFound,
     Connecting,
-    Unauthenticated, // Either no password is provided or the one provided is insufficiently privileged
-    CredentialStoreError, // Cannot access underlying credential store to fetch or save password
+    Unauthenticated, // The provided password is incorrect or insufficiently privileged
+    PasswordNotAvailable, // No password was provided but we need one
+    CredentialStoreError, // Internal error
     WrongPassword,   // The provided password does not match any of the configured passwords
     Connected,
 }
@@ -39,7 +40,7 @@ pub enum ClientError {
 }
 
 mod imp {
-    use glib::{ParamSpec, ParamSpecBoolean, ParamSpecEnum};
+    use glib::{ParamSpec, ParamSpecBoolean, ParamSpecEnum, ParamSpecUInt64};
 
     use super::*;
     use once_cell::sync::Lazy;
@@ -48,7 +49,7 @@ mod imp {
     pub struct ClientState {
         pub connection_state: Cell<ConnectionState>,
         // Used to indicate that the background client is busy.
-        pub busy: Cell<bool>,
+        pub n_tasks: Cell<u64>,
         pub supports_playlists: Cell<bool>,
         pub stickers_support_level: Cell<StickersSupportLevel>,
     }
@@ -61,7 +62,7 @@ mod imp {
         fn new() -> Self {
             Self {
                 connection_state: Cell::default(),
-                busy: Cell::new(false),
+                n_tasks: Cell::new(0),
                 stickers_support_level: Cell::default(),
                 supports_playlists: Cell::new(true),
             }
@@ -72,7 +73,7 @@ mod imp {
         fn properties() -> &'static [ParamSpec] {
             static PROPERTIES: Lazy<Vec<ParamSpec>> = Lazy::new(|| {
                 vec![
-                    ParamSpecBoolean::builder("busy").read_only().build(),
+                    ParamSpecUInt64::builder("n-background-tasks").read_only().build(),
                     ParamSpecEnum::builder::<StickersSupportLevel>("stickers-support-level")
                         .read_only()
                         .build(),
@@ -91,7 +92,7 @@ mod imp {
             let obj = self.obj();
             match pspec.name() {
                 "connection-state" => obj.get_connection_state().to_value(),
-                "busy" => obj.is_busy().to_value(),
+                "n-background-tasks" => self.n_tasks.get().to_value(),
                 "stickers-support-level" => obj.get_stickers_support_level().to_value(),
                 "supports-playlists" => obj.supports_playlists().to_value(),
                 _ => unimplemented!(),
@@ -124,6 +125,9 @@ mod imp {
                     Signal::builder("album-basic-info-downloaded")
                         .param_types([Album::static_type()])
                         .build(),
+                    Signal::builder("recent-album-downloaded")
+                        .param_types([Album::static_type()])
+                        .build(),
                     // A chunk of an album's songs have been retrieved. Emit this
                     // to make AlbumContentView append this chunk.
                     Signal::builder("album-songs-downloaded")
@@ -134,6 +138,9 @@ mod imp {
                         .build(),
                     // ArtistInfo downloaded. Should probably queue metadata retrieval.
                     Signal::builder("artist-basic-info-downloaded")
+                        .param_types([Artist::static_type()])
+                        .build(),
+                    Signal::builder("recent-artist-downloaded")
                         .param_types([Artist::static_type()])
                         .build(),
                     // A chunk of an artist's songs have been retrieved. Emit this
@@ -197,21 +204,10 @@ impl ClientState {
         self.imp().connection_state.get()
     }
 
-    pub fn is_busy(&self) -> bool {
-        self.imp().busy.get()
-    }
-
     pub fn set_connection_state(&self, new_state: ConnectionState) {
         let old_state = self.imp().connection_state.replace(new_state);
         if old_state != new_state {
             self.notify("connection-state");
-        }
-    }
-
-    pub fn set_busy(&self, new_busy: bool) {
-        let old_busy = self.imp().busy.replace(new_busy);
-        if old_busy != new_busy {
-            self.notify("busy");
         }
     }
 
@@ -248,6 +244,17 @@ impl ClientState {
         let old = self.imp().supports_playlists.replace(state);
         if old != state {
             self.notify("supports-playlists");
+        }
+    }
+
+    pub fn get_n_background_tasks(&self) -> u64 {
+        self.imp().n_tasks.get()
+    }
+
+    pub fn set_n_background_tasks(&self, n: u64) {
+        let old = self.imp().n_tasks.replace(n);
+        if old != n {
+            self.notify("n-background-tasks");
         }
     }
 }

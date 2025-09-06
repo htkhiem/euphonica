@@ -146,6 +146,7 @@
                                 </child>
                                 <child>
                                   <object class="GtkSeparator">
+                                    <property name="margin-top">6px</property>
                                     <property name="margin-bottom">6px</property>
                                   </object>
                                 </child>
@@ -238,6 +239,7 @@
                                 </child>
                                 <child>
                                   <object class="GtkSeparator">
+                                    <property name="margin-top">6px</property>
                                     <property name="margin-bottom">6px</property>
                                   </object>
                                 </child>

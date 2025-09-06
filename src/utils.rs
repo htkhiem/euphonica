@@ -262,3 +262,8 @@ pub fn rebuild_artist_delim_exception_automaton() {
         *automaton = new;
     }
 }
+
+pub trait LazyInit {
+    fn clear(&self);
+    fn populate(&self);
+}

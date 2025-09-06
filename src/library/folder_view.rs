@@ -12,7 +12,7 @@ use super::{generic_row::GenericRow, Library};
 use crate::{
     cache::Cache,
     common::{INode, INodeType},
-    utils::{g_cmp_str_options, g_search_substr, settings_manager},
+    utils::{LazyInit, g_cmp_str_options, g_search_substr, settings_manager},
 };
 
 // Folder view implementation
@@ -86,7 +86,8 @@ mod imp {
         // if they now match.
         pub last_search_len: Cell<usize>,
         pub library: OnceCell<Library>,
-        pub collapsed: Cell<bool>
+        pub collapsed: Cell<bool>,
+        pub initialized: Cell<bool>
     }
 
     impl Default for FolderView {
@@ -115,7 +116,8 @@ mod imp {
                 // if they now match.
                 last_search_len: Cell::new(0),
                 library: OnceCell::new(),
-                collapsed: Cell::new(false)
+                collapsed: Cell::new(false),
+                initialized: Cell::new(true)
             }
         }
     }
@@ -498,17 +500,6 @@ impl FolderView {
     }
 
     fn setup_listview(&self, _cache: Rc<Cache>, library: Library) {
-        // client_state.connect_closure(
-        //     "inode-basic-info-downloaded",
-        //     false,
-        //     closure_local!(
-        //         #[strong(rename_to = this)]
-        //         self,
-        //         move |_: ClientState, inode: INode| {
-        //             this.add_inode(inode);
-        //         }
-        //     )
-        // );
         // Setup search bar
         let search_bar = self.imp().search_bar.get();
         let search_entry = self.imp().search_entry.get();
@@ -566,5 +557,22 @@ impl FolderView {
                 this.on_inode_clicked(&inode);
             }
         ));
+    }
+}
+
+impl LazyInit for FolderView {
+    fn clear(&self) {
+        self.imp().initialized.set(false);
+    }
+
+    fn populate(&self) {
+        if let Some(library) = self.imp().library.get() {
+            let was_populated = self.imp().initialized.replace(true);
+            if !was_populated {
+                println!("Initialising inodes at root");
+                // Path is always reset to root upon new connections
+                library.get_folder_contents("");
+            }
+        }
     }
 }

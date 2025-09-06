@@ -3,7 +3,6 @@ use futures::executor;
 use glib::clone;
 use gtk::{gio, glib};
 use gtk::{gio::prelude::*, glib::BoxedAnyObject};
-use keyring::{error::Error as KeyringError, Entry};
 use mpd::song::PosIdChange;
 use resolve_path::PathResolveExt;
 use mpd::error::ServerError;
@@ -39,22 +38,26 @@ use crate::{
 
 use super::state::{ClientState, ConnectionState, StickersSupportLevel};
 use super::stream::StreamWrapper;
+use super::password::get_mpd_password;
 use super::ClientError;
 
 const BATCH_SIZE: usize = 1024;
 const FETCH_LIMIT: usize = 10000000; // Fetch at most ten million songs at once (same
-                                     // folder, same tag, etc)
+// folder, same tag, etc)
 
 // Messages to be sent from child thread or synchronous methods
 enum AsyncClientMessage {
     Connect, // Host and port are always read from gsettings
-    Busy(bool), // A true will be sent when the work queue starts having tasks, and a false when it is empty again.
+    Disconnect,
+    Status(usize), // Number of pending background tasks
     Idle(Vec<Subsystem>), // Will only be sent from the child thread
     QueueSongsDownloaded(Vec<SongInfo>),
     QueueChangesReceived(Vec<PosIdChange>),
     AlbumBasicInfoDownloaded(AlbumInfo), // Return new album to be added to the list model (as SongInfo of a random song in it).
+    RecentAlbumDownloaded(AlbumInfo),
     AlbumSongInfoDownloaded(String, Vec<SongInfo>), // Return songs in the album with the given tag (batched)
     ArtistBasicInfoDownloaded(ArtistInfo), // Return new artist to be added to the list model.
+    RecentArtistDownloaded(ArtistInfo),
     ArtistSongInfoDownloaded(String, Vec<SongInfo>), // Return songs of an artist (or had their participation)
     ArtistAlbumBasicInfoDownloaded(String, AlbumInfo), // Return albums that had this artist in their AlbumArtist tag.
     FolderContentsDownloaded(String, Vec<LsInfoEntry>),
@@ -73,9 +76,11 @@ pub enum BackgroundTask {
     FetchQueue,  // Full fetch
     FetchQueueChanges(u32),  // From given version
     FetchFolderContents(String), // Gradually get all inodes in folder at path
-    FetchAlbums,                 // Gradually get all albums
-    FetchAlbumSongs(String),     // Get songs of album with given tag
+    FetchAlbums, // Gradually get all albums
+    FetchRecentAlbums,
+    FetchAlbumSongs(String),  // Get songs of album with given tag
     FetchArtists(bool), // Gradually get all artists. If bool flag is true, will parse AlbumArtist tag
+    FetchRecentArtists,
     FetchArtistSongs(String), // Get all songs of an artist with given name
     FetchArtistAlbums(String), // Get all albums of an artist with given name
     FetchPlaylistSongs(String), // Get songs of playlist with given name
@@ -145,8 +150,15 @@ mod background {
         client: &mut mpd::Client<StreamWrapper>,
         sender_to_fg: &Sender<AsyncClientMessage>,
     ) {
-        if let Ok(_) = client.update() {
-            let _ = sender_to_fg.send_blocking(AsyncClientMessage::DBUpdated);
+        match client.update() {
+            Ok(_) => {
+                let _ = sender_to_fg.send_blocking(AsyncClientMessage::DBUpdated);
+            }
+            Err(MpdError::Io(_)) => {
+                // Connection error => attempt to reconnect
+                let _ = sender_to_fg.send_blocking(AsyncClientMessage::Connect);
+            }
+            Err(_) => {}
         }
     }
 
@@ -157,19 +169,26 @@ mod background {
         // TODO: batched reads to avoid blocking MPD server
         // For now we're fetching the entire thing at once in the background, then
         // sending batches of it to the UI to allow the UI thread some slack.
-        if let Ok(mut queue) = client.queue() {
-            let mut idx: usize = 0;
-            let len = queue.len();
-            while idx < len {
-                let end = std::cmp::min(idx + BATCH_SIZE, len);
-                let _ = sender_to_fg.send_blocking(AsyncClientMessage::QueueSongsDownloaded(
-                    queue[idx..end]
-                    .iter_mut()
-                    .map(|mpd_song| SongInfo::from(std::mem::take(mpd_song)))
-                    .collect()
-                ));
-                idx += BATCH_SIZE;
+        match client.queue() {
+            Ok(mut queue) => {
+                let mut idx: usize = 0;
+                let len = queue.len();
+                while idx < len {
+                    let end = std::cmp::min(idx + BATCH_SIZE, len);
+                    let _ = sender_to_fg.send_blocking(AsyncClientMessage::QueueSongsDownloaded(
+                        queue[idx..end]
+                            .iter_mut()
+                            .map(|mpd_song| SongInfo::from(std::mem::take(mpd_song)))
+                            .collect()
+                    ));
+                    idx += BATCH_SIZE;
+                }
             }
+            Err(MpdError::Io(_)) => {
+                // Connection error => attempt to reconnect
+                let _ = sender_to_fg.send_blocking(AsyncClientMessage::Connect);
+            }
+            Err(_) => {}
         }
     }
 
@@ -181,16 +200,23 @@ mod background {
         // TODO: batched reads to avoid blocking MPD server
         // For now we're fetching the entire thing at once in the background, then
         // sending batches of it to the UI to allow the UI thread some slack.
-        if let Ok(changes) = client.changesposid(curr_version) {
-            let mut idx: usize = 0;
-            let len = changes.len();
-            while idx < len {
-                let end = std::cmp::min(idx + BATCH_SIZE, len);
-                let _ = sender_to_fg.send_blocking(AsyncClientMessage::QueueChangesReceived(
-                    changes[idx..end].to_owned()
-                ));
-                idx += BATCH_SIZE;
+        match client.changesposid(curr_version) {
+            Ok(changes) => {
+                let mut idx: usize = 0;
+                let len = changes.len();
+                while idx < len {
+                    let end = std::cmp::min(idx + BATCH_SIZE, len);
+                    let _ = sender_to_fg.send_blocking(AsyncClientMessage::QueueChangesReceived(
+                        changes[idx..end].to_owned()
+                    ));
+                    idx += BATCH_SIZE;
+                }
             }
+            Err(MpdError::Io(_)) => {
+                // Connection error => attempt to reconnect
+                let _ = sender_to_fg.send_blocking(AsyncClientMessage::Connect);
+            }
+            Err(_) => {}
         }
     }
 
@@ -350,56 +376,104 @@ mod background {
         }
     }
 
-    fn fetch_albums_by_query<F>(client: &mut mpd::Client<StreamWrapper>, query: &Query, respond: F)
+    // Err is true when a reconnection should be attempted
+    fn fetch_albums_by_query<F>(client: &mut mpd::Client<StreamWrapper>, query: &Query, respond: F) -> Result<(), bool>
     where
         F: Fn(AlbumInfo) -> Result<(), SendError<AsyncClientMessage>>,
     {
         // TODO: batched windowed retrieval
         // Get list of unique album tags
         // Will block child thread until info for all albums have been retrieved.
-        if let Ok(tag_list) = client.list(&Term::Tag(Cow::Borrowed("album")), query) {
-            for tag in &tag_list {
-                if let Ok(mut songs) = client.find(
-                    Query::new().and(Term::Tag(Cow::Borrowed("album")), tag),
-                    Window::from((0, 1)),
-                ) {
-                    if !songs.is_empty() {
-                        let info = SongInfo::from(std::mem::take(&mut songs[0]))
-                            .into_album_info()
-                            .unwrap_or_default();
-                        let _ = respond(info);
+        match client.list(&Term::Tag(Cow::Borrowed("album")), query) {
+            Ok(tag_list) => {
+                for tag in &tag_list {
+                    if let Ok(mut songs) = client.find(
+                        Query::new().and(Term::Tag(Cow::Borrowed("album")), tag),
+                        Window::from((0, 1)),
+                    ) {
+                        if !songs.is_empty() {
+                            let info = SongInfo::from(std::mem::take(&mut songs[0]))
+                                .into_album_info()
+                                .unwrap_or_default();
+                            let _ = respond(info);
+                        }
                     }
                 }
+                Ok(())
+            }
+            Err(MpdError::Io(_)) => {
+                // Connection error => attempt to reconnect
+                Err(true)
+            }
+            Err(_) => {
+                Err(false)
             }
         }
     }
 
-    fn fetch_songs_by_query<F>(client: &mut mpd::Client<StreamWrapper>, query: &Query, respond: F)
+    fn fetch_songs_by_query<F>(client: &mut mpd::Client<StreamWrapper>, query: &Query, respond: F) -> Result<(), bool>
     where
         F: Fn(Vec<SongInfo>) -> Result<(), SendError<AsyncClientMessage>>,
     {
         let mut curr_len: usize = 0;
         let mut more: bool = true;
         while more && (curr_len) < FETCH_LIMIT {
-            let songs: Vec<SongInfo> = client
-                .find(query, Window::from((curr_len as u32, (curr_len + BATCH_SIZE) as u32)))
-                .unwrap()
-                .iter_mut()
-                .map(|mpd_song| SongInfo::from(std::mem::take(mpd_song)))
-                .collect();
-            if !songs.is_empty() {
-                let _ = respond(songs);
-                curr_len += BATCH_SIZE;
-            } else {
-                more = false;
-            }
+            match client
+                .find(query, Window::from((curr_len as u32, (curr_len + BATCH_SIZE) as u32))) {
+                    Ok(mut mpd_songs) => {
+                        let songs: Vec<SongInfo> = mpd_songs
+                            .iter_mut()
+                            .map(|mpd_song| SongInfo::from(std::mem::take(mpd_song)))
+                            .collect();
+                        if !songs.is_empty() {
+                            let _ = respond(songs);
+                            curr_len += BATCH_SIZE;
+                        } else {
+                            more = false;
+                        }
+                    }
+                    Err(MpdError::Io(_)) => {
+                        // Connection error => attempt to reconnect
+                        return Err(true);
+                    }
+                    Err(_) => {
+                        return Err(false);
+                    }
+                }
         }
+        Ok(())
     }
 
     pub fn fetch_all_albums(client: &mut mpd::Client<StreamWrapper>, sender_to_fg: &Sender<AsyncClientMessage>) {
-        fetch_albums_by_query(client, &Query::new(), |info| {
+        match fetch_albums_by_query(client, &Query::new(), |info| {
             sender_to_fg.send_blocking(AsyncClientMessage::AlbumBasicInfoDownloaded(info))
-        });
+        }) {
+            Err(true) => {
+                let _ = sender_to_fg.send_blocking(AsyncClientMessage::Connect);
+            }
+            _ => {}
+        }
+    }
+
+    pub fn fetch_recent_albums(
+        client: &mut mpd::Client<StreamWrapper>,
+        sender_to_fg: &Sender<AsyncClientMessage>
+    ) {
+        let settings = utils::settings_manager().child("library");
+        let recent_titles = sqlite::get_last_n_albums(settings.uint("n-recent-albums")).expect("Sqlite DB error");
+        for title in recent_titles {
+            match fetch_albums_by_query(
+                client,
+                &Query::new().and(Term::Tag(Cow::Borrowed("album")), title),
+                |info| {
+                    sender_to_fg.send_blocking(AsyncClientMessage::RecentAlbumDownloaded(info))
+                }) {
+                Err(true) => {
+                    let _ = sender_to_fg.send_blocking(AsyncClientMessage::Connect);
+                }
+                _ => {}
+            }
+        }
     }
 
     pub fn fetch_albums_of_artist(
@@ -407,7 +481,7 @@ mod background {
         sender_to_fg: &Sender<AsyncClientMessage>,
         artist_name: String,
     ) {
-        fetch_albums_by_query(
+        match fetch_albums_by_query(
             client,
             Query::new().and_with_op(
                 Term::Tag(Cow::Borrowed("artist")),
@@ -420,7 +494,12 @@ mod background {
                     info,
                 ))
             },
-        );
+        ) {
+            Err(true) => {
+                let _ = sender_to_fg.send_blocking(AsyncClientMessage::Connect);
+            }
+            _ => {}
+        }
     }
 
     pub fn fetch_album_songs(
@@ -428,7 +507,7 @@ mod background {
         sender_to_fg: &Sender<AsyncClientMessage>,
         tag: String,
     ) {
-        fetch_songs_by_query(
+        match fetch_songs_by_query(
             client,
             Query::new().and(Term::Tag(Cow::Borrowed("album")), tag.clone()),
             |songs| {
@@ -437,7 +516,12 @@ mod background {
                     songs,
                 ))
             },
-        );
+        ) {
+            Err(true) => {
+                let _ = sender_to_fg.send_blocking(AsyncClientMessage::Connect);
+            }
+            _ => {}
+        }
     }
 
     pub fn fetch_artists(
@@ -455,28 +539,81 @@ mod background {
             "artist"
         };
         let mut already_parsed: FxHashSet<String> = FxHashSet::default();
-        if let Ok(tag_list) = client.list(&Term::Tag(Cow::Borrowed(tag_type)), &Query::new()) {
-            // TODO: Limit tags to only what we need locally
-            for tag in &tag_list {
-                if let Ok(mut songs) = client.find(
-                    Query::new().and(Term::Tag(Cow::Borrowed(tag_type)), tag),
-                    Window::from((0, 1)),
-                ) {
-                    if !songs.is_empty() {
-                        let first_song = SongInfo::from(std::mem::take(&mut songs[0]));
-                        let artists = first_song.into_artist_infos();
-                        // println!("Got these artists: {artists:?}");
-                        for artist in artists.into_iter() {
-                            if already_parsed.insert(artist.name.clone()) {
-                                // println!("Never seen {artist:?} before, inserting...");
-                                let _ = sender_to_fg.send_blocking(
-                                    AsyncClientMessage::ArtistBasicInfoDownloaded(artist),
-                                );
+        match client.list(&Term::Tag(Cow::Borrowed(tag_type)), &Query::new()) {
+            Ok(tag_list) => {
+                // TODO: Limit tags to only what we need locally
+                for tag in &tag_list {
+                    if let Ok(mut songs) = client.find(
+                        Query::new().and(Term::Tag(Cow::Borrowed(tag_type)), tag),
+                        Window::from((0, 1)),
+                    ) {
+                        if !songs.is_empty() {
+                            let first_song = SongInfo::from(std::mem::take(&mut songs[0]));
+                            let artists = first_song.into_artist_infos();
+                            // println!("Got these artists: {artists:?}");
+                            for artist in artists.into_iter() {
+                                if already_parsed.insert(artist.name.clone()) {
+                                    // println!("Never seen {artist:?} before, inserting...");
+                                    let _ = sender_to_fg.send_blocking(
+                                        AsyncClientMessage::ArtistBasicInfoDownloaded(artist),
+                                    );
+                                }
                             }
                         }
                     }
                 }
             }
+            Err(MpdError::Io(_)) => {
+                // Connection error => attempt to reconnect
+                let _ = sender_to_fg.send_blocking(AsyncClientMessage::Connect);
+            }
+            _ => {}
+        }
+    }
+
+    pub fn fetch_recent_artists(
+        client: &mut mpd::Client<StreamWrapper>,
+        sender_to_fg: &Sender<AsyncClientMessage>
+    ) {
+        let mut already_parsed: FxHashSet<String> = FxHashSet::default();
+        let settings = utils::settings_manager().child("library");
+        let n = settings.uint("n-recent-artists");
+        let mut res: Vec<ArtistInfo> = Vec::with_capacity(n as usize);
+        let recent_names = sqlite::get_last_n_artists(n).expect("Sqlite DB error");
+        let mut recent_names_set: FxHashSet<String> = FxHashSet::default();
+        for name in recent_names.iter() {
+            recent_names_set.insert(name.clone());
+        }
+        for name in recent_names.iter() {
+            match client.find(
+                Query::new().and_with_op(Term::Tag(Cow::Borrowed("artist")), QueryOperation::Contains, name),
+                Window::from((0, 1))
+            ) {
+                Ok(mut songs) => {
+                    if !songs.is_empty() {
+                        let first_song = SongInfo::from(std::mem::take(&mut songs[0]));
+                        let artists = first_song.into_artist_infos();
+                        for artist in artists.into_iter() {
+                            if recent_names_set.contains(&artist.name) {
+                                if already_parsed.insert(artist.name.clone()) {
+                                    res.push(artist);
+                                }
+                            }
+                        }
+                    }
+                }
+                Err(MpdError::Io(_)) => {
+                    // Connection error => attempt to reconnect
+                    let _ = sender_to_fg.send_blocking(AsyncClientMessage::Connect);
+                }
+                _ => {}
+            }
+        }
+
+        for artist in res.into_iter() {
+            let _ = sender_to_fg.send_blocking(
+                AsyncClientMessage::RecentArtistDownloaded(artist),
+            );
         }
     }
 
@@ -485,7 +622,7 @@ mod background {
         sender_to_fg: &Sender<AsyncClientMessage>,
         name: String,
     ) {
-        fetch_songs_by_query(
+        match fetch_songs_by_query(
             client,
             Query::new().and_with_op(
                 Term::Tag(Cow::Borrowed("artist")),
@@ -498,7 +635,12 @@ mod background {
                     songs,
                 ))
             },
-        );
+        ) {
+            Err(true) => {
+                let _ = sender_to_fg.send_blocking(AsyncClientMessage::Connect);
+            }
+            _ => {}
+        }
     }
 
     pub fn fetch_folder_contents(
@@ -506,9 +648,16 @@ mod background {
         sender_to_fg: &Sender<AsyncClientMessage>,
         path: String,
     ) {
-        if let Ok(contents) = client.lsinfo(&path) {
-            let _ = sender_to_fg
-                .send_blocking(AsyncClientMessage::FolderContentsDownloaded(path, contents));
+        match client.lsinfo(&path) {
+            Ok(contents) => {
+                let _ = sender_to_fg
+                    .send_blocking(AsyncClientMessage::FolderContentsDownloaded(path, contents));
+            }
+            Err(MpdError::Io(_)) => {
+                // Connection error => attempt to reconnect
+                let _ = sender_to_fg.send_blocking(AsyncClientMessage::Connect);
+            }
+            _ => {}
         }
     }
 
@@ -518,55 +667,82 @@ mod background {
         name: String,
     ) {
         if client.version.1 < 24 {
-            let songs: Vec<SongInfo> = client
-                .playlist(&name, Option::<Range<u32>>::None)
-                .unwrap()
-                .iter_mut()
-                .map(|mpd_song| SongInfo::from(std::mem::take(mpd_song)))
-                .collect();
-            if !songs.is_empty() {
-                let _ = sender_to_fg.send_blocking(AsyncClientMessage::PlaylistSongInfoDownloaded(
-                    name.clone(),
-                    songs,
-                ));
-            }
+            match client
+                .playlist(&name, Option::<Range<u32>>::None) {
+                    Ok(mut mpd_songs) => {
+                        let songs: Vec<SongInfo> = mpd_songs
+                            .iter_mut()
+                            .map(|mpd_song| SongInfo::from(std::mem::take(mpd_song)))
+                            .collect();
+                        if !songs.is_empty() {
+                            let _ = sender_to_fg.send_blocking(AsyncClientMessage::PlaylistSongInfoDownloaded(
+                                name.clone(),
+                                songs,
+                            ));
+                        }
+                    }
+                    Err(MpdError::Io(_)) => {
+                        // Connection error => attempt to reconnect
+                        let _ = sender_to_fg.send_blocking(AsyncClientMessage::Connect);
+                    }
+                    _ => {}
+                }
         } else {
             // For MPD 0.24+, use the new paged loading
             let mut curr_len: u32 = 0;
             let mut more: bool = true;
             while more && (curr_len as usize) < FETCH_LIMIT {
-                let songs: Vec<SongInfo> = client
-                    .playlist(&name, Some(curr_len..(curr_len + BATCH_SIZE as u32)))
-                    .unwrap()
-                    .iter_mut()
-                    .map(|mpd_song| SongInfo::from(std::mem::take(mpd_song)))
-                    .collect();
-                more = songs.len() >= BATCH_SIZE as usize;
-                if !songs.is_empty() {
-                    curr_len += songs.len() as u32;
-                    let _ = sender_to_fg.send_blocking(AsyncClientMessage::PlaylistSongInfoDownloaded(
-                        name.clone(),
-                        songs,
-                    ));
-                }
+                match client
+                    .playlist(&name, Some(curr_len..(curr_len + BATCH_SIZE as u32))) {
+                        Ok(mut mpd_songs) => {
+                            let songs: Vec<SongInfo> = mpd_songs
+                                .iter_mut()
+                                .map(|mpd_song| SongInfo::from(std::mem::take(mpd_song)))
+                                .collect();
+                            more = songs.len() >= BATCH_SIZE as usize;
+                            if !songs.is_empty() {
+                                curr_len += songs.len() as u32;
+                                let _ = sender_to_fg.send_blocking(AsyncClientMessage::PlaylistSongInfoDownloaded(
+                                    name.clone(),
+                                    songs,
+                                ));
+                            }
+                        }
+                        Err(MpdError::Io(_)) => {
+                            // Connection error => attempt to reconnect
+                            let _ = sender_to_fg.send_blocking(AsyncClientMessage::Connect);
+                            return;
+                        }
+                        _ => {return;}
+                    }
+
             }
         }
     }
-    pub fn fetch_songs_by_uri(client: &mut mpd::Client<StreamWrapper>, uris: &[&str]) -> Vec<SongInfo> {
-        uris.iter().map(move |uri| {
-            if let Ok(mut found_songs) = client.find(Query::new().and(Term::File, *uri), None) {
-                if found_songs.len() > 0 {
-                    Some(found_songs.remove(0))
+    pub fn fetch_songs_by_uri(client: &mut mpd::Client<StreamWrapper>, uris: &[&str]) -> Result<Vec<SongInfo>, bool> {
+        let mut res: Vec<mpd::Song> = Vec::with_capacity(uris.len());
+        for uri in uris.iter() {
+            match client.find(Query::new().and(Term::File, *uri), None) {
+                Ok(mut found_songs) => {
+                    if found_songs.len() > 0 {
+                        res.push(found_songs.remove(0));
+                    }
                 }
-                else {
-                    None
+                Err(MpdError::Io(_)) => {
+                    return Err(true);
+                }
+                _ => {
+                    return Err(false);
                 }
             }
-            else {
-                None
-            }
-        }).filter(|maybe_song| maybe_song.is_some())
-          .map(|mut mpd_song| SongInfo::from(std::mem::take(&mut mpd_song).unwrap())).collect()
+        }
+
+        Ok(
+            res
+                .into_iter()
+                .map(|mut mpd_song| SongInfo::from(std::mem::take(&mut mpd_song)))
+                .collect()
+        )
     }
 
     pub fn fetch_last_n_songs(
@@ -575,24 +751,33 @@ mod background {
         n: u32
     ) {
         let to_fetch: Vec<(String, OffsetDateTime)> = sqlite::get_last_n_songs(n).expect("Sqlite DB error");
-        let songs: Vec<SongInfo> = fetch_songs_by_uri(
+        match fetch_songs_by_uri(
             client,
             &to_fetch.iter().map(|tup| tup.0.as_str()).collect::<Vec<&str>>()
-        )
-            .into_iter()
-            .zip(
-                to_fetch.iter().map(|r| r.1).collect::<Vec<OffsetDateTime>>()
-            )
-            .map(|mut tup| {
-                tup.0.last_played = Some(tup.1);
-                std::mem::take(&mut tup.0)
-            })
-            .collect();
+        ) {
+            Ok(raw_songs) => {
+                let songs: Vec<SongInfo> = raw_songs
+                    .into_iter()
+                    .zip(
+                        to_fetch.iter().map(|r| r.1).collect::<Vec<OffsetDateTime>>()
+                    )
+                    .map(|mut tup| {
+                        tup.0.last_played = Some(tup.1);
+                        std::mem::take(&mut tup.0)
+                    })
+                    .collect();
 
-        if !songs.is_empty() {
-            let _ = sender_to_fg.send_blocking(AsyncClientMessage::RecentSongInfoDownloaded(
-                songs
-            ));
+                if !songs.is_empty() {
+                    let _ = sender_to_fg.send_blocking(AsyncClientMessage::RecentSongInfoDownloaded(
+                        songs
+                    ));
+                }
+            }
+            Err(true) => {
+                // Connection error => attempt to reconnect
+                let _ = sender_to_fg.send_blocking(AsyncClientMessage::Connect);
+            }
+            _ => {}
         }
     }
 }
@@ -693,7 +878,13 @@ impl MpdWrapper {
                 else {
                     stream = StreamWrapper::new_unix(UnixStream::connect(path.as_str()).map_err(mpd::error::Error::Io).expect(error_msg));
                 }
-                client = mpd::Client::new(stream).expect(error_msg);
+                if let Ok(new_client) = mpd::Client::new(stream) {
+                    client = new_client;
+                } else {
+                    // For early errors like this it's best to just disconnect.
+                    let _ = sender_to_fg.send_blocking(AsyncClientMessage::Disconnect);
+                    return;
+                }
             } else {
                 let addr = format!("{}:{}", conn.string("mpd-host"), conn.uint("mpd-port"));
                 println!("Connecting to TCP socket {}", &addr);
@@ -701,19 +892,27 @@ impl MpdWrapper {
                 client = mpd::Client::new(stream).expect(error_msg);
             }
             if let Some(password) = password {
-                client
-                    .login(&password)
-                    .expect("Background client failed to authenticate in the same manner as main client");
+                if client.login(&password).is_err() {
+                    // For early errors like this it's best to just disconnect.
+                    println!("Background client failed to authenticate in the same manner as main client");
+                    let _ = sender_to_fg.send_blocking(AsyncClientMessage::Disconnect);
+                    return;
+                }
             }
-            client
-                .subscribe(bg_channel)
-                .expect("Background client could not subscribe to inter-client channel");
+            if let Err(MpdError::Io(_)) = client
+                .subscribe(bg_channel) {
+                    // For early errors like this it's best to just disconnect.
+                    println!("Background client could not subscribe to inter-client channel");
+                    let _ = sender_to_fg.send_blocking(AsyncClientMessage::Disconnect);
+                    return;
+                }
 
-            let mut busy: bool = false;
             'outer: loop {
                 let skip_to_idle = pending_idle.load(Ordering::Relaxed);
 
                 let mut curr_task: Option<BackgroundTask> = None;
+                let n_tasks = bg_receiver_high.len() + bg_receiver.len();
+                let _ = sender_to_fg.send_blocking(AsyncClientMessage::Status(n_tasks));
                 if !skip_to_idle {
                     if !bg_receiver_high.is_empty() {
                         curr_task = Some(
@@ -732,11 +931,6 @@ impl MpdWrapper {
 
                 if !skip_to_idle && curr_task.is_some() {
                     let task = curr_task.unwrap();
-                    if !busy {
-                        // We have tasks now, set state to busy
-                        busy = true;
-                        let _ = sender_to_fg.send_blocking(AsyncClientMessage::Busy(true));
-                    }
                     match task {
                         BackgroundTask::Update => {
                             background::update_mpd_database(&mut client, &sender_to_fg)
@@ -764,6 +958,9 @@ impl MpdWrapper {
                         BackgroundTask::FetchAlbums => {
                             background::fetch_all_albums(&mut client, &sender_to_fg)
                         }
+                        BackgroundTask::FetchRecentAlbums => {
+                            background::fetch_recent_albums(&mut client, &sender_to_fg)
+                        }
                         BackgroundTask::FetchAlbumSongs(tag) => {
                             background::fetch_album_songs(&mut client, &sender_to_fg, tag)
                         }
@@ -773,6 +970,9 @@ impl MpdWrapper {
                                 &sender_to_fg,
                                 use_albumartist,
                             )
+                        }
+                        BackgroundTask::FetchRecentArtists => {
+                            background::fetch_recent_artists(&mut client, &sender_to_fg)
                         }
                         BackgroundTask::FetchArtistSongs(name) => {
                             background::fetch_songs_of_artist(&mut client, &sender_to_fg, name)
@@ -792,10 +992,6 @@ impl MpdWrapper {
                     }
                 } else {
                     // If not, go into idle mode
-                    if busy {
-                        busy = false;
-                        let _ = sender_to_fg.send_blocking(AsyncClientMessage::Busy(false));
-                    }
                     if skip_to_idle {
                         // println!("Background MPD thread skipping to idle mode as there are pending messages");
                         pending_idle.store(false, Ordering::Relaxed);
@@ -822,6 +1018,7 @@ impl MpdWrapper {
                         println!(
                             "Child thread encountered a client error while idling. Stopping..."
                         );
+                        let _ = sender_to_fg.send_blocking(AsyncClientMessage::Disconnect);
                         break 'outer;
                     }
                 }
@@ -841,8 +1038,13 @@ impl MpdWrapper {
                 // Allow receiver to be mutated, but keep it at the same memory address.
                 // See Receiver::next doc for why this is needed.
                 let mut receiver = std::pin::pin!(receiver);
+                let mut recently_connected: bool = false;
                 while let Some(request) = receiver.next().await {
-                    this.respond(request).await;
+                    let old_recently_connected = recently_connected;
+                    recently_connected = matches!(request, AsyncClientMessage::Connect);
+                    this.respond(request, old_recently_connected).await;
+                    // Prevent rapid-fire reconnections
+
                 }
             }
         ));
@@ -855,27 +1057,31 @@ impl MpdWrapper {
             #[weak(rename_to = this)]
             self,
             async move {
-            loop {
-                if let Some(client) = this.main_client.borrow_mut().as_mut() {
-                    let res = client.ping();
-                    if res.is_err() {
-                        println!("[KeepAlive] [FATAL] Could not ping mpd. The connection might have already timed out, or the daemon might have crashed.");
-                        break;
+                loop {
+                    if let Some(client) = this.main_client.borrow_mut().as_mut() {
+                        let res = client.ping();
+                        if res.is_err() {
+                            println!("[KeepAlive] [FATAL] Could not ping mpd. The connection might have already timed out, or the daemon might have crashed.");
+                            break;
+                        }
                     }
+                    else {
+                        println!("[KeepAlive] There is no client currently running. Won't ping.");
+                    }
+                    glib::timeout_future_seconds(ping_interval).await;
                 }
-                else {
-                    println!("[KeepAlive] There is no client currently running. Won't ping.");
-                }
-                glib::timeout_future_seconds(ping_interval).await;
-            }
-        }));
+            }));
     }
 
-    async fn respond(&self, request: AsyncClientMessage) -> glib::ControlFlow {
+    async fn respond(&self, request: AsyncClientMessage, recently_connected: bool) -> glib::ControlFlow {
         // println!("Received MpdMessage {:?}", request);
         match request {
-            AsyncClientMessage::Connect => self.connect_async().await,
-            // AsyncClientMessage::Disconnect => self.disconnect_async().await,
+            AsyncClientMessage::Connect => {
+                if !recently_connected {
+                    self.connect_async().await;
+                }
+            }
+            AsyncClientMessage::Disconnect => self.disconnect_async().await,
             AsyncClientMessage::Idle(changes) => self.handle_idle_changes(changes).await,
             AsyncClientMessage::QueueSongsDownloaded(songs) => {
                 self.on_songs_downloaded("queue-songs-downloaded", None, songs)
@@ -886,12 +1092,18 @@ impl MpdWrapper {
             AsyncClientMessage::AlbumBasicInfoDownloaded(info) => {
                 self.on_album_downloaded("album-basic-info-downloaded", None, info)
             }
+            AsyncClientMessage::RecentAlbumDownloaded(info) => {
+                self.on_album_downloaded("recent-album-downloaded", None, info)
+            }
             AsyncClientMessage::AlbumSongInfoDownloaded(tag, songs) => {
                 self.on_songs_downloaded("album-songs-downloaded", Some(tag), songs)
             }
             AsyncClientMessage::ArtistBasicInfoDownloaded(info) => self
                 .state
                 .emit_result("artist-basic-info-downloaded", Artist::from(info)),
+            AsyncClientMessage::RecentArtistDownloaded(info) => self
+                .state
+                .emit_result("recent-artist-downloaded", Artist::from(info)),
             AsyncClientMessage::ArtistSongInfoDownloaded(name, songs) => {
                 self.on_songs_downloaded("artist-songs-downloaded", Some(name), songs)
             }
@@ -908,7 +1120,7 @@ impl MpdWrapper {
                 self.on_songs_downloaded("playlist-songs-downloaded", Some(name), songs)
             }
             AsyncClientMessage::DBUpdated => {}
-            AsyncClientMessage::Busy(busy) => self.state.set_busy(busy),
+            AsyncClientMessage::Status(n_tasks) => self.state.set_n_background_tasks(n_tasks as u64),
             AsyncClientMessage::RecentSongInfoDownloaded(songs) => self
                 .on_songs_downloaded("recent-songs-downloaded", None, songs),
         }
@@ -937,9 +1149,14 @@ impl MpdWrapper {
             self.bg_sender.borrow()
         };
         if let Some(sender) = maybe_sender.as_ref() {
-            sender
+            if sender
                 .send_blocking(task)
-                .expect("Cannot queue background task");
+                .is_err() {
+                    // These errors can only happen after we've successfully connected both clients, so
+                    // we should attempt a reconnection.
+                    println!("[Warning] Lost child client. Reconnecting...");
+                    let _ = self.main_sender.send_blocking(AsyncClientMessage::Connect);
+                }
             if let Some(client) = self.main_client.borrow_mut().as_mut() {
                 // Wake background thread
                 let _ = client.sendmessage(self.bg_channel.clone(), "WAKE");
@@ -947,6 +1164,7 @@ impl MpdWrapper {
                 println!("Warning: cannot wake child thread. Task might be delayed.");
             }
         } else {
+            // This is nasty (something happened way out of order). Don't attempt to recover.
             panic!("Cannot queue background task (background sender not initialised)");
         }
     }
@@ -974,9 +1192,11 @@ impl MpdWrapper {
             .set_connection_state(ConnectionState::NotConnected);
     }
 
-    async fn connect_async(&self) {
+    pub async fn connect_async(&self) {
         // Close current clients
         self.disconnect_async().await;
+        self.queue_version.set(0);
+        self.expected_queue_version.set(0);
 
         let conn = utils::settings_manager().child("client");
 
@@ -1021,12 +1241,12 @@ impl MpdWrapper {
                 // If there is a password configured, use it to authenticate.
                 let mut password_access_failed = false;
                 let client_password: Option<String>;
-                match Entry::new("euphonica", "mpd-password") {
-                    Ok(entry) => {
-                        match entry.get_password() {
-                            Ok(password) => {
-                                let password_res = client.login(&password);
-                                client_password = Some(password);
+                match get_mpd_password().await {
+                    Ok(maybe_password) => {
+                        match maybe_password {
+                            Some(password) => {
+                                let password_res = client.login(password.as_str());
+                                client_password = Some(password.as_str().to_owned());
                                 if let Err(MpdError::Server(se)) = password_res {
                                     let _ = client.close();
                                     if se.code == MpdErrorCode::Password {
@@ -1039,31 +1259,17 @@ impl MpdWrapper {
                                     return;
                                 }
                             }
-                            Err(e) => {
-                                println!("{:?}", &e);
-                                match e {
-                                    KeyringError::NoEntry => {}
-                                    _ => {
-                                        println!("{:?}", e);
-                                        password_access_failed = true;
-                                    }
-                                }
+                            None => {
+                                // We'll also reach here if denied keyring access.
                                 client_password = None;
                             }
                         }
                     }
                     Err(e) => {
+                        // Only reachable by glib async runner errors
                         client_password = None;
-                        match e {
-                            KeyringError::NoStorageAccess(_) | KeyringError::PlatformFailure(_) => {
-                                // Note this down in case we really needed a password (different error
-                                // message).
-                                password_access_failed = true;
-                            }
-                            _ => {
-                                password_access_failed = false;
-                            }
-                        }
+                        println!("{:?}", &e);
+                        password_access_failed = true;
                     }
                 }
                 // Doubles as a litmus test to see if we are authenticated.
@@ -1072,6 +1278,8 @@ impl MpdWrapper {
                         self.state.set_connection_state(
                             if password_access_failed {
                                 ConnectionState::CredentialStoreError
+                            } else if client_password.is_none() {
+                                ConnectionState::PasswordNotAvailable
                             } else {
                                 ConnectionState::Unauthenticated
                             }
@@ -1103,9 +1311,61 @@ impl MpdWrapper {
         }
     }
 
+    fn handle_common_mpd_error(&self, e: &MpdError, or: Option<ClientError>) {
+        let mut handled = true;
+        match *e {
+            MpdError::Io(_) => {
+                let _ = self.main_sender.send_blocking(AsyncClientMessage::Connect);
+            }
+            _ => {
+                handled = false;
+            }
+        }
+
+        if !handled {
+            if let Some(or_msg) = or {
+                self.state.emit_error(or_msg);
+            }
+        }
+    }
+
+    fn handle_set_error<T>(&self, res: Result<T, MpdError>) {
+        match res {
+            Ok(_) => {
+                self.force_idle();
+            }
+            Err(mpd_err) => {
+                self.handle_common_mpd_error(&mpd_err, None);
+            }
+        }
+    }
+
+    fn handle_set_error_or<T>(&self, res: Result<T, MpdError>, msg: ClientError) {
+        match res {
+            Ok(_) => {
+                self.force_idle();
+            }
+            Err(mpd_err) => {
+                self.handle_common_mpd_error(&mpd_err, Some(msg));
+            }
+        }
+    }
+
+    fn handle_get_error<T>(&self, res: Result<T, MpdError>) -> Option<T> {
+        match res {
+            Ok(val) => {
+                Some(val)
+            }
+            Err(mpd_err) => {
+                self.handle_common_mpd_error(&mpd_err, None);
+                None
+            }
+        }
+    }
+
     pub fn get_volume(&self) -> Option<i8> {
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
-            client.getvol().ok()
+            self.handle_get_error(client.getvol())
         }
         else {
             None
@@ -1114,39 +1374,30 @@ impl MpdWrapper {
 
     pub fn add(&self, uri: String, recursive: bool) {
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
-            if recursive {
-                let _ = client.findadd(Query::new().and(Term::Base, uri));
-
+            let res = if recursive {
+                client.findadd(Query::new().and(Term::Base, uri)).map(|_| ())
             } else {
-                if client.push(uri).is_err() {
-                    self.state.emit_error(ClientError::Queuing);
-                }
-            }
-            self.force_idle();
+                client.push(uri).map(|_| ())
+            };
+            self.handle_set_error_or(res, ClientError::Queuing);
         }
     }
 
     pub fn add_multi(&self, uris: &[String]) {
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
-            if client.push_multiple(uris).is_err() {
-                self.state.emit_error(ClientError::Queuing);
-            }
-            self.force_idle();
+            self.handle_set_error_or(client.push_multiple(uris), ClientError::Queuing);
         }
     }
 
     pub fn insert_multi(&self, uris: &[String], pos: usize) {
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
-            
-            if client.insert_multiple(uris, pos).is_err() {
-                self.state.emit_error(ClientError::Queuing);
-            }
-            self.force_idle();
+            self.handle_set_error_or(client.insert_multiple(uris, pos), ClientError::Queuing);
         }
     }
 
     pub fn volume(&self, vol: i8) {
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
+            // Don't attempt reconnection here since this thing can rapid-fire.
             let _ = client.volume(vol);
             self.force_idle();
         }
@@ -1154,18 +1405,15 @@ impl MpdWrapper {
 
     pub fn get_outputs(&self) -> Option<Vec<Output>> {
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
-            if let Ok(outputs) = client.outputs() {
-                return Some(outputs);
-            }
-            return None;
+            self.handle_get_error(client.outputs())
+        } else {
+            None
         }
-        return None;
     }
 
     pub fn set_output(&self, id: u32, state: bool) {
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
-            let _ = client.output(id, state);
-            self.force_idle();
+            self.handle_set_error(client.output(id, state));
         }
     }
 
@@ -1189,15 +1437,11 @@ impl MpdWrapper {
                     return Some(sticker);
                 }
                 Err(error) => {
-                    match error {
-                        MpdError::Server(server_err) => {
-                            self.handle_sticker_server_error(server_err);
-                        }
-                        _ => {
-                            println!("{:?}", error);
-                            // Not handled yet
-                        }
-                    };
+                    if let MpdError::Server(server_err) = error {
+                        self.handle_sticker_server_error(server_err);
+                    } else {
+                        self.handle_common_mpd_error(&error, None);
+                    }
                     return None;
                 }
             }
@@ -1210,13 +1454,11 @@ impl MpdWrapper {
         if let (true, Some(client)) = (self.state.get_stickers_support_level() >= min_lvl, self.main_client.borrow_mut().as_mut()) {
             match client.set_sticker(typ, uri, name, value) {
                 Ok(()) => {self.force_idle();},
-                Err(err) => match err {
-                    MpdError::Server(server_err) => {
+                Err(error) => {
+                    if let MpdError::Server(server_err) = error {
                         self.handle_sticker_server_error(server_err);
-                    }
-                    _ => {
-                        println!("{:?}", err);
-                        // Not handled yet
+                    } else {
+                        self.handle_common_mpd_error(&error, None);
                     }
                 },
             }
@@ -1228,15 +1470,23 @@ impl MpdWrapper {
         if let (true, Some(client)) = (self.state.get_stickers_support_level() > min_lvl, self.main_client.borrow_mut().as_mut()) {
             match client.delete_sticker(typ, uri, name) {
                 Ok(()) => {self.force_idle();},
-                Err(err) => match err {
-                    MpdError::Server(server_err) => {
+                Err(error) => {
+                    if let MpdError::Server(server_err) = error {
                         self.handle_sticker_server_error(server_err);
+                    } else {
+                        self.handle_common_mpd_error(&error, None);
                     }
-                    _ => {
-                        // Not handled yet
-                    }
-                },
+                }
             }
+        }
+    }
+
+    fn handle_playlist_error(&self, err: &ServerError) {
+        if err.detail.contains("disabled") {
+            self.state.set_supports_playlists(false);
+            println!("Playlists are not supported.");
+        } else {
+            println!("Playlist operation error: {:?}", err);
         }
     }
 
@@ -1246,27 +1496,19 @@ impl MpdWrapper {
             match client.playlists() {
                 Ok(playlists) => {
                     self.state.set_supports_playlists(true);
-
                     // Convert mpd::Playlist to our INode GObject
                     return playlists
                         .into_iter()
                         .map(INode::from)
                         .collect::<Vec<INode>>();
                 }
-                Err(e) => match e {
-                    MpdError::Server(server_err) => {
-                        self.state.set_supports_playlists(false);
-                        if server_err.detail.contains("disabled") {
-                            println!("Playlists are not supported.");
-                        } else {
-                            println!("get_playlists: {:?}", server_err);
-                        }
+                Err(e) => {
+                    if let MpdError::Server(server_err) = &e {
+                        self.handle_playlist_error(server_err);
+                    } else {
+                        self.handle_common_mpd_error(&e, None);
                     }
-                    _ => {
-                        println!("get_playlists: {:?}", e);
-                        // Not handled yet
-                    }
-                },
+                }
             }
         }
         return Vec::with_capacity(0);
@@ -1281,16 +1523,10 @@ impl MpdWrapper {
                     return Ok(());
                 }
                 Err(e) => {
-                    match &e {
-                        MpdError::Server(server_err) => {
-                            if server_err.detail.contains("disabled") {
-                                self.state.set_supports_playlists(false);
-                            }
-                        }
-                        _ => {
-                            // Emit to UI
-                            self.state.emit_error(ClientError::Queuing);
-                        }
+                    if let MpdError::Server(server_err) = &e {
+                        self.handle_playlist_error(server_err);
+                    } else {
+                        self.handle_common_mpd_error(&e, None);
                     }
                     return Err(Some(e));
                 }
@@ -1312,15 +1548,11 @@ impl MpdWrapper {
                     return Ok(());
                 }
                 Err(e) => {
-                    match &e {
-                        MpdError::Server(server_err) => {
-                            if server_err.detail.contains("disabled") {
-                                self.state.set_supports_playlists(false);
-                            }
-                        }
-                        _ => {
-                            // Not handled yet
-                        }
+                    if let MpdError::Server(server_err) = &e {
+                        self.handle_playlist_error(server_err);
+                    } else {
+                        // TODO: auto retry
+                        self.handle_common_mpd_error(&e, None);
                     }
                     return Err(Some(e));
                 }
@@ -1336,7 +1568,14 @@ impl MpdWrapper {
                     self.force_idle();
                     Ok(())
                 },
-                Err(e) => Err(Some(e)),
+                Err(e) => {
+                    if let MpdError::Server(server_err) = &e {
+                        self.handle_playlist_error(server_err);
+                    } else {
+                        self.handle_common_mpd_error(&e, None);
+                    }
+                    return Err(Some(e));
+                },
             }
         } else {
             Err(None)
@@ -1350,7 +1589,14 @@ impl MpdWrapper {
                     self.force_idle();
                     Ok(())
                 },
-                Err(e) => Err(Some(e)),
+                Err(e) => {
+                    if let MpdError::Server(server_err) = &e {
+                        self.handle_playlist_error(server_err);
+                    } else {
+                        self.handle_common_mpd_error(&e, None);
+                    }
+                    return Err(Some(e));
+                }
             }
         } else {
             Err(None)
@@ -1364,14 +1610,22 @@ impl MpdWrapper {
                     self.force_idle();
                     Ok(())
                 },
-                Err(e) => Err(Some(e)),
+                Err(e) => {
+                    if let MpdError::Server(server_err) = &e {
+                        self.handle_playlist_error(server_err);
+                    } else {
+                        self.handle_common_mpd_error(&e, None);
+                    }
+                    return Err(Some(e));
+                }
             }
         } else {
             Err(None)
         }
     }
 
-    pub fn get_status(&self) -> Option<mpd::Status> {
+    pub fn get_status(&self, sync_queue: bool) -> Option<mpd::Status> {
+        // Stop borrowing main client as soon as possible
         let res: Option<Result<mpd::Status, MpdError>>;
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
             res = Some(client.status());
@@ -1382,190 +1636,181 @@ impl MpdWrapper {
         match res {
             Some(Ok(status)) => {
                 // Check whether we need to sync queue with server side (inefficient)
-                let old_version = self.queue_version.replace(status.queue_version);
-                if status.queue_version > old_version {
-                    if status.queue_version > self.expected_queue_version.get() {
-                        self.expected_queue_version.set(status.queue_version);
-                        self.queue_background(
-                            if old_version == 0 {
-                                BackgroundTask::FetchQueue
-                            } else {
-                                BackgroundTask::FetchQueueChanges(old_version)
-                            }
-                            ,
-                            true
-                        );
+                if sync_queue {
+                    let old_version = self.queue_version.replace(status.queue_version);
+                    if status.queue_version > old_version {
+                        if status.queue_version > self.expected_queue_version.get() {
+                            self.expected_queue_version.set(status.queue_version);
+                            self.queue_background(
+                                if old_version == 0 {
+                                    BackgroundTask::FetchQueue
+                                } else {
+                                    BackgroundTask::FetchQueueChanges(old_version)
+                                },
+                                true
+                            );
+                        }
                     }
                 }
                 Some(status)
             }
-            e => {
-                println!("{:?}", e);
+            Some(Err(err)) => {
+                self.handle_common_mpd_error(&err, None);
                 None
             }
+            None => None
         }
     }
 
     pub fn get_song_at_queue_id(&self, id: u32) -> Option<Song> {
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
-            if let Ok(mut songs) = client.songs(mpd::Id(id)) {
-                if songs.len() > 0 {
-                    return Some(Song::from(std::mem::take(&mut songs[0])));
+            match client.songs(mpd::Id(id)) {
+                Ok(mut songs) => {
+                    if songs.len() > 0 {
+                        Some(Song::from(std::mem::take(&mut songs[0])))
+                    } else {
+                        None
+                    }
                 }
-                return None;
+                Err(err) => {
+                    self.handle_common_mpd_error(&err, None);
+                    None
+                }
             }
-            return None;
+        } else {
+            None
         }
-        return None;
     }
 
     pub fn set_playback_flow(&self, flow: PlaybackFlow) {
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
+            let repeat: bool;
+            let single: bool;
             match flow {
                 PlaybackFlow::Sequential => {
-                    let _ = client.repeat(false);
-                    let _ = client.single(false);
+                    repeat = false;
+                    single = false;
                 }
                 PlaybackFlow::Repeat => {
-                    let _ = client.repeat(true);
-                    let _ = client.single(false);
+                    repeat = true;
+                    single = false;
                 }
                 PlaybackFlow::Single => {
-                    let _ = client.repeat(false);
-                    let _ = client.single(true);
+                    repeat = false;
+                    single = true;
                 }
                 PlaybackFlow::RepeatSingle => {
-                    let _ = client.repeat(true);
-                    let _ = client.single(true);
+                    repeat = true;
+                    single = true;
                 }
             }
-            self.force_idle();
+            self.handle_set_error(
+                client.repeat(repeat).and_then(|_| {
+                    client.single(single)
+                })
+            );
         }
     }
 
     pub fn set_crossfade(&self, fade: f64) {
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
-            if client.crossfade(fade as i64).is_ok() {
-                self.force_idle();
-            }
+            self.handle_set_error(client.crossfade(fade as i64));
         }
     }
 
     pub fn set_replaygain(&self, mode: mpd::status::ReplayGain) {
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
-            if client.replaygain(mode).is_ok() {
-                self.force_idle();
-            }
+            self.handle_set_error(client.replaygain(mode));
         }
     }
 
     pub fn set_mixramp_db(&self, db: f32) {
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
-            if client.mixrampdb(db).is_ok() {
-                self.force_idle();
-            }
+            self.handle_set_error(client.mixrampdb(db));
         }
     }
 
     pub fn set_mixramp_delay(&self, delay: f64) {
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
-            if client.mixrampdelay(delay).is_ok() {
-                self.force_idle();
-            }
+            self.handle_set_error(client.mixrampdelay(delay));
         }
     }
 
     pub fn set_random(&self, state: bool) {
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
-            if client.random(state).is_ok() {
-                self.force_idle();
-            }
+            self.handle_set_error(client.random(state));
         }
     }
 
     pub fn set_consume(&self, state: bool) {
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
-            if client.consume(state).is_ok() {
-                self.force_idle();
-            }
+            self.handle_set_error(client.consume(state));
         }
     }
 
     pub fn pause(&self, is_pause: bool) {
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
-            if client.pause(is_pause).is_ok() {
-                self.force_idle();
-            }
+            self.handle_set_error(client.pause(is_pause));
         }
     }
 
     pub fn stop(&self) {
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
-            if client.stop().is_ok() {
-                self.force_idle();
-            }
+            self.handle_set_error(client.stop());
         }
     }
 
     pub fn prev(&self) {
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
-            if client.prev().is_ok() {
-                self.force_idle();
-            }
+            self.handle_set_error(client.prev());
         }
     }
 
     pub fn next(&self) {
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
-            if client.next().is_ok() {
-                self.force_idle();
-            }
+            self.handle_set_error(client.next());
         }
     }
 
     pub fn play_at(&self, id_or_pos: u32, is_id: bool) {
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
-            if is_id {
-                client.switch(Id(id_or_pos)).expect("Could not switch song");
+            let res = if is_id {
+                client.switch(Id(id_or_pos)).map(|_| ())
             } else {
-                client.switch(id_or_pos).expect("Could not switch song");
-            }
-            self.force_idle();
+                client.switch(id_or_pos).map(|_| ())
+            };
+            self.handle_set_error(res);
         }
     }
 
     pub fn swap(&self, id1: u32, id2: u32, is_id: bool) {
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
-            if is_id {
+            let res = if is_id {
                 client
                     .swap(Id(id1), Id(id2))
-                    .expect("Could not swap songs by ID");
             } else {
-                client.swap(id1, id2).expect("Could not swap songs by pos");
-            }
-            self.force_idle();
+                client.swap(id1, id2)
+            };
+            self.handle_set_error(res);
         }
     }
 
     pub fn delete_at(&self, id_or_pos: u32, is_id: bool) {
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
-            if is_id {
+            let res = if is_id {
                 client
                     .delete(Id(id_or_pos))
-                    .expect("Could not delete song from queue");
             } else {
                 client
                     .delete(id_or_pos)
-                    .expect("Could not delete song from queue");
-            }
-            self.force_idle();
+            };
+            self.handle_set_error(res);
         }
     }
 
     pub fn clear_queue(&self) {
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
-            client.clear().expect("Could not clear queue");
-            self.force_idle();
+            self.handle_set_error(client.clear());
         }
     }
 
@@ -1575,8 +1820,7 @@ impl MpdWrapper {
 
     pub fn seek_current_song(&self, position: f64) {
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
-            client.rewind(position).expect("Failed to seek song");
-            self.force_idle();
+            self.handle_set_error(client.rewind(position));
         }
     }
 
@@ -1630,15 +1874,10 @@ impl MpdWrapper {
     pub fn find_add(&self, query: Query) {
         // Convert back to mpd::search::Query
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
-            // println!("Running findadd query: {:?}", &terms);
-            // let mut query = Query::new();
-            // for term in terms.into_iter() {
-            //     query.and(term.0.into(), term.1);
-            // }
-            if client.findadd(&query).is_err() {
-                self.state.emit_error(ClientError::Queuing);
-            }
-            self.force_idle();
+            self.handle_set_error_or(
+                client.findadd(&query),
+                ClientError::Queuing
+            );
         }
     }
 
@@ -1653,7 +1892,7 @@ impl MpdWrapper {
                         .map(INode::from)
                         .collect::<Vec<INode>>(),
                 )
-                .to_value(),
+                    .to_value(),
             ],
         );
     }

@@ -14,13 +14,14 @@ use mpd::{
 
 use super::PlayerPane;
 
-use crate::{cache::Cache, common::Song, window::EuphonicaWindow};
+use crate::{cache::Cache, common::Song, window::EuphonicaWindow, utils::LazyInit};
 
 use super::{Player, QueueRow};
 
 mod imp {
     use std::{cell::{Cell, OnceCell}, sync::OnceLock};
 
+    use ::glib::WeakRef;
     use glib::{subclass::Signal, Properties};
 
     use super::*;
@@ -74,7 +75,10 @@ mod imp {
         // Disgusting I know but it works for now without being too
         // noticeable.
         pub last_scroll_pos: Cell<f64>,
-        pub restore_last_pos: Cell<u8>
+        pub restore_last_pos: Cell<u8>,
+
+        pub player: WeakRef<Player>,
+        pub initialized: Cell<bool>
     }
 
     #[glib::object_subclass]
@@ -303,7 +307,7 @@ impl QueueView {
         );
     }
 
-    pub fn bind_state(&self, player: Player) {
+    pub fn bind_state(&self, player: &Player) {
         let player_queue = player.queue();
         let queue_title = self.imp().queue_title.get();
         let clear_queue_btn = self.imp().clear_queue.get();
@@ -415,7 +419,7 @@ impl QueueView {
             .build();
 
         consume
-            .bind_property("active", &player, "consume")
+            .bind_property("active", player, "consume")
             .bidirectional()
             .sync_create()
             .build();
@@ -433,6 +437,25 @@ impl QueueView {
         let _ = self.imp().window.set(window);
         self.setup_listview(player.clone(), cache);
         self.imp().player_pane.setup(&player);
-        self.bind_state(player);
+        self.bind_state(&player);
+        self.imp().player.set(Some(&player));
+    }
+}
+
+impl LazyInit for QueueView {
+    fn clear(&self) {
+        self.imp().initialized.set(false);
+    }
+
+    fn populate(&self) {
+        if let Some(player) = self.imp().player.upgrade() {
+            let was_populated = self.imp().initialized.replace(true);
+            if !was_populated {
+                println!("Initialising queue");
+                if let Some(status) = player.client().get_status(true) {
+                    player.update_status(&status);
+                }
+            }
+        }
     }
 }

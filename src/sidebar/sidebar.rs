@@ -33,7 +33,7 @@ mod imp {
         #[template_child]
         pub queue_len: TemplateChild<gtk::Label>,
         #[property(get, set)]
-        pub showing_queue_view: Cell<bool>,
+        pub showing_queue_view: Cell<bool>
     }
 
     #[glib::object_subclass]
@@ -292,8 +292,7 @@ impl Sidebar {
         }
 
         player
-            .queue()
-            .bind_property("n-items", &self.imp().queue_len.get(), "label")
+            .bind_property("queue-len", &self.imp().queue_len.get(), "label")
             .transform_to(|_, size: u32| Some(size.to_string()))
             .sync_create()
             .build();

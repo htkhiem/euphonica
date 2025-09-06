@@ -13,7 +13,7 @@ use crate::{
     cache::Cache,
     client::ClientState,
     common::Album,
-    utils::{g_cmp_options, g_cmp_str_options, g_search_substr, settings_manager}, window::EuphonicaWindow,
+    utils::{LazyInit, g_cmp_options, g_cmp_str_options, g_search_substr, settings_manager}, window::EuphonicaWindow,
 };
 
 mod imp {
@@ -74,7 +74,8 @@ mod imp {
         pub library: OnceCell<Library>,
 
         #[property(get, set)]
-        pub collapsed: Cell<bool>
+        pub collapsed: Cell<bool>,
+        pub initialized: Cell<bool>  // Only start fetching content when navigated to for the first time
     }
 
     impl Default for AlbumView {
@@ -107,7 +108,8 @@ mod imp {
                 last_search_len: Cell::new(0),
                 library: OnceCell::new(),
 
-                collapsed: Cell::new(false)
+                collapsed: Cell::new(false),
+                initialized: Cell::new(false)
             }
         }
     }
@@ -623,5 +625,21 @@ impl AlbumView {
                 this.on_album_clicked(&album);
             }
         ));
+    }
+}
+
+impl LazyInit for AlbumView {
+    fn clear(&self) {
+        self.imp().initialized.set(false);
+    }
+
+    fn populate(&self) {
+        if let Some(library) = self.imp().library.get() {
+            let was_populated = self.imp().initialized.replace(true);
+            if !was_populated {
+                println!("Initialising albums");
+                library.init_albums();
+            }
+        }
     }
 }
