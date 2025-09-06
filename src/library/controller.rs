@@ -222,6 +222,9 @@ impl Library {
         self.imp().folder_inodes.remove_all();
         let _ = self.imp().folder_history.replace(Vec::new());
         let _ = self.imp().folder_curr_idx.replace(0);
+        self.notify("folder-path");
+        self.notify("folder-his-len");
+        self.notify("folder-curr-idx");
     }
 
     fn client(&self) -> &Rc<MpdWrapper> {
