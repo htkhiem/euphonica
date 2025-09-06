@@ -189,6 +189,7 @@ mod imp {
         pub song_cache: RefCell<LruCache::<u32, Song, BuildHasherDefault<NoHashHasher<u32>>>>,
         pub lyric_lines: gtk::StringList,  // Line by line for display. May be empty.
         pub lyrics: RefCell<Option<Lyrics>>,
+        pub queue_len: Cell<u32>,
         pub current_song: RefCell<Option<Song>>,
         pub current_lyric_line: Cell<u32>,
         pub format: RefCell<Option<AudioFormat>>,
@@ -255,6 +256,7 @@ mod imp {
                 mixramp_delay: Cell::new(0.0),
                 queue: gio::ListStore::new::<Song>(),
                 song_cache: RefCell::new(LruCache::with_hasher(NonZero::new(1024).unwrap(), BuildHasherDefault::default())),
+                queue_len: Cell::new(0),
                 current_song: RefCell::new(None),
                 current_lyric_line: Cell::default(),
                 format: RefCell::new(None),
@@ -367,6 +369,7 @@ mod imp {
                     ParamSpecString::builder("album").read_only().build(),
                     ParamSpecUInt64::builder("duration").read_only().build(),
                     ParamSpecUInt::builder("queue-id").read_only().build(),
+                    ParamSpecUInt::builder("queue-len").read_only().build(),  // Always available, even when queue hasn't been fetched yet
                     ParamSpecEnum::builder::<QualityGrade>("quality-grade")
                         .read_only()
                         .build(),
@@ -404,6 +407,7 @@ mod imp {
                 "artist" => obj.artist().to_value(),
                 "album" => obj.album().to_value(),
                 "duration" => obj.duration().to_value(),
+                "queue-len" => self.queue_len.get().to_value(),
                 "queue-id" => obj.queue_id().unwrap_or(u32::MAX).to_value(),
                 "quality-grade" => obj.quality_grade().to_value(),
                 "bitrate" => self.bitrate.get().to_value(),
@@ -1174,11 +1178,17 @@ impl Player {
             }
         }
 
+        // We need to separately keep track of queue length here as the queue list model might
+        // not have been initialised yet.
+        let new_len = status.queue_len;
+        let old_len = self.imp().queue_len.replace(new_len);
+        if old_len != new_len {
+            self.notify("queue-len");
+        }
         // If new queue is shorter, truncate current queue.
         // This is because update_queue would be called before update_status, which means
         // the new length was not available to update_queue.
         let old_len = self.imp().queue.n_items();
-        let new_len = status.queue_len;
         if old_len > new_len {
             self.imp()
                 .queue

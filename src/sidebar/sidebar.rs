@@ -292,8 +292,7 @@ impl Sidebar {
         }
 
         player
-            .queue()
-            .bind_property("n-items", &self.imp().queue_len.get(), "label")
+            .bind_property("queue-len", &self.imp().queue_len.get(), "label")
             .transform_to(|_, size: u32| Some(size.to_string()))
             .sync_create()
             .build();
