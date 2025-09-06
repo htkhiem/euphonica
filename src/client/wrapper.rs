@@ -1195,6 +1195,8 @@ impl MpdWrapper {
     pub async fn connect_async(&self) {
         // Close current clients
         self.disconnect_async().await;
+        self.queue_version.set(0);
+        self.expected_queue_version.set(0);
 
         let conn = utils::settings_manager().child("client");
 
