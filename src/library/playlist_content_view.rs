@@ -332,11 +332,12 @@ mod imp {
     impl WidgetImpl for PlaylistContentView {}
 
     impl PlaylistContentView {
-        fn update_undo_redo_sensitivity(&self) {
+        fn update_btn_sensitivity(&self) {
             let curr_idx = self.history_idx.get();
             self.edit_undo.set_sensitive(curr_idx > 0);
             self.edit_redo
                 .set_sensitive(curr_idx < self.history.borrow().len());
+            self.edit_apply.set_sensitive(curr_idx > 0);
         }
 
         pub fn enter_edit_mode(&self) {
@@ -361,6 +362,7 @@ mod imp {
             // Everything is now in place; start fading
             self.action_row.set_visible_child_name("edit-mode");
             self.content_stack.set_visible_child_name("edit-mode");
+            self.edit_apply.set_sensitive(false);
         }
 
         pub fn exit_edit_mode(&self, apply: bool) {
@@ -390,7 +392,6 @@ mod imp {
                 self.history.borrow_mut().clear();
                 self.edit_undo.set_sensitive(false);
                 self.edit_redo.set_sensitive(false);
-                self.edit_apply.set_sensitive(false);
             }
             // Just fade back, no need to clear the list (won't lag us
             // since we're not rendering it)
@@ -408,7 +409,7 @@ mod imp {
                 let step = &history[curr_idx - 1];
                 step.backward(&self.editing_song_list);
                 self.history_idx.replace(curr_idx - 1);
-                self.update_undo_redo_sensitivity();
+                self.update_btn_sensitivity();
             }
         }
 
@@ -424,7 +425,7 @@ mod imp {
                 let step = &history[curr_idx];
                 step.forward(&self.editing_song_list);
                 self.history_idx.replace(curr_idx + 1);
-                self.update_undo_redo_sensitivity();
+                self.update_btn_sensitivity();
             }
         }
 
@@ -440,7 +441,7 @@ mod imp {
                 history.push(step);
                 self.history_idx.replace(history.len());
             }
-            self.update_undo_redo_sensitivity();
+            self.update_btn_sensitivity();
         }
     }
 }
