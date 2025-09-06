@@ -1,11 +1,11 @@
 use crate::{
     cache::{sqlite, Cache},
-    client::{BackgroundTask, ClientState, ConnectionState, MpdWrapper},
+    client::{BackgroundTask, ClientState, MpdWrapper},
     common::{Album, Artist, INode, Song, Stickers}, 
     utils::settings_manager,
     player::Player,
 };
-use glib::{clone, closure_local, subclass::Signal};
+use glib::{closure_local, subclass::Signal};
 use gtk::{gio, glib, prelude::*};
 use std::{borrow::Cow, cell::OnceCell, rc::Rc, sync::OnceLock, vec::Vec};
 
@@ -36,7 +36,9 @@ mod imp {
         // append to the list store.
         pub playlists: gio::ListStore,
         pub albums: gio::ListStore,
+        pub recent_albums: gio::ListStore,
         pub artists: gio::ListStore,
+        pub recent_artists: gio::ListStore,
 
         // Folder view
         // Files and folders
@@ -58,7 +60,9 @@ mod imp {
                 recent_songs: gio::ListStore::new::<Song>(),
                 playlists: gio::ListStore::new::<INode>(),
                 albums: gio::ListStore::new::<Album>(),
+                recent_albums: gio::ListStore::new::<Album>(),
                 artists: gio::ListStore::new::<Artist>(),
+                recent_artists: gio::ListStore::new::<Artist>(),
                 client: OnceCell::new(),
                 cache: OnceCell::new(),
                 player: OnceCell::new(),
@@ -139,6 +143,18 @@ impl Library {
         );
 
         client_state.connect_closure(
+            "recent-album-downloaded",
+            false,
+            closure_local!(
+                #[strong(rename_to = this)]
+                self,
+                move |_: ClientState, album: Album| {
+                    this.imp().recent_albums.append(&album);
+                }
+            ),
+        );
+
+        client_state.connect_closure(
             "artist-basic-info-downloaded",
             false,
             closure_local!(
@@ -146,6 +162,18 @@ impl Library {
                 self,
                 move |_: ClientState, artist: Artist| {
                     this.imp().artists.append(&artist);
+                }
+            ),
+        );
+
+        client_state.connect_closure(
+            "recent-artist-downloaded",
+            false,
+            closure_local!(
+                #[strong(rename_to = this)]
+                self,
+                move |_: ClientState, artist: Artist| {
+                    this.imp().recent_artists.append(&artist);
                 }
             ),
         );
@@ -187,7 +215,9 @@ impl Library {
     pub fn clear(&self) {
         self.imp().recent_songs.remove_all();
         self.imp().albums.remove_all();
+        self.imp().recent_albums.remove_all();
         self.imp().artists.remove_all();
+        self.imp().recent_artists.remove_all();
         self.imp().playlists.remove_all();
         self.imp().folder_inodes.remove_all();
         let _ = self.imp().folder_history.replace(Vec::new());
@@ -405,9 +435,19 @@ impl Library {
         self.imp().albums.clone()
     }
 
+    /// Get a reference to the local recent albums store
+    pub fn recent_albums(&self) -> gio::ListStore {
+        self.imp().recent_albums.clone()
+    }
+
     /// Get a reference to the local artists store
     pub fn artists(&self) -> gio::ListStore {
         self.imp().artists.clone()
+    }
+
+    /// Get a reference to the local recent artists store
+    pub fn recent_artists(&self) -> gio::ListStore {
+        self.imp().recent_artists.clone()
     }
 
     /// Retrieve songs in a playlist
@@ -463,10 +503,26 @@ impl Library {
     pub fn init_albums(&self) {
         self.client().queue_background(BackgroundTask::FetchAlbums, false);
     }
+
+    pub fn fetch_recent_albums(&self) {
+        println!("fetch_recent_albums() called");
+        // High-priority as this is lightweight (only a few will be fetched)
+        // and is triggered by the user navigating to the Recent view
+        self.imp().recent_albums.remove_all();
+        self.client().queue_background(BackgroundTask::FetchRecentAlbums, true);
+    }
  
     pub fn init_artists(&self, use_albumartists: bool) {
         self.client()
             .queue_background(BackgroundTask::FetchArtists(use_albumartists), false);
+    }
+
+    pub fn fetch_recent_artists(&self) {
+        println!("fetch_recent_artists() called");
+        // High-priority as this is lightweight (only a few will be fetched)
+        // and is triggered by the user navigating to the Recent view
+        self.imp().recent_artists.remove_all();
+        self.client().queue_background(BackgroundTask::FetchRecentArtists, true);
     }
 
     pub fn set_cover(&self, folder_uri: &str, path: &str) {

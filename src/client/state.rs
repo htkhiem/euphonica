@@ -125,6 +125,9 @@ mod imp {
                     Signal::builder("album-basic-info-downloaded")
                         .param_types([Album::static_type()])
                         .build(),
+                    Signal::builder("recent-album-downloaded")
+                        .param_types([Album::static_type()])
+                        .build(),
                     // A chunk of an album's songs have been retrieved. Emit this
                     // to make AlbumContentView append this chunk.
                     Signal::builder("album-songs-downloaded")
@@ -135,6 +138,9 @@ mod imp {
                         .build(),
                     // ArtistInfo downloaded. Should probably queue metadata retrieval.
                     Signal::builder("artist-basic-info-downloaded")
+                        .param_types([Artist::static_type()])
+                        .build(),
+                    Signal::builder("recent-artist-downloaded")
                         .param_types([Artist::static_type()])
                         .build(),
                     // A chunk of an artist's songs have been retrieved. Emit this

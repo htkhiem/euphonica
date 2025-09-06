@@ -53,8 +53,10 @@ enum AsyncClientMessage {
     QueueSongsDownloaded(Vec<SongInfo>),
     QueueChangesReceived(Vec<PosIdChange>),
     AlbumBasicInfoDownloaded(AlbumInfo), // Return new album to be added to the list model (as SongInfo of a random song in it).
+    RecentAlbumDownloaded(AlbumInfo),
     AlbumSongInfoDownloaded(String, Vec<SongInfo>), // Return songs in the album with the given tag (batched)
     ArtistBasicInfoDownloaded(ArtistInfo), // Return new artist to be added to the list model.
+    RecentArtistDownloaded(ArtistInfo),
     ArtistSongInfoDownloaded(String, Vec<SongInfo>), // Return songs of an artist (or had their participation)
     ArtistAlbumBasicInfoDownloaded(String, AlbumInfo), // Return albums that had this artist in their AlbumArtist tag.
     FolderContentsDownloaded(String, Vec<LsInfoEntry>),
@@ -73,9 +75,11 @@ pub enum BackgroundTask {
     FetchQueue,  // Full fetch
     FetchQueueChanges(u32),  // From given version
     FetchFolderContents(String), // Gradually get all inodes in folder at path
-    FetchAlbums,                 // Gradually get all albums
-    FetchAlbumSongs(String),     // Get songs of album with given tag
+    FetchAlbums, // Gradually get all albums
+    FetchRecentAlbums,
+    FetchAlbumSongs(String),  // Get songs of album with given tag
     FetchArtists(bool), // Gradually get all artists. If bool flag is true, will parse AlbumArtist tag
+    FetchRecentArtists,
     FetchArtistSongs(String), // Get all songs of an artist with given name
     FetchArtistAlbums(String), // Get all albums of an artist with given name
     FetchPlaylistSongs(String), // Get songs of playlist with given name
@@ -450,6 +454,27 @@ mod background {
         }
     }
 
+    pub fn fetch_recent_albums(
+        client: &mut mpd::Client<StreamWrapper>,
+        sender_to_fg: &Sender<AsyncClientMessage>
+    ) {
+        let settings = utils::settings_manager().child("library");
+        let recent_titles = sqlite::get_last_n_albums(settings.uint("n-recent-albums")).expect("Sqlite DB error");
+        for title in recent_titles {
+            match fetch_albums_by_query(
+                client,
+                &Query::new().and(Term::Tag(Cow::Borrowed("album")), title),
+                |info| {
+                sender_to_fg.send_blocking(AsyncClientMessage::RecentAlbumDownloaded(info))
+            }) {
+                Err(true) => {
+                    let _ = sender_to_fg.send_blocking(AsyncClientMessage::Connect);
+                }
+                _ => {}
+            }
+        }
+    }
+
     pub fn fetch_albums_of_artist(
         client: &mut mpd::Client<StreamWrapper>,
         sender_to_fg: &Sender<AsyncClientMessage>,
@@ -542,6 +567,52 @@ mod background {
                 let _ = sender_to_fg.send_blocking(AsyncClientMessage::Connect);
             }
             _ => {}
+        }
+    }
+
+    pub fn fetch_recent_artists(
+        client: &mut mpd::Client<StreamWrapper>,
+        sender_to_fg: &Sender<AsyncClientMessage>
+    ) {
+        let mut already_parsed: FxHashSet<String> = FxHashSet::default();
+        let settings = utils::settings_manager().child("library");
+        let n = settings.uint("n-recent-artists");
+        let mut res: Vec<ArtistInfo> = Vec::with_capacity(n as usize);
+        let recent_names = sqlite::get_last_n_artists(n).expect("Sqlite DB error");
+        let mut recent_names_set: FxHashSet<String> = FxHashSet::default();
+        for name in recent_names.iter() {
+            recent_names_set.insert(name.clone());
+        }
+        for name in recent_names.iter() {
+            match client.find(
+                Query::new().and_with_op(Term::Tag(Cow::Borrowed("artist")), QueryOperation::Contains, name),
+                Window::from((0, 1))
+            ) {
+                Ok(mut songs) => {
+                    if !songs.is_empty() {
+                        let first_song = SongInfo::from(std::mem::take(&mut songs[0]));
+                        let artists = first_song.into_artist_infos();
+                        for artist in artists.into_iter() {
+                            if recent_names_set.contains(&artist.name) {
+                                if already_parsed.insert(artist.name.clone()) {
+                                    res.push(artist);
+                                }
+                            }
+                        }
+                    }
+                }
+                Err(MpdError::Io(_)) => {
+                    // Connection error => attempt to reconnect
+                    let _ = sender_to_fg.send_blocking(AsyncClientMessage::Connect);
+                }
+                _ => {}
+            }
+        }
+
+        for artist in res.into_iter() {
+            let _ = sender_to_fg.send_blocking(
+                AsyncClientMessage::RecentArtistDownloaded(artist),
+            );
         }
     }
 
@@ -683,7 +754,7 @@ mod background {
             client,
             &to_fetch.iter().map(|tup| tup.0.as_str()).collect::<Vec<&str>>()
         ) {
-            Ok(mut raw_songs) => {
+            Ok(raw_songs) => {
                 let songs: Vec<SongInfo> = raw_songs
                     .into_iter()
                     .zip(
@@ -873,6 +944,9 @@ impl MpdWrapper {
                         BackgroundTask::FetchAlbums => {
                             background::fetch_all_albums(&mut client, &sender_to_fg)
                         }
+                        BackgroundTask::FetchRecentAlbums => {
+                            background::fetch_recent_albums(&mut client, &sender_to_fg)
+                        }
                         BackgroundTask::FetchAlbumSongs(tag) => {
                             background::fetch_album_songs(&mut client, &sender_to_fg, tag)
                         }
@@ -882,6 +956,9 @@ impl MpdWrapper {
                                 &sender_to_fg,
                                 use_albumartist,
                             )
+                        }
+                        BackgroundTask::FetchRecentArtists => {
+                            background::fetch_recent_artists(&mut client, &sender_to_fg)
                         }
                         BackgroundTask::FetchArtistSongs(name) => {
                             background::fetch_songs_of_artist(&mut client, &sender_to_fg, name)
@@ -991,12 +1068,18 @@ impl MpdWrapper {
             AsyncClientMessage::AlbumBasicInfoDownloaded(info) => {
                 self.on_album_downloaded("album-basic-info-downloaded", None, info)
             }
+            AsyncClientMessage::RecentAlbumDownloaded(info) => {
+                self.on_album_downloaded("recent-album-downloaded", None, info)
+            }
             AsyncClientMessage::AlbumSongInfoDownloaded(tag, songs) => {
                 self.on_songs_downloaded("album-songs-downloaded", Some(tag), songs)
             }
             AsyncClientMessage::ArtistBasicInfoDownloaded(info) => self
                 .state
                 .emit_result("artist-basic-info-downloaded", Artist::from(info)),
+            AsyncClientMessage::RecentArtistDownloaded(info) => self
+                .state
+                .emit_result("recent-artist-downloaded", Artist::from(info)),
             AsyncClientMessage::ArtistSongInfoDownloaded(name, songs) => {
                 self.on_songs_downloaded("artist-songs-downloaded", Some(name), songs)
             }
