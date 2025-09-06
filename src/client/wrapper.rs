@@ -1300,16 +1300,61 @@ impl MpdWrapper {
         }
     }
 
+    fn handle_common_mpd_error(&self, e: &MpdError, or: Option<ClientError>) {
+        let mut handled = true;
+        match *e {
+            MpdError::Io(_) => {
+                let _ = self.main_sender.send_blocking(AsyncClientMessage::Connect);
+            }
+            _ => {
+                handled = false;
+            }
+        }
+
+        if !handled {
+            if let Some(or_msg) = or {
+                self.state.emit_error(or_msg);
+            }
+        }
+    }
+
+    fn handle_set_error<T>(&self, res: Result<T, MpdError>) {
+        match res {
+            Ok(_) => {
+                self.force_idle();
+            }
+            Err(mpd_err) => {
+                self.handle_common_mpd_error(&mpd_err, None);
+            }
+        }
+    }
+
+    fn handle_set_error_or<T>(&self, res: Result<T, MpdError>, msg: ClientError) {
+        match res {
+            Ok(_) => {
+                self.force_idle();
+            }
+            Err(mpd_err) => {
+                self.handle_common_mpd_error(&mpd_err, Some(msg));
+            }
+        }
+    }
+
+    fn handle_get_error<T>(&self, res: Result<T, MpdError>) -> Option<T> {
+        match res {
+            Ok(val) => {
+                Some(val)
+            }
+            Err(mpd_err) => {
+                self.handle_common_mpd_error(&mpd_err, None);
+                None
+            }
+        }
+    }
+
     pub fn get_volume(&self) -> Option<i8> {
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
-            match client.getvol() {
-                Ok(vol) => Some(vol),
-                Err(MpdError::Io(_)) => {
-                    let _ = self.main_sender.send_blocking(AsyncClientMessage::Connect);
-                    None
-                }
-                _ => None
-            }
+            self.handle_get_error(client.getvol())
         }
         else {
             None
@@ -1323,55 +1368,25 @@ impl MpdWrapper {
             } else {
                 client.push(uri).map(|_| ())
             };
-            match res {
-                Ok(_) => {
-                    self.force_idle();
-                }
-                Err(MpdError::Io(_)) => {
-                    let _ = self.main_sender.send_blocking(AsyncClientMessage::Connect);
-                }
-                _ => {
-                    self.state.emit_error(ClientError::Queuing);
-                }
-            }
+            self.handle_set_error_or(res, ClientError::Queuing);
         }
     }
 
     pub fn add_multi(&self, uris: &[String]) {
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
-            match client.push_multiple(uris) {
-                Ok(_) => {
-                    self.force_idle();
-                }
-                Err(MpdError::Io(_)) => {
-                    let _ = self.main_sender.send_blocking(AsyncClientMessage::Connect);
-                }
-                _ => {
-                    self.state.emit_error(ClientError::Queuing);
-                }
-            }
+            self.handle_set_error_or(client.push_multiple(uris), ClientError::Queuing);
         }
     }
 
     pub fn insert_multi(&self, uris: &[String], pos: usize) {
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
-            match client.insert_multiple(uris, pos) {
-                Ok(_) => {
-                    self.force_idle();
-                }
-                Err(MpdError::Io(_)) => {
-                    let _ = self.main_sender.send_blocking(AsyncClientMessage::Connect);
-                }
-                _ => {
-                    self.state.emit_error(ClientError::Queuing);
-                }
-            }
-
+            self.handle_set_error_or(client.insert_multiple(uris, pos), ClientError::Queuing);
         }
     }
 
     pub fn volume(&self, vol: i8) {
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
+            // Don't attempt reconnection here since this thing can rapid-fire.
             let _ = client.volume(vol);
             self.force_idle();
         }
@@ -1379,18 +1394,15 @@ impl MpdWrapper {
 
     pub fn get_outputs(&self) -> Option<Vec<Output>> {
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
-            if let Ok(outputs) = client.outputs() {
-                return Some(outputs);
-            }
-            return None;
+            self.handle_get_error(client.outputs())
+        } else {
+            None
         }
-        return None;
     }
 
     pub fn set_output(&self, id: u32, state: bool) {
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
-            let _ = client.output(id, state);
-            self.force_idle();
+            self.handle_set_error(client.output(id, state));
         }
     }
 
@@ -1414,15 +1426,11 @@ impl MpdWrapper {
                     return Some(sticker);
                 }
                 Err(error) => {
-                    match error {
-                        MpdError::Server(server_err) => {
-                            self.handle_sticker_server_error(server_err);
-                        }
-                        _ => {
-                            println!("{:?}", error);
-                            // Not handled yet
-                        }
-                    };
+                    if let MpdError::Server(server_err) = error {
+                        self.handle_sticker_server_error(server_err);
+                    } else {
+                        self.handle_common_mpd_error(&error, None);
+                    }
                     return None;
                 }
             }
@@ -1435,13 +1443,11 @@ impl MpdWrapper {
         if let (true, Some(client)) = (self.state.get_stickers_support_level() >= min_lvl, self.main_client.borrow_mut().as_mut()) {
             match client.set_sticker(typ, uri, name, value) {
                 Ok(()) => {self.force_idle();},
-                Err(err) => match err {
-                    MpdError::Server(server_err) => {
+                Err(error) => {
+                    if let MpdError::Server(server_err) = error {
                         self.handle_sticker_server_error(server_err);
-                    }
-                    _ => {
-                        println!("{:?}", err);
-                        // Not handled yet
+                    } else {
+                        self.handle_common_mpd_error(&error, None);
                     }
                 },
             }
@@ -1453,15 +1459,23 @@ impl MpdWrapper {
         if let (true, Some(client)) = (self.state.get_stickers_support_level() > min_lvl, self.main_client.borrow_mut().as_mut()) {
             match client.delete_sticker(typ, uri, name) {
                 Ok(()) => {self.force_idle();},
-                Err(err) => match err {
-                    MpdError::Server(server_err) => {
+                Err(error) => {
+                    if let MpdError::Server(server_err) = error {
                         self.handle_sticker_server_error(server_err);
+                    } else {
+                        self.handle_common_mpd_error(&error, None);
                     }
-                    _ => {
-                        // Not handled yet
-                    }
-                },
+                }
             }
+        }
+    }
+
+    fn handle_playlist_error(&self, err: &ServerError) {
+        if err.detail.contains("disabled") {
+            self.state.set_supports_playlists(false);
+            println!("Playlists are not supported.");
+        } else {
+            println!("Playlist operation error: {:?}", err);
         }
     }
 
@@ -1471,27 +1485,19 @@ impl MpdWrapper {
             match client.playlists() {
                 Ok(playlists) => {
                     self.state.set_supports_playlists(true);
-
                     // Convert mpd::Playlist to our INode GObject
                     return playlists
                         .into_iter()
                         .map(INode::from)
                         .collect::<Vec<INode>>();
                 }
-                Err(e) => match e {
-                    MpdError::Server(server_err) => {
-                        self.state.set_supports_playlists(false);
-                        if server_err.detail.contains("disabled") {
-                            println!("Playlists are not supported.");
-                        } else {
-                            println!("get_playlists: {:?}", server_err);
-                        }
+                Err(e) => {
+                    if let MpdError::Server(server_err) = &e {
+                        self.handle_playlist_error(server_err);
+                    } else {
+                        self.handle_common_mpd_error(&e, None);
                     }
-                    _ => {
-                        println!("get_playlists: {:?}", e);
-                        // Not handled yet
-                    }
-                },
+                }
             }
         }
         return Vec::with_capacity(0);
@@ -1506,16 +1512,10 @@ impl MpdWrapper {
                     return Ok(());
                 }
                 Err(e) => {
-                    match &e {
-                        MpdError::Server(server_err) => {
-                            if server_err.detail.contains("disabled") {
-                                self.state.set_supports_playlists(false);
-                            }
-                        }
-                        _ => {
-                            // Emit to UI
-                            self.state.emit_error(ClientError::Queuing);
-                        }
+                    if let MpdError::Server(server_err) = &e {
+                        self.handle_playlist_error(server_err);
+                    } else {
+                        self.handle_common_mpd_error(&e, None);
                     }
                     return Err(Some(e));
                 }
@@ -1537,15 +1537,11 @@ impl MpdWrapper {
                     return Ok(());
                 }
                 Err(e) => {
-                    match &e {
-                        MpdError::Server(server_err) => {
-                            if server_err.detail.contains("disabled") {
-                                self.state.set_supports_playlists(false);
-                            }
-                        }
-                        _ => {
-                            // Not handled yet
-                        }
+                    if let MpdError::Server(server_err) = &e {
+                        self.handle_playlist_error(server_err);
+                    } else {
+                        // TODO: auto retry
+                        self.handle_common_mpd_error(&e, None);
                     }
                     return Err(Some(e));
                 }
@@ -1561,7 +1557,14 @@ impl MpdWrapper {
                     self.force_idle();
                     Ok(())
                 },
-                Err(e) => Err(Some(e)),
+                Err(e) => {
+                    if let MpdError::Server(server_err) = &e {
+                        self.handle_playlist_error(server_err);
+                    } else {
+                        self.handle_common_mpd_error(&e, None);
+                    }
+                    return Err(Some(e));
+                },
             }
         } else {
             Err(None)
@@ -1575,7 +1578,14 @@ impl MpdWrapper {
                     self.force_idle();
                     Ok(())
                 },
-                Err(e) => Err(Some(e)),
+                Err(e) => {
+                    if let MpdError::Server(server_err) = &e {
+                        self.handle_playlist_error(server_err);
+                    } else {
+                        self.handle_common_mpd_error(&e, None);
+                    }
+                    return Err(Some(e));
+                }
             }
         } else {
             Err(None)
@@ -1589,7 +1599,14 @@ impl MpdWrapper {
                     self.force_idle();
                     Ok(())
                 },
-                Err(e) => Err(Some(e)),
+                Err(e) => {
+                    if let MpdError::Server(server_err) = &e {
+                        self.handle_playlist_error(server_err);
+                    } else {
+                        self.handle_common_mpd_error(&e, None);
+                    }
+                    return Err(Some(e));
+                }
             }
         } else {
             Err(None)
@@ -1597,6 +1614,7 @@ impl MpdWrapper {
     }
 
     pub fn get_status(&self, sync_queue: bool) -> Option<mpd::Status> {
+        // Stop borrowing main client as soon as possible
         let res: Option<Result<mpd::Status, MpdError>>;
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
             res = Some(client.status());
@@ -1625,173 +1643,163 @@ impl MpdWrapper {
                 }
                 Some(status)
             }
-            e => {
-                println!("{:?}", e);
+            Some(Err(err)) => {
+                self.handle_common_mpd_error(&err, None);
                 None
             }
+            None => None
         }
     }
 
     pub fn get_song_at_queue_id(&self, id: u32) -> Option<Song> {
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
-            if let Ok(mut songs) = client.songs(mpd::Id(id)) {
-                if songs.len() > 0 {
-                    return Some(Song::from(std::mem::take(&mut songs[0])));
+            match client.songs(mpd::Id(id)) {
+                Ok(mut songs) => {
+                    if songs.len() > 0 {
+                        Some(Song::from(std::mem::take(&mut songs[0])))
+                    } else {
+                        None
+                    }
                 }
-                return None;
+                Err(err) => {
+                    self.handle_common_mpd_error(&err, None);
+                    None
+                }
             }
-            return None;
+        } else {
+            None
         }
-        return None;
     }
 
     pub fn set_playback_flow(&self, flow: PlaybackFlow) {
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
+            let repeat: bool;
+            let single: bool;
             match flow {
                 PlaybackFlow::Sequential => {
-                    let _ = client.repeat(false);
-                    let _ = client.single(false);
+                    repeat = false;
+                    single = false;
                 }
                 PlaybackFlow::Repeat => {
-                    let _ = client.repeat(true);
-                    let _ = client.single(false);
+                    repeat = true;
+                    single = false;
                 }
                 PlaybackFlow::Single => {
-                    let _ = client.repeat(false);
-                    let _ = client.single(true);
+                    repeat = false;
+                    single = true;
                 }
                 PlaybackFlow::RepeatSingle => {
-                    let _ = client.repeat(true);
-                    let _ = client.single(true);
+                    repeat = true;
+                    single = true;
                 }
             }
-            self.force_idle();
+            self.handle_set_error(
+                client.repeat(repeat).and_then(|_| {
+                    client.single(single)
+                })
+            );
         }
     }
 
     pub fn set_crossfade(&self, fade: f64) {
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
-            if client.crossfade(fade as i64).is_ok() {
-                self.force_idle();
-            }
+            self.handle_set_error(client.crossfade(fade as i64));
         }
     }
 
     pub fn set_replaygain(&self, mode: mpd::status::ReplayGain) {
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
-            if client.replaygain(mode).is_ok() {
-                self.force_idle();
-            }
+            self.handle_set_error(client.replaygain(mode));
         }
     }
 
     pub fn set_mixramp_db(&self, db: f32) {
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
-            if client.mixrampdb(db).is_ok() {
-                self.force_idle();
-            }
+            self.handle_set_error(client.mixrampdb(db));
         }
     }
 
     pub fn set_mixramp_delay(&self, delay: f64) {
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
-            if client.mixrampdelay(delay).is_ok() {
-                self.force_idle();
-            }
+            self.handle_set_error(client.mixrampdelay(delay));
         }
     }
 
     pub fn set_random(&self, state: bool) {
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
-            if client.random(state).is_ok() {
-                self.force_idle();
-            }
+            self.handle_set_error(client.random(state));
         }
     }
 
     pub fn set_consume(&self, state: bool) {
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
-            if client.consume(state).is_ok() {
-                self.force_idle();
-            }
+            self.handle_set_error(client.consume(state));
         }
     }
 
     pub fn pause(&self, is_pause: bool) {
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
-            if client.pause(is_pause).is_ok() {
-                self.force_idle();
-            }
+            self.handle_set_error(client.pause(is_pause));
         }
     }
 
     pub fn stop(&self) {
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
-            if client.stop().is_ok() {
-                self.force_idle();
-            }
+            self.handle_set_error(client.stop());
         }
     }
 
     pub fn prev(&self) {
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
-            if client.prev().is_ok() {
-                self.force_idle();
-            }
+            self.handle_set_error(client.prev());
         }
     }
 
     pub fn next(&self) {
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
-            if client.next().is_ok() {
-                self.force_idle();
-            }
+            self.handle_set_error(client.next());
         }
     }
 
     pub fn play_at(&self, id_or_pos: u32, is_id: bool) {
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
-            if is_id {
-                client.switch(Id(id_or_pos)).expect("Could not switch song");
+            let res = if is_id {
+                client.switch(Id(id_or_pos)).map(|_| ())
             } else {
-                client.switch(id_or_pos).expect("Could not switch song");
-            }
-            self.force_idle();
+                client.switch(id_or_pos).map(|_| ())
+            };
+            self.handle_set_error(res);
         }
     }
 
     pub fn swap(&self, id1: u32, id2: u32, is_id: bool) {
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
-            if is_id {
+            let res = if is_id {
                 client
                     .swap(Id(id1), Id(id2))
-                    .expect("Could not swap songs by ID");
             } else {
-                client.swap(id1, id2).expect("Could not swap songs by pos");
-            }
-            self.force_idle();
+                client.swap(id1, id2)
+            };
+            self.handle_set_error(res);
         }
     }
 
     pub fn delete_at(&self, id_or_pos: u32, is_id: bool) {
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
-            if is_id {
+            let res = if is_id {
                 client
                     .delete(Id(id_or_pos))
-                    .expect("Could not delete song from queue");
             } else {
                 client
                     .delete(id_or_pos)
-                    .expect("Could not delete song from queue");
-            }
-            self.force_idle();
+            };
+            self.handle_set_error(res);
         }
     }
 
     pub fn clear_queue(&self) {
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
-            client.clear().expect("Could not clear queue");
-            self.force_idle();
+            self.handle_set_error(client.clear());
         }
     }
 
@@ -1801,8 +1809,7 @@ impl MpdWrapper {
 
     pub fn seek_current_song(&self, position: f64) {
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
-            client.rewind(position).expect("Failed to seek song");
-            self.force_idle();
+            self.handle_set_error(client.rewind(position));
         }
     }
 
@@ -1856,15 +1863,10 @@ impl MpdWrapper {
     pub fn find_add(&self, query: Query) {
         // Convert back to mpd::search::Query
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
-            // println!("Running findadd query: {:?}", &terms);
-            // let mut query = Query::new();
-            // for term in terms.into_iter() {
-            //     query.and(term.0.into(), term.1);
-            // }
-            if client.findadd(&query).is_err() {
-                self.state.emit_error(ClientError::Queuing);
-            }
-            self.force_idle();
+            self.handle_set_error_or(
+                client.findadd(&query),
+                ClientError::Queuing
+            );
         }
     }
 
