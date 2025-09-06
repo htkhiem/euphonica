@@ -48,6 +48,7 @@ const FETCH_LIMIT: usize = 10000000; // Fetch at most ten million songs at once 
 // Messages to be sent from child thread or synchronous methods
 enum AsyncClientMessage {
     Connect, // Host and port are always read from gsettings
+    Disconnect,
     Status(usize), // Number of pending background tasks
     Idle(Vec<Subsystem>), // Will only be sent from the child thread
     QueueSongsDownloaded(Vec<SongInfo>),
@@ -465,8 +466,8 @@ mod background {
                 client,
                 &Query::new().and(Term::Tag(Cow::Borrowed("album")), title),
                 |info| {
-                sender_to_fg.send_blocking(AsyncClientMessage::RecentAlbumDownloaded(info))
-            }) {
+                    sender_to_fg.send_blocking(AsyncClientMessage::RecentAlbumDownloaded(info))
+                }) {
                 Err(true) => {
                     let _ = sender_to_fg.send_blocking(AsyncClientMessage::Connect);
                 }
@@ -650,7 +651,7 @@ mod background {
         match client.lsinfo(&path) {
             Ok(contents) => {
                 let _ = sender_to_fg
-                .send_blocking(AsyncClientMessage::FolderContentsDownloaded(path, contents));
+                    .send_blocking(AsyncClientMessage::FolderContentsDownloaded(path, contents));
             }
             Err(MpdError::Io(_)) => {
                 // Connection error => attempt to reconnect
@@ -877,7 +878,13 @@ impl MpdWrapper {
                 else {
                     stream = StreamWrapper::new_unix(UnixStream::connect(path.as_str()).map_err(mpd::error::Error::Io).expect(error_msg));
                 }
-                client = mpd::Client::new(stream).expect(error_msg);
+                if let Ok(new_client) = mpd::Client::new(stream) {
+                    client = new_client;
+                } else {
+                    // For early errors like this it's best to just disconnect.
+                    let _ = sender_to_fg.send_blocking(AsyncClientMessage::Disconnect);
+                    return;
+                }
             } else {
                 let addr = format!("{}:{}", conn.string("mpd-host"), conn.uint("mpd-port"));
                 println!("Connecting to TCP socket {}", &addr);
@@ -885,13 +892,20 @@ impl MpdWrapper {
                 client = mpd::Client::new(stream).expect(error_msg);
             }
             if let Some(password) = password {
-                client
-                    .login(&password)
-                    .expect("Background client failed to authenticate in the same manner as main client");
+                if client.login(&password).is_err() {
+                    // For early errors like this it's best to just disconnect.
+                    println!("Background client failed to authenticate in the same manner as main client");
+                    let _ = sender_to_fg.send_blocking(AsyncClientMessage::Disconnect);
+                    return;
+                }
             }
-            client
-                .subscribe(bg_channel)
-                .expect("Background client could not subscribe to inter-client channel");
+            if let Err(MpdError::Io(_)) = client
+                .subscribe(bg_channel) {
+                    // For early errors like this it's best to just disconnect.
+                    println!("Background client could not subscribe to inter-client channel");
+                    let _ = sender_to_fg.send_blocking(AsyncClientMessage::Disconnect);
+                    return;
+                }
 
             'outer: loop {
                 let skip_to_idle = pending_idle.load(Ordering::Relaxed);
@@ -1004,6 +1018,7 @@ impl MpdWrapper {
                         println!(
                             "Child thread encountered a client error while idling. Stopping..."
                         );
+                        let _ = sender_to_fg.send_blocking(AsyncClientMessage::Disconnect);
                         break 'outer;
                     }
                 }
@@ -1057,7 +1072,7 @@ impl MpdWrapper {
         // println!("Received MpdMessage {:?}", request);
         match request {
             AsyncClientMessage::Connect => self.connect_async().await,
-            // AsyncClientMessage::Disconnect => self.disconnect_async().await,
+            AsyncClientMessage::Disconnect => self.disconnect_async().await,
             AsyncClientMessage::Idle(changes) => self.handle_idle_changes(changes).await,
             AsyncClientMessage::QueueSongsDownloaded(songs) => {
                 self.on_songs_downloaded("queue-songs-downloaded", None, songs)
@@ -1125,9 +1140,14 @@ impl MpdWrapper {
             self.bg_sender.borrow()
         };
         if let Some(sender) = maybe_sender.as_ref() {
-            sender
+            if sender
                 .send_blocking(task)
-                .expect("Cannot queue background task");
+                .is_err() {
+                    // These errors can only happen after we've successfully connected both clients, so
+                    // we should attempt a reconnection.
+                    println!("[Warning] Lost child client. Reconnecting...");
+                    let _ = self.main_sender.send_blocking(AsyncClientMessage::Connect);
+                }
             if let Some(client) = self.main_client.borrow_mut().as_mut() {
                 // Wake background thread
                 let _ = client.sendmessage(self.bg_channel.clone(), "WAKE");
@@ -1135,6 +1155,7 @@ impl MpdWrapper {
                 println!("Warning: cannot wake child thread. Task might be delayed.");
             }
         } else {
+            // This is nasty (something happened way out of order). Don't attempt to recover.
             panic!("Cannot queue background task (background sender not initialised)");
         }
     }
@@ -1281,7 +1302,14 @@ impl MpdWrapper {
 
     pub fn get_volume(&self) -> Option<i8> {
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
-            client.getvol().ok()
+            match client.getvol() {
+                Ok(vol) => Some(vol),
+                Err(MpdError::Io(_)) => {
+                    let _ = self.main_sender.send_blocking(AsyncClientMessage::Connect);
+                    None
+                }
+                _ => None
+            }
         }
         else {
             None
@@ -1290,34 +1318,55 @@ impl MpdWrapper {
 
     pub fn add(&self, uri: String, recursive: bool) {
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
-            if recursive {
-                let _ = client.findadd(Query::new().and(Term::Base, uri));
-
+            let res = if recursive {
+                client.findadd(Query::new().and(Term::Base, uri)).map(|_| ())
             } else {
-                if client.push(uri).is_err() {
+                client.push(uri).map(|_| ())
+            };
+            match res {
+                Ok(_) => {
+                    self.force_idle();
+                }
+                Err(MpdError::Io(_)) => {
+                    let _ = self.main_sender.send_blocking(AsyncClientMessage::Connect);
+                }
+                _ => {
                     self.state.emit_error(ClientError::Queuing);
                 }
             }
-            self.force_idle();
         }
     }
 
     pub fn add_multi(&self, uris: &[String]) {
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
-            if client.push_multiple(uris).is_err() {
-                self.state.emit_error(ClientError::Queuing);
+            match client.push_multiple(uris) {
+                Ok(_) => {
+                    self.force_idle();
+                }
+                Err(MpdError::Io(_)) => {
+                    let _ = self.main_sender.send_blocking(AsyncClientMessage::Connect);
+                }
+                _ => {
+                    self.state.emit_error(ClientError::Queuing);
+                }
             }
-            self.force_idle();
         }
     }
 
     pub fn insert_multi(&self, uris: &[String], pos: usize) {
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
-            
-            if client.insert_multiple(uris, pos).is_err() {
-                self.state.emit_error(ClientError::Queuing);
+            match client.insert_multiple(uris, pos) {
+                Ok(_) => {
+                    self.force_idle();
+                }
+                Err(MpdError::Io(_)) => {
+                    let _ = self.main_sender.send_blocking(AsyncClientMessage::Connect);
+                }
+                _ => {
+                    self.state.emit_error(ClientError::Queuing);
+                }
             }
-            self.force_idle();
+
         }
     }
 
