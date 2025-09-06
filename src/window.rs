@@ -25,7 +25,7 @@ use crate::{
     library::{AlbumView, ArtistContentView, ArtistView, FolderView, PlaylistView, RecentView},
     player::{Player, PlayerBar, QueueView},
     sidebar::Sidebar,
-    utils::{self, settings_manager},
+    utils::{self, LazyInit, settings_manager},
 };
 use adw::{prelude::*, subclass::prelude::*};
 use glib::signal::SignalHandlerId;
@@ -192,6 +192,7 @@ mod imp {
         pub tick_callback: RefCell<Option<gtk::TickCallbackId>>,
         pub fft_data: OnceCell<Arc<Mutex<(Vec<f32>, Vec<f32>)>>>,
         pub accent_color: RefCell<Option<RGB>>,
+        pub should_populate_visible: Cell<bool>,
 
         pub provider: CssProvider,
     }
@@ -864,6 +865,16 @@ impl EuphonicaWindow {
         );
         let _ = win.imp().player.set(player);
 
+        win.imp().stack.connect_visible_child_name_notify(
+            clone!(
+                #[weak(rename_to = this)]
+                win,
+                move |_| {
+                    this.maybe_populate_visible();
+                }
+            )
+        );
+
         win.restore_window_state();
         win.imp()
             .queue_view
@@ -1000,6 +1011,7 @@ impl EuphonicaWindow {
     fn handle_connection_state(&self, state: ConnectionState) {
         match state {
             ConnectionState::ConnectionRefused => {
+                self.imp().title.set_subtitle("Not connected");
                 let conn_settings = utils::settings_manager().child("client");
                 self.show_error_dialog(
                     "Connection refused",
@@ -1012,6 +1024,7 @@ impl EuphonicaWindow {
                 );
             }
             ConnectionState::SocketNotFound => {
+                self.imp().title.set_subtitle("Not connected");
                 let conn_settings = utils::settings_manager().child("client");
                 self.show_error_dialog(
                     "Socket not found",
@@ -1023,6 +1036,7 @@ impl EuphonicaWindow {
                 );
             }
             ConnectionState::WrongPassword => {
+                self.imp().title.set_subtitle("Unauthenticated");
                 self.show_error_dialog(
                     "Incorrect password",
                     "MPD has refused the provided password. Please note that if your MPD instance is not password-protected, providing one will also cause this error.",
@@ -1030,6 +1044,7 @@ impl EuphonicaWindow {
                 );
             }
             ConnectionState::Unauthenticated => {
+                self.imp().title.set_subtitle("Not connected");
                 self.show_error_dialog(
                     "Authentication Failed",
                     "The current password lacks the necessary privileges for Euphonica to function.",
@@ -1037,6 +1052,7 @@ impl EuphonicaWindow {
                 );
             }
             ConnectionState::PasswordNotAvailable => {
+                self.imp().title.set_subtitle("Not connected");
                 self.show_error_dialog(
                     "No password available",
                     "Your MPD instance requires a password, but Euphonica could not find one from the default keyring. If the keyring is still locked, please unlock it first.",
@@ -1044,13 +1060,60 @@ impl EuphonicaWindow {
                 );
             }
             ConnectionState::CredentialStoreError => {
+                self.imp().title.set_subtitle("Unauthenticated");
                 self.show_error_dialog(
                     "Credential Store Error",
                     "Your MPD instance requires a password, but Euphonica could not access your default credential store to retrieve it. Please ensure that it has been unlocked before starting Euphonica.",
                     false
                 );
             }
+            ConnectionState::Connecting => {
+                let app = self.downcast_application();
+                let imp = self.imp();
+                let library = app.get_library();
+                imp.title.set_subtitle("Connecting");
+                imp.should_populate_visible.set(false);
+                library.clear();
+                imp.recent_view.clear();
+                imp.album_view.clear();
+                imp.artist_view.clear();
+                imp.folder_view.clear();
+                imp.queue_view.clear();
+            }
+            ConnectionState::Connected => {
+                let imp = self.imp();
+                imp.title.set_subtitle("Connected");
+                imp.should_populate_visible.set(true);
+                // Initialise content for the currently-visible view
+                self.maybe_populate_visible();
+            }
             _ => {}
+        }
+    }
+
+    pub fn maybe_populate_visible(&self) {
+        let imp = self.imp();
+        if imp.should_populate_visible.get() {
+            if let Some(visible_child_name) = imp.stack.visible_child_name() {
+                match visible_child_name.as_str() {
+                    "recent" => {
+                        imp.recent_view.populate();
+                    }
+                    "albums" => {
+                        imp.album_view.populate();
+                    }
+                    "artists" => {
+                        imp.artist_view.populate();
+                    }
+                    "folders" => {
+                        imp.folder_view.populate();
+                    }
+                    "queue" => {
+                        imp.queue_view.populate();
+                    }
+                    _ => {}
+                }
+            }
         }
     }
 
@@ -1169,21 +1232,7 @@ impl EuphonicaWindow {
         // Bind client state to app name widget
         let client = self.downcast_application().get_client();
         let state = client.get_client_state();
-        let title = self.imp().title.get();
         let spinner = self.imp().busy_spinner.get();
-        state
-            .bind_property("connection-state", &title, "subtitle")
-            .transform_to(|_, state: ConnectionState| match state {
-                ConnectionState::Connecting => Some("Connecting"),
-                ConnectionState::Unauthenticated
-                | ConnectionState::WrongPassword
-                | ConnectionState::PasswordNotAvailable
-                | ConnectionState::CredentialStoreError => Some("Unauthenticated"),
-                ConnectionState::Connected => Some("Connected"),
-                _ => Some("Not connected")
-            })
-            .sync_create()
-            .build();
 
         state
             .bind_property("n-background-tasks", &spinner, "visible")

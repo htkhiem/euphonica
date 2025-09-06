@@ -126,37 +126,6 @@ impl Library {
         let _ = self.imp().client.set(client);
         let _ = self.imp().player.set(player);
 
-        // Refresh upon reconnection.
-        // User-initiated refreshes will also trigger a reconnection, which will
-        // in turn trigger this.
-        client_state.connect_notify_local(
-            Some("connection-state"),
-            clone!(
-                #[weak(rename_to = this)]
-                self,
-                move |state, _| {
-                    match state.get_connection_state() {
-                        ConnectionState::Connected => {
-                            this.get_recent_songs();
-                            this.init_albums();
-                            this.init_artists(false);
-                            this.get_folder_contents("");
-                        }
-                        ConnectionState::Connecting => {
-                            this.imp().recent_songs.remove_all();
-                            this.imp().albums.remove_all();
-                            this.imp().artists.remove_all();
-                            this.imp().playlists.remove_all();
-                            this.imp().folder_inodes.remove_all();
-                            let _ = this.imp().folder_history.replace(Vec::new());
-                            let _ = this.imp().folder_curr_idx.replace(0);
-                        }
-                        _ => {}
-                    }
-                }
-            ),
-        );
-
         client_state.connect_closure(
             "album-basic-info-downloaded",
             false,
@@ -213,6 +182,16 @@ impl Library {
                 }
             ),
         );
+    }
+
+    pub fn clear(&self) {
+        self.imp().recent_songs.remove_all();
+        self.imp().albums.remove_all();
+        self.imp().artists.remove_all();
+        self.imp().playlists.remove_all();
+        self.imp().folder_inodes.remove_all();
+        let _ = self.imp().folder_history.replace(Vec::new());
+        let _ = self.imp().folder_curr_idx.replace(0);
     }
 
     fn client(&self) -> &Rc<MpdWrapper> {

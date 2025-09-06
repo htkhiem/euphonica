@@ -645,6 +645,23 @@ impl Player {
         self.imp().outputs.clone()
     }
 
+    pub fn clear(&self) {
+        self.imp().queue.remove_all();
+        self.imp().song_cache.borrow_mut().clear();
+        self.imp().outputs.remove_all();
+        self.update_status(&mpd::Status::default());
+    }
+
+    pub fn populate(&self) {
+        // Don't fetch queue until Queue View is navigated to.
+        if let Some(status) = self.client().get_status(false) {
+            self.update_status(&status);
+        }
+        if let Some(outputs) = self.client().get_outputs() {
+            self.update_outputs(outputs);
+        }
+    }
+
     pub fn setup(
         &self,
         application: EuphonicaApplication,
@@ -735,19 +752,11 @@ impl Player {
                 move |state, _| {
                     match state.get_connection_state() {
                         ConnectionState::Connected => {
-                            // Newly-connected? Get initial status. This will also fetch the queue.
-                            if let Some(status) = this.client().get_status() {
-                                this.update_status(&status);
-                            }
-                            if let Some(outputs) = this.client().get_outputs() {
-                                this.update_outputs(outputs);
-                            }
+                            // Newly-connected? Get initial status.
+                            this.populate();
                         }
                         ConnectionState::Connecting => {
-                            this.imp().queue.remove_all();
-                            this.imp().song_cache.borrow_mut().clear();
-                            this.imp().outputs.remove_all();
-                            this.update_status(&mpd::Status::default());
+                            this.clear();
                         }
                         _ => {}
                     }
@@ -768,8 +777,13 @@ impl Player {
                 self,
                 move |_: ClientState, subsys: glib::BoxedAnyObject| {
                     match subsys.borrow::<Subsystem>().deref() {
-                        Subsystem::Player | Subsystem::Queue | Subsystem::Options => {
-                            if let Some(status) = this.client().get_status() {
+                        Subsystem::Player | Subsystem::Options => {
+                            if let Some(status) = this.client().get_status(false) {
+                                this.update_status(&status);
+                            }
+                        }
+                        Subsystem::Queue => {
+                            if let Some(status) = this.client().get_status(true) {
                                 this.update_status(&status);
                             }
                         }
@@ -1275,7 +1289,7 @@ impl Player {
         }
     }
 
-    fn client(&self) -> &Rc<MpdWrapper> {
+    pub fn client(&self) -> &Rc<MpdWrapper> {
         self.imp().client.get().unwrap()
     }
 
@@ -1587,7 +1601,7 @@ impl Player {
                 loop {
                     // Don't poll if not playing
                     if this.imp().state.get() == PlaybackState::Playing {
-                        if let Some(status) = client.clone().get_status() {
+                        if let Some(status) = client.clone().get_status(false) {
                             this.update_status(&status);
                         }
                     }

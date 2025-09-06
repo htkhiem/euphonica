@@ -12,6 +12,7 @@ use glib::{clone, closure_local, Properties};
 
 use super::{AlbumCell, ArtistCell, Library};
 use crate::{
+    utils::LazyInit,
     cache::{sqlite, Cache}, common::{marquee::MarqueeWrapMode, Album, Artist, Song}, library::recent_song_row::RecentSongRow, player::Player, utils::settings_manager, window::EuphonicaWindow
 };
 
@@ -74,6 +75,8 @@ mod imp {
 
         pub artist_filter: gtk::CustomFilter,
         pub artist_sorter: gtk::CustomSorter,
+
+        pub initialized: Cell<bool>  // Only start fetching content when navigated to for the first time
     }
 
     #[glib::object_subclass]
@@ -583,5 +586,22 @@ impl RecentView {
                 row.into()
             }
         );
+    }
+}
+
+impl LazyInit for RecentView {
+    fn clear(&self) {
+        self.imp().initialized.set(false);
+    }
+
+    fn populate(&self) {
+        if let Some(library) = self.imp().library.get() {
+            let was_populated = self.imp().initialized.replace(true);
+            if !was_populated {
+                println!("Initialising recents");
+                library.get_recent_songs();
+                self.on_history_changed();
+            }
+        }
     }
 }

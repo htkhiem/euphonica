@@ -701,7 +701,7 @@ mod background {
                     ));
                 }
             }
-            Err(MpdError::Io(_)) => {
+            Err(true) => {
                 // Connection error => attempt to reconnect
                 let _ = sender_to_fg.send_blocking(AsyncClientMessage::Connect);
             }
@@ -1464,7 +1464,7 @@ impl MpdWrapper {
         }
     }
 
-    pub fn get_status(&self) -> Option<mpd::Status> {
+    pub fn get_status(&self, sync_queue: bool) -> Option<mpd::Status> {
         let res: Option<Result<mpd::Status, MpdError>>;
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
             res = Some(client.status());
@@ -1475,19 +1475,20 @@ impl MpdWrapper {
         match res {
             Some(Ok(status)) => {
                 // Check whether we need to sync queue with server side (inefficient)
-                let old_version = self.queue_version.replace(status.queue_version);
-                if status.queue_version > old_version {
-                    if status.queue_version > self.expected_queue_version.get() {
-                        self.expected_queue_version.set(status.queue_version);
-                        self.queue_background(
-                            if old_version == 0 {
-                                BackgroundTask::FetchQueue
-                            } else {
-                                BackgroundTask::FetchQueueChanges(old_version)
-                            }
-                            ,
-                            true
-                        );
+                if sync_queue {
+                    let old_version = self.queue_version.replace(status.queue_version);
+                    if status.queue_version > old_version {
+                        if status.queue_version > self.expected_queue_version.get() {
+                            self.expected_queue_version.set(status.queue_version);
+                            self.queue_background(
+                                if old_version == 0 {
+                                    BackgroundTask::FetchQueue
+                                } else {
+                                    BackgroundTask::FetchQueueChanges(old_version)
+                                },
+                                true
+                            );
+                        }
                     }
                 }
                 Some(status)

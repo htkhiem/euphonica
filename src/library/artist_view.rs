@@ -13,7 +13,7 @@ use crate::{
     cache::Cache,
     client::ClientState,
     common::Artist,
-    utils::{g_cmp_str_options, g_search_substr, settings_manager},
+    utils::{LazyInit, g_cmp_str_options, g_search_substr, settings_manager},
 };
 
 mod imp {
@@ -65,7 +65,8 @@ mod imp {
         #[property(get, set)]
         pub collapsed: Cell<bool>,
 
-        pub library: OnceCell<Library>
+        pub library: OnceCell<Library>,
+        pub initialized: Cell<bool>
     }
 
     impl Default for ArtistView {
@@ -97,7 +98,8 @@ mod imp {
                 last_search_len: Cell::new(0),
                 collapsed: Cell::new(false),
 
-                library: OnceCell::new()
+                library: OnceCell::new(),
+                initialized: Cell::new(false)
             }
         }
     }
@@ -465,5 +467,21 @@ impl ArtistView {
                 this.on_artist_clicked(&artist);
             }
         ));
+    }
+}
+
+impl LazyInit for ArtistView {
+    fn clear(&self) {
+        self.imp().initialized.set(false);
+    }
+
+    fn populate(&self) {
+        if let Some(library) = self.imp().library.get() {
+            let was_populated = self.imp().initialized.replace(true);
+            if !was_populated {
+                println!("Initialising artists");
+                library.init_artists(false);
+            }
+        }
     }
 }

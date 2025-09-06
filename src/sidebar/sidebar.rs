@@ -33,7 +33,7 @@ mod imp {
         #[template_child]
         pub queue_len: TemplateChild<gtk::Label>,
         #[property(get, set)]
-        pub showing_queue_view: Cell<bool>,
+        pub showing_queue_view: Cell<bool>
     }
 
     #[glib::object_subclass]
