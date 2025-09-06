@@ -1038,8 +1038,13 @@ impl MpdWrapper {
                 // Allow receiver to be mutated, but keep it at the same memory address.
                 // See Receiver::next doc for why this is needed.
                 let mut receiver = std::pin::pin!(receiver);
+                let mut recently_connected: bool = false;
                 while let Some(request) = receiver.next().await {
-                    this.respond(request).await;
+                    let old_recently_connected = recently_connected;
+                    recently_connected = matches!(request, AsyncClientMessage::Connect);
+                    this.respond(request, old_recently_connected).await;
+                    // Prevent rapid-fire reconnections
+
                 }
             }
         ));
@@ -1068,10 +1073,14 @@ impl MpdWrapper {
             }));
     }
 
-    async fn respond(&self, request: AsyncClientMessage) -> glib::ControlFlow {
+    async fn respond(&self, request: AsyncClientMessage, recently_connected: bool) -> glib::ControlFlow {
         // println!("Received MpdMessage {:?}", request);
         match request {
-            AsyncClientMessage::Connect => self.connect_async().await,
+            AsyncClientMessage::Connect => {
+                if !recently_connected {
+                    self.connect_async().await;
+                }
+            }
             AsyncClientMessage::Disconnect => self.disconnect_async().await,
             AsyncClientMessage::Idle(changes) => self.handle_idle_changes(changes).await,
             AsyncClientMessage::QueueSongsDownloaded(songs) => {
