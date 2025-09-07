@@ -40,6 +40,7 @@
         <child>
           <object class="AdwSwitchRow" id="mpd_download_album_art">
             <property name="title" translatable="true">Download album arts</property>
+            <property name="subtitle" translatable="true">Fetch album art files (named "cover.png/jpg/webp") and embedded covers in song files.</property>
           </object>
         </child>
         <child>

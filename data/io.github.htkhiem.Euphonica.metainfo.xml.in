@@ -78,7 +78,7 @@
   </screenshots>
 
   <releases>
-    <release version="0.97.0-beta" date="2025-09-06">
+    <release version="0.97.0-beta" date="2025-09-07">
       <url type="details">https://github.com/htkhiem/euphonica/releases/tag/v0.97.0-beta</url>
       <description>
         <p>New: Global background task counter and spinner.</p>
