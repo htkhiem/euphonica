@@ -376,7 +376,7 @@ pub fn find_artist_meta(artist: &ArtistInfo) -> Result<Option<ArtistMeta>, Error
     }
 }
 
-pub async fn write_album_meta(album: &AlbumInfo, meta: &AlbumMeta) -> Result<(), Error> {
+pub fn write_album_meta(album: &AlbumInfo, meta: &AlbumMeta) -> Result<(), Error> {
     let mut conn = SQLITE_POOL.get().unwrap();
     let tx = conn.transaction().map_err(|e| Error::DbError(e))?;
     if let Some(mbid) = album.mbid.as_deref() {

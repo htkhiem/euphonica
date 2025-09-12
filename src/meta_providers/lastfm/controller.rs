@@ -26,7 +26,7 @@ impl LastfmWrapper {
         let key = settings.string("api-key").to_string();
         // Return None if there is no API key specified.
         if !key.is_empty() {
-            println!("Last.fm: calling `{}` with query {:?}", method, params);
+            println!("[Last.fm] Calling `{}` with query {:?}", method, params);
             let resp = self
                 .client
                 .get(API_ROOT)
@@ -38,10 +38,15 @@ impl LastfmWrapper {
                 .query(params)
                 .header(USER_AGENT, APPLICATION_USER_AGENT)
                 .send();
-            if let Ok(res) = resp {
-                return Some(res);
+            match resp {
+                Ok(res) => {
+                    return Some(res);
+                }
+                Err(e) => {
+                    println!("{e:?}");
+                    return None;
+                }
             }
-            return None;
         }
         None
     }
