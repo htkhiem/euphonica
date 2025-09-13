@@ -126,15 +126,24 @@ impl PlaybackControls {
             move |_| player.toggle_playback()
         ));
         self.imp().next_btn.connect_clicked(clone!(
-            #[strong]
+            #[weak]
             player,
             move |_| player.next_song(true)
         ));
         let shuffle_btn = imp.random_btn.get();
-        shuffle_btn
-            .bind_property("active", player, "random")
-            .bidirectional()
+
+        // Don't use bidirectional to avoid erroneously firing once on UI init
+        player
+            .bind_property("random", &shuffle_btn, "active")
             .sync_create()
             .build();
+
+        shuffle_btn.connect_clicked(clone!(
+            #[weak]
+            player,
+            move |btn| {
+                player.set_random(btn.is_active());
+            }
+        ));
     }
 }

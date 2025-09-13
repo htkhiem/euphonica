@@ -908,12 +908,6 @@ impl Player {
     // Signals will be sent for properties whose values have changed, even though
     // we will be receiving updates for many properties at once.
 
-    pub fn get_recent_songs(&self) {
-        let settings = settings_manager().child("library");
-        self.client()
-            .queue_background(BackgroundTask::FetchRecentSongs(settings.uint("n-recent-songs")), true);
-    }
-
     /// Main update function. MPD's protocol has a single "status" commands
     /// that returns everything at once. This update function will take what's
     /// relevant and update the GObject properties accordingly.
@@ -1067,7 +1061,6 @@ impl Player {
                             if let Some(new_position_dur) = status.elapsed {
                                 if !self.imp().saved_to_history.get() && new_position_dur.as_secs_f32() / dur >= 0.5 {
                                     if let Ok(()) = sqlite::add_to_history(curr_song.get_info()) {
-                                        self.get_recent_songs();
                                         self.emit_by_name::<()>("history-changed", &[]);
                                     }
                                     self.imp().saved_to_history.set(true);

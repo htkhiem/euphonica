@@ -262,6 +262,13 @@ pub fn rebuild_artist_delim_exception_automaton() {
     }
 }
 
+
+/// There are two guard layers against full fetches.
+/// - This LazyInit trait. All heavy views must implement it. A view's populate() will then be called
+/// by the sidebar upon navigating to that view. If that view is already initialised, populate() must
+/// be a noop(). TODO: enforce noop at sidebar level instead.
+/// - Additional checks at the controller level, to prevent new windows (after surfacing from background)
+/// from mistakenly reinitialising already-fetched models.
 pub trait LazyInit {
     fn clear(&self);
     fn populate(&self);

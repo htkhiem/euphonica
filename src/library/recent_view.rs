@@ -242,7 +242,7 @@ impl RecentView {
             let library = self.imp().library.get().unwrap();
             library.fetch_recent_albums();
             library.fetch_recent_artists();
-            // Songs are fetched by either the library (upon startup) or player (upon song change)
+            library.fetch_recent_songs();
         }
     }
 
@@ -484,7 +484,6 @@ impl LazyInit for RecentView {
             let was_populated = self.imp().initialized.replace(true);
             if !was_populated {
                 println!("Initialising recents");
-                library.get_recent_songs();
                 self.on_history_changed();
             }
         }

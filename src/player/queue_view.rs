@@ -418,11 +418,19 @@ impl QueueView {
             .sync_create()
             .build();
 
-        consume
-            .bind_property("active", player, "consume")
-            .bidirectional()
+        // Don't use bidirectional here or we'll fire once on UI init, erroneously resetting the state.
+        player
+            .bind_property("consume", &consume, "active")
             .sync_create()
             .build();
+
+        consume.connect_clicked(clone!(
+            #[weak]
+            player,
+            move |btn| {
+                player.set_consume(btn.is_active())
+            }
+        ));
 
         clear_queue_btn.connect_clicked(clone!(
             #[weak]
