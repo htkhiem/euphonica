@@ -53,8 +53,6 @@ mod imp {
         pub rating_readout: TemplateChild<gtk::Label>,
 
         #[template_child]
-        pub wiki_box: TemplateChild<gtk::ScrolledWindow>,
-        #[template_child]
         pub wiki_text: TemplateChild<gtk::Label>,
         #[template_child]
         pub wiki_link: TemplateChild<gtk::LinkButton>,
@@ -111,7 +109,6 @@ mod imp {
                 infobox_spinner: TemplateChild::default(),
                 infobox_revealer: TemplateChild::default(),
                 collapse_infobox: TemplateChild::default(),
-                wiki_box: TemplateChild::default(),
                 wiki_text: TemplateChild::default(),
                 wiki_link: TemplateChild::default(),
                 wiki_attrib: TemplateChild::default(),
@@ -386,7 +383,6 @@ impl AlbumContentView {
                     }
                     wiki_attrib.set_label(&wiki.attribution);
                 }
-                println!("infobox_spinner child: {}", infobox_spinner.visible_child_name().unwrap());
                 if infobox_spinner.visible_child_name().unwrap() != "content" {
                     infobox_spinner.set_visible_child_name("content");
                 }

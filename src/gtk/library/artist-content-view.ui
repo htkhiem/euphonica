@@ -54,21 +54,9 @@
                             <property name="size">128</property>>
                           </object>
                         </child>
+
                         <child>
-                          <object class="GtkStack" id="infobox_spinner">
-                            <child>
-                              <object class="GtkStackPage">
-                                <property name="name">spinner</property>
-                                <property name="child">
-                                  <object class="AdwSpinner"/>
-                                </property>
-                              </object>
-                            </child>
-                            <child>
-                              <object class="GtkStackPage">
-                                <property name="name">content</property>
-                                <property name="child">
-                                  <object class="GtkBox" id="infobox_text">
+                          <object class="GtkBox" id="infobox_text">
                             <property name="orientation">1</property>
                             <property name="spacing">6</property>
                             <property name="hexpand">true</property>
@@ -129,60 +117,74 @@
                                     </child>
                                   </object>
                                 </child>
-
                               </object>
                             </child>
                             <child>
-                              <object class="GtkScrolledWindow" id="bio_box">
-                                <property name="hscrollbar-policy">never</property>
-                                <property name="vexpand">true</property>
-                                <property name="child">
-                                  <object class="GtkBox">
-                                    <property name="orientation">1</property>
-                                    <property name="valign">start</property>
-                                    <child>
-                                      <object class="GtkLabel" id="bio_text">
-                                        <property name="halign">start</property>
-                                        <property name="margin-end">12</property>
-                                        <property name="wrap">true</property>
-                                        <property name="justify">fill</property>
-                                        <style>
-                                          <class name="caption"/>
-                                        </style>
+                              <object class="GtkStack" id="infobox_spinner">
+                                <child>
+                                  <object class="GtkStackPage">
+                                    <property name="name">spinner</property>
+                                    <property name="child">
+                                      <object class="AdwSpinner">
+                                        <property name="vexpand">true</property>
                                       </object>
-                                    </child>
-                                    <child>
-                                      <object class="GtkLinkButton" id="bio_link">
-                                        <style>
-                                          <class name="padding-0"/>
-                                        </style>
-                                        <property name="halign">start</property>
-                                        <child>
-                                          <object class="GtkLabel">
-                                            <style>
-                                              <class name="caption"/>
-                                            </style>
-                                            <property name="label" translatable="true">Read more</property>
-                                          </object>
-                                        </child>
-                                      </object>
-                                    </child>
-                                    <child>
-                                      <object class="GtkLabel" id="bio_attrib">
-                                        <property name="wrap">true</property>
-                                        <property name="halign">start</property>
-                                        <style>
-                                          <class name="caption"/>
-                                          <class name="dim-label"/>
-                                        </style>
-                                      </object>
-                                    </child>
+                                    </property>
                                   </object>
-                                </property>
-                              </object>
-                            </child>
-                          </object>
-                                </property>
+                                </child>
+                                <child>
+                                  <object class="GtkStackPage">
+                                    <property name="name">content</property>
+                                    <property name="child">
+                                      <object class="GtkScrolledWindow" id="bio_box">
+                                        <property name="hscrollbar-policy">never</property>
+                                        <property name="vexpand">true</property>
+                                        <property name="child">
+                                          <object class="GtkBox">
+                                            <property name="orientation">1</property>
+                                            <property name="valign">start</property>
+                                            <child>
+                                              <object class="GtkLabel" id="bio_text">
+                                                <property name="halign">start</property>
+                                                <property name="margin-end">12</property>
+                                                <property name="wrap">true</property>
+                                                <property name="justify">fill</property>
+                                                <style>
+                                                  <class name="caption"/>
+                                                </style>
+                                              </object>
+                                            </child>
+                                            <child>
+                                              <object class="GtkLinkButton" id="bio_link">
+                                                <style>
+                                                  <class name="padding-0"/>
+                                                </style>
+                                                <property name="halign">start</property>
+                                                <child>
+                                                  <object class="GtkLabel">
+                                                    <style>
+                                                      <class name="caption"/>
+                                                    </style>
+                                                    <property name="label" translatable="true">Read more</property>
+                                                  </object>
+                                                </child>
+                                              </object>
+                                            </child>
+                                            <child>
+                                              <object class="GtkLabel" id="bio_attrib">
+                                                <property name="wrap">true</property>
+                                                <property name="halign">start</property>
+                                                <style>
+                                                  <class name="caption"/>
+                                                  <class name="dim-label"/>
+                                                </style>
+                                              </object>
+                                            </child>
+                                          </object>
+                                        </property>
+                                      </object>
+                                    </property>
+                                  </object>
+                                </child>
                               </object>
                             </child>
                           </object>

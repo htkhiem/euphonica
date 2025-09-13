@@ -46,8 +46,6 @@ mod imp {
         pub collapse_infobox: TemplateChild<gtk::ToggleButton>,
 
         #[template_child]
-        pub bio_box: TemplateChild<gtk::ScrolledWindow>,
-        #[template_child]
         pub bio_text: TemplateChild<gtk::Label>,
         #[template_child]
         pub bio_link: TemplateChild<gtk::LinkButton>,
@@ -109,7 +107,6 @@ mod imp {
                 infobox_spinner: TemplateChild::default(),
                 infobox_revealer: TemplateChild::default(),
                 collapse_infobox: TemplateChild::default(),
-                bio_box: TemplateChild::default(),
                 bio_text: TemplateChild::default(),
                 bio_link: TemplateChild::default(),
                 bio_attrib: TemplateChild::default(),
@@ -340,13 +337,11 @@ impl Default for ArtistContentView {
 
 impl ArtistContentView {
     fn update_meta(&self, artist: &Artist) {
-        let bio_box = self.imp().bio_box.get();
         let stack = self.imp().infobox_spinner.get();
         // If the current album is the "untitled" one (i.e. for songs without an album tag),
         // don't attempt to update metadata.
         let cache = self.imp().cache.get().unwrap().clone();
         if artist.get_name().is_empty() {
-            bio_box.set_visible(false);
             if stack.visible_child_name().unwrap() != "content" {
                 stack.set_visible_child_name("content");
             }
@@ -356,7 +351,6 @@ impl ArtistContentView {
             let bio_attrib = self.imp().bio_attrib.get();
             if let Some(meta) = cache.load_cached_artist_meta(artist.get_info()) {
                 if let Some(bio) = meta.bio {
-                    bio_box.set_visible(true);
                     bio_text.set_label(&bio.content);
                     if let Some(url) = bio.url.as_ref() {
                         bio_link.set_visible(true);
@@ -365,14 +359,10 @@ impl ArtistContentView {
                         bio_link.set_visible(false);
                     }
                     bio_attrib.set_label(&bio.attribution);
-                } else {
-                    bio_box.set_visible(false);
                 }
                 if stack.visible_child_name().unwrap() != "content" {
                     stack.set_visible_child_name("content");
                 }
-            } else {
-                bio_box.set_visible(false);
             }
         }
     }
@@ -741,7 +731,6 @@ impl ArtistContentView {
             }
         }
         // Unset metadata widgets
-        self.imp().bio_box.set_visible(false);
         self.imp().avatar.set_text(None);
         self.clear_content();
         duplicate!{
