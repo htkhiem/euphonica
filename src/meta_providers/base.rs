@@ -1,7 +1,7 @@
 extern crate bson;
 use gtk::{prelude::*, gdk};
 use std::{thread, time::Duration};
-
+use reqwest::blocking::Client;
 use crate::{common::{AlbumInfo, ArtistInfo, SongInfo}, utils::settings_manager};
 
 use super::models;
@@ -41,25 +41,37 @@ pub enum ProviderMessage {
 /// Common provider-agnostic utilities.
 pub mod utils {
     use super::*;
-    use crate::utils;
+    use crate::{config::APPLICATION_USER_AGENT, utils};
     use image::DynamicImage;
+    use reqwest::header::USER_AGENT;
 
     /// Get a file from the given URL as bytes. Useful for downloading images.
     fn get_file(url: &str) -> Option<Vec<u8>> {
-        let response = reqwest::blocking::get(url);
+        let client = Client::default();
         // This empty check comes in handy for certain metadata providers who, instead of
         // skipping the URL fields, opt to return an empty string instead.
         if !url.is_empty() {
-            if let Ok(res) = response {
-                if let Ok(bytes) = res.bytes() {
-                    return Some(bytes.to_vec());
-                } else {
-                    println!("get_file: Failed to read response as bytes!");
-                    return None;
+            match client
+                .get(url)
+                .header(USER_AGENT, APPLICATION_USER_AGENT)
+                .send()
+            {
+                Ok(res) => {
+                    if let Ok(bytes) = res.bytes() {
+                        if let Ok(s) = str::from_utf8(&bytes) {
+                            println!("Received UTF8 instead: {}", s);
+                        }
+                        Some(bytes.to_vec())
+                    } else {
+                        println!("get_file: Failed to read response as bytes!");
+                        None
+                    }
+                },
+                Err(e) => {
+                    println!("get_file: {:?}", e);
+                    None
                 }
             }
-            println!("get_file: {:?}", response.err());
-            None
         } else {
             None
         }
@@ -75,9 +87,9 @@ pub mod utils {
             ));
         }
         images.sort_by_key(|img| img.size);
-        for image in images.iter().rev() {
-            if let Some(bytes) = get_file(image.url.as_ref()) {
-                println!("Downloaded image from: {:?}", &image.url);
+        for image_meta in images.iter().rev() {
+            if let Some(bytes) = get_file(image_meta.url.as_ref()) {
+                println!("Downloaded image from: {:?}", &image_meta.url);
                 if let Some(image) = utils::read_image_from_bytes(bytes) {
                     return Ok(image);
                 }
