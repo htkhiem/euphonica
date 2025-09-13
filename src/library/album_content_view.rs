@@ -363,12 +363,10 @@ impl AlbumContentView {
     }
 
     fn update_meta(&self, album: &Album) {
-        let wiki_box = self.imp().wiki_box.get();
         let infobox_spinner = self.imp().infobox_spinner.get();
         // If the current album is the "untitled" one (i.e. for songs without an album tag),
         // don't attempt to update metadata.
         if album.get_title().is_empty() {
-            wiki_box.set_visible(false);
             if infobox_spinner.visible_child_name().unwrap() != "content" {
                 infobox_spinner.set_visible_child_name("content");
             }
@@ -379,7 +377,6 @@ impl AlbumContentView {
             let wiki_attrib = self.imp().wiki_attrib.get();
             if let Some(meta) = cache.load_cached_album_meta(album.get_info()) {
                 if let Some(wiki) = meta.wiki {
-                    wiki_box.set_visible(true);
                     wiki_text.set_label(&wiki.content);
                     if let Some(url) = wiki.url.as_ref() {
                         wiki_link.set_visible(true);
@@ -388,14 +385,11 @@ impl AlbumContentView {
                         wiki_link.set_visible(false);
                     }
                     wiki_attrib.set_label(&wiki.attribution);
-                } else {
-                    wiki_box.set_visible(false);
                 }
+                println!("infobox_spinner child: {}", infobox_spinner.visible_child_name().unwrap());
                 if infobox_spinner.visible_child_name().unwrap() != "content" {
                     infobox_spinner.set_visible_child_name("content");
                 }
-            } else {
-                wiki_box.set_visible(false);
             }
         }
     }
@@ -815,7 +809,6 @@ impl AlbumContentView {
 
         
         // Unset metadata widgets
-        self.imp().wiki_box.set_visible(false);
         self.imp().song_list.remove_all();
         let content_spinner = self.imp().content_spinner.get();
         if content_spinner.visible_child_name().unwrap() != "spinner" {
