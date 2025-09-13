@@ -16,13 +16,15 @@ use super::{artists_to_string, parse_mb_artist_tag, ArtistInfo, QualityGrade, So
 pub struct AlbumInfo {
     // TODO: Might want to refactor to Into<Cow<'a, str>>
     pub title: String,
+    pub albumsort: Option<String>,
     // Example track-level URI, acquired from the first song found with this album's tag.
     // This facilitates falling back to embedded covers in case there's no cover file in the folder.
     pub example_uri: String,
     // The above but with filename removed, for looking up folder-level covers.
     pub folder_uri: String,
     pub artists: Vec<ArtistInfo>, // parse from AlbumArtist tag please, not Artist.
-    pub artist_tag: Option<String>,
+    pub albumartist: Option<String>,
+    pub albumartistsort: Option<String>,
     pub cover: Option<Texture>,
     pub release_date: Option<Date>,
     pub quality_grade: QualityGrade,
@@ -33,15 +35,19 @@ impl AlbumInfo {
     pub fn new(
         example_uri: &str,
         title: &str,
+        albumsort: Option<&str>,
         artist_tag: Option<&str>,
+        albumartistsort: Option<&str>,
         artists: Vec<ArtistInfo>,
         quality_grade: QualityGrade
     ) -> Self {
         Self {
             example_uri: example_uri.to_owned(),
             folder_uri: strip_filename_linux(example_uri).to_owned(),
+            albumsort: albumsort.map(|s| s.to_owned()),
             artists,
-            artist_tag: artist_tag.map(str::to_owned),
+            albumartist: artist_tag.map(str::to_owned),
+            albumartistsort: albumartistsort.map(str::to_owned),
             title: title.to_owned(),
             cover: None,
             release_date: None,
@@ -52,17 +58,17 @@ impl AlbumInfo {
 
     /// Add artists from more artist tags, separated from existing ones by simple commas.
     pub fn add_artists_from_string(&mut self, tag: &str) {
-        if let Some(existing_tag) = &mut self.artist_tag {
+        if let Some(existing_tag) = &mut self.albumartist {
             existing_tag.push_str(", ");
             existing_tag.push_str(tag);
         }
         else {
-            self.artist_tag = Some(tag.to_owned());
+            self.albumartist = Some(tag.to_owned());
         }
 
         let mut new_artists: Vec<ArtistInfo> = parse_mb_artist_tag(tag)
             .iter()
-            .map(|s| ArtistInfo::new(s, false))
+            .map(|s| ArtistInfo::new(s, None, false))
             .collect();
 
         self.artists.append(&mut new_artists);
@@ -73,7 +79,7 @@ impl AlbumInfo {
     }
 
     pub fn get_artist_tag(&self) -> Option<&str> {
-        self.artist_tag.as_deref()
+        self.albumartist.as_deref()
     }
 }
 
@@ -81,10 +87,12 @@ impl Default for AlbumInfo {
     fn default() -> Self {
         AlbumInfo {
             title: "".to_owned(),
+            albumsort: None,
             example_uri: "".to_owned(),
             folder_uri: "".to_owned(),
             artists: Vec::with_capacity(0),
-            artist_tag: None,
+            albumartist: None,
+            albumartistsort: None,
             cover: None,
             release_date: None,
             quality_grade: QualityGrade::Unknown,
@@ -141,6 +149,7 @@ mod imp {
                 vec![
                     ParamSpecString::builder("uri").read_only().build(),
                     ParamSpecString::builder("title").read_only().build(),
+                    ParamSpecString::builder("sortable-title").read_only().build(),
                     ParamSpecString::builder("artist").read_only().build(),
                     ParamSpecChar::builder("rating").build(),
                     ParamSpecObject::builder::<glib::BoxedAnyObject>("release-date")
@@ -159,6 +168,7 @@ mod imp {
             match pspec.name() {
                 "uri" => obj.get_folder_uri().to_value(),
                 "title" => obj.get_title().to_value(),
+                "sortable-title" => obj.get_sortable_title().to_value(),
                 "artist" => obj.get_artist_str().to_value(),
                 "rating" => obj.get_rating().unwrap_or(-1).to_value(),
                 "release-date" => glib::BoxedAnyObject::new(obj.get_release_date()).to_value(),
@@ -212,6 +222,11 @@ impl Album {
         &self.get_info().title
     }
 
+    pub fn get_sortable_title(&self) -> &str {
+        let info = self.get_info();
+        info.albumsort.as_deref().unwrap_or(info.title.as_str())
+    }
+
     pub fn get_artists(&self) -> &[ArtistInfo] {
         &self.get_info().artists
     }
@@ -225,7 +240,19 @@ impl Album {
 
     /// Get the original albumartist tag before any parsing.
     pub fn get_artist_tag(&self) -> Option<&str> {
-        self.get_info().artist_tag.as_deref()
+        self.get_info().albumartist.as_deref()
+    }
+
+    /// Get the original ALBUMARTISTSORT tag.
+    pub fn get_sortable_artist_tag(&self) -> Option<&str> {
+        let info = self.get_info();
+        if let Some(albumartistsort) = info.albumartistsort.as_deref() {
+            Some(albumartistsort)
+        } else if let Some(albumartist) = info.albumartist.as_deref() {
+            Some(albumartist)
+        } else {
+            None
+        }
     }
 
     pub fn get_mbid(&self) -> Option<&str> {

@@ -176,7 +176,7 @@ impl Cache {
                                 providers,
                                 move || {
                                     // Check whether there is one already
-                                    if key.mbid.is_some() || key.artist_tag.is_some() {
+                                    if key.mbid.is_some() || key.albumartist.is_some() {
                                         let folder_uri = key.folder_uri.to_owned();
                                         if overwrite || sqlite::find_album_meta(&key).ok().flatten().is_none() {
                                             let res = providers.read().unwrap().get_album_meta(&mut key, None);

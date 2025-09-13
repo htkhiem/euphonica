@@ -10,14 +10,16 @@ use std::cell::OnceCell;
 pub struct ArtistInfo {
     // TODO: Might want to refactor to Into<Cow<'a, str>>
     pub name: String,
+    pub sort_tag: Option<String>,
     pub mbid: Option<String>,
     pub is_composer: bool,
 }
 
 impl ArtistInfo {
-    pub fn new(name: &str, is_composer: bool) -> Self {
+    pub fn new(name: &str, sort_tag: Option<&str>, is_composer: bool) -> Self {
         Self {
             name: name.to_owned(),
+            sort_tag: sort_tag.map(|s| s.to_owned()),
             mbid: None,
             is_composer,
         }
@@ -28,6 +30,7 @@ impl Default for ArtistInfo {
     fn default() -> Self {
         ArtistInfo {
             name: "Untitled Artist".to_owned(),
+            sort_tag: None,
             mbid: None,
             is_composer: false,
         }
@@ -152,7 +155,10 @@ mod imp {
     impl ObjectImpl for Artist {
         fn properties() -> &'static [ParamSpec] {
             static PROPERTIES: Lazy<Vec<ParamSpec>> =
-                Lazy::new(|| vec![ParamSpecString::builder("name").read_only().build()]);
+                Lazy::new(|| vec![
+                    ParamSpecString::builder("name").read_only().build(),
+                    ParamSpecString::builder("sortable-name").read_only().build()
+                ]);
             PROPERTIES.as_ref()
         }
 
@@ -160,6 +166,7 @@ mod imp {
             let obj = self.obj();
             match pspec.name() {
                 "name" => obj.get_name().to_value(),
+                "sortable-name" => obj.get_sortable_name().to_value(),
                 _ => unimplemented!(),
             }
         }
@@ -177,6 +184,11 @@ impl Artist {
 
     pub fn get_name(&self) -> &str {
         &self.get_info().name
+    }
+
+    pub fn get_sortable_name(&self) -> &str {
+        let info = self.get_info();
+        info.sort_tag.as_deref().unwrap_or(info.name.as_str())
     }
 
     pub fn get_mbid(&self) -> Option<&str> {

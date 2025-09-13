@@ -247,8 +247,8 @@ impl ArtistView {
                 let nulls_first = library_settings.boolean("sort-nulls-first");
 
                 g_cmp_str_options(
-                    Some(artist1.get_name()),
-                    Some(artist2.get_name()),
+                    Some(artist1.get_sortable_name()),
+                    Some(artist2.get_sortable_name()),
                     nulls_first,
                     asc,
                     case_sensitive,

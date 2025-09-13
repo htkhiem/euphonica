@@ -281,8 +281,8 @@ impl AlbumView {
                     3 => {
                         // Album title
                         g_cmp_str_options(
-                            Some(album1.get_title()),
-                            Some(album2.get_title()),
+                            Some(album1.get_sortable_title()),
+                            Some(album2.get_sortable_title()),
                             nulls_first,
                             asc,
                             case_sensitive,
@@ -291,8 +291,8 @@ impl AlbumView {
                     4 => {
                         // AlbumArtist
                         g_cmp_str_options(
-                            album1.get_artist_str().as_deref(),
-                            album2.get_artist_str().as_deref(),
+                            album1.get_sortable_artist_tag().as_deref(),
+                            album2.get_sortable_artist_tag().as_deref(),
                             nulls_first,
                             asc,
                             case_sensitive,

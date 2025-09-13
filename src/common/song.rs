@@ -458,7 +458,7 @@ impl From<mpd::song::Song> for SongInfo {
             // TODO: Find a way to detect classical works
             artists = parse_mb_artist_tag(artist_str)
                 .iter()
-                .map(|s| ArtistInfo::new(s, false))
+                .map(|s| ArtistInfo::new(s, None, false))
                 .collect();
         } else {
             artists = Vec::with_capacity(0);
@@ -509,8 +509,11 @@ impl From<mpd::song::Song> for SongInfo {
                 res.quality_grade = QualityGrade::DSD;
             }
         }
+        let mut albumsort: Option<String> = None;
         let mut artist_mbids: Vec<String> = Vec::new();
+        let mut artistsorts: Vec<String> = Vec::new();
         let mut album_artist_strs: Vec<String> = Vec::new();
+        let mut albumartistsort: Option<String> = None;
         let mut album_artist_mbids: Vec<String> = Vec::new();
         let mut album_mbid: Option<String> = None;
         for (tag, val) in song.tags.into_iter() {
@@ -521,6 +524,8 @@ impl From<mpd::song::Song> for SongInfo {
                             &res.uri,
                             &val,
                             None,
+                            None,
+                            None,
                             Vec::with_capacity(0),
                             res.quality_grade.clone(),
                         ));
@@ -528,8 +533,17 @@ impl From<mpd::song::Song> for SongInfo {
                         println!("[WARNING] Multiple Album tags found. Only keeping the first one.");
                     }
                 }
+                "albumsort" => {
+                    albumsort = Some(val);
+                }
                 "albumartist" => {
                     album_artist_strs.push(val);
+                }
+                "artistsort" => {
+                    artistsorts.push(val);
+                }
+                "albumartistsort" => {
+                    albumartistsort = Some(val);
                 }
                 // "date" => res.imp().release_date.replace(Some(val.clone())),
                 "format" => {
@@ -588,15 +602,23 @@ impl From<mpd::song::Song> for SongInfo {
             }
         }
 
-        // Assume the artist IDs are given in the same order as the artist tags
+        // Assume the artist IDs and artistsort tags are given in the same order as the artist tags
         for (idx, id) in artist_mbids.drain(..).enumerate() {
             if idx < res.artists.len() {
                 let _ = res.artists[idx].mbid.replace(id);
             }
         }
 
+        for (idx, tag) in artistsorts.drain(..).enumerate() {
+            if idx < res.artists.len() {
+                let _ = res.artists[idx].sort_tag.replace(tag);
+            }
+        }
+
         if let Some(album) = res.album.as_mut() {
             album.mbid = album_mbid;
+            album.albumsort = albumsort;
+            album.albumartistsort = albumartistsort;
             album.release_date = res.release_date.clone();
             // Assume the albumartist IDs are given in the same order as the albumartist tags
             for album_artist_str in album_artist_strs.iter() {
