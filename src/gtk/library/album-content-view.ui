@@ -394,6 +394,10 @@
           <attribute name="label" translatable="true">Clear album art</attribute>
           <attribute name="action">album-content-view.clear-album-art</attribute>
         </item>
+        <item>
+          <attribute name="label" translatable="true">Re-fetch metadata</attribute>
+          <attribute name="action">album-content-view.refetch-metadata</attribute>
+        </item>
       </section>
     </menu>
     <menu id="queue_menu_model">

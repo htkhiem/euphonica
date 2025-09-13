@@ -454,6 +454,10 @@
         <attribute name="label" translatable="true">Clear avatar</attribute>
         <attribute name="action">artist-content-view.clear-avatar</attribute>
       </item>
+      <item>
+        <attribute name="label" translatable="true">Re-fetch metadata</attribute>
+        <attribute name="action">artist-content-view.refetch-metadata</attribute>
+      </item>
     </menu>
   </template>
 </interface>

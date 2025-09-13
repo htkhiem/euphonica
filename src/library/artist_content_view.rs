@@ -281,11 +281,32 @@ mod imp {
                 ))
                 .build();
 
+            let action_refetch_metadata = ActionEntry::builder("refetch-metadata")
+                .activate(clone!(
+                    #[strong]
+                    obj,
+                    move |_, _, _| {
+                        if let (Some(artist), Some(library)) = (
+                            obj.imp().artist.borrow().as_ref(),
+                            obj.imp().library.get()
+                        ) {
+                            let spinner = obj.imp().infobox_spinner.get();
+                            if spinner.visible_child_name().unwrap() != "spinner" {
+                                spinner.set_visible_child_name("spinner");
+                            }
+                            library.clear_artist_avatar(artist.get_name());
+                            library.refetch_artist_metadata(&artist);
+                        }
+                    }
+                ))
+                .build();
+
             // Create a new action group and add actions to it
             let actions = SimpleActionGroup::new();
             actions.add_action_entries([
                 action_set_avatar,
-                action_clear_avatar
+                action_clear_avatar,
+                action_refetch_metadata
             ]);
             self.obj().insert_action_group("artist-content-view", Some(&actions));
         }

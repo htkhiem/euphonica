@@ -78,6 +78,16 @@
   </screenshots>
 
   <releases>
+    <release version="0.97.1-beta" date="2025-09-14">
+      <url type="details">https://github.com/htkhiem/euphonica/releases/tag/v0.97.1-beta</url>
+      <description>
+        <p>New: Option to re-fetch metadata. Will also re-attempt artist avatar fetching.</p>
+        <p>Refactor: Basic album/artist info is now shown early instead of being hidden until external wiki loads.</p>
+        <p>Fix: Repeated inits causing duplicate albums and artists after exiting background mode.</p>
+        <p>Fix: Album wiki text and artist avatars not loading.</p>
+        <p>Fix: Consume mode resetting on new window opens.</p>
+      </description>
+    </release>
     <release version="0.97.0-beta" date="2025-09-07">
       <url type="details">https://github.com/htkhiem/euphonica/releases/tag/v0.97.0-beta</url>
       <description>

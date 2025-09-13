@@ -253,15 +253,20 @@ impl Library {
 
     /// Get all the information available about an album & its contents (won't block;
     /// UI will get notified of result later if one does arrive late).
-    /// TODO: implement provider daisy-chaining on the cache side
     pub fn init_album(&self, album: &Album) {
         if let Some(cache) = self.imp().cache.get() {
-            cache.ensure_cached_album_meta(album.get_info());
+            cache.fetch_album_meta(album.get_info(), false);
         }
         self.client()
             .queue_background(BackgroundTask::FetchAlbumSongs(
                 album.get_title().to_owned(),
             ), true);
+    }
+
+    pub fn refetch_album_metadata(&self, album: &Album) {
+        if let Some(cache) = self.imp().cache.get() {
+            cache.fetch_album_meta(album.get_info(), true);
+        }
     }
 
     /// Queue specific songs
@@ -346,13 +351,18 @@ impl Library {
 
     /// Get all the information available about an artist (won't block;
     /// UI will get notified of result later via signals).
-    /// TODO: implement provider daisy-chaining on the cache side
     pub fn init_artist(&self, artist: &Artist) {
         if let Some(cache) = self.imp().cache.get() {
-            cache.ensure_cached_artist_meta(artist.get_info());
+            cache.fetch_artist_meta(artist.get_info(), false);
         }
         self.client()
             .get_artist_content(artist.get_name().to_owned());
+    }
+
+    pub fn refetch_artist_metadata(&self, artist: &Artist) {
+        if let Some(cache) = self.imp().cache.get() {
+            cache.fetch_artist_meta(artist.get_info(), true);
+        }
     }
 
     pub fn folder_inodes(&self) -> gio::ListStore {

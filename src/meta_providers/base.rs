@@ -25,14 +25,14 @@ pub enum ProviderMessage {
     FallbackToFolderCover(AlbumInfo),
     FallbackToEmbeddedCover(AlbumInfo),
     FetchFolderCoverExternally(AlbumInfo), // Pass through the fallback parameter
-    AlbumMeta(AlbumInfo),
+    AlbumMeta(AlbumInfo, bool), // if true, skip check (for overwriting)
     AlbumMetaAvailable(String), // Only return URI
     ArtistAvatarCleared(String), // Only need name
     /// Both request and positive response
     ArtistAvatar(ArtistInfo), // With cache basepath
     ArtistAvatarAvailable(String, bool, gdk::Texture), // Name, is_thumbnail, the texture itself
     /// Both request and positive response. Includes downloading artist avatar.
-    ArtistMeta(ArtistInfo), // With cache basepath (for passthrough to artist avatar)
+    ArtistMeta(ArtistInfo, bool), // If bool is true, skip check (for overwriting)
     ArtistMetaAvailable(String), // Only return name
     Lyrics(SongInfo),
     LyricsAvailable(String) // Only return full URI

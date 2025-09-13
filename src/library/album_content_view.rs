@@ -269,6 +269,26 @@ mod imp {
                 ))
                 .build();
 
+            let action_refetch_metadata = ActionEntry::builder("refetch-metadata")
+                .activate(clone!(
+                    #[strong]
+                    obj,
+                    move |_, _, _| {
+                        if let (Some(album), Some(library)) = (
+                            obj.imp().album.borrow().as_ref(),
+                            obj.imp().library.get()
+                        ) {
+                            let spinner = obj.imp().infobox_spinner.get();
+                            if spinner.visible_child_name().unwrap() != "spinner" {
+                                spinner.set_visible_child_name("spinner");
+                            }
+                            library.clear_cover(album.get_folder_uri());
+                            library.refetch_album_metadata(&album);
+                        }
+                    }
+                ))
+                .build();
+
             let action_insert_queue = ActionEntry::builder("insert-queue")
                 .activate(clone!(
                     #[strong]
@@ -306,6 +326,7 @@ mod imp {
             actions.add_action_entries([
                 action_clear_rating,
                 action_set_album_art,
+                action_refetch_metadata,
                 action_clear_album_art,
                 action_insert_queue,
             ]);

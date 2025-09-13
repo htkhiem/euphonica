@@ -168,7 +168,7 @@ impl Cache {
 
                 while let Some(request) = receiver.next().await {
                     match request {
-                        ProviderMessage::AlbumMeta(mut key) => {
+                        ProviderMessage::AlbumMeta(mut key, overwrite) => {
                             let _ = gio::spawn_blocking(clone!(
                                 #[strong]
                                 fg_sender,
@@ -178,8 +178,7 @@ impl Cache {
                                     // Check whether there is one already
                                     if key.mbid.is_some() || key.artist_tag.is_some() {
                                         let folder_uri = key.folder_uri.to_owned();
-                                        let existing = sqlite::find_album_meta(&key);
-                                        if let Ok(None) = existing {
+                                        if overwrite || sqlite::find_album_meta(&key).ok().flatten().is_none() {
                                             let res = providers.read().unwrap().get_album_meta(&mut key, None);
                                             if let Some(album) = res {
                                                 let _ = sqlite::write_album_meta(&key, &album);
@@ -196,7 +195,7 @@ impl Cache {
                                 }
                             )).await;
                         },
-                        ProviderMessage::ArtistMeta(mut key) => {
+                        ProviderMessage::ArtistMeta(mut key, overwrite) => {
                             let _ = gio::spawn_blocking(clone!(
                                 #[strong]
                                 fg_sender,
@@ -204,8 +203,7 @@ impl Cache {
                                 providers,
                                 move || {
                                     // Check whether there is one already
-                                    let existing = sqlite::find_artist_meta(&key);
-                                    if let Ok(None) = existing {
+                                    if overwrite || sqlite::find_artist_meta(&key).ok().flatten().is_none() {
                                         // Guaranteed to have this field so just unwrap it
                                         let name = key.name.to_owned();
                                         let res = providers.read().unwrap().get_artist_meta(&mut key, None);
@@ -340,7 +338,7 @@ impl Cache {
                             &album.folder_uri
                         );
                         // Fill out metadata before attempting to fetch album art from external sources.
-                        let _ = this.bg_sender.send_blocking(ProviderMessage::AlbumMeta(album.clone()));
+                        let _ = this.bg_sender.send_blocking(ProviderMessage::AlbumMeta(album.clone(), false));
                         let _ = this.bg_sender.send_blocking(ProviderMessage::FolderCover(album));
                     }
                     ProviderMessage::ArtistAvatarAvailable(name, thumb, tex) => {
@@ -822,17 +820,12 @@ impl Cache {
         return None;
     }
 
-    pub fn ensure_cached_album_meta(&self, album: &AlbumInfo) {
+    pub fn fetch_album_meta(&self, album: &AlbumInfo, overwrite: bool) {
         // Check whether we have this album cached
-        let result = sqlite::find_album_meta(album);
-        if let Ok(response) = result {
-            if response.is_none() {
-                self.bg_sender
-                    .send_blocking(ProviderMessage::AlbumMeta(album.clone()))
-                    .expect("[Cache] Unable to schedule album meta fetch task");
-            }
-        } else {
-            println!("{:?}", result.err());
+        if overwrite || sqlite::find_album_meta(album).ok().flatten().is_none() {
+            self.bg_sender
+                .send_blocking(ProviderMessage::AlbumMeta(album.clone(), overwrite))
+                .expect("[Cache] Unable to schedule album meta fetch task");
         }
     }
 
@@ -848,15 +841,11 @@ impl Cache {
         return None;
     }
 
-    pub fn ensure_cached_artist_meta(&self, artist: &ArtistInfo) {
+    pub fn fetch_artist_meta(&self, artist: &ArtistInfo, overwrite: bool) {
         // Check whether we have this artist cached
-        let result = sqlite::find_artist_meta(artist);
-        if let Ok(response) = result {
-            if response.is_none() {
-                let _ = self.bg_sender.send_blocking(ProviderMessage::ArtistMeta(artist.clone()));
-            }
-        } else {
-            println!("{:?}", result.err());
+        if overwrite || sqlite::find_artist_meta(artist).ok().flatten().is_none() {
+            self.bg_sender.send_blocking(ProviderMessage::ArtistMeta(artist.clone(), overwrite))
+                .expect("[Cache] Unable to schedule artist meta fetch task");
         }
     }
 
