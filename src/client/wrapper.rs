@@ -469,11 +469,19 @@ mod background {
         sender_to_fg: &Sender<AsyncClientMessage>
     ) {
         let settings = utils::settings_manager().child("library");
-        let recent_titles = sqlite::get_last_n_albums(settings.uint("n-recent-albums")).expect("Sqlite DB error");
-        for title in recent_titles {
+        let recent_albums = sqlite::get_last_n_albums(settings.uint("n-recent-albums")).expect("Sqlite DB error");
+        for tup in recent_albums.into_iter() {
+            let mut query = Query::new();
+            query.and(Term::Tag(Cow::Borrowed("album")), tup.0);
+            if let Some(artist) = tup.1 {
+                query.and(Term::Tag(Cow::Borrowed("albumartist")), artist);
+            }
+            if let Some(mbid) = tup.2 {
+                query.and(Term::Tag(Cow::Borrowed("musicbrainz_albumid")), mbid);
+            }
             match fetch_albums_by_query(
                 client,
-                &Query::new().and(Term::Tag(Cow::Borrowed("album")), title),
+                &query,
                 |info| {
                     sender_to_fg.send_blocking(AsyncClientMessage::RecentAlbumDownloaded(info))
                 }) {

@@ -37,7 +37,13 @@ static SQLITE_POOL: Lazy<r2d2::Pool<SqliteConnectionManager>> = Lazy::new(|| {
 
         println!("Local metadata DB version: {user_version}");
         match user_version {
-            2 => {break;},
+            3 => {break;},
+            2 => {
+                conn.execute_batch("alter table albums_history add column mbid varchar null;
+alter table albums_history add column artist varchar null;
+pragma user_version = 3;
+").expect("Unable to migrate DB version 2 to 3");
+            },
             1 => {
                 conn.execute_batch("pragma journal_mode=WAL;
 pragma user_version = 2;"
@@ -182,6 +188,8 @@ create index if not exists `artists_history_last` on `artists_history` (`name`, 
 create table if not exists `albums_history` (
     `id` INTEGER not null,
     `title` VARCHAR not null,
+    `mbid` VARCHAR null,
+    `artist` VARCHAR null,
     `timestamp` DATETIME not null,
     primary key(`id`)
 );
@@ -200,7 +208,7 @@ create unique index if not exists `image_key` on `images` (
 );
 
 pragma journal_mode=WAL;
-pragma user_version = 2;
+pragma user_version = 3;
 end;
 ").expect("Unable to init metadata SQLite DB");
                     }
@@ -641,8 +649,8 @@ pub fn add_to_history(song: &SongInfo) -> Result<(), Error> {
     .map_err(|e| Error::DbError(e))?;
     if let Some(album) = song.album.as_ref() {
         tx.execute(
-            "insert into albums_history (title, timestamp) values (?1, ?2)",
-            params![&album.title, &ts],
+            "insert into albums_history (title, mbid, artist, timestamp) values (?1, ?2, ?3, ?4)",
+            params![&album.title, album.mbid.as_ref(), album.albumartist.as_ref(), &ts],
         )
         .map_err(|e| Error::DbError(e))?;
     }
@@ -676,19 +684,23 @@ group by uri order by last_played desc limit ?1",
     return Ok(res.collect());
 }
 
-/// Get titles of up to N last listened to albums.
-pub fn get_last_n_albums(n: u32) -> Result<Vec<String>, Error> {
+/// Get (title, artist, mbid)s of up to N last listened to albums.
+pub fn get_last_n_albums(n: u32) -> Result<Vec<(String, Option<String>, Option<String>)>, Error> {
     let conn = SQLITE_POOL.get().unwrap();
     let mut query = conn
         .prepare(
             "
-select title, max(timestamp) as last_played
+select title, artist, mbid, max(timestamp) as last_played
 from albums_history
 group by title order by last_played desc limit ?1",
         )
         .unwrap();
     let res = query
-        .query_map(params![n], |r| Ok(r.get::<usize, String>(0)?))
+        .query_map(params![n], |r| Ok((
+            r.get::<usize, String>(0)?,
+            r.get::<usize, Option<String>>(1)?,
+            r.get::<usize, Option<String>>(2)?)
+        ))
         .map_err(|e| Error::DbError(e))?
         .map(|r| r.unwrap());
 
