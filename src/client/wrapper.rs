@@ -382,20 +382,27 @@ mod background {
         F: Fn(AlbumInfo) -> Result<(), SendError<AsyncClientMessage>>,
     {
         // TODO: batched windowed retrieval
-        // Get list of unique album tags
+        // Get list of unique album tags, grouped by albumartist
         // Will block child thread until info for all albums have been retrieved.
-        match client.list(&Term::Tag(Cow::Borrowed("album")), query) {
-            Ok(tag_list) => {
-                for tag in &tag_list {
-                    if let Ok(mut songs) = client.find(
-                        Query::new().and(Term::Tag(Cow::Borrowed("album")), tag),
-                        Window::from((0, 1)),
-                    ) {
-                        if !songs.is_empty() {
-                            let info = SongInfo::from(std::mem::take(&mut songs[0]))
-                                .into_album_info()
-                                .unwrap_or_default();
-                            let _ = respond(info);
+        match client.list(&Term::Tag(Cow::Borrowed("album")), query, Some("albumartist")) {
+            Ok(grouped_vals) => {
+                for (key, tags) in grouped_vals.groups.into_iter() {
+                    for tag in tags.iter() {
+                        match client.find(
+                            Query::new().and(Term::Tag(Cow::Borrowed("album")), tag).and(Term::Tag(Cow::Borrowed("albumartist")), &key),
+                            Window::from((0, 1)),
+                        ) {
+                            Ok(mut songs) => {
+                                if !songs.is_empty() {
+                                    let info = SongInfo::from(std::mem::take(&mut songs[0]))
+                                        .into_album_info()
+                                        .unwrap_or_default();
+                                    let _ = respond(info);
+                                }
+                            }
+                            Err(e) => {
+                                dbg!(e);
+                            }
                         }
                     }
                 }
@@ -405,7 +412,8 @@ mod background {
                 // Connection error => attempt to reconnect
                 Err(true)
             }
-            Err(_) => {
+            Err(e) => {
+                dbg!(e);
                 Err(false)
             }
         }
@@ -444,6 +452,7 @@ mod background {
         Ok(())
     }
 
+    /// Fetch all albums, using AlbumArtist to further disambiguate same-named ones.
     pub fn fetch_all_albums(client: &mut mpd::Client<StreamWrapper>, sender_to_fg: &Sender<AsyncClientMessage>) {
         match fetch_albums_by_query(client, &Query::new(), |info| {
             sender_to_fg.send_blocking(AsyncClientMessage::AlbumBasicInfoDownloaded(info))
@@ -539,10 +548,10 @@ mod background {
             "artist"
         };
         let mut already_parsed: FxHashSet<String> = FxHashSet::default();
-        match client.list(&Term::Tag(Cow::Borrowed(tag_type)), &Query::new()) {
-            Ok(tag_list) => {
+        match client.list(&Term::Tag(Cow::Borrowed(tag_type)), &Query::new(), None) {
+            Ok(grouped_vals) => {
                 // TODO: Limit tags to only what we need locally
-                for tag in &tag_list {
+                for tag in &grouped_vals.groups[0].1 {
                     if let Ok(mut songs) = client.find(
                         Query::new().and(Term::Tag(Cow::Borrowed(tag_type)), tag),
                         Window::from((0, 1)),

@@ -512,7 +512,7 @@ impl From<mpd::song::Song> for SongInfo {
         let mut albumsort: Option<String> = None;
         let mut artist_mbids: Vec<String> = Vec::new();
         let mut artistsorts: Vec<String> = Vec::new();
-        let mut album_artist_strs: Vec<String> = Vec::new();
+        let mut albumartist: Option<String> = None;
         let mut albumartistsort: Option<String> = None;
         let mut album_artist_mbids: Vec<String> = Vec::new();
         let mut album_mbid: Option<String> = None;
@@ -534,16 +534,16 @@ impl From<mpd::song::Song> for SongInfo {
                     }
                 }
                 "albumsort" => {
-                    albumsort = Some(val);
+                    albumsort.replace(val);
                 }
                 "albumartist" => {
-                    album_artist_strs.push(val);
+                    albumartist.replace(val);
                 }
                 "artistsort" => {
                     artistsorts.push(val);
                 }
                 "albumartistsort" => {
-                    albumartistsort = Some(val);
+                    albumartistsort.replace(val);
                 }
                 // "date" => res.imp().release_date.replace(Some(val.clone())),
                 "format" => {
@@ -621,9 +621,10 @@ impl From<mpd::song::Song> for SongInfo {
             album.albumartistsort = albumartistsort;
             album.release_date = res.release_date.clone();
             // Assume the albumartist IDs are given in the same order as the albumartist tags
-            for album_artist_str in album_artist_strs.iter() {
+            if let Some(album_artist_str) = albumartist.as_ref() {
                 album.add_artists_from_string(album_artist_str);
             }
+            album.albumartist = albumartist;
             for (idx, id) in album_artist_mbids.drain(..).enumerate() {
                 if idx < album.artists.len() {
                     let _ = album.artists[idx].mbid.replace(id);

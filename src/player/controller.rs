@@ -2,7 +2,7 @@ extern crate mpd;
 use crate::{
     application::EuphonicaApplication,
     cache::{get_image_cache_path, sqlite, Cache, CacheState},
-    client::{BackgroundTask, ClientState, ConnectionState, MpdWrapper},
+    client::{ClientState, ConnectionState, MpdWrapper},
     common::{CoverSource, QualityGrade, Song},
     config::APPLICATION_ID,
     meta_providers::models::Lyrics,
