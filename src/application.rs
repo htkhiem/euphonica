@@ -243,6 +243,10 @@ impl EuphonicaApplication {
     }
 
     fn setup_gactions(&self) {
+        let set_theme_action = gio::ActionEntry::builder("set-theme")
+            .parameter_type(Some(glib::VariantTy::STRING))
+            .activate(move |app: &Self, _, data| app.set_theme(data))
+            .build();
         let toggle_fullscreen_action = gio::ActionEntry::builder("fullscreen")
             .activate(move |app: &Self, _, _| app.toggle_fullscreen())
             .build();
@@ -263,6 +267,7 @@ impl EuphonicaApplication {
             .activate(move |app: &Self, _, _| app.show_preferences())
             .build();
         self.add_action_entries([
+            set_theme_action,
             toggle_fullscreen_action,
             refresh_action,
             update_db_action,
@@ -270,6 +275,11 @@ impl EuphonicaApplication {
             about_action,
             preferences_action
         ]);
+    }
+
+    fn set_theme(&self, mode: Option<&glib::Variant>) {
+        println!("Setting theme to {:?}", mode);
+        // TODO
     }
 
     fn toggle_fullscreen(&self) {

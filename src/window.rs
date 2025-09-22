@@ -138,6 +138,9 @@ mod imp {
         #[template_child]
         pub queue_view: TemplateChild<QueueView>,
 
+        #[template_child]
+        pub menu_btn: TemplateChild<gtk::MenuButton>,
+
         // Content view stack
         #[template_child]
         pub stack: TemplateChild<gtk::Stack>,
@@ -221,6 +224,14 @@ mod imp {
             let obj_borrow = self.obj();
             let obj = obj_borrow.as_ref();
             let bg_paintable = &self.bg_paintable;
+
+            // Add theme selector from libpanel
+            let primary_menu = self.menu_btn.popover().and_downcast::<gtk::PopoverMenu>().unwrap();
+            let theme_selector = libpanel::ThemeSelector::builder()
+                .action_name("app.set-theme")
+                .css_classes(["panelthemeselector"])
+                .build();
+            primary_menu.add_child(&theme_selector, "theme_selector");
 
             settings
                 .bind("use-album-art-as-bg", obj, "use-album-art-bg")
