@@ -380,6 +380,8 @@ impl ArtistContentView {
                         bio_link.set_visible(false);
                     }
                     bio_attrib.set_label(&bio.attribution);
+                } else {
+                    bio_text.set_label("");
                 }
                 if stack.visible_child_name().unwrap() != "content" {
                     stack.set_visible_child_name("content");

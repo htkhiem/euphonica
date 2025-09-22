@@ -3,7 +3,7 @@
   <id>io.github.htkhiem.Euphonica</id>
 
   <name>Euphonica</name>
-  <summary>An MPD client with delusions of grandeur</summary>
+  <summary>MPD client with delusions of grandeur</summary>
   <developer id="io.github.htkhiem">
     <name>Huynh Thien Khiem</name>
   </developer>
@@ -78,6 +78,14 @@
   </screenshots>
 
   <releases>
+    <release version="0.97.2-beta" date="2025-09-22">
+      <url type="details">https://github.com/htkhiem/euphonica/releases/tag/v0.97.2-beta</url>
+      <description>
+        <p>Refactor: incremental queue updates are now fully asynchronous and paged to avoid blocking UI and reduce stress on MPD server.</p>
+        <p>Fix: album wiki &amp; artist bio text still showing those of prior albums/artists when the current one does not have one.</p>
+        <p>Fix: albums of the same name getting merged together.</p>
+      </description>
+    </release>
     <release version="0.97.1-beta" date="2025-09-14">
       <url type="details">https://github.com/htkhiem/euphonica/releases/tag/v0.97.1-beta</url>
       <description>

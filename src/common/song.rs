@@ -84,8 +84,8 @@ pub struct SongInfo {
     pub artists: Vec<ArtistInfo>,
     pub artist_tag: Option<String>, // Original tag, with all the linkages and formatting
     pub duration: Option<Duration>, // Default to 0 if somehow the option in mpd's Song is None
-    queue_id: Option<u32>,
-    queue_pos: Option<u32>,  // Only set once at creation. Subsequent updates are kept in the Song GObject.
+    pub queue_id: Option<u32>,
+    pub queue_pos: Option<u32>,  // Only set once at creation. Subsequent updates are kept in the Song GObject.
     // range: Option<Range>,
     pub album: Option<AlbumInfo>,
     track: Cell<i64>,

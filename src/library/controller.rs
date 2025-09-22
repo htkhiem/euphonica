@@ -313,6 +313,12 @@ impl Library {
             Term::Tag(Cow::Borrowed("album")),
             album.get_title().to_owned(),
         );
+        if let Some(artist) = album.get_artist_tag() {
+            query.and(Term::Tag(Cow::Borrowed("albumartist")), artist);
+        }
+        if let Some(mbid) = album.get_mbid() {
+            query.and(Term::Tag(Cow::Borrowed("musicbrainz_albumid")), mbid);
+        }
         self.client().find_add(query);
         if replace && play {
             self.client().play_at(play_from.unwrap_or(0), false);

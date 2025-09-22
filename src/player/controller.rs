@@ -3,7 +3,7 @@ use crate::{
     application::EuphonicaApplication,
     cache::{get_image_cache_path, sqlite, Cache, CacheState},
     client::{ClientState, ConnectionState, MpdWrapper},
-    common::{CoverSource, QualityGrade, Song},
+    common::{CoverSource, QualityGrade, Song, SongInfo},
     config::APPLICATION_ID,
     meta_providers::models::Lyrics,
     utils::{prettify_audio_format, settings_manager, strip_filename_linux}
@@ -21,16 +21,12 @@ use glib::{clone, closure_local, subclass::Signal, BoxedAnyObject};
 use gtk::gdk::{self, Texture};
 use gtk::{gio, glib, prelude::*};
 use mpd::{
-    error::Error as MpdError, song::PosIdChange, status::{AudioFormat, State, Status}, ReplayGain, SaveMode, Subsystem
+    error::Error as MpdError, status::{AudioFormat, State, Status}, ReplayGain, SaveMode, Subsystem
 };
-use lru::LruCache;
-use nohash_hasher::NoHashHasher;
 use std::{
-    hash::BuildHasherDefault,
     cell::{Cell, OnceCell, RefCell},
     ops::Deref, path::PathBuf,
     rc::Rc, sync::{Arc, Mutex, OnceLock}, vec::Vec,
-
 };
 
 use super::fft_backends::{
@@ -183,10 +179,6 @@ mod imp {
         pub state: Cell<PlaybackState>,
         pub position: Cell<f64>,
         pub queue: gio::ListStore,
-        // Cache song infos so we can reuse them on queue updates.
-        // Song IDs are u32s anyway, and I don't think there's any risk of a HashDoS attack
-        // from a self-hosted music server so we'll just use identity hash for speed.
-        pub song_cache: RefCell<LruCache::<u32, Song, BuildHasherDefault<NoHashHasher<u32>>>>,
         pub lyric_lines: gtk::StringList,  // Line by line for display. May be empty.
         pub lyrics: RefCell<Option<Lyrics>>,
         pub queue_len: Cell<u32>,
@@ -255,7 +247,6 @@ mod imp {
                 mixramp_db: Cell::new(0.0),
                 mixramp_delay: Cell::new(0.0),
                 queue: gio::ListStore::new::<Song>(),
-                song_cache: RefCell::new(LruCache::with_hasher(NonZero::new(1024).unwrap(), BuildHasherDefault::default())),
                 queue_len: Cell::new(0),
                 current_song: RefCell::new(None),
                 current_lyric_line: Cell::default(),
@@ -651,7 +642,6 @@ impl Player {
 
     pub fn clear(&self) {
         self.imp().queue.remove_all();
-        self.imp().song_cache.borrow_mut().clear();
         self.imp().outputs.remove_all();
         self.update_status(&mpd::Status::default());
     }
@@ -817,10 +807,6 @@ impl Player {
                 move |_: ClientState, songs: glib::BoxedAnyObject| {
                     let songs = songs.borrow::<Vec<Song>>();
                     this.imp().queue.extend_from_slice(&songs);
-                    let mut song_cache = this.imp().song_cache.borrow_mut();
-                    for song in songs.iter() {
-                        song_cache.push(song.get_queue_id(), song.clone());
-                    }
                 }
             )
         );
@@ -832,7 +818,7 @@ impl Player {
                 #[weak(rename_to = this)]
                 self,
                 move |_: ClientState, changes: BoxedAnyObject| {
-                    this.update_queue(changes.borrow::<Vec<PosIdChange>>().as_ref());
+                    this.update_queue(changes.borrow::<Vec<SongInfo>>().as_ref());
                 }
             ),
         );
@@ -1228,30 +1214,31 @@ impl Player {
     /// new queue length. The update_status() function will instead truncate the queue to the new
     /// length for us once called.
     /// If an MPRIS server is running, it will also emit property change signals.
-    pub fn update_queue(&self, changes: &[PosIdChange]) {
+    pub fn update_queue(&self, changes: &[SongInfo]) {
         let queue = &self.imp().queue;
         if changes.len() > 0 {
             // Find queue range covered by the changes vec
             let mut max_pos: u32 = 0;
             let mut min_pos: u32 = u32::MAX;
-            for change in changes.iter() {
-                if change.pos < min_pos {
-                    min_pos = change.pos;
+            for song in changes.iter() {
+                let this_pos = song.queue_pos.unwrap();
+                if song.queue_pos.unwrap() < min_pos {
+                    min_pos = this_pos;
                 }
-                if change.pos > max_pos {
-                    max_pos = change.pos;
+                if song.queue_pos.unwrap() > max_pos {
+                    max_pos = this_pos;
                 }
             }
 
             // Reconstruct the queue within that range.
             let mut new_segment: Vec<glib::Object> = Vec::with_capacity((max_pos - min_pos + 1) as usize);
-            let mut song_cache = self.imp().song_cache.borrow_mut();
             let mut change_idx: usize = 0;
             for pos in min_pos..=max_pos {
                 // If this position did not change, then simply use the current GObject.
                 // This only happens within the length of the current queue. Entries past its
                 // length will be included in the changes vec.
-                if changes[change_idx].pos != pos {
+                let this_pos = changes[change_idx].queue_pos.unwrap();
+                if this_pos != pos {
                     if let Some(old_song) = queue.item(pos as u32) {
                         new_segment.push(old_song);
                     } else {
@@ -1259,23 +1246,9 @@ impl Player {
                         panic!("New queue is longer than current queue, but no corresponding diff info was received");
                     }
                 } else {
-                    // This position changed. Check if it's a song we already have locally.
-                    let id = changes[change_idx].id.0;
-                    if let Some(existing) = song_cache.get(&id) {
-                        new_segment.push(existing.clone().into());
-                    } else {
-                        println!("update_queue(): Song cache miss");
-                        // New song. Fetch info.
-                        // On very slow connections this might be called after the queue has changed
-                        // once more, potentially removing the song with this ID from the server-side
-                        // queue. In that case, push a default Song GObject as padding. More update
-                        // calls are guaranteed to be triggered and will fix this.
-                        let song = self.client()
-                                .get_song_at_queue_id(id)
-                                .unwrap_or_default();
-                        song_cache.push(id, song.clone());
-                        new_segment.push(song.into());
-                    }
+                    // This position changed. Push newly received song into it.
+                    // TODO: reduce cloning
+                    new_segment.push(Song::from(changes[change_idx].clone()).upcast());
                     change_idx += 1;
                 }
             }
