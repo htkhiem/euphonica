@@ -1020,7 +1020,6 @@ dependencies = [
  "libadwaita",
  "libblur",
  "libc",
- "libpanel",
  "librsvg",
  "libsecret",
  "lru",
@@ -2384,37 +2383,6 @@ name = "libm"
 version = "0.2.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f9fbbcab51052fe104eb5e5d351cf728d30a5be1fe14d9be8a3b097481fb97de"
-
-[[package]]
-name = "libpanel"
-version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "853d6d6865c9dad18aa2873058502ac07bab1caf5a73f514595cb0a1e19104b0"
-dependencies = [
- "futures-core",
- "gdk4",
- "gio 0.21.0",
- "glib 0.21.0",
- "gtk4",
- "libadwaita",
- "libc",
- "libpanel-sys",
-]
-
-[[package]]
-name = "libpanel-sys"
-version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "42885e16466bdaafd2da1972d0e996f1245e41e821d663f7efba2f79d47c3d49"
-dependencies = [
- "gio-sys 0.21.0",
- "glib-sys 0.21.0",
- "gobject-sys 0.21.0",
- "gtk4-sys",
- "libadwaita-sys",
- "libc",
- "system-deps 7.0.5",
-]
 
 [[package]]
 name = "libredox"

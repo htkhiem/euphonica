@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <requires lib="gtk" version="4.0"/>
+  <template class="EuphonicaThemeSelector" parent="GtkBox">
+    <property name="hexpand">true</property>
+    <style>
+      <class name="themeselector"/>
+    </style>
+    <child>
+      <object class="GtkCheckButton" id="follow">
+        <property name="hexpand">true</property>
+        <property name="halign">center</property>
+        <property name="focus-on-click">false</property>
+        <property name="tooltip-text" translatable="yes">Follow system style</property>
+        <style>
+          <class name="follow"/>
+        </style>
+      </object>
+    </child>
+    <child>
+      <object class="GtkCheckButton" id="light">
+        <property name="hexpand">true</property>
+        <property name="halign">center</property>
+        <property name="focus-on-click">false</property>
+        <property name="tooltip-text" translatable="yes">Light style</property>
+        <style>
+          <class name="light"/>
+        </style>
+        <property name="group">follow</property>
+      </object>
+    </child>
+    <child>
+      <object class="GtkCheckButton" id="dark">
+        <property name="hexpand">true</property>
+        <property name="halign">center</property>
+        <property name="focus-on-click">false</property>
+        <property name="tooltip-text" translatable="yes">Dark style</property>
+        <style>
+          <class name="dark"/>
+        </style>
+        <property name="group">follow</property>
+      </object>
+    </child>
+  </template>
+</interface>

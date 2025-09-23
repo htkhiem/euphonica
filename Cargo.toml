@@ -52,7 +52,6 @@ resolve-path = "0.1.0"
 lru = "0.16.0"
 nohash-hasher = "0.2.0"
 libsecret = "0.7.0"
-libpanel = "0.6.0"
 
 [dependencies.gtk]
 package = "gtk4"

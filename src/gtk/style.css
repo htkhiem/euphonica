@@ -97,13 +97,11 @@ windowhandle {
     transition: opacity 0.5s;
 }
 
-
-/* FIXME: avoid having to keep a copy of the theme selector CSS here
- * (already in libpanel's stylesheet but not working). */
-panelthemeselector {
+/* Theme selector styling from libpanel */
+.themeselector {
   margin: 9px;
 }
-panelthemeselector checkbutton {
+.themeselector checkbutton {
   padding: 0;
   min-height: 44px;
   min-width: 44px;
@@ -115,21 +113,22 @@ panelthemeselector checkbutton {
   --light-bg: #fff;
   --dark-bg: #202020;
 }
-panelthemeselector checkbutton.follow:checked,
-panelthemeselector checkbutton.light:checked,
-panelthemeselector checkbutton.dark:checked {
+
+.themeselector checkbutton.follow:checked,
+.themeselector checkbutton.light:checked,
+.themeselector checkbutton.dark:checked {
   box-shadow: inset 0 0 0 2px var(--accent-bg-color);
 }
-panelthemeselector checkbutton.follow {
+.themeselector checkbutton.follow {
   background-image: linear-gradient(to bottom right, var(--light-bg) 49.99%, var(--dark-bg) 50.01%);
 }
-panelthemeselector checkbutton.light {
+.themeselector checkbutton.light {
   background-color: var(--light-bg);
 }
-panelthemeselector checkbutton.dark {
+.themeselector checkbutton.dark {
   background-color: var(--dark-bg);
 }
-panelthemeselector checkbutton radio {
+.themeselector checkbutton radio {
   -gtk-icon-source: none;
   border: none;
   background: none;
@@ -139,7 +138,7 @@ panelthemeselector checkbutton radio {
   transform: translate(27px, 14px);
   padding: 2px;
 }
-panelthemeselector checkbutton radio:checked {
+.themeselector checkbutton radio:checked {
   -gtk-icon-source: -gtk-icontheme("object-select-symbolic");
   background-color: var(--accent-bg-color);
   color: var(--accent-fg-color);

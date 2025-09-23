@@ -223,8 +223,6 @@ glib::wrapper! {
     @implements gtk::Accessible, gtk::Buildable, gtk::ConstraintTarget, gtk::Orientable;
 }
 
-/// Label but with a marquee effect when allocated less than its natural width.
-
 impl Default for Rating {
     fn default() -> Self {
         glib::Object::new()

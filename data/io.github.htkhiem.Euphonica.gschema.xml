@@ -231,6 +231,9 @@
 	</schema>
 
 	<schema id="io.github.htkhiem.Euphonica.ui" path="/io/github/htkhiem/Euphonica/ui/">
+		<key name="colorscheme" type="s">
+			<default>'follow'</default>
+		</key>
 		<key name="recent-playlists-count" type="u">
 			<default>5</default>
 		</key>

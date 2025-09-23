@@ -27,7 +27,7 @@ use crate::{
     sidebar::Sidebar,
     utils::{self, LazyInit, settings_manager},
 };
-use adw::{prelude::*, subclass::prelude::*};
+use adw::{prelude::*, subclass::prelude::*, ColorScheme, StyleManager};
 use glib::signal::SignalHandlerId;
 use gtk::{
     gdk, gio,
@@ -111,6 +111,8 @@ pub enum WindowMessage {
 // will not result in a rapidly-changing background - it will only change as quickly as it
 // can fade or the CPU can blur, whichever is slower.
 mod imp {
+    use crate::common::ThemeSelector;
+
     use super::*;
 
     #[derive(Debug, Default, Properties, gtk::CompositeTemplate)]
@@ -225,13 +227,42 @@ mod imp {
             let obj = obj_borrow.as_ref();
             let bg_paintable = &self.bg_paintable;
 
-            // Add theme selector from libpanel
+            // Set theme from setting first, then connect listener later (else we'll have a feedback loop).
+            let style = adw::StyleManager::default();
+            style.set_color_scheme(match settings.string("colorscheme").as_str() {
+                "dark" => ColorScheme::ForceDark,
+                "prefer-dark" => ColorScheme::PreferDark,
+                "prefer-light" => ColorScheme::PreferLight,
+                "force-light" => ColorScheme::ForceLight,
+                _ => ColorScheme::Default,
+            });
+
+            // Add theme selector to popover menu
             let primary_menu = self.menu_btn.popover().and_downcast::<gtk::PopoverMenu>().unwrap();
-            let theme_selector = libpanel::ThemeSelector::builder()
-                .action_name("app.set-theme")
-                .css_classes(["panelthemeselector"])
-                .build();
+            let theme_selector = ThemeSelector::new();
             primary_menu.add_child(&theme_selector, "theme_selector");
+            theme_selector.connect_closure(
+                "changed",
+                false,
+                closure_local!(|_: ThemeSelector, scheme: ColorScheme| {
+                    let style = StyleManager::default();
+                    println!("Setting theme to {:?}", &scheme);
+                    style.set_color_scheme(scheme);
+
+                    // Save setting
+                    let settings = settings_manager().child("ui");
+                    let _ = settings.set_string(
+                        "colorscheme",
+                        match scheme {
+                            ColorScheme::ForceDark => "dark",
+                            ColorScheme::PreferDark => "prefer-dark",
+                            ColorScheme::PreferLight => "prefer-light",
+                            ColorScheme::ForceLight => "light",
+                            _ => "follow"
+                        }
+                    );
+                })
+            );
 
             settings
                 .bind("use-album-art-as-bg", obj, "use-album-art-bg")

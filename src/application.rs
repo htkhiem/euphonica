@@ -26,7 +26,8 @@ use crate::{
     library::Library,
     player::Player,
     preferences::Preferences,
-    utils, EuphonicaWindow
+    utils::{settings_manager, tokio_runtime},
+    EuphonicaWindow
 };
 use adw::subclass::prelude::*;
 use gtk::{gio, glib};
@@ -37,12 +38,12 @@ use std::{
 use ashpd::desktop::background::Background;
 
 pub fn update_xdg_background_request() {
-    let settings = utils::settings_manager().child("state");
+    let settings = settings_manager().child("state");
     let run_in_background = settings.boolean("run-in-background");
     let autostart = settings.boolean("autostart");
     let start_minimized = settings.boolean("start-minimized");
 
-    utils::tokio_runtime().spawn(async move {
+    tokio_runtime().spawn(async move {
         let mut request = Background::request()
             .reason("Run Euphonica in the background")
             .dbus_activatable(false);
@@ -57,7 +58,7 @@ pub fn update_xdg_background_request() {
 
         match request.send().await {
             Ok(request) => {
-                let settings = utils::settings_manager();
+                let settings = settings_manager();
                 if let Ok(response) = request.response() {
                     let _ = settings.set_boolean("background-portal-available", true);
                     let state_settings = settings.child("state");
@@ -70,7 +71,7 @@ pub fn update_xdg_background_request() {
                 }
             }
             Err(_) => {
-                let settings = utils::settings_manager();
+                let settings = settings_manager();
                 let _ = settings.set_boolean("background-portal-available", false);
             }
         }
@@ -243,10 +244,6 @@ impl EuphonicaApplication {
     }
 
     fn setup_gactions(&self) {
-        let set_theme_action = gio::ActionEntry::builder("set-theme")
-            .parameter_type(Some(glib::VariantTy::STRING))
-            .activate(move |app: &Self, _, data| app.set_theme(data))
-            .build();
         let toggle_fullscreen_action = gio::ActionEntry::builder("fullscreen")
             .activate(move |app: &Self, _, _| app.toggle_fullscreen())
             .build();
@@ -267,7 +264,6 @@ impl EuphonicaApplication {
             .activate(move |app: &Self, _, _| app.show_preferences())
             .build();
         self.add_action_entries([
-            set_theme_action,
             toggle_fullscreen_action,
             refresh_action,
             update_db_action,
@@ -275,11 +271,6 @@ impl EuphonicaApplication {
             about_action,
             preferences_action
         ]);
-    }
-
-    fn set_theme(&self, mode: Option<&glib::Variant>) {
-        println!("Setting theme to {:?}", mode);
-        // TODO
     }
 
     fn toggle_fullscreen(&self) {
@@ -322,7 +313,7 @@ impl EuphonicaApplication {
     }
 
     pub fn on_window_closed(&self) {
-        let settings = utils::settings_manager().child("state");
+        let settings = settings_manager().child("state");
         if settings.boolean("run-in-background") {
             self.imp().player.get().unwrap().set_is_foreground(false);
             if let Some(_) = self.imp().hold_guard.replace(Some(self.hold())) {
@@ -334,7 +325,7 @@ impl EuphonicaApplication {
         }
     }
 
-    fn refresh(&self) {
+     fn refresh(&self) {
         self.get_client().queue_connect();
     }
 

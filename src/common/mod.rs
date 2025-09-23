@@ -7,6 +7,7 @@ pub mod rating;
 pub mod paintables;
 pub mod song;
 pub mod sticker;
+pub mod theme_selector;
 
 pub use sticker::Stickers;
 pub use album::{Album, AlbumInfo};
@@ -15,6 +16,7 @@ pub use inode::{INode, INodeType};
 pub use marquee::Marquee;
 pub use rating::Rating;
 pub use song::{QualityGrade, Song, SongInfo};
+pub use theme_selector::ThemeSelector;
 
 
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
