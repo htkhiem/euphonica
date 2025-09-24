@@ -10,7 +10,7 @@ use time::OffsetDateTime;
 
 use mpd::{
     error::{Error as MpdError, ErrorCode},
-    search::{Operation as QueryOperation, Query, Term, Window},
+    search::{Operation as QueryOperation, Query, Term, Window}, Id,
 };
 use rustc_hash::FxHashSet;
 
@@ -38,11 +38,9 @@ pub fn update_mpd_database(
         Ok(_) => {
             let _ = sender_to_fg.send_blocking(AsyncClientMessage::DBUpdated);
         }
-        Err(MpdError::Io(_)) => {
-            // Connection error => attempt to reconnect
-            let _ = sender_to_fg.send_blocking(AsyncClientMessage::Connect);
+        Err(mpd_error) => {
+            let _ = sender_to_fg.send_blocking(AsyncClientMessage::BackgroundError(mpd_error, None));
         }
-        Err(_) => {}
     }
 }
 
@@ -83,11 +81,6 @@ pub fn get_current_queue(
                     more = false;
                 }
             }
-            Err(MpdError::Io(_)) => {
-                // Connection error => attempt to reconnect
-                let _ = sender_to_fg.send_blocking(AsyncClientMessage::Connect);
-                more = false;
-            }
             Err(MpdError::Server(e)) => {
                 if e.code != ErrorCode::Argument {
                     dbg!(e);
@@ -95,9 +88,8 @@ pub fn get_current_queue(
                 // Else assume it's because we've completely fetched the queue
                 more = false;
             }
-            Err(e) => {
-                dbg!(e);
-                more = false;
+            Err(mpd_error) => {
+                let _ = sender_to_fg.send_blocking(AsyncClientMessage::BackgroundError(mpd_error, None));
             }
         }
     }
@@ -148,23 +140,18 @@ pub fn get_queue_changes(
                     ));
                 }
             }
-            Err(MpdError::Io(_)) => {
-                // Connection error => attempt to reconnect
-                let _ = sender_to_fg.send_blocking(AsyncClientMessage::Connect);
-            }
             Err(MpdError::Server(e)) => {
                 if e.code != ErrorCode::Argument {
                     dbg!(e);
                 }
                 // Else assume it's because we've completely fetched the changes
             }
-            Err(e) => {
-                dbg!(e);
+            Err(mpd_error) => {
+                let _ = sender_to_fg.send_blocking(AsyncClientMessage::BackgroundError(mpd_error, None));
             }
         }
         curr_len += BATCH_SIZE;
     }
-
 }
 
 fn download_embedded_cover_inner(
@@ -386,7 +373,7 @@ fn fetch_albums_by_query<F>(
     client: &mut mpd::Client<stream::StreamWrapper>,
     query: &Query,
     respond: F,
-) -> Result<(), bool>
+) -> Result<(), MpdError>
 where
     F: Fn(AlbumInfo) -> Result<(), SendError<AsyncClientMessage>>,
 {
@@ -423,13 +410,8 @@ where
             }
             Ok(())
         }
-        Err(MpdError::Io(_)) => {
-            // Connection error => attempt to reconnect
-            Err(true)
-        }
-        Err(e) => {
-            dbg!(e);
-            Err(false)
+        Err(mpd_error) => {
+            Err(mpd_error)
         }
     }
 }
@@ -438,8 +420,7 @@ fn fetch_songs_by_query<F>(
     client: &mut mpd::Client<stream::StreamWrapper>,
     query: &Query,
     respond: F,
-) -> Result<(), bool>
-where
+) where
     F: Fn(Vec<SongInfo>) -> Result<(), SendError<AsyncClientMessage>>,
 {
     let mut curr_len: usize = 0;
@@ -461,16 +442,11 @@ where
                     more = false;
                 }
             }
-            Err(MpdError::Io(_)) => {
-                // Connection error => attempt to reconnect
-                return Err(true);
-            }
-            Err(_) => {
-                return Err(false);
+            Err(e) => {
+                dbg!(e);
             }
         }
     }
-    Ok(())
 }
 
 /// Fetch all albums, using AlbumArtist to further disambiguate same-named ones.
@@ -481,8 +457,8 @@ pub fn fetch_all_albums(
     match fetch_albums_by_query(client, &Query::new(), |info| {
         sender_to_fg.send_blocking(AsyncClientMessage::AlbumBasicInfoDownloaded(info))
     }) {
-        Err(true) => {
-            let _ = sender_to_fg.send_blocking(AsyncClientMessage::Connect);
+        Err(mpd_error) => {
+            let _ = sender_to_fg.send_blocking(AsyncClientMessage::BackgroundError(mpd_error, None));
         }
         _ => {}
     }
@@ -507,8 +483,8 @@ pub fn fetch_recent_albums(
         match fetch_albums_by_query(client, &query, |info| {
             sender_to_fg.send_blocking(AsyncClientMessage::RecentAlbumDownloaded(info))
         }) {
-            Err(true) => {
-                let _ = sender_to_fg.send_blocking(AsyncClientMessage::Connect);
+            Err(mpd_error) => {
+                let _ = sender_to_fg.send_blocking(AsyncClientMessage::BackgroundError(mpd_error, None));
             }
             _ => {}
         }
@@ -534,8 +510,8 @@ pub fn fetch_albums_of_artist(
             ))
         },
     ) {
-        Err(true) => {
-            let _ = sender_to_fg.send_blocking(AsyncClientMessage::Connect);
+        Err(mpd_error) => {
+            let _ = sender_to_fg.send_blocking(AsyncClientMessage::BackgroundError(mpd_error, None));
         }
         _ => {}
     }
@@ -546,7 +522,7 @@ pub fn fetch_album_songs(
     sender_to_fg: &Sender<AsyncClientMessage>,
     tag: String,
 ) {
-    match fetch_songs_by_query(
+    fetch_songs_by_query(
         client,
         Query::new().and(Term::Tag(Cow::Borrowed("album")), tag.clone()),
         |songs| {
@@ -555,12 +531,7 @@ pub fn fetch_album_songs(
                 songs,
             ))
         },
-    ) {
-        Err(true) => {
-            let _ = sender_to_fg.send_blocking(AsyncClientMessage::Connect);
-        }
-        _ => {}
-    }
+    );
 }
 
 pub fn fetch_artists(
@@ -602,11 +573,9 @@ pub fn fetch_artists(
                 }
             }
         }
-        Err(MpdError::Io(_)) => {
-            // Connection error => attempt to reconnect
-            let _ = sender_to_fg.send_blocking(AsyncClientMessage::Connect);
+        Err(mpd_error) => {
+            let _ = sender_to_fg.send_blocking(AsyncClientMessage::BackgroundError(mpd_error, None));
         }
-        _ => {}
     }
 }
 
@@ -648,6 +617,7 @@ pub fn fetch_recent_artists(
             Err(MpdError::Io(_)) => {
                 // Connection error => attempt to reconnect
                 let _ = sender_to_fg.send_blocking(AsyncClientMessage::Connect);
+                return;
             }
             _ => {}
         }
@@ -663,7 +633,7 @@ pub fn fetch_songs_of_artist(
     sender_to_fg: &Sender<AsyncClientMessage>,
     name: String,
 ) {
-    match fetch_songs_by_query(
+    fetch_songs_by_query(
         client,
         Query::new().and_with_op(
             Term::Tag(Cow::Borrowed("artist")),
@@ -676,12 +646,7 @@ pub fn fetch_songs_of_artist(
                 songs,
             ))
         },
-    ) {
-        Err(true) => {
-            let _ = sender_to_fg.send_blocking(AsyncClientMessage::Connect);
-        }
-        _ => {}
-    }
+    );
 }
 
 pub fn fetch_folder_contents(
@@ -694,11 +659,9 @@ pub fn fetch_folder_contents(
             let _ = sender_to_fg
                 .send_blocking(AsyncClientMessage::FolderContentsDownloaded(path, contents));
         }
-        Err(MpdError::Io(_)) => {
-            // Connection error => attempt to reconnect
-            let _ = sender_to_fg.send_blocking(AsyncClientMessage::Connect);
+        Err(mpd_error) => {
+            let _ = sender_to_fg.send_blocking(AsyncClientMessage::BackgroundError(mpd_error, None));
         }
-        _ => {}
     }
 }
 
@@ -720,11 +683,9 @@ pub fn fetch_playlist_songs(
                     );
                 }
             }
-            Err(MpdError::Io(_)) => {
-                // Connection error => attempt to reconnect
-                let _ = sender_to_fg.send_blocking(AsyncClientMessage::Connect);
+            Err(mpd_error) => {
+                let _ = sender_to_fg.send_blocking(AsyncClientMessage::BackgroundError(mpd_error, None));
             }
-            _ => {}
         }
     } else {
         // For MPD 0.24+, use the new paged loading
@@ -745,22 +706,18 @@ pub fn fetch_playlist_songs(
                         );
                     }
                 }
-                Err(MpdError::Io(_)) => {
-                    // Connection error => attempt to reconnect
-                    let _ = sender_to_fg.send_blocking(AsyncClientMessage::Connect);
-                    return;
-                }
-                _ => {
-                    return;
+                Err(mpd_error) => {
+                    let _ = sender_to_fg.send_blocking(AsyncClientMessage::BackgroundError(mpd_error, None));
                 }
             }
         }
     }
 }
+
 pub fn fetch_songs_by_uri(
     client: &mut mpd::Client<stream::StreamWrapper>,
     uris: &[&str],
-) -> Result<Vec<SongInfo>, bool> {
+) -> Result<Vec<SongInfo>, MpdError> {
     let mut res: Vec<mpd::Song> = Vec::with_capacity(uris.len());
     for uri in uris.iter() {
         match client.find(Query::new().and(Term::File, *uri), None) {
@@ -769,11 +726,8 @@ pub fn fetch_songs_by_uri(
                     res.push(found_songs.remove(0));
                 }
             }
-            Err(MpdError::Io(_)) => {
-                return Err(true);
-            }
-            _ => {
-                return Err(false);
+            Err(mpd_error) => {
+                return Err(mpd_error);
             }
         }
     }
@@ -781,7 +735,8 @@ pub fn fetch_songs_by_uri(
     Ok(res
         .into_iter()
         .map(|mut mpd_song| SongInfo::from(std::mem::take(&mut mpd_song)))
-        .collect())
+        .collect()
+    )
 }
 
 pub fn fetch_last_n_songs(
@@ -818,10 +773,123 @@ pub fn fetch_last_n_songs(
                     sender_to_fg.send_blocking(AsyncClientMessage::RecentSongInfoDownloaded(songs));
             }
         }
-        Err(true) => {
+        Err(error) => {
             // Connection error => attempt to reconnect
+            let _ = sender_to_fg.send_blocking(AsyncClientMessage::BackgroundError(error, None));
+        }
+    }
+}
+
+pub fn play_at(
+    client: &mut mpd::Client<stream::StreamWrapper>,
+    id_or_pos: u32,
+    is_id: bool
+) -> Result<(), MpdError> {
+    if is_id {
+        client.switch(Id(id_or_pos)).map(|_| ())
+    } else {
+        client.switch(id_or_pos).map(|_| ())
+    }
+}
+
+pub fn find_add(
+    client: &mut mpd::Client<stream::StreamWrapper>,
+    sender_to_fg: &Sender<AsyncClientMessage>,
+    query: Query<'static>,
+    start_playing_pos: Option<u32>
+) {
+    let _ = sender_to_fg.send_blocking(AsyncClientMessage::Queuing(true));
+    let mut res = client.findadd(&query);
+
+    if let Some(pos) = start_playing_pos {
+        res = res.and_then(|_| {
+            play_at(client, pos, false)
+        });
+    }
+
+    match res {
+        Ok(()) => {
+            let _ = sender_to_fg.send_blocking(AsyncClientMessage::Queuing(false));
+        }
+        Err(mpd_error) => {
+            let _ = sender_to_fg.send_blocking(AsyncClientMessage::BackgroundError(mpd_error, Some(ClientError::Queuing)));
+        }
+    }
+}
+
+pub fn add_multi(
+    client: &mut mpd::Client<stream::StreamWrapper>,
+    sender_to_fg: &Sender<AsyncClientMessage>,
+    uris: &[String],
+    recursive: bool,
+    start_playing_pos: Option<u32>,
+    insert_pos: Option<u32>
+) {
+    if uris.is_empty() {
+        return;
+    }
+    let _ = sender_to_fg.send_blocking(AsyncClientMessage::Queuing(true));
+    let mut res: Result<(), MpdError>;
+    if uris.len() > 1 {
+        res = if let Some(pos) = insert_pos {
+            client.insert_multiple(uris, pos as usize).map(|_| ())
+        } else {
+             client.push_multiple(uris).map(|_| ())
+        };
+    } else {
+        res = if recursive {
+            // TODO: support inserting at specific location in queue
+            client.findadd(Query::new().and(Term::Base, &uris[0])).map(|_| ())
+        } else if let Some(pos) = insert_pos {
+            client.insert(&uris[0], pos as usize).map(|_| ())
+        } else {
+            client.push(&uris[0]).map(|_| ())
+        };
+    }
+
+    if let Some(pos) = start_playing_pos {
+        res = res.and_then(|_| {
+            play_at(client, pos, false)
+        });
+    }
+
+    match res {
+        Ok(()) => {
+            let _ = sender_to_fg.send_blocking(AsyncClientMessage::Queuing(false));
+        }
+        Err(MpdError::Io(_)) => {
             let _ = sender_to_fg.send_blocking(AsyncClientMessage::Connect);
         }
-        _ => {}
+        Err(mpd_error) => {
+            let _ = sender_to_fg.send_blocking(AsyncClientMessage::BackgroundError(mpd_error, Some(ClientError::Queuing)));
+        }
+    }
+}
+
+pub fn load_playlist(
+    client: &mut mpd::Client<stream::StreamWrapper>,
+    sender_to_fg: &Sender<AsyncClientMessage>,
+    name: &str,
+    start_playing_pos: Option<u32>
+) {
+    let _ = sender_to_fg.send_blocking(AsyncClientMessage::Queuing(true));
+
+    let mut res = client.load(name, ..);
+    if let Some(pos) = start_playing_pos {
+        res = res.and_then(|_| {
+            play_at(client, pos, false)
+        });
+    }
+
+    match res {
+        Ok(()) => {
+            let _ = sender_to_fg.send_blocking(AsyncClientMessage::Queuing(false));
+        }
+        Err(MpdError::Io(_)) => {
+            let _ = sender_to_fg.send_blocking(AsyncClientMessage::Connect);
+        }
+        Err(mpd_error) => {
+            let _ = sender_to_fg.send_blocking(AsyncClientMessage::BackgroundError(mpd_error, Some(ClientError::Queuing)));
+        }
     }
 }

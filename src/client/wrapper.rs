@@ -9,7 +9,6 @@ use mpd::{
     client::Client,
     error::{Error as MpdError, ErrorCode as MpdErrorCode},
     lsinfo::LsInfoEntry,
-    search::{Query, Term},
     song::Id,
     Channel, EditAction, Idle, Output, SaveMode, Subsystem,
 };
@@ -297,6 +296,15 @@ impl MpdWrapper {
                         BackgroundTask::FetchRecentSongs(count) => {
                             background::fetch_last_n_songs(&mut client, &sender_to_fg, count);
                         }
+                        BackgroundTask::QueueUris(uris, recursive, play_from, insert_pos) => {
+                            background::add_multi(&mut client, &sender_to_fg, &uris, recursive, play_from, insert_pos);
+                        }
+                        BackgroundTask::QueueQuery(query, play_from) => {
+                            background::find_add(&mut client, &sender_to_fg, query, play_from);
+                        }
+                        BackgroundTask::QueuePlaylist(name, play_from) => {
+                            background::load_playlist(&mut client, &sender_to_fg, &name, play_from);
+                        }
                     }
                 } else {
                     // If not, go into idle mode
@@ -431,6 +439,12 @@ impl MpdWrapper {
             AsyncClientMessage::Status(n_tasks) => self.state.set_n_background_tasks(n_tasks as u64),
             AsyncClientMessage::RecentSongInfoDownloaded(songs) => self
                 .on_songs_downloaded("recent-songs-downloaded", None, songs),
+            AsyncClientMessage::Queuing(block) => {
+                self.state.set_queuing(block);
+            }
+            AsyncClientMessage::BackgroundError(error, or) => {
+                self.handle_common_mpd_error(&error, or);
+            }
         }
         glib::ControlFlow::Continue
     }
@@ -503,6 +517,7 @@ impl MpdWrapper {
     pub async fn connect_async(&self) {
         // Close current clients
         self.disconnect_async().await;
+        self.state.set_queuing(false);
         self.queue_version.set(0);
         self.expected_queue_version.set(0);
 
@@ -677,29 +692,6 @@ impl MpdWrapper {
         }
         else {
             None
-        }
-    }
-
-    pub fn add(&self, uri: String, recursive: bool) {
-        if let Some(client) = self.main_client.borrow_mut().as_mut() {
-            let res = if recursive {
-                client.findadd(Query::new().and(Term::Base, uri)).map(|_| ())
-            } else {
-                client.push(uri).map(|_| ())
-            };
-            self.handle_set_error_or(res, ClientError::Queuing);
-        }
-    }
-
-    pub fn add_multi(&self, uris: &[String]) {
-        if let Some(client) = self.main_client.borrow_mut().as_mut() {
-            self.handle_set_error_or(client.push_multiple(uris), ClientError::Queuing);
-        }
-    }
-
-    pub fn insert_multi(&self, uris: &[String], pos: usize) {
-        if let Some(client) = self.main_client.borrow_mut().as_mut() {
-            self.handle_set_error_or(client.insert_multiple(uris, pos), ClientError::Queuing);
         }
     }
 
@@ -1177,16 +1169,6 @@ impl MpdWrapper {
         // took part in
         self.queue_background(BackgroundTask::FetchArtistSongs(name.clone()), true);
         self.queue_background(BackgroundTask::FetchArtistAlbums(name.clone()), true);
-    }
-
-    pub fn find_add(&self, query: Query) {
-        // Convert back to mpd::search::Query
-        if let Some(client) = self.main_client.borrow_mut().as_mut() {
-            self.handle_set_error_or(
-                client.findadd(&query),
-                ClientError::Queuing
-            );
-        }
     }
 
     pub fn on_folder_contents_downloaded(&self, uri: String, contents: Vec<LsInfoEntry>) {

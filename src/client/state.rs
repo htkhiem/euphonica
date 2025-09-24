@@ -51,6 +51,7 @@ mod imp {
         // Used to indicate that the background client is busy.
         pub n_tasks: Cell<u64>,
         pub supports_playlists: Cell<bool>,
+        pub queuing: Cell<bool>,
         pub stickers_support_level: Cell<StickersSupportLevel>,
     }
 
@@ -65,6 +66,7 @@ mod imp {
                 n_tasks: Cell::new(0),
                 stickers_support_level: Cell::default(),
                 supports_playlists: Cell::new(true),
+                queuing: Cell::new(false)
             }
         }
     }
@@ -78,6 +80,9 @@ mod imp {
                         .read_only()
                         .build(),
                     ParamSpecBoolean::builder("supports-playlists")
+                        .read_only()
+                        .build(),
+                    ParamSpecBoolean::builder("is-queuing")
                         .read_only()
                         .build(),
                     ParamSpecEnum::builder::<ConnectionState>("connection-state")
@@ -95,6 +100,7 @@ mod imp {
                 "n-background-tasks" => self.n_tasks.get().to_value(),
                 "stickers-support-level" => obj.get_stickers_support_level().to_value(),
                 "supports-playlists" => obj.supports_playlists().to_value(),
+                "is-queuing" => self.queuing.get().to_value(),
                 _ => unimplemented!(),
             }
         }
@@ -182,7 +188,7 @@ mod imp {
                         .param_types([
                             BoxedAnyObject::static_type(), // Vec<Song>
                         ])
-                        .build(),
+                        .build()
                 ]
             })
         }
@@ -255,6 +261,17 @@ impl ClientState {
         let old = self.imp().n_tasks.replace(n);
         if old != n {
             self.notify("n-background-tasks");
+        }
+    }
+
+    pub fn is_queuing(&self) -> bool {
+        self.imp().queuing.get()
+    }
+
+    pub fn set_queuing(&self, new: bool) {
+        let old = self.imp().queuing.replace(new);
+        if old != new {
+            self.notify("is-queuing");
         }
     }
 }

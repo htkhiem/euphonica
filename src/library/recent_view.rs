@@ -480,12 +480,10 @@ impl LazyInit for RecentView {
     }
 
     fn populate(&self) {
-        if let Some(library) = self.imp().library.get() {
-            let was_populated = self.imp().initialized.replace(true);
-            if !was_populated {
-                println!("Initialising recents");
-                self.on_history_changed();
-            }
+        let was_populated = self.imp().initialized.replace(true);
+        if !was_populated {
+            println!("Initialising recents");
+            self.on_history_changed();
         }
     }
 }

@@ -275,15 +275,22 @@ impl Library {
         if replace {
             self.client().clear_queue();
         }
-        self.client().add_multi(
-            &songs
-                .iter()
-                .map(|s| s.get_uri().to_owned())
-                .collect::<Vec<String>>(),
+        self.client().queue_background(
+            BackgroundTask::QueueUris(
+                songs
+                    .iter()
+                    .map(|s| s.get_uri().to_owned())
+                    .collect::<Vec<String>>(),
+                false,
+                if replace && play {
+                    Some(0)
+                } else {
+                    None
+                },
+                None
+            ),
+            true
         );
-        if replace && play {
-            self.client().play_at(0, false);
-        }
     }
 
     pub fn insert_songs_next(&self, songs: &[Song]) {
@@ -294,13 +301,18 @@ impl Library {
             // If no current song, insert at the start of the queue
             0
         };
-        self.client().insert_multi(
-                &songs
+        self.client().queue_background(
+            BackgroundTask::QueueUris(
+                songs
                     .iter()
                     .map(|s| s.get_uri().to_owned())
                     .collect::<Vec<String>>(),
-                pos as usize,
-            );
+                false,
+                None,
+                Some(pos),
+            ),
+            true
+        );
     }
 
     /// Queue all songs in a given album by track order.
@@ -314,15 +326,22 @@ impl Library {
             album.get_title().to_owned(),
         );
         if let Some(artist) = album.get_artist_tag() {
-            query.and(Term::Tag(Cow::Borrowed("albumartist")), artist);
+            query.and(Term::Tag(Cow::Borrowed("albumartist")), artist.to_owned());
         }
         if let Some(mbid) = album.get_mbid() {
-            query.and(Term::Tag(Cow::Borrowed("musicbrainz_albumid")), mbid);
+            query.and(Term::Tag(Cow::Borrowed("musicbrainz_albumid")), mbid.to_owned());
         }
-        self.client().find_add(query);
-        if replace && play {
-            self.client().play_at(play_from.unwrap_or(0), false);
-        }
+        self.client().queue_background(
+            BackgroundTask::QueueQuery(
+                query,
+                if replace && play {
+                    play_from
+                } else {
+                    None
+                }
+            ),
+            true
+        );
     }
 
     pub fn rate_album(&self, album: &Album, score: Option<i8>) {
@@ -349,10 +368,17 @@ impl Library {
             Operation::Contains,
             artist.get_name().to_owned(),
         );
-        self.client().find_add(query);
-        if replace && play {
-            self.client().play_at(0, false);
-        }
+        self.client().queue_background(
+            BackgroundTask::QueueQuery(
+                query,
+                if replace && play {
+                    Some(0)
+                } else {
+                    None
+                }
+            ),
+            true
+        );
     }
 
     /// Get all the information available about an artist (won't block;
@@ -433,10 +459,19 @@ impl Library {
         if replace {
             self.client().clear_queue();
         }
-        self.client().add(uri.to_owned(), recursive);
-        if replace && play {
-            self.client().play_at(0, false);
-        }
+        self.client().queue_background(
+            BackgroundTask::QueueUris(
+                vec![uri.to_owned()],
+                recursive,
+                if replace && play {
+                    Some(0)
+                } else {
+                    None
+                },
+                None
+            ),
+            true
+        );
     }
 
     /// Queue a playlist for playback.
@@ -496,10 +531,17 @@ impl Library {
         if replace {
             self.client().clear_queue();
         }
-        let _ = self.client().load_playlist(name);
-        if replace && play {
-            self.client().play_at(0, false);
-        }
+        self.client().queue_background(
+            BackgroundTask::QueuePlaylist(
+                name.to_owned(),
+                if replace && play {
+                    Some(0)
+                } else {
+                    None
+                }
+            ),
+            true
+        );
     }
 
     pub fn rename_playlist(&self, old_name: &str, new_name: &str) -> Result<(), Option<MpdError>> {

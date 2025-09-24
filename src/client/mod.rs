@@ -4,7 +4,7 @@ pub mod state;
 pub mod wrapper;
 pub mod password;
 
-use mpd::{lsinfo::LsInfoEntry, song::PosIdChange, Subsystem};
+use mpd::{lsinfo::LsInfoEntry, Query, Subsystem, error::Error as MpdError};
 pub use state::{ClientState, ConnectionState, ClientError};
 pub use wrapper::MpdWrapper;
 
@@ -18,6 +18,7 @@ enum AsyncClientMessage {
     Idle(Vec<Subsystem>), // Will only be sent from the child thread
     QueueSongsDownloaded(Vec<SongInfo>),
     QueueChangesReceived(Vec<SongInfo>),
+    Queuing(bool),  // Set queuing state
     AlbumBasicInfoDownloaded(AlbumInfo), // Return new album to be added to the list model (as SongInfo of a random song in it).
     RecentAlbumDownloaded(AlbumInfo),
     AlbumSongInfoDownloaded(String, Vec<SongInfo>), // Return songs in the album with the given tag (batched)
@@ -28,14 +29,20 @@ enum AsyncClientMessage {
     FolderContentsDownloaded(String, Vec<LsInfoEntry>),
     PlaylistSongInfoDownloaded(String, Vec<SongInfo>),
     RecentSongInfoDownloaded(Vec<SongInfo>),
-    DBUpdated
+    DBUpdated,
+    // Generic background error, with an optional Euphonica-specific hint
+    BackgroundError(MpdError, Option<ClientError>)
 }
 
 // Work requests for sending to the child thread.
 // Completed results will be reported back via AsyncClientMessage.
-#[derive(Debug)]
 pub enum BackgroundTask {
     Update,
+    // Optional recursive, optional position to start playing from,
+    // optional position in queue to insert at
+    QueueUris(Vec<String>, bool, Option<u32>, Option<u32>),
+    QueueQuery(Query<'static>, Option<u32>),  // Optional position to start playing from
+    QueuePlaylist(String, Option<u32>),
     DownloadFolderCover(AlbumInfo),
     DownloadEmbeddedCover(SongInfo),
     FetchQueue,  // Full fetch
