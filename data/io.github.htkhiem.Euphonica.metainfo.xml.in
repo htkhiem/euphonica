@@ -78,9 +78,11 @@
   </screenshots>
 
   <releases>
-    <release version="0.97.2-beta" date="2025-09-22">
+    <release version="0.97.2-beta" date="2025-09-26">
       <url type="details">https://github.com/htkhiem/euphonica/releases/tag/v0.97.2-beta</url>
       <description>
+        <p>New: in-app theme selector (follow system style, force light, force dark).</p>
+        <p>Refactor: queuing is now done in the background to avoid freezing UI when adding lots of tracks.</p>
         <p>Refactor: incremental queue updates are now fully asynchronous and paged to avoid blocking UI and reduce stress on MPD server.</p>
         <p>Fix: album wiki &amp; artist bio text still showing those of prior albums/artists when the current one does not have one.</p>
         <p>Fix: albums of the same name getting merged together.</p>
