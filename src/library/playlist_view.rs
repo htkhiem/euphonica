@@ -9,13 +9,9 @@ use std::{cell::Cell, cmp::Ordering, ops::Deref, rc::Rc};
 use glib::clone;
 use mpd::Subsystem;
 
-use super::{generic_row::GenericRow, Library};
+use super::Library;
 use crate::{
-    cache::Cache,
-    client::{ClientState, ConnectionState},
-    common::INode,
-    utils::{g_cmp_str_options, g_search_substr, settings_manager},
-    window::EuphonicaWindow,
+    cache::Cache, client::{ClientState, ConnectionState}, common::INode, library::playlist_row::PlaylistRow, utils::{g_cmp_str_options, g_search_substr, settings_manager}, window::EuphonicaWindow
 };
 
 // Playlist view implementation
@@ -69,6 +65,7 @@ mod imp {
         // if they now match.
         pub last_search_len: Cell<usize>,
         pub library: OnceCell<Library>,
+        pub cache: OnceCell<Rc<Cache>>,
         #[property(get, set)]
         pub collapsed: Cell<bool>
     }
@@ -99,6 +96,7 @@ mod imp {
                 // if they now match.
                 last_search_len: Cell::new(0),
                 library: OnceCell::new(),
+                cache: OnceCell::new(),
                 collapsed: Cell::new(false)
             }
         }
@@ -201,6 +199,10 @@ impl PlaylistView {
             .library
             .set(library.clone())
             .expect("Cannot init PlaylistView with Library");
+        self.imp()
+            .cache
+            .set(cache.clone())
+            .expect("Cannot init PlaylistView with cache controller");
         self.setup_sort();
         self.setup_search();
         self.setup_listview();
@@ -459,6 +461,7 @@ impl PlaylistView {
 
     fn setup_listview(&self) {
         let library = self.imp().library.get().unwrap();
+        let cache = self.imp().cache.get().unwrap();
         // client_state.connect_closure(
         //     "inode-basic-info-downloaded",
         //     false,
@@ -498,32 +501,39 @@ impl PlaylistView {
         // Set up factory
         let factory = SignalListItemFactory::new();
 
-        // Create an empty `INodeCell` during setup
         factory.connect_setup(clone!(
             #[weak]
             library,
+            #[weak]
+            cache,
             move |_, list_item| {
                 let item = list_item
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
-                let folder_row = GenericRow::new(library, &item);
+                let folder_row = PlaylistRow::new(library, &item, cache);
                 item.set_child(Some(&folder_row));
             }
         ));
 
-        // factory.connect_teardown(
-        //     move |_, list_item| {
-        //         // Get `INodeCell` from `ListItem` (the UI widget)
-        //         let child: Option<GenericRow> = list_item
-        //             .downcast_ref::<ListItem>()
-        //             .expect("Needs to be ListItem")
-        //             .child()
-        //             .and_downcast::<GenericRow>();
-        //         if let Some(c) = child {
-        //             c.teardown();
-        //         }
-        //     }
-        // );
+        factory.connect_bind(
+            move |_, list_item| {
+                let item = list_item
+                    .downcast_ref::<ListItem>()
+                    .expect("Needs to be ListItem");
+
+                let playlist = item
+                    .item()
+                    .and_downcast::<INode>()
+                    .expect("The item has to be a common::INode.");
+
+                let child: PlaylistRow = item
+                    .child()
+                    .and_downcast::<PlaylistRow>()
+                    .expect("The child has to be an `PlaylistRow`.");
+
+                child.bind(&playlist);
+            }
+        );
 
         // Set the factory of the list view
         self.imp().list_view.set_factory(Some(&factory));

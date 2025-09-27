@@ -22,6 +22,7 @@
     <file preprocess="xml-stripblanks">gtk/library/folder-view.ui</file>
     <file preprocess="xml-stripblanks">gtk/library/generic-row.ui</file>
     <file preprocess="xml-stripblanks">gtk/library/playlist-view.ui</file>
+    <file preprocess="xml-stripblanks">gtk/library/playlist-row.ui</file>
     <file preprocess="xml-stripblanks">gtk/library/playlist-content-view.ui</file>
     <file preprocess="xml-stripblanks">gtk/library/playlist-song-row.ui</file>
     <file preprocess="xml-stripblanks">gtk/library/add-to-playlist-button.ui</file>

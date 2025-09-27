@@ -17,6 +17,7 @@ mod folder_view;
 
 mod playlist_content_view;
 mod playlist_view;
+mod playlist_row;
 
 // Common stuff shared between views
 mod add_to_playlist;

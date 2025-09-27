@@ -499,7 +499,7 @@ pub fn write_lyrics(song: &SongInfo, lyrics: Option<&Lyrics>) -> Result<(), Erro
     Ok(())
 }
 
-fn find_image_by_key(key: &str, prefix: Option<&str>, is_thumbnail: bool) -> Result<Option<String>, Error> {
+pub fn find_image_by_key(key: &str, prefix: Option<&str>, is_thumbnail: bool) -> Result<Option<String>, Error> {
     let query: Result<String, SqliteError>;
     let conn = SQLITE_POOL.get().unwrap();
     let final_key = if let Some(prefix) = prefix {
@@ -526,14 +526,6 @@ fn find_image_by_key(key: &str, prefix: Option<&str>, is_thumbnail: bool) -> Res
     }
 }
 
-pub fn find_cover_by_key(key: &str, is_thumbnail: bool) -> Result<Option<String>, Error> {
-    find_image_by_key(key, None, is_thumbnail)
-}
-
-pub fn find_avatar_by_key(key: &str, is_thumbnail: bool) -> Result<Option<String>, Error> {
-    find_image_by_key(key, Some("avatar"), is_thumbnail)
-}
-
 /// Convenience wrapper for looking up covers. Automatically falls back to folder-level cover if possible.
 pub fn find_cover_by_uri(track_uri: &str, is_thumbnail: bool) -> Result<Option<String>, Error> {
     if let Some(filename) = find_image_by_key(track_uri, None, is_thumbnail)? {
@@ -548,7 +540,7 @@ pub fn find_cover_by_uri(track_uri: &str, is_thumbnail: bool) -> Result<Option<S
     }
 }
 
-fn register_image_key(
+pub fn register_image_key(
     key: String,
     prefix: Option<&'static str>,
     filename: Option<String>,
@@ -557,16 +549,19 @@ fn register_image_key(
     SQLITE_WRITE_THREADPOOL.push(move || {
         let mut conn = SQLITE_POOL.get().unwrap();
         let tx = conn.transaction().map_err(|e| Error::DbError(e))?;
-        tx.execute(
-            "delete from images where key = ?1 and is_thumbnail = ?2",
-            params![key, is_thumbnail as i32],
-        )
-          .map_err(|e| Error::DbError(e))?;
+
         let final_key = if let Some(prefix) = prefix {
             &format!("{prefix}:{key}")
         } else {
             &key
         };
+
+        tx.execute(
+            "delete from images where key = ?1 and is_thumbnail = ?2",
+            params![final_key, is_thumbnail as i32],
+        )
+          .map_err(|e| Error::DbError(e))?;
+
         tx.execute(
             "insert into images (key, is_thumbnail, filename, last_modified) values (?1,?2,?3,?4)",
             params![
@@ -587,27 +582,7 @@ fn register_image_key(
     }).expect("register_image_key: Failed to schedule transaction with threadpool")
 }
 
-pub fn register_cover_key(
-    key: &str,
-    filename: Option<&str>,
-    is_thumbnail: bool,
-) -> ThreadHandle<Result<(), Error>> {
-    register_image_key(
-        key.to_owned(), None, filename.map(str::to_owned), is_thumbnail
-    )
-}
-
-pub fn register_avatar_key(
-    key: &str,
-    filename: Option<&str>,
-    is_thumbnail: bool,
-) -> ThreadHandle<Result<(), Error>> {
-    register_image_key(
-        key.to_owned(), Some("avatar"), filename.map(str::to_owned), is_thumbnail
-    )
-}
-
-fn unregister_image_key(
+pub fn unregister_image_key(
     key: String,
     prefix: Option<&'static str>,
     is_thumbnail: bool
@@ -628,14 +603,6 @@ fn unregister_image_key(
         tx.commit().map_err(|e| Error::DbError(e))?;
         Ok(())
     }).expect("register_image_key: Failed to schedule transaction with threadpool")
-}
-
-pub fn unregister_cover_key(key: &str, is_thumbnail: bool) -> ThreadHandle<Result<(), Error>> {
-    unregister_image_key(key.to_owned(), None, is_thumbnail)
-}
-
-pub fn unregister_avatar_key(key: &str, is_thumbnail: bool) -> ThreadHandle<Result<(), Error>> {
-    unregister_image_key(key.to_owned(), Some("avatar"), is_thumbnail)
 }
 
 pub fn add_to_history(song: &SongInfo) -> Result<(), Error> {
