@@ -25,6 +25,10 @@ mod imp {
         #[template_child]
         pub playlists_section: TemplateChild<gtk::Box>,
         #[template_child]
+        pub dyn_playlists_btn: TemplateChild<SidebarButton>,
+        #[template_child]
+        pub recent_dyn_playlists: TemplateChild<gtk::ListBox>,
+        #[template_child]
         pub playlists_btn: TemplateChild<SidebarButton>,
         #[template_child]
         pub recent_playlists: TemplateChild<gtk::ListBox>,

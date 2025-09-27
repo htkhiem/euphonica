@@ -3,6 +3,7 @@ extern crate rusqlite;
 
 use std::io::Cursor;
 
+use mpd::search::Query;
 use once_cell::sync::Lazy;
 use r2d2_sqlite::SqliteConnectionManager;
 use rusqlite::{params, Error as SqliteError, Result, Row};
@@ -37,7 +38,25 @@ static SQLITE_POOL: Lazy<r2d2::Pool<SqliteConnectionManager>> = Lazy::new(|| {
 
         println!("Local metadata DB version: {user_version}");
         match user_version {
-            3 => {break;},
+            4 => {break;},
+            3 => {
+                conn.execute_batch("create table if not exists `queries` (
+    `name` VARCHAR not null,
+    `description` VARCHAR not null,
+    `last_modified` DATETIME not null,
+    `last_queued` DATETIME null,
+    `play_count` INTEGER not null,
+    `rules` BLOB not null,
+
+    primary key(`name`)
+);
+
+create unique index if not exists `query_key` on `queries` (
+    `name`
+);
+
+pragma user_version = 4;").expect("Unable to migrate DB version 3 to 4");
+            },
             2 => {
                 conn.execute_batch("alter table albums_history add column mbid varchar null;
 alter table albums_history add column artist varchar null;
@@ -207,8 +226,22 @@ create unique index if not exists `image_key` on `images` (
     `is_thumbnail`
 );
 
+create table if not exists `queries` (
+    `name` VARCHAR not null,
+    `description` VARCHAR not null,
+    `last_modified` DATETIME not null,
+    `last_queued` DATETIME null,
+    `play_count` INTEGER not null,
+    `rules` BLOB not null,
+    primary key(`name`)
+);
+
+create unique index if not exists `query_key` on `queries` (
+    `name`
+);
+
 pragma journal_mode=WAL;
-pragma user_version = 3;
+pragma user_version = 4;
 end;
 ").expect("Unable to init metadata SQLite DB");
                     }
@@ -701,4 +734,8 @@ pub fn clear_history() -> Result<(), Error> {
     tx.execute("delete from artists_history", []).map_err(|e| Error::DbError(e))?;
     tx.commit().map_err(|e| Error::DbError(e))?;
     Ok(())
+}
+
+pub fn insert_dynamic_playlist(query: Query) -> Result<(), Error> {
+    let mut conn = SQLITE_POOL.get().unwrap();
 }

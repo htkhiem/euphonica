@@ -15,7 +15,7 @@ futures = "0.3.30"
 gettext-rs = { version = "0.7", features = ["gettext-system"] }
 image = "0.25.1"
 librsvg = "2.58.1"
-mpd = { git = "https://github.com/htkhiem/rust-mpd.git", rev = "04985377eb9c700d2237e6a895a689d204158f71" }
+mpd = { git = "https://github.com/htkhiem/rust-mpd.git", rev = "c795b56e0bc46cebfc4649210843f6c1f45740a9", features = ["serde"] }
 once_cell = "1.19.0"
 time = { version = "0.3.36", features = ["formatting"] }
 reqwest = { version = "0.12.5", features = ["blocking", "json"] }
