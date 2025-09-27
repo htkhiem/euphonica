@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+	<template class="EuphonicaPlaylistRow" parent="GtkBox">
+		<style>
+			<class name="padding-6"/>
+		</style>
+		<child>
+			<object class="GtkBox">
+				<property name="halign">3</property>
+				<property name="valign">3</property>
+				<property name="overflow">hidden</property>
+				<style>
+					<class name="border-radius-6" />
+				</style>
+				<child>
+					<object class="GtkImage" id="thumbnail">
+						<property name="pixel-size">36</property>
+						<property name="resource">io/github/htkhiem/Euphonica/albumart-placeholder-thumb.png</property>
+					</object>
+				</child>
+			</object>
+		</child>
+		<child>
+			<object class="GtkCenterBox">
+				<property name="hexpand">true</property>
+				<property name="start-widget">
+					<object class="GtkBox">
+						<property name="orientation">vertical</property>
+						<property name="spacing">6</property>
+						<property name="margin-start">6</property>
+						<child>
+							<object class="GtkLabel" id="name">
+								<style>
+									<class name="heading"/>
+								</style>
+								<property name="halign">start</property>
+								<property name="ellipsize">end</property>
+							</object>
+						</child>
+						<child>
+							<object class="GtkLabel" id="last_modified">
+								<property name="halign">start</property>
+								<property name="ellipsize">start</property>
+								<style>
+									<class name="dim-label"/>
+								</style>
+							</object>
+						</child>
+					</object>
+				</property>
+				<property name="end-widget">
+					<object class="GtkBox">
+						<child>
+							<object class="GtkButton" id="replace_queue">
+								<property name="tooltip-text" translatable="true">Replace queue with this playlist</property>
+								<property name="icon-name">play-symbolic</property>
+								<property name="visible">false</property>
+								<style>
+									<class name="flat"/>
+								</style>
+							</object>
+						</child>
+						<child>
+							<object class="GtkButton" id="append_queue">
+								<property name="tooltip-text" translatable="true">Append this playlist to the queue</property>
+								<property name="icon-name">list-add-symbolic</property>
+								<property name="visible">false</property>
+								<style>
+									<class name="flat"/>
+								</style>
+							</object>
+						</child>
+					</object>
+				</property>
+			</object>
+		</child>
+	</template>
+</interface>

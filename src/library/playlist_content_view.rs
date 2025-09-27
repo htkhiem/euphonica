@@ -562,8 +562,10 @@ impl PlaylistContentView {
                     if thumb {
                         return;
                     }
-                    if name.as_str() == this.imp().title.label().as_str() {
-                        this.update_cover(&tex);
+                    if let Some(playlist) = this.imp().playlist.borrow().as_ref() {
+                        if name.as_str() == playlist.get_uri() {
+                            this.update_cover(&tex);
+                        }
                     }
                 }
             )
@@ -575,8 +577,10 @@ impl PlaylistContentView {
                 #[weak(rename_to = this)]
                 self,
                 move |_: CacheState, name: String| {
-                    if name.as_str() == this.imp().title.label().as_str() {
-                        this.clear_cover();
+                    if let Some(playlist) = this.imp().playlist.borrow().as_ref() {
+                        if name.as_str() == playlist.get_uri() {
+                            this.clear_cover();
+                        }
                     }
                 }
             ),

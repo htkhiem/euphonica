@@ -63,6 +63,9 @@
 									<object class="GtkListBox" id="recent_playlists">
 										<property name="hexpand">true</property>
 										<property name="selection-mode">none</property>
+										<style>
+											<class name="no-bg"/>
+										</style>
 									</object>
 								</child>
 							</object>
@@ -100,7 +103,7 @@
 			</object>
 		</child>
 		<style>
-			<class name="sidebar"/>
+			<class name="euphonica-sidebar"/>
 		</style>
 	</template>
 </interface>

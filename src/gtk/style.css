@@ -46,16 +46,11 @@ listview > row {
     background-color: unset;
 }
 
-.sidebar {
+.euphonica-sidebar {
     padding-top: 12pt;
     padding-bottom: 12pt;
     padding-left: 6pt;
     padding-right: 6pt;
-    border-right: unset; /* Fixes an annoying visual quirk in dark mode at the top of the sidebar */
-}
-
-windowhandle {
-    border-right: unset; /* Fixes an annoying visual quirk in dark mode at the top of the sidebar */
 }
 
 .player-bar {
