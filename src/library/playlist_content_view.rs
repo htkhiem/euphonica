@@ -1,6 +1,6 @@
 use adw::subclass::prelude::*;
 use glib::{clone, closure_local, signal::SignalHandlerId, Binding};
-use gtk::{gio, glib, prelude::*, BitsetIter, CompositeTemplate, ListItem, SignalListItemFactory};
+use gtk::{gdk, gio, glib, prelude::*, BitsetIter, CompositeTemplate, ListItem, SignalListItemFactory};
 use std::{
     cell::{OnceCell, RefCell},
     rc::Rc,
@@ -10,7 +10,7 @@ use mpd::error::{Error as MpdError, ErrorCode as MpdErrorCode, ServerError};
 
 use super::{Library, PlaylistSongRow};
 use crate::{
-    cache::Cache,
+    cache::{placeholders::ALBUMART_PLACEHOLDER, Cache, CacheState},
     client::ClientState,
     common::{INode, Song},
     utils::format_secs_as_duration,
@@ -78,7 +78,12 @@ impl HistoryStep {
 mod imp {
     use std::cell::Cell;
 
+    use ashpd::desktop::file_chooser::SelectedFiles;
+    use async_channel::Sender;
+    use gio::{ActionEntry, SimpleActionGroup};
     use mpd::SaveMode;
+
+    use crate::utils;
 
     use super::*;
 
@@ -89,6 +94,8 @@ mod imp {
         pub infobox_revealer: TemplateChild<gtk::Revealer>,
         #[template_child]
         pub collapse_infobox: TemplateChild<gtk::ToggleButton>,
+        #[template_child]
+        pub cover: TemplateChild<gtk::Image>,
         #[template_child]
         pub content_stack: TemplateChild<gtk::Stack>,
         #[template_child]
@@ -156,6 +163,7 @@ mod imp {
         pub bindings: RefCell<Vec<Binding>>,
         pub cover_signal_id: RefCell<Option<SignalHandlerId>>,
         pub cache: OnceCell<Rc<Cache>>,
+        pub filepath_sender: OnceCell<Sender<String>>,
         pub selecting_all: Cell<bool>, // Enables queuing the entire playlist efficiently
         pub window: OnceCell<EuphonicaWindow>,
         pub library: OnceCell<Library>,
@@ -172,6 +180,7 @@ mod imp {
                 last_mod: TemplateChild::default(),
                 track_count: TemplateChild::default(),
                 infobox_revealer: TemplateChild::default(),
+                cover: TemplateChild::default(),
                 collapse_infobox: TemplateChild::default(),
                 runtime: TemplateChild::default(),
                 content_stack: TemplateChild::default(),
@@ -204,6 +213,7 @@ mod imp {
                 delete: TemplateChild::default(),
                 bindings: RefCell::new(Vec::new()),
                 cover_signal_id: RefCell::new(None),
+                filepath_sender: OnceCell::new(),
                 cache: OnceCell::new(),
                 playlist: RefCell::new(None),
                 selecting_all: Cell::new(true), // When nothing is selected, default to select-all
@@ -326,6 +336,63 @@ mod imp {
                     sel_model.unselect_all();
                 }
             ));
+
+            // Edit actions
+            let obj = self.obj();
+            let action_set_cover = ActionEntry::builder("set-cover")
+                .activate(clone!(
+                    #[strong]
+                    obj,
+                    move |_, _, _| {
+                        if let Some(sender) = obj.imp().filepath_sender.get() {
+                            let sender = sender.clone();
+                            utils::tokio_runtime().spawn(async move {
+                                let maybe_files = SelectedFiles::open_file()
+                                    .title("Select a new cover")
+                                    .modal(true)
+                                    .multiple(false)
+                                    .send()
+                                    .await
+                                    .expect("ashpd file open await failure")
+                                    .response();
+
+                                if let Ok(files) = maybe_files {
+                                    let uris = files.uris();
+                                    if uris.len() > 0 {
+                                        let _ = sender.send_blocking(uris[0].to_string());
+                                    }
+                                }
+                                else {
+                                    println!("{:?}", maybe_files);
+                                }
+                            });
+                        }
+                    }
+                ))
+                .build();
+            let action_clear_cover = ActionEntry::builder("clear-cover")
+                .activate(clone!(
+                    #[strong]
+                    obj,
+                    move |_, _, _| {
+                        let title = obj.imp().title.label();
+                        if !title.is_empty() {
+                            if let Some(library) = obj.imp().library.get() {
+                                obj.clear_cover();
+                                library.clear_playlist_cover(title.as_str());
+                            }
+                        }
+                    }
+                ))
+                .build();
+
+            // Create a new action group and add actions to it
+            let actions = SimpleActionGroup::new();
+            actions.add_action_entries([
+                action_set_cover,
+                action_clear_cover
+            ]);
+            self.obj().insert_action_group("playlist-content-view", Some(&actions));
         }
     }
 
@@ -466,21 +533,54 @@ impl PlaylistContentView {
         cache: Rc<Cache>,
         window: EuphonicaWindow,
     ) {
-        // cache.get_cache_state().connect_closure(
-        //     "album-art-downloaded",
-        //     false,
-        //     closure_local!(
-        //         #[weak(rename_to = this)]
-        //         self,
-        //         move |_: CacheState, folder_uri: String| {
-        //             if let Some(album) = this.imp().album.borrow().as_ref() {
-        //                 if folder_uri == album.get_uri() {
-        //                     this.update_cover(album.get_info());
-        //                 }
-        //             }
-        //         }
-        //     )
-        // );
+        // Set up channel for listening to cover dialog
+        let (sender, receiver) = async_channel::unbounded::<String>();
+        let _ = self.imp().filepath_sender.set(sender);
+        glib::MainContext::default().spawn_local(clone!(
+            #[strong(rename_to = this)]
+            self,
+            async move {
+                use futures::prelude::*;
+                // Allow receiver to be mutated, but keep it at the same memory address.
+                // See Receiver::next doc for why this is needed.
+                let mut receiver = std::pin::pin!(receiver);
+
+                while let Some(tag) = receiver.next().await {
+                    this.set_cover(&tag);
+                }
+            }
+        ));
+
+        let cache_state = cache.get_cache_state();
+        cache_state.connect_closure(
+            "playlist-cover-downloaded",
+            false,
+            closure_local!(
+                #[weak(rename_to = this)]
+                self,
+                move |_: CacheState, name: String, thumb: bool, tex: gdk::Texture| {
+                    if thumb {
+                        return;
+                    }
+                    if name.as_str() == this.imp().title.label().as_str() {
+                        this.update_cover(&tex);
+                    }
+                }
+            )
+        );
+        cache_state.connect_closure(
+            "playlist-cover-cleared",
+            false,
+            closure_local!(
+                #[weak(rename_to = this)]
+                self,
+                move |_: CacheState, name: String| {
+                    if name.as_str() == this.imp().title.label().as_str() {
+                        this.clear_cover();
+                    }
+                }
+            ),
+        );
         self.imp()
             .window
             .set(window)
@@ -768,22 +868,6 @@ impl PlaylistContentView {
         );
     }
 
-    /// Returns true if an album art was successfully retrieved.
-    /// On false, we will want to call cache.ensure_local_album_art()
-    // fn update_cover(&self, info: &PlaylistInfo) -> bool {
-    //     if let Some(cache) = self.imp().cache.get() {
-    //         if let Some(tex) = cache.load_cached_album_art(info, false, true) {
-    //             self.imp().cover.set_paintable(Some(&tex));
-    //             return true;
-    //         }
-    //         else {
-    //             self.imp().cover.set_paintable(Some(&*ALBUMART_PLACEHOLDER));
-    //             return false;
-    //         }
-    //     }
-    //     false
-    // }
-
     pub fn bind(&self, playlist: INode) {
         let title_label = self.imp().title.get();
         let last_mod_label = self.imp().last_mod.get();
@@ -795,6 +879,20 @@ impl PlaylistContentView {
             .build();
         // Save binding
         bindings.push(title_binding);
+
+        if let Some(tex) = self
+            .imp()
+            .cache
+            .get()
+            .unwrap()
+            .clone()
+            .load_cached_playlist_cover(playlist.get_uri(), false)
+            .as_ref() {
+                self.update_cover(tex);
+            }
+        else {
+            self.clear_cover();
+        }
 
         let last_mod_binding = playlist
             .bind_property("last-modified", &last_mod_label, "label")
@@ -845,6 +943,25 @@ impl PlaylistContentView {
                 })
                 .sum::<u64>() as f64,
         ));
+    }
+
+    /// Set a user-selected path as the new local avatar.
+    pub fn set_cover(&self, path: &str) {
+        let title = self.imp().title.label();
+        if !title.is_empty() {
+            if let Some(library) = self.imp().library.get() {
+                library.set_playlist_cover(title.as_str(), path);
+            }
+        }
+    }
+
+    fn update_cover(&self, tex: &gdk::Texture) {
+        // Set text in case there is no image
+        self.imp().cover.set_paintable(Some(tex));
+    }
+
+    fn clear_cover(&self) {
+        self.imp().cover.set_paintable(Some(&*ALBUMART_PLACEHOLDER));
     }
 
     pub fn current_playlist(&self) -> Option<INode> {

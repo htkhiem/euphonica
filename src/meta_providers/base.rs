@@ -31,6 +31,9 @@ pub enum ProviderMessage {
     /// Both request and positive response
     ArtistAvatar(ArtistInfo), // With cache basepath
     ArtistAvatarAvailable(String, bool, gdk::Texture), // Name, is_thumbnail, the texture itself
+    PlaylistCover(String),
+    PlaylistCoverAvailable(String, bool, gdk::Texture),
+    PlaylistCoverCleared(String),
     /// Both request and positive response. Includes downloading artist avatar.
     ArtistMeta(ArtistInfo, bool), // If bool is true, skip check (for overwriting)
     ArtistMetaAvailable(String), // Only return name

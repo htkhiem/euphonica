@@ -627,6 +627,14 @@ impl Library {
         self.cache().clear_artist_avatar(tag);
     }
 
+    pub fn set_playlist_cover(&self, playlist_name: &str, path: &str) {
+        self.cache().set_playlist_cover(playlist_name, path);
+    }
+
+    pub fn clear_playlist_cover(&self, playlist_name: &str) {
+        self.cache().clear_playlist_cover(playlist_name);
+    }
+
     pub fn fetch_recent_songs(&self) {
         self.imp().recent_songs.remove_all();
         let settings = settings_manager().child("library");

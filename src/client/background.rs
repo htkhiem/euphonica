@@ -171,17 +171,19 @@ fn download_embedded_cover_inner(
             "Couldn't save downloaded thumbnail cover to {:?}",
             &thumbnail_path
         ));
-        sqlite::register_cover_key(
-            &uri,
-            Some(path.file_name().unwrap().to_str().unwrap()),
+        sqlite::register_image_key(
+            uri.clone(),
+            None,
+            Some(path.file_name().unwrap().to_str().unwrap().to_string()),
             false,
         )
         .join()
         .unwrap()
         .expect("Sqlite DB error");
-        sqlite::register_cover_key(
-            &uri,
-            Some(thumbnail_path.file_name().unwrap().to_str().unwrap()),
+        sqlite::register_image_key(
+            uri.clone(),
+            None,
+            Some(thumbnail_path.file_name().unwrap().to_str().unwrap().to_string()),
             true,
         )
         .join()
@@ -212,17 +214,19 @@ fn download_folder_cover_inner(
             "Couldn't save downloaded thumbnail cover to {:?}",
             &thumbnail_path
         ));
-        sqlite::register_cover_key(
-            &folder_uri,
-            Some(path.file_name().unwrap().to_str().unwrap()),
+        sqlite::register_image_key(
+            folder_uri.clone(),
+            None,
+            Some(path.file_name().unwrap().to_str().unwrap().to_string()),
             false,
         )
         .join()
         .unwrap()
         .expect("Sqlite DB error");
-        sqlite::register_cover_key(
-            &folder_uri,
-            Some(thumbnail_path.file_name().unwrap().to_str().unwrap()),
+        sqlite::register_image_key(
+            folder_uri.clone(),
+            None,
+            Some(thumbnail_path.file_name().unwrap().to_str().unwrap().to_string()),
             true,
         )
         .join()
@@ -249,7 +253,7 @@ pub fn download_embedded_cover(
     // in case the folder has been deleted, only thumbnail records in the SQLite DB will be
     // dropped. Checking with thumbnail=true will still return a path even though that
     // path has already been deleted, preventing downloading from proceeding.
-    let folder_path = sqlite::find_cover_by_key(&folder_uri, true).expect("Sqlite DB error");
+    let folder_path = sqlite::find_image_by_key(&folder_uri, None, true).expect("Sqlite DB error");
     if folder_path.is_none() {
         if let Some((hires_tex, thumb_tex)) =
             download_folder_cover_inner(client, folder_uri.clone())
@@ -272,7 +276,7 @@ pub fn download_embedded_cover(
     }
     // Re-check in case previous iterations have already downloaded these.
     let uri = key.uri.to_owned();
-    if sqlite::find_cover_by_key(&uri, true)
+    if sqlite::find_image_by_key(&uri, None, true)
         .expect("Sqlite DB error")
         .is_none()
     {
@@ -315,7 +319,7 @@ pub fn download_folder_cover(
     key: AlbumInfo,
 ) {
     // Re-check in case previous iterations have already downloaded these.
-    if sqlite::find_cover_by_key(&key.folder_uri, true)
+    if sqlite::find_image_by_key(&key.folder_uri, None, true)
         .expect("Sqlite DB error")
         .is_none()
     {
@@ -340,7 +344,7 @@ pub fn download_folder_cover(
         } else {
             // Fall back to embedded art.
             let uri = key.example_uri.to_owned();
-            let sqlite_path = sqlite::find_cover_by_key(&uri, true).expect("Sqlite DB error");
+            let sqlite_path = sqlite::find_image_by_key(&uri, None, true).expect("Sqlite DB error");
             if sqlite_path.is_none() {
                 if let Some((hires_tex, thumb_tex)) =
                     download_embedded_cover_inner(client, uri.clone())
