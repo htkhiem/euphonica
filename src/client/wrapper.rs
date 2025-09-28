@@ -645,6 +645,11 @@ impl MpdWrapper {
             }
         }
 
+        // For queue errors, reenable queue buttons regardless
+        if let Some(ClientError::Queuing) = or.as_ref() {
+            self.state.set_queuing(false);
+        }
+
         if !handled {
             if let Some(or_msg) = or {
                 self.state.emit_error(or_msg);

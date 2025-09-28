@@ -8,7 +8,7 @@ use mpd::{lsinfo::LsInfoEntry, Query, Subsystem, error::Error as MpdError};
 pub use state::{ClientState, ConnectionState, ClientError};
 pub use wrapper::MpdWrapper;
 
-use crate::common::{AlbumInfo, ArtistInfo, SongInfo};
+use crate::common::{AlbumInfo, ArtistInfo, DynamicPlaylist, SongInfo};
 
 // Messages to be sent from child thread or synchronous methods
 enum AsyncClientMessage {
@@ -28,6 +28,7 @@ enum AsyncClientMessage {
     ArtistAlbumBasicInfoDownloaded(String, AlbumInfo), // Return albums that had this artist in their AlbumArtist tag.
     FolderContentsDownloaded(String, Vec<LsInfoEntry>),
     PlaylistSongInfoDownloaded(String, Vec<SongInfo>),
+    DynamicPlaylistSongInfoDownloaded(String, Vec<SongInfo>),
     RecentSongInfoDownloaded(Vec<SongInfo>),
     DBUpdated,
     // Generic background error, with an optional Euphonica-specific hint
@@ -57,4 +58,6 @@ pub enum BackgroundTask {
     FetchArtistAlbums(String), // Get all albums of an artist with given name
     FetchPlaylistSongs(String), // Get songs of playlist with given name
     FetchRecentSongs(u32), // Get last n songs
+    // DynamicPlaylist object, optional fetch limit for preview, queue or not, play or not
+    FetchDynamicPlaylist(DynamicPlaylist, Option<u32>, bool, bool)
 }

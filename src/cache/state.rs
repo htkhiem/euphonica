@@ -92,6 +92,18 @@ mod imp {
                             String::static_type(), // artist tag
                         ])
                         .build(),
+                    Signal::builder("playlist-cover-downloaded")
+                        .param_types([
+                            String::static_type(), // playlist name
+                            bool::static_type(),   // is_thumbnail
+                            gdk::Texture::static_type()
+                        ])
+                        .build(),
+                    Signal::builder("playlist-cover-cleared")
+                        .param_types([
+                            String::static_type(), // playlist name
+                        ])
+                        .build(),
                     Signal::builder("song-lyrics-downloaded")
                         .param_types([
                             String::static_type(), // full song URI

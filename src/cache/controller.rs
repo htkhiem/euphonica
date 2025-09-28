@@ -210,7 +210,7 @@ impl Cache {
                                         if let Some(artist) = res {
                                             sqlite::write_artist_meta(&key, &artist)
                                                 .expect("Unable to write downloaded artist meta");
-                                            if !sqlite::find_avatar_by_key(&key.name, false).expect("Sqlite DB error").is_some() {
+                                            if !sqlite::find_image_by_key(&key.name, Some("avatar"), false).expect("Sqlite DB error").is_some() {
                                                 // Try to download artist avatar too
                                                 let res = get_best_image(&artist.image);
                                                 let (path, thumbnail_path) = get_new_image_paths();
@@ -220,8 +220,14 @@ impl Cache {
                                                         hires.save(&path),
                                                         thumbnail.save(&thumbnail_path)
                                                     ) {
-                                                        let _ = sqlite::register_avatar_key(&key.name, Some(path.file_name().unwrap().to_str().unwrap()), false);
-                                                        let _ = sqlite::register_avatar_key(&key.name, Some(thumbnail_path.file_name().unwrap().to_str().unwrap()), true);
+                                                        let _ = sqlite::register_image_key(
+                                                            key.name.clone(), Some("avatar"),
+                                                            Some(path.file_name().unwrap().to_str().unwrap().to_string()), false
+                                                        );
+                                                        let _ = sqlite::register_image_key(
+                                                            key.name.clone(), Some("avatar"),
+                                                            Some(thumbnail_path.file_name().unwrap().to_str().unwrap().to_string()), true
+                                                        );
                                                         let hires_tex = gdk::Texture::from_filename(&path).unwrap();
                                                         let thumbnail_tex = gdk::Texture::from_filename(&thumbnail_path).unwrap();
                                                         let _ = fg_sender.send_blocking(ProviderMessage::ArtistAvatarAvailable(name.clone(), false, hires_tex));
@@ -251,7 +257,7 @@ impl Cache {
                                 fg_sender,
                                 move || {
                                     let mut success: bool = false;
-                                    if sqlite::find_cover_by_key(&album.folder_uri, false).expect("Sqlite DB error").is_some() {
+                                    if sqlite::find_image_by_key(&album.folder_uri, None, false).expect("Sqlite DB error").is_some() {
                                         success = true;
                                     }
                                     else if let Ok(Some(meta)) = sqlite::find_album_meta(&album) {
@@ -263,8 +269,14 @@ impl Cache {
                                                 hires.save(&path),
                                                 thumbnail.save(&thumbnail_path)
                                             ) {
-                                                let _ = sqlite::register_cover_key(&album.folder_uri, Some(path.file_name().unwrap().to_str().unwrap()), false);
-                                                let _ = sqlite::register_cover_key(&album.folder_uri, Some(thumbnail_path.file_name().unwrap().to_str().unwrap()), true);
+                                                let _ = sqlite::register_image_key(
+                                                    album.folder_uri.clone(), None,
+                                                    Some(path.file_name().unwrap().to_str().unwrap().to_string()), false
+                                                );
+                                                let _ = sqlite::register_image_key(
+                                                    album.folder_uri.clone(), None,
+                                                    Some(thumbnail_path.file_name().unwrap().to_str().unwrap().to_string()), true
+                                                );
                                                 let hires_tex = gdk::Texture::from_filename(&path).unwrap();
                                                 let thumbnail_tex = gdk::Texture::from_filename(&thumbnail_path).unwrap();
                                                 let _ = fg_sender.send_blocking(ProviderMessage::CoverAvailable(album.folder_uri.to_owned(), false, hires_tex));
@@ -278,8 +290,8 @@ impl Cache {
                                         // End of the road, still unable to find anything for this folder (or its songs).
                                         println!("Cannot download folder cover for {} externally (perhaps all providers were disabled)", album.folder_uri);
                                         // Write empty entries to prevent further (fruitless) lookups
-                                        let _ = sqlite::register_cover_key(&album.folder_uri, None, false);
-                                        let _ = sqlite::register_cover_key(&album.folder_uri, None, true);
+                                        let _ = sqlite::register_image_key(album.folder_uri.clone(), None, None, false);
+                                        let _ = sqlite::register_image_key(album.folder_uri.clone(), None, None, true);
                                         let _ = fg_sender.send_blocking(ProviderMessage::CoverNotAvailable(album.folder_uri));
                                     }
                                 }
@@ -347,6 +359,12 @@ impl Cache {
                     ProviderMessage::ArtistAvatarCleared(name) => {
                         this.on_artist_avatar_cleared(&name)
                     }
+                    ProviderMessage::PlaylistCoverAvailable(name, thumb, tex) => {
+                        this.on_playlist_cover_downloaded(&name, thumb, &tex)
+                    }
+                    ProviderMessage::PlaylistCoverCleared(name) => {
+                        this.on_playlist_cover_cleared(&name)
+                    }
                     ProviderMessage::LyricsAvailable(key) => {
                         this.on_lyrics_downloaded(&key)
                     }
@@ -383,6 +401,14 @@ impl Cache {
         self.state.emit_with_param("artist-avatar-cleared", name);
     }
 
+    fn on_playlist_cover_downloaded(&self, name: &str, is_thumbnail: bool, tex: &gdk::Texture) {
+        self.state.emit_texture("playlist-cover-downloaded", name, is_thumbnail, tex);
+    }
+
+    fn on_playlist_cover_cleared(&self, name: &str) {
+        self.state.emit_with_param("playlist-cover-cleared", name);
+    }
+
     fn on_lyrics_downloaded(&self, uri: &str) {
         self.state.emit_with_param("song-lyrics-downloaded", uri);
     }
@@ -406,7 +432,7 @@ impl Cache {
     ) -> Option<(Texture, bool)> {
         let mut embedded_failed_before = false;
         let mut folder_failed_before = false;
-        if let Some(filename) = sqlite::find_cover_by_key(&song.uri, thumbnail)
+        if let Some(filename) = sqlite::find_image_by_key(&song.uri, None, thumbnail)
             .expect("Sqlite DB error")
         {
             if !filename.is_empty() {
@@ -437,7 +463,7 @@ impl Cache {
                                 } else {
                                     // File no longer exists (maybe user had removed it). Unregister it from DB
                                     // and repeat process.
-                                    sqlite::unregister_cover_key(&song.uri, thumbnail)
+                                    sqlite::unregister_image_key(song.uri.clone(), None, thumbnail)
                                         .join().unwrap().expect("Sqlite DB error");
                                     println!("Unregistered image. Retrying...");
                                     // Return song info object to facilitate recursive retry
@@ -460,7 +486,7 @@ impl Cache {
         }
         // Failed to get embedded art locally. Try falling back to folder art first.
         let folder_uri = strip_filename_linux(&song.uri);
-        if let Some(filename) = sqlite::find_cover_by_key(folder_uri, thumbnail)
+        if let Some(filename) = sqlite::find_image_by_key(folder_uri, None, thumbnail)
             .expect("Sqlite DB error")
         {
             if !filename.is_empty() {
@@ -494,7 +520,7 @@ impl Cache {
                                 } else {
                                     // File no longer exists (maybe user had removed it). Unregister it from DB
                                     // and repeat process.
-                                    sqlite::unregister_cover_key(&folder_uri, thumbnail)
+                                    sqlite::unregister_image_key(folder_uri.clone(), None, thumbnail)
                                         .join().unwrap().expect("Sqlite DB error");
                                     println!("Unregistered image. Retrying...");
                                     // Return song info object to facilitate recursive retry
@@ -545,7 +571,7 @@ impl Cache {
         let folder_uri = &album.folder_uri;
         let mut failed_before = false;
         // Try folder cover first
-        if let Some(filename) = sqlite::find_cover_by_key(folder_uri, thumbnail)
+        if let Some(filename) = sqlite::find_image_by_key(folder_uri, None, thumbnail)
             .expect("Sqlite DB error")
         {
             if !filename.is_empty() {
@@ -576,7 +602,7 @@ impl Cache {
                                 else {
                                     // File no longer exists (maybe user had removed it). Unregister it from DB
                                     // and repeat process.
-                                    sqlite::unregister_cover_key(&folder_uri, thumbnail)
+                                    sqlite::unregister_image_key(folder_uri.clone(), None, thumbnail)
                                         .join().unwrap().expect("Sqlite DB error");
                                     return Some(album);
                                 }
@@ -596,7 +622,7 @@ impl Cache {
         // Failed to get folder cover locally. Try looking for a locally cached embedded
         // cover of a song in this folder.
         let uri = &album.example_uri;
-        if let Some(filename) = sqlite::find_cover_by_key(uri, thumbnail)
+        if let Some(filename) = sqlite::find_image_by_key(uri, None, thumbnail)
             .expect("Sqlite DB error")
             .map_or(None, |name| if name.len() > 0 {Some(name)} else {None})
         {
@@ -629,7 +655,7 @@ impl Cache {
                             } else {
                                 // File no longer exists (maybe user had removed it). Unregister it from DB
                                 // and repeat process.
-                                sqlite::unregister_cover_key(&uri, thumbnail)
+                                sqlite::unregister_image_key(uri.clone(), None, thumbnail)
                                     .join().unwrap().expect("Sqlite DB error");
                                 println!("Unregistered image. Retrying...");
                                 return Some(album);
@@ -665,10 +691,13 @@ impl Cache {
     }
 
     /// Load the specified image, resize it, load into cache then send a message to frontend.
-    /// All of the above must be done in the background to avoid blocking UI.
-    pub fn set_cover(&self, folder_uri: &str, path: &str) {
+    /// All of the above is done in the background to avoid blocking UI.
+    /// respond is a closure that uses the provided sender to send the hires and thumbnail versions to UI.
+    fn set_image<F>(&self, key: &str, key_prefix: Option<&'static str>, path: &str, respond: F)
+    where F: Send + FnOnce(Sender<ProviderMessage>, String, gdk::Texture, gdk::Texture) + 'static
+    {
         let fg_sender = self.fg_sender.clone();
-        let folder_uri = folder_uri.to_owned();
+        let key = key.to_owned();
         let (hires_path, thumbnail_path) = get_new_image_paths();
         // Assume ashpd always return filesystem spec
         let filepath = urlencoding::decode(if path.starts_with("file://") {
@@ -682,8 +711,14 @@ impl Cache {
                 if let Ok(dyn_img) = ptr.decode() {
                     let (hires, thumbnail) = resize_convert_image(dyn_img);
                     if let (Ok(_), Ok(_)) = (hires.save(&hires_path), thumbnail.save(&thumbnail_path)) {
-                        let _ = sqlite::register_cover_key(&folder_uri, Some(hires_path.file_name().unwrap().to_str().unwrap()), false);
-                        let _ = sqlite::register_cover_key(&folder_uri, Some(thumbnail_path.file_name().unwrap().to_str().unwrap()), true);
+                        sqlite::register_image_key(
+                            key.clone(), key_prefix,
+                            Some(hires_path.file_name().unwrap().to_str().unwrap().to_owned()), false
+                        ).join().unwrap().expect("Unable to register image key");
+                        sqlite::register_image_key(
+                            key.clone(), key_prefix,
+                            Some(thumbnail_path.file_name().unwrap().to_str().unwrap().to_owned()), true
+                        ).join().unwrap().expect("Unable to register image key");
                     }
                     // TODO: Optimise to avoid reading back from disk
                     let hires_tex = gdk::Texture::from_filename(&hires_path).unwrap();
@@ -695,115 +730,111 @@ impl Cache {
                             hires_tex.clone()
                         );
                         cache.put(
-                            hires_path.file_name().unwrap().to_str().unwrap().to_owned(),
+                            thumbnail_path.file_name().unwrap().to_str().unwrap().to_owned(),
                             thumbnail_tex.clone(),
                         );
                     }
-                    let _ = fg_sender.send_blocking(ProviderMessage::CoverAvailable(folder_uri.clone(), false, hires_tex));
-                    let _ = fg_sender.send_blocking(ProviderMessage::CoverAvailable(folder_uri, true, thumbnail_tex));
+                    respond(fg_sender, key, hires_tex, thumbnail_tex);
                 }
             }
             else {
                 println!("{:?}", maybe_ptr.err());
             }
         });
-   }
+    }
 
-    /// Evict the album art from cache and delete from cache folder on disk.
-    /// This does not by itself yeet the art from memory (UI elements will still hold refs to it).
+
+    /// Evict the image from cache and delete from cache folder on disk.
+    /// This does not by itself yeet the image from memory (UI elements will still hold refs to it).
     /// We'll need to signal to these elements to clear themselves.
+    pub fn clear_image<F>(&self, key: &str, key_prefix: Option<&'static str>, respond: F)
+    where F: Send + FnOnce(Sender<ProviderMessage>, String) + 'static
+    {
+        let fg_sender = self.fg_sender.clone();
+        let key = key.to_owned();
+        gio::spawn_blocking(move || {
+            if let Some(hires_name) = sqlite::find_image_by_key(&key, key_prefix, false).unwrap() {
+                let mut hires_path = get_image_cache_path();
+                hires_path.push(&hires_name);
+                sqlite::unregister_image_key(key.clone(), key_prefix, false)
+                    .join().unwrap().expect("Unable to unregister image key");
+                IMAGE_CACHE.lock().unwrap().pop(&hires_name);
+                let _ = std::fs::remove_file(hires_path);
+            }
+            if let Some(thumb_name) = sqlite::find_image_by_key(&key, key_prefix, true).unwrap() {
+                let mut thumb_path = get_image_cache_path();
+                thumb_path.push(&thumb_name);
+                sqlite::unregister_image_key(key.clone(), key_prefix, true)
+                    .join().unwrap().expect("Unable to unregister image key");
+                IMAGE_CACHE.lock().unwrap().pop(&thumb_name);
+                let _ = std::fs::remove_file(thumb_path);
+            }
+            respond(fg_sender, key);
+            // let _ = fg_sender.send_blocking(ProviderMessage::FolderCoverCleared(folder_uri));
+        });
+    }
+
+
+    pub fn set_cover(&self, folder_uri: &str, path: &str) {
+        self.set_image(
+            folder_uri, None, path,
+            |sender, folder_uri, hires, thumb| {
+                let _ = sender.send_blocking(ProviderMessage::CoverAvailable(folder_uri.clone(), false, hires));
+                let _ = sender.send_blocking(ProviderMessage::CoverAvailable(folder_uri, true, thumb));
+            }
+        );
+    }
+
+
     pub fn clear_cover(&self, folder_uri: &str) {
-        let fg_sender = self.fg_sender.clone();
-        let folder_uri = folder_uri.to_owned();
-        gio::spawn_blocking(move || {
-            if let Some(hires_name) = sqlite::find_cover_by_key(&folder_uri, false).unwrap() {
-                let mut hires_path = get_image_cache_path();
-                hires_path.push(&hires_name);
-                sqlite::unregister_cover_key(&folder_uri, false)
-                    .join().unwrap().expect("Unable to unregister image key");
-                IMAGE_CACHE.lock().unwrap().pop(&hires_name);
-                let _ = std::fs::remove_file(hires_path);
+        self.clear_image(
+            folder_uri, None,
+            |sender, folder_uri| {
+                let _ = sender.send_blocking(ProviderMessage::FolderCoverCleared(folder_uri));
             }
-            if let Some(thumb_name) = sqlite::find_cover_by_key(&folder_uri, true).unwrap() {
-                let mut thumb_path = get_image_cache_path();
-                thumb_path.push(&thumb_name);
-                sqlite::unregister_cover_key(&folder_uri, true)
-                    .join().unwrap().expect("Unable to unregister image key");
-                IMAGE_CACHE.lock().unwrap().pop(&thumb_name);
-                let _ = std::fs::remove_file(thumb_path);
-            }
-            let _ = fg_sender.send_blocking(ProviderMessage::FolderCoverCleared(folder_uri));
-        });
+        );
     }
 
-    /// Load the specified image, resize it, load into cache then send a message to frontend.
-    /// All of the above must be done in the background to avoid blocking UI.
+
     pub fn set_artist_avatar(&self, tag: &str, path: &str) {
-        let fg_sender = self.fg_sender.clone();
-        let tag = tag.to_owned();
-        let (hires_path, thumbnail_path) = get_new_image_paths();
-        // Assume ashpd always return filesystem spec
-        let filepath = urlencoding::decode(if path.starts_with("file://") {
-            &path[7..]
-        } else {
-            path
-        }).expect("UTF-8").into_owned();
-        gio::spawn_blocking(move || {
-            let maybe_ptr = ImageReader::open(&filepath);
-            if let Ok(ptr) = maybe_ptr {
-                if let Ok(dyn_img) = ptr.decode() {
-                    let (hires, thumbnail) = resize_convert_image(dyn_img);
-                    if let (Ok(_), Ok(_)) = (hires.save(&hires_path), thumbnail.save(&thumbnail_path)) {
-                        let _ = sqlite::register_avatar_key(&tag, Some(hires_path.file_name().unwrap().to_str().unwrap()), false);
-                        let _ = sqlite::register_avatar_key(&tag, Some(thumbnail_path.file_name().unwrap().to_str().unwrap()), true);
-                        // TODO: Optimise to avoid reading back from disk
-                        let hires_tex = gdk::Texture::from_filename(&hires_path).unwrap();
-                        let thumbnail_tex = gdk::Texture::from_filename(&thumbnail_path).unwrap();
-                        {
-                            let mut cache = IMAGE_CACHE.lock().unwrap();
-                            cache.put(
-                                hires_path.file_name().unwrap().to_str().unwrap().to_owned(),
-                                hires_tex.clone()
-                            );
-                            cache.put(
-                                hires_path.file_name().unwrap().to_str().unwrap().to_owned(),
-                                thumbnail_tex.clone(),
-                            );
-                        }
-                        let _ = fg_sender.send_blocking(ProviderMessage::ArtistAvatarAvailable(tag.clone(), false, hires_tex));
-                        let _ = fg_sender.send_blocking(ProviderMessage::ArtistAvatarAvailable(tag, false, thumbnail_tex));
-                    }
-                }
+        self.set_image(
+            tag, Some("avatar"), path,
+            |sender, tag, hires, thumb| {
+                let _ = sender.send_blocking(ProviderMessage::ArtistAvatarAvailable(tag.clone(), false, hires));
+                let _ = sender.send_blocking(ProviderMessage::ArtistAvatarAvailable(tag, true, thumb));
             }
-            else {
-                println!("{:?}", maybe_ptr.err());
-            }
-        });
+        );
     }
 
-    /// Evict the album art from cache and delete from cache folder on disk.
-    /// This does not by itself yeet the art from memory (UI elements will still hold refs to it).
-    /// We'll need to signal to these elements to clear themselves.
+
     pub fn clear_artist_avatar(&self, tag: &str) {
-        let fg_sender = self.fg_sender.clone();
-        let tag = tag.to_owned();
-        gio::spawn_blocking(move || {
-            if let Some(hires_name) = sqlite::find_avatar_by_key(&tag, false).unwrap() {
-                let mut hires_path = get_image_cache_path();
-                hires_path.push(&hires_name);
-                let _ = sqlite::unregister_avatar_key(&tag, false);
-                IMAGE_CACHE.lock().unwrap().pop(&hires_name);
-                let _ = std::fs::remove_file(hires_path);
+        self.clear_image(
+            tag, Some("avatar"),
+            |sender, tag| {
+                let _ = sender.send_blocking(ProviderMessage::ArtistAvatarCleared(tag));
             }
-            if let Some(thumb_name) = sqlite::find_avatar_by_key(&tag, true).unwrap() {
-                let mut thumb_path = get_image_cache_path();
-                thumb_path.push(&thumb_name);
-                let _ = sqlite::unregister_avatar_key(&tag, true);
-                IMAGE_CACHE.lock().unwrap().pop(&thumb_name);
-                let _ = std::fs::remove_file(thumb_path);
+        );
+    }
+
+
+    pub fn set_playlist_cover(&self, playlist_name: &str, path: &str) {
+        self.set_image(
+            playlist_name, Some("playlist"), path,
+            |sender, playlist_name, hires, thumb| {
+                let _ = sender.send_blocking(ProviderMessage::PlaylistCoverAvailable(playlist_name.clone(), false, hires));
+                let _ = sender.send_blocking(ProviderMessage::PlaylistCoverAvailable(playlist_name, true, thumb));
             }
-            let _ = fg_sender.send_blocking(ProviderMessage::ArtistAvatarCleared(tag));
-        });
+        );
+    }
+
+
+    pub fn clear_playlist_cover(&self, playlist_name: &str) {
+        self.clear_image(
+            playlist_name, Some("playlist"),
+            |sender, playlist_name| {
+                let _ = sender.send_blocking(ProviderMessage::PlaylistCoverCleared(playlist_name));
+            }
+        );
     }
 
 
@@ -861,7 +892,7 @@ impl Cache {
     ) -> Option<Texture> {
         // First try to get from cache
         let name = &artist.name;
-        if let Some(filename) = sqlite::find_avatar_by_key(name, thumbnail).expect("Sqlite DB error") {
+        if let Some(filename) = sqlite::find_image_by_key(name, Some("avatar"), thumbnail).expect("Sqlite DB error") {
             if let Some(tex) = IMAGE_CACHE.lock().unwrap().get(&filename) {
                 // Cloning GObjects is cheap since they're just references
                 return Some(tex.clone());
@@ -884,7 +915,7 @@ impl Cache {
                         } else {
                             // File no longer exists (maybe user had removed it). Unregister it from DB
                             // and repeat process.
-                            sqlite::unregister_avatar_key(&artist.name, thumbnail)
+                            sqlite::unregister_image_key(artist.name.clone(), Some("avatar"), thumbnail)
                                 .join().unwrap().expect("Sqlite DB error");
                             println!("Unregistered image. Retrying...");
                             // Return song info object to facilitate recursive retry
@@ -897,6 +928,42 @@ impl Cache {
                     }).await;
                 }
             ));
+        }
+        None
+    }
+
+    /// Public method to allow other controllers to get playlist cover images for
+    /// directly if possible.
+    /// Without this, they can only get the textures via signals, which have overhead.
+    pub fn load_cached_playlist_cover(
+        self: Rc<Self>,
+        playlist_name: &str,
+        thumbnail: bool,
+    ) -> Option<Texture> {
+        // First try to get from cache
+        if let Some(filename) = sqlite::find_image_by_key(playlist_name, Some("playlist"), thumbnail).expect("Sqlite DB error") {
+            if let Some(tex) = IMAGE_CACHE.lock().unwrap().get(&filename) {
+                // Cloning GObjects is cheap since they're just references
+                return Some(tex.clone());
+            }
+            // If missed, try loading from disk
+            let fg_sender = self.fg_sender.clone();
+            let playlist_name = playlist_name.to_owned();
+            let _ = gio::spawn_blocking(move || {
+                let mut path = get_image_cache_path();
+                path.push(&filename);
+                // Try to load from disk. Do this using the threadpool to avoid blocking UI.
+                if let Ok(tex) = Texture::from_filename(&path) {
+                    IMAGE_CACHE.lock().unwrap().put(filename, tex.clone());
+                    let _ = fg_sender.send_blocking(ProviderMessage::PlaylistCoverAvailable(playlist_name, thumbnail, tex));
+                } else {
+                    // File no longer exists (maybe user had removed it). Unregister it from DB.
+                    // NO NEED TO REPEAT PROCESS. There is nothing to fetch automatically.
+                    println!("Playlist cover no longer present on disk. Unregistering...");
+                    sqlite::unregister_image_key(playlist_name, Some("playlist"), thumbnail)
+                        .join().unwrap().expect("Sqlite DB error");
+                }
+            });
         }
         None
     }

@@ -403,8 +403,11 @@ impl AlbumContentView {
                         wiki_link.set_visible(false);
                     }
                     wiki_attrib.set_label(&wiki.attribution);
+                    wiki_attrib.set_visible(true);
                 } else {
                     wiki_text.set_label("");
+                    wiki_link.set_visible(false);
+                    wiki_attrib.set_visible(false);
                 }
                 if infobox_spinner.visible_child_name().unwrap() != "content" {
                     infobox_spinner.set_visible_child_name("content");
