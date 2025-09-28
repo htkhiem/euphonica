@@ -1,9 +1,10 @@
-use mpd::search::{Query};
+use std::borrow::Cow;
+
+use mpd::{search::{Operation as TagOperation}, Query, Term};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub enum StickerOp {
-    #[serde()]
+pub enum StickerOperation {
     LessThan,
     GreaterThan,
     Contains,
@@ -12,8 +13,8 @@ pub enum StickerOp {
     IntGreaterThan
 }
 
-impl StickerOp {
-    pub fn op(&self) -> &'static str {
+impl StickerOperation {
+    pub fn to_mpd_syntax(&self) -> &'static str {
         match self {
             Self::LessThan => "<",
             Self::GreaterThan => ">",
@@ -25,12 +26,60 @@ impl StickerOp {
     }
 }
 
+/// Flattened, no-lifetime version of mpd::search::Term * mpd::search::Operation,
+/// only containing supported tag types.
 #[derive(Serialize, Deserialize)]
-pub struct Rules<'a> {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    query: Option<Query<'a>>,
-    /// RHS is always a string. If should be treated as numeric, use the relevant StickerOps.
-    sticker_conditions: Vec<(String, StickerOp, String)>,
+pub enum QueryLhs {
+    File,    // matches full song URI, always ==
+    Base,    // from this directory
+    LastMod, // since (>=)
+    // Tags
+    Any(TagOperation),  // will match any tag
+    Album(TagOperation),
+    AlbumArtist(TagOperation),
+    Artist(TagOperation),
+    // more to come
+}
+
+impl QueryLhs {
+    /// Consume & add self into an existing mpd::search::Query.
+    pub fn add_to_query(self, query: &mut Query, rhs: String) {
+        let rhs = Cow::Owned(rhs);
+        match self {
+            Self::File => {
+                query.and(Term::File, rhs);
+            }
+            Self::Base => {
+                query.and(Term::Base, rhs);
+            }
+            Self::LastMod => {
+                query.and(Term::LastMod, rhs);
+            }
+            Self::Any(op) => {
+                query.and_with_op(Term::Any, op, rhs);
+            }
+            Self::Album(op) => {
+                query.and_with_op(Term::Tag(Cow::Borrowed("album")), op, rhs);
+            }
+            Self::AlbumArtist(op) => {
+                query.and_with_op(Term::Tag(Cow::Borrowed("albumartist")), op, rhs);
+            }
+            Self::Artist(op) => {
+                query.and_with_op(Term::Tag(Cow::Borrowed("artist")), op, rhs);
+            }
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+pub enum Rule {
+    /// LHS (key), operator, RHS (always a string)
+    Sticker(String, StickerOperation, String),
+    /// A subset of supported query operations.
+    /// Optional LHS (tag or MPD term as string), MPD operation, right hand
+    /// side (unary ops use this). We don't use mpd::search::Filter directly
+    /// here to keep the Rule struct Send+Sync.
+    Query(QueryLhs, String)
 }
 
 /// Dynamic playlist struct.
@@ -51,11 +100,11 @@ pub struct Rules<'a> {
 /// sticker conditions. To query a DP, we perform an intersection between sets of URIs
 /// returned by the query and each of the sticker conditions.
 #[derive(Serialize, Deserialize)]
-pub struct DynamicPlaylist<'a> {
+pub struct DynamicPlaylist {
     pub name: String,
     pub description: String,
     pub last_modified: String,
     pub last_queued: String,
     pub play_count: isize,
-    pub rules: Rules<'a>
+    pub rules: Vec<Rule>
 }

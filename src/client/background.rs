@@ -14,7 +14,7 @@ use mpd::{
 };
 use rustc_hash::FxHashSet;
 
-use crate::{cache::{get_new_image_paths, sqlite}, common::SongInfo, meta_providers::ProviderMessage, utils::{self, strip_filename_linux}};
+use crate::{cache::{get_new_image_paths, sqlite}, common::{dynamic_playlist::{QueryLhs, Rule, StickerOperation}, SongInfo}, meta_providers::ProviderMessage, utils::{self, strip_filename_linux}};
 
 use super::*;
 
@@ -423,9 +423,9 @@ where
 fn fetch_songs_by_query<F>(
     client: &mut mpd::Client<stream::StreamWrapper>,
     query: &Query,
-    respond: F,
+    mut respond: F,
 ) where
-    F: Fn(Vec<SongInfo>) -> Result<(), SendError<AsyncClientMessage>>,
+    F: FnMut(Vec<SongInfo>) -> Result<(), SendError<AsyncClientMessage>>,
 {
     let mut curr_len: usize = 0;
     let mut more: bool = true;
@@ -441,6 +441,37 @@ fn fetch_songs_by_query<F>(
                     .collect();
                 if !songs.is_empty() {
                     let _ = respond(songs);
+                    curr_len += BATCH_SIZE;
+                } else {
+                    more = false;
+                }
+            }
+            Err(e) => {
+                dbg!(e);
+            }
+        }
+    }
+}
+
+fn fetch_uris_by_sticker<F>(
+    client: &mut mpd::Client<stream::StreamWrapper>,
+    sticker: &str,
+    op: StickerOperation,
+    rhs: &str,
+    mut respond: F,
+) where
+    F: FnMut(Vec<String>) -> Result<(), SendError<AsyncClientMessage>>,
+{
+    let mut curr_len: usize = 0;
+    let mut more: bool = true;
+    while more && (curr_len) < FETCH_LIMIT {
+        match client.find_sticker_op(
+            "song", "", sticker, op.to_mpd_syntax(), rhs,
+            Window::from((curr_len as u32, (curr_len + BATCH_SIZE) as u32))
+        ) {
+            Ok(uris) => {
+                if !uris.is_empty() {
+                    let _ = respond(uris);
                     curr_len += BATCH_SIZE;
                 } else {
                     more = false;
@@ -833,13 +864,22 @@ pub fn add_multi(
         return;
     }
     let _ = sender_to_fg.send_blocking(AsyncClientMessage::Queuing(true));
-    let mut res: Result<(), MpdError>;
+    let mut res: Result<(), MpdError> = Ok(());
     if uris.len() > 1 {
-        res = if let Some(pos) = insert_pos {
-            client.insert_multiple(uris, pos as usize).map(|_| ())
-        } else {
-             client.push_multiple(uris).map(|_| ())
-        };
+        // Batch by batch to avoid holding the server up too long (and timing out)
+        let mut inserted: usize = 0;
+        while inserted < uris.len() {
+            let to_insert = (uris.len() - inserted).min(BATCH_SIZE);
+            res = if let Some(pos) = insert_pos {
+                client.insert_multiple(&uris[inserted..(inserted + to_insert)], pos as usize + inserted).map(|_| ())
+            } else {
+                client.push_multiple(&uris[inserted..(inserted + to_insert)]).map(|_| ())
+            };
+            inserted += to_insert;
+            if !res.is_ok() {
+                break;
+            }
+        }
     } else {
         res = if recursive {
             // TODO: support inserting at specific location in queue
@@ -860,9 +900,6 @@ pub fn add_multi(
     match res {
         Ok(()) => {
             let _ = sender_to_fg.send_blocking(AsyncClientMessage::Queuing(false));
-        }
-        Err(MpdError::Io(_)) => {
-            let _ = sender_to_fg.send_blocking(AsyncClientMessage::Connect);
         }
         Err(mpd_error) => {
             let _ = sender_to_fg.send_blocking(AsyncClientMessage::BackgroundError(mpd_error, Some(ClientError::Queuing)));
@@ -894,6 +931,115 @@ pub fn load_playlist(
         }
         Err(mpd_error) => {
             let _ = sender_to_fg.send_blocking(AsyncClientMessage::BackgroundError(mpd_error, Some(ClientError::Queuing)));
+        }
+    }
+}
+
+fn resolve_dynamic_playlist_rules(
+    client: &mut mpd::Client<stream::StreamWrapper>,
+    dp: DynamicPlaylist
+) ->Vec<String> {
+    // Resolve into concrete URIs.
+    // First, separate the search query-based conditions from the sticker ones.
+    let mut query_clauses: Vec<(QueryLhs, String)> = Vec::new();
+    let mut sticker_clauses: Vec<(String, StickerOperation, String)> = Vec::new();
+    for rule in dp.rules.into_iter() {
+        match rule {
+            Rule::Sticker(key, op, rhs) => {
+                sticker_clauses.push((key, op, rhs));
+            }
+            Rule::Query(lhs, rhs) => {
+                query_clauses.push((lhs, rhs));
+            }
+        }
+    }
+    let mut res: Option<FxHashSet<String>> = None;
+    // Query first 'cuz I feel like it.
+    if !query_clauses.is_empty() {
+        let mut mpd_query = Query::new();
+        for (lhs, rhs) in query_clauses.into_iter() {
+            lhs.add_to_query(&mut mpd_query, rhs);
+        }
+        let mut set = FxHashSet::default();
+        fetch_songs_by_query(client, &mpd_query, |batch| {
+            for song in batch.into_iter() {
+                set.insert(song.uri);
+            }
+            Ok(())
+        });
+        res = Some(set);
+    }
+
+    // Get matching URIs for each sticker condition
+    for clause in sticker_clauses.into_iter() {
+        let mut set = FxHashSet::default();
+        fetch_uris_by_sticker(
+            client, &clause.0, clause.1, &clause.2,
+            |batch| {
+                for uri in batch.into_iter() {
+                    set.insert(uri);
+                }
+                Ok(())
+            }
+        );
+        if let Some(ref prev_res) = res {
+            // TODO: reduce cloning
+            let intersection: FxHashSet<String> = prev_res.intersection(&set).map(|s| s.to_owned()).collect();
+            if intersection.len() == 0 {
+                // Return early
+                return Vec::with_capacity(0);
+            }
+            res.replace(intersection);
+        }
+    }
+
+    if let Some(res) = res {
+        res.into_iter().collect()
+    } else {
+        Vec::with_capacity(0)
+    }
+}
+
+pub fn fetch_dynamic_playlist(
+    client: &mut mpd::Client<stream::StreamWrapper>,
+    sender_to_fg: &Sender<AsyncClientMessage>,
+    dp: DynamicPlaylist,
+    fetch_limit: Option<usize>,  // disregarded when queuing
+    queue: bool,  // If true, will queue instead of replying with SongInfos
+    play: bool
+) {
+    if queue {
+        let _ = sender_to_fg.send_blocking(AsyncClientMessage::Queuing(true));
+    }
+
+    // To reduce server & connection burden, temporarily turn off all tags in responses.
+    if client.tagtypes_clear().is_ok() {
+        let name = dp.name.to_owned();
+        let uris = resolve_dynamic_playlist_rules(client, dp);
+        client.tagtypes_all().expect("Cannot restore tagtypes");
+        if queue {
+            add_multi(client, sender_to_fg, &uris, false, if play {Some(0)} else {None}, None);
+        } else {
+            let mut curr_len: usize = 0;
+            match fetch_songs_by_uri(
+                client,
+                uris[..(if let Some(limit) = fetch_limit {limit.min(uris.len())} else {uris.len()})]
+                    .iter().map(AsRef::as_ref).collect::<Vec<&str>>().as_slice()
+            ) {
+                Ok(songs) => {
+                    let songs_len = songs.len();
+                    while curr_len < songs_len {
+                        let next_len = (curr_len + BATCH_SIZE).min(songs_len);
+                        let _ = sender_to_fg.send_blocking(
+                            AsyncClientMessage::DynamicPlaylistSongInfoDownloaded(name.clone(), songs[curr_len..next_len].to_vec())
+                        );
+                        curr_len = next_len;
+                    }
+                }
+                Err(e) => {
+                    dbg!(e);
+                }
+            }
         }
     }
 }
