@@ -22,22 +22,19 @@ fn map_icon_name(plugin_name: &str) -> &'static str {
 mod imp {
     use super::*;
 
-    #[derive(Properties, Default, CompositeTemplate)]
-    #[properties(wrapper_type = super::MpdOutput)]
+    #[derive(Default, CompositeTemplate)]
     #[template(resource = "/io/github/htkhiem/Euphonica/gtk/player/output.ui")]
     pub struct MpdOutput {
         #[template_child]
-        pub toggle_btn: TemplateChild<gtk::Button>,
+        pub icon_btn: TemplateChild<gtk::MenuButton>,
         #[template_child]
         pub icon: TemplateChild<gtk::Image>,
         #[template_child]
         pub name: TemplateChild<gtk::Label>,
         #[template_child]
-        pub options: TemplateChild<gtk::MenuButton>,
+        pub enable_output: TemplateChild<gtk::Switch>,
         #[template_child]
-        pub options_preview: TemplateChild<gtk::Label>,
-        #[property(get, set)]
-        pub enabled: Cell<bool>,
+        pub options_preview: TemplateChild<gtk::Label>
     }
 
     // The central trait for subclassing a GObject
@@ -57,7 +54,6 @@ mod imp {
         }
     }
 
-    #[glib::derived_properties]
     impl ObjectImpl for MpdOutput {}
 
     // Trait shared by all widgets
@@ -78,7 +74,7 @@ impl MpdOutput {
         let icon = self.imp().icon.get();
         let label = self.imp().name.get();
         let is_dimmed = icon.has_css_class("dim-label");
-        let is_enabled = self.imp().enabled.get();
+        let is_enabled = self.imp().enable_output.is_active();
         if is_enabled && is_dimmed {
             icon.remove_css_class("dim-label");
             label.remove_css_class("dim-label");
@@ -93,24 +89,26 @@ impl MpdOutput {
         let imp = self.imp();
         let name = imp.name.get();
         let icon = imp.icon.get();
-        let options = imp.options.get();
+        let enable_output = imp.enable_output.get();
         let options_preview = imp.options_preview.get();
 
         name.set_label(&output.name);
+        if enable_output.is_active() != output.enabled {
+            enable_output.set_active(output.enabled);
+        }
         icon.set_icon_name(Some(map_icon_name(&output.plugin)));
-        let _ = self.imp().enabled.replace(output.enabled);
         if output.attributes.len() > 0 {
             // Big TODO: editable runtime attributes
-            options.set_visible(true);
             let mut attribs: Vec<String> = Vec::with_capacity(output.attributes.len());
             for (k, v) in output.attributes.iter() {
-                println!("<b>{}</b>: {}", k, v);
                 attribs.push(format!("<b>{}</b>: {}", k, v));
             }
 
+            options_preview.set_visible(true);
             options_preview.set_label(&attribs.join("\n"));
         } else {
-            options.set_visible(false);
+            options_preview.set_label("");
+            options_preview.set_visible(false);
         }
         self.set_dim();
     }
@@ -120,17 +118,11 @@ impl MpdOutput {
         res.update_state(output);
 
         let id = output.id;
-        let toggle_btn = res.imp().toggle_btn.get();
-        toggle_btn.connect_clicked(clone!(
-            #[weak(rename_to = this)]
-            res,
+        res.imp().enable_output.connect_active_notify(clone!(
             #[weak]
             player,
-            move |_| {
-                let was_enabled = this.imp().enabled.get();
-                let _ = this.imp().enabled.replace(!was_enabled);
-                this.set_dim();
-                player.set_output(id, !was_enabled);
+            move |sw| {
+                player.set_output(id, sw.is_active());
             }
         ));
 

@@ -1,59 +1,65 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <interface>
-	<template class="EuphonicaMpdOutput" parent="GtkBox">
-		<style>
-			<class name="linked"/>
-		</style>
+  <template class="EuphonicaMpdOutput" parent="GtkBox">
     <property name="orientation">1</property>
-		<property name="halign">center</property>
-		<property name="valign">center</property>
-
-		<object class="GtkPopover" id="options_popover">
+    <property name="halign">center</property>
+    <property name="valign">center</property>
+    <object class="GtkPopover" id="options_popover">
       <property name="has-arrow">true</property>
       <property name="name">options_popover</property>
       <property name="child">
-        <object class="GtkLabel" id="options_preview">
-          <property name="use-markup">true</property>
-        </object>
+				<object class="GtkBox">
+					<property name="orientation">1</property>
+					<property name="spacing">6</property>
+					<child>
+						<object class="GtkLabel" id="options_preview">
+							<property name="use-markup">true</property>
+						</object>
+					</child>
+					<child>
+						<object class="GtkBox">
+							<property name="hexpand">true</property>
+							<child>
+								<object class="GtkSwitch" id="enable_output"/>
+							</child>
+							<child>
+								<object class="GtkLabel">
+									<property name="hexpand">true</property>
+									<property name="label" translatable="true">Enabled</property>
+								</object>
+							</child>
+						</object>
+					</child>
+				</object>
       </property>
     </object>
-
-		<child>
-			<object class="GtkButton" id="toggle_btn">
-				<style>
-					<class name="flat"/>
-				</style>
-				<child>
-					<object class="GtkBox">
-						<property name="spacing">6</property>
-						<property name="orientation">1</property>
-						<child>
-							<object class="GtkImage" id="icon">
-								<property name="icon-size">large</property>
-								<property name="icon-name">soundcard-symbolic</property>
-							</object>
-						</child>
-						<child>
-							<object class="GtkLabel" id="name">
-								<property name="ellipsize">end</property>
-								<style>
-									<class name="caption"/>
-								</style>
-							</object>
-						</child>
-					</object>
-				</child>
-			</object>
-		</child>
-		<child>
-			<object class="GtkMenuButton" id="options">
-				<property name="icon-name">dialog-information-symbolic</property>
-				<property name="visible">false</property>
+    <child>
+      <object class="GtkMenuButton" id="icon_btn">
+        <style>
+          <class name="flat"/>
+        </style>
 				<property name="popover">options_popover</property>
-				<style>
-					<class name="flat"/>
-				</style>
-			</object>
-		</child>
-	</template>
+        <child>
+          <object class="GtkBox">
+            <property name="spacing">6</property>
+            <property name="orientation">1</property>
+            <child>
+              <object class="GtkImage" id="icon">
+                <property name="icon-size">large</property>
+                <property name="icon-name">soundcard-symbolic</property>
+              </object>
+            </child>
+            <child>
+              <object class="GtkLabel" id="name">
+                <property name="ellipsize">end</property>
+                <style>
+                  <class name="caption"/>
+                </style>
+              </object>
+            </child>
+          </object>
+        </child>
+      </object>
+    </child>
+  </template>
 </interface>
