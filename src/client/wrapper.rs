@@ -12,6 +12,7 @@ use mpd::{
     song::Id,
     Channel, EditAction, Idle, Output, SaveMode, Subsystem,
 };
+use zbus::{Connection as ZConnection, Proxy as ZProxy, Result as ZResult};
 
 use std::net::TcpStream;
 use std::os::unix::net::UnixStream;
@@ -387,6 +388,40 @@ impl MpdWrapper {
                     glib::timeout_future_seconds(ping_interval).await;
                 }
             }));
+
+        // A new loop to watch for system suspend/wake actions. We proactively disconnect before suspend
+        // and connect again upon wake to avoid freezing upon a timed-out connection.
+        // let (suspend_sender, suspend_receiver): (Sender<bool>, Receiver<bool>) = async_channel::unbounded();
+        let main_sender = self.main_sender.clone();
+        utils::tokio_runtime().spawn(async move {
+            let connection = ZConnection::system().await.unwrap();
+
+            // Create a proxy for systemd-logind
+            let proxy = ZProxy::new(
+                &connection,
+                "org.freedesktop.login1",      // The service name
+                "/org/freedesktop/login1",     // The object path
+                "org.freedesktop.login1.Manager", // The interface
+            ).await.unwrap();
+
+            // Get a stream of the "PrepareForSleep" signal
+            use futures::prelude::*;
+            let mut signal_stream = std::pin::pin!(
+                proxy.receive_signal("PrepareForSleep").await.unwrap()
+            );
+            // Loop forever, processing signals
+            while let Some(signal) = signal_stream.next().await {
+                if let Ok(going_to_sleep) = signal.body().deserialize::<bool>() {
+                    if going_to_sleep {
+                        println!("System is preparing to suspend. Disconnecting...");
+                        main_sender.send(AsyncClientMessage::Disconnect).await;
+                    } else {
+                        println!("System has woken up. Reconnecting...");
+                        main_sender.send(AsyncClientMessage::Connect).await;
+                    }
+                }
+            }
+        });
     }
 
     async fn respond(&self, request: AsyncClientMessage, recently_connected: bool) -> glib::ControlFlow {
