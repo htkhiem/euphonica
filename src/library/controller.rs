@@ -1,15 +1,19 @@
 use crate::{
-    cache::{sqlite, Cache}, client::{BackgroundTask, ClientState, MpdWrapper, StickerSetMode}, common::{Album, Artist, DynamicPlaylist, INode, Song, Stickers}, player::Player, utils::settings_manager
+    cache::{Cache, sqlite},
+    client::{BackgroundTask, ClientState, MpdWrapper, StickerSetMode},
+    common::{Album, Artist, DynamicPlaylist, INode, Song, Stickers},
+    player::Player,
+    utils::settings_manager,
 };
-use glib::{closure_local, subclass::Signal, clone};
+use chrono::Local;
+use derivative::Derivative;
+use glib::{clone, closure_local, subclass::Signal};
 use gtk::{gio, glib, prelude::*};
 use std::{borrow::Cow, cell::OnceCell, rc::Rc, sync::OnceLock, vec::Vec};
-use derivative::Derivative;
-use chrono::Local;
 
 use adw::subclass::prelude::*;
 
-use mpd::{error::Error as MpdError, search::Operation, EditAction, Query, SaveMode, Term};
+use mpd::{EditAction, Query, SaveMode, Term, error::Error as MpdError, search::Operation};
 
 mod imp {
     use std::cell::{Cell, RefCell};
@@ -80,12 +84,8 @@ mod imp {
                     ParamSpecUInt::builder("folder-curr-idx")
                         .read_only()
                         .build(),
-                    ParamSpecUInt::builder("folder-his-len")
-                        .read_only()
-                        .build(),
-                    ParamSpecString::builder("folder-path")
-                        .read_only()
-                        .build()
+                    ParamSpecUInt::builder("folder-his-len").read_only().build(),
+                    ParamSpecString::builder("folder-path").read_only().build(),
                 ]
             });
             PROPERTIES.as_ref()
@@ -97,16 +97,20 @@ mod imp {
                 "folder-curr-idx" => self.folder_curr_idx.get().to_value(),
                 "folder-his-len" => (self.folder_history.borrow().len() as u32).to_value(),
                 "folder-path" => obj.folder_path().to_value(),
-                _ => {unimplemented!()}
+                _ => {
+                    unimplemented!()
+                }
             }
         }
 
         fn signals() -> &'static [Signal] {
             static SIGNALS: OnceLock<Vec<Signal>> = OnceLock::new();
             SIGNALS.get_or_init(|| {
-                vec![Signal::builder("album-clicked")
-                    .param_types([Album::static_type(), gio::ListStore::static_type()])
-                    .build()]
+                vec![
+                    Signal::builder("album-clicked")
+                        .param_types([Album::static_type(), gio::ListStore::static_type()])
+                        .build(),
+                ]
             })
         }
     }
@@ -258,10 +262,10 @@ impl Library {
         if let Some(cache) = self.imp().cache.get() {
             cache.fetch_album_meta(album.get_info(), false);
         }
-        self.client()
-            .queue_background(BackgroundTask::FetchAlbumSongs(
-                album.get_title().to_owned(),
-            ), true);
+        self.client().queue_background(
+            BackgroundTask::FetchAlbumSongs(album.get_title().to_owned()),
+            true,
+        );
     }
 
     pub fn refetch_album_metadata(&self, album: &Album) {
@@ -283,14 +287,10 @@ impl Library {
                     .map(|s| s.get_uri().to_owned())
                     .collect::<Vec<String>>(),
                 false,
-                if replace && play {
-                    Some(0)
-                } else {
-                    None
-                },
-                None
+                if replace && play { Some(0) } else { None },
+                None,
             ),
-            true
+            true,
         );
     }
 
@@ -312,7 +312,7 @@ impl Library {
                 None,
                 Some(pos),
             ),
-            true
+            true,
         );
     }
 
@@ -330,7 +330,10 @@ impl Library {
             query.and(Term::Tag(Cow::Borrowed("albumartist")), artist.to_owned());
         }
         if let Some(mbid) = album.get_mbid() {
-            query.and(Term::Tag(Cow::Borrowed("musicbrainz_albumid")), mbid.to_owned());
+            query.and(
+                Term::Tag(Cow::Borrowed("musicbrainz_albumid")),
+                mbid.to_owned(),
+            );
         }
         self.client().queue_background(
             BackgroundTask::QueueQuery(
@@ -339,18 +342,24 @@ impl Library {
                     play_from.or(Some(0))
                 } else {
                     None
-                }
+                },
             ),
-            true
+            true,
         );
     }
 
     pub fn rate_album(&self, album: &Album, score: Option<i8>) {
         if let Some(score) = score {
-            self.client().set_sticker("album", album.get_title(), Stickers::RATING_KEY, &score.to_string(), StickerSetMode::Set);
-        }
-        else {
-            self.client().delete_sticker("album", album.get_title(), Stickers::RATING_KEY);
+            self.client().set_sticker(
+                "album",
+                album.get_title(),
+                Stickers::RATING_KEY,
+                &score.to_string(),
+                StickerSetMode::Set,
+            );
+        } else {
+            self.client()
+                .delete_sticker("album", album.get_title(), Stickers::RATING_KEY);
         }
     }
 
@@ -370,15 +379,8 @@ impl Library {
             artist.get_name().to_owned(),
         );
         self.client().queue_background(
-            BackgroundTask::QueueQuery(
-                query,
-                if replace && play {
-                    Some(0)
-                } else {
-                    None
-                }
-            ),
-            true
+            BackgroundTask::QueueQuery(query, if replace && play { Some(0) } else { None }),
+            true,
         );
     }
 
@@ -456,7 +458,7 @@ impl Library {
         self.imp().folder_inodes_initialized.set(false);
         self.folder_forward();
     }
-    
+
     /// Queue a song or folder (when recursive == true) for playback.
     pub fn queue_uri(&self, uri: &str, replace: bool, play: bool, recursive: bool) {
         if replace {
@@ -466,14 +468,10 @@ impl Library {
             BackgroundTask::QueueUris(
                 vec![uri.to_owned()],
                 recursive,
-                if replace && play {
-                    Some(0)
-                } else {
-                    None
-                },
-                None
+                if replace && play { Some(0) } else { None },
+                None,
             ),
-            true
+            true,
         );
     }
 
@@ -496,19 +494,18 @@ impl Library {
                 #[weak(rename_to = this)]
                 self,
                 async move {
-                    match gio::spawn_blocking(|| {
-                        sqlite::get_dynamic_playlists()
-                    }).await.unwrap() {
+                    match gio::spawn_blocking(|| sqlite::get_dynamic_playlists())
+                        .await
+                        .unwrap()
+                    {
                         Ok(inode_infos) => {
                             println!("Received {} dynamic playlists", inode_infos.len());
-                            this.imp()
-                                .dyn_playlists
-                                .extend_from_slice(
-                                    &inode_infos
+                            this.imp().dyn_playlists.extend_from_slice(
+                                &inode_infos
                                     .into_iter()
                                     .map(INode::from)
-                                    .collect::<Vec<INode>>()
-                                );
+                                    .collect::<Vec<INode>>(),
+                            );
                             this.imp().dyn_playlists_initialized.set(true);
                         }
                         Err(e) => {
@@ -526,7 +523,7 @@ impl Library {
     }
 
     pub fn clear_recent_songs(&self) {
-        self.imp().recent_songs.remove_all();  // Will make Recent View switch to the empty StatusPage
+        self.imp().recent_songs.remove_all(); // Will make Recent View switch to the empty StatusPage
         sqlite::clear_history().expect("Unable to clear history");
     }
 
@@ -574,13 +571,9 @@ impl Library {
         self.client().queue_background(
             BackgroundTask::QueuePlaylist(
                 name.to_owned(),
-                if replace && play {
-                    Some(0)
-                } else {
-                    None
-                }
+                if replace && play { Some(0) } else { None },
             ),
-            true
+            true,
         );
     }
 
@@ -600,14 +593,14 @@ impl Library {
         songs: &[Song],
         mode: SaveMode,
     ) -> Result<(), Option<MpdError>> {
-        let mut edits: Vec<EditAction> = Vec::with_capacity(songs.len() + 1);
+        let mut edits: Vec<EditAction<'static>> = Vec::with_capacity(songs.len() + 1);
         if mode == SaveMode::Replace {
-            edits.push(EditAction::Clear(Cow::Borrowed(playlist_name)));
+            edits.push(EditAction::Clear(Cow::Owned(playlist_name.to_string())));
         }
         songs.iter().for_each(|s| {
             edits.push(EditAction::Add(
-                Cow::Borrowed(playlist_name),
-                Cow::Borrowed(s.get_uri()),
+                Cow::Owned(playlist_name.to_string()),
+                Cow::Owned(s.get_uri().to_string()),
                 None,
             ));
         });
@@ -616,15 +609,15 @@ impl Library {
 
     /// Retrieve songs in a dynamic playlist
     pub fn fetch_dynamic_playlist(&self, dp: DynamicPlaylist, cache: bool) {
-        self.client().queue_background(
-            BackgroundTask::FetchDynamicPlaylistSongs(dp, cache), true
-        );
+        self.client()
+            .queue_background(BackgroundTask::FetchDynamicPlaylistSongs(dp, cache), true);
     }
 
     /// Retrieve last cached state of a dynamic playlist
     pub fn fetch_cached_dynamic_playlist(&self, name: &str) {
         self.client().queue_background(
-            BackgroundTask::FetchCachedDynamicPlaylistSongs(name.to_string()), true
+            BackgroundTask::FetchCachedDynamicPlaylistSongs(name.to_string()),
+            true,
         );
     }
 
@@ -634,7 +627,8 @@ impl Library {
             self.client().clear_queue();
         }
         self.client().queue_background(
-            BackgroundTask::QueueDynamicPlaylist(name.to_string(), play), true
+            BackgroundTask::QueueDynamicPlaylist(name.to_string(), play),
+            true,
         );
     }
 
@@ -642,21 +636,20 @@ impl Library {
     pub fn delete_dynamic_playlist(&self, name: &str) {
         glib::spawn_future_local(clone!(
             #[weak(rename_to = this)]
-           self,
+            self,
             async move {
-                match gio::spawn_blocking(|| {
-                    sqlite::get_dynamic_playlists()
-                }).await.unwrap() {
+                match gio::spawn_blocking(|| sqlite::get_dynamic_playlists())
+                    .await
+                    .unwrap()
+                {
                     Ok(inode_infos) => {
                         println!("Received {} dynamic playlists", inode_infos.len());
-                        this.imp()
-                            .dyn_playlists
-                            .extend_from_slice(
-                                &inode_infos
-                                    .into_iter()
-                                    .map(INode::from)
-                                    .collect::<Vec<INode>>()
-                            );
+                        this.imp().dyn_playlists.extend_from_slice(
+                            &inode_infos
+                                .into_iter()
+                                .map(INode::from)
+                                .collect::<Vec<INode>>(),
+                        );
                         this.imp().dyn_playlists_initialized.set(true);
                     }
                     Err(e) => {
@@ -670,11 +663,18 @@ impl Library {
     pub fn save_dynamic_playlist_state(&self, dp_name: &str) -> Option<String> {
         if let Ok(uris) = sqlite::get_cached_dynamic_playlist_results(dp_name) {
             if !uris.is_empty() {
-                let fixed_name = format!("{} {}", dp_name, Local::now().format("%Y-%m-%d %H:%M:%S"));
+                let fixed_name =
+                    format!("{} {}", dp_name, Local::now().format("%Y-%m-%d %H:%M:%S"));
                 self.client().edit_playlist(
-                    &uris.iter().map(
-                        |uri| EditAction::Add(Cow::Borrowed(&fixed_name), Cow::Borrowed(uri), None)
-                    ).collect::<Vec::<EditAction>>()
+                    uris.iter()
+                        .map(|uri| {
+                            EditAction::Add(
+                                Cow::Owned(fixed_name.clone()),
+                                Cow::Owned(uri.to_string()),
+                                None,
+                            )
+                        })
+                        .collect::<Vec<EditAction<'static>>>(),
                 );
                 Some(fixed_name)
             } else {
@@ -687,15 +687,18 @@ impl Library {
 
     pub fn get_folder_contents(&self) {
         if !self.imp().folder_inodes_initialized.get() {
-            self.client()
-                .queue_background(BackgroundTask::FetchFolderContents(self.folder_path()), true);
+            self.client().queue_background(
+                BackgroundTask::FetchFolderContents(self.folder_path()),
+                true,
+            );
             self.imp().folder_inodes_initialized.set(true);
         }
     }
 
     pub fn init_albums(&self) {
         if !self.imp().albums_initialized.get() {
-            self.client().queue_background(BackgroundTask::FetchAlbums, false);
+            self.client()
+                .queue_background(BackgroundTask::FetchAlbums, false);
             self.imp().albums_initialized.set(true);
         }
     }
@@ -704,9 +707,10 @@ impl Library {
         // High-priority as this is lightweight (only a few will be fetched)
         // and is triggered by the user navigating to the Recent view
         self.imp().recent_albums.remove_all();
-        self.client().queue_background(BackgroundTask::FetchRecentAlbums, true);
+        self.client()
+            .queue_background(BackgroundTask::FetchRecentAlbums, true);
     }
- 
+
     pub fn init_artists(&self, use_albumartists: bool) {
         if !self.imp().artists_initialized.get() {
             self.client()
@@ -719,7 +723,8 @@ impl Library {
         // High-priority as this is lightweight (only a few will be fetched)
         // and is triggered by the user navigating to the Recent view
         self.imp().recent_artists.remove_all();
-        self.client().queue_background(BackgroundTask::FetchRecentArtists, true);
+        self.client()
+            .queue_background(BackgroundTask::FetchRecentArtists, true);
     }
 
     pub fn set_cover(&self, folder_uri: &str, path: &str) {
@@ -749,7 +754,9 @@ impl Library {
     pub fn fetch_recent_songs(&self) {
         self.imp().recent_songs.remove_all();
         let settings = settings_manager().child("library");
-        self.client()
-            .queue_background(BackgroundTask::FetchRecentSongs(settings.uint("n-recent-songs")), true);
+        self.client().queue_background(
+            BackgroundTask::FetchRecentSongs(settings.uint("n-recent-songs")),
+            true,
+        );
     }
 }

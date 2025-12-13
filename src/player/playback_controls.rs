@@ -1,9 +1,9 @@
-use glib::{clone, Object};
+use glib::{Object, clone};
 use gtk::{
+    CompositeTemplate,
     glib::{self},
     prelude::*,
     subclass::prelude::*,
-    CompositeTemplate,
 };
 
 use super::{PlaybackFlow, PlaybackState, Player};
@@ -35,7 +35,7 @@ mod imp {
         #[template_child]
         pub random_btn: TemplateChild<gtk::ToggleButton>,
         #[property(get, set)]
-        pub playing: Cell<bool>
+        pub playing: Cell<bool>,
     }
 
     // The central trait for subclassing a GObject

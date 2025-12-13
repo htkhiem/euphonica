@@ -1,17 +1,21 @@
-use duplicate::duplicate;
 use ::glib::closure_local;
+use duplicate::duplicate;
 use std::{rc::Rc, str::FromStr};
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
-use gtk::{glib, CompositeTemplate};
+use gtk::{CompositeTemplate, glib};
 
 use glib::clone;
 
 use mpd::status::AudioFormat;
 
 use crate::{
-    client::{password::{get_mpd_password, set_mpd_password}, state::StickersSupportLevel, ClientState, ConnectionState, MpdWrapper},
+    client::{
+        ClientState, ConnectionState, MpdWrapper,
+        password::{get_mpd_password, set_mpd_password},
+        state::StickersSupportLevel,
+    },
     player::{FftStatus, Player},
     utils,
 };
@@ -27,7 +31,7 @@ pub enum StatusIconState {
     Disabled,
     Loading,
     Partial,
-    Full
+    Full,
 }
 
 impl StickersSupportLevel {
@@ -37,18 +41,20 @@ impl StickersSupportLevel {
             StickersSupportLevel::Disabled => (
                 StatusIconState::Disabled,
                 String::from("Stickers support: disabled"),
-                String::from("Features such as song and album rating are unavailable. Enable stickers DB in your mpd.conf first.")
+                String::from(
+                    "Features such as song and album rating are unavailable. Enable stickers DB in your mpd.conf first.",
+                ),
             ),
             StickersSupportLevel::SongsOnly => (
                 StatusIconState::Partial,
                 String::from("Stickers support: partial"),
-                String::from("Album-level stickers are unavailable on MPD older than 0.24.")
+                String::from("Album-level stickers are unavailable on MPD older than 0.24."),
             ),
             StickersSupportLevel::All => (
                 StatusIconState::Full,
                 String::from("Stickers support: full"),
-                String::from("All stickers-based features are enabled.")
-            )
+                String::from("All stickers-based features are enabled."),
+            ),
         }
     }
 }
@@ -156,30 +162,18 @@ mod imp {
             self.parent_constructed();
 
             self.mpd_use_unix_socket
-                .bind_property(
-                    "active",
-                    &self.mpd_unix_socket.get(),
-                    "visible"
-                )
+                .bind_property("active", &self.mpd_unix_socket.get(), "visible")
                 .sync_create()
                 .build();
 
             self.mpd_use_unix_socket
-                .bind_property(
-                    "active",
-                    &self.mpd_host.get(),
-                    "visible"
-                )
+                .bind_property("active", &self.mpd_host.get(), "visible")
                 .invert_boolean()
                 .sync_create()
                 .build();
 
             self.mpd_use_unix_socket
-                .bind_property(
-                    "active",
-                    &self.mpd_port.get(),
-                    "visible"
-                )
+                .bind_property("active", &self.mpd_port.get(), "visible")
                 .invert_boolean()
                 .sync_create()
                 .build();
@@ -191,7 +185,11 @@ mod imp {
                 .get_only()
                 .build();
             viz_settings
-                .bind("pipewire-restart-between-songs", &self.pipewire_restart_between_songs.get(), "active")
+                .bind(
+                    "pipewire-restart-between-songs",
+                    &self.pipewire_restart_between_songs.get(),
+                    "active",
+                )
                 .build();
             self.fifo_browse.connect_clicked(|_| {
                 utils::tokio_runtime().spawn(async move {
@@ -209,14 +207,10 @@ mod imp {
                         let uris = files.uris();
                         if !uris.is_empty() {
                             fifo_settings
-                                .set_string(
-                                    "mpd-fifo-path",
-                                    uris[0].as_str(),
-                                )
+                                .set_string("mpd-fifo-path", uris[0].as_str())
                                 .expect("Unable to save FIFO path");
                         }
-                    }
-                    else {
+                    } else {
                         println!("{maybe_files:?}");
                     }
                 });
@@ -229,11 +223,10 @@ mod imp {
                         match typ.as_str() {
                             "fifo" => Some(0u32.to_value()),
                             "pipewire" => Some(1u32.to_value()),
-                            _ => unimplemented!()
+                            _ => unimplemented!(),
                         }
-                    }
-                    else {
-                         Option::<glib::Value>::None
+                    } else {
+                        Option::<glib::Value>::None
                     }
                 })
                 .set_mapping(|val, _| {
@@ -242,16 +235,15 @@ mod imp {
                         match idx {
                             0 => Some("fifo".to_variant()),
                             1 => Some("pipewire".to_variant()),
-                            _ => unimplemented!()
+                            _ => unimplemented!(),
                         }
-                    }
-                    else {
+                    } else {
                         Option::<glib::Variant>::None
                     }
                 })
                 .build();
             // Hide FIFO-specific rows when PipeWire is selected as data source
-            duplicate!{
+            duplicate! {
                 [name; [fifo_path]; [fifo_format];]
                 viz_source
                     .bind_property("selected", &self.name.get(), "visible")
@@ -260,7 +252,7 @@ mod imp {
                     .build();
             }
             // Hide PipeWire-specific rows when FIFO is selected as data source
-            duplicate!{
+            duplicate! {
                 [name; [pipewire_devices]; [pipewire_restart_between_songs];]
                 viz_source
                     .bind_property("selected", &self.name.get(), "visible")
@@ -288,7 +280,7 @@ impl Default for ClientPreferences {
 
 impl ClientPreferences {
     fn on_connection_state_changed(&self, cs: &ClientState) {
-        match cs.get_connection_state() { 
+        match cs.get_connection_state() {
             ConnectionState::NotConnected => {
                 self.imp().mpd_status.set_subtitle("Failed to connect");
                 self.imp().mpd_status.set_enable_expansion(false);
@@ -362,8 +354,7 @@ impl ClientPreferences {
             set_status_icon(&icon, StatusIconState::Full);
             row.set_title("Playlists support: enabled");
             row.set_subtitle("Playlist-related features are enabled.");
-        }
-        else {
+        } else {
             set_status_icon(&icon, StatusIconState::Disabled);
             row.set_title("Playlists support: disabled");
             row.set_subtitle("Enable playlists DB in your mpd.conf first.");
@@ -389,13 +380,16 @@ impl ClientPreferences {
         // These should only be saved when the Apply button is clicked.
         // As such we won't bind the widgets directly to the settings.
         let conn_settings = settings.child("client");
-        conn_settings.bind(
-            "mpd-use-unix-socket",
-            &imp.mpd_use_unix_socket.get(),
-            "active"
-        ).build();
+        conn_settings
+            .bind(
+                "mpd-use-unix-socket",
+                &imp.mpd_use_unix_socket.get(),
+                "active",
+            )
+            .build();
         imp.mpd_host.set_text(&conn_settings.string("mpd-host"));
-        imp.mpd_unix_socket.set_text(&conn_settings.string("mpd-unix-socket"));
+        imp.mpd_unix_socket
+            .set_text(&conn_settings.string("mpd-unix-socket"));
         imp.mpd_port
             .set_text(&conn_settings.uint("mpd-port").to_string());
         let password_field = imp.mpd_password.get();
@@ -415,7 +409,6 @@ impl ClientPreferences {
                 }
             }
         });
-
 
         // TODO: more input validation
         // Prevent entering anything other than digits into the port entry row
@@ -488,9 +481,9 @@ impl ClientPreferences {
             client,
             move |_| {
                 if this.imp().mpd_use_unix_socket.is_active() {
-                    let _ = conn_settings.set_string("mpd-unix-socket", &this.imp().mpd_unix_socket.text());
-                }
-                else {
+                    let _ = conn_settings
+                        .set_string("mpd-unix-socket", &this.imp().mpd_unix_socket.text());
+                } else {
                     let _ = conn_settings.set_string("mpd-host", &this.imp().mpd_host.text());
                     let _ = conn_settings.set_uint(
                         "mpd-port",
@@ -503,12 +496,18 @@ impl ClientPreferences {
                     #[weak]
                     client,
                     async move {
-                        let password: Option<&str> = if password_val.is_empty() { None } else { Some(password_val.as_str()) };
+                        let password: Option<&str> = if password_val.is_empty() {
+                            None
+                        } else {
+                            Some(password_val.as_str())
+                        };
                         match set_mpd_password(password).await {
                             Ok(()) => {
                                 client.connect_async().await;
                             }
-                            Err(msg) => {println!("{msg}");}
+                            Err(msg) => {
+                                println!("{msg}");
+                            }
                         }
                     }
                 ));
@@ -521,11 +520,7 @@ impl ClientPreferences {
 
         // Visualiser
         player
-            .bind_property(
-                "fft-status",
-                &self.imp().fifo_status.get(),
-                "subtitle"
-            )
+            .bind_property("fft-status", &self.imp().fifo_status.get(), "subtitle")
             .transform_to(|_, status: FftStatus| Some(status.get_description()))
             .sync_create()
             .build();
@@ -534,12 +529,12 @@ impl ClientPreferences {
         self.update_pipewire_devices(
             player
                 .get_fft_param(Some("pipewire"), "devices")
-                .and_then(|variant| variant.get::<Vec<String>>())
+                .and_then(|variant| variant.get::<Vec<String>>()),
         );
         self.update_pipewire_current_device(
             player
                 .get_fft_param(Some("pipewire"), "current-device")
-                .and_then(|variant| variant.get::<i32>())
+                .and_then(|variant| variant.get::<i32>()),
         );
 
         player.connect_closure(
@@ -552,13 +547,17 @@ impl ClientPreferences {
                     // Currently only need to handle PipeWire
                     if name == "pipewire" {
                         match key.as_str() {
-                            "devices" => {this.update_pipewire_devices(new_val.get::<Vec<String>>());}
-                            "current-device" => {this.update_pipewire_current_device(new_val.get::<i32>());}
+                            "devices" => {
+                                this.update_pipewire_devices(new_val.get::<Vec<String>>());
+                            }
+                            "current-device" => {
+                                this.update_pipewire_current_device(new_val.get::<i32>());
+                            }
                             _ => {}
                         }
                     }
                 }
-            )
+            ),
         );
 
         let player_settings = settings.child("player");
@@ -610,7 +609,11 @@ impl ClientPreferences {
                 let imp = this.imp();
                 let pw_dev_idx = imp.pipewire_devices.selected();
                 if pw_dev_idx != gtk::INVALID_LIST_POSITION {
-                    player.set_fft_param(Some("pipewire"), "current-device", (pw_dev_idx as i32 - 1).to_variant());
+                    player.set_fft_param(
+                        Some("pipewire"),
+                        "current-device",
+                        (pw_dev_idx as i32 - 1).to_variant(),
+                    );
                 }
                 conn_settings
                     .set_string("mpd-fifo-format", &imp.fifo_format.text())
@@ -637,18 +640,23 @@ impl ClientPreferences {
 
     fn update_pipewire_devices(&self, maybe_devices: Option<Vec<String>>) {
         self.imp().pipewire_devices.set_model(
-            maybe_devices.map(|devices: Vec<String>| {
-                let mut device_list = vec!["(auto)"];
-                device_list.append(&mut devices.iter().map(String::as_ref).collect::<Vec<&str>>());
-                gtk::StringList::new(&device_list)
-            }).as_ref()
+            maybe_devices
+                .map(|devices: Vec<String>| {
+                    let mut device_list = vec!["(auto)"];
+                    device_list
+                        .append(&mut devices.iter().map(String::as_ref).collect::<Vec<&str>>());
+                    gtk::StringList::new(&device_list)
+                })
+                .as_ref(),
         );
     }
 
     fn update_pipewire_current_device(&self, curr_device: Option<i32>) {
         // Position -1 means auto.
         if let Some(curr_device) = curr_device {
-            self.imp().pipewire_devices.set_selected((curr_device + 1) as u32);
+            self.imp()
+                .pipewire_devices
+                .set_selected((curr_device + 1) as u32);
         }
     }
 }

@@ -18,8 +18,8 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-use adw::prelude::*;
 use crate::{
+    EuphonicaWindow,
     cache::Cache,
     client::{BackgroundTask, MpdWrapper},
     config::{APPLICATION_USER_AGENT, VERSION},
@@ -27,12 +27,16 @@ use crate::{
     player::Player,
     preferences::Preferences,
     utils::{settings_manager, tokio_runtime},
-    EuphonicaWindow
 };
+use adw::prelude::*;
 use adw::subclass::prelude::*;
 use gtk::{gio, glib};
 use std::{
-    cell::{Cell, OnceCell, RefCell}, fs::create_dir_all, ops::ControlFlow, path::PathBuf, rc::Rc
+    cell::{Cell, OnceCell, RefCell},
+    fs::create_dir_all,
+    ops::ControlFlow,
+    path::PathBuf,
+    rc::Rc,
 };
 
 use ashpd::desktop::background::Background;
@@ -49,8 +53,7 @@ pub fn update_xdg_background_request() {
             .dbus_activatable(false);
 
         if autostart {
-            request = request
-                .auto_start(true);
+            request = request.auto_start(true);
             if start_minimized {
                 request = request.command(&["euphonica", "--minimized"])
             }
@@ -67,7 +70,10 @@ pub fn update_xdg_background_request() {
                     let _ = state_settings.set_boolean("autostart", response.auto_start());
                     // Since we call the above regardless of whether we wish to run in background
                     // or not (to update autostart) we need to do an AND here.
-                    let _ = state_settings.set_boolean("run-in-background", run_in_background && response.run_in_background());
+                    let _ = state_settings.set_boolean(
+                        "run-in-background",
+                        run_in_background && response.run_in_background(),
+                    );
                 }
             }
             Err(_) => {
@@ -186,8 +192,7 @@ mod imp {
                     self.player.get().unwrap().set_is_foreground(true);
                     self.obj().raise_window();
                 }
-            }
-            else {
+            } else {
                 // Not the main instance -> not starting a new one -> always open a window regardless
                 // of whether the main instance was started with the --minimized flag or not.
                 self.obj().raise_window();
@@ -218,7 +223,7 @@ impl EuphonicaApplication {
             if vd.lookup_value("minimized", None).is_some() {
                 this.imp().start_minimized.set(true);
             }
-            ControlFlow::Continue(())  // let execution continue
+            ControlFlow::Continue(()) // let execution continue
         });
 
         // Background mode
@@ -269,7 +274,7 @@ impl EuphonicaApplication {
             update_db_action,
             quit_action,
             about_action,
-            preferences_action
+            preferences_action,
         ]);
     }
 
@@ -281,8 +286,7 @@ impl EuphonicaApplication {
     pub fn is_fullscreen(&self) -> bool {
         if let Some(window) = self.active_window() {
             window.is_fullscreen()
-        }
-        else {
+        } else {
             false
         }
     }

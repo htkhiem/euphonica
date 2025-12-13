@@ -12,10 +12,10 @@ mod seekbar;
 use knob::VolumeKnob;
 use output::MpdOutput;
 
-pub use fft_backends::backend::FftStatus;
 pub use bar::PlayerBar;
 pub use controller::PlaybackState;
 pub use controller::{PlaybackFlow, Player};
+pub use fft_backends::backend::FftStatus;
 pub use pane::PlayerPane;
 pub use playback_controls::PlaybackControls;
 pub use queue_view::QueueView;

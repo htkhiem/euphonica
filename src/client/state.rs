@@ -1,7 +1,7 @@
 use glib::{
-    prelude::*,
-    subclass::{prelude::*, Signal},
     BoxedAnyObject,
+    prelude::*,
+    subclass::{Signal, prelude::*},
 };
 use gtk::glib;
 use std::{cell::Cell, sync::OnceLock};
@@ -27,16 +27,16 @@ pub enum ConnectionState {
 #[enum_type(name = "EuphonicaStickersSupportLevel")]
 pub enum StickersSupportLevel {
     #[default]
-    Disabled,  // Sticker DB has not been set up
+    Disabled, // Sticker DB has not been set up
     SongsOnly, // MPD <0.23.15 only supports attaching stickers directly to songs
-    All // MPD 0.24+ also supports attaching stickers to tags
+    All,       // MPD 0.24+ also supports attaching stickers to tags
 }
 
 #[non_exhaustive]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, glib::Enum)]
 #[enum_type(name = "EuphonicaClientError")]
 pub enum ClientError {
-    Queuing
+    Queuing,
 }
 
 mod imp {
@@ -66,7 +66,7 @@ mod imp {
                 n_tasks: Cell::new(0),
                 stickers_support_level: Cell::default(),
                 supports_playlists: Cell::new(true),
-                queuing: Cell::new(false)
+                queuing: Cell::new(false),
             }
         }
     }
@@ -75,16 +75,16 @@ mod imp {
         fn properties() -> &'static [ParamSpec] {
             static PROPERTIES: Lazy<Vec<ParamSpec>> = Lazy::new(|| {
                 vec![
-                    ParamSpecUInt64::builder("n-background-tasks").read_only().build(),
+                    ParamSpecUInt64::builder("n-background-tasks")
+                        .read_only()
+                        .build(),
                     ParamSpecEnum::builder::<StickersSupportLevel>("stickers-support-level")
                         .read_only()
                         .build(),
                     ParamSpecBoolean::builder("supports-playlists")
                         .read_only()
                         .build(),
-                    ParamSpecBoolean::builder("is-queuing")
-                        .read_only()
-                        .build(),
+                    ParamSpecBoolean::builder("is-queuing").read_only().build(),
                     ParamSpecEnum::builder::<ConnectionState>("connection-state")
                         .read_only()
                         .build(),
@@ -186,15 +186,13 @@ mod imp {
                         ])
                         .build(),
                     Signal::builder("client-error")
-                        .param_types([
-                            ClientError::static_type()
-                        ])
+                        .param_types([ClientError::static_type()])
                         .build(),
                     Signal::builder("queue-songs-downloaded")
                         .param_types([
                             BoxedAnyObject::static_type(), // Vec<Song>
                         ])
-                        .build()
+                        .build(),
                 ]
             })
         }

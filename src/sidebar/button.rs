@@ -1,5 +1,5 @@
 use glib::{Object, Properties};
-use gtk::{glib, prelude::*, subclass::prelude::*, CompositeTemplate, Image, Label};
+use gtk::{CompositeTemplate, Image, Label, glib, prelude::*, subclass::prelude::*};
 use std::cell::RefCell;
 
 mod imp {

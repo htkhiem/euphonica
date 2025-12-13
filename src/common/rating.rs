@@ -1,5 +1,5 @@
-use duplicate::duplicate;
 use adw::prelude::*;
+use duplicate::duplicate;
 use gtk::{glib, subclass::prelude::*};
 use std::cell::Cell;
 
@@ -11,7 +11,7 @@ mod imp {
     use std::sync::OnceLock;
 
     use super::*;
-    use glib::{clone, subclass::Signal, Properties};
+    use glib::{Properties, clone, subclass::Signal};
     use gtk::CompositeTemplate;
 
     #[derive(Default, CompositeTemplate, Properties)]
@@ -37,7 +37,7 @@ mod imp {
         pub icon_size: Cell<u8>,
         #[property(get, set)]
         pub editable: Cell<bool>,
-        pub preview_value: Cell<i8>
+        pub preview_value: Cell<i8>,
     }
 
     #[glib::object_subclass]
@@ -61,7 +61,7 @@ mod imp {
         fn constructed(&self) {
             self.parent_constructed();
 
-            duplicate!{
+            duplicate! {
                 [name; [s1]; [s2]; [s3]; [s4]; [s5];]
                 self.obj()
                     .bind_property("icon-size", &self.name.get(), "icon-size")
@@ -74,7 +74,6 @@ mod imp {
                     .sync_create()
                     .build();
             }
-
 
             self.update_stars(self.value.get());
 
@@ -134,12 +133,7 @@ mod imp {
 
         fn signals() -> &'static [Signal] {
             static SIGNALS: OnceLock<Vec<Signal>> = OnceLock::new();
-            SIGNALS.get_or_init(|| {
-                vec![
-                    Signal::builder("changed")
-                        .build() 
-                ]
-            })
+            SIGNALS.get_or_init(|| vec![Signal::builder("changed").build()])
         }
     }
 
@@ -170,47 +164,37 @@ mod imp {
         fn update_stars(&self, to_value: i8) {
             if to_value >= 2 {
                 self.s1.set_icon_name(Some(FULL));
-            }
-            else if to_value == 1 {
+            } else if to_value == 1 {
                 self.s1.set_icon_name(Some(HALF));
-            }
-            else {
+            } else {
                 self.s1.set_icon_name(Some(NONE));
             }
             if to_value >= 4 {
                 self.s2.set_icon_name(Some(FULL));
-            }
-            else if to_value == 3 {
+            } else if to_value == 3 {
                 self.s2.set_icon_name(Some(HALF));
-            }
-            else {
+            } else {
                 self.s2.set_icon_name(Some(NONE));
             }
             if to_value >= 6 {
                 self.s3.set_icon_name(Some(FULL));
-            }
-            else if to_value == 5 {
+            } else if to_value == 5 {
                 self.s3.set_icon_name(Some(HALF));
-            }
-            else {
+            } else {
                 self.s3.set_icon_name(Some(NONE));
             }
             if to_value >= 8 {
                 self.s4.set_icon_name(Some(FULL));
-            }
-            else if to_value == 7 {
+            } else if to_value == 7 {
                 self.s4.set_icon_name(Some(HALF));
-            }
-            else {
+            } else {
                 self.s4.set_icon_name(Some(NONE));
             }
             if to_value == 10 {
                 self.s5.set_icon_name(Some(FULL));
-            }
-            else if to_value == 9 {
+            } else if to_value == 9 {
                 self.s5.set_icon_name(Some(HALF));
-            }
-            else {
+            } else {
                 self.s5.set_icon_name(Some(NONE));
             }
         }

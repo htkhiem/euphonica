@@ -1,5 +1,5 @@
-use glib::{clone, Object};
-use gtk::{glib, prelude::*, subclass::prelude::*, CompositeTemplate};
+use glib::{Object, clone};
+use gtk::{CompositeTemplate, glib, prelude::*, subclass::prelude::*};
 use std::cell::Cell;
 
 use crate::{common::QualityGrade, utils};
@@ -7,7 +7,7 @@ use crate::{common::QualityGrade, utils};
 use super::Player;
 
 mod imp {
-    use std::{cell::OnceCell};
+    use std::cell::OnceCell;
 
     use crate::utils::format_secs_as_duration;
     use glib::{ParamSpec, ParamSpecDouble};
@@ -31,7 +31,7 @@ mod imp {
         #[template_child]
         pub bitrate: TemplateChild<gtk::Label>,
         pub seekbar_clicked: Cell<bool>,
-        pub player: OnceCell<Player>
+        pub player: OnceCell<Player>,
     }
 
     // The central trait for subclassing a GObject
@@ -201,7 +201,11 @@ impl Seekbar {
             .build();
 
         player
-            .bind_property("quality-grade", &self.imp().quality_grade.get(), "icon-name")
+            .bind_property(
+                "quality-grade",
+                &self.imp().quality_grade.get(),
+                "icon-name",
+            )
             .transform_to(|_, grade: QualityGrade| Some(grade.to_icon_name()))
             .sync_create()
             .build();
@@ -213,7 +217,7 @@ impl Seekbar {
 
         player
             .bind_property("bitrate", &self.imp().bitrate.get(), "label")
-            .transform_to(|_, val: u32| Some(utils::format_bitrate(val))) 
+            .transform_to(|_, val: u32| Some(utils::format_bitrate(val)))
             .sync_create()
             .build();
 

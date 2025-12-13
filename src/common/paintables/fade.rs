@@ -86,24 +86,15 @@ mod imp {
             if current.is_some() {
                 if !previous.is_some() && fade < 1.0 {
                     snapshot.push_opacity(fade);
-                    current
-                        .as_ref()
-                        .unwrap()
-                        .snapshot(snapshot, width, height);
+                    current.as_ref().unwrap().snapshot(snapshot, width, height);
                     snapshot.pop();
                 } else {
-                    current
-                        .as_ref()
-                        .unwrap()
-                        .snapshot(snapshot, width, height);
+                    current.as_ref().unwrap().snapshot(snapshot, width, height);
                 }
             }
             if previous.is_some() && fade < 1.0 {
                 snapshot.push_opacity(1.0 - fade);
-                previous
-                    .as_ref()
-                    .unwrap()
-                    .snapshot(snapshot, width, height);
+                previous.as_ref().unwrap().snapshot(snapshot, width, height);
                 snapshot.pop();
             }
         }

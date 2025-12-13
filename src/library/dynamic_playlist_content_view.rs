@@ -1,23 +1,24 @@
-use adw::prelude::*;
-use adw::subclass::prelude::*;
-use ashpd::desktop::file_chooser::SelectedFiles;
-use glib::{clone, closure_local, signal::SignalHandlerId};
-use gio::{ActionEntry, SimpleActionGroup};
-use gtk::{gio, glib, CompositeTemplate, ListItem, SignalListItemFactory};
-use glib::WeakRef;
-use time::OffsetDateTime;
-use std::{
-    cell::{OnceCell, RefCell},
-    rc::Rc,
-};
-use derivative::Derivative;
 use super::{DynamicPlaylistView, Library, artist_tag::ArtistTag};
 use crate::{
     cache::{Cache, placeholders::ALBUMART_PLACEHOLDER, sqlite},
     client::ClientState,
     common::{ContentView, DynamicPlaylist, Song, SongRow, dynamic_playlist::AutoRefresh},
-    utils::{self, format_secs_as_duration, get_time_ago_desc}, window::EuphonicaWindow,
+    utils::{self, format_secs_as_duration, get_time_ago_desc},
+    window::EuphonicaWindow,
 };
+use adw::prelude::*;
+use adw::subclass::prelude::*;
+use ashpd::desktop::file_chooser::SelectedFiles;
+use derivative::Derivative;
+use gio::{ActionEntry, SimpleActionGroup};
+use glib::WeakRef;
+use glib::{clone, closure_local, signal::SignalHandlerId};
+use gtk::{CompositeTemplate, ListItem, SignalListItemFactory, gio, glib};
+use std::{
+    cell::{OnceCell, RefCell},
+    rc::Rc,
+};
+use time::OffsetDateTime;
 
 mod imp {
     use crate::common::{INodeType, inode::INodeInfo};
@@ -26,7 +27,9 @@ mod imp {
 
     #[derive(Debug, CompositeTemplate, Derivative)]
     #[derivative(Default)]
-    #[template(resource = "/io/github/htkhiem/Euphonica/gtk/library/dynamic-playlist-content-view.ui")]
+    #[template(
+        resource = "/io/github/htkhiem/Euphonica/gtk/library/dynamic-playlist-content-view.ui"
+    )]
     pub struct DynamicPlaylistContentView {
         #[template_child]
         pub delete_dialog: TemplateChild<adw::AlertDialog>,
@@ -102,7 +105,8 @@ mod imp {
 
         fn constructed(&self) {
             self.parent_constructed();
-            self.content.set_model(Some(&gtk::NoSelection::new(Some(self.song_list.clone()))));
+            self.content
+                .set_model(Some(&gtk::NoSelection::new(Some(self.song_list.clone()))));
 
             self.refresh_btn.connect_clicked(clone!(
                 #[weak(rename_to = this)]
@@ -110,7 +114,9 @@ mod imp {
                 #[upgrade_or]
                 (),
                 move |_| {
-                    if let (Some(library), Some(dp)) = (this.library.upgrade(), this.dp.borrow_mut().as_ref()) {
+                    if let (Some(library), Some(dp)) =
+                        (this.library.upgrade(), this.dp.borrow_mut().as_ref())
+                    {
                         let spinner = this.content_spinner.get();
                         if spinner.visible_child_name().unwrap() != "spinner" {
                             spinner.set_visible_child_name("spinner");
@@ -122,7 +128,7 @@ mod imp {
                         // Fetch from scratch & update cache
                         library.fetch_dynamic_playlist(dp.clone(), true);
                         this.last_refreshed.set_label(&get_time_ago_desc(
-                            OffsetDateTime::now_utc().unix_timestamp()
+                            OffsetDateTime::now_utc().unix_timestamp(),
                         ));
                     }
                 }
@@ -132,7 +138,9 @@ mod imp {
                 #[weak(rename_to = this)]
                 self,
                 move |_| {
-                    if let (Some(library), Some(dp)) = (this.library.upgrade(), this.dp.borrow_mut().as_ref()) {
+                    if let (Some(library), Some(dp)) =
+                        (this.library.upgrade(), this.dp.borrow_mut().as_ref())
+                    {
                         library.queue_cached_dynamic_playlist(&dp.name, true, true);
                     }
                 }
@@ -142,7 +150,9 @@ mod imp {
                 #[weak(rename_to = this)]
                 self,
                 move |_| {
-                    if let (Some(library), Some(dp)) = (this.library.upgrade(), this.dp.borrow_mut().as_ref()) {
+                    if let (Some(library), Some(dp)) =
+                        (this.library.upgrade(), this.dp.borrow_mut().as_ref())
+                    {
                         library.queue_cached_dynamic_playlist(&dp.name, false, false);
                     }
                 }
@@ -220,23 +230,25 @@ mod imp {
                                     }
                                 }
                             });
-                            glib::spawn_future_local(
-                                async move {
-                                    use futures::prelude::*;
-                                    let mut receiver = std::pin::pin!(receiver);
-                                    if let Some(path) = receiver.next().await {
-                                        if !path.is_empty() {
-                                            // Assume ashpd always return filesystem spec
-                                            let filepath = urlencoding::decode(if path.starts_with("file://") {
+                            glib::spawn_future_local(async move {
+                                use futures::prelude::*;
+                                let mut receiver = std::pin::pin!(receiver);
+                                if let Some(path) = receiver.next().await {
+                                    if !path.is_empty() {
+                                        // Assume ashpd always return filesystem spec
+                                        let filepath =
+                                            urlencoding::decode(if path.starts_with("file://") {
                                                 &path[7..]
                                             } else {
                                                 &path
-                                            }).expect("Path must be in UTF-8").into_owned();
-                                            utils::export_to_json(&dp, &filepath).expect("Unable to write file");
-                                        }
+                                            })
+                                            .expect("Path must be in UTF-8")
+                                            .into_owned();
+                                        utils::export_to_json(&dp, &filepath)
+                                            .expect("Unable to write file");
                                     }
                                 }
-                            );
+                            });
                         }
                     }
                 ))
@@ -249,18 +261,15 @@ mod imp {
                     #[upgrade_or]
                     (),
                     move |_, _, _| {
-                        if let (Some(dp), Some(library)) = (
-                            this.dp.borrow().as_ref(),
-                            this.library.upgrade()
-                        ) {
+                        if let (Some(dp), Some(library)) =
+                            (this.dp.borrow().as_ref(), this.library.upgrade())
+                        {
                             if let (Some(fixed_name), Some(window)) = (
                                 library.save_dynamic_playlist_state(&dp.name),
-                                this.window.upgrade()
+                                this.window.upgrade(),
                             ) {
                                 window.goto_playlist(
-                                    &INodeInfo::new(
-                                        &fixed_name, None, INodeType::Playlist
-                                    ).into()
+                                    &INodeInfo::new(&fixed_name, None, INodeType::Playlist).into(),
                                 );
                             }
                         }
@@ -270,12 +279,9 @@ mod imp {
 
             // Create a new action group and add actions to it
             let actions = SimpleActionGroup::new();
-            actions.add_action_entries([
-                action_delete,
-                action_save_mpd,
-                action_export_json,
-            ]);
-            self.obj().insert_action_group("dp-content-view", Some(&actions));
+            actions.add_action_entries([action_delete, action_save_mpd, action_export_json]);
+            self.obj()
+                .insert_action_group("dp-content-view", Some(&actions));
         }
     }
 
@@ -301,7 +307,14 @@ impl DynamicPlaylistContentView {
         self.imp().library.upgrade()
     }
 
-    pub fn setup(&self, outer: &DynamicPlaylistView, library: &Library, client_state: &ClientState, cache: Rc<Cache>, window: &EuphonicaWindow) {
+    pub fn setup(
+        &self,
+        outer: &DynamicPlaylistView,
+        library: &Library,
+        client_state: &ClientState,
+        cache: Rc<Cache>,
+        window: &EuphonicaWindow,
+    ) {
         self.imp().library.set(Some(library));
         self.imp().outer.set(Some(outer));
         self.imp().window.set(Some(window));
@@ -432,9 +445,9 @@ impl DynamicPlaylistContentView {
         self.imp().content.set_factory(Some(&factory));
 
         self.imp()
-           .cache
-           .set(cache)
-           .expect("DynamicPlaylistContentView cannot bind to cache");
+            .cache
+            .set(cache)
+            .expect("DynamicPlaylistContentView cannot bind to cache");
     }
 
     fn clear_cover(&self) {
@@ -443,9 +456,12 @@ impl DynamicPlaylistContentView {
 
     fn schedule_cover(&self, name: &str) {
         self.imp().cover.set_paintable(Some(&*ALBUMART_PLACEHOLDER));
-        let handle = self.imp().cache.get().unwrap().load_cached_playlist_cover(
-            name, true, false
-        );
+        let handle = self
+            .imp()
+            .cache
+            .get()
+            .unwrap()
+            .load_cached_playlist_cover(name, true, false);
 
         glib::spawn_future_local(clone!(
             #[weak(rename_to = this)]
@@ -461,9 +477,9 @@ impl DynamicPlaylistContentView {
     fn force_refresh(&self, dp: &DynamicPlaylist) {
         if let Some(library) = self.get_library() {
             library.fetch_dynamic_playlist(dp.clone(), true);
-            self.imp().last_refreshed.set_label(
-                &get_time_ago_desc(OffsetDateTime::now_utc().unix_timestamp())
-            );
+            self.imp().last_refreshed.set_label(&get_time_ago_desc(
+                OffsetDateTime::now_utc().unix_timestamp(),
+            ));
         }
     }
 
@@ -476,9 +492,10 @@ impl DynamicPlaylistContentView {
             #[upgrade_or]
             (),
             async move {
-                match gio::spawn_blocking(move || {
-                    sqlite::get_dynamic_playlist_info(&name)
-                }).await.unwrap() {
+                match gio::spawn_blocking(move || sqlite::get_dynamic_playlist_info(&name))
+                    .await
+                    .unwrap()
+                {
                     Ok(Some(dp)) => {
                         let library = this.get_library().unwrap();
                         this.imp().title.set_label(&dp.name);
@@ -486,29 +503,33 @@ impl DynamicPlaylistContentView {
                         // yet, use it. Else resolve rules from scratch.
                         if let Some(last_refresh) = dp.last_refresh {
                             // Check whether we need to perform an auto-refresh
-                            if dp.auto_refresh != AutoRefresh::None &&
-                                OffsetDateTime::now_utc().unix_timestamp() - last_refresh > match dp.auto_refresh
+                            if dp.auto_refresh != AutoRefresh::None
+                                && OffsetDateTime::now_utc().unix_timestamp() - last_refresh
+                                    > match dp.auto_refresh {
+                                        AutoRefresh::None => i64::MAX,
+                                        AutoRefresh::Hourly => 3600,
+                                        AutoRefresh::Daily => 86400,
+                                        AutoRefresh::Weekly => 86400 * 7,
+                                        AutoRefresh::Monthly => 86400 * 30,
+                                        AutoRefresh::Yearly => 86400 * 365,
+                                    }
                             {
-                                AutoRefresh::None => i64::MAX,
-                                AutoRefresh::Hourly => 3600,
-                                AutoRefresh::Daily => 86400,
-                                AutoRefresh::Weekly => 86400 * 7,
-                                AutoRefresh::Monthly => 86400 * 30,
-                                AutoRefresh::Yearly => 86400 * 365
-                            } {
                                 if let Some(window) = this.imp().window.upgrade() {
                                     window.send_simple_toast("Auto-refreshing...", 3);
                                 }
                                 this.force_refresh(&dp);
-
                             } else {
                                 library.fetch_cached_dynamic_playlist(&dp.name);
                             }
-                            this.imp().last_refreshed.set_label(&get_time_ago_desc(last_refresh));
+                            this.imp()
+                                .last_refreshed
+                                .set_label(&get_time_ago_desc(last_refresh));
                         } else {
                             this.force_refresh(&dp);
                         }
-                        this.imp().rule_count.set_label(&(dp.rules.len() + dp.ordering.len()).to_string());
+                        this.imp()
+                            .rule_count
+                            .set_label(&(dp.rules.len() + dp.ordering.len()).to_string());
                         this.imp().dp.replace(Some(dp));
                     }
                     other => {

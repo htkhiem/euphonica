@@ -1,9 +1,9 @@
 use glib::Object;
 use gtk::{
+    CompositeTemplate,
     glib::{self, clone},
     prelude::*,
     subclass::prelude::*,
-    CompositeTemplate,
 };
 use mpd::output::Output;
 
@@ -33,7 +33,7 @@ mod imp {
         #[template_child]
         pub enable_output: TemplateChild<gtk::Switch>,
         #[template_child]
-        pub options_preview: TemplateChild<gtk::Label>
+        pub options_preview: TemplateChild<gtk::Label>,
     }
 
     // The central trait for subclassing a GObject

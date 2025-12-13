@@ -1,22 +1,30 @@
+use super::{Library, artist_tag::ArtistTag};
+use crate::{
+    cache::{
+        Cache, CacheState,
+        placeholders::{ALBUMART_PLACEHOLDER, EMPTY_ALBUM_STRING},
+    },
+    client::{ClientState, state::StickersSupportLevel},
+    common::{
+        Album, AlbumInfo, Artist, ContentView, CoverSource, Rating, RowAddButtons, Song, SongRow,
+    },
+    library::add_to_playlist::AddToPlaylistButton,
+    utils::{format_secs_as_duration, tokio_runtime},
+    window::EuphonicaWindow,
+};
 use adw::subclass::prelude::*;
-use gio::{ActionEntry, SimpleActionGroup, Menu};
-use glib::{clone, closure_local, signal::SignalHandlerId, Binding, WeakRef};
-use gtk::{gio, glib, gdk, prelude::*, BitsetIter, CompositeTemplate, ListItem, SignalListItemFactory};
+use ashpd::desktop::file_chooser::SelectedFiles;
+use derivative::Derivative;
+use gio::{ActionEntry, Menu, SimpleActionGroup};
+use glib::{Binding, WeakRef, clone, closure_local, signal::SignalHandlerId};
+use gtk::{
+    BitsetIter, CompositeTemplate, ListItem, SignalListItemFactory, gdk, gio, glib, prelude::*,
+};
 use std::{
-    cell::{OnceCell, RefCell, Cell},
+    cell::{Cell, OnceCell, RefCell},
     rc::Rc,
 };
-use time::{format_description, Date};
-use derivative::Derivative;
-use ashpd::desktop::file_chooser::SelectedFiles;
-use super::{artist_tag::ArtistTag, Library};
-use crate::{
-    cache::{placeholders::{ALBUMART_PLACEHOLDER, EMPTY_ALBUM_STRING}, Cache, CacheState},
-    client::{state::StickersSupportLevel, ClientState},
-    common::{Album, AlbumInfo, Artist, CoverSource, Rating, RowAddButtons, Song, SongRow, ContentView},
-    utils::{tokio_runtime, format_secs_as_duration}, window::EuphonicaWindow,
-    library::add_to_playlist::AddToPlaylistButton
-};
+use time::{Date, format_description};
 
 mod imp {
     use super::*;
@@ -89,7 +97,7 @@ mod imp {
         pub cache: OnceCell<Rc<Cache>>,
         #[derivative(Default(value = "Cell::new(true)"))]
         pub selecting_all: Cell<bool>, // Enables queuing the entire album efficiently
-        pub cover_source: Cell<CoverSource>
+        pub cover_source: Cell<CoverSource>,
     }
 
     #[glib::object_subclass]
@@ -148,13 +156,14 @@ mod imp {
 
             // Rating readout
             self.rating
-                .bind_property(
-                    "value", &self.rating_readout.get(), "label"
-                )
+                .bind_property("value", &self.rating_readout.get(), "label")
                 .transform_to(|_, r: i8| {
                     // TODO: l10n
-                    if r < 0 { Some("Unrated".to_value()) }
-                    else { Some(format!("{:.1}", r as f32 / 2.0).to_value()) }
+                    if r < 0 {
+                        Some("Unrated".to_value())
+                    } else {
+                        Some(format!("{:.1}", r as f32 / 2.0).to_value())
+                    }
                 })
                 .sync_create()
                 .build();
@@ -170,7 +179,7 @@ mod imp {
                     move |_, _, _| {
                         if let (Some(album), Some(library)) = (
                             obj.imp().album.borrow().as_ref(),
-                            obj.imp().library.upgrade()
+                            obj.imp().library.upgrade(),
                         ) {
                             library.rate_album(album, None);
                             obj.imp().rating.set_value(-1);
@@ -201,8 +210,7 @@ mod imp {
                                 if !uris.is_empty() {
                                     let _ = sender.send_blocking(uris[0].to_string());
                                 }
-                            }
-                            else {
+                            } else {
                                 println!("{maybe_files:?}");
                             }
                         });
@@ -234,7 +242,7 @@ mod imp {
                     move |_, _, _| {
                         if let (Some(album), Some(library)) = (
                             obj.imp().album.borrow().as_ref(),
-                            obj.imp().library.upgrade()
+                            obj.imp().library.upgrade(),
                         ) {
                             library.clear_cover(album.get_folder_uri());
                         }
@@ -251,7 +259,7 @@ mod imp {
                     move |_, _, _| {
                         if let (Some(album), Some(library)) = (
                             obj.imp().album.borrow().as_ref(),
-                            obj.imp().library.upgrade()
+                            obj.imp().library.upgrade(),
                         ) {
                             let spinner = obj.imp().infobox_spinner.get();
                             if spinner.visible_child_name().unwrap() != "spinner" {
@@ -272,13 +280,13 @@ mod imp {
                     #[upgrade_or]
                     (),
                     move |_, _, _| {
-                        if let (_, Some(library)) = (
-                            obj.imp().album.borrow().as_ref(),
-                            obj.get_library()
-                        ) {
+                        if let (_, Some(library)) =
+                            (obj.imp().album.borrow().as_ref(), obj.get_library())
+                        {
                             let store = &obj.imp().song_list;
                             if obj.imp().selecting_all.get() {
-                                let mut songs: Vec<Song> = Vec::with_capacity(store.n_items() as usize);
+                                let mut songs: Vec<Song> =
+                                    Vec::with_capacity(store.n_items() as usize);
                                 for i in 0..store.n_items() {
                                     songs.push(store.item(i).and_downcast::<Song>().unwrap());
                                 }
@@ -308,7 +316,8 @@ mod imp {
                 action_clear_album_art,
                 action_insert_queue,
             ]);
-            self.obj().insert_action_group("album-content-view", Some(&actions));
+            self.obj()
+                .insert_action_group("album-content-view", Some(&actions));
         }
     }
 
@@ -324,8 +333,12 @@ mod imp {
                 self.replace_queue_text.set_label("Play all");
                 self.queue_split_button_content.set_label("Queue all");
                 let queue_split_menu = Menu::new();
-                queue_split_menu.append(Some("Queue all next"), Some("album-content-view.insert-queue"));
-                self.queue_split_button.set_menu_model(Some(&queue_split_menu));
+                queue_split_menu.append(
+                    Some("Queue all next"),
+                    Some("album-content-view.insert-queue"),
+                );
+                self.queue_split_button
+                    .set_menu_model(Some(&queue_split_menu));
             } else {
                 // TODO: l10n
                 self.selecting_all.replace(false);
@@ -334,8 +347,12 @@ mod imp {
                 self.queue_split_button_content
                     .set_label(format!("Queue {n_sel}").as_str());
                 let queue_split_menu = Menu::new();
-                queue_split_menu.append(Some(format!("Queue {n_sel} next").as_str()), Some("album-content-view.insert-queue"));
-                self.queue_split_button.set_menu_model(Some(&queue_split_menu));
+                queue_split_menu.append(
+                    Some(format!("Queue {n_sel} next").as_str()),
+                    Some("album-content-view.insert-queue"),
+                );
+                self.queue_split_button
+                    .set_menu_model(Some(&queue_split_menu));
             }
         }
     }
@@ -403,21 +420,25 @@ impl AlbumContentView {
     pub fn set_cover(&self, path: &str) {
         if let (Some(album), Some(library)) = (
             self.imp().album.borrow().as_ref(),
-            self.imp().library.upgrade()
+            self.imp().library.upgrade(),
         ) {
             library.set_cover(album.get_folder_uri(), path);
         }
     }
 
-    pub fn setup(&self, library: &Library, client_state: &ClientState, cache: Rc<Cache>, window: &EuphonicaWindow) {
+    pub fn setup(
+        &self,
+        library: &Library,
+        client_state: &ClientState,
+        cache: Rc<Cache>,
+        window: &EuphonicaWindow,
+    ) {
         let cache_state = cache.get_cache_state();
         self.imp()
-           .cache
-           .set(cache)
-           .expect("AlbumContentView cannot bind to cache");
-        self.imp()
-           .window
-           .set(Some(window));
+            .cache
+            .set(cache)
+            .expect("AlbumContentView cannot bind to cache");
+        self.imp().window.set(Some(window));
         self.imp()
             .add_to_playlist
             .setup(library, &self.imp().sel_model);
@@ -438,9 +459,10 @@ impl AlbumContentView {
                             // temporarily
                             this.update_cover(tex, CoverSource::Folder);
                         } else if this.imp().cover_source.get() != CoverSource::Folder
-                            && album.get_example_uri() == uri {
-                                this.update_cover(tex, CoverSource::Embedded);
-                            }
+                            && album.get_example_uri() == uri
+                        {
+                            this.update_cover(tex, CoverSource::Embedded);
+                        }
                     }
                 }
             ),
@@ -473,39 +495,37 @@ impl AlbumContentView {
 
         let rating = self.imp().rating.get();
         client_state
-            .bind_property(
-                "stickers-support-level",
-                &rating,
-                "visible"
-            )
+            .bind_property("stickers-support-level", &rating, "visible")
             .transform_to(|_, lvl: StickersSupportLevel| {
                 Some((lvl == StickersSupportLevel::All).to_value())
             })
             .sync_create()
             .build();
 
-        rating
-            .connect_closure( 
-                "changed",
-                false,
-                closure_local!(
-                    #[weak(rename_to = this)]
-                    self,
-                    #[upgrade_or]
-                    (),
-                    move |rating: Rating| {
-                        if let (Some(album), Some(library)) = (
-                            this.imp().album.borrow().as_ref(),
-                            this.get_library()
-                        ) {
-                            let rating_val = rating.value();
-                            let rating_opt = if rating_val > 0 { Some(rating_val)} else { None };
-                            album.set_rating(rating_opt);
-                            library.rate_album(album, rating_opt);
-                        }
+        rating.connect_closure(
+            "changed",
+            false,
+            closure_local!(
+                #[weak(rename_to = this)]
+                self,
+                #[upgrade_or]
+                (),
+                move |rating: Rating| {
+                    if let (Some(album), Some(library)) =
+                        (this.imp().album.borrow().as_ref(), this.get_library())
+                    {
+                        let rating_val = rating.value();
+                        let rating_opt = if rating_val > 0 {
+                            Some(rating_val)
+                        } else {
+                            None
+                        };
+                        album.set_rating(rating_opt);
+                        library.rate_album(album, rating_opt);
                     }
-                )
-            );
+                }
+            ),
+        );
 
         cache_state.connect_closure(
             "album-meta-downloaded",
@@ -550,10 +570,9 @@ impl AlbumContentView {
             #[upgrade_or]
             (),
             move |_| {
-                if let (Some(album), Some(library)) = (
-                    this.imp().album.borrow().as_ref(),
-                    this.get_library()
-                ) {
+                if let (Some(album), Some(library)) =
+                    (this.imp().album.borrow().as_ref(), this.get_library())
+                {
                     if this.imp().selecting_all.get() {
                         library.queue_album(album.clone(), true, true, None);
                     } else {
@@ -583,10 +602,9 @@ impl AlbumContentView {
             #[upgrade_or]
             (),
             move |_| {
-                if let (Some(album), Some(library)) = (
-                    this.imp().album.borrow().as_ref(),
-                    this.get_library()
-                ) { 
+                if let (Some(album), Some(library)) =
+                    (this.imp().album.borrow().as_ref(), this.get_library())
+                {
                     if this.imp().selecting_all.get() {
                         library.queue_album(album.clone(), false, false, None);
                     } else {
@@ -669,7 +687,11 @@ impl AlbumContentView {
                 .and_downcast::<SongRow>()
                 .expect("The child has to be an `SongRow`.");
 
-            child.end_widget().and_downcast::<RowAddButtons>().unwrap().set_song(Some(&item));
+            child
+                .end_widget()
+                .and_downcast::<RowAddButtons>()
+                .unwrap()
+                .set_song(Some(&item));
         });
 
         // When row goes out of sight, unbind from item to allow reuse with another.
@@ -681,7 +703,11 @@ impl AlbumContentView {
                 .child()
                 .and_downcast::<SongRow>()
                 .expect("The child has to be an `SongRow`.");
-            child.end_widget().and_downcast::<RowAddButtons>().unwrap().set_song(None);
+            child
+                .end_widget()
+                .and_downcast::<RowAddButtons>()
+                .unwrap()
+                .set_song(None);
         });
 
         // Set the factory of the list view
@@ -694,10 +720,9 @@ impl AlbumContentView {
             #[upgrade_or]
             (),
             move |_, position| {
-                if let (Some(album), Some(library)) = (
-                    this.imp().album.borrow().as_ref(),
-                    this.get_library()
-                ) {
+                if let (Some(album), Some(library)) =
+                    (this.imp().album.borrow().as_ref(), this.get_library())
+                {
                     library.queue_album(album.clone(), true, true, Some(position));
                 }
             }
@@ -718,12 +743,15 @@ impl AlbumContentView {
             .get()
             .unwrap()
             .clone()
-            .load_cached_folder_cover(info, false, true) {
-                self.imp().cover.set_paintable(Some(&tex));
-                self.imp().cover_source.set(
-                    if is_embedded {CoverSource::Embedded} else {CoverSource::Folder}
-                );
-            }
+            .load_cached_folder_cover(info, false, true)
+        {
+            self.imp().cover.set_paintable(Some(&tex));
+            self.imp().cover_source.set(if is_embedded {
+                CoverSource::Embedded
+            } else {
+                CoverSource::Folder
+            });
+        }
     }
 
     fn update_cover(&self, tex: gdk::Texture, src: CoverSource) {
@@ -754,13 +782,17 @@ impl AlbumContentView {
         bindings.push(title_binding);
 
         // Populate artist tags
-        let artist_tags = album.get_artists().iter().map(
-            |info| ArtistTag::new(
-                Artist::from(info.clone()),
-                self.imp().cache.get().unwrap().clone(),
-                &self.imp().window.upgrade().unwrap()
-            )
-        ).collect::<Vec<ArtistTag>>();
+        let artist_tags = album
+            .get_artists()
+            .iter()
+            .map(|info| {
+                ArtistTag::new(
+                    Artist::from(info.clone()),
+                    self.imp().cache.get().unwrap().clone(),
+                    &self.imp().window.upgrade().unwrap(),
+                )
+            })
+            .collect::<Vec<ArtistTag>>();
         self.imp().artist_tags.extend_from_slice(&artist_tags);
         for tag in artist_tags {
             artists_box.append(&tag);
@@ -828,7 +860,6 @@ impl AlbumContentView {
             self.clear_cover();
         }
 
-        
         // Unset metadata widgets
         self.imp().song_list.remove_all();
         let content_spinner = self.imp().content_spinner.get();

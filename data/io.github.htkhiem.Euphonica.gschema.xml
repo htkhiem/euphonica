@@ -46,6 +46,9 @@
 	</schema>
 
 	<schema id="io.github.htkhiem.Euphonica.client" path="/io/github/htkhiem/Euphonica/client/">
+		<key name="mpd-auto-reconnect" type="b">
+			<default>true</default>
+		</key>
 		<key name="mpd-use-unix-socket" type="b">
 			<default>false</default>
 		</key>

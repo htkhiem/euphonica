@@ -1,5 +1,5 @@
-use gtk::{prelude::*, glib, subclass::prelude::*, CompositeTemplate};
 use glib::clone;
+use gtk::{CompositeTemplate, glib, prelude::*, subclass::prelude::*};
 
 use crate::common::dynamic_playlist::Ordering;
 
@@ -13,7 +13,7 @@ mod imp {
     pub struct OrderingButton {
         #[template_child]
         pub label: TemplateChild<gtk::Label>,
-        pub ordering: OnceCell<Ordering>
+        pub ordering: OnceCell<Ordering>,
     }
 
     // The central trait for subclassing a GObject
