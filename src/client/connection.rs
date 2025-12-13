@@ -24,6 +24,8 @@ use super::StickerSetMode;
 pub enum Error {
     Mpd(MpdError),
     Internal,
+    Socket,
+    Tcp,
     NotConnected,
 }
 
@@ -32,7 +34,7 @@ pub type Result<T> = result::Result<T, Error>;
 pub type Responder<T> = OneShotSender<Result<T>>;
 
 /// The successor to BackgroundTask.
-pub enum Task<'a> {
+pub enum Task {
     /// Connects to MPD. Credentials will be read from settings.
     Connect(
         /// Password
@@ -115,7 +117,7 @@ pub enum Task<'a> {
         String,
         Responder<()>,
     ),
-    EditPlaylist(Vec<EditAction<'a>>, Responder<()>),
+    EditPlaylist(Vec<EditAction<'static>>, Responder<()>),
     DeletePlaylist(String, Responder<()>),
     /// Get status object from MPD. Won't automatically update queue.
     GetStatus(Responder<Status>),
@@ -148,18 +150,14 @@ pub enum Task<'a> {
 /// requests sequentially. We respond to the main thread via
 /// oneshot channels to appear synchronous.
 ///
-/// There are two tasks queues for each client. The high-priority
-/// queue will always be exhausted first before the low-priority
-/// queue is read from.
-///
 /// If constructed as a background client, we will go into
 /// idle mode after exhausting both queues. In this mode we will
 /// listen to server-side changes, but will be unable to respond
 /// to incoming tasks. To break out of idle mode, the wrapper must
 /// send a WAKE message via the MPD channel given at connect time.
-pub struct Connection<'a> {
-    low_receiver: Receiver<Task<'a>>,
-    high_receiver: Receiver<Task<'a>>,
+pub struct Connection {
+    receiver: Receiver<Task>,
+    // high_receiver: Receiver<Task<'a>>,
     client: Option<Client<StreamWrapper>>,
     /// MPD inter-client channel for communication between Euphonica connections
     wake_channel: Channel,
@@ -171,17 +169,17 @@ fn respond<T>(result: Result<T>, resp: Responder<T>) {
     resp.send(result).expect("Broken oneshot sender");
 }
 
-impl<'a> Connection<'a> {
+impl Connection {
     /// If idle_sender is given, will initialise this client as background
     pub fn new(
-        low_receiver: Receiver<Task<'a>>,
-        high_receiver: Receiver<Task<'a>>,
+        receiver: Receiver<Task>,
+        // high_receiver: Receiver<Task<'a>>,
         wake_channel: Channel,
         idle_sender: Option<Sender<Subsystem>>,
     ) -> Self {
         Self {
-            low_receiver,
-            high_receiver,
+            receiver,
+            // high_receiver,
             client: None,
             wake_channel,
             idle_sender,
@@ -200,12 +198,12 @@ impl<'a> Connection<'a> {
             println!("Connecting to local socket {}", &path);
             if let Ok(resolved) = path.try_resolve() {
                 mpd::Client::new(StreamWrapper::new_unix(
-                    UnixStream::connect(resolved).map_err(|_| Error::Internal)?,
+                    UnixStream::connect(resolved).map_err(|_| Error::SocketError)?,
                 ))
                 .map_err(Error::Mpd)?
             } else {
                 mpd::Client::new(StreamWrapper::new_unix(
-                    UnixStream::connect(path).map_err(|_| Error::Internal)?,
+                    UnixStream::connect(path).map_err(|_| Error::SocketError)?,
                 ))
                 .map_err(Error::Mpd)?
             }
@@ -217,7 +215,7 @@ impl<'a> Connection<'a> {
             );
             println!("Connecting to TCP socket {}", &addr);
             mpd::Client::new(StreamWrapper::new_tcp(
-                TcpStream::connect(addr).map_err(|_| Error::Internal)?,
+                TcpStream::connect(addr).map_err(|_| Error::TcpError)?,
             ))
             .map_err(Error::Mpd)?
         };
@@ -265,19 +263,18 @@ impl<'a> Connection<'a> {
         loop {
             let mut curr_task: Option<Task> = None;
             // let n_tasks = self.high_receiver.len() + bg_receiver.len();
-            if !self.high_receiver.is_empty() {
+            if !self.receiver.is_empty() {
                 curr_task = Some(
-                    self.high_receiver
-                        .recv_blocking()
-                        .expect("Unable to read from high-priority queue"),
-                );
-            } else if !self.low_receiver.is_empty() {
-                curr_task = Some(
-                    self.low_receiver
-                        .recv_blocking()
-                        .expect("Unable to read from low-priority queue"),
+                    self.receiver.recv_blocking().expect("Unable to read from high-priority queue")
                 );
             }
+            // else if !self.low_receiver.is_empty() {
+            //     curr_task = Some(
+            //         self.low_receiver
+            //             .recv_blocking()
+            //             .expect("Unable to read from low-priority queue"),
+            //     );
+            // }
 
             if let Some(task) = curr_task {
                 match task {
