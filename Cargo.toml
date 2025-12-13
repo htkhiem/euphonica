@@ -57,6 +57,7 @@ derivative = "2.2.0"
 strum = "0.27.2"
 strum_macros = "0.27.2"
 rand = "0.9.2"
+oneshot = { version = "0.1.11", features = ["async"] }
 
 [dependencies.gtk]
 package = "gtk4"
