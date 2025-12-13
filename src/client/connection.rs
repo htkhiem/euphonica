@@ -1,9 +1,9 @@
 use async_channel::{Receiver, Sender};
 use gio::prelude::SettingsExt;
 use mpd::{
-    error::{Error as MpdError, Result as MpdResult},
     Channel, Client, EditAction, Id, Idle, Output, ReplayGain, SaveMode, Status, Subsystem,
     Version,
+    error::{Error as MpdError, Result as MpdResult}, search::Window, song::PosIdChange,
 };
 use oneshot::Sender as OneShotSender;
 use resolve_path::PathResolveExt;
@@ -13,13 +13,13 @@ use std::{
 
 use crate::{
     client::stream::StreamWrapper,
-    common::{inode::INodeInfo, SongInfo, Stickers},
+    common::{SongInfo, Stickers, inode::INodeInfo},
     player::PlaybackFlow,
     utils,
 };
 
-use super::state::StickersSupportLevel;
 use super::StickerSetMode;
+use super::state::StickersSupportLevel;
 
 pub enum Error {
     Mpd(MpdError),
@@ -27,6 +27,8 @@ pub enum Error {
     Socket,
     Tcp,
     NotConnected,
+    InsufficientStickersSupportLevel, // any better name for this? not a native speaker
+    PlaylistNotEnabled,
 }
 
 pub type Result<T> = result::Result<T, Error>;
@@ -122,7 +124,7 @@ pub enum Task {
     /// Get status object from MPD. Won't automatically update queue.
     GetStatus(Responder<Status>),
     /// Get the current song at the given queue ID, if any.
-    GetSongAtQueueId(u32, Responder<Option<SongInfo>>),
+    GetSongAtQueueId(Id, Responder<Option<SongInfo>>),
     SetPlaybackFlow(PlaybackFlow, Responder<()>),
     SetCrossfade(i64, Responder<()>),
     SetReplayGain(ReplayGain, Responder<()>),
@@ -142,6 +144,14 @@ pub enum Task {
     DeleteAtPos(u32, Responder<()>),
     ClearQueue(Responder<()>),
     Seek(f64, Responder<()>),
+    GetQueue(Window, Responder<Vec<SongInfo>>),
+    GetQueueChanges(
+        /// From version
+        u32,
+        Window,
+        Responder<Vec<PosIdChange>>
+    ),
+    UpdateDb(Responder<u32>)
 }
 
 /// Asynchronous wrapper around an rust-mpd client instance.
@@ -198,12 +208,12 @@ impl Connection {
             println!("Connecting to local socket {}", &path);
             if let Ok(resolved) = path.try_resolve() {
                 mpd::Client::new(StreamWrapper::new_unix(
-                    UnixStream::connect(resolved).map_err(|_| Error::SocketError)?,
+                    UnixStream::connect(resolved).map_err(|_| Error::Socket)?,
                 ))
                 .map_err(Error::Mpd)?
             } else {
                 mpd::Client::new(StreamWrapper::new_unix(
-                    UnixStream::connect(path).map_err(|_| Error::SocketError)?,
+                    UnixStream::connect(path).map_err(|_| Error::Socket)?,
                 ))
                 .map_err(Error::Mpd)?
             }
@@ -215,7 +225,7 @@ impl Connection {
             );
             println!("Connecting to TCP socket {}", &addr);
             mpd::Client::new(StreamWrapper::new_tcp(
-                TcpStream::connect(addr).map_err(|_| Error::TcpError)?,
+                TcpStream::connect(addr).map_err(|_| Error::Tcp)?,
             ))
             .map_err(Error::Mpd)?
         };
@@ -265,7 +275,9 @@ impl Connection {
             // let n_tasks = self.high_receiver.len() + bg_receiver.len();
             if !self.receiver.is_empty() {
                 curr_task = Some(
-                    self.receiver.recv_blocking().expect("Unable to read from high-priority queue")
+                    self.receiver
+                        .recv_blocking()
+                        .expect("Unable to read from high-priority queue"),
                 );
             }
             // else if !self.low_receiver.is_empty() {
@@ -380,10 +392,14 @@ impl Connection {
                         },
                         resp,
                     ),
-					Task::SetCrossfade(fade, resp) => self.client_then(|c| c.crossfade(fade), resp),
-                    Task::SetReplayGain(mode, resp) => self.client_then(|c| c.replaygain(mode), resp),
+                    Task::SetCrossfade(fade, resp) => self.client_then(|c| c.crossfade(fade), resp),
+                    Task::SetReplayGain(mode, resp) => {
+                        self.client_then(|c| c.replaygain(mode), resp)
+                    }
                     Task::SetMixRampDb(db, resp) => self.client_then(|c| c.mixrampdb(db), resp),
-                    Task::SetMixRampDelay(delay, resp) => self.client_then(|c| c.mixrampdelay(delay), resp),
+                    Task::SetMixRampDelay(delay, resp) => {
+                        self.client_then(|c| c.mixrampdelay(delay), resp)
+                    }
                     Task::SetRandom(state, resp) => self.client_then(|c| c.random(state), resp),
                     Task::SetConsume(state, resp) => self.client_then(|c| c.consume(state), resp),
                     Task::Pause(state, resp) => self.client_then(|c| c.pause(state), resp),
@@ -395,7 +411,20 @@ impl Connection {
                     Task::SwapPos(p1, p2, resp) => self.client_then(|c| c.swap(p1, p2), resp),
                     Task::DeleteAtPos(p, resp) => self.client_then(|c| c.delete(p), resp),
                     Task::ClearQueue(resp) => self.client_then(|c| c.clear(), resp),
-                    Task::Seek(pos, resp) => self.client_then(|c| c.rewind(pos), resp)
+                    Task::Seek(pos, resp) => self.client_then(|c| c.rewind(pos), resp),
+                    Task::GetQueue(window, resp) => self.client_then(
+                        |c| c.queue(window).map(|mut mpd_songs| {
+                            mpd_songs
+                                .iter_mut()
+                                .map(|mpd_song| SongInfo::from(std::mem::take(mpd_song)))
+                                .collect()
+                        }),
+                        resp
+                    ),
+                    Task::GetQueueChanges(since, window, resp) => self.client_then(
+                        |c| c.changesposid(since, window), resp
+                    ),
+                    Task::UpdateDb(resp) => self.client_then(|c| c.update(), resp)
                 }
             } else if let (Some(sender), Some(client)) =
                 (self.idle_sender.as_ref(), self.client.as_mut())
