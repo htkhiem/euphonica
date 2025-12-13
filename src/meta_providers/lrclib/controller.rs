@@ -11,14 +11,14 @@ use reqwest::{
 };
 
 use super::{
-    super::{models, MetadataProvider},
+    super::{MetadataProvider, models},
     LrcLibResponse, PROVIDER_KEY,
 };
 
 pub const API_ROOT: &str = "https://lrclib.net/api/";
 
 pub struct LrcLibWrapper {
-    client: Client
+    client: Client,
 }
 
 impl LrcLibWrapper {
@@ -39,7 +39,7 @@ impl LrcLibWrapper {
 impl MetadataProvider for LrcLibWrapper {
     fn new() -> Self {
         Self {
-            client: Client::new()
+            client: Client::new(),
         }
     }
 
@@ -93,7 +93,7 @@ impl MetadataProvider for LrcLibWrapper {
                                         }
                                     }
                                     let mut res: Option<models::Lyrics> = None;
-                                    if let Some(synced) = parsed[best_idx].synced.as_ref() { 
+                                    if let Some(synced) = parsed[best_idx].synced.as_ref() {
                                         if let Ok(lyrics) =
                                             models::Lyrics::try_from_synced_lrclib_str(synced)
                                         {
@@ -117,20 +117,19 @@ impl MetadataProvider for LrcLibWrapper {
                             Err(e) => {
                                 dbg!(e);
                                 None
-                            },
+                            }
                         }
                     }
                     code => {
                         dbg!(code);
                         None
-                    },
+                    }
                 }
                 // Pick the one with the closest duration to our song
             } else {
                 None
             }
-        }
-        else {
+        } else {
             None
         }
     }

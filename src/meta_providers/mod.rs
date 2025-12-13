@@ -1,14 +1,14 @@
 mod base;
 mod chain;
 pub mod lastfm;
+pub mod lrclib;
 pub mod models;
 pub mod musicbrainz;
-pub mod lrclib;
 
-pub use base::{utils, ProviderMessage, MetadataProvider};
-pub use chain::{get_provider, MetadataChain};
+pub use base::{MetadataProvider, ProviderMessage, utils};
+pub use chain::{MetadataChain, get_provider};
 
 pub mod prelude {
-    pub use super::base::{sleep_after_request, MetadataProvider};
+    pub use super::base::{MetadataProvider, sleep_after_request};
     pub use super::models::Merge;
 }

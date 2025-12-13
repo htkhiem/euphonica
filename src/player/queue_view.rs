@@ -4,25 +4,33 @@ use adw::prelude::*;
 use adw::subclass::prelude::*;
 use gio::glib::closure_local;
 use glib::clone;
-use gtk::{
-    gio, glib, CompositeTemplate, ListItem, SignalListItemFactory, SingleSelection,
-};
+use gtk::{CompositeTemplate, ListItem, SignalListItemFactory, SingleSelection, gio, glib};
 use mpd::{
-    error::{Error as MpdError, ErrorCode as MpdErrorCode, ServerError},
     SaveMode,
+    error::{Error as MpdError, ErrorCode as MpdErrorCode, ServerError},
 };
 
 use super::PlayerPane;
 
-use crate::{cache::Cache, client::ClientState, common::{RowEditButtons, Song, SongRow}, player::controller::SwapDirection, utils::LazyInit, window::EuphonicaWindow};
+use crate::{
+    cache::Cache,
+    client::ClientState,
+    common::{RowEditButtons, Song, SongRow},
+    player::controller::SwapDirection,
+    utils::LazyInit,
+    window::EuphonicaWindow,
+};
 
 use super::Player;
 
 mod imp {
-    use std::{cell::{Cell, OnceCell}, sync::OnceLock};
+    use std::{
+        cell::{Cell, OnceCell},
+        sync::OnceLock,
+    };
 
     use ::glib::WeakRef;
-    use glib::{subclass::Signal, Properties};
+    use glib::{Properties, subclass::Signal};
 
     use super::*;
 
@@ -78,7 +86,7 @@ mod imp {
         pub restore_last_pos: Cell<u8>,
 
         pub player: WeakRef<Player>,
-        pub initialized: Cell<bool>
+        pub initialized: Cell<bool>,
     }
 
     #[glib::object_subclass]
@@ -122,11 +130,7 @@ mod imp {
                 .build();
 
             self.obj()
-                .bind_property(
-                    "collapsed",
-                    &self.show_sidebar.get(),
-                    "visible"
-                )
+                .bind_property("collapsed", &self.show_sidebar.get(), "visible")
                 .sync_create()
                 .build();
 
@@ -158,11 +162,7 @@ mod imp {
 
         fn signals() -> &'static [Signal] {
             static SIGNALS: OnceLock<Vec<Signal>> = OnceLock::new();
-            SIGNALS.get_or_init(|| {
-                vec![
-                    Signal::builder("show-sidebar-clicked").build(),
-                ]
-            })
+            SIGNALS.get_or_init(|| vec![Signal::builder("show-sidebar-clicked").build()])
         }
     }
 
@@ -278,7 +278,7 @@ impl QueueView {
                         move |idx| {
                             player.remove_pos(idx);
                         }
-                    )
+                    ),
                 );
                 row.set_end_widget(Some(&end_widget.into()));
                 item.set_child(Some(&row));
@@ -304,9 +304,12 @@ impl QueueView {
                 // Within this binding fn is where the cached album art texture gets used.
                 child.on_bind(&item);
 
-                this.imp().last_scroll_pos.set(this.imp().scrolled_window.vadjustment().value());
+                this.imp()
+                    .last_scroll_pos
+                    .set(this.imp().scrolled_window.vadjustment().value());
                 this.imp().restore_last_pos.set(2);
-            }));
+            }
+        ));
 
         // When row goes out of sight, unbind from item to allow reuse with another.
         // Remember to also unset the thumbnail widget's texture to potentially free it from memory.
@@ -326,7 +329,9 @@ impl QueueView {
             move |_, _| {
                 // The above scroll bug also manifests after this, so now is the best time to set
                 // the corresponding values.
-                this.imp().last_scroll_pos.set(this.imp().scrolled_window.vadjustment().value());
+                this.imp()
+                    .last_scroll_pos
+                    .set(this.imp().scrolled_window.vadjustment().value());
                 this.imp().restore_last_pos.set(2);
             }
         ));
@@ -402,26 +407,28 @@ impl QueueView {
             .build();
 
         // Disgusting workaround until I can pinpoint whenever this is a GTK problem.
-        self.imp().scrolled_window.vadjustment().connect_notify_local(
-            Some("value"),
-            clone!(
-                #[weak(rename_to = this)]
-                self,
-                move |adj, _| {
-                    let checks_left = this.imp().restore_last_pos.get();
-                    if checks_left > 0 {
-                        let old_pos = this.imp().last_scroll_pos.get();
-                        if adj.value() == 0.0 {
-                            adj.set_value(old_pos);
-                        }
-                        else {
-                            this.imp().restore_last_pos.set(checks_left - 1);
-                            // this.imp().restore_last_pos.set(false);
+        self.imp()
+            .scrolled_window
+            .vadjustment()
+            .connect_notify_local(
+                Some("value"),
+                clone!(
+                    #[weak(rename_to = this)]
+                    self,
+                    move |adj, _| {
+                        let checks_left = this.imp().restore_last_pos.get();
+                        if checks_left > 0 {
+                            let old_pos = this.imp().last_scroll_pos.get();
+                            if adj.value() == 0.0 {
+                                adj.set_value(old_pos);
+                            } else {
+                                this.imp().restore_last_pos.set(checks_left - 1);
+                                // this.imp().restore_last_pos.set(false);
+                            }
                         }
                     }
-                }
-            )
-        );
+                ),
+            );
 
         save_name.connect_closure(
             "changed",
@@ -446,14 +453,17 @@ impl QueueView {
                 let name = save_name.buffer().text().as_str().to_owned();
                 match player.save_queue(&name, SaveMode::Create) {
                     Ok(()) => {}
-                    Err(e) => if let Some(MpdError::Server(ServerError {
+                    Err(e) => {
+                        if let Some(MpdError::Server(ServerError {
                             code: MpdErrorCode::Exist,
                             pos: _,
                             command: _,
                             detail: _,
-                        })) = e {
-                        this.show_save_error_dialog(name, player);
-                    },
+                        })) = e
+                        {
+                            this.show_save_error_dialog(name, player);
+                        }
+                    }
                 }
             }
         ));
@@ -492,9 +502,7 @@ impl QueueView {
         consume.connect_clicked(clone!(
             #[weak]
             player,
-            move |btn| {
-                player.set_consume(btn.is_active())
-            }
+            move |btn| { player.set_consume(btn.is_active()) }
         ));
 
         clear_queue_btn.connect_clicked(clone!(
@@ -506,7 +514,13 @@ impl QueueView {
         ));
     }
 
-    pub fn setup(&self, player: &Player, cache: Rc<Cache>, client_state: &ClientState, window: EuphonicaWindow) {
+    pub fn setup(
+        &self,
+        player: &Player,
+        cache: Rc<Cache>,
+        client_state: &ClientState,
+        window: EuphonicaWindow,
+    ) {
         let _ = self.imp().window.set(window);
         self.setup_listview(player, cache);
         self.imp().player_pane.setup(player, client_state);

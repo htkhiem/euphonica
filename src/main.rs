@@ -38,7 +38,7 @@ use config::{GETTEXT_PACKAGE, LOCALEDIR, PKGDATADIR};
 use gdk::Display;
 use gettextrs::{bind_textdomain_codeset, bindtextdomain, textdomain};
 use gtk::prelude::*;
-use gtk::{gdk, gio, glib, CssProvider};
+use gtk::{CssProvider, gdk, gio, glib};
 
 fn load_css() {
     // Load the CSS file and add it to the provider
@@ -68,7 +68,10 @@ fn main() -> glib::ExitCode {
     // Create a new GtkApplication. The application manages our main loop,
     // application windows, integration with the window manager/compositor, and
     // desktop features such as file opening and single-instance applications.
-    let app = EuphonicaApplication::new("io.github.htkhiem.Euphonica", &gio::ApplicationFlags::empty());
+    let app = EuphonicaApplication::new(
+        "io.github.htkhiem.Euphonica",
+        &gio::ApplicationFlags::empty(),
+    );
     app.connect_startup(|_| load_css());
     app.add_main_option(
         "minimized",
@@ -76,7 +79,7 @@ fn main() -> glib::ExitCode {
         glib::OptionFlags::IN_MAIN | glib::OptionFlags::OPTIONAL_ARG,
         glib::OptionArg::None,
         "Start Euphonica without opening a window",
-        None
+        None,
     );
 
     // Run the application. This function will block until the application

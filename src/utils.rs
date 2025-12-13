@@ -1,32 +1,30 @@
 use crate::config::APPLICATION_ID;
 use aho_corasick::AhoCorasick;
 use gio::prelude::*;
-use gtk::gio;
 use gtk::Ordering;
-use image::{imageops::FilterType, DynamicImage, RgbImage};
+use gtk::gio;
+use image::{DynamicImage, RgbImage, imageops::FilterType};
 use mpd::status::AudioFormat;
 use once_cell::sync::Lazy;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
-use time::OffsetDateTime;
-use time::UtcOffset;
-use time::format_description::{parse_owned, OwnedFormatItem};
-use time::error::IndeterminateOffset;
-use std::fs::File;
-use std::io::{BufWriter, BufReader};
-use std::sync::OnceLock;
 use std::fmt::Write;
+use std::fs::File;
+use std::io::{BufReader, BufWriter};
+use std::sync::OnceLock;
+use std::sync::RwLock;
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
-use std::sync::RwLock;
+use time::OffsetDateTime;
+use time::UtcOffset;
+use time::error::IndeterminateOffset;
+use time::format_description::{OwnedFormatItem, parse_owned};
 use tokio::runtime::Runtime;
 
 /// Spawn a Tokio runtime on a new thread. This is needed by the zbus dependency.
 pub fn tokio_runtime() -> &'static Runtime {
     static RUNTIME: OnceLock<Runtime> = OnceLock::new();
-    RUNTIME.get_or_init(|| {
-        Runtime::new().expect("Setting up tokio runtime needs to succeed.")
-    })
+    RUNTIME.get_or_init(|| Runtime::new().expect("Setting up tokio runtime needs to succeed."))
 }
 
 /// Get GSettings for the entire application.
@@ -195,15 +193,19 @@ pub fn resize_convert_image(dyn_img: DynamicImage) -> (RgbImage, RgbImage) {
     // Avoid resizing to larger than the original image.
     let w = dyn_img.width();
     let h = dyn_img.height();
-    let hires_size = settings
-        .uint("hires-image-size")
-        .min(w.max(h));
+    let hires_size = settings.uint("hires-image-size").min(w.max(h));
     let thumbnail_short_edge = settings.uint("thumbnail-image-size");
     // For thumbnails, scale such that the short edge is equal to thumbnail_size.
     let thumbnail_sizes = if w > h {
-        ((w as f32 * (thumbnail_short_edge as f32 / h as f32)).ceil() as u32, thumbnail_short_edge)
+        (
+            (w as f32 * (thumbnail_short_edge as f32 / h as f32)).ceil() as u32,
+            thumbnail_short_edge,
+        )
     } else {
-        (thumbnail_short_edge, (h as f32 * (thumbnail_short_edge as f32 / w as f32)).ceil() as u32)
+        (
+            thumbnail_short_edge,
+            (h as f32 * (thumbnail_short_edge as f32 / w as f32)).ceil() as u32,
+        )
     };
     (
         dyn_img
@@ -216,7 +218,10 @@ pub fn resize_convert_image(dyn_img: DynamicImage) -> (RgbImage, RgbImage) {
 }
 
 pub fn current_unix_timestamp() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs()
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
 }
 
 pub static LOCAL_TZ_OFFSET: OnceLock<Result<UtcOffset, IndeterminateOffset>> = OnceLock::new();
@@ -224,9 +229,7 @@ pub static LOCAL_TZ_OFFSET: OnceLock<Result<UtcOffset, IndeterminateOffset>> = O
 /// Safely retrieve the initialized local UTC offset, computing it if necessary.
 /// Returns the UtcOffset or the error encountered during system lookup.
 fn get_local_tz_offset() -> Result<UtcOffset, IndeterminateOffset> {
-    *LOCAL_TZ_OFFSET.get_or_init(|| {
-        UtcOffset::current_local_offset()
-    })
+    *LOCAL_TZ_OFFSET.get_or_init(|| UtcOffset::current_local_offset())
 }
 
 /// Static storage for the determined locale format string.
@@ -248,11 +251,20 @@ fn get_locale_format() -> &'static OwnedFormatItem {
 
         if locale_str.contains("us") || locale_str.contains("ca") {
             // Example for North America: MM/DD/YYYY HH:MM:SS
-            parse_owned::<2>("[month padding:none]/[day padding:none]/[year] [hour]:[minute]:[second]").unwrap()
-        } else if locale_str.contains("gb") || locale_str.contains("de") || locale_str.contains("fr") || locale_str.contains("au") {
+            parse_owned::<2>(
+                "[month padding:none]/[day padding:none]/[year] [hour]:[minute]:[second]",
+            )
+            .unwrap()
+        } else if locale_str.contains("gb")
+            || locale_str.contains("de")
+            || locale_str.contains("fr")
+            || locale_str.contains("au")
+        {
             // Example for Europe/UK/Australia: DD/MM/YYYY HH:MM:SS
-            parse_owned::<2>("[day padding:none]/[month padding:none]/[year] [hour]:[minute]:[second]").unwrap()
-
+            parse_owned::<2>(
+                "[day padding:none]/[month padding:none]/[year] [hour]:[minute]:[second]",
+            )
+            .unwrap()
         } else {
             // Default
             parse_owned::<2>("[year]-[month]-[day] [hour]:[minute]:[second]").unwrap()
@@ -323,7 +335,6 @@ pub fn rebuild_artist_delim_exception_automaton() {
     }
 }
 
-
 /// There are two guard layers against full fetches.
 /// - This LazyInit trait. All heavy views must implement it. A view's populate() will then be called
 /// by the sidebar upon navigating to that view. If that view is already initialised, populate() must
@@ -334,14 +345,16 @@ pub trait LazyInit {
     fn populate(&self);
 }
 
-
 /// Exports any type that implements Serialize to a JSON file.
 ///
 /// # Arguments
 /// * `data` - A reference to the struct to serialize.
 /// * `file_path` - The path where the JSON file will be saved. Assume we have
 /// write access to this path already.
-pub fn export_to_json<T: Serialize>(data: &T, file_path: &str) -> Result<(), Box<dyn std::error::Error>> {
+pub fn export_to_json<T: Serialize>(
+    data: &T,
+    file_path: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
     let file = File::create(file_path)?;
     // Use BufWriter for better performance (reduces system calls).
     let writer = BufWriter::new(file);
@@ -349,7 +362,6 @@ pub fn export_to_json<T: Serialize>(data: &T, file_path: &str) -> Result<(), Box
 
     Ok(())
 }
-
 
 /// Import a type that implements Deserialize from a JSON file.
 ///
@@ -360,14 +372,15 @@ pub fn export_to_json<T: Serialize>(data: &T, file_path: &str) -> Result<(), Box
 /// A Result containing the deserialized struct or an error.
 /// We use `DeserializeOwned` here because we are creating the data from the file,
 /// so it must own its memory (not borrow from the input string).
-pub fn import_from_json<T: DeserializeOwned>(file_path: &str) -> Result<T, Box<dyn std::error::Error>> {
+pub fn import_from_json<T: DeserializeOwned>(
+    file_path: &str,
+) -> Result<T, Box<dyn std::error::Error>> {
     let file = File::open(file_path)?;
     let reader = BufReader::new(file);
     let deserialized_data = serde_json::from_reader(reader)?;
 
     Ok(deserialized_data)
 }
-
 
 /// Describe how long ago was a timestamp compared to now.
 ///
@@ -377,47 +390,36 @@ pub fn import_from_json<T: DeserializeOwned>(file_path: &str) -> Result<T, Box<d
 /// TODO: translations
 pub fn get_time_ago_desc(past_ts: i64) -> String {
     let now = OffsetDateTime::now_utc();
-    let diff = (
-        now.unix_timestamp() - past_ts
-    ) as f64;
+    let diff = (now.unix_timestamp() - past_ts) as f64;
     let diff_days = diff / 86400.0;
     if diff_days <= 0.0 {
         String::from("now")
-    }
-    else if diff_days >= 365.0 {
+    } else if diff_days >= 365.0 {
         let years = (diff_days / 365.0).floor() as u32;
         if years == 1 {
             String::from("last year")
-        }
-        else {
+        } else {
             format!("{years} years ago")
         }
-    }
-    else if diff_days >= 30.0 {
+    } else if diff_days >= 30.0 {
         // Just let a month be 30 days long on average :)
         let months = (diff_days / 30.0).floor() as u32;
         if months == 1 {
             String::from("last month")
-        }
-        else {
+        } else {
             format!("{months} months ago")
         }
-    }
-    else if diff_days >= 2.0 {
+    } else if diff_days >= 2.0 {
         format!("{diff_days:.0} days ago")
-    }
-    else if diff_days >= 1.0 {
+    } else if diff_days >= 1.0 {
         String::from("yesterday")
-    }
-    else if diff >= 3600.0 {
+    } else if diff >= 3600.0 {
         let hours = (diff / 3600.0).floor() as u32;
         format!("{hours}h ago")
-    }
-    else if diff >= 60.0 {
+    } else if diff >= 60.0 {
         let mins = (diff / 60.0).floor() as u32;
         format!("{mins}m ago")
-    }
-    else {
+    } else {
         "just now".to_string()
     }
 }

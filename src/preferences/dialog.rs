@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
 use adw::subclass::prelude::*;
-use gtk::{glib, CompositeTemplate};
+use gtk::{CompositeTemplate, glib};
 
 use crate::{cache::Cache, client::MpdWrapper, player::Player};
 
@@ -66,13 +66,13 @@ impl Preferences {
 
         res.imp().client_tab.get().setup(client, player);
         res.imp().library_tab.get().setup();
-        res.imp().ui_tab.get().setup(); 
+        res.imp().ui_tab.get().setup();
         res.imp().integrations_tab.get().setup(cache);
-        
+
         res
     }
 
     pub fn update(&self) {
-        self.imp().library_tab.get().refresh_cache_stats(); 
+        self.imp().library_tab.get().refresh_cache_stats();
     }
 }

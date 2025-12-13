@@ -1,7 +1,7 @@
 use glib::prelude::*;
 use gtk::glib;
 use gtk::subclass::prelude::*;
-use mpd::{lsinfo::LsInfoEntry, Playlist};
+use mpd::{Playlist, lsinfo::LsInfoEntry};
 use std::cell::OnceCell;
 
 #[derive(Clone, Copy, Debug, glib::Enum, PartialEq, Default)]
@@ -12,7 +12,7 @@ pub enum INodeType {
     Song,
     Folder,
     Playlist,
-    DynamicPlaylist
+    DynamicPlaylist,
 }
 
 impl INodeType {

@@ -1,16 +1,23 @@
 use ashpd::desktop::file_chooser::{FileFilter, SelectedFiles};
 use glib::{clone, closure_local};
 use gtk::{
-    gdk,
+    CompositeTemplate, gdk,
     glib::{self, Variant},
     prelude::*,
     subclass::prelude::*,
-    CompositeTemplate,
 };
-use std::{cell::{Cell, RefCell}, fs::{self, File}, io::Write};
+use std::{
+    cell::{Cell, RefCell},
+    fs::{self, File},
+    io::Write,
+};
 
 use crate::{
-    cache::placeholders::{ALBUMART_PLACEHOLDER, EMPTY_ALBUM_STRING, EMPTY_ARTIST_STRING}, client::{state::StickersSupportLevel, ClientState}, common::{paintables::FadePaintable, Rating}, player::seekbar::Seekbar, utils::{self, settings_manager}
+    cache::placeholders::{ALBUMART_PLACEHOLDER, EMPTY_ALBUM_STRING, EMPTY_ARTIST_STRING},
+    client::{ClientState, state::StickersSupportLevel},
+    common::{Rating, paintables::FadePaintable},
+    player::seekbar::Seekbar,
+    utils::{self, settings_manager},
 };
 
 use super::{MpdOutput, PlaybackControls, PlaybackState, Player, VolumeKnob};
@@ -141,11 +148,7 @@ mod imp {
                 .build();
 
             self.show_lyrics
-                .bind_property(
-                    "active",
-                    &self.lyrics_btn.get(),
-                    "icon-name"
-                )
+                .bind_property("active", &self.lyrics_btn.get(), "icon-name")
                 .transform_to(|_, show_lyrics: bool| {
                     if show_lyrics {
                         Some("lyrics-on-symbolic")
@@ -157,11 +160,7 @@ mod imp {
                 .build();
 
             self.vol_knob
-                .bind_property(
-                    "value",
-                    &self.output_btn.get(),
-                    "icon-name"
-                )
+                .bind_property("value", &self.output_btn.get(), "icon-name")
                 .transform_to(|_, level: f64| {
                     if level > 75.0 {
                         Some("speaker-4-symbolic")
@@ -205,7 +204,9 @@ impl PlayerPane {
 
     pub fn update_lyrics_availability(&self, player: &Player) {
         let has_lyrics = player.n_lyric_lines() > 0;
-        self.imp().lyrics_window.set_visible(has_lyrics && self.imp().show_lyrics.is_active());
+        self.imp()
+            .lyrics_window
+            .set_visible(has_lyrics && self.imp().show_lyrics.is_active());
         self.imp().export_lyrics.set_sensitive(has_lyrics);
         self.imp().clear_lyrics.set_sensitive(has_lyrics);
     }
@@ -218,7 +219,7 @@ impl PlayerPane {
             for i in 0..n_lyric_lines {
                 if let Some(row) = lyrics_box.row_at_index(i as i32) {
                     if let Some(label) = row.child() {
-                        label.set_opacity(if i == curr_line_idx {1.0} else {0.2});
+                        label.set_opacity(if i == curr_line_idx { 1.0 } else { 0.2 });
                     }
                 }
             }
@@ -227,7 +228,11 @@ impl PlayerPane {
             // TODO: Figure out exactly how many lines ahead to focus
             // on, based on lyrics box height, such that the current line
             // is vertically centered.
-            let focus_line = if curr_line_idx == 0 {0} else {(curr_line_idx + 1).min(n_lyric_lines - 1)};
+            let focus_line = if curr_line_idx == 0 {
+                0
+            } else {
+                (curr_line_idx + 1).min(n_lyric_lines - 1)
+            };
             if let Some(row) = lyrics_box.row_at_index(focus_line as i32) {
                 row.grab_focus();
             }
@@ -417,42 +422,44 @@ impl PlayerPane {
             .build();
 
         client_state
-            .bind_property(
-                "stickers-support-level",
-                &rating,
-                "visible"
-            )
+            .bind_property("stickers-support-level", &rating, "visible")
             .transform_to(|_, lvl: StickersSupportLevel| {
                 Some((lvl >= StickersSupportLevel::SongsOnly).to_value())
             })
             .sync_create()
             .build();
 
-        rating
-            .connect_closure(
-                "changed",
-                false,
-                closure_local!(
-                    #[weak]
-                    player,
-                    move |rating: Rating| {
-                        let rating_val = rating.value();
-                        let rating_opt = if rating_val > 0 { Some(rating_val)} else { None };
-                        player.rate_current_song(rating_opt);
-                    }
-                )
-            );
+        rating.connect_closure(
+            "changed",
+            false,
+            closure_local!(
+                #[weak]
+                player,
+                move |rating: Rating| {
+                    let rating_val = rating.value();
+                    let rating_opt = if rating_val > 0 {
+                        Some(rating_val)
+                    } else {
+                        None
+                    };
+                    player.rate_current_song(rating_opt);
+                }
+            ),
+        );
 
         let lyric_lines = player.lyrics();
-        lyric_lines.connect_notify_local(Some("n-items"), clone!(
-            #[weak(rename_to = this)]
-            self,
-            #[weak]
-            player,
-            move |_, _| {
-                this.update_lyrics_availability(&player);
-            }
-        ));
+        lyric_lines.connect_notify_local(
+            Some("n-items"),
+            clone!(
+                #[weak(rename_to = this)]
+                self,
+                #[weak]
+                player,
+                move |_, _| {
+                    this.update_lyrics_availability(&player);
+                }
+            ),
+        );
 
         // Synced lyrics handling:
         // - Upon loading new lyrics, player controller sets new lyrics object,
@@ -461,22 +468,27 @@ impl PlayerPane {
         // fetch that new object's synced property, rendering all newly created
         // Labels at 20% opacity.
         let lyrics_box = imp.lyrics_box.get();
-        lyrics_box.bind_model(Some(&lyric_lines), clone!(
-            #[weak]
-            player,
-            #[upgrade_or]
-            gtk::Label::default().into(),
-            move |line| {
-                let widget = gtk::Label::new(Some(&line.downcast_ref::<gtk::StringObject>().unwrap().string()));
-                widget.set_halign(gtk::Align::Center);
-                widget.set_hexpand(true);
-                widget.set_wrap(true);
-                if player.lyrics_are_synced() {
-                    widget.set_opacity(0.2);
+        lyrics_box.bind_model(
+            Some(&lyric_lines),
+            clone!(
+                #[weak]
+                player,
+                #[upgrade_or]
+                gtk::Label::default().into(),
+                move |line| {
+                    let widget = gtk::Label::new(Some(
+                        &line.downcast_ref::<gtk::StringObject>().unwrap().string(),
+                    ));
+                    widget.set_halign(gtk::Align::Center);
+                    widget.set_hexpand(true);
+                    widget.set_wrap(true);
+                    if player.lyrics_are_synced() {
+                        widget.set_opacity(0.2);
+                    }
+                    widget.into()
                 }
-                widget.into()
-            }
-        ));
+            ),
+        );
 
         lyrics_box.connect_row_activated(clone!(
             #[weak]
@@ -490,13 +502,16 @@ impl PlayerPane {
         // trigger a current-lyric-line notification (with current_lyric_line
         // at zero), which in turn runs this callback to highlight the initial
         // lyric line.
-        player.connect_notify_local(Some("current-lyric-line"), clone!(
-            #[weak(rename_to = this)]
-            self,
-            move |player, _| {
-                this.update_lyrics_state(player);
-            }
-        ));
+        player.connect_notify_local(
+            Some("current-lyric-line"),
+            clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |player, _| {
+                    this.update_lyrics_state(player);
+                }
+            ),
+        );
 
         self.update_outputs(player);
         player.connect_closure(
@@ -521,7 +536,7 @@ impl PlayerPane {
                 move |_: Player, tex: Option<gdk::Texture>| {
                     this.update_album_art(tex);
                 }
-            )
+            ),
         );
 
         imp.prev_output.connect_clicked(clone!(
@@ -551,7 +566,7 @@ impl PlayerPane {
                     println!("show-lyrics changed");
                     this.update_lyrics_availability(&player);
                 }
-            )
+            ),
         );
 
         imp.use_synced_lyrics.connect_notify_local(
@@ -565,7 +580,7 @@ impl PlayerPane {
                     println!("use-synced-lyrics changed");
                     this.update_lyrics_state(&player);
                 }
-            )
+            ),
         );
 
         imp.import_lyrics.connect_clicked(clone!(
@@ -573,9 +588,9 @@ impl PlayerPane {
             player,
             move |_| {
                 let (sender, receiver) = async_channel::bounded(1);
-                utils::tokio_runtime().spawn(
-                    async move {
-                        sender.send(
+                utils::tokio_runtime().spawn(async move {
+                    sender
+                        .send(
                             SelectedFiles::open_file()
                                 .title("Import a .lrc file")
                                 .modal(true)
@@ -584,27 +599,38 @@ impl PlayerPane {
                                 .send()
                                 .await
                                 .expect("ashpd file open await failure")
-                                .response()
-                        ).await.expect("Unable to send response from ashpd back to main thread");
-                    });
+                                .response(),
+                        )
+                        .await
+                        .expect("Unable to send response from ashpd back to main thread");
+                });
                 glib::spawn_future_local(clone!(
                     #[weak]
                     player,
                     async move {
                         if let Some(uri) = receiver
-                            .recv().await
-                                   .unwrap().ok()  // Once for receiver result and once for ashpd's
-                                   .and_then(|sel_files| {
-                                       let uris = sel_files.uris();
-                                       if uris.is_empty() {None} else {Some(uris[0].to_string())}
-                                   })
+                            .recv()
+                            .await
+                            .unwrap()
+                            .ok() // Once for receiver result and once for ashpd's
+                            .and_then(|sel_files| {
+                                let uris = sel_files.uris();
+                                if uris.is_empty() {
+                                    None
+                                } else {
+                                    Some(uris[0].to_string())
+                                }
+                            })
                         {
                             let uri = urlencoding::decode(if uri.starts_with("file://") {
                                 &uri[7..]
                             } else {
                                 &uri
-                            }).expect("UTF-8").into_owned();
-                            let text = fs::read_to_string(uri).expect("Unable to read given .lrc file");
+                            })
+                            .expect("UTF-8")
+                            .into_owned();
+                            let text =
+                                fs::read_to_string(uri).expect("Unable to read given .lrc file");
                             player.import_lyrics(&text);
                         }
                     }
@@ -618,9 +644,9 @@ impl PlayerPane {
             move |_| {
                 let (sender, receiver) = async_channel::bounded(1);
                 if let Some(text) = player.export_lyrics() {
-                    utils::tokio_runtime().spawn(
-                        async move {
-                            sender.send(
+                    utils::tokio_runtime().spawn(async move {
+                        sender
+                            .send(
                                 SelectedFiles::save_file()
                                     .title("Save lyrics to .lrc file")
                                     .accept_label("Save")
@@ -630,29 +656,40 @@ impl PlayerPane {
                                     .send()
                                     .await
                                     .expect("ashpd file open await failure")
-                                    .response()
-                            ).await.expect("Unable to send response from ashpd back to main thread");
-                        });
-                    glib::spawn_future_local(
-                        async move {
-                            if let Some(uri) = receiver
-                                .recv().await
-                                       .unwrap().ok()  // Once for receiver result and once for ashpd's
-                                       .and_then(|sel_files| {
-                                           let uris = sel_files.uris();
-                                           if uris.is_empty() {None} else {Some(uris[0].to_string())}
-                                       })
-                            {
-                                let uri = urlencoding::decode(if uri.starts_with("file://") {
-                                    &uri[7..]
+                                    .response(),
+                            )
+                            .await
+                            .expect("Unable to send response from ashpd back to main thread");
+                    });
+                    glib::spawn_future_local(async move {
+                        if let Some(uri) = receiver
+                            .recv()
+                            .await
+                            .unwrap()
+                            .ok() // Once for receiver result and once for ashpd's
+                            .and_then(|sel_files| {
+                                let uris = sel_files.uris();
+                                if uris.is_empty() {
+                                    None
                                 } else {
-                                    &uri
-                                }).expect("UTF-8").into_owned();
-                                let mut output = File::create(uri).expect("Unable to open a file for exporting lyrics");
-                                output.write_all(text.as_bytes()).expect("Unable to write to opened file");
-                            }
+                                    Some(uris[0].to_string())
+                                }
+                            })
+                        {
+                            let uri = urlencoding::decode(if uri.starts_with("file://") {
+                                &uri[7..]
+                            } else {
+                                &uri
+                            })
+                            .expect("UTF-8")
+                            .into_owned();
+                            let mut output = File::create(uri)
+                                .expect("Unable to open a file for exporting lyrics");
+                            output
+                                .write_all(text.as_bytes())
+                                .expect("Unable to write to opened file");
                         }
-                    );
+                    });
                 }
             }
         ));
@@ -684,7 +721,14 @@ impl PlayerPane {
     fn update_outputs(&self, player: &Player) {
         let outputs = player.outputs();
         let outputs: Vec<glib::BoxedAnyObject> = (0..outputs.n_items())
-            .map(|i| outputs.item(i).unwrap().downcast::<glib::BoxedAnyObject>().unwrap()).collect();
+            .map(|i| {
+                outputs
+                    .item(i)
+                    .unwrap()
+                    .downcast::<glib::BoxedAnyObject>()
+                    .unwrap()
+            })
+            .collect();
         let section = self.imp().output_section.get();
         let stack = self.imp().output_stack.get();
         let new_len = outputs.len();

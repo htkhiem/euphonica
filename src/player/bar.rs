@@ -1,25 +1,21 @@
 use glib::{clone, closure_local};
 use gtk::{
-    gdk,
-    glib::{self, Variant, subclass::Signal, Properties},
+    CompositeTemplate, gdk,
+    glib::{self, Properties, Variant, subclass::Signal},
     prelude::*,
     subclass::prelude::*,
-    CompositeTemplate,
 };
 use std::cell::{Cell, RefCell};
 use std::sync::OnceLock;
 
 use crate::{
-    cache::placeholders::{ALBUMART_PLACEHOLDER, EMPTY_ALBUM_STRING, EMPTY_ARTIST_STRING}, common::Marquee, player::{ratio_center_box::RatioCenterBox, seekbar::Seekbar}, utils::settings_manager
+    cache::placeholders::{ALBUMART_PLACEHOLDER, EMPTY_ALBUM_STRING, EMPTY_ARTIST_STRING},
+    common::Marquee,
+    player::{ratio_center_box::RatioCenterBox, seekbar::Seekbar},
+    utils::settings_manager,
 };
 
-use super::{
-    MpdOutput,
-    PlaybackControls,
-    PlaybackState,
-    Player,
-    VolumeKnob
-};
+use super::{MpdOutput, PlaybackControls, PlaybackState, Player, VolumeKnob};
 
 mod imp {
     use super::*;
@@ -103,26 +99,20 @@ mod imp {
             let obj = self.obj();
 
             obj.bind_property("collapsed", &self.multi_layout_view.get(), "layout-name")
-                .transform_to(
-                    |_, collapsed: bool| {
-                        if collapsed {
-                            Some("mini")
-                        } else {
-                            Some("full")
-                        }
-                    },
-                )
+                .transform_to(|_, collapsed: bool| {
+                    if collapsed {
+                        Some("mini")
+                    } else {
+                        Some("full")
+                    }
+                })
                 .sync_create()
                 .build();
 
             obj.bind_property("collapsed", &self.albumart.get(), "pixel-size")
                 .transform_to(
                     |_, collapsed: bool| {
-                        if collapsed {
-                            Some(48)
-                        } else {
-                            Some(115)
-                        }
+                        if collapsed { Some(48) } else { Some(115) }
                     },
                 )
                 .sync_create()
@@ -340,7 +330,7 @@ impl PlayerBar {
                 move |_: Player, tex: Option<gdk::Texture>| {
                     this.update_album_art(tex);
                 }
-            )
+            ),
         );
 
         self.imp().prev_output.connect_clicked(clone!(
@@ -374,7 +364,14 @@ impl PlayerBar {
     fn update_outputs(&self, player: &Player) {
         let outputs = player.outputs();
         let outputs: Vec<glib::BoxedAnyObject> = (0..outputs.n_items())
-            .map(|i| outputs.item(i).unwrap().downcast::<glib::BoxedAnyObject>().unwrap()).collect();
+            .map(|i| {
+                outputs
+                    .item(i)
+                    .unwrap()
+                    .downcast::<glib::BoxedAnyObject>()
+                    .unwrap()
+            })
+            .collect();
         let section = self.imp().output_section.get();
         let stack = self.imp().output_stack.get();
         let new_len = outputs.len();

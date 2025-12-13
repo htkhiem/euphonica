@@ -1,18 +1,20 @@
 use adw::subclass::prelude::*;
-use glib::{clone, closure_local, signal::SignalHandlerId, Binding};
-use gtk::{gdk, gio, glib, prelude::*, BitsetIter, CompositeTemplate, ListItem, SignalListItemFactory};
+use derivative::Derivative;
+use glib::{Binding, clone, closure_local, signal::SignalHandlerId};
+use gtk::{
+    BitsetIter, CompositeTemplate, ListItem, SignalListItemFactory, gdk, gio, glib, prelude::*,
+};
+use mpd::error::{Error as MpdError, ErrorCode as MpdErrorCode, ServerError};
 use std::{
     cell::{OnceCell, RefCell},
     rc::Rc,
 };
-use derivative::Derivative;
-use mpd::error::{Error as MpdError, ErrorCode as MpdErrorCode, ServerError};
 
 use super::Library;
 use crate::{
-    cache::{placeholders::ALBUMART_PLACEHOLDER, Cache},
+    cache::{Cache, placeholders::ALBUMART_PLACEHOLDER},
     client::ClientState,
-    common::{RowEditButtons, INode, RowAddButtons, Song, SongRow},
+    common::{INode, RowAddButtons, RowEditButtons, Song, SongRow},
     utils::format_secs_as_duration,
     window::EuphonicaWindow,
 };
@@ -175,7 +177,7 @@ mod imp {
 
         // FIXME: Working around the scroll position bug. See src/player/queue_view.rs (same issue).
         pub last_scroll_pos: Cell<f64>,
-        pub restore_last_pos: Cell<u8>
+        pub restore_last_pos: Cell<u8>,
     }
 
     #[glib::object_subclass]
@@ -316,8 +318,7 @@ mod imp {
                                     if !uris.is_empty() {
                                         let _ = sender.send_blocking(uris[0].to_string());
                                     }
-                                }
-                                else {
+                                } else {
                                     println!("{maybe_files:?}");
                                 }
                             });
@@ -345,11 +346,9 @@ mod imp {
 
             // Create a new action group and add actions to it
             let actions = SimpleActionGroup::new();
-            actions.add_action_entries([
-                action_set_cover,
-                action_clear_cover
-            ]);
-            self.obj().insert_action_group("playlist-content-view", Some(&actions));
+            actions.add_action_entries([action_set_cover, action_clear_cover]);
+            self.obj()
+                .insert_action_group("playlist-content-view", Some(&actions));
         }
     }
 
@@ -800,7 +799,7 @@ impl PlaylistContentView {
                         move |idx| {
                             this.remove(idx);
                         }
-                    )
+                    ),
                 );
                 row.set_end_widget(Some(&end_widget.into()));
                 item.set_child(Some(&row));
@@ -824,7 +823,11 @@ impl PlaylistContentView {
                 .and_downcast::<SongRow>()
                 .expect("The child has to be an `SongRow`.");
 
-            child.end_widget().and_downcast::<RowAddButtons>().unwrap().set_song(Some(&item));
+            child
+                .end_widget()
+                .and_downcast::<RowAddButtons>()
+                .unwrap()
+                .set_song(Some(&item));
             child.on_bind(&item);
         });
 
@@ -853,7 +856,11 @@ impl PlaylistContentView {
                 .child()
                 .and_downcast::<SongRow>()
                 .expect("The child has to be an `SongRow`.");
-            child.end_widget().and_downcast::<RowAddButtons>().unwrap().set_song(None);
+            child
+                .end_widget()
+                .and_downcast::<RowAddButtons>()
+                .unwrap()
+                .set_song(None);
             child.on_unbind();
         });
 
@@ -873,7 +880,9 @@ impl PlaylistContentView {
             move |_, _| {
                 // The above scroll bug only manifests after this, so now is the best time to set
                 // the corresponding values.
-                this.imp().last_scroll_pos.set(this.imp().editing_content_scroller.vadjustment().value());
+                this.imp()
+                    .last_scroll_pos
+                    .set(this.imp().editing_content_scroller.vadjustment().value());
                 this.imp().restore_last_pos.set(2);
             }
         ));
@@ -885,26 +894,28 @@ impl PlaylistContentView {
             .set_factory(Some(&editing_factory));
 
         // Disgusting workaround until I can pinpoint whenever this is a GTK problem.
-        self.imp().editing_content_scroller.vadjustment().connect_notify_local(
-            Some("value"),
-            clone!(
-                #[weak(rename_to = this)]
-                self,
-                move |adj, _| {
-                    let checks_left = this.imp().restore_last_pos.get();
-                    if checks_left > 0 {
-                        let old_pos = this.imp().last_scroll_pos.get();
-                        if adj.value() == 0.0 {
-                            adj.set_value(old_pos);
-                        }
-                        else {
-                            this.imp().restore_last_pos.set(checks_left - 1);
-                            // this.imp().restore_last_pos.set(false);
+        self.imp()
+            .editing_content_scroller
+            .vadjustment()
+            .connect_notify_local(
+                Some("value"),
+                clone!(
+                    #[weak(rename_to = this)]
+                    self,
+                    move |adj, _| {
+                        let checks_left = this.imp().restore_last_pos.get();
+                        if checks_left > 0 {
+                            let old_pos = this.imp().last_scroll_pos.get();
+                            if adj.value() == 0.0 {
+                                adj.set_value(old_pos);
+                            } else {
+                                this.imp().restore_last_pos.set(checks_left - 1);
+                                // this.imp().restore_last_pos.set(false);
+                            }
                         }
                     }
-                }
-            )
-        );
+                ),
+            );
     }
 
     pub fn bind(&self, playlist: INode) {
@@ -928,7 +939,9 @@ impl PlaylistContentView {
 
         // Fetch high resolution playlist cover
         let handle = self.imp().cache.get().unwrap().load_cached_playlist_cover(
-            playlist.get_uri(), false, false
+            playlist.get_uri(),
+            false,
+            false,
         );
         glib::spawn_future_local(clone!(
             #[weak(rename_to = this)]

@@ -1,7 +1,8 @@
+use glib::prelude::*;
 use std::{
-    rc::Rc, sync::{Arc, Mutex}
+    rc::Rc,
+    sync::{Arc, Mutex},
 };
-use glib::{prelude::*};
 
 use crate::player::Player;
 
@@ -36,7 +37,8 @@ pub trait FftBackendExt: FftBackendImpl {
     }
 
     fn emit_param_changed(&self, key: &str, val: &glib::Variant) {
-        self.player().emit_by_name::<()>("fft-param-changed", &[&self.name(), &key, val]);
+        self.player()
+            .emit_by_name::<()>("fft-param-changed", &[&self.name(), &key, val]);
     }
 }
 

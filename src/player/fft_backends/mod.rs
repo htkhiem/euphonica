@@ -1,7 +1,7 @@
 use duplicate::duplicate_item;
 
-pub mod fft;
 pub mod backend;
+pub mod fft;
 pub mod fifo;
 pub mod pipewire;
 

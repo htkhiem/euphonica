@@ -23,24 +23,25 @@ use crate::{
     client::{ClientError, ClientState, ConnectionState},
     common::{Album, Artist, INode, ThemeSelector, blend_mode::*, paintables::FadePaintable},
     library::{
-        AlbumView, ArtistContentView, ArtistView, DynamicPlaylistView, FolderView, PlaylistView, RecentView
+        AlbumView, ArtistContentView, ArtistView, DynamicPlaylistView, FolderView, PlaylistView,
+        RecentView,
     },
     player::{Player, PlayerBar, QueueView},
     sidebar::Sidebar,
     utils::{self, LazyInit, settings_manager},
 };
-use adw::{prelude::*, subclass::prelude::*, ColorScheme, StyleManager};
-use glib::{signal::SignalHandlerId, WeakRef};
+use adw::{ColorScheme, StyleManager, prelude::*, subclass::prelude::*};
+use auto_palette::{ImageData, Palette, Theme, color::RGB};
+use glib::{WeakRef, signal::SignalHandlerId};
 use gtk::{
-    gdk, gio,
-    glib::{self, clone, closure_local, BoxedAnyObject},
-    graphene, gsk, CssProvider
+    CssProvider, gdk, gio,
+    glib::{self, BoxedAnyObject, clone, closure_local},
+    graphene, gsk,
 };
-use image::{imageops::FilterType, DynamicImage};
-use libblur::{stack_blur, FastBlurChannels, ThreadingPolicy};
+use image::{DynamicImage, imageops::FilterType};
+use libblur::{FastBlurChannels, ThreadingPolicy, stack_blur};
 use mpd::Subsystem;
 use std::{cell::RefCell, ops::Deref, path::PathBuf, thread, time::Duration};
-use auto_palette::{ImageData, Palette, Theme, color::RGB};
 use std::{
     cell::{Cell, OnceCell},
     sync::{Arc, Mutex},
@@ -94,15 +95,24 @@ fn run_blur(di: &DynamicImage, config: &BlurConfig) -> gdk::MemoryTexture {
 }
 
 fn get_dominant_color(img: &DynamicImage) -> RGB {
-    let colors = img.as_rgb8().unwrap().pixels().flat_map(|pixel| {
-        [pixel[0], pixel[1], pixel[2], 255]
-    }).collect::<Vec::<u8>>();
+    let colors = img
+        .as_rgb8()
+        .unwrap()
+        .pixels()
+        .flat_map(|pixel| [pixel[0], pixel[1], pixel[2], 255])
+        .collect::<Vec<u8>>();
 
-    let palette = Palette::<f32>::extract(&ImageData::new(img.width(), img.height(), &colors).unwrap()).unwrap();
+    let palette =
+        Palette::<f32>::extract(&ImageData::new(img.width(), img.height(), &colors).unwrap())
+            .unwrap();
 
-    palette.find_swatches_with_theme(1, Theme::Colorful).first().unwrap().color().to_rgb()
+    palette
+        .find_swatches_with_theme(1, Theme::Colorful)
+        .first()
+        .unwrap()
+        .color()
+        .to_rgb()
 }
-
 
 pub enum WindowMessage {
     NewBackground(PathBuf, BlurConfig), // Load new image at FULL PATH & blur with given configuration. Will fade.
@@ -239,7 +249,11 @@ mod imp {
             });
 
             // Add theme selector to popover menu
-            let primary_menu = self.menu_btn.popover().and_downcast::<gtk::PopoverMenu>().unwrap();
+            let primary_menu = self
+                .menu_btn
+                .popover()
+                .and_downcast::<gtk::PopoverMenu>()
+                .unwrap();
             let theme_selector = ThemeSelector::new();
             primary_menu.add_child(&theme_selector, "theme_selector");
             theme_selector.connect_closure(
@@ -259,10 +273,10 @@ mod imp {
                             ColorScheme::PreferDark => "prefer-dark",
                             ColorScheme::PreferLight => "prefer-light",
                             ColorScheme::ForceLight => "light",
-                            _ => "follow"
-                        }
+                            _ => "follow",
+                        },
                     );
-                })
+                }),
             );
 
             settings
@@ -370,19 +384,17 @@ mod imp {
                 self.folder_view.upcast_ref::<gtk::Widget>(),
                 self.playlist_view.upcast_ref::<gtk::Widget>(),
                 self.dyn_playlist_view.upcast_ref::<gtk::Widget>(),
-                self.queue_view.upcast_ref::<gtk::Widget>()
-            ].iter().for_each(clone!(
+                self.queue_view.upcast_ref::<gtk::Widget>(),
+            ]
+            .iter()
+            .for_each(clone!(
                 #[weak]
                 view,
                 move |item| {
-                    item.connect_local(
-                        "show-sidebar-clicked",
-                        false,
-                        move |_| {
-                            view.set_show_sidebar(true);
-                            None
-                        }
-                    );
+                    item.connect_local("show-sidebar-clicked", false, move |_| {
+                        view.set_show_sidebar(true);
+                        None
+                    });
                 }
             ));
 
@@ -410,7 +422,11 @@ mod imp {
 
             // Set up accent colour provider
             if let Some(display) = gdk::Display::default() {
-                gtk::style_context_add_provider_for_display(&display, &self.provider, gtk::STYLE_PROVIDER_PRIORITY_USER);
+                gtk::style_context_add_provider_for_display(
+                    &display,
+                    &self.provider,
+                    gtk::STYLE_PROVIDER_PRIORITY_USER,
+                );
             }
 
             // Set up blur & accent thread
@@ -466,7 +482,7 @@ mod imp {
                                 if config.width > 0 && config.height > 0 {
                                     let _ = sender_to_fg.send_blocking(WindowMessage::Result(
                                         run_blur(data, &config),
-                                        Some(get_dominant_color(data)),  // No need to update accent colour
+                                        Some(get_dominant_color(data)), // No need to update accent colour
                                         config.fade,
                                     ));
                                 }
@@ -562,9 +578,13 @@ mod imp {
                 let scale = self.visualizer_scale.get() as f32;
                 let fg: gdk::RGBA;
                 if let Some(rgb) = self.accent_color.borrow().as_ref() {
-                    fg = gdk::RGBA::new(rgb.r as f32 / 255.0, rgb.g as f32 / 255.0, rgb.b as f32 / 255.0, 1.0);
-                }
-                else {
+                    fg = gdk::RGBA::new(
+                        rgb.r as f32 / 255.0,
+                        rgb.g as f32 / 255.0,
+                        rgb.b as f32 / 255.0,
+                        1.0,
+                    );
+                } else {
                     fg = widget.color();
                 }
                 // Halve configured opacity since we're drawing two channels
@@ -593,8 +613,7 @@ mod imp {
             if old != new {
                 if new {
                     self.obj().queue_background_update(false);
-                }
-                else {
+                } else {
                     let _ = self.accent_color.take();
                     self.update_accent_color();
                 }
@@ -603,12 +622,17 @@ mod imp {
         }
 
         pub fn update_accent_color(&self) {
-            if let (Some(color), true) = (self.accent_color.borrow().as_ref(), self.auto_accent.get()) {
+            if let (Some(color), true) =
+                (self.accent_color.borrow().as_ref(), self.auto_accent.get())
+            {
                 // Is the generated accent colour too bright?
                 // Luminance formula: L = 0.2126 * R + 0.7152 * G + 0.0722 * B
-                let lum = 0.2126 * color.r as f32 / 255.0 + 0.7152 * color.g as f32 / 255.0 + 0.0722 * color.b as f32 / 255.0;
+                let lum = 0.2126 * color.r as f32 / 255.0
+                    + 0.7152 * color.g as f32 / 255.0
+                    + 0.0722 * color.b as f32 / 255.0;
                 if lum > 0.5 {
-                    self.provider.load_from_string(&format!("
+                    self.provider.load_from_string(&format!(
+                        "
 :root {{
     --accent-bg-color: rgb({}, {}, {});
     --accent-fg-color: rgb(0 0 0 / 80%);
@@ -617,12 +641,11 @@ mod imp {
     color: rgb({}, {}, {});
 }}
 ",
-                        color.r, color.g, color.b,
-                        color.r, color.g, color.b
+                        color.r, color.g, color.b, color.r, color.g, color.b
                     ));
-                }
-                else {
-                    self.provider.load_from_string(&format!("
+                } else {
+                    self.provider.load_from_string(&format!(
+                        "
 :root {{
     --accent-bg-color: rgb({}, {}, {});
 }}
@@ -630,12 +653,10 @@ mod imp {
     color: rgb({}, {}, {});
 }}
 ",
-                        color.r, color.g, color.b,
-                        color.r, color.g, color.b
+                        color.r, color.g, color.b, color.r, color.g, color.b
                     ));
                 }
-            }
-            else {
+            } else {
                 // If no accent colour is given, revert to system accent colour
                 self.provider.load_from_string("");
             }
@@ -667,7 +688,7 @@ mod imp {
             height: f32,
             data: &[f32],
             scale: f32,
-            color: &gdk::RGBA
+            color: &gdk::RGBA,
         ) {
             let band_width = width / (data.len() as f32 - 1.0);
 
@@ -849,30 +870,29 @@ impl EuphonicaWindow {
 
         // Construct all views first
         win.restore_window_state();
-        win.imp()
-            .queue_view
-            .setup(app.get_player(), app.get_cache(), &client_state, win.clone());
-        win.imp().recent_view.setup(
-            app.get_library(),
+        win.imp().queue_view.setup(
             app.get_player(),
             app.get_cache(),
-            &win
+            &client_state,
+            win.clone(),
         );
+        win.imp()
+            .recent_view
+            .setup(app.get_library(), app.get_player(), app.get_cache(), &win);
         win.imp().album_view.setup(
             app.get_library(),
             app.get_cache(),
             &app.get_client().get_client_state(),
-            &win
+            &win,
         );
         win.imp().artist_view.setup(
             app.get_library(),
             &app.get_client().get_client_state(),
             app.get_cache(),
         );
-        win.imp().folder_view.setup(
-            app.get_library(),
-            app.get_cache()
-        );
+        win.imp()
+            .folder_view
+            .setup(app.get_library(), app.get_cache());
         win.imp().dyn_playlist_view.setup(
             app.get_library(),
             app.get_cache(),
@@ -928,7 +948,7 @@ impl EuphonicaWindow {
                 move |state: &ClientState, _| {
                     this.handle_connection_state(state.get_connection_state());
                 }
-            )
+            ),
         );
 
         player.connect_closure(
@@ -940,19 +960,17 @@ impl EuphonicaWindow {
                 move |_: Player, _: Option<gdk::Texture>| {
                     this.queue_new_background();
                 }
-            )
+            ),
         );
         win.imp().player.set(Some(player));
 
-        win.imp().stack.connect_visible_child_name_notify(
-            clone!(
-                #[weak(rename_to = this)]
-                win,
-                move |_| {
-                    this.maybe_populate_visible();
-                }
-            )
-        );
+        win.imp().stack.connect_visible_child_name_notify(clone!(
+            #[weak(rename_to = this)]
+            win,
+            move |_| {
+                this.maybe_populate_visible();
+            }
+        ));
 
         win.imp().player_bar.connect_closure(
             "goto-pane-clicked",
@@ -1172,8 +1190,7 @@ impl EuphonicaWindow {
         match err {
             ClientError::Queuing => {
                 self.send_simple_toast("Some songs could not be queued", 3);
-            }
-            // _ => {}
+            } // _ => {}
         }
     }
 
@@ -1189,7 +1206,9 @@ impl EuphonicaWindow {
         let revealer = self.imp().player_bar_revealer.get();
         if self.imp().sidebar.showing_queue_view() {
             let queue_view = self.imp().queue_view.get();
-            if (queue_view.pane_collapsed() && queue_view.show_content()) || !queue_view.pane_collapsed() {
+            if (queue_view.pane_collapsed() && queue_view.show_content())
+                || !queue_view.pane_collapsed()
+            {
                 revealer.set_reveal_child(false);
             } else {
                 revealer.set_reveal_child(true);
@@ -1201,7 +1220,9 @@ impl EuphonicaWindow {
 
     fn goto_pane(&self) {
         self.imp().sidebar.set_view("queue");
-        self.imp().split_view.set_show_sidebar(!self.imp().split_view.is_collapsed());
+        self.imp()
+            .split_view
+            .set_show_sidebar(!self.imp().split_view.is_collapsed());
         self.imp().queue_view.set_show_content(true);
     }
 
@@ -1209,7 +1230,9 @@ impl EuphonicaWindow {
         self.imp().album_view.on_album_clicked(album);
         self.imp().sidebar.set_view("albums");
         if self.imp().split_view.shows_sidebar() {
-            self.imp().split_view.set_show_sidebar(!self.imp().split_view.is_collapsed());
+            self.imp()
+                .split_view
+                .set_show_sidebar(!self.imp().split_view.is_collapsed());
         }
     }
 
@@ -1217,7 +1240,9 @@ impl EuphonicaWindow {
         self.imp().artist_view.on_artist_clicked(artist);
         self.imp().sidebar.set_view("artists");
         if self.imp().split_view.shows_sidebar() {
-            self.imp().split_view.set_show_sidebar(!self.imp().split_view.is_collapsed());
+            self.imp()
+                .split_view
+                .set_show_sidebar(!self.imp().split_view.is_collapsed());
         }
     }
 
@@ -1225,7 +1250,9 @@ impl EuphonicaWindow {
         self.imp().playlist_view.on_playlist_clicked(playlist);
         self.imp().sidebar.set_view("playlists");
         if self.imp().split_view.shows_sidebar() {
-            self.imp().split_view.set_show_sidebar(!self.imp().split_view.is_collapsed());
+            self.imp()
+                .split_view
+                .set_show_sidebar(!self.imp().split_view.is_collapsed());
         }
     }
 
@@ -1235,7 +1262,8 @@ impl EuphonicaWindow {
         if let Some(player) = self.imp().player.upgrade() {
             if let Some(sender) = self.imp().sender_to_bg.get() {
                 if let Some(path) = player
-                    .current_song_cover_path(true).and_then(|path| if path.exists() {Some(path)} else {None})
+                    .current_song_cover_path(true)
+                    .and_then(|path| if path.exists() { Some(path) } else { None })
                 {
                     let settings = settings_manager().child("ui");
                     let config = BlurConfig {
@@ -1303,18 +1331,12 @@ impl EuphonicaWindow {
 
         // Remove default libadwaita sidebar backgrounds when using
         // album art as background, or the visualiser is enabled, or both.
-        self.connect_notify_local(
-            Some("use-album-art-as-background"),
-            move |win, _| {
-                win.update_background_css_classes();
-            }
-        );
-        self.connect_notify_local(
-            Some("use-visualizer"),
-            move |win, _| {
-                win.update_background_css_classes();
-            }
-        );
+        self.connect_notify_local(Some("use-album-art-as-background"), move |win, _| {
+            win.update_background_css_classes();
+        });
+        self.connect_notify_local(Some("use-visualizer"), move |win, _| {
+            win.update_background_css_classes();
+        });
         self.update_background_css_classes();
     }
 
@@ -1336,7 +1358,13 @@ impl EuphonicaWindow {
             // We need to take care of this now that the app's lifetime is decoupled from the window
             // (background running support)
             if window.imp().bg_handle.get().is_some() {
-                window.imp().sender_to_bg.get().unwrap().send_blocking(WindowMessage::Stop).expect("Could not stop background blur thread");
+                window
+                    .imp()
+                    .sender_to_bg
+                    .get()
+                    .unwrap()
+                    .send_blocking(WindowMessage::Stop)
+                    .expect("Could not stop background blur thread");
             }
 
             window.downcast_application().on_window_closed();

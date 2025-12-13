@@ -1,24 +1,29 @@
 use adw::prelude::*;
 use adw::subclass::prelude::*;
 use gtk::{
-    glib::{self, closure_local},
     CompositeTemplate, ListItem, SignalListItemFactory, SingleSelection,
+    glib::{self, closure_local},
 };
-use std::{cell::{Cell, OnceCell}, sync::OnceLock, cmp::Ordering, rc::Rc};
+use std::{
+    cell::{Cell, OnceCell},
+    cmp::Ordering,
+    rc::Rc,
+    sync::OnceLock,
+};
 
-use glib::clone;
-use glib::subclass::Signal;
 use glib::Properties;
 use glib::WeakRef;
+use glib::clone;
+use glib::subclass::Signal;
 
-use super::{Library, DynamicPlaylistContentView};
+use super::{DynamicPlaylistContentView, Library};
 use crate::{
     cache::{Cache, sqlite},
     client::{ClientState, ConnectionState},
     common::{DynamicPlaylist, INode},
     library::{DynamicPlaylistEditorView, playlist_row::PlaylistRow},
     utils::{g_cmp_str_options, settings_manager},
-    window::EuphonicaWindow
+    window::EuphonicaWindow,
 };
 
 // DynamicPlaylist view implementation
@@ -76,7 +81,7 @@ mod imp {
         pub client_state: WeakRef<ClientState>,
         pub window: WeakRef<EuphonicaWindow>,
         #[property(get, set)]
-        pub collapsed: Cell<bool>
+        pub collapsed: Cell<bool>,
     }
 
     #[glib::object_subclass]
@@ -107,11 +112,7 @@ mod imp {
             self.parent_constructed();
 
             self.obj()
-                .bind_property(
-                    "collapsed",
-                    &self.show_sidebar.get(),
-                    "visible"
-                )
+                .bind_property("collapsed", &self.show_sidebar.get(), "visible")
                 .sync_create()
                 .build();
 
@@ -182,13 +183,12 @@ mod imp {
                 .get_only()
                 .invert_boolean()
                 .build();
-            self.search_filter.set_expression(Some(
-                &gtk::PropertyExpression::new(
+            self.search_filter
+                .set_expression(Some(&gtk::PropertyExpression::new(
                     INode::static_type(),
                     Option::<gtk::PropertyExpression>::None,
-                    "uri"
-                )
-            ));
+                    "uri",
+                )));
             let search_entry = self.search_entry.get();
             search_entry
                 .bind_property("text", &self.search_filter, "search")
@@ -202,19 +202,13 @@ mod imp {
                     let old_len = this.last_search_len.replace(new_len);
                     match new_len.cmp(&old_len) {
                         Ordering::Greater => {
-                            this
-                                .search_filter
-                                .changed(gtk::FilterChange::MoreStrict);
+                            this.search_filter.changed(gtk::FilterChange::MoreStrict);
                         }
                         Ordering::Less => {
-                            this
-                                .search_filter
-                                .changed(gtk::FilterChange::LessStrict);
+                            this.search_filter.changed(gtk::FilterChange::LessStrict);
                         }
                         Ordering::Equal => {
-                            this
-                                .search_filter
-                                .changed(gtk::FilterChange::Different);
+                            this.search_filter.changed(gtk::FilterChange::Different);
                         }
                     }
                 }
@@ -246,12 +240,12 @@ mod imp {
                             .expect("The value needs to be of type `String`.");
                         let idx = param.parse::<i32>().unwrap();
 
-
                         if state.set_enum("sort-by", idx).is_ok() {
                             this.sorter.changed(gtk::SorterChange::Different);
                             action.set_state(&param.to_variant());
                         }
-                    }))
+                    }
+                ))
                 .build();
 
             let action_sort_direction = ActionEntry::builder("sort-direction")
@@ -269,12 +263,12 @@ mod imp {
                             .expect("The value needs to be of type `String`.");
                         let idx = param.parse::<i32>().unwrap();
 
-
                         if state.set_enum("sort-direction", idx).is_ok() {
                             this.sorter.changed(gtk::SorterChange::Inverted);
                             action.set_state(&param.to_variant());
                         }
-                    }))
+                    }
+                ))
                 .build();
 
             let action_import_json = ActionEntry::builder("import-json")
@@ -382,21 +376,13 @@ mod imp {
 
             // Create a new action group and add actions to it
             let actions = SimpleActionGroup::new();
-            actions.add_action_entries([
-                action_sort_by,
-                action_sort_direction,
-                action_import_json
-            ]);
+            actions.add_action_entries([action_sort_by, action_sort_direction, action_import_json]);
             self.obj().insert_action_group("dp-view", Some(&actions));
         }
 
         fn signals() -> &'static [Signal] {
             static SIGNALS: OnceLock<Vec<Signal>> = OnceLock::new();
-            SIGNALS.get_or_init(|| {
-                vec![
-                    Signal::builder("show-sidebar-clicked").build(),
-                ]
-            })
+            SIGNALS.get_or_init(|| vec![Signal::builder("show-sidebar-clicked").build()])
         }
     }
 
@@ -476,48 +462,46 @@ impl DynamicPlaylistView {
             ),
         );
 
-        self.imp()
-            .create_btn
-            .connect_clicked(clone!(
-                #[weak(rename_to = this)]
-                self,
-                #[weak]
-                library,
-                #[weak]
-                cache,
-                #[weak]
-                client_state,
-                #[weak]
-                window,
-                move |_| {
-                    let editor = DynamicPlaylistEditorView::default();
-                    editor.setup(&library, cache, &client_state, &window);
-                    editor.connect_closure(
-                        "exit-clicked",
-                        false,
-                        closure_local!(
-                            #[weak]
-                            this,
-                            #[weak]
-                            library,
-                            move |_: DynamicPlaylistEditorView, should_refresh: bool| {
-                                if should_refresh {
-                                    library.init_dyn_playlists(true);
-                                }
-                                this.imp().nav_view.pop();
+        self.imp().create_btn.connect_clicked(clone!(
+            #[weak(rename_to = this)]
+            self,
+            #[weak]
+            library,
+            #[weak]
+            cache,
+            #[weak]
+            client_state,
+            #[weak]
+            window,
+            move |_| {
+                let editor = DynamicPlaylistEditorView::default();
+                editor.setup(&library, cache, &client_state, &window);
+                editor.connect_closure(
+                    "exit-clicked",
+                    false,
+                    closure_local!(
+                        #[weak]
+                        this,
+                        #[weak]
+                        library,
+                        move |_: DynamicPlaylistEditorView, should_refresh: bool| {
+                            if should_refresh {
+                                library.init_dyn_playlists(true);
                             }
-                        )
-                    );
+                            this.imp().nav_view.pop();
+                        }
+                    ),
+                );
 
-                    this.imp().nav_view.push(
-                        &adw::NavigationPage::builder()
-                            .tag("editor")
-                            .title("New Dynamic Playlist")
-                            .child(&editor)
-                            .build()
-                    );
-                }
-            ));
+                this.imp().nav_view.push(
+                    &adw::NavigationPage::builder()
+                        .tag("editor")
+                        .title("New Dynamic Playlist")
+                        .child(&editor)
+                        .build(),
+                );
+            }
+        ));
     }
 
     pub fn edit_playlist(&self, dp: DynamicPlaylist) {
@@ -527,7 +511,7 @@ impl DynamicPlaylistView {
             &library,
             self.imp().cache.get().unwrap().clone(),
             &self.imp().client_state.upgrade().unwrap(),
-            &self.imp().window.upgrade().unwrap()
+            &self.imp().window.upgrade().unwrap(),
         );
         editor.init(dp);
         editor.connect_closure(
@@ -547,7 +531,7 @@ impl DynamicPlaylistView {
                     }
                     this.imp().nav_view.pop();
                 }
-            )
+            ),
         );
 
         self.imp().nav_view.push(
@@ -555,7 +539,7 @@ impl DynamicPlaylistView {
                 .tag("editor")
                 .title("Edit Dynamic Playlist")
                 .child(&editor)
-                .build()
+                .build(),
         );
     }
 
@@ -563,7 +547,12 @@ impl DynamicPlaylistView {
         let content_view = self.imp().content_view.get();
         content_view.unbind();
         content_view.bind_by_name(inode.get_uri());
-        if self.imp().nav_view.visible_page_tag().is_none_or(|tag| tag.as_str() != "content") {
+        if self
+            .imp()
+            .nav_view
+            .visible_page_tag()
+            .is_none_or(|tag| tag.as_str() != "content")
+        {
             self.imp().nav_view.push_by_tag("content");
         }
         // Unlike other views, DynamicPlaylistContentView initialises itself.
@@ -614,25 +603,23 @@ impl DynamicPlaylistView {
             }
         ));
 
-        factory.connect_bind(
-            move |_, list_item| {
-                let item = list_item
-                    .downcast_ref::<ListItem>()
-                    .expect("Needs to be ListItem");
+        factory.connect_bind(move |_, list_item| {
+            let item = list_item
+                .downcast_ref::<ListItem>()
+                .expect("Needs to be ListItem");
 
-                let playlist = item
-                    .item()
-                    .and_downcast::<INode>()
-                    .expect("The item has to be a common::INode.");
+            let playlist = item
+                .item()
+                .and_downcast::<INode>()
+                .expect("The item has to be a common::INode.");
 
-                let child: PlaylistRow = item
-                    .child()
-                    .and_downcast::<PlaylistRow>()
-                    .expect("The child has to be an `DynamicPlaylistRow`.");
+            let child: PlaylistRow = item
+                .child()
+                .and_downcast::<PlaylistRow>()
+                .expect("The child has to be an `DynamicPlaylistRow`.");
 
-                child.bind(&playlist);
-            }
-        );
+            child.bind(&playlist);
+        });
 
         // Set the factory of the list view
         self.imp().list_view.set_factory(Some(&factory));

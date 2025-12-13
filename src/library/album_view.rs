@@ -1,19 +1,20 @@
 use adw::prelude::*;
 use adw::subclass::prelude::*;
-use gtk::{
-    glib::{self},
-    CompositeTemplate, ListItem, SignalListItemFactory, SingleSelection,
-};
 use gio::{ActionEntry, SimpleActionGroup};
-use std::{cell::Cell, cmp::Ordering, rc::Rc, cell::OnceCell, sync::OnceLock};
-use glib::{clone, Properties, subclass::Signal};
+use glib::{Properties, clone, subclass::Signal};
+use gtk::{
+    CompositeTemplate, ListItem, SignalListItemFactory, SingleSelection,
+    glib::{self},
+};
+use std::{cell::Cell, cell::OnceCell, cmp::Ordering, rc::Rc, sync::OnceLock};
 
 use super::{AlbumCell, AlbumContentView, Library};
 use crate::{
     cache::Cache,
     client::ClientState,
     common::{Album, Rating},
-    utils::{LazyInit, g_cmp_options, g_cmp_str_options, g_search_substr, settings_manager}, window::EuphonicaWindow,
+    utils::{LazyInit, g_cmp_options, g_cmp_str_options, g_search_substr, settings_manager},
+    window::EuphonicaWindow,
 };
 
 mod imp {
@@ -64,7 +65,7 @@ mod imp {
         pub library: OnceCell<Library>,
 
         #[property(get, set)]
-        pub collapsed: Cell<bool>
+        pub collapsed: Cell<bool>,
     }
 
     #[glib::object_subclass]
@@ -95,11 +96,7 @@ mod imp {
             self.parent_constructed();
 
             self.obj()
-                .bind_property(
-                    "collapsed",
-                    &self.show_sidebar.get(),
-                    "visible"
-                )
+                .bind_property("collapsed", &self.show_sidebar.get(), "visible")
                 .sync_create()
                 .build();
 
@@ -141,12 +138,12 @@ mod imp {
                             .expect("The value needs to be of type `String`.");
                         let idx = param.parse::<i32>().unwrap();
 
-
                         if state.set_enum("sort-by", idx).is_ok() {
                             this.sorter.changed(gtk::SorterChange::Different);
                             action.set_state(&param.to_variant());
                         }
-                    }))
+                    }
+                ))
                 .build();
 
             let action_sort_direction = ActionEntry::builder("sort-direction")
@@ -164,12 +161,12 @@ mod imp {
                             .expect("The value needs to be of type `String`.");
                         let idx = param.parse::<i32>().unwrap();
 
-
                         if state.set_enum("sort-direction", idx).is_ok() {
                             this.sorter.changed(gtk::SorterChange::Inverted);
                             action.set_state(&param.to_variant());
                         }
-                    }))
+                    }
+                ))
                 .build();
 
             self.sorter.set_sort_func(clone!(
@@ -285,7 +282,7 @@ mod imp {
                         1 => this_rating.is_some() && this_rating.unwrap() >= filter_rating,
                         2 => this_rating.is_some() && this_rating.unwrap() < filter_rating,
                         3 => this_rating.is_some() && this_rating.unwrap() == filter_rating,
-                        _ => unimplemented!()
+                        _ => unimplemented!(),
                     };
 
                     if !matches_rating {
@@ -340,19 +337,13 @@ mod imp {
                     let old_len = this.last_search_len.replace(new_len);
                     match new_len.cmp(&old_len) {
                         Ordering::Greater => {
-                            this
-                                .search_filter
-                                .changed(gtk::FilterChange::MoreStrict);
+                            this.search_filter.changed(gtk::FilterChange::MoreStrict);
                         }
                         Ordering::Less => {
-                            this
-                                .search_filter
-                                .changed(gtk::FilterChange::LessStrict);
+                            this.search_filter.changed(gtk::FilterChange::LessStrict);
                         }
                         Ordering::Equal => {
-                            this
-                                .search_filter
-                                .changed(gtk::FilterChange::Different);
+                            this.search_filter.changed(gtk::FilterChange::Different);
                         }
                     }
                 }
@@ -361,19 +352,14 @@ mod imp {
             let rating = self.rating.get();
             let rating_mode = self.rating_mode.get();
             let search_mode = self.search_mode.get();
-            for mode in [
-                &rating_mode,
-                &search_mode
-            ] {
+            for mode in [&rating_mode, &search_mode] {
                 mode.connect_notify_local(
                     Some("selected"),
                     clone!(
                         #[weak(rename_to = this)]
                         self,
                         move |_, _| {
-                            this
-                                .search_filter
-                                .changed(gtk::FilterChange::Different);
+                            this.search_filter.changed(gtk::FilterChange::Different);
                         }
                     ),
                 );
@@ -386,42 +372,27 @@ mod imp {
                     self,
                     move |_, _| {
                         if this.rating_mode.selected() > 0 {
-                            this
-                                .search_filter
-                                .changed(gtk::FilterChange::Different);
+                            this.search_filter.changed(gtk::FilterChange::Different);
                         }
                     }
-                )
+                ),
             );
 
             rating_mode
-                .bind_property(
-                    "selected",
-                    &rating,
-                    "visible"
-                )
-                .transform_to(|_, val: u32| {
-                    Some(val > 0)
-                })
+                .bind_property("selected", &rating, "visible")
+                .transform_to(|_, val: u32| Some(val > 0))
                 .sync_create()
                 .build();
 
             // Create a new action group and add actions to it
             let actions = SimpleActionGroup::new();
-            actions.add_action_entries([
-                action_sort_by,
-                action_sort_direction
-            ]);
+            actions.add_action_entries([action_sort_by, action_sort_direction]);
             self.obj().insert_action_group("album-view", Some(&actions));
         }
 
         fn signals() -> &'static [Signal] {
             static SIGNALS: OnceLock<Vec<Signal>> = OnceLock::new();
-            SIGNALS.get_or_init(|| {
-                vec![
-                    Signal::builder("show-sidebar-clicked").build(),
-                ]
-            })
+            SIGNALS.get_or_init(|| vec![Signal::builder("show-sidebar-clicked").build()])
         }
     }
 
@@ -447,7 +418,13 @@ impl AlbumView {
         res
     }
 
-    pub fn setup(&self, library: &Library, cache: Rc<Cache>, client_state: &ClientState, window: &EuphonicaWindow) {
+    pub fn setup(
+        &self,
+        library: &Library,
+        cache: Rc<Cache>,
+        client_state: &ClientState,
+        window: &EuphonicaWindow,
+    ) {
         self.imp()
             .library
             .set(library.clone())
@@ -483,7 +460,12 @@ impl AlbumView {
             .get()
             .expect("AlbumView is incorrectly set up (no Library reference)")
             .init_album(album);
-        if self.imp().nav_view.visible_page_tag().is_none_or(|tag| tag.as_str() != "content") {
+        if self
+            .imp()
+            .nav_view
+            .visible_page_tag()
+            .is_none_or(|tag| tag.as_str() != "content")
+        {
             self.imp().nav_view.push_by_tag("content");
         }
     }
@@ -516,11 +498,7 @@ impl AlbumView {
         let grid_view = self.imp().grid_view.get();
         grid_view.set_model(Some(&sel_model));
         settings
-            .bind(
-                "max-columns",
-                &grid_view,
-                "max-columns"
-            )
+            .bind("max-columns", &grid_view, "max-columns")
             .build();
 
         // Set up factory

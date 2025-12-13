@@ -1,14 +1,9 @@
 use adw::prelude::*;
 use adw::subclass::prelude::*;
-use gtk::{
-    glib,
-    CompositeTemplate, ListItem, SignalListItemFactory, SingleSelection,
-};
+use gtk::{CompositeTemplate, ListItem, SignalListItemFactory, SingleSelection, glib};
 use std::{cell::Cell, cmp::Ordering, rc::Rc, sync::OnceLock};
 
-use glib::{
-    clone, subclass::Signal, Properties, WeakRef
-};
+use glib::{Properties, WeakRef, clone, subclass::Signal};
 
 use super::{ArtistCell, ArtistContentView, Library};
 use crate::{
@@ -62,7 +57,7 @@ mod imp {
         #[property(get, set)]
         pub collapsed: Cell<bool>,
 
-        pub library: WeakRef<Library>
+        pub library: WeakRef<Library>,
     }
 
     #[glib::object_subclass]
@@ -93,11 +88,7 @@ mod imp {
             self.parent_constructed();
 
             self.obj()
-                .bind_property(
-                    "collapsed",
-                    &self.show_sidebar.get(),
-                    "visible"
-                )
+                .bind_property("collapsed", &self.show_sidebar.get(), "visible")
                 .sync_create()
                 .build();
 
@@ -112,11 +103,7 @@ mod imp {
 
         fn signals() -> &'static [Signal] {
             static SIGNALS: OnceLock<Vec<Signal>> = OnceLock::new();
-            SIGNALS.get_or_init(|| {
-                vec![
-                    Signal::builder("show-sidebar-clicked").build(),
-                ]
-            })
+            SIGNALS.get_or_init(|| vec![Signal::builder("show-sidebar-clicked").build()])
         }
     }
 
@@ -313,7 +300,12 @@ impl ArtistView {
         let content_view = self.imp().content_view.get();
         content_view.unbind();
         content_view.bind(artist.clone());
-        if self.imp().nav_view.visible_page_tag().is_none_or(|tag| tag.as_str() != "content") {
+        if self
+            .imp()
+            .nav_view
+            .visible_page_tag()
+            .is_none_or(|tag| tag.as_str() != "content")
+        {
             self.imp().nav_view.push_by_tag("content");
         }
         self.imp().library.upgrade().unwrap().init_artist(artist);
@@ -325,7 +317,7 @@ impl ArtistView {
         // User-initiated refreshes will also trigger a reconnection, which will
         // in turn trigger this.
         let artists = self.imp().library.upgrade().unwrap().artists();
-        
+
         // Setup search bar
         let search_bar = self.imp().search_bar.get();
         let search_entry = self.imp().search_entry.get();
@@ -351,11 +343,7 @@ impl ArtistView {
         let grid_view = self.imp().grid_view.get();
         grid_view.set_model(Some(&sel_model));
         settings
-            .bind(
-                "max-columns",
-                &grid_view,
-                "max-columns"
-            )
+            .bind("max-columns", &grid_view, "max-columns")
             .build();
 
         // Set up factory

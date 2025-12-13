@@ -1,5 +1,5 @@
-use glib::{clone, Object};
-use gtk::{glib, prelude::*, subclass::prelude::*, CompositeTemplate};
+use glib::{Object, clone};
+use gtk::{CompositeTemplate, glib, prelude::*, subclass::prelude::*};
 use std::cell::{OnceCell, RefCell};
 
 use crate::common::INode;

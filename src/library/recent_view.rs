@@ -4,15 +4,19 @@ use std::{cell::Cell, sync::OnceLock};
 use adw::prelude::*;
 use adw::subclass::prelude::*;
 use gtk::{
-    glib::{self},
     CompositeTemplate, ListItem, SignalListItemFactory, SingleSelection,
+    glib::{self},
 };
 
-use glib::{clone, closure_local, Properties, WeakRef, subclass::Signal};
+use glib::{Properties, WeakRef, clone, closure_local, subclass::Signal};
 
 use super::{AlbumCell, ArtistCell, Library};
 use crate::{
-    cache::Cache, common::{marquee::MarqueeWrapMode, Album, Artist, RowAddButtons, Song, SongRow}, player::Player, utils::LazyInit, window::EuphonicaWindow
+    cache::Cache,
+    common::{Album, Artist, RowAddButtons, Song, SongRow, marquee::MarqueeWrapMode},
+    player::Player,
+    utils::LazyInit,
+    window::EuphonicaWindow,
 };
 
 mod imp {
@@ -62,7 +66,7 @@ mod imp {
         pub library: WeakRef<Library>,
 
         #[property(get, set)]
-        pub collapsed: Cell<bool>
+        pub collapsed: Cell<bool>,
     }
 
     #[glib::object_subclass]
@@ -204,9 +208,7 @@ impl RecentView {
         cache: Rc<Cache>,
         window: &EuphonicaWindow,
     ) {
-        self.imp()
-            .library
-            .set(Some(library));
+        self.imp().library.set(Some(library));
 
         player.connect_closure(
             "history-changed",
@@ -239,7 +241,7 @@ impl RecentView {
             .bind_property(
                 "n-items",
                 &self.imp().album_row_stack.get(),
-                "visible-child-name"
+                "visible-child-name",
             )
             .transform_to(|_, n: u32| {
                 if n > 0 {
@@ -342,7 +344,7 @@ impl RecentView {
             .bind_property(
                 "n-items",
                 &self.imp().artist_row_stack.get(),
-                "visible-child-name"
+                "visible-child-name",
             )
             .transform_to(|_, n: u32| {
                 if n > 0 {
@@ -434,25 +436,20 @@ impl RecentView {
         let song_list = library.recent_songs();
 
         song_list
-            .bind_property(
-                "n-items",
-                &self.imp().stack.get(),
-                "visible-child-name",
-            )
+            .bind_property("n-items", &self.imp().stack.get(), "visible-child-name")
             .transform_to(|_, val: u32| {
                 if val > 0 {
                     Some("content".to_value())
                 } else {
                     Some("empty".to_value())
                 }
-            }
-        )
-         .sync_create()
-         .build();
+            })
+            .sync_create()
+            .build();
 
-        self.imp().song_list.bind_model(
-            Some(&song_list),
-            move |obj| {
+        self.imp()
+            .song_list
+            .bind_model(Some(&song_list), move |obj| {
                 let song = obj.downcast_ref::<Song>().unwrap();
                 let row = SongRow::new(Some(cache.clone()), None);
                 // Manually bind attributes here
@@ -471,8 +468,7 @@ impl RecentView {
 
                 row.on_bind(song);
                 row.into()
-            }
-        );
+            });
     }
 }
 

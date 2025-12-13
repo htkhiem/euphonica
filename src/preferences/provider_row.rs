@@ -1,6 +1,6 @@
 use adw::prelude::*;
-use glib::{clone, Object, Properties};
-use gtk::{glib, subclass::prelude::*, CompositeTemplate};
+use glib::{Object, Properties, clone};
+use gtk::{CompositeTemplate, glib, subclass::prelude::*};
 
 use crate::utils::meta_provider_settings;
 

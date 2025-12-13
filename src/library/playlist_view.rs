@@ -1,19 +1,24 @@
 use adw::prelude::*;
 use adw::subclass::prelude::*;
-use gtk::{
-    glib::{self, closure_local},
-    CompositeTemplate, ListItem, SignalListItemFactory, SingleSelection,
-};
-use std::{cell::Cell, cmp::Ordering, ops::Deref, rc::Rc};
 use gio::{ActionEntry, SimpleActionGroup};
-use glib::{clone, WeakRef, subclass::Signal, Properties};
+use glib::{Properties, WeakRef, clone, subclass::Signal};
+use gtk::{
+    CompositeTemplate, ListItem, SignalListItemFactory, SingleSelection,
+    glib::{self, closure_local},
+};
 use mpd::Subsystem;
+use std::{cell::Cell, cmp::Ordering, ops::Deref, rc::Rc};
 use std::{cell::OnceCell, sync::OnceLock};
 
 use super::Library;
 use crate::{
+    cache::Cache,
+    client::{ClientState, ConnectionState},
+    common::INode,
     library::PlaylistContentView,
-    cache::Cache, client::{ClientState, ConnectionState}, common::INode, library::playlist_row::PlaylistRow, utils::{g_cmp_str_options, settings_manager}, window::EuphonicaWindow
+    library::playlist_row::PlaylistRow,
+    utils::{g_cmp_str_options, settings_manager},
+    window::EuphonicaWindow,
 };
 
 // Playlist view implementation
@@ -59,7 +64,7 @@ mod imp {
         pub library: WeakRef<Library>,
         pub cache: OnceCell<Rc<Cache>>,
         #[property(get, set)]
-        pub collapsed: Cell<bool>
+        pub collapsed: Cell<bool>,
     }
 
     #[glib::object_subclass]
@@ -90,11 +95,7 @@ mod imp {
             self.parent_constructed();
 
             self.obj()
-                .bind_property(
-                    "collapsed",
-                    &self.show_sidebar.get(),
-                    "visible"
-                )
+                .bind_property("collapsed", &self.show_sidebar.get(), "visible")
                 .sync_create()
                 .build();
 
@@ -165,13 +166,12 @@ mod imp {
                 .get_only()
                 .invert_boolean()
                 .build();
-            self.search_filter.set_expression(Some(
-                &gtk::PropertyExpression::new(
+            self.search_filter
+                .set_expression(Some(&gtk::PropertyExpression::new(
                     INode::static_type(),
                     Option::<gtk::PropertyExpression>::None,
-                    "uri"
-                )
-            ));
+                    "uri",
+                )));
             let search_entry = self.search_entry.get();
             search_entry
                 .bind_property("text", &self.search_filter, "search")
@@ -185,19 +185,13 @@ mod imp {
                     let old_len = this.last_search_len.replace(new_len);
                     match new_len.cmp(&old_len) {
                         Ordering::Greater => {
-                            this
-                                .search_filter
-                                .changed(gtk::FilterChange::MoreStrict);
+                            this.search_filter.changed(gtk::FilterChange::MoreStrict);
                         }
                         Ordering::Less => {
-                            this
-                                .search_filter
-                                .changed(gtk::FilterChange::LessStrict);
+                            this.search_filter.changed(gtk::FilterChange::LessStrict);
                         }
                         Ordering::Equal => {
-                            this
-                                .search_filter
-                                .changed(gtk::FilterChange::Different);
+                            this.search_filter.changed(gtk::FilterChange::Different);
                         }
                     }
                 }
@@ -229,12 +223,12 @@ mod imp {
                             .expect("The value needs to be of type `String`.");
                         let idx = param.parse::<i32>().unwrap();
 
-
                         if state.set_enum("sort-by", idx).is_ok() {
                             this.sorter.changed(gtk::SorterChange::Different);
                             action.set_state(&param.to_variant());
                         }
-                    }))
+                    }
+                ))
                 .build();
 
             let action_sort_direction = ActionEntry::builder("sort-direction")
@@ -252,30 +246,24 @@ mod imp {
                             .expect("The value needs to be of type `String`.");
                         let idx = param.parse::<i32>().unwrap();
 
-
                         if state.set_enum("sort-direction", idx).is_ok() {
                             this.sorter.changed(gtk::SorterChange::Inverted);
                             action.set_state(&param.to_variant());
                         }
-                    }))
+                    }
+                ))
                 .build();
 
             // Create a new action group and add actions to it
             let actions = SimpleActionGroup::new();
-            actions.add_action_entries([
-                action_sort_by,
-                action_sort_direction
-            ]);
-            self.obj().insert_action_group("playlist-view", Some(&actions));
+            actions.add_action_entries([action_sort_by, action_sort_direction]);
+            self.obj()
+                .insert_action_group("playlist-view", Some(&actions));
         }
 
         fn signals() -> &'static [Signal] {
             static SIGNALS: OnceLock<Vec<Signal>> = OnceLock::new();
-            SIGNALS.get_or_init(|| {
-                vec![
-                    Signal::builder("show-sidebar-clicked").build(),
-                ]
-            })
+            SIGNALS.get_or_init(|| vec![Signal::builder("show-sidebar-clicked").build()])
         }
     }
 
@@ -317,9 +305,7 @@ impl PlaylistView {
         self.imp().content_page.connect_hidden(move |_| {
             content_view.unbind(true);
         });
-        self.imp()
-            .library
-            .set(Some(library));
+        self.imp().library.set(Some(library));
         self.imp()
             .cache
             .set(cache.clone())
@@ -389,7 +375,12 @@ impl PlaylistView {
         let content_view = self.imp().content_view.get();
         content_view.unbind(true);
         content_view.bind(inode.clone());
-        if self.imp().nav_view.visible_page_tag().is_none_or(|tag| tag.as_str() != "content") {
+        if self
+            .imp()
+            .nav_view
+            .visible_page_tag()
+            .is_none_or(|tag| tag.as_str() != "content")
+        {
             self.imp().nav_view.push_by_tag("content");
         }
         self.imp()
@@ -455,25 +446,23 @@ impl PlaylistView {
             }
         ));
 
-        factory.connect_bind(
-            move |_, list_item| {
-                let item = list_item
-                    .downcast_ref::<ListItem>()
-                    .expect("Needs to be ListItem");
+        factory.connect_bind(move |_, list_item| {
+            let item = list_item
+                .downcast_ref::<ListItem>()
+                .expect("Needs to be ListItem");
 
-                let playlist = item
-                    .item()
-                    .and_downcast::<INode>()
-                    .expect("The item has to be a common::INode.");
+            let playlist = item
+                .item()
+                .and_downcast::<INode>()
+                .expect("The item has to be a common::INode.");
 
-                let child: PlaylistRow = item
-                    .child()
-                    .and_downcast::<PlaylistRow>()
-                    .expect("The child has to be an `PlaylistRow`.");
+            let child: PlaylistRow = item
+                .child()
+                .and_downcast::<PlaylistRow>()
+                .expect("The child has to be an `PlaylistRow`.");
 
-                child.bind(&playlist);
-            }
-        );
+            child.bind(&playlist);
+        });
 
         // Set the factory of the list view
         self.imp().list_view.set_factory(Some(&factory));

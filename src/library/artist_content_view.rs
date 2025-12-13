@@ -1,22 +1,23 @@
-use duplicate::duplicate;
 use adw::subclass::prelude::*;
-use gio::{ActionEntry, SimpleActionGroup};
-use glib::{clone, closure_local, signal::SignalHandlerId, Binding, subclass::Signal, WeakRef};
-use gtk::{gdk, gio, glib, prelude::*, CompositeTemplate, ListItem, SignalListItemFactory};
-use std::{
-    cell::{OnceCell, RefCell, Cell},
-    sync::OnceLock,
-    rc::Rc,
-};
 use ashpd::desktop::file_chooser::SelectedFiles;
 use derivative::Derivative;
+use duplicate::duplicate;
+use gio::{ActionEntry, SimpleActionGroup};
+use glib::{Binding, WeakRef, clone, closure_local, signal::SignalHandlerId, subclass::Signal};
+use gtk::{CompositeTemplate, ListItem, SignalListItemFactory, gdk, gio, glib, prelude::*};
+use std::{
+    cell::{Cell, OnceCell, RefCell},
+    rc::Rc,
+    sync::OnceLock,
+};
 
 use super::{AlbumCell, Library};
 use crate::{
-    cache::{placeholders::EMPTY_ARTIST_STRING, Cache, CacheState},
+    cache::{Cache, CacheState, placeholders::EMPTY_ARTIST_STRING},
     client::ClientState,
+    common::{Album, Artist, ContentView, RowAddButtons, Song, SongRow},
     library::add_to_playlist::AddToPlaylistButton,
-    common::{Album, Artist, RowAddButtons, Song, SongRow, ContentView}, utils::{format_secs_as_duration, settings_manager, tokio_runtime},
+    utils::{format_secs_as_duration, settings_manager, tokio_runtime},
 };
 
 mod imp {
@@ -92,7 +93,7 @@ mod imp {
         pub avatar_signal_id: RefCell<Option<SignalHandlerId>>,
         pub cache: OnceCell<Rc<Cache>>,
         #[derivative(Default(value = "Cell::new(true)"))]
-        pub selecting_all: Cell<bool> // Enables queuing all songs from this artist efficiently
+        pub selecting_all: Cell<bool>, // Enables queuing all songs from this artist efficiently
     }
 
     #[glib::object_subclass]
@@ -170,21 +171,14 @@ mod imp {
             ));
 
             self.all_songs_btn
-                .bind_property(
-                    "active",
-                    &self.subview_stack.get(),
-                    "visible-child-name"
-                )
-                .transform_to(
-                    |_, active| {
-                        if active {
-                            Some("songs")
-                        }
-                        else {
-                            Some("albums")
-                        }
+                .bind_property("active", &self.subview_stack.get(), "visible-child-name")
+                .transform_to(|_, active| {
+                    if active {
+                        Some("songs")
+                    } else {
+                        Some("albums")
                     }
-                )
+                })
                 .sync_create()
                 .build();
 
@@ -213,8 +207,7 @@ mod imp {
                                 if !uris.is_empty() {
                                     let _ = sender.send_blocking(uris[0].to_string());
                                 }
-                            }
-                            else {
+                            } else {
                                 println!("{maybe_files:?}");
                             }
                         });
@@ -246,7 +239,7 @@ mod imp {
                     move |_, _, _| {
                         if let (Some(artist), Some(library)) = (
                             obj.imp().artist.borrow().as_ref(),
-                            obj.imp().library.upgrade()
+                            obj.imp().library.upgrade(),
                         ) {
                             library.clear_artist_avatar(artist.get_name());
                         }
@@ -263,7 +256,7 @@ mod imp {
                     move |_, _, _| {
                         if let (Some(artist), Some(library)) = (
                             obj.imp().artist.borrow().as_ref(),
-                            obj.imp().library.upgrade()
+                            obj.imp().library.upgrade(),
                         ) {
                             let spinner = obj.imp().infobox_spinner.get();
                             if spinner.visible_child_name().unwrap() != "spinner" {
@@ -282,17 +275,20 @@ mod imp {
             actions.add_action_entries([
                 action_set_avatar,
                 action_clear_avatar,
-                action_refetch_metadata
+                action_refetch_metadata,
             ]);
-            self.obj().insert_action_group("artist-content-view", Some(&actions));
+            self.obj()
+                .insert_action_group("artist-content-view", Some(&actions));
         }
 
         fn signals() -> &'static [Signal] {
             static SIGNALS: OnceLock<Vec<Signal>> = OnceLock::new();
             SIGNALS.get_or_init(|| {
-                vec![Signal::builder("album-clicked")
-                    .param_types([Album::static_type()])
-                    .build()]
+                vec![
+                    Signal::builder("album-clicked")
+                        .param_types([Album::static_type()])
+                        .build(),
+                ]
             })
         }
     }
@@ -404,7 +400,9 @@ impl ArtistContentView {
                 move |_: CacheState, tag: String| {
                     if let Some(artist) = this.imp().artist.borrow().as_ref() {
                         if tag == artist.get_name() {
-                            this.imp().avatar.set_custom_image(Option::<gdk::Texture>::None.as_ref());
+                            this.imp()
+                                .avatar
+                                .set_custom_image(Option::<gdk::Texture>::None.as_ref());
                         }
                     }
                 }
@@ -565,7 +563,11 @@ impl ArtistContentView {
                 .and_downcast::<SongRow>()
                 .expect("The child has to be a `SongRow`.");
 
-            child.end_widget().and_downcast::<RowAddButtons>().unwrap().set_song(Some(&item));
+            child
+                .end_widget()
+                .and_downcast::<RowAddButtons>()
+                .unwrap()
+                .set_song(Some(&item));
             child.on_bind(&item);
         });
 
@@ -578,7 +580,11 @@ impl ArtistContentView {
                 .child()
                 .and_downcast::<SongRow>()
                 .expect("The child has to be a `SongRow`.");
-            child.end_widget().and_downcast::<RowAddButtons>().unwrap().set_song(None);
+            child
+                .end_widget()
+                .and_downcast::<RowAddButtons>()
+                .unwrap()
+                .set_song(None);
             child.on_unbind();
         });
 
@@ -652,16 +658,15 @@ impl ArtistContentView {
         let grid_view = self.imp().album_subview.get();
         grid_view.set_factory(Some(&factory));
         settings
-            .bind(
-                "max-columns",
-                &grid_view,
-                "max-columns"
-            )
+            .bind("max-columns", &grid_view, "max-columns")
             .build();
     }
 
     pub fn setup(&self, library: &Library, cache: Rc<Cache>, client_state: &ClientState) {
-        self.imp().cache.set(cache).expect("Could not register artist content view with cache controller");
+        self.imp()
+            .cache
+            .set(cache)
+            .expect("Could not register artist content view with cache controller");
         self.imp().library.set(Some(library));
 
         self.setup_info_box();
@@ -677,9 +682,9 @@ impl ArtistContentView {
     pub fn set_avatar(&self, path: &str) {
         if let (Some(artist), Some(library)) = (
             self.imp().artist.borrow().as_ref(),
-            self.imp().library.upgrade()
+            self.imp().library.upgrade(),
         ) {
-            library.set_artist_avatar(artist.get_name(), path); 
+            library.set_artist_avatar(artist.get_name(), path);
         }
     }
 
@@ -694,14 +699,13 @@ impl ArtistContentView {
         let info = artist.get_info();
         self.imp().avatar.set_text(Some(&info.name));
         self.update_avatar(
-            self
-                .imp()
+            self.imp()
                 .cache
                 .get()
                 .unwrap()
                 .clone()
                 .load_cached_artist_avatar(info, true)
-                .as_ref()
+                .as_ref(),
         );
 
         let name_label = self.imp().name.get();
@@ -737,7 +741,7 @@ impl ArtistContentView {
         // Unset metadata widgets
         self.imp().avatar.set_text(None);
         self.clear_content();
-        duplicate!{
+        duplicate! {
             [stack; [infobox_spinner]; [song_spinner]; [album_spinner];]
             if self.imp().stack.visible_child_name().unwrap() != "spinner" {
                 self.imp().stack.set_visible_child_name("spinner");

@@ -1,4 +1,4 @@
-use gtk::{glib::{Properties}, prelude::*, subclass::prelude::*};
+use gtk::{glib::Properties, prelude::*, subclass::prelude::*};
 use std::cell::{Cell, RefCell};
 
 mod imp {
@@ -87,7 +87,10 @@ mod imp {
 
         fn size_allocate(&self, w: i32, h: i32, baseline: i32) {
             let nat_side_width = self.nat_side_width.get();
-            let min_center_width = self.nat_center_width.get().min((w as f32 * self.max_center_ratio.get()).floor() as i32);
+            let min_center_width = self
+                .nat_center_width
+                .get()
+                .min((w as f32 * self.max_center_ratio.get()).floor() as i32);
             let available_center_width = w - 2 * nat_side_width;
 
             let final_side_width: i32;
@@ -96,20 +99,30 @@ mod imp {
                 // Shrink both sides symmetrically to keep centre widget centered
                 final_side_width = ((w - min_center_width) as f32 / 2.0).floor() as i32;
                 final_center_width = w - 2 * final_side_width;
-            }
-            else {
+            } else {
                 final_side_width = nat_side_width;
                 final_center_width = available_center_width;
             }
 
             if let Some(widget) = self.center_widget.borrow().as_ref() {
-                widget.size_allocate(&gtk::Allocation::new(final_side_width + 1, 0, final_center_width, h), baseline);
+                widget.size_allocate(
+                    &gtk::Allocation::new(final_side_width + 1, 0, final_center_width, h),
+                    baseline,
+                );
             }
             if let Some(widget) = self.left_widget.borrow().as_ref() {
                 widget.size_allocate(&gtk::Allocation::new(0, 0, final_side_width, h), baseline);
             }
             if let Some(widget) = self.right_widget.borrow().as_ref() {
-                widget.size_allocate(&gtk::Allocation::new(final_side_width + final_center_width + 1, 0, final_side_width, h), baseline);
+                widget.size_allocate(
+                    &gtk::Allocation::new(
+                        final_side_width + final_center_width + 1,
+                        0,
+                        final_side_width,
+                        h,
+                    ),
+                    baseline,
+                );
             }
         }
 
