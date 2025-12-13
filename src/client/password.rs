@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use libsecret::*;
+use std::collections::HashMap;
 
 use crate::config::APPLICATION_ID;
 
@@ -15,10 +15,7 @@ pub async fn get_mpd_password() -> Result<Option<String>, String> {
     let mut attributes = HashMap::new();
     attributes.insert("type", "mpd");
 
-    libsecret::password_lookup_future(
-        Some(&schema),
-        attributes
-    )
+    libsecret::password_lookup_future(Some(&schema), attributes)
         .await
         .map(|op| op.map(|gs| gs.as_str().to_owned()))
         .map_err(|ge| format!("{ge:?}"))
@@ -35,15 +32,12 @@ pub async fn set_mpd_password(maybe_password: Option<&str>) -> Result<(), String
             attributes,
             None,
             "Euphonica MPD password",
-            password
+            password,
         )
-            .await
-            .map_err(|ge| format!("{ge:?}"))
+        .await
+        .map_err(|ge| format!("{ge:?}"))
     } else {
-        libsecret::password_clear_future(
-            Some(&schema),
-            attributes
-        )
+        libsecret::password_clear_future(Some(&schema), attributes)
             .await
             .map_err(|ge| format!("{ge:?}"))
     }

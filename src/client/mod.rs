@@ -1,13 +1,13 @@
-mod stream;
 mod background;
 mod connection;
+mod stream;
 
+pub mod password;
 pub mod state;
 pub mod wrapper;
-pub mod password;
 
-use mpd::{lsinfo::LsInfoEntry, Query, Subsystem, error::Error as MpdError};
-pub use state::{ClientState, ConnectionState, ClientError};
+use mpd::{Query, Subsystem, error::Error as MpdError, lsinfo::LsInfoEntry};
+pub use state::{ClientError, ClientState, ConnectionState};
 pub use wrapper::MpdWrapper;
 
 use crate::common::{AlbumInfo, ArtistInfo, DynamicPlaylist, SongInfo, Stickers};
@@ -275,5 +275,5 @@ pub enum BackgroundTask {
 pub enum StickerSetMode {
     Inc,
     Set,
-    Dec
+    Dec,
 }
