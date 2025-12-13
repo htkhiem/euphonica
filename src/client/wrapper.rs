@@ -401,6 +401,7 @@ impl MpdWrapper {
         // A new loop to watch for system suspend/wake actions. We proactively disconnect before suspend
         // and connect again upon wake to avoid freezing upon a timed-out connection.
         // let (suspend_sender, suspend_receiver): (Sender<bool>, Receiver<bool>) = async_channel::unbounded();
+        // TODO: Avoid sending more updates if the current one hasn't completed yet.
         let main_sender = self.main_sender.clone();
         utils::tokio_runtime().spawn(async move {
             let connection = ZConnection::system().await.unwrap();

@@ -1,5 +1,7 @@
 mod stream;
 mod background;
+mod connection;
+
 pub mod state;
 pub mod wrapper;
 pub mod password;
