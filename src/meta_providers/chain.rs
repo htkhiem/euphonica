@@ -1,6 +1,9 @@
 use crate::common::{AlbumInfo, ArtistInfo, SongInfo};
 
-use super::{lastfm::LastfmWrapper, lrclib::LrcLibWrapper, models, musicbrainz::MusicBrainzWrapper, MetadataProvider};
+use super::{
+    MetadataProvider, lastfm::LastfmWrapper, lrclib::LrcLibWrapper, models,
+    musicbrainz::MusicBrainzWrapper,
+};
 
 /// A meta-MetadataProvider that works by daisy-chaining actual MetadataProviders.
 /// Think composite pattern.
@@ -56,13 +59,10 @@ impl MetadataProvider for MetadataChain {
         existing
     }
 
-    fn get_lyrics(
-        &self,
-        key: &SongInfo
-    ) -> Option<models::Lyrics> {
+    fn get_lyrics(&self, key: &SongInfo) -> Option<models::Lyrics> {
         for provider in self.providers.iter() {
             if let Some(lyrics) = provider.get_lyrics(key) {
-                return Some(lyrics)
+                return Some(lyrics);
             }
         }
         None

@@ -1,11 +1,9 @@
 use ::glib::clone;
 use glib::Object;
-use gtk::{glib, prelude::*, subclass::prelude::*, CompositeTemplate};
+use gtk::{CompositeTemplate, glib, prelude::*, subclass::prelude::*};
 use std::cell::RefCell;
 
-use crate::{
-    common::Song, library::Library
-};
+use crate::{common::Song, library::Library};
 
 mod imp {
     use super::*;
@@ -17,7 +15,7 @@ mod imp {
         pub replace_queue: TemplateChild<gtk::Button>,
         #[template_child]
         pub append_queue: TemplateChild<gtk::Button>,
-        pub song: RefCell<Option<Song>>
+        pub song: RefCell<Option<Song>>,
     }
 
     // The central trait for subclassing a GObject

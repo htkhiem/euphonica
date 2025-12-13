@@ -1,44 +1,42 @@
 use adw::prelude::*;
 use adw::subclass::prelude::*;
 use ashpd::desktop::file_chooser::SelectedFiles;
-use glib::{clone, closure_local, WeakRef};
-use gtk::{gio, glib, CompositeTemplate, ListItem, SignalListItemFactory};
-use uuid::Uuid;
+use glib::{WeakRef, clone, closure_local};
+use gtk::{CompositeTemplate, ListItem, SignalListItemFactory, gio, glib};
 use std::{
     cell::{OnceCell, RefCell},
     rc::Rc,
 };
+use uuid::Uuid;
 
 use derivative::Derivative;
 use strum::{EnumCount, IntoEnumIterator, VariantArray};
 
 use crate::{
-    cache::{
-        placeholders::ALBUMART_PLACEHOLDER, sqlite, Cache, ImageAction
-    },
+    cache::{Cache, ImageAction, placeholders::ALBUMART_PLACEHOLDER, sqlite},
     client::ClientState,
     common::{
+        DynamicPlaylist, Song, SongRow,
         dynamic_playlist::{AutoRefresh, Ordering, Rule},
-        DynamicPlaylist, Song, SongRow
     },
     utils::{format_secs_as_duration, tokio_runtime},
-    window::EuphonicaWindow
+    window::EuphonicaWindow,
 };
 
-use super::{
-    ordering_button::OrderingButton, rule_button::RuleButton, Library
-};
+use super::{Library, ordering_button::OrderingButton, rule_button::RuleButton};
 
 mod imp {
     use std::{cell::Cell, sync::OnceLock};
-    
+
     use glib::subclass::Signal;
 
     use super::*;
 
     #[derive(Debug, CompositeTemplate, Derivative)]
     #[derivative(Default)]
-    #[template(resource = "/io/github/htkhiem/Euphonica/gtk/library/dynamic-playlist-editor-view.ui")]
+    #[template(
+        resource = "/io/github/htkhiem/Euphonica/gtk/library/dynamic-playlist-editor-view.ui"
+    )]
     pub struct DynamicPlaylistEditorView {
         #[template_child]
         pub overwrite_dialog: TemplateChild<adw::AlertDialog>,
@@ -103,13 +101,13 @@ mod imp {
         pub rules_valid: Cell<bool>,
         pub title_valid: Cell<bool>,
         pub unsaved: Cell<bool>,
-        pub editing_name: RefCell<Option<String>>,  // If not None, will be in edit mode.
+        pub editing_name: RefCell<Option<String>>, // If not None, will be in edit mode.
 
         pub library: WeakRef<Library>,
         pub cache: OnceCell<Rc<Cache>>,
         #[derivative(Default(value = "RefCell::new(String::from(\"\"))"))]
         pub tmp_name: RefCell<String>,
-        pub window: WeakRef<EuphonicaWindow>
+        pub window: WeakRef<EuphonicaWindow>,
     }
 
     #[glib::object_subclass]
@@ -197,10 +195,7 @@ mod imp {
                     let rules_box = this.rules_box.get();
                     let btn = RuleButton::new(&rules_box);
                     rules_box.append(&btn);
-                    rules_box.reorder_child_after(
-                        add_btn,
-                        Some(&btn)
-                    );
+                    rules_box.reorder_child_after(add_btn, Some(&btn));
                     // Validate once at creation
                     btn.validate();
                     btn.connect_notify_local(
@@ -212,11 +207,10 @@ mod imp {
                                 this.obj().validate_rules();
                                 this.obj().on_change();
                             }
-                        )
+                        ),
                     );
                 }
             ));
-
 
             // TODO: find another way as observe_children() is very inefficient
             let orderings_model = self.ordering_box.observe_children();
@@ -231,11 +225,7 @@ mod imp {
             let _ = self.orderings_model.set(orderings_model);
 
             self.song_list
-                .bind_property(
-                    "n-items",
-                    &self.track_count.get(),
-                    "label"
-                )
+                .bind_property("n-items", &self.track_count.get(), "label")
                 .transform_to(|_, n_items: u32| Some(n_items.to_string()))
                 .sync_create()
                 .build();
@@ -252,12 +242,9 @@ mod imp {
                         let btn = OrderingButton::new(ordering, &ordering_box);
                         ordering_box.append(&btn);
                         let add_ordering_btn = obj.imp().add_ordering_btn.get();
-                        ordering_box.reorder_child_after(
-                            &add_ordering_btn,
-                            Some(&btn)
-                        );
-                    })
-                )
+                        ordering_box.reorder_child_after(&add_ordering_btn, Some(&btn));
+                    }
+                ))
                 .build();
 
             // Create a new action group and add actions to it
@@ -267,25 +254,18 @@ mod imp {
             // Once the actions are in place we can construct the menu items
             // Call once to init ordering options menu
             obj.on_ordering_changed();
-            self.add_ordering_btn.set_menu_model(Some(&self.orderings_menu));
+            self.add_ordering_btn
+                .set_menu_model(Some(&self.orderings_menu));
 
             self.limit_mode
-                .bind_property(
-                    "selected",
-                    &self.limit.get(),
-                    "visible"
-                )
-                .transform_to(|_, idx: u32| { Some(idx > 0) })
+                .bind_property("selected", &self.limit.get(), "visible")
+                .transform_to(|_, idx: u32| Some(idx > 0))
                 .sync_create()
                 .build();
 
             self.limit_mode
-                .bind_property(
-                    "selected",
-                    &self.limit_unit.get(),
-                    "visible"
-                )
-                .transform_to(|_, idx: u32| { Some(idx > 0) })
+                .bind_property("selected", &self.limit_unit.get(), "visible")
+                .transform_to(|_, idx: u32| Some(idx > 0))
                 .sync_create()
                 .build();
 
@@ -342,9 +322,11 @@ mod imp {
             static SIGNALS: OnceLock<Vec<Signal>> = OnceLock::new();
             SIGNALS.get_or_init(|| {
                 vec![
-                    Signal::builder("exit-clicked").param_types([
-                        bool::static_type()  // if true, indicates saved changes & should reset list & content views
-                    ]).build()
+                    Signal::builder("exit-clicked")
+                        .param_types([
+                            bool::static_type(), // if true, indicates saved changes & should reset list & content views
+                        ])
+                        .build(),
                 ]
             })
         }
@@ -420,12 +402,12 @@ impl DynamicPlaylistEditorView {
         library: &Library,
         cache: Rc<Cache>,
         client_state: &ClientState,
-        window: &EuphonicaWindow
+        window: &EuphonicaWindow,
     ) {
         self.imp()
-           .cache
-           .set(cache.clone())
-           .expect("DynamicPlaylistEditorView cannot bind to cache");
+            .cache
+            .set(cache.clone())
+            .expect("DynamicPlaylistEditorView cannot bind to cache");
         self.imp().window.set(Some(window));
         self.imp().library.set(Some(library));
 
@@ -555,9 +537,11 @@ impl DynamicPlaylistEditorView {
 
         // Set the factory of the list view
         self.imp().content.set_factory(Some(&factory));
-        self.imp().content.set_model(Some(
-            &gtk::NoSelection::new(Some(self.imp().song_list.clone()))
-        ));
+        self.imp()
+            .content
+            .set_model(Some(&gtk::NoSelection::new(Some(
+                self.imp().song_list.clone(),
+            ))));
     }
 
     fn on_change(&self) {
@@ -596,14 +580,10 @@ impl DynamicPlaylistEditorView {
         let mut per_rule_is_valid: Vec<bool> = Vec::with_capacity(n_items as usize);
         for i in 0..n_items {
             if let Some(rule_btn) = model.item(i).and_downcast_ref::<RuleButton>() {
-                per_rule_is_valid.push(
-                    rule_btn.is_valid()
-                );
+                per_rule_is_valid.push(rule_btn.is_valid());
             }
         }
-        let new_rules_valid = per_rule_is_valid
-            .iter()
-            .all(|item| *item);
+        let new_rules_valid = per_rule_is_valid.iter().all(|item| *item);
         let old_rules_valid = self.imp().rules_valid.replace(new_rules_valid);
         if old_rules_valid != new_rules_valid {
             self.update_sensitivity();
@@ -655,7 +635,7 @@ impl DynamicPlaylistEditorView {
                     let item = gio::MenuItem::new(Some(opt.readable_name()), None);
                     item.set_action_and_target_value(
                         Some("dynamic-playlist-editor-view.add-ordering"),
-                        Some(&(idx as u32).to_variant())
+                        Some(&(idx as u32).to_variant()),
                     );
                     orderings_menu.append_item(&item);
                 }
@@ -667,7 +647,9 @@ impl DynamicPlaylistEditorView {
         let rules_valid = self.imp().rules_valid.get();
         let title_valid = self.imp().title_valid.get();
         let unsaved = self.imp().unsaved.get();
-        self.imp().save_btn.set_sensitive(rules_valid && title_valid && unsaved);
+        self.imp()
+            .save_btn
+            .set_sensitive(rules_valid && title_valid && unsaved);
         self.imp().refresh_btn.set_sensitive(rules_valid);
     }
 
@@ -678,9 +660,13 @@ impl DynamicPlaylistEditorView {
             &path[7..]
         } else {
             path
-        }).expect("Path must be in UTF-8").into_owned();
-        self.imp().cover_action.replace(ImageAction::New(filepath.clone()));
-        self.imp().cover.set_from_file(Some(filepath));  // FIXME: use libglycin
+        })
+        .expect("Path must be in UTF-8")
+        .into_owned();
+        self.imp()
+            .cover_action
+            .replace(ImageAction::New(filepath.clone()));
+        self.imp().cover.set_from_file(Some(filepath)); // FIXME: use libglycin
         self.on_change();
     }
 
@@ -691,13 +677,18 @@ impl DynamicPlaylistEditorView {
     }
 
     fn schedule_existing_cover(&self, dp: &DynamicPlaylist) {
-        self.imp().cover_action.replace(ImageAction::Existing(false)); // for now
+        self.imp()
+            .cover_action
+            .replace(ImageAction::Existing(false)); // for now
         self.imp().cover.set_paintable(Some(&*ALBUMART_PLACEHOLDER));
 
         // Fetch high resolution playlist cover
-        let handle = self.imp().cache.get().unwrap().load_cached_playlist_cover(
-            &dp.name, true, false
-        );
+        let handle = self
+            .imp()
+            .cache
+            .get()
+            .unwrap()
+            .load_cached_playlist_cover(&dp.name, true, false);
         glib::spawn_future_local(clone!(
             #[weak(rename_to = this)]
             self,
@@ -728,21 +719,21 @@ impl DynamicPlaylistEditorView {
             "Refresh weekly" => AutoRefresh::Weekly,
             "Refresh monthly" => AutoRefresh::Monthly,
             "Refresh yearly" => AutoRefresh::Yearly,
-            _ => unimplemented!()
+            _ => unimplemented!(),
         }
     }
 
     fn set_refresh_schedule(&self, auto_refresh: AutoRefresh) {
-        self.imp().refresh_schedule.set_selected(
-            match auto_refresh {
+        self.imp()
+            .refresh_schedule
+            .set_selected(match auto_refresh {
                 AutoRefresh::None => 0,
                 AutoRefresh::Hourly => 1,
                 AutoRefresh::Daily => 2,
                 AutoRefresh::Weekly => 3,
                 AutoRefresh::Monthly => 4,
                 AutoRefresh::Yearly => 5,
-            }
-        );
+            });
     }
 
     fn preview_result(&self) {
@@ -760,26 +751,29 @@ impl DynamicPlaylistEditorView {
         println!("{:?}", &dp);
 
         // Don't cache as this DP is still being edited
-        self.get_library().unwrap().fetch_dynamic_playlist(dp, false);
+        self.get_library()
+            .unwrap()
+            .fetch_dynamic_playlist(dp, false);
     }
 
     fn build_dynamic_playlist(&self) -> DynamicPlaylist {
         let rules_model = self.imp().rules_model.get().unwrap();
         let n_rules = rules_model.n_items() as usize;
-        let mut rules: Vec<Rule> = Vec::with_capacity(n_rules - 1);  // Except the "Add Rule" button
+        let mut rules: Vec<Rule> = Vec::with_capacity(n_rules - 1); // Except the "Add Rule" button
         for i in 0..n_rules {
             if let Some(rule_btn) = rules_model.item(i as u32).and_downcast_ref::<RuleButton>() {
-                rules.push(
-                    rule_btn.get_rule().unwrap()
-                );
+                rules.push(rule_btn.get_rule().unwrap());
             }
         }
 
         let orderings_model = self.imp().orderings_model.get().unwrap();
         let n_orderings = orderings_model.n_items() as usize;
-        let mut ordering: Vec<Ordering> = Vec::with_capacity(n_orderings - 1);  // Except the "Add Rule" button
+        let mut ordering: Vec<Ordering> = Vec::with_capacity(n_orderings - 1); // Except the "Add Rule" button
         for i in 0..n_orderings {
-            if let Some(ordering_btn) = orderings_model.item(i as u32).and_downcast::<OrderingButton>() {
+            if let Some(ordering_btn) = orderings_model
+                .item(i as u32)
+                .and_downcast::<OrderingButton>()
+            {
                 ordering.push(ordering_btn.ordering());
             }
         }
@@ -797,7 +791,7 @@ impl DynamicPlaylistEditorView {
             ordering,
             auto_refresh: self.get_refresh_schedule(),
             last_refresh: None,
-            limit
+            limit,
         }
     }
 
@@ -810,20 +804,13 @@ impl DynamicPlaylistEditorView {
             dp,
             cover_action,
             Some(
-                self
-                    .imp()
+                self.imp()
                     .editing_name
                     .borrow()
                     .as_deref()
-                    .unwrap_or(
-                        self
-                            .imp()
-                            .title
-                            .text()
-                            .as_str()
-                    )
-                    .to_string()
-            )
+                    .unwrap_or(self.imp().title.text().as_str())
+                    .to_string(),
+            ),
         );
         glib::spawn_future_local(clone!(
             #[weak(rename_to = this)]
@@ -861,7 +848,9 @@ impl DynamicPlaylistEditorView {
         {
             editing = self.imp().editing_name.borrow().is_some();
         }
-        if !editing && sqlite::exists_dynamic_playlist(self.imp().title.text().as_str()).unwrap_or(false) {
+        if !editing
+            && sqlite::exists_dynamic_playlist(self.imp().title.text().as_str()).unwrap_or(false)
+        {
             // If creating a new playlist, ask for confirmation before overwriting
             let dialog = self.imp().overwrite_dialog.get();
             dialog.choose(
@@ -937,15 +926,12 @@ impl DynamicPlaylistEditorView {
                         this.validate_rules();
                         this.on_change();
                     }
-                )
+                ),
             );
             last_btn.replace(btn);
         }
         if let Some(last_btn) = last_btn {
-            rules_box.reorder_child_after(
-                &add_btn,
-                Some(&last_btn)
-            );
+            rules_box.reorder_child_after(&add_btn, Some(&last_btn));
         }
 
         // Init orderings
@@ -958,10 +944,7 @@ impl DynamicPlaylistEditorView {
             last_btn.replace(btn);
         }
         if let Some(last_btn) = last_btn {
-            ordering_box.reorder_child_after(
-                &add_btn,
-                Some(&last_btn)
-            );
+            ordering_box.reorder_child_after(&add_btn, Some(&last_btn));
         }
 
         self.validate_rules();
@@ -982,7 +965,11 @@ impl DynamicPlaylistEditorView {
         // If this is called with an empty list, it indicates the queried DP is empty.
         if songs.is_empty() {
             println!("dynamic_playlist_editor_view: end of response received");
-            if self.imp().content_pages.visible_child_name().is_some_and(|name| name.as_str() != "empty")
+            if self
+                .imp()
+                .content_pages
+                .visible_child_name()
+                .is_some_and(|name| name.as_str() != "empty")
                 && self.imp().song_list.n_items() == 0
             {
                 self.imp().content_pages.set_visible_child_name("empty");

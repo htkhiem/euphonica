@@ -1,6 +1,6 @@
 use ::glib::clone;
 use glib::{self, Object, SignalHandlerId};
-use gtk::{prelude::*, subclass::prelude::*, CompositeTemplate};
+use gtk::{CompositeTemplate, prelude::*, subclass::prelude::*};
 use std::cell::RefCell;
 
 mod imp {
@@ -15,7 +15,7 @@ mod imp {
         pub lower: TemplateChild<gtk::Button>,
         #[template_child]
         pub remove: TemplateChild<gtk::Button>,
-        pub signal_ids: RefCell<Option<(SignalHandlerId, SignalHandlerId, SignalHandlerId)>>
+        pub signal_ids: RefCell<Option<(SignalHandlerId, SignalHandlerId, SignalHandlerId)>>,
     }
 
     // The central trait for subclassing a GObject
@@ -56,8 +56,13 @@ impl RowEditButtons {
         item: &gtk::ListItem,
         on_raise_clicked: F1,
         on_lower_clicked: F2,
-        on_remove_clicked: F3
-    ) -> Self where F1: Fn(u32) + 'static, F2: Fn(u32) + 'static, F3: Fn(u32) + 'static {
+        on_remove_clicked: F3,
+    ) -> Self
+    where
+        F1: Fn(u32) + 'static,
+        F2: Fn(u32) + 'static,
+        F3: Fn(u32) + 'static,
+    {
         let res: Self = Object::builder().build();
         res.imp().raise.connect_clicked(clone!(
             #[weak]

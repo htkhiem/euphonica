@@ -11,19 +11,15 @@ use musicbrainz_rs::entity::{
     tag::Tag,
 };
 
-use super::{
-    super::{models},
-    PROVIDER_KEY,
-};
+use super::{super::models, PROVIDER_KEY};
 
 fn transform_wikimedia_url(url: &str) -> Option<String> {
     // MusicBrainz relations cannot contain direct links, so we'll have to extract one ourselves.
     // For now hardcoding downloaded size to 256px wide. Images are usually in portrait orientation
     // so this should work fine.
     if let Some(file_name) = url.strip_prefix("https://commons.wikimedia.org/wiki/File:") {
-        let transformed_url = format!(
-            "https://commons.wikimedia.org/w/thumb.php?f={file_name}&w=256"
-        );
+        let transformed_url =
+            format!("https://commons.wikimedia.org/w/thumb.php?f={file_name}&w=256");
         return Some(transformed_url);
     }
     None

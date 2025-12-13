@@ -1,6 +1,6 @@
 use adw::prelude::*;
 use adw::subclass::prelude::*;
-use gtk::{glib, CompositeTemplate};
+use gtk::{CompositeTemplate, glib};
 use std::cell::OnceCell;
 use std::rc::Rc;
 

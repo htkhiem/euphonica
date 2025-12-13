@@ -1,8 +1,8 @@
 use glib::{
     prelude::*,
-    subclass::{prelude::*, Signal},
+    subclass::{Signal, prelude::*},
 };
-use gtk::{glib, gdk};
+use gtk::{gdk, glib};
 use std::sync::OnceLock;
 
 mod imp {
@@ -62,7 +62,7 @@ mod imp {
                         .param_types([
                             String::static_type(), // folder or file URI
                             bool::static_type(),   // is_thumbnail
-                            gdk::Texture::static_type()
+                            gdk::Texture::static_type(),
                         ])
                         .build(),
                     Signal::builder("album-art-cleared")
@@ -84,7 +84,7 @@ mod imp {
                         .param_types([
                             String::static_type(), // artist tag
                             bool::static_type(),   // is_thumbnail
-                            gdk::Texture::static_type()
+                            gdk::Texture::static_type(),
                         ])
                         .build(),
                     Signal::builder("artist-avatar-cleared")

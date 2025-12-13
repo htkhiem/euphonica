@@ -1,9 +1,12 @@
-use std::cell::Cell;
 use adw::subclass::prelude::*;
-use glib::{clone, Properties};
-use gtk::{glib, prelude::*, CompositeTemplate};
+use glib::{Properties, clone};
+use gtk::{CompositeTemplate, glib, prelude::*};
+use std::cell::Cell;
 
-use crate::{application::EuphonicaApplication, client::state::StickersSupportLevel, common::INode, utils, window::EuphonicaWindow};
+use crate::{
+    application::EuphonicaApplication, client::state::StickersSupportLevel, common::INode, utils,
+    window::EuphonicaWindow,
+};
 
 use super::SidebarButton;
 
@@ -39,7 +42,7 @@ mod imp {
         #[template_child]
         pub queue_len: TemplateChild<gtk::Label>,
         #[property(get, set)]
-        pub showing_queue_view: Cell<bool>
+        pub showing_queue_view: Cell<bool>,
     }
 
     #[glib::object_subclass]
@@ -194,7 +197,10 @@ impl Sidebar {
             move |btn| {
                 if btn.is_active() {
                     playlist_view.pop();
-                    if stack.visible_child_name().is_none_or(|name| name.as_str() != "playlists") {
+                    if stack
+                        .visible_child_name()
+                        .is_none_or(|name| name.as_str() != "playlists")
+                    {
                         stack.set_visible_child_name("playlists");
                     }
                 }
@@ -231,7 +237,10 @@ impl Sidebar {
                         move |btn| {
                             if btn.is_active() {
                                 playlist_view.on_playlist_clicked(&playlist);
-                                if stack.visible_child_name().is_none_or(|name| name.as_str() != "playlists") {
+                                if stack
+                                    .visible_child_name()
+                                    .is_none_or(|name| name.as_str() != "playlists")
+                                {
                                     stack.set_visible_child_name("playlists");
                                 }
                                 split_view.set_show_sidebar(!split_view.is_collapsed());
@@ -262,7 +271,11 @@ impl Sidebar {
             5, // placeholder, will be bound to a GSettings key later
         );
         settings
-            .bind("recent-playlists-count", &recent_dyn_playlists_model, "size")
+            .bind(
+                "recent-playlists-count",
+                &recent_dyn_playlists_model,
+                "size",
+            )
             .build();
 
         self.imp().dyn_playlists_btn.connect_toggled(clone!(
@@ -308,7 +321,10 @@ impl Sidebar {
                         move |btn| {
                             if btn.is_active() {
                                 dyn_playlist_view.on_playlist_clicked(&playlist);
-                                if stack.visible_child_name().is_none_or(|name| name.as_str() != "dynamic_playlists") {
+                                if stack
+                                    .visible_child_name()
+                                    .is_none_or(|name| name.as_str() != "dynamic_playlists")
+                                {
                                     stack.set_visible_child_name("dynamic_playlists");
                                 }
                                 split_view.set_show_sidebar(!split_view.is_collapsed());
@@ -324,12 +340,16 @@ impl Sidebar {
         playlists.connect_items_changed(clone!(
             #[weak(rename_to = this)]
             self,
-            move |_, _, _, _| {this.hide_highlights();}
+            move |_, _, _, _| {
+                this.hide_highlights();
+            }
         ));
         dyn_playlists.connect_items_changed(clone!(
             #[weak(rename_to = this)]
             self,
-            move |_, _, _, _| {this.hide_highlights();}
+            move |_, _, _, _| {
+                this.hide_highlights();
+            }
         ));
 
         // Hide the list widget when there is no playlist at all to avoid

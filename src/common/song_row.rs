@@ -1,23 +1,19 @@
 use glib::{
-    closure_local,
-    clone,
-    WeakRef,
-    Object,
-    SignalHandlerId,
-    ParamSpec,
-    ParamSpecString,
-    ParamSpecBoolean,
-    ParamSpecObject
+    Object, ParamSpec, ParamSpecBoolean, ParamSpecObject, ParamSpecString, SignalHandlerId,
+    WeakRef, clone, closure_local,
 };
-use gtk::{gdk, glib, prelude::*, subclass::prelude::*, CompositeTemplate};
+use gtk::{CompositeTemplate, gdk, glib, prelude::*, subclass::prelude::*};
+use once_cell::sync::Lazy;
 use std::{
     cell::{Cell, OnceCell, Ref, RefCell},
     rc::Rc,
 };
-use once_cell::sync::Lazy;
 
 use crate::{
-    cache::{Cache, CacheState, placeholders::ALBUMART_THUMBNAIL_PLACEHOLDER}, common::{CoverSource, Marquee, Song, SongInfo}, player::Player, utils::strip_filename_linux
+    cache::{Cache, CacheState, placeholders::ALBUMART_THUMBNAIL_PLACEHOLDER},
+    common::{CoverSource, Marquee, Song, SongInfo},
+    player::Player,
+    utils::strip_filename_linux,
 };
 
 use super::QualityGrade;
@@ -58,7 +54,7 @@ mod imp {
         pub playing_signal_id: RefCell<Option<SignalHandlerId>>,
         pub cache: OnceCell<Rc<Cache>>,
         pub player: WeakRef<Player>,
-        pub thumbnail_source: Cell<CoverSource>
+        pub thumbnail_source: Cell<CoverSource>,
     }
 
     // The central trait for subclassing a GObject
@@ -118,7 +114,7 @@ mod imp {
                     ParamSpecString::builder("first-attrib-text").build(),
                     ParamSpecString::builder("second-attrib-text").build(),
                     ParamSpecString::builder("third-attrib-text").build(),
-                    ParamSpecObject::builder::<gtk::Widget>("end-widget").build()
+                    ParamSpecObject::builder::<gtk::Widget>("end-widget").build(),
                 ]
             });
             PROPERTIES.as_ref()
@@ -208,12 +204,15 @@ mod imp {
         }
 
         fn dispose(&self) {
-            if let (Some(cache), Some((set_id, clear_id))) = (self.cache.get(), self.thumbnail_signal_ids.take()) {
+            if let (Some(cache), Some((set_id, clear_id))) =
+                (self.cache.get(), self.thumbnail_signal_ids.take())
+            {
                 let cache_state = cache.get_cache_state();
                 cache_state.disconnect(set_id);
                 cache_state.disconnect(clear_id);
             }
-            if let (Some(player), Some(id)) = (self.player.upgrade(), self.playing_signal_id.take()) {
+            if let (Some(player), Some(id)) = (self.player.upgrade(), self.playing_signal_id.take())
+            {
                 player.disconnect(id);
             }
         }
@@ -238,7 +237,7 @@ impl SongRow {
         // If not given, will not set up thumbnail fetching
         cache: Option<Rc<Cache>>,
         // If not given, will not set up is-playing indicator
-        player: Option<&Player>
+        player: Option<&Player>,
     ) -> Self {
         let res: Self = Object::builder().build();
         if let Some(cache) = cache {
@@ -263,9 +262,10 @@ impl SongRow {
                                     // temporarily
                                     res.update_thumbnail(tex, CoverSource::Embedded);
                                 } else if res.imp().thumbnail_source.get() != CoverSource::Embedded
-                                    && strip_filename_linux(song.get_uri()) == uri {
-                                        res.update_thumbnail(tex, CoverSource::Folder);
-                                    }
+                                    && strip_filename_linux(song.get_uri()) == uri
+                                {
+                                    res.update_thumbnail(tex, CoverSource::Folder);
+                                }
                             }
                         }
                     ),
@@ -301,8 +301,10 @@ impl SongRow {
         if let Some(player) = player {
             res.imp().player.set(Some(player));
 
-            let _ = res.imp().playing_signal_id.replace(Some(
-                player.connect_notify_local(
+            let _ = res
+                .imp()
+                .playing_signal_id
+                .replace(Some(player.connect_notify_local(
                     Some("queue-id"),
                     clone!(
                         #[weak]
@@ -310,9 +312,8 @@ impl SongRow {
                         move |player, _| {
                             res.update_playing_indicator(player);
                         }
-                    )
-                ))
-            );
+                    ),
+                )));
             res.update_playing_indicator(player);
         }
 
@@ -322,7 +323,7 @@ impl SongRow {
     fn update_playing_indicator(&self, player: &Player) {
         match (
             player.queue_id(),
-            self.song().as_ref().map(|s| s.get_queue_id())
+            self.song().as_ref().map(|s| s.get_queue_id()),
         ) {
             (Some(id), Some(own_id)) => {
                 self.set_is_playing(id == own_id);
@@ -333,26 +334,30 @@ impl SongRow {
         }
     }
 
-
     fn clear_thumbnail(&self) {
         self.imp().thumbnail_source.set(CoverSource::None);
-        self.imp().thumbnail.set_paintable(Some(&*ALBUMART_THUMBNAIL_PLACEHOLDER));
+        self.imp()
+            .thumbnail
+            .set_paintable(Some(&*ALBUMART_THUMBNAIL_PLACEHOLDER));
     }
 
     fn schedule_thumbnail(&self, info: &SongInfo) {
         if let Some(cache) = self.imp().cache.get() {
             self.imp().thumbnail_source.set(CoverSource::Unknown);
-            self.imp().thumbnail.set_paintable(Some(&*ALBUMART_THUMBNAIL_PLACEHOLDER));
-            if let Some((tex, is_embedded)) = cache
-                .clone()
-                .load_cached_embedded_cover(info, true, true) {
-                    self.imp().thumbnail.set_paintable(Some(&tex));
-                    self.imp().thumbnail_source.set(
-                        if is_embedded {CoverSource::Embedded} else {CoverSource::Folder}
-                    );
-                }
+            self.imp()
+                .thumbnail
+                .set_paintable(Some(&*ALBUMART_THUMBNAIL_PLACEHOLDER));
+            if let Some((tex, is_embedded)) =
+                cache.clone().load_cached_embedded_cover(info, true, true)
+            {
+                self.imp().thumbnail.set_paintable(Some(&tex));
+                self.imp().thumbnail_source.set(if is_embedded {
+                    CoverSource::Embedded
+                } else {
+                    CoverSource::Folder
+                });
+            }
         }
-
     }
 
     fn update_thumbnail(&self, tex: &gdk::Texture, src: CoverSource) {

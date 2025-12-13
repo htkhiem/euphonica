@@ -1,13 +1,24 @@
 use std::borrow::Cow;
 use std::str::FromStr;
 
-use mpd::{search::{Operation as TagOperation}, Query, Term};
+use mpd::{Query, Term, search::Operation as TagOperation};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use strum::EnumCount;
 use strum_macros::{EnumCount as EnumCountMacro, EnumIter, VariantArray};
 
-#[derive(Serialize, Deserialize, Debug, Copy, Clone, EnumIter, EnumCountMacro, VariantArray, PartialEq, Eq)]
+#[derive(
+    Serialize,
+    Deserialize,
+    Debug,
+    Copy,
+    Clone,
+    EnumIter,
+    EnumCountMacro,
+    VariantArray,
+    PartialEq,
+    Eq,
+)]
 pub enum Ordering {
     AscAlbumTitle,
     DescAlbumTitle,
@@ -24,7 +35,7 @@ pub enum Ordering {
     DescPlayCount,
     AscSkipCount,
     DescSkipCount,
-    Random
+    Random,
 }
 
 impl Ordering {
@@ -48,7 +59,7 @@ impl Ordering {
                 "Desc. play count",
                 "Asc. skip count",
                 "Desc. skip count",
-                "Random"  // Keep this the last option please
+                "Random", // Keep this the last option please
             ]
         });
 
@@ -78,7 +89,7 @@ impl Ordering {
             Self::DescPlayCount => Some(Self::AscPlayCount),
             Self::AscSkipCount => Some(Self::DescSkipCount),
             Self::DescSkipCount => Some(Self::AscSkipCount),
-            _ => None
+            _ => None,
         }
     }
 }
@@ -97,7 +108,7 @@ pub enum AutoRefresh {
     #[serde(rename = "monthly")]
     Monthly,
     #[serde(rename = "yearly")]
-    Yearly
+    Yearly,
 }
 
 impl FromStr for AutoRefresh {
@@ -110,7 +121,7 @@ impl FromStr for AutoRefresh {
             "weekly" => Ok(Self::Weekly),
             "monthly" => Ok(Self::Monthly),
             "yearly" => Ok(Self::Yearly),
-            _ => Err(())
+            _ => Err(()),
         }
     }
 }
@@ -123,11 +134,10 @@ impl AutoRefresh {
             Self::Daily => "daily",
             Self::Weekly => "weekly",
             Self::Monthly => "monthly",
-            Self::Yearly => "yearly"
+            Self::Yearly => "yearly",
         }
     }
 }
-
 
 #[derive(Default, Serialize, Deserialize, Debug, Clone, Copy)]
 pub enum StickerObjectType {
@@ -142,7 +152,7 @@ pub enum StickerObjectType {
     #[serde(rename = "artist")]
     Artist,
     #[serde(rename = "albumartist")]
-    AlbumArtist
+    AlbumArtist,
 }
 
 impl StickerObjectType {
@@ -152,11 +162,10 @@ impl StickerObjectType {
             Self::Playlist => "playlist",
             Self::Album => "album",
             Self::Artist => "artist",
-            Self::AlbumArtist => "albumartist"
+            Self::AlbumArtist => "albumartist",
         }
     }
 }
-
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum StickerOperation {
@@ -167,18 +176,12 @@ pub enum StickerOperation {
     StartsWith,
     IntEquals,
     IntLessThan,
-    IntGreaterThan
+    IntGreaterThan,
 }
 
 impl StickerOperation {
     pub fn numeric_model() -> &'static [&'static str] {
-        static MODEL: Lazy<Vec<&str>> = Lazy::new(|| {
-            vec![
-                "==",
-                ">",
-                "<"
-            ]
-        });
+        static MODEL: Lazy<Vec<&str>> = Lazy::new(|| vec!["==", ">", "<"]);
 
         MODEL.as_ref()
     }
@@ -188,21 +191,14 @@ impl StickerOperation {
             Self::IntEquals => Some(0),
             Self::IntGreaterThan => Some(1),
             Self::IntLessThan => Some(2),
-            _ => None
+            _ => None,
         }
     }
 
     // TODO: translations
     pub fn text_model() -> &'static [&'static str] {
-        static MODEL: Lazy<Vec<&str>> = Lazy::new(|| {
-            vec![
-                "==",
-                ">",
-                "<",
-                "contains",
-                "starts with"
-            ]
-        });
+        static MODEL: Lazy<Vec<&str>> =
+            Lazy::new(|| vec!["==", ">", "<", "contains", "starts with"]);
 
         MODEL.as_ref()
     }
@@ -214,7 +210,7 @@ impl StickerOperation {
             Self::LessThan => Some(2),
             Self::Contains => Some(3),
             Self::StartsWith => Some(4),
-            _ => None
+            _ => None,
         }
     }
 
@@ -227,7 +223,7 @@ impl StickerOperation {
             Self::StartsWith => "starts_with",
             Self::IntEquals => "eq",
             Self::IntLessThan => "lt",
-            Self::IntGreaterThan => "gt"
+            Self::IntGreaterThan => "gt",
         }
     }
 }
@@ -236,11 +232,11 @@ impl StickerOperation {
 /// only containing supported tag types.
 #[derive(Debug, Serialize, Deserialize, Clone, Copy)]
 pub enum QueryLhs {
-    File,    // matches full song URI, always ==
-    Base,    // from this directory
+    File, // matches full song URI, always ==
+    Base, // from this directory
     // Tags
     LastMod,
-    Any(TagOperation),  // will match any tag
+    Any(TagOperation), // will match any tag
     Album(TagOperation),
     AlbumArtist(TagOperation),
     Artist(TagOperation),
@@ -316,5 +312,5 @@ pub struct DynamicPlaylist {
     pub ordering: Vec<Ordering>,
     pub auto_refresh: AutoRefresh,
     pub last_refresh: Option<i64>,
-    pub limit: Option<u32>
+    pub limit: Option<u32>,
 }
