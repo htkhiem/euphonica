@@ -6,6 +6,7 @@ use gtk::{gio::prelude::*, glib::BoxedAnyObject};
 use resolve_path::PathResolveExt;
 use mpd::error::ServerError;
 use mpd::{
+    Version,
     client::Client,
     error::{Error as MpdError, ErrorCode as MpdErrorCode},
     lsinfo::LsInfoEntry,
@@ -14,6 +15,7 @@ use mpd::{
 };
 use zbus::{Connection as ZConnection, Proxy as ZProxy};
 
+use std::thread;
 use std::net::TcpStream;
 use std::os::unix::net::UnixStream;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -37,6 +39,9 @@ use super::state::{ClientState, ConnectionState, StickersSupportLevel};
 use super::stream::StreamWrapper;
 use super::password::get_mpd_password;
 use super::background;
+use super::connection::{
+    Connection, Error as ClientError, Result as ClientResult, Task
+};
 use super::ClientError;
 
 // Thin wrapper around the blocking mpd::Client. It contains two separate client
@@ -75,13 +80,13 @@ use super::ClientError;
 // forwards all queued-up messages to the main thread, sets the atomic flag to false,
 // then ends the iteration.
 // 3. When there is nothing left in the work queue, simply enter idle mode without
-// checking the flag.
+// checking thelag.
 
 // The child thread never modifies the main state directly. It instead sends
-// messages containing a list of subsystems with updated states to the main thread
+// messagecontaining a list of subsystems with updated states to the main thread
 // via a bounded async_channel. The main thread receives these messages in an async
 // loop, contacts the daemon again to get information for each of the changed
-// subsystems, then update the relevant state objects accordingly, saving us the
+// suystems, then update the relevant state objects accordingly, saving us the
 // trouble of putting state objects behind mutexes.
 
 // Reconnection is a bit convoluted. There is no way to abort the child thread
@@ -91,22 +96,15 @@ use super::ClientError;
 // unblocking the child thread and allowing it to check the flag.
 
 #[derive(Debug)]
-pub struct MpdWrapper {
-    // Corresponding sender, for cloning into child thread.
-    main_sender: Sender<AsyncClientMessage>,
-    // The main client living on the main thread. Every single method of
-    // mpd::Client is mutating so we'll just rely on a RefCell for now.
-    main_client: RefCell<Option<Client<StreamWrapper>>>, 
-    // The state GObject, used for communicating client status & changes to UI elements
+pub struct MpdWrapper<'a> {
+    // Handles return bool to indicate whether the threads stopped due to an error
+    // (true) or disconnection request (false).
+    fg_handle: thread::JoinHandle<bool>,
+    bg_handle: thread::JoinHandle<bool>,
     state: ClientState,
-    // Handle to the child thread.
-    bg_handle: RefCell<Option<gio::JoinHandle<()>>>,
-    bg_channel: Channel, // For waking up the child client
-    bg_sender: RefCell<Option<Sender<BackgroundTask>>>, // For sending tasks to background thread
-    bg_sender_high: RefCell<Option<Sender<BackgroundTask>>>, // For sending high-priority tasks to background thread
-    meta_sender: Sender<ProviderMessage>, // For sending album arts to cache controller
-    pending_idle: Arc<AtomicBool>,
-
+    fg_sender: Sender<Task>, // For sending tasks to the interactive client
+    bg_sender: Sender<Task>, // For sending tasks to the background client
+    idle_receiver: async_channel::Receiver<Subsystem>,
     // To improve efficiency & avoid UI scroll resetting problems we'll
     // cheat by applying queue edits locally first, then send the commands
     // afterwards. This requires us to carefully skip the next updates
@@ -119,32 +117,35 @@ pub struct MpdWrapper {
     // expected_queue version, we are out of sync and must perform a refresh
     // using the old logic. Else do nothing.
     queue_version: Cell<u32>,
-    expected_queue_version: Cell<u32>
+    expected_queue_version: Cell<u32>,
+    client_version: RefCell<Option<Version>>
 }
 
-impl MpdWrapper {
-    pub fn new(meta_sender: Sender<ProviderMessage>) -> Rc<Self> {
-        // Set up channels for communication with client object
-        let (sender, receiver): (Sender<AsyncClientMessage>, Receiver<AsyncClientMessage>) =
-            async_channel::unbounded();
+impl<'a> MpdWrapper<'a> {
+    pub fn new() -> Rc<Self> {
         let ch_name = Uuid::new_v4().simple().to_string();
+        let wake_channel = Channel::new(&ch_name).unwrap();
+        let wake_channel_bg = wake_channel.clone();
+        let (fg_sender, fg_receiver) = async_channel::unbounded();
+        let (bg_sender, bg_receiver) = async_channel::unbounded();
+        let (idle_sender, idle_receiver) = async_channel::unbounded();
         println!("Channel name: {}", &ch_name);
         let wrapper = Rc::new(Self {
-            main_sender: sender,
+            fg_handle: thread::spawn(|| {
+                Connection::new(fg_receiver, wake_channel, None).run().is_err()
+            }),
+            bg_handle: thread::spawn(|| {
+                Connection::new(bg_receiver, wake_channel_bg, Some(idle_sender)).run().is_err()
+            }),
             state: ClientState::default(),
-            main_client: RefCell::new(None), // Must be initialised later
-            bg_handle: RefCell::new(None),   // Will be spawned later
-            bg_channel: Channel::new(&ch_name).unwrap(),
-            bg_sender: RefCell::new(None),
-            bg_sender_high: RefCell::new(None),
-            pending_idle: Arc::new(AtomicBool::new(false)),
-            meta_sender,
+            fg_sender,
+            bg_sender,
+            idle_receiver,
             queue_version: Cell::new(0),
-            expected_queue_version: Cell::new(0)
+            expected_queue_version: Cell::new(0),
+            client_version: RefCell::new(None)
         });
 
-        // For future noob self: these are shallow
-        wrapper.clone().setup_channel(receiver);
         wrapper
     }
 
@@ -168,7 +169,7 @@ impl MpdWrapper {
         let meta_sender = self.meta_sender.clone();
         self.bg_sender.replace(Some(bg_sender));
         self.bg_sender_high.replace(Some(bg_sender_high));
-        let bg_channel = self.bg_channel.clone();
+        let bg_channel = self.wake_channel.clone();
 
         let bg_handle = gio::spawn_blocking(move || {
             // Create a new connection for the child thread
@@ -529,7 +530,7 @@ impl MpdWrapper {
                 }
             if let Some(client) = self.main_client.borrow_mut().as_mut() {
                 // Wake background thread
-                let _ = client.sendmessage(self.bg_channel.clone(), "WAKE");
+                let _ = client.sendmessage(self.wake_channel.clone(), "WAKE");
             } else {
                 println!("Warning: cannot wake child thread. Task might be delayed.");
             }
@@ -539,141 +540,158 @@ impl MpdWrapper {
         }
     }
 
-    pub fn queue_connect(&self) {
-        self.main_sender
-            .send_blocking(AsyncClientMessage::Connect)
-            .expect("Cannot call reconnection asynchronously");
-    }
-
-    async fn disconnect_async(&self) {
-        if let Some(mut main_client) = self.main_client.borrow_mut().take() {
-            println!("Closing existing clients");
-            // Stop child thread by sending a "STOP" message through mpd itself
-            let _ = main_client.sendmessage(self.bg_channel.clone(), "STOP");
-            // Now close the main client
-            let _ = main_client.close();
-        }
-        // Wait for child client to stop.
-        if let Some(handle) = self.bg_handle.take() {
-            let _ = handle.await;
-            println!("Stopped all clients successfully.");
-        }
-        self.state
-            .set_connection_state(ConnectionState::NotConnected);
-    }
-
-    pub async fn connect_async(&self) {
-        // Close current clients
-        self.disconnect_async().await;
+    pub async fn disconnect(&self, stop: bool) -> ClientResult<()> {
+        let (s, r) = oneshot::channel();
+        self.fg_sender.send(Task::Disconnect(stop, s)).await;
+        r.await.expect("Broken oneshot receiver")?;
+        println!("Stopped foreground client");
+        let (s, r) = oneshot::channel();
+        self.bg_sender.send(Task::Disconnect(stop, s)).await;
+        r.await.expect("Broken oneshot receiver")?;
+        println!("Stopped background client");
+        self.state.set_connection_state(ConnectionState::NotConnected);
         self.state.set_queuing(false);
         self.queue_version.set(0);
         self.expected_queue_version.set(0);
+        self.client_version.take();
+        Ok(())
+    }
 
-        let conn = utils::settings_manager().child("client");
-
-        self.state.set_connection_state(ConnectionState::Connecting);
-        let handle: gio::JoinHandle<Result<mpd::Client<StreamWrapper>, MpdError>>;
-        let use_unix_socket = conn.boolean("mpd-use-unix-socket");
-        if use_unix_socket {
-            let path = conn.string("mpd-unix-socket");
-            println!("Connecting to local socket {}", &path);
-            if let Ok(resolved_path) = path.as_str().try_resolve() {
-                let resolved_path = resolved_path.into_owned();
-                handle = gio::spawn_blocking(move || {
-                    let stream = StreamWrapper::new_unix(UnixStream::connect(&resolved_path).map_err(mpd::error::Error::Io)?);
-                    mpd::Client::new(stream)
-                });
-            } else {
-                handle = gio::spawn_blocking(move || {
-                    let stream = StreamWrapper::new_unix(UnixStream::connect(path.as_str()).map_err(mpd::error::Error::Io)?);
-                    mpd::Client::new(stream)
-                });
-            }
-        } else {
-            let addr = format!("{}:{}", conn.string("mpd-host"), conn.uint("mpd-port"));
-            println!("Connecting to TCP socket {}", &addr);
-            handle = gio::spawn_blocking(move || {
-                let stream = StreamWrapper::new_tcp(TcpStream::connect(addr).map_err(mpd::error::Error::Io)?);
-                mpd::Client::new(stream)
-            });
-        }
-        match handle.await {
-            Ok(Ok(mut client)) => {
-                // Set to maximum supported level first. Any subsequent sticker command will then
-                // update it to a lower state upon encountering related errors.
-                // Euphonica relies on 0.24+ stickers capabilities. Disable if connected to
-                // an older daemon.
-                if client.version.1 < 24 {
-                    self.state.set_stickers_support_level(StickersSupportLevel::SongsOnly);
-                }
-                else {
-                    self.state.set_stickers_support_level(StickersSupportLevel::All);
-                }
-                // If there is a password configured, use it to authenticate.
-                let mut password_access_failed = false;
-                let client_password: Option<String>;
-                match get_mpd_password().await {
-                    Ok(maybe_password) => {
-                        match maybe_password {
-                            Some(password) => {
-                                let password_res = client.login(password.as_str());
-                                client_password = Some(password.as_str().to_owned());
-                                if let Err(MpdError::Server(se)) = password_res {
-                                    let _ = client.close();
-                                    if se.code == MpdErrorCode::Password {
-                                        self.state
-                                            .set_connection_state(ConnectionState::WrongPassword);
-                                    } else {
-                                        self.state
-                                            .set_connection_state(ConnectionState::NotConnected);
+    fn handle_error<T>(&self, res: ClientResult<T>) -> ClientResult<T> {
+        match &res {
+            Err(e) => {
+                match e {
+                    ClientError::Internal => {
+                        // TODO
+                    }
+                    ClientError::Mpd(e) => {
+                        match e {
+                            MpdError::Io(e) => {
+                                self.state.set_connection_state(ConnectionState::NotConnected);
+                                // TODO
+                            },
+                            MpdError::Parse(e) => {},
+                            MpdError::Proto(e) => {}
+                            MpdError::Server(e) => {
+                                match e.code {
+                                    MpdErrorCode::Password => {
+                                        self.state.set_connection_state(ConnectionState::WrongPassword);
                                     }
-                                    return;
+                                    MpdErrorCode::Permission => {
+                                        self.state.set_connection_state(ConnectionState::Unauthenticated);
+                                    }
+                                    _ => {
+                                        // TODO
+                                    }
                                 }
-                            }
-                            None => {
-                                // We'll also reach here if denied keyring access.
-                                client_password = None;
                             }
                         }
                     }
-                    Err(e) => {
-                        // Only reachable by glib async runner errors
-                        client_password = None;
-                        println!("{:?}", &e);
-                        password_access_failed = true;
+                    ClientError::NotConnected => {
+                        self.state.set_connection_state(ConnectionState::NotConnected);
                     }
                 }
-                // Doubles as a litmus test to see if we are authenticated.
-                if let Err(MpdError::Server(se)) = client.subscribe(self.bg_channel.clone()) {
-                    if se.code == MpdErrorCode::Permission {
+            }
+            _ => {}
+        }
+
+        res
+    }
+
+    fn handle_connect_error(
+        &self,
+        res: ClientResult<Version>,
+        access_error: bool,
+        password_unset: bool
+    ) -> ClientResult<Version> {
+        match &res {
+            Err(e) => match e {
+                ClientError::Mpd(MpdError::Server(e)) => match e.code {
+                    MpdErrorCode::Password => {
+                        self.state.set_connection_state(ConnectionState::WrongPassword);
+                    }
+                    MpdErrorCode::Permission => {
                         self.state.set_connection_state(
-                            if password_access_failed {
+                            if access_error {
                                 ConnectionState::CredentialStoreError
-                            } else if client_password.is_none() {
+                            } else if password_unset {
                                 ConnectionState::PasswordNotAvailable
                             } else {
                                 ConnectionState::Unauthenticated
                             }
                         );
                     }
-                } else {
-                    self.main_client.replace(Some(client));
-                    self.start_bg_thread(client_password);
-                    self.state.set_connection_state(ConnectionState::Connected);
+                    _ => {
+                        return self.handle_error(res);
+                    }
+                }
+                ClientError::Socket => {
+                    self.state.set_connection_state(ConnectionState::SocketNotFound);
+                }
+                ClientError::Tcp => {
+                    self.state.set_connection_state(ConnectionState::ConnectionRefused);
+                }
+                _ => {
+                    return self.handle_error(res);
                 }
             }
-            e => {
-                let _ = dbg!(e);
-                self.state
-                    .set_connection_state(
-                        if use_unix_socket {
-                            ConnectionState::SocketNotFound
-                        } else {
-                            ConnectionState::ConnectionRefused
-                        }
-                    );
+            _ => {}
+        }
+        res
+    }
+
+    pub async fn connect(&self) -> ClientResult<()> {
+        // Close current clients
+        self.disconnect(false).await;
+
+        let conn = utils::settings_manager().child("client");
+
+        self.state.set_connection_state(ConnectionState::Connecting);
+
+        let mut password_access_failed = false;
+        let mut password_unset = false;
+        let client_password: Option<String>;
+        match get_mpd_password().await {
+            Ok(maybe_password) => {
+                client_password = maybe_password;
+                password_unset = client_password.is_none();
+            }
+            Err(e) => {
+                // Only reachable by glib async runner errors
+                client_password = None;
+                println!("{:?}", &e);
+                password_access_failed = true;
             }
         }
+
+        let (s, r) = oneshot::channel();
+        self.fg_sender.send(Task::Connect(client_password.clone(), s)).await;
+        let version = self.handle_connect_error(
+            r.await.expect("Broken oneshot receiver"),
+            password_access_failed,
+            password_unset
+        )?;
+        // Set to maximum supported level first. Any subsequent sticker command will then
+        // update it to a lower state upon encountering related errors.
+        // Euphonica relies on 0.24+ stickers capabilities. Disable if connected to
+        // an older daemon.
+        if version.1 < 24 {
+            self.state.set_stickers_support_level(StickersSupportLevel::SongsOnly);
+        }
+        else {
+            self.state.set_stickers_support_level(StickersSupportLevel::All);
+        }
+        self.client_version.replace(Some(version));
+        println!("Connected foreground client");
+
+        let (s, r) = oneshot::channel();
+        self.bg_sender.send(Task::Connect(client_password, s)).await;
+        self.handle_connect_error(
+            r.await.expect("Broken oneshot receiver"),
+            password_access_failed,
+            password_unset
+        )?;
+        println!("Connected background client");
     }
 
     fn force_idle(&self) {
@@ -1280,7 +1298,7 @@ impl Drop for MpdWrapper {
         if let Some(mut main_client) = self.main_client.borrow_mut().take() {
             println!("App closed. Closing clients...");
             // First, send stop message
-            let _ = main_client.sendmessage(self.bg_channel.clone(), "STOP");
+            let _ = main_client.sendmessage(self.wake_channel.clone(), "STOP");
             // Now close the main client, which will trigger an idle message.
             let _ = main_client.close();
             // Now the child thread really should have read the stop_flag.
