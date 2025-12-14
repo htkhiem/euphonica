@@ -17,6 +17,7 @@ use mpd::{
 };
 use nohash_hasher::NoHashHasher;
 use once_cell::sync::Lazy;
+use rand::seq::SliceRandom;
 use resolve_path::PathResolveExt;
 use rustc_hash::FxHashSet;
 use time::OffsetDateTime;
@@ -37,6 +38,7 @@ use std::{
 use uuid::Uuid;
 
 use crate::cache::sqlite;
+use crate::common::DynamicPlaylist;
 use crate::common::dynamic_playlist::{QueryLhs, StickerObjectType, StickerOperation, Ordering};
 use crate::utils::settings_manager;
 use crate::{
@@ -1648,86 +1650,66 @@ impl MpdWrapper {
     pub async fn fetch_dynamic_playlist<F>(
         &self,
         dp: DynamicPlaylist,
-        cache: bool, // If true, will cache resolved song URIs locally
-        respond: F
-    ) -> ClientResult<()> where F: Fn(Vec<Song>)
+        cache: bool // If true, will cache resolved song URIs locally
+    ) -> ClientResult<Vec<Song>> where F: Fn(Vec<Song>)
     {
         // To reduce server & connection burden, temporarily turn off all tags in responses.
-        if client.tagtypes_clear().is_ok() {
-            let name = dp.name.to_owned();
-            // First, fetch just the URIs, without any sorting
-            let uris = resolve_dynamic_playlist_rules(client, dp.rules);
+        let (s, r) = oneshot::channel();
+        self.foreground(Task::ClearTagTypes(s), r).await?;
+        // First, fetch just the URIs, without any sorting
+        let uris = self.resolve_dynamic_playlist_rules(dp.rules).await?;
 
-            // Then, fetch the tags and stickers needed for display and sorting.
-            // These three are always needed for display.
-            let mut tagtypes: Vec<&'static str> = vec!["title", "album", "artist", "albumartist"];
-            for ordering in dp.ordering.iter() {
-                match ordering {
-                    Ordering::Track => {
-                        tagtypes.push("track");
-                    }
-                    Ordering::AscReleaseDate | Ordering::DescReleaseDate => {
-                        tagtypes.push("originaldate");
-                    }
-                    _ => {
-                        // the rest are either Random, always included (LastModified), or stickers-based
-                    }
+        // Then, fetch the tags and stickers needed for display and sorting.
+        // These three are always needed for display.
+        let mut tagtypes: Vec<&'static str> = vec!["title", "album", "artist", "albumartist"];
+        for ordering in dp.ordering.iter() {
+            match ordering {
+                Ordering::Track => {
+                    tagtypes.push("track");
+                }
+                Ordering::AscReleaseDate | Ordering::DescReleaseDate => {
+                    tagtypes.push("originaldate");
+                }
+                _ => {
+                    // the rest are either Random, always included (LastModified), or stickers-based
                 }
             }
-            client
-                .tagtypes_enable(tagtypes)
-                .expect("Unable to enable the needed tag types to order the dynamic playlist");
-            if let Ok(mut songs_stickers) = fetch_songs_by_uri(
-                client,
-                &uris.iter().map(String::as_str).collect::<Vec<&str>>(),
-                true,
-            )
-                .map(|raw| {
-                    raw.into_iter()
-                       .map(|t| (t.0, t.1.unwrap()))
-                       .collect::<Vec<(SongInfo, Stickers)>>()
-                }) {
-                    if !songs_stickers.is_empty() {
-                        // Sort the song list now
-                        if dp.ordering.len() == 1 && dp.ordering[0] == Ordering::Random {
-                            let mut rng = rand::rng();
-                            songs_stickers.shuffle(&mut rng);
-                        } else {
-                            let cmp_func = build_comparator(&dp.ordering);
-                            songs_stickers.sort_by(cmp_func);
-                        }
-                        if let Some(limit) = dp.limit {
-                            songs_stickers.truncate(limit as usize);
-                        }
-                        let songs: Vec<SongInfo> = songs_stickers.into_iter().map(|tup| tup.0).collect();
-                        if cache {
-                            if let Err(db_err) = sqlite::cache_dynamic_playlist_results(&dp.name, &songs) {
-                                println!("Failed to cache DP query result. Queuing will be incorrect!");
-                                dbg!(db_err);
-                            }
-                        }
-
-                        let mut curr_len: usize = 0;
-                        let songs_len = songs.len();
-                        while curr_len < songs_len {
-                            let next_len = (curr_len + BATCH_SIZE).min(songs_len);
-                            let _ = sender_to_fg.send_blocking(
-                                AsyncClientMessage::DynamicPlaylistSongInfoDownloaded(
-                                    name.clone(),
-                                    songs[curr_len..next_len].to_vec(),
-                                ),
-                            );
-                            curr_len = next_len;
-                        }
-                    }
-                    // Send once more w/ an empty list to signal end-of-result
-                    println!("Sending end-of-response");
-                    let _ = sender_to_fg.send_blocking(
-                        AsyncClientMessage::DynamicPlaylistSongInfoDownloaded(name.clone(), Vec::new()),
-                    );
-                }
-            client.tagtypes_all().expect("Cannot restore tagtypes");
         }
+        let (s, r) = oneshot::channel();
+        self.foreground(Task::EnableTagTypes(Some(tagtypes), s), r).await?;
+        let mut songs_stickers = Vec::with_capacity(uris.len());
+        for uri in uris.into_iter() {
+            if let Some((song, stickers)) = self.get_song_by_uri(uri, true).await? {
+                let stickers = stickers.unwrap();
+                songs_stickers.push((song, stickers));
+            }
+        }
+        let songs: Vec<SongInfo>;
+        if !songs_stickers.is_empty() {
+            // Sort the song list now
+            if dp.ordering.len() == 1 && dp.ordering[0] == Ordering::Random {
+                let mut rng = rand::rng();
+                songs_stickers.shuffle(&mut rng);
+            } else {
+                let cmp_func = build_comparator(&dp.ordering);
+                songs_stickers.sort_by(cmp_func);
+            }
+            if let Some(limit) = dp.limit {
+                songs_stickers.truncate(limit as usize);
+            }
+            songs = songs_stickers.into_iter().map(|tup| tup.0).collect();
+            if cache {
+                if let Err(db_err) = sqlite::cache_dynamic_playlist_results(&dp.name, &songs) {
+                    println!("Failed to cache DP query result. Queuing will be incorrect!");
+                    dbg!(db_err);
+                }
+            }
+        } else {
+            songs = Vec::with_capacity(0);
+        }
+        let (s, r) = oneshot::channel();
+        self.foreground(Task::EnableTagTypes(None, s), r).await?;
+        Ok(songs.into_iter().map(Song::from).collect())
     }
 
     pub async fn fetch_dynamic_playlist_cached<F>(&self, name: &str, respond: F) -> ClientResult<()>
