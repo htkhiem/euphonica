@@ -1,9 +1,7 @@
 use async_channel::{Receiver, Sender};
 use gio::prelude::SettingsExt;
 use mpd::{
-    Channel, Client, EditAction, Id, Idle, Output, ReplayGain, SaveMode, Status, Subsystem,
-    Version,
-    error::{Error as MpdError, Result as MpdResult}, search::Window, song::PosIdChange,
+    Channel, Client, EditAction, GroupedValues, Id, Idle, Output, Query, ReplayGain, SaveMode, Status, Subsystem, Term, Version, error::{Error as MpdError, ProtoError, Result as MpdResult}, search::Window, song::PosIdChange
 };
 use oneshot::Sender as OneShotSender;
 use resolve_path::PathResolveExt;
@@ -12,15 +10,13 @@ use std::{
 };
 
 use crate::{
-    client::stream::StreamWrapper,
-    common::{SongInfo, Stickers, inode::INodeInfo},
-    player::PlaybackFlow,
-    utils,
+    cache::{get_new_image_paths, sqlite}, client::stream::StreamWrapper, common::{SongInfo, Stickers, inode::INodeInfo}, player::PlaybackFlow, utils
 };
 
 use super::StickerSetMode;
 use super::state::StickersSupportLevel;
 
+#[derive(Debug)]
 pub enum Error {
     Mpd(MpdError),
     Internal,
@@ -49,6 +45,7 @@ pub enum Task {
         bool,
         Responder<()>,
     ),
+    Ping(Responder<()>),
     /// Send a message to the inter-client channel
     SendMessage(
         /// Content
@@ -67,7 +64,7 @@ pub enum Task {
     ),
     GetSticker(
         /// Type
-        String,
+        &'static str,
         /// URI
         String,
         /// Name
@@ -76,14 +73,14 @@ pub enum Task {
     ),
     GetKnownStickers(
         /// Type
-        String,
+        &'static str,
         /// URI
         String,
         Responder<Stickers>,
     ),
     SetSticker(
         /// Type
-        String,
+        &'static str,
         /// URI
         String,
         /// Name
@@ -96,12 +93,26 @@ pub enum Task {
     ),
     DeleteSticker(
         /// Type
-        String,
+        &'static str,
         /// URI
         String,
         /// Name
         String,
         Responder<()>,
+    ),
+    FindStickerOp(
+        /// Type
+        &'static str,
+        /// Base URI
+        String,
+        /// Name (LHS)
+        String,
+        /// Operator
+        &'static str,
+        /// Value (RHS)
+        String,
+        Window,
+        Responder<Vec<String>>
     ),
     GetPlaylists(Responder<Vec<INodeInfo>>),
     LoadPlaylist(String, Responder<()>),
@@ -151,7 +162,51 @@ pub enum Task {
         Window,
         Responder<Vec<PosIdChange>>
     ),
-    UpdateDb(Responder<u32>)
+    UpdateDb(Responder<u32>),
+    /// Get a song's embedded cover.
+    /// Will try to download from MPD if one isn't already available locally.
+    GetEmbeddedCover(
+        /// URI to song file
+        String,
+        /// SQLite keys to high-resolution and low-resolution file, respectively
+        Responder<Option<(String, String)>>
+    ),
+    /// Get a song's folder cover (cover.jpg/png/webp in the same folder).
+    /// Will try to download from MPD if one isn't already available locally.
+    GetFolderCover(
+        /// URI to folder with trailing slash
+        String,
+        /// SQLite keys to high-resolution and low-resolution file, respectively
+        Responder<Option<(String, String)>>
+    ),
+    /// Query distinct values of a tag, optionally grouped by another
+    List(Term<'static>, Query<'static>, Option<&'static str>, Responder<GroupedValues>),
+    Find(Query<'static>, Window, Responder<Vec<SongInfo>>),
+    LsInfo(String, Responder<Vec<INodeInfo>>),
+    GetPlaylist(
+        /// Playlist name
+        String,
+        /// Fetch window. Do NOT use when connected to clients older than v0.24.
+        Option<std::ops::Range<u32>>,
+        Responder<Vec<SongInfo>>
+    ),
+    /// Append song at URI to queue.
+    Add(String, Responder<Id>),
+    /// Append multiple URIs to the queue.
+    /// This utilises commandlists for better efficiency.
+    AddMultiple(Vec<String>, Responder<Vec<Id>>),
+    /// Insert song at URI into queue at given position.
+    Insert(String, usize, Responder<usize>),
+    /// Insert multiple URIs into given position on queue.
+    /// This utilises commandlists for better efficiency.
+    InsertMultiple(Vec<String>, usize, Responder<Vec<usize>>),
+    FindAdd(Query<'static>, Responder<()>),
+    ClearTagTypes(Responder<()>),
+    EnableTagTypes(
+        /// If none, will enable all tag types
+        Option<Vec<&'static str>>,
+        Responder<()>
+    ),
 }
 
 /// Asynchronous wrapper around an rust-mpd client instance.
@@ -269,6 +324,57 @@ impl Connection {
         )
     }
 
+    fn maybe_download_image<F>(&mut self, uri: String, download_func: F, resp: Responder<Option<(String, String)>>)
+    where F: FnOnce(&mut Client<StreamWrapper>, &String) -> MpdResult<Vec<u8>> {
+        // Always check with our DB first, as multiple calls may be spawned
+        // asynchronously when no cover was locally available.
+        // Only one of those calls should cause a download; other calls
+        // should start using the local cached version as soon as possible.
+        let hires = sqlite::find_image_by_key(&uri, None, false).expect("Sqlite DB error");
+        let thumb = sqlite::find_image_by_key(&uri, None, true).expect("Sqlite DB error");
+        if let (Some(hires), Some(thumb)) = (hires, thumb) {
+            resp.send(Ok(Some((hires, thumb))));
+            return;
+        } else {
+            // Not available locally => try to download
+            self.client_then(|c| {
+                match download_func(c, &uri) {
+                    Ok(bytes) => {
+                        let dyn_img = image::load_from_memory(&bytes).expect("Unable to read image from bytes");
+                        let (hires_img, thumb_img) = utils::resize_convert_image(dyn_img);
+                        let (hires_path, thumb_path) = get_new_image_paths();
+                        hires_img
+                            .save(&hires_path)
+                            .unwrap_or_else(|_| panic!("Couldn't save downloaded cover to {:?}", &hires_path));
+                        thumb_img
+                            .save(&thumb_path)
+                            .unwrap_or_else(|_| panic!("Couldn't save downloaded thumbnail cover to {:?}", &thumb_path));
+                        let hires = hires_path.file_name().unwrap().to_str().unwrap().to_string();
+                        let thumb = thumb_path.file_name().unwrap().to_str().unwrap().to_string();
+                        sqlite::register_image_key(uri.to_string(), None, Some(hires.clone()), false)
+                            .join()
+                            .unwrap()
+                            .expect("Sqlite DB error");
+                        sqlite::register_image_key(uri.to_string(), None, Some(thumb.clone()), false)
+                            .join()
+                            .unwrap()
+                            .expect("Sqlite DB error");
+
+                        Ok(Some((hires, thumb)))
+                    }
+                    Err(MpdError::Proto(ProtoError::NotPair)) => {
+                        println!("GetEmbeddedCover: empty output");
+                        // Empty output. Treat as not available.
+                        Ok(None)
+                    }
+                    Err(e) => {
+                        Err(e)
+                    }
+                }
+            }, resp);
+        }
+    }
+
     pub fn run(&mut self) -> Result<()> {
         loop {
             let mut curr_task: Option<Task> = None;
@@ -301,6 +407,9 @@ impl Connection {
                             break;
                         }
                     }
+                    Task::Ping(resp) => {
+                        self.client_then(move |c| c.ping(), resp);
+                    }
                     Task::SendMessage(content, resp) => {
                         let ch = self.wake_channel.clone();
                         self.client_then(move |c| c.sendmessage(ch, &content), resp);
@@ -308,12 +417,12 @@ impl Connection {
                     Task::GetVolume(resp) => self.client_then(|c| c.getvol(), resp),
                     Task::SetVolume(val, resp) => self.client_then(|c| c.volume(val), resp),
                     Task::GetOutputs(resp) => self.client_then(|c| c.outputs(), resp),
-                    Task::SetOutput(id, state, resp) => {
-                        self.client_then(|c| c.output(id, state), resp)
-                    }
-                    Task::GetSticker(typ, uri, name, resp) => {
-                        self.client_then(|c| c.sticker(&typ, &uri, &name), resp)
-                    }
+                    Task::SetOutput(id, state, resp) => self.client_then(
+                        |c| c.output(id, state), resp
+                    ),
+                    Task::GetSticker(typ, uri, name, resp) => self.client_then(
+                        |c| c.sticker(&typ, &uri, &name), resp
+                    ),
                     Task::GetKnownStickers(typ, uri, resp) => self
                         .client_then(|c| c.stickers(&typ, &uri).map(Stickers::from_mpd_kv), resp),
                     Task::SetSticker(typ, uri, name, val, mode, resp) => self.client_then(
@@ -324,19 +433,16 @@ impl Connection {
                         },
                         resp,
                     ),
-                    Task::DeleteSticker(typ, uri, name, resp) => {
-                        self.client_then(|c| c.delete_sticker(&typ, &uri, &name), resp)
-                    }
+                    Task::DeleteSticker(typ, uri, name, resp) => self.client_then(
+                        |c| c.delete_sticker(typ, &uri, &name), resp
+                    ),
+                    Task::FindStickerOp(typ, base_uri, name, op, value, window, resp) => self.client_then(
+                        |c| c.find_sticker_op(typ, &base_uri, &name, op, &value, window), resp
+                    ),
                     Task::GetPlaylists(resp) => self.client_then(
-                        |c| {
-                            c.playlists().map(|playlists| {
-                                playlists
-                                    .into_iter()
-                                    .map(INodeInfo::from)
-                                    .collect::<Vec<INodeInfo>>()
-                            })
-                        },
-                        resp,
+                        |c| c.playlists().map(
+                            |playlists| playlists.into_iter().map(INodeInfo::from).collect()
+                        ), resp
                     ),
                     Task::LoadPlaylist(name, resp) => self.client_then(|c| c.load(&name, ..), resp),
                     Task::SaveQueueAsPlaylist(name, mode, resp) => {
@@ -413,18 +519,55 @@ impl Connection {
                     Task::ClearQueue(resp) => self.client_then(|c| c.clear(), resp),
                     Task::Seek(pos, resp) => self.client_then(|c| c.rewind(pos), resp),
                     Task::GetQueue(window, resp) => self.client_then(
-                        |c| c.queue(window).map(|mut mpd_songs| {
-                            mpd_songs
-                                .iter_mut()
-                                .map(|mpd_song| SongInfo::from(std::mem::take(mpd_song)))
-                                .collect()
-                        }),
+                        |c| c.queue(window).map(
+                            |mpd_songs| mpd_songs.into_iter().map(SongInfo::from).collect()
+                        ),
                         resp
                     ),
                     Task::GetQueueChanges(since, window, resp) => self.client_then(
                         |c| c.changesposid(since, window), resp
                     ),
-                    Task::UpdateDb(resp) => self.client_then(|c| c.update(), resp)
+                    Task::UpdateDb(resp) => self.client_then(|c| c.update(), resp),
+                    Task::GetEmbeddedCover(uri, resp) => self.maybe_download_image(
+                        uri,
+                        |client, uri| {client.readpicture(uri)},
+                        resp
+                    ),
+                    Task::GetFolderCover(folder_uri, resp) => self.maybe_download_image(
+                        folder_uri,
+                        |client, uri| {client.albumart(uri)},
+                        resp
+                    ),
+                    Task::List(term, query, groupby, resp) => self.client_then(
+                        |c| c.list(&term, &query, groupby), resp
+                    ),
+                    Task::Find(query, window, resp) => self.client_then(
+                        |c| c.find(&query, window).map(|mpd_songs| {
+                            mpd_songs.into_iter().map(SongInfo::from).collect()
+                        }
+                    ), resp),
+                    Task::LsInfo(path, resp) => self.client_then(|c| {
+                        c.lsinfo(path)
+                         .map(|entries| entries.into_iter().map(INodeInfo::from).collect())
+                    }, resp),
+                    Task::GetPlaylist(name, window, resp) => self.client_then(
+                        |c| c.playlist(name, window).map(
+                            |mpd_songs| mpd_songs.into_iter().map(SongInfo::from).collect()
+                        ), resp
+                    ),
+                    Task::Add(uri, resp) => self.client_then(|c| c.push(uri), resp),
+                    Task::AddMultiple(uris, resp) => self.client_then(|c| c.push_multiple(&uris), resp),
+                    Task::Insert(uri, pos, resp) => self.client_then(|c| c.insert(uri, pos), resp),
+                    Task::InsertMultiple(uris, pos, resp) => self.client_then(|c| c.insert_multiple(&uris, pos), resp),
+                    Task::FindAdd(query, resp) => self.client_then(|c| c.findadd(&query), resp),
+                    Task::ClearTagTypes(resp) => self.client_then(|c| c.tagtypes_clear(), resp),
+                    Task::EnableTagTypes(types, resp) => self.client_then(|c| {
+                        if let Some(types) = types {
+                            c.tagtypes_enable(types)
+                        } else {
+                            c.tagtypes_all()
+                        }
+                    }, resp)
                 }
             } else if let (Some(sender), Some(client)) =
                 (self.idle_sender.as_ref(), self.client.as_mut())

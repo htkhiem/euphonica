@@ -32,21 +32,7 @@ use crate::{
 
 use super::*;
 
-const BATCH_SIZE: usize = 128;
-const FETCH_LIMIT: usize = 10000000; // Fetch at most ten million songs at once (same
-// folder, same tag, etc)
 
-// Cache song infos so we can reuse them on queue updates.
-// Song IDs are u32s anyway, and I don't think there's any risk of a HashDoS attack
-// from a self-hosted music server so we'll just use identity hash for speed.
-static QUEUED_SONG_CACHE: Lazy<
-    Mutex<LruCache<u32, SongInfo, BuildHasherDefault<NoHashHasher<u32>>>>,
-> = Lazy::new(|| {
-    Mutex::new(LruCache::with_hasher(
-        NonZero::new(16384).unwrap(),
-        BuildHasherDefault::default(),
-    ))
-});
 
 pub fn update_mpd_database(
     client: &mut mpd::Client<stream::StreamWrapper>,
@@ -60,113 +46,6 @@ pub fn update_mpd_database(
             let _ =
                 sender_to_fg.send_blocking(AsyncClientMessage::BackgroundError(mpd_error, None));
         }
-    }
-}
-
-pub fn get_current_queue(
-    client: &mut mpd::Client<stream::StreamWrapper>,
-    sender_to_fg: &Sender<AsyncClientMessage>,
-) {
-    // This command is only called upon connection so we should drop the entire cache
-    {
-        QUEUED_SONG_CACHE.lock().unwrap().clear();
-    }
-    let mut curr_len: usize = 0;
-    let mut more: bool = true;
-    while more && (curr_len) < FETCH_LIMIT {
-        match client.queue(Window::from((
-            curr_len as u32,
-            (curr_len + BATCH_SIZE) as u32,
-        ))) {
-            Ok(mut mpd_songs) => {
-                let songs: Vec<SongInfo> = mpd_songs
-                    .iter_mut()
-                    .map(|mpd_song| SongInfo::from(std::mem::take(mpd_song)))
-                    .collect();
-                if !songs.is_empty() {
-                    // Cache
-                    let mut cache = QUEUED_SONG_CACHE.lock().unwrap();
-                    for song in songs.iter() {
-                        if let Some(id) = song.queue_id {
-                            cache.put(id, song.clone());
-                        }
-                    }
-                    let _ =
-                        sender_to_fg.send_blocking(AsyncClientMessage::QueueSongsDownloaded(songs));
-                    curr_len += BATCH_SIZE;
-                } else {
-                    more = false;
-                }
-            }
-            Err(MpdError::Server(e)) => {
-                if e.code != ErrorCode::Argument {
-                    dbg!(e);
-                }
-                // Else assume it's because we've completely fetched the queue
-                more = false;
-            }
-            Err(mpd_error) => {
-                let _ = sender_to_fg
-                    .send_blocking(AsyncClientMessage::BackgroundError(mpd_error, None));
-            }
-        }
-    }
-}
-
-pub fn get_queue_changes(
-    client: &mut mpd::Client<stream::StreamWrapper>,
-    sender_to_fg: &Sender<AsyncClientMessage>,
-    curr_version: u32,
-    total_len: u32,
-) {
-    let mut curr_len: usize = 0;
-    while curr_len < total_len as usize {
-        match client.changesposid(
-            curr_version,
-            Window::from((curr_len as u32, (curr_len + BATCH_SIZE) as u32)),
-        ) {
-            Ok(changes) => {
-                if !changes.is_empty() {
-                    // Map to songs.
-                    // Use this background client to fetch cache misses to avoid blocking UI.
-                    let mut cache = QUEUED_SONG_CACHE.lock().unwrap();
-                    let songs: Vec<SongInfo> = changes
-                        .into_iter()
-                        .map(|change| {
-                            if let Some(cached_song) = cache.get(&change.id.0) {
-                                let mut song = cached_song.clone();
-                                song.queue_pos = Some(change.pos);
-                                song
-                            } else if let Ok(mut songs) = client.songs(change.id) {
-                                let song = SongInfo::from(std::mem::take(&mut songs[0]));
-                                cache.push(change.id.0, song.clone());
-                                song
-                            } else {
-                                // Queue has probably changed again. Push empty song &
-                                // wait for next refresh.
-                                let mut song = SongInfo::default();
-                                song.queue_id = Some(change.id.0);
-                                song.queue_pos = Some(change.pos);
-                                song
-                            }
-                        })
-                        .collect();
-                    let _ =
-                        sender_to_fg.send_blocking(AsyncClientMessage::QueueChangesReceived(songs));
-                }
-            }
-            Err(MpdError::Server(e)) => {
-                if e.code != ErrorCode::Argument {
-                    dbg!(e);
-                }
-                // Else assume it's because we've completely fetched the changes
-            }
-            Err(mpd_error) => {
-                let _ = sender_to_fg
-                    .send_blocking(AsyncClientMessage::BackgroundError(mpd_error, None));
-            }
-        }
-        curr_len += BATCH_SIZE;
     }
 }
 
@@ -274,136 +153,7 @@ fn download_folder_cover_inner(
     }
 }
 
-pub fn download_embedded_cover(
-    client: &mut mpd::Client<stream::StreamWrapper>,
-    sender_to_cache: &Sender<ProviderMessage>,
-    key: SongInfo,
-) {
-    // Still prioritise folder-level art if allowed to
-    let folder_uri = strip_filename_linux(&key.uri).to_owned();
-    // Re-check in case previous iterations have already downloaded these.
-    // Check using thumbnail = true to quickly refresh cache after a deletion of the entire
-    // images folder. This is because upon startup we'll mass-schedule thumbnail fetches, so
-    // in case the folder has been deleted, only thumbnail records in the SQLite DB will be
-    // dropped. Checking with thumbnail=true will still return a path even though that
-    // path has already been deleted, preventing downloading from proceeding.
-    let folder_path = sqlite::find_image_by_key(&folder_uri, None, true).expect("Sqlite DB error");
-    if folder_path.is_none() {
-        if let Some((hires_tex, thumb_tex)) =
-            download_folder_cover_inner(client, folder_uri.clone())
-        {
-            sender_to_cache
-                .send_blocking(ProviderMessage::CoverAvailable(
-                    folder_uri.clone(),
-                    false,
-                    hires_tex,
-                ))
-                .expect("Cannot notify main cache of folder cover download result.");
-            sender_to_cache
-                .send_blocking(ProviderMessage::CoverAvailable(folder_uri, true, thumb_tex))
-                .expect("Cannot notify main cache of folder cover download result.");
-            return;
-        } // No folder-level art was available. Proceed to actually fetch embedded art.
-    } else if folder_path.as_ref().is_some_and(|p| !p.is_empty()) {
-        // Nothing to do, as there's already a path in the DB.
-        return;
-    }
-    // Re-check in case previous iterations have already downloaded these.
-    let uri = key.uri.to_owned();
-    if sqlite::find_image_by_key(&uri, None, true)
-        .expect("Sqlite DB error")
-        .is_none()
-    {
-        if let Some((hires_tex, thumb_tex)) = download_embedded_cover_inner(client, uri.clone()) {
-            sender_to_cache
-                .send_blocking(ProviderMessage::CoverAvailable(
-                    uri.clone(),
-                    false,
-                    hires_tex,
-                ))
-                .expect("Cannot notify main cache of embedded cover download result.");
-            sender_to_cache
-                .send_blocking(ProviderMessage::CoverAvailable(uri, true, thumb_tex))
-                .expect("Cannot notify main cache of embedded cover download result.");
-            return;
-        }
-        if let Some(album) = &key.album {
-            // Go straight to external metadata providers since we've already
-            // failed to fetch folder-level cover from MPD at this point.
-            // Don't schedule again if we've come back empty-handed once before.
-            if folder_path.is_none() {
-                sender_to_cache
-                    .send_blocking(ProviderMessage::FetchFolderCoverExternally(album.clone()))
-                    .expect("Cannot signal main cache to run fallback folder cover logic.");
-                return;
-            }
-        }
-        sender_to_cache
-            .send_blocking(ProviderMessage::CoverNotAvailable(uri))
-            .expect("Cannot notify main cache of embedded cover download result.");
-    } else {
-        // Nothing to do, as there's already a path in the DB
-    }
-}
 
-pub fn download_folder_cover(
-    client: &mut mpd::Client<stream::StreamWrapper>,
-    sender_to_cache: &Sender<ProviderMessage>,
-    key: AlbumInfo,
-) {
-    // Re-check in case previous iterations have already downloaded these.
-    if sqlite::find_image_by_key(&key.folder_uri, None, true)
-        .expect("Sqlite DB error")
-        .is_none()
-    {
-        let folder_uri = key.folder_uri.to_owned();
-        if let Some((hires_tex, thumb_tex)) =
-            download_folder_cover_inner(client, folder_uri.clone())
-        {
-            sender_to_cache
-                .send_blocking(ProviderMessage::CoverAvailable(
-                    key.folder_uri.clone(),
-                    false,
-                    hires_tex,
-                ))
-                .expect("Cannot notify main cache of folder cover download result.");
-            sender_to_cache
-                .send_blocking(ProviderMessage::CoverAvailable(
-                    key.folder_uri,
-                    true,
-                    thumb_tex,
-                ))
-                .expect("Cannot notify main cache of folder cover download result.");
-        } else {
-            // Fall back to embedded art.
-            let uri = key.example_uri.to_owned();
-            let sqlite_path = sqlite::find_image_by_key(&uri, None, true).expect("Sqlite DB error");
-            if sqlite_path.is_none() {
-                if let Some((hires_tex, thumb_tex)) =
-                    download_embedded_cover_inner(client, uri.clone())
-                {
-                    sender_to_cache
-                        .send_blocking(ProviderMessage::CoverAvailable(
-                            uri.clone(),
-                            false,
-                            hires_tex,
-                        ))
-                        .expect("Cannot notify main cache of embedded fallback download result.");
-                    sender_to_cache
-                        .send_blocking(ProviderMessage::CoverAvailable(uri, true, thumb_tex))
-                        .expect("Cannot notify main cache of embedded fallback download result.");
-                    return;
-                }
-            } else if sqlite_path.as_ref().is_some_and(|p| !p.is_empty()) {
-                // Nothing to do, as there's already a path in the DB.
-                return;
-            }
-            sender_to_cache
-                .send_blocking(ProviderMessage::FetchFolderCoverExternally(key))
-                .expect("Cannot signal main cache to fetch cover externally.");
-        }
-    }
-}
 
 // Err is true when a reconnection should be attempted
 fn fetch_albums_by_query<F>(
@@ -451,39 +201,7 @@ where
     }
 }
 
-fn fetch_songs_by_query<F>(
-    client: &mut mpd::Client<stream::StreamWrapper>,
-    query: &Query,
-    mut respond: F,
-) where
-    F: FnMut(Vec<SongInfo>) -> Result<(), SendError<AsyncClientMessage>>,
-{
-    let mut curr_len: usize = 0;
-    let mut more: bool = true;
-    while more && (curr_len) < FETCH_LIMIT {
-        match client.find(
-            query,
-            Window::from((curr_len as u32, (curr_len + BATCH_SIZE) as u32)),
-        ) {
-            Ok(mut mpd_songs) => {
-                let songs: Vec<SongInfo> = mpd_songs
-                    .iter_mut()
-                    .map(|mpd_song| SongInfo::from(std::mem::take(mpd_song)))
-                    .collect();
-                if !songs.is_empty() {
-                    let _ = respond(songs);
-                    curr_len += BATCH_SIZE;
-                } else {
-                    more = false;
-                }
-            }
-            Err(e) => {
-                dbg!(e);
-                more = false;
-            }
-        }
-    }
-}
+
 
 fn fetch_uris_by_sticker<F>(
     client: &mut mpd::Client<stream::StreamWrapper>,
@@ -556,18 +274,6 @@ fn fetch_uris_by_sticker<F>(
     }
 }
 
-/// Fetch all albums, using AlbumArtist to further disambiguate same-named ones.
-pub fn fetch_all_albums(
-    client: &mut mpd::Client<stream::StreamWrapper>,
-    sender_to_fg: &Sender<AsyncClientMessage>,
-) {
-    if let Err(mpd_error) = fetch_albums_by_query(client, &Query::new(), |info| {
-        sender_to_fg.send_blocking(AsyncClientMessage::AlbumBasicInfoDownloaded(info))
-    }) {
-        let _ = sender_to_fg.send_blocking(AsyncClientMessage::BackgroundError(mpd_error, None));
-    }
-}
-
 pub fn fetch_recent_albums(
     client: &mut mpd::Client<stream::StreamWrapper>,
     sender_to_fg: &Sender<AsyncClientMessage>,
@@ -631,52 +337,6 @@ pub fn fetch_album_songs(
             ))
         },
     );
-}
-
-pub fn fetch_artists(
-    client: &mut mpd::Client<stream::StreamWrapper>,
-    sender_to_fg: &Sender<AsyncClientMessage>,
-    use_album_artist: bool,
-) {
-    // Fetching artists is a bit more involved: artist tags usually contain multiple artists.
-    // For the same reason, one artist can appear in multiple tags.
-    // Here we'll reuse the artist parsing code in our SongInfo struct and put parsed
-    // ArtistInfos in a Set to deduplicate them.
-    let tag_type: &'static str = if use_album_artist {
-        "albumartist"
-    } else {
-        "artist"
-    };
-    let mut already_parsed: FxHashSet<String> = FxHashSet::default();
-    match client.list(&Term::Tag(Cow::Borrowed(tag_type)), &Query::new(), None) {
-        Ok(grouped_vals) => {
-            // TODO: Limit tags to only what we need locally
-            for tag in &grouped_vals.groups[0].1 {
-                if let Ok(mut songs) = client.find(
-                    Query::new().and(Term::Tag(Cow::Borrowed(tag_type)), tag),
-                    Window::from((0, 1)),
-                ) {
-                    if !songs.is_empty() {
-                        let first_song = SongInfo::from(std::mem::take(&mut songs[0]));
-                        let artists = first_song.into_artist_infos();
-                        // println!("Got these artists: {artists:?}");
-                        for artist in artists.into_iter() {
-                            if already_parsed.insert(artist.name.clone()) {
-                                // println!("Never seen {artist:?} before, inserting...");
-                                let _ = sender_to_fg.send_blocking(
-                                    AsyncClientMessage::ArtistBasicInfoDownloaded(artist),
-                                );
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        Err(mpd_error) => {
-            let _ =
-                sender_to_fg.send_blocking(AsyncClientMessage::BackgroundError(mpd_error, None));
-        }
-    }
 }
 
 pub fn fetch_recent_artists(
@@ -917,126 +577,6 @@ pub fn play_at(
         client.switch(Id(id_or_pos)).map(|_| ())
     } else {
         client.switch(id_or_pos).map(|_| ())
-    }
-}
-
-pub fn find_add(
-    client: &mut mpd::Client<stream::StreamWrapper>,
-    sender_to_fg: &Sender<AsyncClientMessage>,
-    query: Query<'static>,
-    start_playing_pos: Option<u32>,
-) {
-    let _ = sender_to_fg.send_blocking(AsyncClientMessage::Queuing(true));
-    let mut res = client.findadd(&query);
-
-    if let Some(pos) = start_playing_pos {
-        res = res.and_then(|_| play_at(client, pos, false));
-    }
-
-    match res {
-        Ok(()) => {
-            let _ = sender_to_fg.send_blocking(AsyncClientMessage::Queuing(false));
-        }
-        Err(mpd_error) => {
-            let _ = sender_to_fg.send_blocking(AsyncClientMessage::BackgroundError(
-                mpd_error,
-                Some(ClientError::Queuing),
-            ));
-        }
-    }
-}
-
-pub fn add_multi(
-    client: &mut mpd::Client<stream::StreamWrapper>,
-    sender_to_fg: &Sender<AsyncClientMessage>,
-    uris: &[String],
-    recursive: bool,
-    start_playing_pos: Option<u32>,
-    insert_pos: Option<u32>,
-) {
-    if uris.is_empty() {
-        return;
-    }
-    let _ = sender_to_fg.send_blocking(AsyncClientMessage::Queuing(true));
-    let mut res: Result<(), MpdError> = Ok(());
-    if uris.len() > 1 {
-        // Batch by batch to avoid holding the server up too long (and timing out)
-        let mut inserted: usize = 0;
-        while inserted < uris.len() {
-            let to_insert = (uris.len() - inserted).min(BATCH_SIZE);
-            res = if let Some(pos) = insert_pos {
-                client
-                    .insert_multiple(
-                        &uris[inserted..(inserted + to_insert)],
-                        pos as usize + inserted,
-                    )
-                    .map(|_| ())
-            } else {
-                client
-                    .push_multiple(&uris[inserted..(inserted + to_insert)])
-                    .map(|_| ())
-            };
-            inserted += to_insert;
-            if res.is_err() {
-                break;
-            }
-        }
-    } else {
-        res = if recursive {
-            // TODO: support inserting at specific location in queue
-            client
-                .findadd(Query::new().and(Term::Base, &uris[0]))
-                .map(|_| ())
-        } else if let Some(pos) = insert_pos {
-            client.insert(&uris[0], pos as usize).map(|_| ())
-        } else {
-            client.push(&uris[0]).map(|_| ())
-        };
-    }
-
-    if let Some(pos) = start_playing_pos {
-        res = res.and_then(|_| play_at(client, pos, false));
-    }
-
-    match res {
-        Ok(()) => {
-            let _ = sender_to_fg.send_blocking(AsyncClientMessage::Queuing(false));
-        }
-        Err(mpd_error) => {
-            let _ = sender_to_fg.send_blocking(AsyncClientMessage::BackgroundError(
-                mpd_error,
-                Some(ClientError::Queuing),
-            ));
-        }
-    }
-}
-
-pub fn load_playlist(
-    client: &mut mpd::Client<stream::StreamWrapper>,
-    sender_to_fg: &Sender<AsyncClientMessage>,
-    name: &str,
-    start_playing_pos: Option<u32>,
-) {
-    let _ = sender_to_fg.send_blocking(AsyncClientMessage::Queuing(true));
-
-    let mut res = client.load(name, ..);
-    if let Some(pos) = start_playing_pos {
-        res = res.and_then(|_| play_at(client, pos, false));
-    }
-
-    match res {
-        Ok(()) => {
-            let _ = sender_to_fg.send_blocking(AsyncClientMessage::Queuing(false));
-        }
-        Err(MpdError::Io(_)) => {
-            let _ = sender_to_fg.send_blocking(AsyncClientMessage::Connect);
-        }
-        Err(mpd_error) => {
-            let _ = sender_to_fg.send_blocking(AsyncClientMessage::BackgroundError(
-                mpd_error,
-                Some(ClientError::Queuing),
-            ));
-        }
     }
 }
 

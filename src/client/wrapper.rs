@@ -1,12 +1,13 @@
 use async_channel::{Receiver, Sender};
+use chrono::{DateTime, Duration, Local};
 use futures::executor;
 use glib::clone;
 use gtk::{gio, glib};
 use gtk::{gio::prelude::*, glib::BoxedAnyObject};
 use lru::LruCache;
-use mpd::Status;
+use mpd::{Query, Status, Term};
 use mpd::error::ServerError;
-use mpd::search::Window;
+use mpd::search::{Operation as QueryOperation, Window};
 use mpd::{
     Channel, EditAction, Idle, Output, SaveMode, Subsystem, Version,
     client::Client,
@@ -17,15 +18,17 @@ use mpd::{
 use nohash_hasher::NoHashHasher;
 use once_cell::sync::Lazy;
 use resolve_path::PathResolveExt;
+use rustc_hash::FxHashSet;
+use time::OffsetDateTime;
 use zbus::{Connection as ZConnection, Proxy as ZProxy};
 
 use std::borrow::Cow;
+use std::cmp::Ordering as StdOrdering;
 use std::hash::BuildHasherDefault;
 use std::net::TcpStream;
 use std::num::NonZero;
 use std::os::unix::net::UnixStream;
 use std::sync::{Arc, Mutex};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::{
     cell::{Cell, RefCell},
@@ -33,11 +36,11 @@ use std::{
 };
 use uuid::Uuid;
 
-use crate::common::Stickers;
+use crate::cache::sqlite;
+use crate::common::dynamic_playlist::{QueryLhs, StickerObjectType, StickerOperation, Ordering};
 use crate::utils::settings_manager;
 use crate::{
-    common::{Album, AlbumInfo, Artist, INode, Song, SongInfo},
-    meta_providers::ProviderMessage,
+    common::{Album, AlbumInfo, Artist, INode, Song, SongInfo, Stickers, dynamic_playlist::{Rule}},
     player::PlaybackFlow,
     utils,
 };
@@ -49,61 +52,167 @@ use super::state::{ClientState, ConnectionState, StickersSupportLevel};
 use super::stream::StreamWrapper;
 use super::{AsyncClientMessage, BackgroundTask, StickerSetMode};
 
-// Thin wrapper around the blocking mpd::Client. It contains two separate client
-// objects connected to the same address. One lives on the main thread along
-// with the GUI and takes care of sending user commands to the daemon, while the
-// other lives on a child thread. It is often in idle mode in order to
-// receive all server-side changes, including those resulting from commands from
-// other clients, such as MPRIS controls in the notification centre or another
-// frontend. Note that this second client will not notify the main thread on
-// seekbar progress. That will have to be polled by the main thread.
+// Thin wrapper around blocking mpd::Clients. It contains two separate client
+// objects connected to the same address, each living on their own std::thread.
+// One (foreground) is used for short interactive operations like playback
+// controls. The (background) other is reserved for batch operations such as
+// fetching many songs or albums. The background client is also put into
+// idle mode to receive server-side changes, such as MPRIS controls or changes
+// from  another frontend. Both receives tasks from the main thread via their
+// unbounded async_channels and responds via lightweight oneshot channels in
+// order to expose an async API to the rest of the code.
 
 // Heavy operations such as streaming lots of album arts from a remote server
-// should be performed by the background child client, which will receive them
-// through an unbounded async_channel serving as a work queue. On each loop,
-// the child client checks whether there's anything to handle in the work queue.
-// If there is, it will take & handle one item. If the queue is instead empty, it
-// will go into idle() mode.
+// should be performed by the background client. Note that it is the foreground
+// client that updates the seekbar position, as it is never in idle mode.
 
-// Once in the idle mode, the child client is blocked and thus cannot check the
-// work queue. As such, after inserting a work item into the queue, the main
-// thread will also post a message to an mpd inter-client channel also listened
-// to by the child client. This will trigger an idle notification for the Message
-// subsystem, allowing the child client to break out of the blocking idle.
-//
-// The reverse also needs to be taken care of. In case there are too many background
-// tasks (such as mass album art downloading upon a cold start), the child client
-// might spend too much time completing these tasks without listening to idle updates.
-// This is unacceptable as our entire UI relies on idle updates. To solve this, we
-// conversely break the child thread out of background tasks when there are foreground
-// actions that would cause an idle update using an atomic flag.
-// 1. Prior to processing a work item, the child client checks whether this flag is
-// true. If it is, it is guaranteed that it could switch back to idle mode for a
-// quick update and won't be stuck there for too long.
-// 2. The child thread then switches to idle mode, which should return immediately
-// as there should be at least one idle message in the queue. The child client
-// forwards all queued-up messages to the main thread, sets the atomic flag to false,
-// then ends the iteration.
-// 3. When there is nothing left in the work queue, simply enter idle mode without
-// checking thelag.
+// Once in the idle mode, the background client is blocked and thus cannot check the
+// work queue. As such, after inserting a work item into the queue, we use the
+// foreground client to send a message to an mpd inter-client channel also listened
+// to by the background client. This triggers an idle notification for the Message
+// subsystem, allowing the background client to break out of the blocking idle.
 
-// The child thread never modifies the main state directly. It instead sends
-// messagecontaining a list of subsystems with updated states to the main thread
-// via a bounded async_channel. The main thread receives these messages in an async
-// loop, contacts the daemon again to get information for each of the changed
-// suystems, then update the relevant state objects accordingly, saving us the
-// trouble of putting state objects behind mutexes.
-
-// Reconnection is a bit convoluted. There is no way to abort the child thread
-// from the main one, but we can make the child thread check a flag before idling.
-// The child thread will only be able to do so after finishing idling, but
-// incidentally, disconnecting the main thread's client will send an idle message,
-// unblocking the child thread and allowing it to check the flag.
-
+// Compared to the pre-0.98.1 design, the new async API makes it much easier to
+// implement loading spinners, vastly reduces dependency on async channels
+// and glib object signals, and simplifies daisy-chaining metadata provision
+// code (as the cache can now simply await cover art requests sent to the MPD
+// wrapper directly).
 
 const BATCH_SIZE: usize = 128;
 const FETCH_LIMIT: usize = 10000000; // Fetch at most ten million songs at once (same
 // folder, same tag, etc)
+
+
+fn get_past_unix_timestamp(backoff: i64) -> i64 {
+    let current_local_dt: DateTime<Local> = Local::now();
+    let backoff_dur: Duration = Duration::seconds(backoff);
+    current_local_dt
+        .checked_sub_signed(backoff_dur)
+        .unwrap()
+        .timestamp()
+}
+
+
+fn cmp_options_nulls_last<T: Ord>(a: Option<&T>, b: Option<&T>) -> StdOrdering {
+    match (a, b) {
+        (Some(val_a), Some(val_b)) => val_a.cmp(val_b),
+        (Some(_), None) => StdOrdering::Less,
+        (None, Some(_)) => StdOrdering::Greater,
+        (None, None) => StdOrdering::Equal,
+    }
+}
+
+// Reverse comparison, but still putting nulls last
+fn reverse_cmp_options_nulls_last<T: Ord>(a: Option<&T>, b: Option<&T>) -> StdOrdering {
+    match (a, b) {
+        (Some(val_a), Some(val_b)) => val_a.cmp(val_b).reverse(),
+        (Some(_), None) => StdOrdering::Less,
+        (None, Some(_)) => StdOrdering::Greater,
+        (None, None) => StdOrdering::Equal,
+    }
+}
+
+/// Build and return a dynamic comparator closure.
+///
+/// This is highly efficient because the logic for choosing which fields to compare
+/// is determined *once* when this function is called.
+pub fn build_comparator(
+    orderings: &[Ordering],
+) -> Box<dyn Fn(&(SongInfo, Stickers), &(SongInfo, Stickers)) -> StdOrdering> {
+    let orderings = orderings.to_vec();
+    Box::new(
+        move |a: &(SongInfo, Stickers), b: &(SongInfo, Stickers)| -> StdOrdering {
+            let song_a = &a.0;
+            let stickers_a = &a.1;
+            let song_b = &b.0;
+            let stickers_b = &b.1;
+            for ordering in &orderings {
+                // Determine the ordering for the current rule's field.
+                // Nulls are always sorted last as it wouldn't really make sense otherwise in
+                // the dynamic playlist/all songs view cases.
+                let res = match *ordering {
+                    Ordering::AscAlbumTitle => cmp_options_nulls_last(
+                        song_a.album.as_ref().map(|album: &AlbumInfo| &album.title),
+                        song_b.album.as_ref().map(|album: &AlbumInfo| &album.title),
+                    ),
+                    Ordering::DescAlbumTitle => reverse_cmp_options_nulls_last(
+                        song_a.album.as_ref().map(|album: &AlbumInfo| &album.title),
+                        song_b.album.as_ref().map(|album: &AlbumInfo| &album.title),
+                    ),
+                    Ordering::Track => {
+                        // Since nulls are -1, replace them with i64::MAX instead.
+                        let mut track_a = song_a.track.get();
+                        if track_a < 0 {
+                            track_a = i64::MAX;
+                        }
+                        let mut track_b = song_b.track.get();
+                        if track_b < 0 {
+                            track_b = i64::MAX;
+                        }
+                        track_a.cmp(&track_b)
+                    }
+                    Ordering::AscReleaseDate => cmp_options_nulls_last(
+                        song_a.release_date.as_ref(),
+                        song_b.release_date.as_ref(),
+                    ),
+                    Ordering::DescReleaseDate => reverse_cmp_options_nulls_last(
+                        song_a.release_date.as_ref(),
+                        song_b.release_date.as_ref(),
+                    ),
+                    Ordering::AscArtistTag => cmp_options_nulls_last(
+                        song_a.artist_tag.as_ref(),
+                        song_b.artist_tag.as_ref(),
+                    ),
+                    Ordering::DescArtistTag => reverse_cmp_options_nulls_last(
+                        song_a.artist_tag.as_ref(),
+                        song_b.artist_tag.as_ref(),
+                    ),
+                    Ordering::AscRating => cmp_options_nulls_last(
+                        stickers_a.rating.as_ref(),
+                        stickers_b.rating.as_ref(),
+                    ),
+                    Ordering::DescRating => reverse_cmp_options_nulls_last(
+                        stickers_a.rating.as_ref(),
+                        stickers_b.rating.as_ref(),
+                    ),
+                    Ordering::AscLastModified => cmp_options_nulls_last(
+                        song_a.last_modified.as_ref(),
+                        song_b.last_modified.as_ref(),
+                    ),
+                    Ordering::DescLastModified => reverse_cmp_options_nulls_last(
+                        song_a.last_modified.as_ref(),
+                        song_b.last_modified.as_ref(),
+                    ),
+                    Ordering::AscPlayCount => cmp_options_nulls_last(
+                        stickers_a.play_count.as_ref(),
+                        stickers_b.play_count.as_ref(),
+                    ),
+                    Ordering::DescPlayCount => reverse_cmp_options_nulls_last(
+                        stickers_a.play_count.as_ref(),
+                        stickers_b.play_count.as_ref(),
+                    ),
+                    Ordering::AscSkipCount => cmp_options_nulls_last(
+                        stickers_a.skip_count.as_ref(),
+                        stickers_b.skip_count.as_ref(),
+                    ),
+                    Ordering::DescSkipCount => reverse_cmp_options_nulls_last(
+                        stickers_a.skip_count.as_ref(),
+                        stickers_b.skip_count.as_ref(),
+                    ),
+                    Ordering::Random => unreachable!(),
+                };
+
+                if res != StdOrdering::Equal {
+                    return res;
+                }
+                // If equal, fall through to next rule
+            }
+
+            // If all rules resulted in equality, the items are considered equal.
+            std::cmp::Ordering::Equal
+        },
+    )
+}
 
 
 #[derive(Debug)]
@@ -148,10 +257,10 @@ impl MpdWrapper {
             // Cache song infos so we can reuse them on queue updates.
             // Song IDs are u32s anyway, and I don't think there's any risk of a HashDoS attack
             // from a self-hosted music server so we'll just use identity hash for speed.
-            song_cache: LruCache::with_hasher(
+            song_cache: RefCell::new(LruCache::with_hasher(
                 NonZero::new(16384).unwrap(),
                 BuildHasherDefault::default(),
-            )
+            ))
         });
 
         wrapper
@@ -261,66 +370,7 @@ impl MpdWrapper {
                 if !skip_to_idle && curr_task.is_some() {
                     let task = curr_task.unwrap();
                     match task {
-                        BackgroundTask::Update => {
-                            background::update_mpd_database(&mut client, &sender_to_fg)
-                        }
-                        BackgroundTask::FetchQueue => {
-                            background::get_current_queue(&mut client, &sender_to_fg);
-                        }
-                        BackgroundTask::FetchQueueChanges(version, total_len) => {
-                            background::get_queue_changes(
-                                &mut client,
-                                &sender_to_fg,
-                                version,
-                                total_len,
-                            );
-                        }
-                        BackgroundTask::DownloadFolderCover(key) => {
-                            background::download_folder_cover(&mut client, &meta_sender, key)
-                        }
-                        BackgroundTask::DownloadEmbeddedCover(key) => {
-                            background::download_embedded_cover(&mut client, &meta_sender, key)
-                        }
-                        BackgroundTask::FetchAlbums => {
-                            background::fetch_all_albums(&mut client, &sender_to_fg)
-                        }
-                        BackgroundTask::FetchRecentAlbums => {
-                            background::fetch_recent_albums(&mut client, &sender_to_fg)
-                        }
-                        BackgroundTask::FetchAlbumSongs(tag) => {
-                            background::fetch_album_songs(&mut client, &sender_to_fg, tag)
-                        }
-                        BackgroundTask::FetchArtists(use_albumartist) => {
-                            background::fetch_artists(&mut client, &sender_to_fg, use_albumartist)
-                        }
-                        BackgroundTask::FetchRecentArtists => {
-                            background::fetch_recent_artists(&mut client, &sender_to_fg)
-                        }
-                        BackgroundTask::FetchArtistSongs(name) => {
-                            background::fetch_songs_of_artist(&mut client, &sender_to_fg, name)
-                        }
-                        BackgroundTask::FetchArtistAlbums(name) => {
-                            background::fetch_albums_of_artist(&mut client, &sender_to_fg, name)
-                        }
-                        BackgroundTask::FetchFolderContents(uri) => {
-                            background::fetch_folder_contents(&mut client, &sender_to_fg, uri)
-                        }
-                        BackgroundTask::FetchPlaylistSongs(name) => {
-                            background::fetch_playlist_songs(&mut client, &sender_to_fg, name)
-                        }
-                        BackgroundTask::FetchRecentSongs(count) => {
-                            background::fetch_last_n_songs(&mut client, &sender_to_fg, count);
-                        }
-                        BackgroundTask::QueueUris(uris, recursive, play_from, insert_pos) => {
-                            background::add_multi(
-                                &mut client,
-                                &sender_to_fg,
-                                &uris,
-                                recursive,
-                                play_from,
-                                insert_pos,
-                            );
-                        }
+
                         BackgroundTask::QueueQuery(query, play_from) => {
                             background::find_add(&mut client, &sender_to_fg, query, play_from);
                         }
@@ -389,26 +439,6 @@ impl MpdWrapper {
     }
 
     fn setup_channel(self: Rc<Self>, receiver: Receiver<AsyncClientMessage>) {
-        // Set up a listener to the receiver we got from Application.
-        // This will be the loop that handles user interaction and idle updates.
-        glib::MainContext::default().spawn_local(clone!(
-            #[weak(rename_to = this)]
-            self,
-            async move {
-                use futures::prelude::*;
-                // Allow receiver to be mutated, but keep it at the same memory address.
-                // See Receiver::next doc for why this is needed.
-                let mut receiver = std::pin::pin!(receiver);
-                let mut recently_connected: bool = false;
-                while let Some(request) = receiver.next().await {
-                    let old_recently_connected = recently_connected;
-                    recently_connected = matches!(request, AsyncClientMessage::Connect);
-                    this.respond(request, old_recently_connected).await;
-                    // Prevent rapid-fire reconnections
-                }
-            }
-        ));
-
         // Set up a ping loop. Main client does not use idle mode, so it needs to ping periodically.
         // If there is no client connected, it will simply skip pinging.
         let conn = utils::settings_manager().child("client");
@@ -418,24 +448,20 @@ impl MpdWrapper {
             self,
             async move {
                 loop {
-                    if let Some(client) = this.main_client.borrow_mut().as_mut() {
-                        let res = client.ping();
-                        if res.is_err() {
-                            println!("[KeepAlive] [FATAL] Could not ping mpd. The connection might have already timed out, or the daemon might have crashed.");
-                            break;
+                    let (s, r) = oneshot::channel();
+                    match this.foreground(Task::Ping(s), r).await {
+                        Ok(()) => {}
+                        Err(ClientError::NotConnected) => {
+                            println!("[KeepAlive] There is no client currently running. Won't ping.");
                         }
-                    }
-                    else {
-                        println!("[KeepAlive] There is no client currently running. Won't ping.");
-                    }
+                        Err(e) => {dbg!(e);}
+                    };
                     glib::timeout_future_seconds(ping_interval).await;
                 }
             }));
 
         // A new loop to watch for system suspend/wake actions. We proactively disconnect before suspend
         // and connect again upon wake to avoid freezing upon a timed-out connection.
-        // let (suspend_sender, suspend_receiver): (Sender<bool>, Receiver<bool>) = async_channel::unbounded();
-        // TODO: Avoid sending more updates if the current one hasn't completed yet.
         let fg_sender = self.fg_sender.clone();
         let bg_sender = self.bg_sender.clone();
         utils::tokio_runtime().spawn(async move {
@@ -476,7 +502,7 @@ impl MpdWrapper {
                             _ => {}
                         }
                         let (s, r) = oneshot::channel();
-                        fg_sender.send(Task::Connect(client_password, s)).await;
+                        fg_sender.send(Task::Connect(client_password.clone(), s)).await;
                         r.await;
                         let (s, r) = oneshot::channel();
                         bg_sender.send(Task::Connect(client_password, s)).await;
@@ -595,9 +621,6 @@ impl MpdWrapper {
         match &res {
             Err(e) => {
                 match e {
-                    ClientError::Internal => {
-                        // TODO
-                    }
                     ClientError::Mpd(e) => {
                         match e {
                             MpdError::Io(e) => {
@@ -631,6 +654,9 @@ impl MpdWrapper {
                         if settings.boolean("mpd-auto-reconnect") {
                             self.connect().await;
                         }
+                    }
+                    _ => {
+                        // TODO
                     }
                 }
             }
@@ -810,7 +836,7 @@ impl MpdWrapper {
         res
     }
 
-    pub async fn get_sticker(&self, typ: &str, uri: &str, name: &str) -> ClientResult<String> {
+    pub async fn get_sticker(&self, typ: &'static str, uri: &str, name: &str) -> ClientResult<String> {
         let min_lvl = if typ == "song" {
             StickersSupportLevel::SongsOnly
         } else {
@@ -820,7 +846,7 @@ impl MpdWrapper {
             let (s, r) = oneshot::channel();
             self.handle_sticker_error(
                 self.foreground(
-                    Task::GetSticker(typ.to_owned(), uri.to_owned(), name.to_owned(), s),
+                    Task::GetSticker(typ, uri.to_owned(), name.to_owned(), s),
                     r,
                 )
                 .await,
@@ -830,7 +856,7 @@ impl MpdWrapper {
         }
     }
 
-    pub async fn get_known_stickers(&self, typ: &str, uri: &str) -> ClientResult<Stickers> {
+    pub async fn get_known_stickers(&self, typ: &'static str, uri: &str) -> ClientResult<Stickers> {
         let min_lvl = if typ == "song" {
             StickersSupportLevel::SongsOnly
         } else {
@@ -839,7 +865,7 @@ impl MpdWrapper {
         if self.state.get_stickers_support_level() >= min_lvl {
             let (s, r) = oneshot::channel();
             self.handle_sticker_error(
-                self.foreground(Task::GetKnownStickers(typ.to_owned(), uri.to_owned(), s), r)
+                self.foreground(Task::GetKnownStickers(typ, uri.to_owned(), s), r)
                     .await,
             )
         } else {
@@ -849,7 +875,7 @@ impl MpdWrapper {
 
     pub async fn set_sticker(
         &self,
-        typ: &str,
+        typ: &'static str,
         uri: &str,
         name: &str,
         value: &str,
@@ -865,7 +891,7 @@ impl MpdWrapper {
             self.handle_sticker_error(
                 self.foreground(
                     Task::SetSticker(
-                        typ.to_owned(),
+                        typ,
                         uri.to_owned(),
                         name.to_owned(),
                         value.to_owned(),
@@ -881,7 +907,7 @@ impl MpdWrapper {
         }
     }
 
-    pub async fn delete_sticker(&self, typ: &str, uri: &str, name: &str) -> ClientResult<()> {
+    pub async fn delete_sticker(&self, typ: &'static str, uri: &str, name: &str) -> ClientResult<()> {
         let min_lvl = if typ == "song" {
             StickersSupportLevel::SongsOnly
         } else {
@@ -891,7 +917,7 @@ impl MpdWrapper {
             let (s, r) = oneshot::channel();
             self.handle_sticker_error(
                 self.foreground(
-                    Task::DeleteSticker(typ.to_owned(), uri.to_owned(), name.to_owned(), s),
+                    Task::DeleteSticker(typ, uri.to_owned(), name.to_owned(), s),
                     r,
                 )
                 .await,
@@ -1059,7 +1085,7 @@ impl MpdWrapper {
             if fetch_stickers {
                 let (s, r) = oneshot::channel();
                 res.set_stickers(self.foreground(
-                    Task::GetKnownStickers("song".to_owned(), res.get_uri().to_owned(), s), r
+                    Task::GetKnownStickers("song", res.get_uri().to_owned(), s), r
                 ).await?);
             }
             Ok(Some(res))
@@ -1153,63 +1179,709 @@ impl MpdWrapper {
         self.foreground(Task::Seek(position, s), r).await
     }
 
-    fn on_songs_downloaded(&self, signal_name: &str, tag: Option<String>, songs: Vec<SongInfo>) {
-        if let Some(tag) = tag {
-            self.state.emit_by_name::<()>(
-                signal_name,
-                &[
-                    &tag,
-                    &BoxedAnyObject::new(songs.into_iter().map(Song::from).collect::<Vec<Song>>()),
-                ],
-            );
-        } else {
-            self.state.emit_by_name::<()>(
-                signal_name,
-                &[&BoxedAnyObject::new(
-                    songs.into_iter().map(Song::from).collect::<Vec<Song>>(),
-                )],
-            );
-        }
+    pub async fn update_db(&self) -> ClientResult<u32> {
+        let (s, r) = oneshot::channel();
+        self.foreground(Task::UpdateDb(s), r).await
     }
 
-    fn on_album_downloaded(&self, signal_name: &str, tag: Option<&str>, info: AlbumInfo) {
-        let album = Album::from(info);
-        {
-            let mut stickers = album.get_stickers().borrow_mut();
-            if let Some(val) = self.get_sticker("album", album.get_title(), Stickers::RATING_KEY) {
-                stickers.set_rating(&val);
+    pub async fn get_embedded_cover(&self, uri: &str) -> ClientResult<Option<(String, String)>> {
+        let (s, r) = oneshot::channel();
+        self.background(Task::GetEmbeddedCover(uri.to_owned(), s), r).await
+    }
+
+    pub async fn get_folder_cover(&self, folder_uri: &str) -> ClientResult<Option<(String, String)>> {
+        let (s, r) = oneshot::channel();
+        self.background(Task::GetFolderCover(folder_uri.to_owned(), s), r).await
+    }
+
+    pub async fn get_albums_by_query<F>(&self, query: Query<'static>, respond: &F) -> ClientResult<()>
+    where F: Fn(Album) {
+        // TODO: batched windowed retrieval
+        // Get list of unique album tags, grouped by albumartist
+        // Will block child thread until info for all albums have been retrieved.
+        let (s, r) = oneshot::channel();
+        let grouped_vals = self.background(Task::List(
+            Term::Tag(Cow::Borrowed("album")),
+            query,
+            Some("albumartist"),
+            s
+        ), r).await?;
+        for (key, tags) in grouped_vals.groups.into_iter() {
+            for tag in tags.iter() {
+
+                let mut query = Query::new();
+                query.and(Term::Tag(Cow::Borrowed("album")), tag.to_string());
+                query.and(Term::Tag(Cow::Borrowed("albumartist")), key.to_string());
+                let (s, r) = oneshot::channel();
+                let mut songs = self.background(Task::Find(query, Window::from((0, 1)), s), r).await?;
+                if !songs.is_empty() {
+                    respond(
+                        std::mem::take(&mut songs[0])
+                            .into_album_info()
+                            .expect("Fetched song by album tag but did not find album info")
+                            .into()
+                    );
+                }
             }
         }
-        // Append to listener lists
-        if let Some(tag) = tag {
-            self.state.emit_by_name::<()>(signal_name, &[&tag, &album]);
+        Ok(())
+    }
+
+    pub async fn get_recent_albums<F>(&self, respond: F) -> ClientResult<()> where F: Fn(Album) {
+        let settings = utils::settings_manager().child("library");
+        // TODO: async this
+        let recent_albums =
+            sqlite::get_last_n_albums(settings.uint("n-recent-albums")).expect("Sqlite DB error");
+        for tup in recent_albums.into_iter() {
+            let mut query = Query::new();
+            query.and(Term::Tag(Cow::Borrowed("album")), tup.0);
+            if let Some(artist) = tup.1 {
+                query.and(Term::Tag(Cow::Borrowed("albumartist")), artist);
+            }
+            if let Some(mbid) = tup.2 {
+                query.and(Term::Tag(Cow::Borrowed("musicbrainz_albumid")), mbid);
+            }
+            self.get_albums_by_query(query, &respond).await?;
+        }
+        Ok(())
+    }
+
+    async fn get_song_infos_by_query<F>(&self, query: Query<'static>, respond: &mut F) -> ClientResult<()>
+    where F: FnMut(Vec<SongInfo>) {
+        let mut curr_len: usize = 0;
+        let mut more: bool = true;
+        while more && (curr_len) < FETCH_LIMIT {
+            let (s, r) = oneshot::channel();
+            let songs = self.background(Task::Find(
+                query.clone(),
+                Window::from((curr_len as u32, (curr_len + BATCH_SIZE) as u32)),
+                s
+            ), r).await?;
+            if !songs.is_empty() {
+                let _ = respond(songs);
+                curr_len += BATCH_SIZE;
+            } else {
+                more = false;
+            }
+        }
+        Ok(())
+    }
+
+    pub async fn get_songs_by_query<F>(&self, query: Query<'static>, respond: &mut F) -> ClientResult<()>
+    where F: FnMut(Vec<Song>) {
+        self.get_song_infos_by_query(query, &mut |song_infos| {
+            respond(
+                song_infos
+                    .into_iter()
+                    .map(|mut si| Song::from(std::mem::take(&mut si)))
+                    .collect()
+            )
+        }).await
+    }
+
+    // Should handle this in Library controller
+    // pub async fn get_album_songs<F>(&self, tag: &str, respond: F) -> ClientResult<()>
+    // where F: Fn(Vec<Song>) {
+    //     let mut query = Query::new();
+    //     query.and(Term::Tag(Cow::Borrowed("album")), tag.to_string());
+    //     self.get_songs_by_query(query, &respond).await
+    // }
+
+
+    pub async fn get_artists<F>(&self, use_album_artist: bool, respond: F) -> ClientResult<()>
+    where F: Fn(Artist) {
+        // Fetching artists is a bit more involved: artist tags usually contain multiple artists.
+        // For the same reason, one artist can appear in multiple tags.
+        // Here we'll reuse the artist parsing code in our SongInfo struct and put parsed
+        // ArtistInfos in a Set to deduplicate them.
+        let tag_type: &'static str = if use_album_artist {
+            "albumartist"
         } else {
-            self.state.emit_by_name::<()>(signal_name, &[&album]);
+            "artist"
+        };
+        let mut already_parsed: FxHashSet<String> = FxHashSet::default();
+        let (s, r) = oneshot::channel();
+        let mut grouped_vals = self.background(
+            Task::List(Term::Tag(Cow::Borrowed(tag_type)), Query::new(), None, s), r
+        ).await?;
+        // TODO: Limit tags to only what we need locally
+        for mut tag in std::mem::take(&mut grouped_vals.groups[0].1).into_iter() {
+            let mut query = Query::new();
+            query.and(Term::Tag(Cow::Borrowed(tag_type)), std::mem::take(&mut tag));
+            let (s, r) = oneshot::channel();
+            let mut songs = self.background(
+                Task::Find(query, Window::from((0, 1)), s), r
+            ).await?;
+            if !songs.is_empty() {
+                let artists = std::mem::take(&mut songs[0]).into_artist_infos();
+                // println!("Got these artists: {artists:?}");
+                for artist in artists.into_iter() {
+                    if already_parsed.insert(artist.name.clone()) {
+                        // println!("Never seen {artist:?} before, inserting...");
+                        respond(artist.into());
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    pub async fn get_recent_artists<F>(&self, respond: &F) -> ClientResult<()>
+    where F: Fn(Artist) {
+        let mut already_parsed: FxHashSet<String> = FxHashSet::default();
+        let settings = utils::settings_manager().child("library");
+        let n = settings.uint("n-recent-artists");
+        let recent_names = sqlite::get_last_n_artists(n).expect("Sqlite DB error");
+        let mut recent_names_set: FxHashSet<String> = FxHashSet::default();
+        for name in recent_names.iter() {
+            recent_names_set.insert(name.clone());
+        }
+        for name in recent_names.into_iter() {
+            let mut query = Query::new();
+            query.and_with_op(Term::Tag(Cow::Borrowed("artist")), QueryOperation::Contains, name);
+            let (s, r) = oneshot::channel();
+            let mut songs = self.background(Task::Find(query, Window::from((0, 1)), s), r).await?;
+            if !songs.is_empty() {
+                let artists = SongInfo::from(std::mem::take(&mut songs[0])).into_artist_infos();
+                for artist in artists.into_iter() {
+                    if recent_names_set.contains(&artist.name)
+                        && already_parsed.insert(artist.name.clone())
+                    {
+                        respond(artist.into());
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    pub async fn lsinfo(&self, path: String) -> ClientResult<Vec<INode>> {
+        let (s, r) = oneshot::channel();
+        self.background(Task::LsInfo(path, s), r)
+            .await.map(|infos| infos.into_iter().map(INode::from).collect::<Vec<INode>>())
+    }
+
+    async fn get_playlist_song_infos<F>(&self, name: String, respond: F) -> ClientResult<()>
+    where F: Fn(Vec<SongInfo>) {
+        let client_version = self.client_version.borrow().ok_or(ClientError::NotConnected)?;
+        if client_version.1 < 24 {
+            let (s, r) = oneshot::channel();
+            let songs = self.background(Task::GetPlaylist(name, None, s), r).await?;
+            if !songs.is_empty() {
+                respond(songs);
+            }
+        } else {
+            // For MPD 0.24+, use the new paged loading
+            let mut curr_len: u32 = 0;
+            let mut more: bool = true;
+            while more && (curr_len as usize) < FETCH_LIMIT {
+                let (s, r) = oneshot::channel();
+                let songs = self.background(Task::GetPlaylist(
+                    name.clone(), Some(curr_len..(curr_len + BATCH_SIZE as u32)), s
+                ), r).await?;
+                more = songs.len() >= BATCH_SIZE;
+                if !songs.is_empty() {
+                    curr_len += songs.len() as u32;
+                    respond(songs);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    pub async fn get_playlist_songs<F>(&self, name: String, respond: F) -> ClientResult<()>
+    where F: Fn(Vec<Song>) {
+        self.get_playlist_song_infos(name, &|song_infos: Vec<SongInfo>| {
+            respond(
+                song_infos
+                    .into_iter()
+                    .map(|mut si| Song::from(std::mem::take(&mut si)))
+                    .collect()
+            )
+        }).await
+    }
+
+    /// Convenience function to get a single song by URI using the background client.
+    async fn get_song_by_uri(&self, uri: String, fetch_stickers: bool) -> ClientResult<Option<(SongInfo, Option<Stickers>)>> {
+        let mut query = Query::new();
+        query.and(Term::File, uri.clone());
+        let (s, r) = oneshot::channel();
+        let mut found_songs = self.background(Task::Find(query, Window::from((0, 1)), s), r).await?;
+        if !found_songs.is_empty() {
+            let song = std::mem::take(&mut found_songs[0]);
+            if fetch_stickers {
+                let (s, r) = oneshot::channel();
+                Ok(Some((song, Some(self.background(Task::GetKnownStickers("song", uri, s), r).await?))))
+            } else {
+                Ok(Some((song, None)))
+            }
+        } else {
+            Ok(None)
         }
     }
 
-    pub fn get_artist_content(&self, name: String) {
-        // For artists, we will need to find by substring to include songs and albums that they
-        // took part in
-        self.queue_background(BackgroundTask::FetchArtistSongs(name.clone()), true);
-        self.queue_background(BackgroundTask::FetchArtistAlbums(name.clone()), true);
+    pub async fn get_recent_songs<F>(&self, n: u32) -> ClientResult<Vec<Song>> {
+        let to_fetch: Vec<(String, OffsetDateTime)> = sqlite::get_last_n_songs(n).expect("Sqlite DB error");
+        let mut res: Vec<Song> = Vec::with_capacity(n as usize);
+        for tup in to_fetch.iter() {
+            if let Some(mut song) = self
+                .get_song_by_uri(tup.0.to_owned(), false)
+                .await
+                .map(|opt| opt.map(|pair| pair.0))?
+            {
+                song.last_played = Some(tup.1);
+                res.push(song.into())
+            }
+        }
+        Ok(res)
     }
 
-    pub fn on_folder_contents_downloaded(&self, uri: String, contents: Vec<LsInfoEntry>) {
-        self.state.emit_by_name::<()>(
-            "folder-contents-downloaded",
-            &[
-                &uri.to_value(),
-                &BoxedAnyObject::new(
-                    contents
-                        .into_iter()
-                        .map(INode::from)
-                        .collect::<Vec<INode>>(),
-                )
-                .to_value(),
-            ],
-        );
+    pub async fn find_add(&self, query: Query<'static>) -> ClientResult<()> {
+        let (s, r) = oneshot::channel();
+        self.foreground(Task::FindAdd(query, s), r).await
     }
+
+    /// When queuing multiple URIs, will use the background client & command list for efficiency.
+    pub async fn add_multi(
+        &self,
+        mut uris: Vec<String>,
+        recursive: bool,
+        start_playing_pos: Option<usize>,
+        insert_pos: Option<usize>,
+    ) -> ClientResult<()> {
+        if uris.is_empty() {
+            return Ok(());
+        }
+        if uris.len() > 1 {
+            // Batch by batch to avoid holding the server up too long (and timing out)
+            let mut inserted: usize = 0;
+            while inserted < uris.len() {
+                let to_insert = (uris.len() - inserted).min(BATCH_SIZE);
+                let batch = uris[inserted..(inserted + to_insert)].iter_mut().map(
+                    |uri| std::mem::take(uri)
+                ).collect();
+                if let Some(pos) = insert_pos {
+                    let (s, r) = oneshot::channel();
+                    self.background(Task::InsertMultiple(batch, pos, s), r).await?;
+                } else {
+                    let (s, r) = oneshot::channel();
+                    self.background(Task::AddMultiple(batch, s), r).await?;
+                }
+                inserted += to_insert;
+            }
+        } else {
+            if recursive {
+                // TODO: support inserting at specific location in queue
+                let mut query = Query::new();
+                query.and(Term::Base, std::mem::take(&mut uris[0]));
+                self.find_add(query).await?;
+            } else if let Some(pos) = insert_pos {
+                let (s, r) = oneshot::channel();
+                self.foreground(Task::Insert(std::mem::take(&mut uris[0]), pos, s), r).await?;
+            } else {
+                let (s, r) = oneshot::channel();
+                self.foreground(Task::Add(std::mem::take(&mut uris[0]), s), r).await?;
+            };
+        }
+
+        if let Some(pos) = start_playing_pos {
+            let (s, r) = oneshot::channel();
+            self.foreground(Task::PlayAtPos(pos as u32, s), r).await?;
+        }
+
+        Ok(())
+    }
+
+    async fn get_uris_by_sticker<F>(
+        &self,
+        obj: StickerObjectType,
+        sticker: String,
+        op: StickerOperation,
+        rhs: String,
+        only_in: Option<String>,
+        mut respond: F,
+    ) -> ClientResult<()> where F: FnMut(Vec<String>)
+    {
+        let mut curr_len: usize = 0;
+        let mut more: bool = true;
+        let only_in = only_in.unwrap_or(String::from(""));
+        while more && (curr_len) < FETCH_LIMIT {
+            let (s, r) = oneshot::channel();
+            let names = self.background(Task::FindStickerOp(
+                obj.to_str(),
+                only_in.clone(),
+                sticker.clone(),
+                op.to_mpd_syntax(),
+                rhs.clone(),
+                Window::from((curr_len as u32, (curr_len + BATCH_SIZE) as u32)),
+                s
+            ), r).await?;
+            if !names.is_empty() {
+                // If not searching directly by song (for example by album rating), further resolve to URI.
+                match obj {
+                    StickerObjectType::Song => {
+                        // In this case the names are the URIs themselves
+                        let _ = respond(names);
+                        curr_len += BATCH_SIZE;
+                    }
+                    StickerObjectType::Playlist => {
+                        // Fetch playlist contents. Don't create GObjects yet.
+                        for playlist_name in names.into_iter() {
+                            self.get_playlist_song_infos(
+                                playlist_name,
+                                |batch: Vec<SongInfo>| {
+                                    let _ = respond(
+                                        batch.into_iter().map(|song| song.uri).collect(),
+                                    );
+                                }
+                            ).await?;
+                        }
+                    }
+                    tag_type => {
+                        let tag_type_str = tag_type.to_str();
+                        // Fetch all songs for each tag
+                        for tag_value in names.into_iter() {
+                            let mut query = Query::new();
+                            query.and(Term::Tag(Cow::Borrowed(tag_type_str)), tag_value);
+                            self.get_song_infos_by_query(query, &mut |batch: Vec<SongInfo>| {
+                                respond(batch.into_iter().map(|song| song.uri).collect())
+                            }).await?;
+                        }
+                    }
+                }
+                curr_len += BATCH_SIZE;
+            } else {
+                more = false;
+            }
+        }
+        Ok(())
+    }
+
+    async fn resolve_dynamic_playlist_rules(&self, rules: Vec<Rule>) -> ClientResult<Vec<String>> {
+        // Resolve into concrete URIs.
+        // First, separate the search query-based conditions from the sticker ones.
+        let mut query_clauses: Vec<(QueryLhs, String)> = Vec::new();
+        let mut sticker_clauses: Vec<(StickerObjectType, String, StickerOperation, String)> =
+            Vec::new();
+        for rule in rules.into_iter() {
+            println!("{rule:?}");
+            match rule {
+                Rule::Sticker(obj, key, op, rhs) => {
+                    sticker_clauses.push((obj, key, op, rhs));
+                }
+                Rule::Query(lhs, rhs) => {
+                    query_clauses.push((lhs, rhs));
+                }
+                Rule::LastModified(secs) => {
+                    // Special case: query current system datetime
+                    query_clauses.push((QueryLhs::LastMod, get_past_unix_timestamp(secs).to_string()));
+                }
+            }
+        }
+        let mut res: FxHashSet<String> = FxHashSet::default();
+        let mut mpd_query = Query::new();
+        if !query_clauses.is_empty() {
+            for (lhs, rhs) in query_clauses.into_iter() {
+                lhs.add_to_query(&mut mpd_query, rhs);
+            }
+        } else {
+            // Dummy term that basically matches everything.
+            mpd_query.and(Term::AddedSince, i64::MIN.to_string());
+        }
+        // Avoid creating GObjects right now as they can still be filtered out
+        self.get_song_infos_by_query(mpd_query, &mut |batch: Vec<SongInfo>| {
+            for song in batch.into_iter() {
+                res.insert(song.uri);
+            }
+        });
+        println!("Length after query_clauses: {}", res.len());
+
+        // Get matching URIs for each sticker condition
+        // TODO: Optimise sticker operations by limiting to any found URI query clause.
+        for clause in sticker_clauses.into_iter() {
+            let mut set = FxHashSet::default();
+            match clause.1.as_str() {
+                Stickers::LAST_PLAYED_KEY | Stickers::LAST_SKIPPED_KEY => {
+                    // Special case: treat RHS as relative to current time
+                    self.get_uris_by_sticker(
+                        clause.0,
+                        clause.1,
+                        clause.2,
+                        get_past_unix_timestamp(clause.3.parse::<i64>().unwrap()).to_string(),
+                        None,
+                        |batch| {
+                            for uri in batch.into_iter() {
+                                set.insert(uri);
+                            }
+                        }
+                    );
+                }
+                _ => {
+                    self.get_uris_by_sticker(
+                        clause.0,
+                        clause.1,
+                        clause.2,
+                        clause.3,
+                        None,
+                        |batch| {
+                            for uri in batch.into_iter() {
+                                set.insert(uri);
+                            }
+                        }
+                    );
+                }
+            }
+
+            println!("Length of matches of sticker_clause: {}", set.len());
+            res.retain(move |elem| set.contains(elem));
+            if res.is_empty() {
+                // Return early
+                return Ok(Vec::with_capacity(0));
+            }
+            println!("Length afterwards: {}", res.len());
+        }
+
+        Ok(res.into_iter().collect())
+    }
+
+    pub async fn fetch_dynamic_playlist<F>(
+        &self,
+        dp: DynamicPlaylist,
+        cache: bool, // If true, will cache resolved song URIs locally
+        respond: F
+    ) -> ClientResult<()> where F: Fn(Vec<Song>)
+    {
+        // To reduce server & connection burden, temporarily turn off all tags in responses.
+        if client.tagtypes_clear().is_ok() {
+            let name = dp.name.to_owned();
+            // First, fetch just the URIs, without any sorting
+            let uris = resolve_dynamic_playlist_rules(client, dp.rules);
+
+            // Then, fetch the tags and stickers needed for display and sorting.
+            // These three are always needed for display.
+            let mut tagtypes: Vec<&'static str> = vec!["title", "album", "artist", "albumartist"];
+            for ordering in dp.ordering.iter() {
+                match ordering {
+                    Ordering::Track => {
+                        tagtypes.push("track");
+                    }
+                    Ordering::AscReleaseDate | Ordering::DescReleaseDate => {
+                        tagtypes.push("originaldate");
+                    }
+                    _ => {
+                        // the rest are either Random, always included (LastModified), or stickers-based
+                    }
+                }
+            }
+            client
+                .tagtypes_enable(tagtypes)
+                .expect("Unable to enable the needed tag types to order the dynamic playlist");
+            if let Ok(mut songs_stickers) = fetch_songs_by_uri(
+                client,
+                &uris.iter().map(String::as_str).collect::<Vec<&str>>(),
+                true,
+            )
+                .map(|raw| {
+                    raw.into_iter()
+                       .map(|t| (t.0, t.1.unwrap()))
+                       .collect::<Vec<(SongInfo, Stickers)>>()
+                }) {
+                    if !songs_stickers.is_empty() {
+                        // Sort the song list now
+                        if dp.ordering.len() == 1 && dp.ordering[0] == Ordering::Random {
+                            let mut rng = rand::rng();
+                            songs_stickers.shuffle(&mut rng);
+                        } else {
+                            let cmp_func = build_comparator(&dp.ordering);
+                            songs_stickers.sort_by(cmp_func);
+                        }
+                        if let Some(limit) = dp.limit {
+                            songs_stickers.truncate(limit as usize);
+                        }
+                        let songs: Vec<SongInfo> = songs_stickers.into_iter().map(|tup| tup.0).collect();
+                        if cache {
+                            if let Err(db_err) = sqlite::cache_dynamic_playlist_results(&dp.name, &songs) {
+                                println!("Failed to cache DP query result. Queuing will be incorrect!");
+                                dbg!(db_err);
+                            }
+                        }
+
+                        let mut curr_len: usize = 0;
+                        let songs_len = songs.len();
+                        while curr_len < songs_len {
+                            let next_len = (curr_len + BATCH_SIZE).min(songs_len);
+                            let _ = sender_to_fg.send_blocking(
+                                AsyncClientMessage::DynamicPlaylistSongInfoDownloaded(
+                                    name.clone(),
+                                    songs[curr_len..next_len].to_vec(),
+                                ),
+                            );
+                            curr_len = next_len;
+                        }
+                    }
+                    // Send once more w/ an empty list to signal end-of-result
+                    println!("Sending end-of-response");
+                    let _ = sender_to_fg.send_blocking(
+                        AsyncClientMessage::DynamicPlaylistSongInfoDownloaded(name.clone(), Vec::new()),
+                    );
+                }
+            client.tagtypes_all().expect("Cannot restore tagtypes");
+        }
+    }
+
+    pub async fn fetch_dynamic_playlist_cached<F>(&self, name: &str, respond: F) -> ClientResult<()>
+    where F: Fn(Vec<Song>){
+        if let Some(songs_stickers) = sqlite::get_cached_dynamic_playlist_results(name)
+            .ok()
+            .and_then(|uris| {
+
+                fetch_songs_by_uri(
+                    client,
+                    &uris.iter().map(String::as_str).collect::<Vec<&str>>(),
+                    false,
+                )
+                    .ok()
+            })
+        {
+            let songs: Vec<SongInfo> = songs_stickers.into_iter().map(|tup| tup.0).collect();
+            let mut curr_len: usize = 0;
+            let songs_len = songs.len();
+            while curr_len < songs_len {
+                let next_len = (curr_len + BATCH_SIZE).min(songs_len);
+                let _ =
+                    sender_to_fg.send_blocking(AsyncClientMessage::DynamicPlaylistSongInfoDownloaded(
+                        name.to_string(),
+                        songs[curr_len..next_len].to_vec(),
+                    ));
+                curr_len = next_len;
+            }
+
+            // Send once more w/ an empty list to signal end-of-result
+            println!("Sending end-of-response");
+            let _ = sender_to_fg.send_blocking(AsyncClientMessage::DynamicPlaylistSongInfoDownloaded(
+                name.to_string(),
+                Vec::new(),
+            ));
+        }
+    }
+
+    pub fn queue_cached_dynamic_playlist(
+        client: &mut mpd::Client<stream::StreamWrapper>,
+        sender_to_fg: &Sender<AsyncClientMessage>,
+        name: &str,
+        play: bool,
+    ) {
+        let _ = sender_to_fg.send_blocking(AsyncClientMessage::Queuing(true));
+        if let Ok(uris) = sqlite::get_cached_dynamic_playlist_results(name) {
+            add_multi(
+                client,
+                sender_to_fg,
+                &uris,
+                false,
+                if play { Some(0) } else { None },
+                None,
+            );
+        }
+
+        let _ = sender_to_fg.send_blocking(AsyncClientMessage::Queuing(false));
+    }
+
+
+    // Should handle in Library controller
+    // pub async fn get_songs_of_artist<F>(&self, name: String, respond: F) -> ClientResult<()>
+    // where F: Fn(Song) {
+    //     let mut query = Query::new();
+    //     query.and_with_op(
+    //         Term::Tag(Cow::Borrowed("artist")),
+    //         QueryOperation::Contains,
+    //         name,
+    //     );
+    //     self.get_songs_by_query(Query::new(), respond);
+    // }
+    //
+    // pub fn fetch_albums_of_artist(
+    //     client: &mut mpd::Client<stream::StreamWrapper>,
+    //     sender_to_fg: &Sender<AsyncClientMessage>,
+    //     artist_name: String,
+    // ) {
+    //     if let Err(mpd_error) = fetch_albums_by_query(
+    //         client,
+    //         Query::new().and_with_op(
+    //             Term::Tag(Cow::Borrowed("artist")),
+    //             QueryOperation::Contains,
+    //             artist_name.clone(),
+    //         ),
+    //         |info| {
+    //             sender_to_fg.send_blocking(AsyncClientMessage::ArtistAlbumBasicInfoDownloaded(
+    //                 artist_name.clone(),
+    //                 info,
+    //             ))
+    //         },
+    //     ) {
+    //         let _ = sender_to_fg.send_blocking(AsyncClientMessage::BackgroundError(mpd_error, None));
+    //     }
+    // }
+
+
+
+    // fn on_songs_downloaded(&self, signal_name: &str, tag: Option<String>, songs: Vec<SongInfo>) {
+    //     if let Some(tag) = tag {
+    //         self.state.emit_by_name::<()>(
+    //             signal_name,
+    //             &[
+    //                 &tag,
+    //                 &BoxedAnyObject::new(songs.into_iter().map(Song::from).collect::<Vec<Song>>()),
+    //             ],
+    //         );
+    //     } else {
+    //         self.state.emit_by_name::<()>(
+    //             signal_name,
+    //             &[&BoxedAnyObject::new(
+    //                 songs.into_iter().map(Song::from).collect::<Vec<Song>>(),
+    //             )],
+    //         );
+    //     }
+    // }
+
+    // fn on_album_downloaded(&self, signal_name: &str, tag: Option<&str>, info: AlbumInfo) {
+    //     let album = Album::from(info);
+    //     {
+    //         let mut stickers = album.get_stickers().borrow_mut();
+    //         if let Some(val) = self.get_sticker("album", album.get_title(), Stickers::RATING_KEY) {
+    //             stickers.set_rating(&val);
+    //         }
+    //     }
+    //     // Append to listener lists
+    //     if let Some(tag) = tag {
+    //         self.state.emit_by_name::<()>(signal_name, &[&tag, &album]);
+    //     } else {
+    //         self.state.emit_by_name::<()>(signal_name, &[&album]);
+    //     }
+    // }
+
+    // pub fn get_artist_content(&self, name: String) {
+    //     // For artists, we will need to find by substring to include songs and albums that they
+    //     // took part in
+    //     self.queue_background(BackgroundTask::FetchArtistSongs(name.clone()), true);
+    //     self.queue_background(BackgroundTask::FetchArtistAlbums(name.clone()), true);
+    // }
+
+    // pub fn on_folder_contents_downloaded(&self, uri: String, contents: Vec<LsInfoEntry>) {
+    //     self.state.emit_by_name::<()>(
+    //         "folder-contents-downloaded",
+    //         &[
+    //             &uri.to_value(),
+    //             &BoxedAnyObject::new(
+    //                 contents
+    //                     .into_iter()
+    //                     .map(INode::from)
+    //                     .collect::<Vec<INode>>(),
+    //             )
+    //             .to_value(),
+    //         ],
+    //     );
+    // }
 }
 
 // impl Drop for MpdWrapper {
