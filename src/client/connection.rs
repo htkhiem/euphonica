@@ -13,6 +13,7 @@ use crate::{
     cache::{get_new_image_paths, sqlite}, client::stream::StreamWrapper, common::{SongInfo, Stickers, inode::INodeInfo}, player::PlaybackFlow, utils
 };
 
+use super::password;
 use super::StickerSetMode;
 use super::state::StickersSupportLevel;
 
@@ -21,6 +22,7 @@ pub enum Error {
     Mpd(MpdError),
     Internal,
     Socket,
+    CredentialStore,
     Tcp,
     NotConnected,
     InsufficientStickersSupportLevel, // any better name for this? not a native speaker
@@ -34,11 +36,7 @@ pub type Responder<T> = OneShotSender<Result<T>>;
 /// The successor to BackgroundTask.
 pub enum Task {
     /// Connects to MPD. Credentials will be read from settings.
-    Connect(
-        /// Password
-        Option<String>,
-        Responder<Version>,
-    ),
+    Connect(Responder<Version>),
     /// Disconnects from MPD
     Disconnect(
         /// If true, will also terminate run.
@@ -251,7 +249,7 @@ impl Connection {
         }
     }
 
-    pub fn connect(&mut self, password: Option<&str>) -> Result<Version> {
+    pub fn connect(&mut self) -> Result<Version> {
         self.disconnect()?;
         let settings = utils::settings_manager().child("client");
 
@@ -286,7 +284,10 @@ impl Connection {
         };
 
         // If there is a password configured, use it to authenticate.
-        if let Some(password) = password {
+        let mut password_access_failed = false;
+        let mut password_unset = false;
+
+        if let Some(password) = password::get_mpd_password().map_err(|_| Error::CredentialStore)? {
             client.login(password).map_err(Error::Mpd)?;
         }
 
@@ -378,7 +379,6 @@ impl Connection {
     pub fn run(&mut self) -> Result<()> {
         loop {
             let mut curr_task: Option<Task> = None;
-            // let n_tasks = self.high_receiver.len() + bg_receiver.len();
             if !self.receiver.is_empty() {
                 curr_task = Some(
                     self.receiver
@@ -386,18 +386,11 @@ impl Connection {
                         .expect("Unable to read from high-priority queue"),
                 );
             }
-            // else if !self.low_receiver.is_empty() {
-            //     curr_task = Some(
-            //         self.low_receiver
-            //             .recv_blocking()
-            //             .expect("Unable to read from low-priority queue"),
-            //     );
-            // }
 
             if let Some(task) = curr_task {
                 match task {
-                    Task::Connect(password, resp) => {
-                        respond(self.connect(password.as_deref()), resp);
+                    Task::Connect(resp) => {
+                        respond(self.connect(), resp);
                     }
                     Task::Disconnect(stop, resp) => {
                         let res = self.disconnect();

@@ -226,7 +226,6 @@ pub struct MpdWrapper {
     state: ClientState,
     fg_sender: Sender<Task>, // For sending tasks to the interactive client
     bg_sender: Sender<Task>, // For sending tasks to the background client
-    idle_receiver: async_channel::Receiver<Subsystem>,
     client_version: RefCell<Option<Version>>,
     song_cache: RefCell<LruCache<u32, Song, BuildHasherDefault<NoHashHasher<u32>>>>
 }
@@ -254,7 +253,6 @@ impl MpdWrapper {
             state: ClientState::default(),
             fg_sender,
             bg_sender,
-            idle_receiver,
             client_version: RefCell::new(None),
             // Cache song infos so we can reuse them on queue updates.
             // Song IDs are u32s anyway, and I don't think there's any risk of a HashDoS attack
@@ -265,6 +263,21 @@ impl MpdWrapper {
             ))
         });
 
+        // Loop to handle idle changes
+        glib::MainContext::default().spawn_local(clone!(
+            #[weak]
+            wrapper,
+            async move {
+                use futures::prelude::*;
+                let mut receiver =
+                    std::pin::pin!(idle_receiver);
+
+                while let Some(change) = receiver.next().await {
+                    wrapper.handle_idle_changes(change);
+                }
+            })
+        );
+
         wrapper
     }
 
@@ -272,175 +285,7 @@ impl MpdWrapper {
         self.state.clone()
     }
 
-    fn start_bg_thread(&self, password: Option<String>) {
-        let sender_to_fg = self.main_sender.clone();
-        let pending_idle = self.pending_idle.clone();
-        // We have two queues here:
-        // A "normal" queue for tasks that don't require immediacy, like batch album art downloading
-        // on cold startups.
-        let (bg_sender, bg_receiver) = async_channel::unbounded::<BackgroundTask>();
-        // A "high-priority" queue for tasks queued as a direct result of a user action, such as fetching
-        // album content.
-        let (bg_sender_high, bg_receiver_high) = async_channel::unbounded::<BackgroundTask>();
-        // The high-priority queue will always be exhausted first before the normal queue is processed.
-        // Since right now we only have two priority levels, having two queues is much simpler and faster
-        // than an actual heap/hash-based priority queue.
-        let meta_sender = self.meta_sender.clone();
-        self.bg_sender.replace(Some(bg_sender));
-        self.bg_sender_high.replace(Some(bg_sender_high));
-        let bg_channel = self.wake_channel.clone();
-
-        let bg_handle = gio::spawn_blocking(move || {
-            // Create a new connection for the child thread
-            let conn = utils::settings_manager().child("client");
-
-            let mut client: Client<StreamWrapper>;
-
-            let error_msg = "Unable to start background client using current connection settings";
-            if conn.boolean("mpd-use-unix-socket") {
-                let stream: StreamWrapper;
-                let path = conn.string("mpd-unix-socket");
-                if let Ok(resolved_path) = path.try_resolve() {
-                    stream = StreamWrapper::new_unix(
-                        UnixStream::connect(resolved_path)
-                            .map_err(mpd::error::Error::Io)
-                            .expect(error_msg),
-                    );
-                } else {
-                    stream = StreamWrapper::new_unix(
-                        UnixStream::connect(path.as_str())
-                            .map_err(mpd::error::Error::Io)
-                            .expect(error_msg),
-                    );
-                }
-                if let Ok(new_client) = mpd::Client::new(stream) {
-                    client = new_client;
-                } else {
-                    // For early errors like this it's best to just disconnect.
-                    let _ = sender_to_fg.send_blocking(AsyncClientMessage::Disconnect);
-                    return;
-                }
-            } else {
-                let addr = format!("{}:{}", conn.string("mpd-host"), conn.uint("mpd-port"));
-                println!("Connecting to TCP socket {}", &addr);
-                let stream = StreamWrapper::new_tcp(
-                    TcpStream::connect(addr)
-                        .map_err(mpd::error::Error::Io)
-                        .expect(error_msg),
-                );
-                client = mpd::Client::new(stream).expect(error_msg);
-            }
-            if let Some(password) = password {
-                if client.login(&password).is_err() {
-                    // For early errors like this it's best to just disconnect.
-                    println!(
-                        "Background client failed to authenticate in the same manner as main client"
-                    );
-                    let _ = sender_to_fg.send_blocking(AsyncClientMessage::Disconnect);
-                    return;
-                }
-            }
-            if let Err(MpdError::Io(_)) = client.subscribe(bg_channel) {
-                // For early errors like this it's best to just disconnect.
-                println!("Background client could not subscribe to inter-client channel");
-                let _ = sender_to_fg.send_blocking(AsyncClientMessage::Disconnect);
-                return;
-            }
-
-            'outer: loop {
-                let skip_to_idle = pending_idle.load(Ordering::Relaxed);
-
-                let mut curr_task: Option<BackgroundTask> = None;
-                let n_tasks = bg_receiver_high.len() + bg_receiver.len();
-                let _ = sender_to_fg.send_blocking(AsyncClientMessage::Status(n_tasks));
-                if !skip_to_idle {
-                    if !bg_receiver_high.is_empty() {
-                        curr_task = Some(
-                            bg_receiver_high
-                                .recv_blocking()
-                                .expect("Unable to read from high-priority queue"),
-                        );
-                    } else if !bg_receiver.is_empty() {
-                        curr_task = Some(
-                            bg_receiver
-                                .recv_blocking()
-                                .expect("Unable to read from background queue"),
-                        );
-                    }
-                }
-
-                if !skip_to_idle && curr_task.is_some() {
-                    let task = curr_task.unwrap();
-                    match task {
-
-                        BackgroundTask::QueueQuery(query, play_from) => {
-                            background::find_add(&mut client, &sender_to_fg, query, play_from);
-                        }
-                        BackgroundTask::QueuePlaylist(name, play_from) => {
-                            background::load_playlist(&mut client, &sender_to_fg, &name, play_from);
-                        }
-                        BackgroundTask::FetchDynamicPlaylistSongs(dp, cache) => {
-                            background::fetch_dynamic_playlist(
-                                &mut client,
-                                &sender_to_fg,
-                                dp,
-                                cache,
-                            );
-                        }
-                        BackgroundTask::FetchCachedDynamicPlaylistSongs(name) => {
-                            background::fetch_dynamic_playlist_cached(
-                                &mut client,
-                                &sender_to_fg,
-                                &name,
-                            );
-                        }
-                        BackgroundTask::QueueDynamicPlaylist(name, play) => {
-                            background::queue_cached_dynamic_playlist(
-                                &mut client,
-                                &sender_to_fg,
-                                &name,
-                                play,
-                            );
-                        }
-                    }
-                } else {
-                    // If not, go into idle mode
-                    if skip_to_idle {
-                        // println!("Background MPD thread skipping to idle mode as there are pending messages");
-                        pending_idle.store(false, Ordering::Relaxed);
-                    }
-                    if let Ok(changes) = client.wait(&[]) {
-                        if changes.contains(&Subsystem::Message) {
-                            if let Ok(msgs) = client.readmessages() {
-                                for msg in msgs {
-                                    let content = msg.message.as_str();
-                                    match content {
-                                        // More to come
-                                        "STOP" => {
-                                            let _ = client.close();
-                                            break 'outer;
-                                        }
-                                        _ => {}
-                                    }
-                                }
-                            }
-                        }
-                        let _ = sender_to_fg.send_blocking(AsyncClientMessage::Idle(changes));
-                    } else {
-                        let _ = client.close();
-                        println!(
-                            "Child thread encountered a client error while idling. Stopping..."
-                        );
-                        let _ = sender_to_fg.send_blocking(AsyncClientMessage::Disconnect);
-                        break 'outer;
-                    }
-                }
-            }
-        });
-        self.bg_handle.replace(Some(bg_handle));
-    }
-
-    fn setup_channel(self: Rc<Self>, receiver: Receiver<AsyncClientMessage>) {
+    fn setup_channel(self: Rc<Self>) {
         // Set up a ping loop. Main client does not use idle mode, so it needs to ping periodically.
         // If there is no client connected, it will simply skip pinging.
         let conn = utils::settings_manager().child("client");
@@ -496,18 +341,11 @@ impl MpdWrapper {
                         r.await;
                     } else {
                         println!("System has woken up. Reconnecting...");
-                        let mut client_password: Option<String> = None;
-                        match get_mpd_password().await {
-                            Ok(maybe_password) => {
-                                client_password = maybe_password;
-                            }
-                            _ => {}
-                        }
                         let (s, r) = oneshot::channel();
-                        fg_sender.send(Task::Connect(client_password.clone(), s)).await;
+                        fg_sender.send(Task::Connect(s)).await;
                         r.await;
                         let (s, r) = oneshot::channel();
-                        bg_sender.send(Task::Connect(client_password, s)).await;
+                        bg_sender.send(Task::Connect(s)).await;
                         r.await;
                     }
                 }
@@ -515,89 +353,17 @@ impl MpdWrapper {
         });
     }
 
-    async fn respond(
-        &self,
-        request: AsyncClientMessage,
-        recently_connected: bool,
-    ) -> glib::ControlFlow {
-        // println!("Received MpdMessage {:?}", request);
-        match request {
-            AsyncClientMessage::Connect => {
-                if !recently_connected {
-                    self.connect_async().await;
-                }
+    async fn handle_idle_changes(&self, subsystem: Subsystem) {
+        self.state.emit_boxed_result("idle", subsystem); // Handle some directly here
+        match subsystem {
+            Subsystem::Database => {
+                // Database changed after updating. Perform a reconnection,
+                // which will also trigger views to refresh their contents.
+                let (s, r) = oneshot::channel();
+                let _ = self.background(Task::UpdateDb(s), r).await;
             }
-            AsyncClientMessage::Disconnect => self.disconnect_async().await,
-            AsyncClientMessage::Idle(changes) => self.handle_idle_changes(changes).await,
-            AsyncClientMessage::QueueSongsDownloaded(songs) => {
-                self.on_songs_downloaded("queue-songs-downloaded", None, songs)
-            }
-            AsyncClientMessage::QueueChangesReceived(changes) => {
-                self.state.emit_boxed_result("queue-changed", changes);
-            }
-            AsyncClientMessage::AlbumBasicInfoDownloaded(info) => {
-                self.on_album_downloaded("album-basic-info-downloaded", None, info)
-            }
-            AsyncClientMessage::RecentAlbumDownloaded(info) => {
-                self.on_album_downloaded("recent-album-downloaded", None, info)
-            }
-            AsyncClientMessage::AlbumSongInfoDownloaded(tag, songs) => {
-                self.on_songs_downloaded("album-songs-downloaded", Some(tag), songs)
-            }
-            AsyncClientMessage::ArtistBasicInfoDownloaded(info) => self
-                .state
-                .emit_result("artist-basic-info-downloaded", Artist::from(info)),
-            AsyncClientMessage::RecentArtistDownloaded(info) => self
-                .state
-                .emit_result("recent-artist-downloaded", Artist::from(info)),
-            AsyncClientMessage::ArtistSongInfoDownloaded(name, songs) => {
-                self.on_songs_downloaded("artist-songs-downloaded", Some(name), songs)
-            }
-            AsyncClientMessage::ArtistAlbumBasicInfoDownloaded(artist_name, song_info) => self
-                .on_album_downloaded(
-                    "artist-album-basic-info-downloaded",
-                    Some(&artist_name),
-                    song_info,
-                ),
-            AsyncClientMessage::FolderContentsDownloaded(uri, contents) => {
-                self.on_folder_contents_downloaded(uri, contents)
-            }
-            AsyncClientMessage::PlaylistSongInfoDownloaded(name, songs) => {
-                self.on_songs_downloaded("playlist-songs-downloaded", Some(name), songs)
-            }
-            AsyncClientMessage::DBUpdated => {}
-            AsyncClientMessage::Status(n_tasks) => {
-                self.state.set_n_background_tasks(n_tasks as u64)
-            }
-            AsyncClientMessage::RecentSongInfoDownloaded(songs) => {
-                self.on_songs_downloaded("recent-songs-downloaded", None, songs)
-            }
-            AsyncClientMessage::Queuing(block) => {
-                self.state.set_queuing(block);
-            }
-            AsyncClientMessage::BackgroundError(error, or) => {
-                self.handle_common_mpd_error(&error, or);
-            }
-            AsyncClientMessage::DynamicPlaylistSongInfoDownloaded(name, songs) => {
-                self.on_songs_downloaded("dynamic-playlist-songs-downloaded", Some(name), songs)
-            }
-        }
-        glib::ControlFlow::Continue
-    }
-
-    async fn handle_idle_changes(&self, changes: Vec<Subsystem>) {
-        for subsystem in changes {
-            self.state.emit_boxed_result("idle", subsystem); // Handle some directly here
-            match subsystem {
-                Subsystem::Database => {
-                    // Database changed after updating. Perform a reconnection,
-                    // which will also trigger views to refresh their contents.
-                    let (s, r) = oneshot::channel();
-                    let _ = self.background(Task::UpdateDb(s), r).await;
-                }
-                // More to come
-                _ => {}
-            }
+            // More to come
+            _ => {}
         }
     }
 
@@ -612,9 +378,6 @@ impl MpdWrapper {
         println!("Stopped background client");
         self.state
             .set_connection_state(ConnectionState::NotConnected);
-        self.state.set_queuing(false);
-        self.queue_version.set(0);
-        self.expected_queue_version.set(0);
         self.client_version.take();
         Ok(())
     }
@@ -668,12 +431,7 @@ impl MpdWrapper {
         res
     }
 
-    async fn handle_connect_error(
-        &self,
-        res: ClientResult<Version>,
-        access_error: bool,
-        password_unset: bool,
-    ) -> ClientResult<Version> {
+    async fn handle_connect_error(&self, res: ClientResult<Version>) -> ClientResult<Version> {
         match &res {
             Err(e) => match e {
                 ClientError::Mpd(MpdError::Server(e)) => match e.code {
@@ -682,13 +440,7 @@ impl MpdWrapper {
                             .set_connection_state(ConnectionState::WrongPassword);
                     }
                     MpdErrorCode::Permission => {
-                        self.state.set_connection_state(if access_error {
-                            ConnectionState::CredentialStoreError
-                        } else if password_unset {
-                            ConnectionState::PasswordNotAvailable
-                        } else {
-                            ConnectionState::Unauthenticated
-                        });
+                        self.state.set_connection_state(ConnectionState::Unauthenticated);
                     }
                     _ => {
                         self.state
@@ -702,6 +454,10 @@ impl MpdWrapper {
                 ClientError::Tcp => {
                     self.state
                         .set_connection_state(ConnectionState::ConnectionRefused);
+                }
+                ClientError::CredentialStore => {
+                    self.state
+                        .set_connection_state(ConnectionState::CredentialStoreError);
                 }
                 _ => {
                     self.state
@@ -722,33 +478,9 @@ impl MpdWrapper {
 
         self.state.set_connection_state(ConnectionState::Connecting);
 
-        let mut password_access_failed = false;
-        let mut password_unset = false;
-        let client_password: Option<String>;
-        match get_mpd_password().await {
-            Ok(maybe_password) => {
-                client_password = maybe_password;
-                password_unset = client_password.is_none();
-            }
-            Err(e) => {
-                // Only reachable by glib async runner errors
-                client_password = None;
-                println!("{:?}", &e);
-                password_access_failed = true;
-            }
-        }
-
         let (s, r) = oneshot::channel();
-        self.fg_sender
-            .send(Task::Connect(client_password.clone(), s))
-            .await;
-        let version = self
-            .handle_connect_error(
-                r.await.expect("Broken oneshot receiver"),
-                password_access_failed,
-                password_unset,
-            )
-            .await?;
+        self.fg_sender.send(Task::Connect(s)).await;
+        let version = self.handle_connect_error(r.await.expect("Broken oneshot receiver")).await?;
         // Set to maximum supported level first. Any subsequent sticker command will then
         // update it to a lower state upon encountering related errors.
         // Euphonica relies on 0.24+ stickers capabilities. Disable if connected to
@@ -764,13 +496,8 @@ impl MpdWrapper {
         println!("Connected foreground client");
 
         let (s, r) = oneshot::channel();
-        self.bg_sender.send(Task::Connect(client_password, s)).await;
-        self.handle_connect_error(
-            r.await.expect("Broken oneshot receiver"),
-            password_access_failed,
-            password_unset,
-        )
-        .await?;
+        self.bg_sender.send(Task::Connect(s)).await;
+        self.handle_connect_error(r.await.expect("Broken oneshot receiver")).await?;
         println!("Connected background client");
 
         Ok(())
@@ -1651,8 +1378,7 @@ impl MpdWrapper {
         &self,
         dp: DynamicPlaylist,
         cache: bool // If true, will cache resolved song URIs locally
-    ) -> ClientResult<Vec<Song>> where F: Fn(Vec<Song>)
-    {
+    ) -> ClientResult<Vec<Song>> {
         // To reduce server & connection burden, temporarily turn off all tags in responses.
         let (s, r) = oneshot::channel();
         self.foreground(Task::ClearTagTypes(s), r).await?;
@@ -1712,61 +1438,26 @@ impl MpdWrapper {
         Ok(songs.into_iter().map(Song::from).collect())
     }
 
-    pub async fn fetch_dynamic_playlist_cached<F>(&self, name: &str, respond: F) -> ClientResult<()>
-    where F: Fn(Vec<Song>){
-        if let Some(songs_stickers) = sqlite::get_cached_dynamic_playlist_results(name)
-            .ok()
-            .and_then(|uris| {
-
-                fetch_songs_by_uri(
-                    client,
-                    &uris.iter().map(String::as_str).collect::<Vec<&str>>(),
-                    false,
-                )
-                    .ok()
-            })
-        {
-            let songs: Vec<SongInfo> = songs_stickers.into_iter().map(|tup| tup.0).collect();
-            let mut curr_len: usize = 0;
-            let songs_len = songs.len();
-            while curr_len < songs_len {
-                let next_len = (curr_len + BATCH_SIZE).min(songs_len);
-                let _ =
-                    sender_to_fg.send_blocking(AsyncClientMessage::DynamicPlaylistSongInfoDownloaded(
-                        name.to_string(),
-                        songs[curr_len..next_len].to_vec(),
-                    ));
-                curr_len = next_len;
+    pub async fn fetch_dynamic_playlist_cached<F>(&self, name: &str, respond: F) -> ClientResult<Vec<Song>>
+    where F: Fn(Vec<Song>) {
+        let uris = gio::spawn_blocking(|| {
+            sqlite::get_cached_dynamic_playlist_results(name).map_err(|_| ClientError::Internal)
+        }).await.unwrap().map_err(|_| ClientError::Internal)?;
+        let songs: Vec<Song> = Vec::with_capacity(uris.len());
+        for uri in uris.into_iter() {
+            if let Some(tup) = self.get_song_by_uri(uri, false).await? {
+                songs.push(tup.0);
             }
-
-            // Send once more w/ an empty list to signal end-of-result
-            println!("Sending end-of-response");
-            let _ = sender_to_fg.send_blocking(AsyncClientMessage::DynamicPlaylistSongInfoDownloaded(
-                name.to_string(),
-                Vec::new(),
-            ));
         }
+        Ok(songs)
     }
 
-    pub fn queue_cached_dynamic_playlist(
-        client: &mut mpd::Client<stream::StreamWrapper>,
-        sender_to_fg: &Sender<AsyncClientMessage>,
-        name: &str,
-        play: bool,
-    ) {
-        let _ = sender_to_fg.send_blocking(AsyncClientMessage::Queuing(true));
-        if let Ok(uris) = sqlite::get_cached_dynamic_playlist_results(name) {
-            add_multi(
-                client,
-                sender_to_fg,
-                &uris,
-                false,
-                if play { Some(0) } else { None },
-                None,
-            );
-        }
-
-        let _ = sender_to_fg.send_blocking(AsyncClientMessage::Queuing(false));
+    pub async fn queue_cached_dynamic_playlist(&self, name: &str) -> ClientResult<()> {
+        let uris = gio::spawn_blocking(|| {
+            sqlite::get_cached_dynamic_playlist_results(name).map_err(|_| ClientError::Internal)
+        }).await.unwrap().map_err(|_| ClientError::Internal)?;
+        let (s, r) = oneshot::channel();
+        self.background(Task::AddMultiple(uris, s), r).await
     }
 
 
