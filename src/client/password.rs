@@ -1,3 +1,4 @@
+use gio::Cancellable;
 use libsecret::*;
 use std::collections::HashMap;
 
@@ -10,13 +11,12 @@ pub fn get_mpd_password_schema() -> Schema {
     Schema::new(APPLICATION_ID, SchemaFlags::NONE, attributes)
 }
 
-pub async fn get_mpd_password() -> Result<Option<String>, String> {
+pub fn get_mpd_password() -> Result<Option<String>, String> {
     let schema = get_mpd_password_schema();
     let mut attributes = HashMap::new();
     attributes.insert("type", "mpd");
 
-    libsecret::password_lookup_future(Some(&schema), attributes)
-        .await
+    libsecret::password_lookup_sync(Some(&schema), attributes, Option::<Cancellable>::None)
         .map(|op| op.map(|gs| gs.as_str().to_owned()))
         .map_err(|ge| format!("{ge:?}"))
 }

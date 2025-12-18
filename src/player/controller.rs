@@ -678,6 +678,8 @@ impl Player {
     pub fn clear(&self) {
         self.imp().queue.remove_all();
         self.imp().outputs.remove_all();
+        self.imp().queue_version.set(0);
+        self.imp().expected_queue_version.set(0);
         self.update_status(&mpd::Status::default());
     }
 
