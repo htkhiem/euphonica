@@ -3,7 +3,6 @@ extern crate rusqlite;
 
 use std::{io::Cursor, str::FromStr};
 
-use glib::{ThreadHandle, ThreadPool};
 use once_cell::sync::Lazy;
 use r2d2_sqlite::SqliteConnectionManager;
 use rusqlite::{Error as SqliteError, OptionalExtension, Result, Row, params};
@@ -21,10 +20,6 @@ use crate::{
 
 use super::controller::get_doc_cache_path;
 
-// Limit writes to a single thread to avoid DatabaseBusy races.
-// Thread will be parked when idle.
-static SQLITE_WRITE_THREADPOOL: Lazy<glib::ThreadPool> =
-    Lazy::new(|| ThreadPool::shared(Some(1)).expect("Failed to spawn Sqlite write threadpool"));
 static SQLITE_POOL: Lazy<r2d2::Pool<SqliteConnectionManager>> = Lazy::new(|| {
     let manager = SqliteConnectionManager::file(get_doc_cache_path());
     let pool = r2d2::Pool::new(manager).unwrap();
@@ -611,72 +606,57 @@ pub fn find_cover_by_uri(track_uri: &str, is_thumbnail: bool) -> Result<Option<S
 }
 
 pub fn register_image_key(
-    key: String,
+    key: &str,
     prefix: Option<&'static str>,
-    filename: Option<String>,
+    filename: Option<&str>,
     is_thumbnail: bool,
-) -> ThreadHandle<Result<(), Error>> {
-    SQLITE_WRITE_THREADPOOL
-        .push(move || {
-            let mut conn = SQLITE_POOL.get().unwrap();
-            let tx = conn.transaction().map_err(Error::Db)?;
+) -> Result<(), Error> {
+    let mut conn = SQLITE_POOL.get().unwrap();
+    let tx = conn.transaction().map_err(Error::Db)?;
 
-            let final_key = if let Some(prefix) = prefix {
-                &format!("{prefix}:{key}")
-            } else {
-                &key
-            };
+    let final_key = if let Some(prefix) = prefix {
+        &format!("{prefix}:{key}")
+    } else {
+        key
+    };
 
-            tx.execute(
-                "delete from images where key = ?1 and is_thumbnail = ?2",
-                params![final_key, is_thumbnail as i32],
-            )
-            .map_err(Error::Db)?;
+    tx.execute(
+        "delete from images where key = ?1 and is_thumbnail = ?2",
+        params![final_key, is_thumbnail as i32],
+    ).map_err(Error::Db)?;
 
-            tx.execute(
-            "insert into images (key, is_thumbnail, filename, last_modified) values (?1,?2,?3,?4)",
-            params![
-                final_key,
-                is_thumbnail as i32,
-                // Callers should interpret empty names as "tried but didn't find anything, don't try again"
-                if let Some(filename) = filename {
-                    filename
-                } else {
-                    "".to_owned()
-                },
-                OffsetDateTime::now_utc()
-            ],
-        )
-          .map_err(Error::Db)?;
-            tx.commit().map_err(Error::Db)?;
-            Ok(())
-        })
-        .expect("register_image_key: Failed to schedule transaction with threadpool")
+    tx.execute(
+        "insert into images (key, is_thumbnail, filename, last_modified) values (?1,?2,?3,?4)",
+        params![
+            final_key,
+            is_thumbnail as i32,
+            // Callers should interpret empty names as "tried but didn't find anything, don't try again"
+            filename.unwrap_or(""),
+            OffsetDateTime::now_utc()
+        ])
+      .map_err(Error::Db)?;
+    tx.commit().map_err(Error::Db)?;
+    Ok(())
 }
 
 pub fn unregister_image_key(
-    key: String,
+    key: &str,
     prefix: Option<&'static str>,
     is_thumbnail: bool,
-) -> ThreadHandle<Result<(), Error>> {
-    SQLITE_WRITE_THREADPOOL
-        .push(move || {
-            let mut conn = SQLITE_POOL.get().unwrap();
-            let tx = conn.transaction().map_err(Error::Db)?;
-            let final_key = if let Some(prefix) = prefix {
-                &format!("{prefix}:{key}")
-            } else {
-                &key
-            };
-            tx.execute(
-                "delete from images where key = ?1 and is_thumbnail = ?2",
-                params![final_key, is_thumbnail as i32],
-            )
-            .map_err(Error::Db)?;
-            tx.commit().map_err(Error::Db)?;
-            Ok(())
-        })
-        .expect("register_image_key: Failed to schedule transaction with threadpool")
+) -> Result<(), Error> {
+    let mut conn = SQLITE_POOL.get().unwrap();
+    let tx = conn.transaction().map_err(Error::Db)?;
+    let final_key = if let Some(prefix) = prefix {
+        &format!("{prefix}:{key}")
+    } else {
+        key
+    };
+    tx.execute(
+        "delete from images where key = ?1 and is_thumbnail = ?2",
+        params![final_key, is_thumbnail as i32],
+    ).map_err(Error::Db)?;
+    tx.commit().map_err(Error::Db)?;
+    Ok(())
 }
 
 pub fn add_to_history(song: &SongInfo) -> Result<(), Error> {
