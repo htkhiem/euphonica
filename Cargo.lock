@@ -277,6 +277,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "asyncified"
+version = "0.6.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ddbcf3c524e7338b7e791a2b2d82c478c89930f1ecd4a64bced1211392b6ccae"
+
+[[package]]
 name = "atomic-waker"
 version = "1.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1015,6 +1021,7 @@ dependencies = [
  "ashpd",
  "async-channel",
  "async-lock",
+ "asyncified",
  "auto-palette",
  "base64 0.22.1",
  "bson",

@@ -57,39 +57,28 @@ mod imp {
             static SIGNALS: OnceLock<Vec<Signal>> = OnceLock::new();
             SIGNALS.get_or_init(|| {
                 vec![
-                    // Only emitted when a new album art becomes locally available.
-                    Signal::builder("album-art-downloaded")
+                    Signal::builder("folder-cover-set")
                         .param_types([
-                            String::static_type(), // folder or file URI
-                            bool::static_type(),   // is_thumbnail
-                            gdk::Texture::static_type(),
+                            String::static_type(), // folder URI
+                            gdk::Texture::static_type(),   // handle to hires texture
+                            gdk::Texture::static_type(),   // handle to thumbnail texture
                         ])
                         .build(),
-                    Signal::builder("album-art-cleared")
+                    Signal::builder("folder-cover-cleared")
                         .param_types([
                             String::static_type(), // folder URI
                         ])
                         .build(),
-                    Signal::builder("album-meta-downloaded")
+                    Signal::builder("artist-avatar-set")
                         .param_types([
-                            String::static_type(), // album tag
-                        ])
-                        .build(),
-                    Signal::builder("artist-meta-downloaded")
-                        .param_types([
-                            String::static_type(), // artist tag
-                        ])
-                        .build(),
-                    Signal::builder("artist-avatar-downloaded")
-                        .param_types([
-                            String::static_type(), // artist tag
-                            bool::static_type(),   // is_thumbnail
-                            gdk::Texture::static_type(),
+                            String::static_type(), // Artist name (may be part of a tag)
+                            gdk::Texture::static_type(),   // handle to hires texture
+                            gdk::Texture::static_type(),   // handle to thumbnail texture
                         ])
                         .build(),
                     Signal::builder("artist-avatar-cleared")
                         .param_types([
-                            String::static_type(), // artist tag
+                            String::static_type(), // Artist name (may be part of a tag)
                         ])
                         .build(),
                     // Signal::builder("playlist-cover-downloaded")
@@ -105,11 +94,6 @@ mod imp {
                     //     ])
                     //     .build(),
                     // Dynamic playlists are local & changes would require refreshing the outer list anyway.
-                    Signal::builder("song-lyrics-downloaded")
-                        .param_types([
-                            String::static_type(), // full song URI
-                        ])
-                        .build(),
                 ]
             })
         }
@@ -132,7 +116,7 @@ impl CacheState {
         self.emit_by_name::<()>(name, &[&tag]);
     }
 
-    pub fn emit_texture(&self, name: &str, tag: &str, thumb: bool, tex: &gdk::Texture) {
-        self.emit_by_name::<()>(name, &[&tag, &thumb, tex]);
+    pub fn emit_texture(&self, name: &str, tag: &str, hires: &gdk::Texture, thumb: &gdk::Texture) {
+        self.emit_by_name::<()>(name, &[&tag, hires, thumb]);
     }
 }
