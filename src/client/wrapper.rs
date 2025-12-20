@@ -388,13 +388,13 @@ impl MpdWrapper {
                 match e {
                     ClientError::Mpd(e) => {
                         match e {
-                            MpdError::Io(e) => {
+                            MpdError::Io(_e) => {
                                 self.state
                                     .set_connection_state(ConnectionState::NotConnected);
                                 // TODO
                             }
-                            MpdError::Parse(e) => {}
-                            MpdError::Proto(e) => {}
+                            MpdError::Parse(_e) => {}
+                            MpdError::Proto(_e) => {}
                             MpdError::Server(e) => {
                                 match e.code {
                                     MpdErrorCode::Password => {
@@ -565,7 +565,7 @@ impl MpdWrapper {
         res
     }
 
-    pub async fn get_sticker(&self, typ: &'static str, uri: &str, name: &str) -> ClientResult<String> {
+    pub async fn get_sticker(&self, typ: &'static str, uri: String, name: String) -> ClientResult<String> {
         let min_lvl = if typ == "song" {
             StickersSupportLevel::SongsOnly
         } else {
@@ -575,7 +575,7 @@ impl MpdWrapper {
             let (s, r) = oneshot::channel();
             self.handle_sticker_error(
                 self.foreground(
-                    Task::GetSticker(typ, uri.to_owned(), name.to_owned(), s),
+                    Task::GetSticker(typ, uri, name, s),
                     r,
                 )
                 .await,
@@ -585,7 +585,7 @@ impl MpdWrapper {
         }
     }
 
-    pub async fn get_known_stickers(&self, typ: &'static str, uri: &str) -> ClientResult<Stickers> {
+    pub async fn get_known_stickers(&self, typ: &'static str, uri: String) -> ClientResult<Stickers> {
         let min_lvl = if typ == "song" {
             StickersSupportLevel::SongsOnly
         } else {
@@ -594,8 +594,7 @@ impl MpdWrapper {
         if self.state.get_stickers_support_level() >= min_lvl {
             let (s, r) = oneshot::channel();
             self.handle_sticker_error(
-                self.foreground(Task::GetKnownStickers(typ, uri.to_owned(), s), r)
-                    .await,
+                self.foreground(Task::GetKnownStickers(typ, uri, s), r).await,
             )
         } else {
             Err(ClientError::InsufficientStickersSupportLevel)
@@ -605,9 +604,9 @@ impl MpdWrapper {
     pub async fn set_sticker(
         &self,
         typ: &'static str,
-        uri: &str,
-        name: &str,
-        value: &str,
+        uri: String,
+        name: String,
+        value: String,
         mode: StickerSetMode,
     ) -> ClientResult<()> {
         let min_lvl = if typ == "song" {
@@ -618,25 +617,14 @@ impl MpdWrapper {
         if self.state.get_stickers_support_level() >= min_lvl {
             let (s, r) = oneshot::channel();
             self.handle_sticker_error(
-                self.foreground(
-                    Task::SetSticker(
-                        typ,
-                        uri.to_owned(),
-                        name.to_owned(),
-                        value.to_owned(),
-                        mode,
-                        s,
-                    ),
-                    r,
-                )
-                .await,
+                self.foreground(Task::SetSticker(typ, uri, name, value, mode, s), r).await,
             )
         } else {
             Err(ClientError::InsufficientStickersSupportLevel)
         }
     }
 
-    pub async fn delete_sticker(&self, typ: &'static str, uri: &str, name: &str) -> ClientResult<()> {
+    pub async fn delete_sticker(&self, typ: &'static str, uri: String, name: String) -> ClientResult<()> {
         let min_lvl = if typ == "song" {
             StickersSupportLevel::SongsOnly
         } else {
@@ -646,7 +634,7 @@ impl MpdWrapper {
             let (s, r) = oneshot::channel();
             self.handle_sticker_error(
                 self.foreground(
-                    Task::DeleteSticker(typ, uri.to_owned(), name.to_owned(), s),
+                    Task::DeleteSticker(typ, uri, name, s),
                     r,
                 )
                 .await,
@@ -675,31 +663,31 @@ impl MpdWrapper {
             .map(|infos| infos.into_iter().map(INode::from).collect::<Vec<INode>>())
     }
 
-    pub async fn load_playlist(&self, name: &str) -> ClientResult<()> {
+    pub async fn load_playlist(&self, name: String) -> ClientResult<()> {
         let (s, r) = oneshot::channel();
         self.handle_playlist_error(
-            self.foreground(Task::LoadPlaylist(name.to_owned(), s), r)
+            self.foreground(Task::LoadPlaylist(name, s), r)
                 .await,
         )
     }
 
     pub async fn save_queue_as_playlist(
         &self,
-        name: &str,
+        name: String,
         save_mode: SaveMode,
     ) -> ClientResult<()> {
         let (s, r) = oneshot::channel();
         self.handle_playlist_error(
-            self.foreground(Task::SaveQueueAsPlaylist(name.to_owned(), save_mode, s), r)
+            self.foreground(Task::SaveQueueAsPlaylist(name, save_mode, s), r)
                 .await,
         )
     }
 
-    pub async fn rename_playlist(&self, old_name: &str, new_name: &str) -> ClientResult<()> {
+    pub async fn rename_playlist(&self, old_name: String, new_name: String) -> ClientResult<()> {
         let (s, r) = oneshot::channel();
         self.handle_playlist_error(
             self.foreground(
-                Task::RenamePlaylist(old_name.to_owned(), new_name.to_owned(), s),
+                Task::RenamePlaylist(old_name, new_name, s),
                 r,
             )
             .await,
@@ -711,10 +699,10 @@ impl MpdWrapper {
         self.handle_playlist_error(self.foreground(Task::EditPlaylist(actions, s), r).await)
     }
 
-    pub async fn delete_playlist(&self, name: &str) -> ClientResult<()> {
+    pub async fn delete_playlist(&self, name: String) -> ClientResult<()> {
         let (s, r) = oneshot::channel();
         self.handle_playlist_error(
-            self.foreground(Task::DeletePlaylist(name.to_owned(), s), r)
+            self.foreground(Task::DeletePlaylist(name, s), r)
                 .await,
         )
     }
@@ -913,14 +901,14 @@ impl MpdWrapper {
         self.foreground(Task::UpdateDb(s), r).await
     }
 
-    pub async fn get_embedded_cover(&self, uri: &str) -> ClientResult<Option<(String, String)>> {
+    pub async fn get_embedded_cover(&self, uri: String) -> ClientResult<Option<(String, String)>> {
         let (s, r) = oneshot::channel();
-        self.background(Task::GetEmbeddedCover(uri.to_owned(), s), r).await
+        self.background(Task::GetEmbeddedCover(uri, s), r).await
     }
 
-    pub async fn get_folder_cover(&self, folder_uri: &str) -> ClientResult<Option<(String, String)>> {
+    pub async fn get_folder_cover(&self, folder_uri: String) -> ClientResult<Option<(String, String)>> {
         let (s, r) = oneshot::channel();
-        self.background(Task::GetFolderCover(folder_uri.to_owned(), s), r).await
+        self.background(Task::GetFolderCover(folder_uri, s), r).await
     }
 
     pub async fn get_albums_by_query<F>(&self, query: Query<'static>, respond: &F) -> ClientResult<()>
@@ -1091,8 +1079,8 @@ impl MpdWrapper {
             .await.map(|infos| infos.into_iter().map(INode::from).collect::<Vec<INode>>())
     }
 
-    async fn get_playlist_song_infos<F>(&self, name: String, respond: F) -> ClientResult<()>
-    where F: Fn(Vec<SongInfo>) {
+    async fn get_playlist_song_infos<F>(&self, name: String, respond: &mut F) -> ClientResult<()>
+    where F: FnMut(Vec<SongInfo>) {
         let client_version = self.client_version.borrow().ok_or(ClientError::NotConnected)?;
         if client_version.1 < 24 {
             let (s, r) = oneshot::channel();
@@ -1119,9 +1107,9 @@ impl MpdWrapper {
         Ok(())
     }
 
-    pub async fn get_playlist_songs<F>(&self, name: String, respond: F) -> ClientResult<()>
-    where F: Fn(Vec<Song>) {
-        self.get_playlist_song_infos(name, &|song_infos: Vec<SongInfo>| {
+    pub async fn get_playlist_songs<F>(&self, name: String, mut respond: F) -> ClientResult<()>
+    where F: FnMut(Vec<Song>) {
+        self.get_playlist_song_infos(name, &mut |song_infos: Vec<SongInfo>| {
             respond(
                 song_infos
                     .into_iter()
@@ -1153,9 +1141,9 @@ impl MpdWrapper {
     pub async fn get_recent_songs<F>(&self, n: u32) -> ClientResult<Vec<Song>> {
         let to_fetch: Vec<(String, OffsetDateTime)> = sqlite::get_last_n_songs(n).expect("Sqlite DB error");
         let mut res: Vec<Song> = Vec::with_capacity(n as usize);
-        for tup in to_fetch.iter() {
+        for tup in to_fetch.into_iter() {
             if let Some(mut song) = self
-                .get_song_by_uri(tup.0.to_owned(), false)
+                .get_song_by_uri(tup.0, false)
                 .await
                 .map(|opt| opt.map(|pair| pair.0))?
             {
@@ -1259,7 +1247,7 @@ impl MpdWrapper {
                         for playlist_name in names.into_iter() {
                             self.get_playlist_song_infos(
                                 playlist_name,
-                                |batch: Vec<SongInfo>| {
+                                &mut |batch: Vec<SongInfo>| {
                                     let _ = respond(
                                         batch.into_iter().map(|song| song.uri).collect(),
                                     );
@@ -1438,23 +1426,22 @@ impl MpdWrapper {
         Ok(songs.into_iter().map(Song::from).collect())
     }
 
-    pub async fn fetch_dynamic_playlist_cached<F>(&self, name: &str, respond: F) -> ClientResult<Vec<Song>>
-    where F: Fn(Vec<Song>) {
-        let uris = gio::spawn_blocking(|| {
-            sqlite::get_cached_dynamic_playlist_results(name).map_err(|_| ClientError::Internal)
+    pub async fn fetch_dynamic_playlist_cached<F>(&self, name: String) -> ClientResult<Vec<Song>> {
+        let uris = gio::spawn_blocking(move || {
+            sqlite::get_cached_dynamic_playlist_results(&name).map_err(|_| ClientError::Internal)
         }).await.unwrap().map_err(|_| ClientError::Internal)?;
-        let songs: Vec<Song> = Vec::with_capacity(uris.len());
+        let mut songs: Vec<Song> = Vec::with_capacity(uris.len());
         for uri in uris.into_iter() {
             if let Some(tup) = self.get_song_by_uri(uri, false).await? {
-                songs.push(tup.0);
+                songs.push(tup.0.into());
             }
         }
         Ok(songs)
     }
 
-    pub async fn queue_cached_dynamic_playlist(&self, name: &str) -> ClientResult<()> {
-        let uris = gio::spawn_blocking(|| {
-            sqlite::get_cached_dynamic_playlist_results(name).map_err(|_| ClientError::Internal)
+    pub async fn queue_cached_dynamic_playlist(&self, name: String) -> ClientResult<Vec<Id>> {
+        let uris = gio::spawn_blocking(move || {
+            sqlite::get_cached_dynamic_playlist_results(&name).map_err(|_| ClientError::Internal)
         }).await.unwrap().map_err(|_| ClientError::Internal)?;
         let (s, r) = oneshot::channel();
         self.background(Task::AddMultiple(uris, s), r).await

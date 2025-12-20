@@ -31,13 +31,6 @@ pub enum StickersSupportLevel {
     All,       // MPD 0.24+ also supports attaching stickers to tags
 }
 
-#[non_exhaustive]
-#[derive(Debug, Copy, Clone, PartialEq, Eq, glib::Enum)]
-#[enum_type(name = "EuphonicaClientError")]
-pub enum ClientError {
-    Queuing,
-}
-
 mod imp {
     use glib::{ParamSpec, ParamSpecBoolean, ParamSpecEnum, ParamSpecUInt64};
 

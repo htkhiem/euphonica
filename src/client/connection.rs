@@ -218,6 +218,10 @@ pub enum Task {
 /// listen to server-side changes, but will be unable to respond
 /// to incoming tasks. To break out of idle mode, the wrapper must
 /// send a WAKE message via the MPD channel given at connect time.
+///
+/// The design is very similar to asyncified, but implementing
+/// this manually allows for custom behaviour such as going into
+/// idle listener mode after clearing the task queue.
 pub struct Connection {
     receiver: Receiver<Task>,
     // high_receiver: Receiver<Task<'a>>,
@@ -284,11 +288,8 @@ impl Connection {
         };
 
         // If there is a password configured, use it to authenticate.
-        let mut password_access_failed = false;
-        let mut password_unset = false;
-
         if let Some(password) = password::get_mpd_password().map_err(|_| Error::CredentialStore)? {
-            client.login(password).map_err(Error::Mpd)?;
+            client.login(&password).map_err(Error::Mpd)?;
         }
 
         // Doubles as a litmus test to see if we are authenticated.
