@@ -121,23 +121,19 @@ fn set_image_internal(
     hires.save(&hires_path).map_err(|_| Error::Io)?;
     thumbnail.save(&thumbnail_path).map_err(|_| Error::Io)?;
     sqlite::register_image_key(
-        key.clone(),
+        key,
         key_prefix,
-        Some(hires_name.clone()),
+        Some(&hires_name),
         false,
     )
-        .join()
-        .unwrap()
-        .map_err(Error::Sqlite);
+        .map_err(Error::Sqlite)?;
     sqlite::register_image_key(
-        key.clone(),
+        key,
         key_prefix,
-        Some(thumbnail_name.clone()),
+        Some(&thumbnail_name),
         true,
     )
-        .join()
-        .unwrap()
-        .map_err(Error::Sqlite);
+        .map_err(Error::Sqlite)?;
     // TODO: Optimise to avoid reading back from disk
     let hires_tex = gdk::Texture::from_filename(&hires_path).map_err(|_| Error::FileNotFound)?;
     let thumbnail_tex = gdk::Texture::from_filename(&thumbnail_path).map_err(|_| Error::FileNotFound)?;
@@ -161,9 +157,7 @@ fn clear_image_internal(key: &str, key_prefix: Option<&'static str>) -> Result<b
     if let Some(hires_name) = sqlite::find_image_by_key(key, key_prefix, false).map_err(Error::Sqlite)? {
         let mut hires_path = get_image_cache_path();
         hires_path.push(&hires_name);
-        sqlite::unregister_image_key(key.clone(), key_prefix, false)
-            .join()
-            .unwrap()
+        sqlite::unregister_image_key(key, key_prefix, false)
             .map_err(Error::Sqlite)?;
         IMAGE_CACHE.lock().unwrap().pop(&hires_name);
         std::fs::remove_file(hires_path).map_err(|_| Error::Io)?;
@@ -172,9 +166,7 @@ fn clear_image_internal(key: &str, key_prefix: Option<&'static str>) -> Result<b
     if let Some(thumb_name) = sqlite::find_image_by_key(key, key_prefix, true).map_err(Error::Sqlite)? {
         let mut thumb_path = get_image_cache_path();
         thumb_path.push(&thumb_name);
-        sqlite::unregister_image_key(key.clone(), key_prefix, true)
-            .join()
-            .unwrap()
+        sqlite::unregister_image_key(key, key_prefix, true)
             .map_err(Error::Sqlite)?;
         IMAGE_CACHE.lock().unwrap().pop(&thumb_name);
         std::fs::remove_file(thumb_path).map_err(|_| Error::Io)?;
@@ -205,8 +197,7 @@ fn get_image_internal(key: &str, prefix: Option<&'static str>, thumbnail: bool) 
                     }
                     Err(_) => {
                         // File no longer exists (maybe user had removed it). Unregister it from DB.
-                        sqlite::unregister_image_key(key.to_owned(), prefix, thumbnail)
-                            .join().unwrap().map_err(Error::Sqlite)?;
+                        sqlite::unregister_image_key(key, prefix, thumbnail).map_err(Error::Sqlite)?;
                         println!("Unregistered image. Retrying...");
                         // Return song info object to facilitate recursive retry
                         Err(Error::FileNotFound)
@@ -287,248 +278,12 @@ impl Cache {
         };
         let res = Rc::new(cache);
 
-        // res.clone()
-        //     .setup_channel(bg_receiver, fg_sender, fg_receiver);
         res
     }
     /// Re-initialise list of providers when priority order is changed
     pub fn reinit_meta_providers(&self) {
         let mut curr_providers = self.meta_providers.write().unwrap();
         *curr_providers = init_meta_provider_chain();
-    }
-
-    fn setup_channel(
-        self: Rc<Self>,
-        bg_receiver: Receiver<ProviderMessage>,
-        fg_sender: Sender<ProviderMessage>,
-        fg_receiver: Receiver<ProviderMessage>,
-    ) {
-        // // Handle remote metadata fetching tasks in another thread
-        // let providers = self.clone().meta_providers.clone();
-        // glib::MainContext::default().spawn_local(
-        //     async move {
-        //         use futures::prelude::*;
-        //         // Allow receiver to be mutated, but keep it at the same memory address.
-        //         // See Receiver::next doc for why this is needed.
-        //         let mut receiver = std::pin::pin!(bg_receiver);
-
-        //         while let Some(request) = receiver.next().await {
-        //             match request {
-        //                 ProviderMessage::AlbumMeta(mut key, overwrite) => {
-        //                     let _ = gio::spawn_blocking(clone!(
-        //                         #[strong]
-        //                         fg_sender,
-        //                         #[strong]
-        //                         providers,
-        //                         move || {
-        //                             // Check whether there is one already
-        //                             if key.mbid.is_some() || key.albumartist.is_some() {
-        //                                 let folder_uri = key.folder_uri.to_owned();
-        //                                 if overwrite || sqlite::find_album_meta(&key).ok().flatten().is_none() {
-        //                                     let res = providers.read().unwrap().get_album_meta(&mut key, None);
-        //                                     if let Some(album) = res {
-        //                                         let _ = sqlite::write_album_meta(&key, &album);
-        //                                     }
-        //                                     else {
-        //                                         // Push an empty AlbumMeta to block further calls for this album.
-        //                                         println!("No album meta could be found for {}. Pushing empty document...", &folder_uri);
-        //                                         let _ = sqlite::write_album_meta(&key, &models::AlbumMeta::from_key(&key));
-        //                                     }
-        //                                     let _ = fg_sender.send_blocking(ProviderMessage::AlbumMetaAvailable(folder_uri));
-        //                                     sleep_after_request();
-        //                                 }
-        //                             }
-        //                         }
-        //                     )).await;
-        //                 },
-        //                 ProviderMessage::ArtistMeta(mut key, overwrite) => {
-        //                     let _ = gio::spawn_blocking(clone!(
-        //                         #[strong]
-        //                         fg_sender,
-        //                         #[strong]
-        //                         providers,
-        //                         move || {
-        //                             // Check whether there is one already
-        //                             if overwrite || sqlite::find_artist_meta(&key).ok().flatten().is_none() {
-        //                                 // Guaranteed to have this field so just unwrap it
-        //                                 let name = key.name.to_owned();
-        //                                 let res = providers.read().unwrap().get_artist_meta(&mut key, None);
-        //                                 if let Some(artist) = res {
-        //                                     sqlite::write_artist_meta(&key, &artist)
-        //                                         .expect("Unable to write downloaded artist meta");
-        //                                     if sqlite::find_image_by_key(&key.name, Some("avatar"), false).expect("Sqlite DB error").is_none() {
-        //                                         // Try to download artist avatar too
-        //                                         let res = get_best_image(&artist.image);
-        //                                         let (path, thumbnail_path) = get_new_image_paths();
-        //                                         if res.is_ok() {
-        //                                             let (hires, thumbnail) = resize_convert_image(res.unwrap());
-        //                                             if let (Ok(_), Ok(_)) = (
-        //                                                 hires.save(&path),
-        //                                                 thumbnail.save(&thumbnail_path)
-        //                                             ) {
-        //                                                 let _ = sqlite::register_image_key(
-        //                                                     key.name.clone(), Some("avatar"),
-        //                                                     Some(path.file_name().unwrap().to_str().unwrap().to_string()), false
-        //                                                 );
-        //                                                 let _ = sqlite::register_image_key(
-        //                                                     key.name.clone(), Some("avatar"),
-        //                                                     Some(thumbnail_path.file_name().unwrap().to_str().unwrap().to_string()), true
-        //                                                 );
-        //                                                 let hires_tex = gdk::Texture::from_filename(&path).unwrap();
-        //                                                 let thumbnail_tex = gdk::Texture::from_filename(&thumbnail_path).unwrap();
-        //                                                 let _ = fg_sender.send_blocking(ProviderMessage::ArtistAvatarAvailable(name.clone(), false, hires_tex));
-        //                                                 let _ = fg_sender.send_blocking(ProviderMessage::ArtistAvatarAvailable(name.clone(), true, thumbnail_tex));
-        //                                             }
-        //                                         }
-        //                                         else {
-        //                                             println!("[Cache] Failed to download artist avatar for {:?} (perhaps all providers were disabled)", res.err());
-        //                                         }
-        //                                     }
-        //                                 }
-        //                                 else {
-        //                                     // Push an empty ArtistMeta to block further calls for this album.
-        //                                     println!("No artist meta could be found for {:?}. Pushing empty document...", &key);
-        //                                     sqlite::write_artist_meta(&key, &models::ArtistMeta::from_key(&key))
-        //                                         .expect("Unable to write downloaded artist meta");
-        //                                 }
-        //                                 let _ = fg_sender.send_blocking(ProviderMessage::ArtistMetaAvailable(name));
-        //                                 sleep_after_request();
-        //                             }
-        //                         }
-        //                     )).await;
-        //                 },
-        //                 ProviderMessage::FolderCover(album) => {
-        //                     let _ = gio::spawn_blocking(clone!(
-        //                         #[strong]
-        //                         fg_sender,
-        //                         move || {
-        //                             let mut success: bool = false;
-        //                             if sqlite::find_image_by_key(&album.folder_uri, None, false).expect("Sqlite DB error").is_some() {
-        //                                 success = true;
-        //                             }
-        //                             else if let Ok(Some(meta)) = sqlite::find_album_meta_sync(&album) {
-        //                                 let res = get_best_image(&meta.image);
-        //                                 if res.is_ok() {
-        //                                     let (hires, thumbnail) = resize_convert_image(res.unwrap());
-        //                                     let (path, thumbnail_path) = get_new_image_paths();
-        //                                     if let (Ok(_), Ok(_)) = (
-        //                                         hires.save(&path),
-        //                                         thumbnail.save(&thumbnail_path)
-        //                                     ) {
-        //                                         let _ = sqlite::register_image_key(
-        //                                             album.folder_uri.clone(), None,
-        //                                             Some(path.file_name().unwrap().to_str().unwrap().to_string()), false
-        //                                         );
-        //                                         let _ = sqlite::register_image_key(
-        //                                             album.folder_uri.clone(), None,
-        //                                             Some(thumbnail_path.file_name().unwrap().to_str().unwrap().to_string()), true
-        //                                         );
-        //                                         let hires_tex = gdk::Texture::from_filename(&path).unwrap();
-        //                                         let thumbnail_tex = gdk::Texture::from_filename(&thumbnail_path).unwrap();
-        //                                         let _ = fg_sender.send_blocking(ProviderMessage::CoverAvailable(album.folder_uri.to_owned(), false, hires_tex));
-        //                                         let _ = fg_sender.send_blocking(ProviderMessage::CoverAvailable(album.folder_uri.to_owned(), true, thumbnail_tex));
-        //                                         success = true;
-        //                                     }
-        //                                 }
-        //                                 sleep_after_request();
-        //                             }
-        //                             if !success {
-        //                                 // End of the road, still unable to find anything for this folder (or its songs).
-        //                                 println!("Cannot download folder cover for {} externally (perhaps all providers were disabled)", album.folder_uri);
-        //                                 // Write empty entries to prevent further (fruitless) lookups
-        //                                 let _ = sqlite::register_image_key(album.folder_uri.clone(), None, None, false);
-        //                                 let _ = sqlite::register_image_key(album.folder_uri.clone(), None, None, true);
-        //                                 let _ = fg_sender.send_blocking(ProviderMessage::CoverNotAvailable(album.folder_uri));
-        //                             }
-        //                         }
-        //                     )).await;
-        //                 },
-        //                 ProviderMessage::Lyrics(key) => {
-        //                     let _ = gio::spawn_blocking(clone!(
-        //                         #[strong]
-        //                         fg_sender,
-        //                         #[strong]
-        //                         providers,
-        //                         move || {
-        //                             // Guaranteed to have this field so just unwrap it
-        //                             let res = providers.read().unwrap().get_lyrics(&key);
-        //                             if let Some(lyrics) = res {
-        //                                 sqlite::write_lyrics(&key, Some(&lyrics))
-        //                                          .expect("Unable to write downloaded lyrics");
-        //                                 let _ = fg_sender.send_blocking(ProviderMessage::LyricsAvailable(key.uri));
-        //                             }
-        //                             sleep_after_request();
-        //                         }
-        //                     )).await;
-        //                 }
-        //                 _ => {}
-        //             };
-        //         }
-        //     }
-        // );
-        // let this = self.clone();
-        // // Listen to the background thread.
-        // glib::MainContext::default().spawn_local(async move {
-        //     use futures::prelude::*;
-        //     // Allow receiver to be mutated, but keep it at the same memory address.
-        //     // See Receiver::next doc for why this is needed.
-        //     let mut receiver = std::pin::pin!(fg_receiver);
-        //     while let Some(notify) = receiver.next().await {
-        //         match notify {
-        //             ProviderMessage::AlbumMetaAvailable(folder_uri) => {
-        //                 this.on_album_meta_downloaded(&folder_uri)
-        //             }
-        //             ProviderMessage::ArtistMetaAvailable(name) => {
-        //                 this.on_artist_meta_downloaded(&name)
-        //             }
-        //             ProviderMessage::CoverAvailable(uri, thumb, tex) => {
-        //                 this.on_cover_downloaded(&uri, thumb, &tex)
-        //             }
-        //             ProviderMessage::CoverNotAvailable(_uri) => {
-        //                 // TODO: use this to implement loading spinners for cover widgets
-        //             }
-        //             ProviderMessage::FetchFolderCoverExternally(album) => {
-        //                 println!(
-        //                     "MPD does not have cover for folder {}, will try fetching from external providers.",
-        //                     &album.folder_uri
-        //                 );
-        //                 // Fill out metadata before attempting to fetch album art from external sources.
-        //                 let _ = this.bg_sender.send_blocking(ProviderMessage::AlbumMeta(album.clone(), false));
-        //                 let _ = this.bg_sender.send_blocking(ProviderMessage::FolderCover(album));
-        //             }
-        //             ProviderMessage::ArtistAvatarAvailable(name, thumb, tex) => {
-        //                 this.on_artist_avatar_downloaded(&name, thumb, &tex)
-        //             }
-        //             ProviderMessage::LyricsAvailable(key) => {
-        //                 this.on_lyrics_downloaded(&key)
-        //             }
-        //             _ => {}
-        //         }
-        //     }
-        // });
-    }
-
-    fn on_album_meta_downloaded(&self, folder_uri: &str) {
-        self.state
-            .emit_with_param("album-meta-downloaded", folder_uri);
-    }
-
-    fn on_artist_meta_downloaded(&self, name: &str) {
-        self.state.emit_with_param("artist-meta-downloaded", name);
-    }
-
-    fn on_cover_downloaded(&self, folder_uri: &str, is_thumbnail: bool, tex: &gdk::Texture) {
-        self.state
-            .emit_texture("album-art-downloaded", folder_uri, is_thumbnail, tex);
-    }
-
-    fn on_artist_avatar_downloaded(&self, name: &str, is_thumbnail: bool, tex: &gdk::Texture) {
-        self.state
-            .emit_texture("artist-avatar-downloaded", name, is_thumbnail, tex);
-    }
-
-    fn on_lyrics_downloaded(&self, uri: &str) {
-        self.state.emit_with_param("song-lyrics-downloaded", uri);
     }
 
     pub fn get_cache_state(&self) -> CacheState {
@@ -899,18 +654,4 @@ impl Cache {
 
         Ok(None)
     }
-
-    // pub fn ensure_cached_lyrics(&self, song: &SongInfo) {
-    //     // Check whether we have this artist cached
-    //     let result = sqlite::find_lyrics(song);
-    //     if let Ok(response) = result {
-    //         if response.is_none() {
-    //             let _ = self
-    //                 .bg_sender
-    //                 .send_blocking(ProviderMessage::Lyrics(song.clone()));
-    //         }
-    //     } else {
-    //         println!("{:?}", result.err());
-    //     }
-    // }
 }
