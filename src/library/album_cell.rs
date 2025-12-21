@@ -32,7 +32,7 @@ mod imp {
         #[template_child]
         pub inner: TemplateChild<gtk::Box>,
         #[template_child]
-        pub cover: TemplateChild<gtk::Picture>, // Use high-resolution version
+        pub cover: TemplateChild<gtk::Picture>, // Use thumbnail version
         #[template_child]
         pub title: TemplateChild<Marquee>,
         #[template_child]
@@ -43,6 +43,7 @@ mod imp {
         pub rating: TemplateChild<Rating>,
         #[derivative(Default(value = "Cell::new(128)"))]
         pub image_size: Cell<i32>,
+        #[derivative(Default(value = "Cell::new(-1)"))]
         pub rating_val: Cell<i8>,
         pub album: RefCell<Option<Album>>,
         // Vector holding the bindings to properties of the Album GObject
@@ -333,29 +334,6 @@ impl AlbumCell {
         self.imp().cover.set_paintable(Some(&*ALBUMART_THUMBNAIL_PLACEHOLDER));
     }
 
-    fn schedule_cover(&self) {
-        self.imp()
-            .cover
-            .set_paintable(Some(&*ALBUMART_THUMBNAIL_PLACEHOLDER));
-        glib::spawn_future_local(clone!(
-            #[weak(rename_to = this)]
-            self,
-            async move {
-                if let Some(info) = this.imp().album.borrow().as_ref().map(|a| a.get_info()) {
-                    match this.imp().cache.get().unwrap().clone().get_album_cover(
-                        info, true, true
-                    ).await {
-                        Ok(Some(tex)) => {
-                            this.update_cover(tex);
-                        }
-                        Ok(None) => {}
-                        Err(e) => {dbg!(e);}
-                    }
-                }
-            }
-        ));
-    }
-
     #[inline]
     fn update_cover(&self, tex: gdk::Texture) {
         self.imp().cover.set_paintable(Some(&tex));
@@ -366,7 +344,24 @@ impl AlbumCell {
         // Fetch album cover once here.
         // Set once first (like sync_create)
         let _ = self.imp().album.replace(Some(album.clone()));
-        self.schedule_cover();
+        self.clear_cover();
+        glib::spawn_future_local(clone!(
+            #[weak(rename_to = this)]
+            self,
+            #[strong]
+            album,
+            async move {
+                match this.imp().cache.get().unwrap().clone().get_album_cover(
+                    album.get_info(), true, true
+                ).await {
+                    Ok(Some(tex)) => {
+                        this.update_cover(tex);
+                    }
+                    Ok(None) => {}
+                    Err(e) => {dbg!(e);}
+                }
+            }
+        ));
     }
 
     pub fn unbind(&self) {

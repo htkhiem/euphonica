@@ -204,23 +204,27 @@ mod imp {
                                 .expect("ashpd file open await failure")
                                 .response();
 
-                            if let Ok(files) = maybe_files {
-                                let uris = files.uris();
-                                if !uris.is_empty() {
-                                    sender.send(uris[0].to_string());
+                            sender.send(
+                                if let Ok(files) = maybe_files {
+                                    let uris = files.uris();
+                                    if !uris.is_empty() {
+                                        Some(uris[0].to_string())
+                                    } else {
+                                        None
+                                    }
+                                } else {
+                                    println!("{maybe_files:?}");
+                                    None
                                 }
-                            } else {
-                                println!("{maybe_files:?}");
-                            }
+                            );
                         });
                         glib::spawn_future_local(clone!(
                             #[weak]
                             obj,
-                            #[upgrade_or]
-                            (),
                             async move {
-                                let path = receiver.await.expect("Broken oneshot receiver");
-                                obj.set_cover(&path).await;
+                                if let Some(path) = receiver.await.expect("Broken oneshot receiver") {
+                                    obj.set_cover(&path).await;
+                                }
                             }
                         ));
                     }
@@ -230,23 +234,19 @@ mod imp {
                 .activate(clone!(
                     #[weak]
                     obj,
-                    #[upgrade_or]
-                    (),
                     move |_, _, _| {
                         glib::spawn_future_local(clone!(
                             #[weak]
                             obj,
                             async move {
-                                obj.schedule_cover().await;
-                                obj.update_meta(true).await;
+                                if let (Some(album), Some(cache)) = (
+                                    obj.imp().album.borrow().as_ref(),
+                                    obj.imp().cache.get(),
+                                ) {
+                                    cache.clear_cover(album.get_folder_uri().to_owned()).await;
+                                }
                             }
                         ));
-                        if let (Some(album), Some(library)) = (
-                            obj.imp().album.borrow().as_ref(),
-                            obj.imp().library.upgrade(),
-                        ) {
-                            library.clear_cover(album.get_folder_uri());
-                        }
                     }
                 ))
                 .build();
@@ -303,7 +303,7 @@ mod imp {
                                     obj.set_is_queuing(false);
                                 }
                             }
-                        ))
+                        ));
                     }
                 ))
                 .build();
@@ -375,9 +375,6 @@ impl AlbumContentView {
     fn get_library(&self) -> Option<Library> {
         self.imp().library.upgrade()
     }
-
-    /// HEY WELCOME BACK
-    /// YOU LEFT OFF AT REFACTORING THE GET_SONGS LOGIC
 
     #[inline]
     fn hide_wiki(&self) {
@@ -463,7 +460,6 @@ impl AlbumContentView {
     pub fn setup(
         &self,
         library: &Library,
-        client_state: &ClientState,
         cache: Rc<Cache>,
         window: &EuphonicaWindow,
     ) {
@@ -737,7 +733,7 @@ impl AlbumContentView {
         }
     }
 
-    pub fn bind(&self, album: Album) {
+    pub fn bind(&self, album: &Album) {
         self.imp().on_selection_changed();
         let title_label = self.imp().title.get();
         let artists_box = self.imp().artists_box.get();
@@ -812,20 +808,51 @@ impl AlbumContentView {
         // Save binding
         bindings.push(release_date_viz_binding);
 
-        self.imp().album.borrow_mut().replace(album);
+        self.imp().album.borrow_mut().replace(album.clone());
         glib::spawn_future_local(clone!(
             #[weak(rename_to = this)]
             self,
+            #[strong]
+            album,
             async move {
+                let library = this.imp().library.upgrade().unwrap();
+                // Important, MPD-side content first
+                let content_spinner = this.imp().content_spinner.get();
+                if content_spinner.visible_child_name().unwrap() != "spinner" {
+                    content_spinner.set_visible_child_name("spinner");
+                }
+                let song_list = this.imp().song_list.clone();
+                song_list.remove_all();
+                match library.get_album_songs(
+                    album.get_title().to_owned(),
+                    &mut |songs| {song_list.extend_from_slice(&songs);}
+                ).await {
+                    Ok(()) => {},
+                    Err(e) => {dbg!(e);}
+                };
+                content_spinner.set_visible_child_name("content");
+                let song_list = &this.imp().song_list;
+                this.imp().track_count.set_label(&song_list.n_items().to_string());
+                this.imp().runtime.set_label(&format_secs_as_duration(
+                    song_list
+                        .iter()
+                        .map(|item: Result<Song, _>| {
+                            if let Ok(song) = item {
+                                return song.get_duration();
+                            }
+                            0
+                        })
+                        .sum::<u64>() as f64,
+                ));
+                // The extra fluff later
                 this.schedule_cover().await;
                 this.update_meta(false).await;
-                this.get_songs().await;
             }
         ));
     }
 
     pub fn unbind(&self) {
-        for binding in self.imp().bindings.borrow_mut().drain(..) {
+        for binding in self.imp().bindings.take().into_iter() {
             binding.unbind();
         }
 
@@ -855,40 +882,5 @@ impl AlbumContentView {
             infobox_spinner.set_visible_child_name("spinner");
         }
         infobox_spinner.set_visible(true);
-    }
-
-    async fn get_songs(&self) {
-        if let (Some(album), Some(library)) = (
-            self.imp().album.borrow().as_ref(),
-            self.imp().library.upgrade()
-        ) {
-            let content_spinner = self.imp().content_spinner.get();
-            if content_spinner.visible_child_name().unwrap() != "spinner" {
-                content_spinner.set_visible_child_name("spinner");
-            }
-            let song_list = self.imp().song_list.clone();
-            song_list.remove_all();
-            match library.get_album_songs(
-                album.get_title().to_owned(),
-                &mut |songs| {song_list.extend_from_slice(&songs);}
-            ).await {
-                Ok(()) => {},
-                Err(e) => {dbg!(e);}
-            };
-            content_spinner.set_visible_child_name("content");
-            let song_list = &self.imp().song_list;
-            self.imp().track_count.set_label(&song_list.n_items().to_string());
-            self.imp().runtime.set_label(&format_secs_as_duration(
-                song_list
-                    .iter()
-                    .map(|item: Result<Song, _>| {
-                        if let Ok(song) = item {
-                            return song.get_duration();
-                        }
-                        0
-                    })
-                    .sum::<u64>() as f64,
-            ));
-        }
     }
 }

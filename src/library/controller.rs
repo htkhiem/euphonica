@@ -17,7 +17,7 @@ use once_cell::sync::Lazy;
 
 use adw::subclass::prelude::*;
 
-use mpd::{EditAction, Query, SaveMode, Term, error::Error as MpdError, search::Operation};
+use mpd::{EditAction, Query, SaveMode, Term, error::Error as MpdError, search::Operation as QueryOperation};
 
 mod imp {
 
@@ -244,7 +244,7 @@ impl Library {
     }
 
     /// Queue all songs of an artist. TODO: allow specifying order.
-    pub async fn queue_artist(&self, artist: Artist, use_albumartist: bool, replace: bool, play: bool) -> ClientResult<()> {
+    pub async fn queue_artist(&self, artist: &Artist, use_albumartist: bool, replace: bool, play: bool) -> ClientResult<()> {
         let client = self.client();
         if replace {
             client.clear_queue().await?;
@@ -562,6 +562,28 @@ impl Library {
             self.imp().artists_initialized.set(true);
         }
         Ok(())
+    }
+
+    pub async fn get_albums_of_artist<F>(&self, artist: &Artist, mut respond: F) -> ClientResult<()>
+    where F: FnMut(Album) {
+        let mut query = Query::new();
+        query.and_with_op(
+            Term::Tag("artist".into()),
+            QueryOperation::Contains,
+            artist.get_name().to_owned(),
+        );
+        self.client().get_albums_by_query(query, &mut respond).await
+    }
+
+    pub async fn get_songs_of_artist<F>(&self, artist: &Artist, mut respond: F) -> ClientResult<()>
+    where F: FnMut(Vec<Song>) {
+        let mut query = Query::new();
+        query.and_with_op(
+            Term::Tag("artist".into()),
+            QueryOperation::Contains,
+            artist.get_name().to_owned(),
+        );
+        self.client().get_songs_by_query(query, &mut respond).await
     }
 
     pub async fn get_recent_artists(&self) -> ClientResult<()> {
