@@ -52,7 +52,7 @@ use super::connection::{Connection, Error as ClientError, Result as ClientResult
 use super::password::get_mpd_password;
 use super::state::{ClientState, ConnectionState, StickersSupportLevel};
 use super::stream::StreamWrapper;
-use super::{AsyncClientMessage, BackgroundTask, StickerSetMode};
+use super::StickerSetMode;
 
 // Thin wrapper around blocking mpd::Clients. It contains two separate client
 // objects connected to the same address, each living on their own std::thread.
@@ -565,7 +565,7 @@ impl MpdWrapper {
         res
     }
 
-    pub async fn get_sticker(&self, typ: &'static str, uri: String, name: String) -> ClientResult<String> {
+    pub async fn get_sticker(&self, typ: &'static str, uri: String, name: Cow<'static, str>) -> ClientResult<String> {
         let min_lvl = if typ == "song" {
             StickersSupportLevel::SongsOnly
         } else {
@@ -605,8 +605,8 @@ impl MpdWrapper {
         &self,
         typ: &'static str,
         uri: String,
-        name: String,
-        value: String,
+        name: Cow<'static, str>,
+        value: Cow<'static, str>,
         mode: StickerSetMode,
     ) -> ClientResult<()> {
         let min_lvl = if typ == "song" {
@@ -624,7 +624,7 @@ impl MpdWrapper {
         }
     }
 
-    pub async fn delete_sticker(&self, typ: &'static str, uri: String, name: String) -> ClientResult<()> {
+    pub async fn delete_sticker(&self, typ: &'static str, uri: String, name: Cow<'static, str>) -> ClientResult<()> {
         let min_lvl = if typ == "song" {
             StickersSupportLevel::SongsOnly
         } else {
@@ -911,8 +911,8 @@ impl MpdWrapper {
         self.background(Task::GetFolderCover(folder_uri, s), r).await
     }
 
-    pub async fn get_albums_by_query<F>(&self, query: Query<'static>, respond: &F) -> ClientResult<()>
-    where F: Fn(Album) {
+    pub async fn get_albums_by_query<F>(&self, query: Query<'static>, respond: &mut F) -> ClientResult<()>
+    where F: FnMut(Album) {
         // TODO: batched windowed retrieval
         // Get list of unique album tags, grouped by albumartist
         // Will block child thread until info for all albums have been retrieved.
@@ -944,7 +944,7 @@ impl MpdWrapper {
         Ok(())
     }
 
-    pub async fn get_recent_albums<F>(&self, respond: F) -> ClientResult<()> where F: Fn(Album) {
+    pub async fn get_recent_albums<F>(&self, respond: &mut F) -> ClientResult<()> where F: FnMut(Album) {
         let settings = utils::settings_manager().child("library");
         // TODO: async this
         let recent_albums =
@@ -958,7 +958,7 @@ impl MpdWrapper {
             if let Some(mbid) = tup.2 {
                 query.and(Term::Tag(Cow::Borrowed("musicbrainz_albumid")), mbid);
             }
-            self.get_albums_by_query(query, &respond).await?;
+            self.get_albums_by_query(query, respond).await?;
         }
         Ok(())
     }
@@ -1005,8 +1005,8 @@ impl MpdWrapper {
     // }
 
 
-    pub async fn get_artists<F>(&self, use_album_artist: bool, respond: F) -> ClientResult<()>
-    where F: Fn(Artist) {
+    pub async fn get_artists<F>(&self, use_album_artist: bool, respond: &mut F) -> ClientResult<()>
+    where F: FnMut(Artist) {
         // Fetching artists is a bit more involved: artist tags usually contain multiple artists.
         // For the same reason, one artist can appear in multiple tags.
         // Here we'll reuse the artist parsing code in our SongInfo struct and put parsed
@@ -1138,7 +1138,7 @@ impl MpdWrapper {
         }
     }
 
-    pub async fn get_recent_songs<F>(&self, n: u32) -> ClientResult<Vec<Song>> {
+    pub async fn get_recent_songs(&self, n: u32) -> ClientResult<Vec<Song>> {
         let to_fetch: Vec<(String, OffsetDateTime)> = sqlite::get_last_n_songs(n).expect("Sqlite DB error");
         let mut res: Vec<Song> = Vec::with_capacity(n as usize);
         for tup in to_fetch.into_iter() {
@@ -1164,7 +1164,6 @@ impl MpdWrapper {
         &self,
         mut uris: Vec<String>,
         recursive: bool,
-        start_playing_pos: Option<usize>,
         insert_pos: Option<usize>,
     ) -> ClientResult<()> {
         if uris.is_empty() {
@@ -1202,20 +1201,15 @@ impl MpdWrapper {
             };
         }
 
-        if let Some(pos) = start_playing_pos {
-            let (s, r) = oneshot::channel();
-            self.foreground(Task::PlayAtPos(pos as u32, s), r).await?;
-        }
-
         Ok(())
     }
 
     async fn get_uris_by_sticker<F>(
         &self,
         obj: StickerObjectType,
-        sticker: String,
+        sticker: Cow<'static, str>,
         op: StickerOperation,
-        rhs: String,
+        rhs: Cow<'static, str>,
         only_in: Option<String>,
         mut respond: F,
     ) -> ClientResult<()> where F: FnMut(Vec<String>)
@@ -1323,9 +1317,9 @@ impl MpdWrapper {
                     // Special case: treat RHS as relative to current time
                     self.get_uris_by_sticker(
                         clause.0,
-                        clause.1,
+                        clause.1.into(),
                         clause.2,
-                        get_past_unix_timestamp(clause.3.parse::<i64>().unwrap()).to_string(),
+                        get_past_unix_timestamp(clause.3.parse::<i64>().unwrap()).to_string().into(),
                         None,
                         |batch| {
                             for uri in batch.into_iter() {
@@ -1337,9 +1331,9 @@ impl MpdWrapper {
                 _ => {
                     self.get_uris_by_sticker(
                         clause.0,
-                        clause.1,
+                        clause.1.into(),
                         clause.2,
-                        clause.3,
+                        clause.3.into(),
                         None,
                         |batch| {
                             for uri in batch.into_iter() {
@@ -1362,7 +1356,7 @@ impl MpdWrapper {
         Ok(res.into_iter().collect())
     }
 
-    pub async fn fetch_dynamic_playlist<F>(
+    pub async fn get_dynamic_playlist_songs(
         &self,
         dp: DynamicPlaylist,
         cache: bool // If true, will cache resolved song URIs locally
@@ -1426,7 +1420,7 @@ impl MpdWrapper {
         Ok(songs.into_iter().map(Song::from).collect())
     }
 
-    pub async fn fetch_dynamic_playlist_cached<F>(&self, name: String) -> ClientResult<Vec<Song>> {
+    pub async fn get_dynamic_playlist_songs_cached(&self, name: String) -> ClientResult<Vec<Song>> {
         let uris = gio::spawn_blocking(move || {
             sqlite::get_cached_dynamic_playlist_results(&name).map_err(|_| ClientError::Internal)
         }).await.unwrap().map_err(|_| ClientError::Internal)?;

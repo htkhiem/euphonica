@@ -441,25 +441,10 @@ impl AlbumView {
     pub fn on_album_clicked(&self, album: &Album) {
         // - Upon receiving click signal, get the list item at the indicated activate index.
         // - Extract album from that list item.
-        // - Bind AlbumContentView to that album. This will cause the AlbumContentView to start listening
-        //   to the cache & client (MpdWrapper) states for arrival of album arts, contents & metadata.
-        // - Try to ensure existence of local metadata by queuing download if necessary. Since
-        //   AlbumContentView is now listening to the relevant signals, it will immediately update itself
-        //   in an asynchronous manner.
-        // - Schedule client to fetch all songs with this album tag in the same manner.
-        // - Now we can push the AlbumContentView. At this point, it must already have been bound to at
-        //   least the album's basic information (title, artist, etc). If we're lucky, it might also have
-        //   its song list and wiki initialised, but that's not mandatory.
-        // NOTE: We do not ensure local album art again in the above steps, since we have already done so
-        // once when adding this album to the ListStore for the GridView.
+        // - Bind AlbumContentView to that album. The content view should then populate itself.
         let content_view = self.imp().content_view.get();
         content_view.unbind();
         content_view.bind(album.clone());
-        self.imp()
-            .library
-            .get()
-            .expect("AlbumView is incorrectly set up (no Library reference)")
-            .init_album(album);
         if self
             .imp()
             .nav_view
