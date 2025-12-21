@@ -66,7 +66,7 @@ pub enum Task {
         /// URI
         String,
         /// Name
-        String,
+        Cow<'static, &str>,
         Responder<String>,
     ),
     GetKnownStickers(
@@ -82,9 +82,9 @@ pub enum Task {
         /// URI
         String,
         /// Name
-        String,
+        Cow<'static, str>,
         /// Value
-        String,
+        Cow<'static, str>,
         /// Set mode (overwrite, increment, decrement)
         StickerSetMode,
         Responder<()>,
@@ -95,7 +95,7 @@ pub enum Task {
         /// URI
         String,
         /// Name
-        String,
+        Cow<'static, str>,
         Responder<()>,
     ),
     FindStickerOp(
@@ -104,11 +104,11 @@ pub enum Task {
         /// Base URI
         String,
         /// Name (LHS)
-        String,
+        Cow<'static, str>,
         /// Operator
         &'static str,
         /// Value (RHS)
-        String,
+        Cow<'static, str>,
         Window,
         Responder<Vec<String>>
     ),
@@ -353,14 +353,10 @@ impl Connection {
                             .unwrap_or_else(|_| panic!("Couldn't save downloaded thumbnail cover to {:?}", &thumb_path));
                         let hires = hires_path.file_name().unwrap().to_str().unwrap().to_string();
                         let thumb = thumb_path.file_name().unwrap().to_str().unwrap().to_string();
-                        sqlite::register_image_key(uri.to_string(), None, Some(hires.clone()), false)
-                            .join()
-                            .unwrap()
-                            .expect("Sqlite DB error");
-                        sqlite::register_image_key(uri.to_string(), None, Some(thumb.clone()), false)
-                            .join()
-                            .unwrap()
-                            .expect("Sqlite DB error");
+                        sqlite::register_image_key(&uri, None, Some(&hires), false)
+                            .map_err(Error::Internal)?;
+                        sqlite::register_image_key(&uri, None, Some(&thumb), false)
+                            .map_err(Error::Internal)?;
 
                         Ok(Some((hires, thumb)))
                     }
