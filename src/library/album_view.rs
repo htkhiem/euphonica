@@ -561,8 +561,11 @@ impl AlbumView {
 
 impl LazyInit for AlbumView {
     fn populate(&self) {
-        if let Some(library) = self.imp().library.get() {
-            library.init_albums();
+        if let Some(library) = self.imp().library.get().cloned() {
+            // TODO: add spinner
+            glib::spawn_future_local(async move {
+                library.init_albums().await;
+            });
         }
     }
 }

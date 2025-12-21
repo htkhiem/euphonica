@@ -1,3 +1,4 @@
+use ::glib::clone;
 use glib::{Object, closure_local, signal::SignalHandlerId};
 use gtk::{CompositeTemplate, gdk, glib, prelude::*, subclass::prelude::*};
 use std::{
@@ -105,19 +106,14 @@ impl ArtistCell {
         let cache_state = res.imp().cache.get().unwrap().get_cache_state();
         let _ = res.imp().avatar_signal_ids.replace(Some((
             cache_state.connect_closure(
-                "artist-avatar-downloaded",
+                "artist-avatar-set",
                 false,
                 closure_local!(
                     #[weak(rename_to = this)]
                     res,
-                    move |_: CacheState, name: String, thumb: bool, tex: gdk::Texture| {
-                        if !thumb {
-                            return;
-                        }
-                        if let Some(artist) = this.imp().artist.borrow().as_ref() {
-                            if artist.get_name() == name {
-                                this.update_avatar(Some(&tex));
-                            }
+                    move |_: CacheState, name: String, _: gdk::Texture, thumb: gdk::Texture| {
+                        if this.imp().artist.borrow().as_ref().is_some_and(|a| a.get_name() == name) {
+                            this.update_avatar(Some(&thumb));
                         }
                     }
                 ),
@@ -128,13 +124,9 @@ impl ArtistCell {
                 closure_local!(
                     #[weak(rename_to = this)]
                     res,
-                    move |_: CacheState, tag: String| {
-                        if let Some(artist) = this.imp().artist.borrow().as_ref() {
-                            if artist.get_name() == tag {
-                                this.imp()
-                                    .avatar
-                                    .set_custom_image(Option::<gdk::Texture>::None.as_ref());
-                            }
+                    move |_: CacheState, name: String| {
+                        if this.imp().artist.borrow().as_ref().is_some_and(|a| a.get_name() == name) {
+                            this.update_avatar(None);
                         }
                     }
                 ),
@@ -175,16 +167,25 @@ impl ArtistCell {
     pub fn bind(&self, artist: &Artist) {
         let _ = self.imp().artist.replace(Some(artist.clone()));
         // Try to get from cache (or from disk asynchronously)
-        if let Some(tex) = self
-            .imp()
-            .cache
-            .get()
-            .unwrap()
-            .clone()
-            .load_cached_artist_avatar(artist.get_info(), true)
-        {
-            self.imp().avatar.set_custom_image(Some(&tex));
-        }
+        glib::spawn_future_local(clone!(
+            #[weak(rename_to = this)]
+            self,
+            #[strong]
+            artist,
+            async move {
+                match this.imp().cache.get().unwrap().clone().get_artist_avatar(
+                    artist.get_info(), true,
+                    // For artist view, don't mass-query from external sources!
+                    false
+                ).await {
+                    Ok(maybe_tex) => {
+                        this.update_avatar(maybe_tex.as_ref());
+                    }
+                    Err(e) => {dbg!(e);}
+                }
+            }
+        ));
+
     }
 
     pub fn unbind(&self) {

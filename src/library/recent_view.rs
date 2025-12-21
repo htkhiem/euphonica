@@ -229,9 +229,9 @@ impl RecentView {
 
     pub fn on_history_changed(&self) {
         let library = self.imp().library.upgrade().unwrap();
-        library.fetch_recent_albums();
-        library.fetch_recent_artists();
-        library.fetch_recent_songs();
+        library.get_recent_albums();
+        library.get_recent_artists();
+        library.get_recent_songs();
     }
 
     fn setup_album_row(&self, window: &EuphonicaWindow, cache: Rc<Cache>) {
