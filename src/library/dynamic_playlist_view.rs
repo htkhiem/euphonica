@@ -435,7 +435,7 @@ impl DynamicPlaylistView {
         window: &EuphonicaWindow,
     ) {
         let content_view = self.imp().content_view.get();
-        content_view.setup(self, library, client_state, cache.clone(), window);
+        content_view.setup(self, library, cache.clone(), window);
         self.imp().content_page.connect_hidden(move |_| {
             content_view.unbind();
         });
@@ -455,8 +455,9 @@ impl DynamicPlaylistView {
                 library,
                 move |state, _| {
                     if state.get_connection_state() == ConnectionState::Connected {
-                        // Newly-connected? Get all playlists.
-                        library.init_dyn_playlists(false);
+                        glib::spawn_future_local(clone!(#[weak] library, async move {
+                            library.init_dyn_playlists(false).await;
+                        }));
                     }
                 }
             ),
@@ -485,10 +486,13 @@ impl DynamicPlaylistView {
                         #[weak]
                         library,
                         move |_: DynamicPlaylistEditorView, should_refresh: bool| {
-                            if should_refresh {
-                                library.init_dyn_playlists(true);
-                            }
-                            this.imp().nav_view.pop();
+                            glib::spawn_future_local(clone!(
+                                #[weak] this, #[weak] library, async move {
+                                if should_refresh {
+                                    library.init_dyn_playlists(true).await;
+                                }
+                                this.imp().nav_view.pop();
+                            }));
                         }
                     ),
                 );
@@ -518,18 +522,19 @@ impl DynamicPlaylistView {
             "exit-clicked",
             false,
             closure_local!(
-                #[weak(rename_to = this)]
-                self,
-                #[weak]
-                library,
+                #[weak(rename_to = this)] self, #[weak] library,
                 move |editor: DynamicPlaylistEditorView, should_refresh: bool| {
-                    let content_view = this.imp().content_view.get();
-                    content_view.unbind();
-                    content_view.bind_by_name(editor.get_current_name().as_str());
-                    if should_refresh {
-                        library.init_dyn_playlists(true);
-                    }
-                    this.imp().nav_view.pop();
+                    glib::spawn_future_local(clone!(
+                        #[weak] this, #[weak] library, async move {
+                            let content_view = this.imp().content_view.get();
+                            content_view.unbind();
+                            content_view.bind_by_name(editor.get_current_name()).await;
+                            if should_refresh {
+                                library.init_dyn_playlists(true).await;
+                            }
+                            this.imp().nav_view.pop();
+                        }
+                    ));
                 }
             ),
         );
@@ -544,18 +549,20 @@ impl DynamicPlaylistView {
     }
 
     pub fn on_playlist_clicked(&self, inode: &INode) {
-        let content_view = self.imp().content_view.get();
-        content_view.unbind();
-        content_view.bind_by_name(inode.get_uri());
-        if self
-            .imp()
-            .nav_view
-            .visible_page_tag()
-            .is_none_or(|tag| tag.as_str() != "content")
-        {
-            self.imp().nav_view.push_by_tag("content");
-        }
-        // Unlike other views, DynamicPlaylistContentView initialises itself.
+        let uri = inode.get_uri().to_owned();
+        glib::spawn_future_local(clone!(#[weak(rename_to = this)] self, async move {
+            let content_view = this.imp().content_view.get();
+            content_view.unbind();
+            content_view.bind_by_name(uri).await;
+            if this
+                .imp()
+                .nav_view
+                .visible_page_tag()
+                .is_none_or(|tag| tag.as_str() != "content")
+            {
+                this.imp().nav_view.push_by_tag("content");
+            }
+        }));
     }
 
     fn setup_listview(&self) {

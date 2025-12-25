@@ -460,6 +460,7 @@ impl AlbumContentView {
     pub fn setup(
         &self,
         library: &Library,
+        client_state: &ClientState,
         cache: Rc<Cache>,
         window: &EuphonicaWindow,
     ) {
