@@ -128,14 +128,14 @@ impl ArtistView {
         res
     }
 
-    pub fn setup(&self, library: &Library, client_state: &ClientState, cache: Rc<Cache>) {
+    pub fn setup(&self, library: &Library, cache: Rc<Cache>) {
         self.imp().library.set(Some(library));
         self.setup_sort();
         self.setup_search();
         self.setup_gridview(cache.clone());
 
         let content_view = self.imp().content_view.get();
-        content_view.setup(library, cache, client_state);
+        content_view.setup(library, cache);
         self.imp().content_page.connect_hidden(move |_| {
             content_view.unbind();
         });
@@ -299,7 +299,7 @@ impl ArtistView {
         //
         let content_view = self.imp().content_view.get();
         content_view.unbind();
-        content_view.bind(artist.clone());
+        content_view.bind(artist);
         if self
             .imp()
             .nav_view
@@ -308,7 +308,6 @@ impl ArtistView {
         {
             self.imp().nav_view.push_by_tag("content");
         }
-        self.imp().library.upgrade().unwrap().init_artist(artist);
     }
 
     fn setup_gridview(&self, cache: Rc<Cache>) {
