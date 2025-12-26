@@ -78,7 +78,6 @@ mod imp {
         pub last_search_len: Cell<usize>,
         pub library: WeakRef<Library>,
         pub cache: OnceCell<Rc<Cache>>,
-        pub client_state: WeakRef<ClientState>,
         pub window: WeakRef<EuphonicaWindow>,
         #[property(get, set)]
         pub collapsed: Cell<bool>,
@@ -444,7 +443,6 @@ impl DynamicPlaylistView {
             .cache
             .set(cache.clone())
             .expect("Cannot init DynamicPlaylistView with cache controller");
-        self.imp().client_state.set(Some(client_state));
         self.imp().window.set(Some(window));
         self.setup_listview();
 
@@ -471,12 +469,10 @@ impl DynamicPlaylistView {
             #[weak]
             cache,
             #[weak]
-            client_state,
-            #[weak]
             window,
             move |_| {
                 let editor = DynamicPlaylistEditorView::default();
-                editor.setup(&library, cache, &client_state, &window);
+                editor.setup(&library, cache, &window);
                 editor.connect_closure(
                     "exit-clicked",
                     false,
@@ -514,7 +510,6 @@ impl DynamicPlaylistView {
         editor.setup(
             &library,
             self.imp().cache.get().unwrap().clone(),
-            &self.imp().client_state.upgrade().unwrap(),
             &self.imp().window.upgrade().unwrap(),
         );
         editor.init(dp);

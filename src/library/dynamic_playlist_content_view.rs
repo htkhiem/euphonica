@@ -448,6 +448,7 @@ impl DynamicPlaylistContentView {
             .expect("DynamicPlaylistContentView cannot bind to cache");
     }
 
+    #[inline]
     fn clear_cover(&self) {
         self.imp().cover.set_paintable(Some(&*ALBUMART_PLACEHOLDER));
     }
