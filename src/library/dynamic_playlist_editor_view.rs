@@ -357,9 +357,9 @@ impl DynamicPlaylistEditorView {
     }
 
     fn open_cover_file_dialog(&self) {
-        let (sender, receiver) = async_channel::unbounded();
+        let (sender, receiver) = oneshot::channel();
         tokio_runtime().spawn(async move {
-            match SelectedFiles::open_file()
+            sender.send(match SelectedFiles::open_file()
                 .title("Select a new cover image")
                 .modal(true)
                 .multiple(false)
@@ -371,26 +371,24 @@ impl DynamicPlaylistEditorView {
                 Ok(files) => {
                     let uris = files.uris();
                     if !uris.is_empty() {
-                        let _ = sender.send_blocking(uris[0].to_string());
+                        Some(uris[0].to_string())
+                    } else {
+                        None
                     }
                 }
                 Err(e) => {
                     dbg!(e);
+                    None
                 }
-            }
+            });
         });
-        glib::MainContext::default().spawn_local(clone!(
+        glib::spawn_future_local(clone!(
             #[weak(rename_to = this)]
             self,
             #[upgrade_or]
             (),
             async move {
-                use futures::prelude::*;
-                // Allow receiver to be mutated, but keep it at the same memory address.
-                // See Receiver::next doc for why this is needed.
-                let mut receiver = std::pin::pin!(receiver);
-
-                if let Some(path) = receiver.next().await {
+                if let Some(path) = receiver.await.expect("Broken oneshot receiver") {
                     this.set_cover_path(&path);
                 }
             }
@@ -401,7 +399,6 @@ impl DynamicPlaylistEditorView {
         &self,
         library: &Library,
         cache: Rc<Cache>,
-        client_state: &ClientState,
         window: &EuphonicaWindow,
     ) {
         self.imp()
@@ -446,20 +443,6 @@ impl DynamicPlaylistEditorView {
                 }
             }
         ));
-
-        client_state.connect_closure(
-            "dynamic-playlist-songs-downloaded",
-            false,
-            closure_local!(
-                #[weak(rename_to = this)]
-                self,
-                move |_: ClientState, name: String, songs: glib::BoxedAnyObject| {
-                    if name == this.imp().tmp_name.borrow().as_str() {
-                        this.add_songs(songs.borrow::<Vec<Song>>().as_ref());
-                    }
-                }
-            ),
-        );
 
         // Set up factory
         let factory = SignalListItemFactory::new();
@@ -676,29 +659,21 @@ impl DynamicPlaylistEditorView {
         self.on_change();
     }
 
-    fn schedule_existing_cover(&self, dp: &DynamicPlaylist) {
+    async fn schedule_existing_cover(&self, dp: &DynamicPlaylist) {
         self.imp()
             .cover_action
             .replace(ImageAction::Existing(false)); // for now
         self.imp().cover.set_paintable(Some(&*ALBUMART_PLACEHOLDER));
 
         // Fetch high resolution playlist cover
-        let handle = self
-            .imp()
-            .cache
-            .get()
-            .unwrap()
-            .load_cached_playlist_cover(&dp.name, true, false);
-        glib::spawn_future_local(clone!(
-            #[weak(rename_to = this)]
-            self,
-            async move {
-                if let Some(tex) = handle.await.unwrap() {
-                    this.imp().cover_action.replace(ImageAction::Existing(true));
-                    this.imp().cover.set_paintable(Some(&tex));
-                }
+        match self.imp().cache.get().unwrap().get_playlist_cover(dp.name.to_owned(), true, false).await {
+            Ok(Some(tex)) => {
+                self.imp().cover_action.replace(ImageAction::Existing(true));
+                self.imp().cover.set_paintable(Some(&tex));
             }
-        ));
+            Ok(None) => {}
+            Err(e) => {dbg!(e);}
+        }
     }
 
     fn get_refresh_schedule(&self) -> AutoRefresh {
@@ -737,23 +712,37 @@ impl DynamicPlaylistEditorView {
     }
 
     fn preview_result(&self) {
-        self.imp().refresh_btn.set_sensitive(false);
-        self.imp().content_pages.set_visible_child_name("spinner");
-        self.imp().song_list.remove_all();
+        glib::spawn_future_local(clone!(
+            #[weak(rename_to = this)] self, async move {
+                this.imp().refresh_btn.set_sensitive(false);
+                this.imp().content_pages.set_visible_child_name("spinner");
+                this.imp().song_list.remove_all();
 
-        // Build a test DP instance with a random name to avoid confusion w/ late-coming
-        // background fetches of actual DPs.
-        let mut dp = self.build_dynamic_playlist();
-        let tmp_name = Uuid::new_v4().simple().to_string();
-        dp.name = tmp_name.clone();
-        self.imp().tmp_name.replace(tmp_name);
+                // Build a test DP instance with a random name to avoid confusion w/ late-coming
+                // background fetches of actual DPs.
+                let mut dp = this.build_dynamic_playlist();
+                let tmp_name = Uuid::new_v4().simple().to_string();
+                dp.name = tmp_name.clone();
+                this.imp().tmp_name.replace(tmp_name);
 
-        println!("{:?}", &dp);
+                println!("{:?}", &dp);
 
-        // Don't cache as this DP is still being edited
-        self.get_library()
-            .unwrap()
-            .fetch_dynamic_playlist(dp, false);
+                // Don't cache as this DP is still being edited
+                match this.get_library()
+                    .unwrap()
+                    .get_dynamic_playlist_songs(dp, false).await
+                {
+                    Ok(songs) => {
+                        this.imp().song_list.extend_from_slice(&songs);
+                        this.imp().content_pages.set_visible_child_name(
+                            if songs.len() > 0 {"content"} else {"empty"}
+                        );
+                    }
+                    Err(e) => {dbg!(e);}
+                };
+                this.imp().refresh_btn.set_sensitive(true);
+            }
+        ));
     }
 
     fn build_dynamic_playlist(&self) -> DynamicPlaylist {
@@ -796,27 +785,29 @@ impl DynamicPlaylistEditorView {
     }
 
     fn finalize_save(&self) {
-        let dp = self.build_dynamic_playlist();
-        let cache = self.imp().cache.get().unwrap();
-        let cover_action = self.imp().cover_action.borrow().to_owned();
+        let cover_action;
+        {
+            // Clone then end borrow outside of async scope to avoid multiple borrows
+            cover_action = self.imp().cover_action.borrow().to_owned();
+        }
         // Always overwrite, as we'd only reach here after user confirmation
-        let handle = cache.insert_dynamic_playlist(
-            dp,
-            cover_action,
-            Some(
-                self.imp()
-                    .editing_name
-                    .borrow()
-                    .as_deref()
-                    .unwrap_or(self.imp().title.text().as_str())
-                    .to_string(),
-            ),
-        );
         glib::spawn_future_local(clone!(
             #[weak(rename_to = this)]
             self,
             async move {
-                let res = handle.await.unwrap();
+                let dp = this.build_dynamic_playlist();
+                let res = this.imp().cache.get().unwrap().insert_dynamic_playlist(
+                    dp,
+                    cover_action,
+                    Some(
+                        this.imp()
+                            .editing_name
+                            .borrow()
+                            .as_deref()
+                            .unwrap_or(this.imp().title.text().as_str())
+                            .to_string(),
+                    ),
+                ).await;
                 let stack = this.imp().save_btn_content.get();
                 if stack.visible_child_name().unwrap() != "label" {
                     stack.set_visible_child_name("label");
