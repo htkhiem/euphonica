@@ -107,9 +107,13 @@ mod imp {
                 #[weak(rename_to = this)]
                 self,
                 move |_| {
-                    if let Some(lib) = this.library.upgrade() {
-                        lib.folder_backward();
-                    }
+                    glib::spawn_future_local(clone!(
+                        #[weak] this, async move {
+                            if let Some(lib) = this.library.upgrade() {
+                                lib.folder_backward().await;
+                            }
+                        }
+                    ));
                 }
             ));
 
@@ -117,9 +121,13 @@ mod imp {
                 #[weak(rename_to = this)]
                 self,
                 move |_| {
-                    if let Some(lib) = this.library.upgrade() {
-                        lib.folder_forward();
-                    }
+                    glib::spawn_future_local(clone!(
+                        #[weak] this, async move {
+                            if let Some(lib) = this.library.upgrade() {
+                                lib.folder_forward().await;
+                            }
+                        }
+                    ));
                 }
             ));
 
@@ -437,11 +445,13 @@ impl FolderView {
         //   - Send an lsinfo query with the newly-updated URI.
         //   - Switch to loading page.
         // - Else: do nothing (adding songs and playlists are done with buttons to the right of each row).
-        if let Some(name) = inode.get_name() {
-            if inode.get_info().inode_type == INodeType::Folder {
-                self.library().navigate_to(name);
+        glib::spawn_future_local(clone!(#[weak(rename_to = this)] self, #[weak] inode, async move {
+            if let Some(name) = inode.get_name() {
+                if inode.get_info().inode_type == INodeType::Folder {
+                    this.library().navigate_to(&name).await;
+                }
             }
-        }
+        }));
     }
 
     fn setup_listview(&self, _cache: Rc<Cache>, library: Library) {
@@ -507,7 +517,9 @@ impl FolderView {
 impl LazyInit for FolderView {
     fn populate(&self) {
         if let Some(library) = self.imp().library.upgrade() {
-            library.get_folder_contents();
+            glib::spawn_future_local(clone!(#[weak] library, async move {
+                library.get_folder_contents();
+            }));
         }
     }
 }
