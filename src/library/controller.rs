@@ -256,7 +256,7 @@ impl Library {
             } else {
                 "artist"
             })),
-            Operation::Contains,
+            QueryOperation::Contains,
             artist.get_name().to_owned(),
         );
         client.find_add(query).await?;
@@ -328,12 +328,12 @@ impl Library {
     }
 
     /// Queue a song or folder (when recursive == true) for playback.
-    pub async fn queue_uri(&self, uri: &str, replace: bool, play: bool, recursive: bool) -> ClientResult<()> {
+    pub async fn queue_uri(&self, uri: String, replace: bool, play: bool, recursive: bool) -> ClientResult<()> {
         let client = self.client();
         if replace {
             client.clear_queue().await?;
         }
-        client.add_multi(vec![uri.to_owned()], recursive, None).await?;
+        client.add_multi(vec![uri], recursive, None).await?;
         if play {
             client.play_at(0, false).await?;
         }

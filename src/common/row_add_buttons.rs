@@ -64,7 +64,10 @@ impl RowAddButtons {
             (),
             move |_| {
                 if let Some(song) = res.imp().song.borrow().as_ref() {
-                    library.queue_uri(song.get_uri(), true, true, false);
+                    let uri = song.get_uri().to_owned();
+                    glib::spawn_future_local(async move {
+                        library.queue_uri(uri, true, true, false).await;
+                    });
                 }
             }
         ));
@@ -78,7 +81,10 @@ impl RowAddButtons {
             (),
             move |_| {
                 if let Some(song) = res.imp().song.borrow().as_ref() {
-                    library.queue_uri(song.get_uri(), false, false, false);
+                    let uri = song.get_uri().to_owned();
+                    glib::spawn_future_local(async move {
+                        library.queue_uri(uri, false, false, false).await;
+                    });
                 }
             }
         ));
