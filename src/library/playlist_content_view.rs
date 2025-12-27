@@ -500,7 +500,7 @@ impl Default for PlaylistContentView {
 impl PlaylistContentView {
     pub fn setup(
         &self,
-        library: Library,
+        library: &Library,
         cache: Rc<Cache>,
         window: &EuphonicaWindow,
     ) {

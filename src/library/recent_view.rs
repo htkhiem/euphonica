@@ -229,9 +229,11 @@ impl RecentView {
 
     pub fn on_history_changed(&self) {
         let library = self.imp().library.upgrade().unwrap();
-        library.get_recent_albums();
-        library.get_recent_artists();
-        library.get_recent_songs();
+        glib::spawn_future_local(async move {
+            library.get_recent_albums().await;
+            library.get_recent_artists().await;
+            library.get_recent_songs().await;
+        });
     }
 
     fn setup_album_row(&self, window: &EuphonicaWindow, cache: Rc<Cache>) {

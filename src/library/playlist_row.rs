@@ -135,30 +135,30 @@ impl PlaylistRow {
         self.imp().replace_queue.connect_clicked(clone!(
             #[weak(rename_to = this)]
             self,
-            #[upgrade_or]
-            (),
             move |_| {
-                if let (Some(library), Some(playlist)) = (
-                    this.imp().library.get(),
-                    this.imp().playlist.borrow().as_ref(),
-                ) {
-                    library.queue_playlist(playlist.get_uri(), true, true);
-                }
+                glib::spawn_future_local(clone!(#[weak] this, async move {
+                    if let (Some(library), Some(playlist)) = (
+                        this.imp().library.get(),
+                        this.imp().playlist.borrow().as_ref(),
+                    ) {
+                        library.queue_playlist(playlist.get_uri().to_owned(), true, true).await;
+                    }
+                }));
             }
         ));
 
         self.imp().append_queue.connect_clicked(clone!(
             #[weak(rename_to = this)]
             self,
-            #[upgrade_or]
-            (),
             move |_| {
-                if let (Some(library), Some(playlist)) = (
+                glib::spawn_future_local(clone!(#[weak] this, async move {
+                    if let (Some(library), Some(playlist)) = (
                     this.imp().library.get(),
                     this.imp().playlist.borrow().as_ref(),
                 ) {
-                    library.queue_playlist(playlist.get_uri(), false, false);
+                    library.queue_playlist(playlist.get_uri().to_owned(), false, false).await;
                 }
+                }));
             }
         ));
     }
@@ -169,22 +169,24 @@ impl PlaylistRow {
             .set_paintable(Some(&*ALBUMART_THUMBNAIL_PLACEHOLDER));
     }
 
-    fn schedule_thumbnail(&self, playlist: &INodeInfo) {
+    fn schedule_thumbnail(&self, uri: String) {
         self.imp()
             .thumbnail
             .set_paintable(Some(&*ALBUMART_THUMBNAIL_PLACEHOLDER));
-        let handle = self.imp().cache.get().unwrap().load_cached_playlist_cover(
-            &playlist.uri,
-            self.imp().is_dynamic.get(),
-            true,
-        );
-
         glib::spawn_future_local(clone!(
             #[weak(rename_to = this)]
             self,
             async move {
-                if let Some(tex) = handle.await.unwrap() {
-                    this.imp().thumbnail.set_paintable(Some(&tex));
+                match this.imp().cache.get().unwrap().get_playlist_cover(
+                    uri,
+                    this.imp().is_dynamic.get(),
+                    true,
+                ).await {
+                    Ok(Some(tex)) => {
+                        this.imp().thumbnail.set_paintable(Some(&tex));
+                    }
+                    Ok(None) => {}
+                    Err(e) => {dbg!(e);}
                 }
             }
         ));
@@ -197,7 +199,7 @@ impl PlaylistRow {
     pub fn bind(&self, playlist: &INode) {
         // Bind album art listener. Set once first (like sync_create)
         self.imp().playlist.replace(Some(playlist.clone()));
-        self.schedule_thumbnail(playlist.get_info());
+        self.schedule_thumbnail(playlist.get_uri().to_owned());
     }
 
     pub fn unbind(&self) {
