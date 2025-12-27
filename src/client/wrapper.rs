@@ -1,6 +1,7 @@
 use async_channel::{Receiver, Sender};
 use chrono::{DateTime, Duration, Local};
 use futures::executor;
+use ::glib::WeakRef;
 use glib::clone;
 use gtk::{gio, glib};
 use gtk::{gio::prelude::*, glib::BoxedAnyObject};
@@ -41,6 +42,7 @@ use crate::cache::sqlite;
 use crate::common::DynamicPlaylist;
 use crate::common::dynamic_playlist::{QueryLhs, StickerObjectType, StickerOperation, Ordering};
 use crate::utils::settings_manager;
+use crate::window::EuphonicaWindow;
 use crate::{
     common::{Album, AlbumInfo, Artist, INode, Song, SongInfo, Stickers, dynamic_playlist::{Rule}},
     player::PlaybackFlow,
@@ -53,6 +55,8 @@ use super::password::get_mpd_password;
 use super::state::{ClientState, ConnectionState, StickersSupportLevel};
 use super::stream::StreamWrapper;
 use super::StickerSetMode;
+
+static MAX_RETRIES: u32 = 3;
 
 // Thin wrapper around blocking mpd::Clients. It contains two separate client
 // objects connected to the same address, each living on their own std::thread.
@@ -239,14 +243,20 @@ impl MpdWrapper {
         let (bg_sender, bg_receiver) = async_channel::unbounded();
         let (idle_sender, idle_receiver) = async_channel::unbounded();
         println!("Channel name: {}", &ch_name);
+        let settings = settings_manager().child("client");
+        let max_retries = if settings.boolean("mpd-auto-reconnect") {
+            MAX_RETRIES
+        } else {
+            0
+        };
         let wrapper = Rc::new(Self {
-            fg_handle: thread::spawn(|| {
-                Connection::new(fg_receiver, wake_channel, None)
+            fg_handle: thread::spawn(move || {
+                Connection::new(fg_receiver, wake_channel, None, max_retries)
                     .run()
                     .is_err()
             }),
-            bg_handle: thread::spawn(|| {
-                Connection::new(bg_receiver, wake_channel_bg, Some(idle_sender))
+            bg_handle: thread::spawn(move || {
+                Connection::new(bg_receiver, wake_channel_bg, Some(idle_sender), max_retries)
                     .run()
                     .is_err()
             }),
@@ -415,10 +425,6 @@ impl MpdWrapper {
                     ClientError::NotConnected | ClientError::Socket | ClientError::Tcp => {
                         self.state
                             .set_connection_state(ConnectionState::NotConnected);
-                        let settings = settings_manager().child("client");
-                        if settings.boolean("mpd-auto-reconnect") {
-                            self.connect().await;
-                        }
                     }
                     _ => {
                         // TODO
