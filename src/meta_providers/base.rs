@@ -1,8 +1,11 @@
 extern crate bson;
-use gtk::{prelude::*, gdk};
-use std::{thread, time::Duration};
+use crate::{
+    common::{AlbumInfo, ArtistInfo, SongInfo},
+    utils::settings_manager,
+};
+use gtk::{gdk, prelude::*};
 use reqwest::blocking::Client;
-use crate::{common::{AlbumInfo, ArtistInfo, SongInfo}, utils::settings_manager};
+use std::{thread, time::Duration};
 
 use super::models;
 
@@ -24,14 +27,14 @@ pub enum ProviderMessage {
     FallbackToFolderCover(AlbumInfo),
     FallbackToEmbeddedCover(AlbumInfo),
     FetchFolderCoverExternally(AlbumInfo), // Pass through the fallback parameter
-    AlbumMeta(AlbumInfo, bool), // if true, skip check (for overwriting)
-    AlbumMetaAvailable(String), // Only return URI
+    AlbumMeta(AlbumInfo, bool),            // if true, skip check (for overwriting)
+    AlbumMetaAvailable(String),            // Only return URI
     /// Both request and positive response
     ArtistAvatar(ArtistInfo), // With cache basepath
     ArtistAvatarAvailable(String, bool, gdk::Texture), // Name, is_thumbnail, the texture itself
     /// Both request and positive response. Includes downloading artist avatar.
     ArtistMeta(ArtistInfo, bool), // If bool is true, skip check (for overwriting)
-    ArtistMetaAvailable(String), // Only return name
+    ArtistMetaAvailable(String),           // Only return name
     Lyrics(SongInfo),
     LyricsAvailable(String), // Only return full URI
 }
@@ -64,7 +67,7 @@ pub mod utils {
                         println!("get_file: Failed to read response as bytes!");
                         None
                     }
-                },
+                }
                 Err(e) => {
                     println!("get_file: {e:?}");
                     None
@@ -127,8 +130,5 @@ pub trait MetadataProvider: Send + Sync {
     /// duration to the song is returned.
     ///
     /// Unlike with album and artist metadata, we stop when one metadata provider returns lyrics.
-    fn get_lyrics(
-        &self,
-        key: &SongInfo
-    ) -> Option<models::Lyrics>; 
+    fn get_lyrics(&self, key: &SongInfo) -> Option<models::Lyrics>;
 }

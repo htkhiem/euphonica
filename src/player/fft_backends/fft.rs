@@ -3,7 +3,7 @@ use std::{
     f32::consts::PI,
     fs::{File, OpenOptions},
     // Option 1: read from MPD FIFO output (default)
-    io::{self, prelude::*, BufReader, Error},
+    io::{self, BufReader, Error, prelude::*},
     os::unix::fs::OpenOptionsExt,
 };
 
@@ -58,7 +58,9 @@ pub fn try_open_pipe(
         &path[7..]
     } else {
         path
-    }).expect("Path must be in UTF-8").into_owned();
+    })
+    .expect("Path must be in UTF-8")
+    .into_owned();
     let pipe = BufReader::with_capacity(buf_bytes, open_named_pipe_readonly(&path)?);
     Ok(pipe)
 }
@@ -69,7 +71,9 @@ fn parse_to_float(buf: [u8; 4], format: &AudioFormat, is_le: bool) -> f32 {
     if format.bits == 0 {
         // 32bit float. Should already be -1 to 1, no need for normalisation.
         if buf.len() != 4 {
-            panic!("Invalid FIFO data: configured to interpret as float32, got less than 4 bytes per sample");
+            panic!(
+                "Invalid FIFO data: configured to interpret as float32, got less than 4 bytes per sample"
+            );
         }
         if is_le {
             f32::from_le_bytes(buf)

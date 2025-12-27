@@ -277,6 +277,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "asyncified"
+version = "0.6.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ddbcf3c524e7338b7e791a2b2d82c478c89930f1ecd4a64bced1211392b6ccae"
+
+[[package]]
 name = "atomic-waker"
 version = "1.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1015,6 +1021,7 @@ dependencies = [
  "ashpd",
  "async-channel",
  "async-lock",
+ "asyncified",
  "auto-palette",
  "base64 0.22.1",
  "bson",
@@ -1041,6 +1048,7 @@ dependencies = [
  "musicbrainz_rs",
  "nohash-hasher",
  "once_cell",
+ "oneshot",
  "open",
  "pipewire",
  "r2d2",
@@ -2706,7 +2714,7 @@ dependencies = [
 [[package]]
 name = "mpd"
 version = "0.1.0"
-source = "git+https://github.com/htkhiem/rust-mpd.git?rev=f09e9d8ffd4a3316a4e9a3d84f9ef6a1d7adc483#f09e9d8ffd4a3316a4e9a3d84f9ef6a1d7adc483"
+source = "git+https://github.com/htkhiem/rust-mpd.git?rev=ebfcbed8ab111a3df7a9d721da4bf56ad94cc3b4#ebfcbed8ab111a3df7a9d721da4bf56ad94cc3b4"
 dependencies = [
  "bufstream",
  "fxhash",
@@ -2968,6 +2976,12 @@ name = "once_cell"
 version = "1.21.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "42f5e15c9953c5e4ccceeb2e7382a716482c34515315f7b03532b8b4e8393d2d"
+
+[[package]]
+name = "oneshot"
+version = "0.1.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b4ce411919553d3f9fa53a0880544cda985a112117a0444d5ff1e870a893d6ea"
 
 [[package]]
 name = "open"

@@ -1,5 +1,5 @@
-use glib::{clone, Object};
-use gtk::{glib, prelude::*, subclass::prelude::*, CompositeTemplate};
+use glib::{Object, clone};
+use gtk::{CompositeTemplate, glib, prelude::*, subclass::prelude::*};
 use std::cell::{OnceCell, RefCell};
 
 use crate::common::INode;
@@ -61,20 +61,22 @@ mod imp {
                 #[weak(rename_to = this)]
                 self,
                 move |_| {
-                    if let Some(library) = this.library.get() {
-                        match this.inode_type.get() {
-                            INodeType::Song => {
-                                library.queue_uri(this.uri.borrow().as_ref(), true, true, false);
+                    glib::spawn_future_local(clone!(#[weak] this, async move {
+                        if let Some(library) = this.library.get() {
+                            match this.inode_type.get() {
+                                INodeType::Song => {
+                                    library.queue_uri(this.uri.borrow().to_owned(), true, true, false).await;
+                                }
+                                INodeType::Folder => {
+                                    library.queue_uri(this.uri.borrow().to_owned(), true, true, true).await;
+                                }
+                                INodeType::Playlist => {
+                                    library.queue_playlist(this.title.label().to_string(), true, true).await;
+                                }
+                                _ => unreachable!(),
                             }
-                            INodeType::Folder => {
-                                library.queue_uri(this.uri.borrow().as_ref(), true, true, true);
-                            }
-                            INodeType::Playlist => {
-                                library.queue_playlist(this.title.label().as_ref(), true, true);
-                            }
-                            _ => unreachable!(),
                         }
-                    }
+                    }));
                 }
             ));
 
@@ -82,20 +84,22 @@ mod imp {
                 #[weak(rename_to = this)]
                 self,
                 move |_| {
-                    if let Some(library) = this.library.get() {
-                        match this.inode_type.get() {
-                            INodeType::Song => {
-                                library.queue_uri(this.uri.borrow().as_ref(), false, false, false);
+                    glib::spawn_future_local(clone!(#[weak] this, async move {
+                        if let Some(library) = this.library.get() {
+                            match this.inode_type.get() {
+                                INodeType::Song => {
+                                    library.queue_uri(this.uri.borrow().to_owned(), false, false, false).await;
+                                }
+                                INodeType::Folder => {
+                                    library.queue_uri(this.uri.borrow().to_owned(), false, false, true).await;
+                                }
+                                INodeType::Playlist => {
+                                    library.queue_playlist(this.title.label().to_string(), false, false).await;
+                                }
+                                _ => unreachable!(),
                             }
-                            INodeType::Folder => {
-                                library.queue_uri(this.uri.borrow().as_ref(), false, false, true);
-                            }
-                            INodeType::Playlist => {
-                                library.queue_playlist(this.title.label().as_ref(), false, false);
-                            }
-                            _ => unreachable!(),
                         }
-                    }
+                    }));
                 }
             ));
         }

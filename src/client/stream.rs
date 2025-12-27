@@ -43,9 +43,7 @@ impl Read for StreamWrapper {
         } else if let Some(ref mut s) = self.unix_stream {
             s.read(buf)
         } else {
-            Err(io::Error::other(
-                "Uninitialised StreamWrapper",
-            ))
+            Err(io::Error::other("Uninitialised StreamWrapper"))
         }
     }
 }
@@ -59,9 +57,7 @@ impl Write for StreamWrapper {
         } else if let Some(ref mut s) = self.unix_stream {
             s.write(buf)
         } else {
-            Err(io::Error::other(
-                "Uninitialised StreamWrapper",
-            ))
+            Err(io::Error::other("Uninitialised StreamWrapper"))
         }
     }
 
@@ -73,9 +69,7 @@ impl Write for StreamWrapper {
         } else if let Some(ref mut s) = self.unix_stream {
             s.flush()
         } else {
-            Err(io::Error::other(
-                "Uninitialised StreamWrapper",
-            ))
+            Err(io::Error::other("Uninitialised StreamWrapper"))
         }
     }
 }

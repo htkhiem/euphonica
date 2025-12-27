@@ -1,11 +1,13 @@
-
 use adw::prelude::*;
 use adw::subclass::prelude::*;
-use gtk::{glib, gio, CompositeTemplate};
+use gtk::{CompositeTemplate, gio, glib};
 
 use glib::clone;
 
-use crate::{cache::{get_doc_cache_path, get_image_cache_path}, utils};
+use crate::{
+    cache::{get_doc_cache_path, get_image_cache_path},
+    utils,
+};
 
 mod imp {
     use std::cell::Cell;
@@ -51,7 +53,7 @@ mod imp {
         #[template_child]
         pub refresh_cache_stats_btn: TemplateChild<gtk::Button>,
 
-        pub n_async_in_progress: Cell<u8>
+        pub n_async_in_progress: Cell<u8>,
     }
 
     #[glib::object_subclass]
@@ -239,13 +241,15 @@ impl LibraryPreferences {
                     move |res: Result<(u64, u64, u64), glib::error::Error>| {
                         if let Ok((bytes, _, n_files)) = res {
                             let size_str = glib::format_size(bytes);
-                            this.imp().image_cache_size.set_subtitle(
-                                &format!("{n_files} file(s) ({size_str})")
-                            );
+                            this.imp()
+                                .image_cache_size
+                                .set_subtitle(&format!("{n_files} file(s) ({size_str})"));
                         }
-                        this.imp().n_async_in_progress.set(this.imp().n_async_in_progress.get() - 1);
+                        this.imp()
+                            .n_async_in_progress
+                            .set(this.imp().n_async_in_progress.get() - 1);
                     }
-                )
+                ),
             );
 
             gio::File::for_path(get_doc_cache_path()).measure_disk_usage_async(
@@ -258,12 +262,16 @@ impl LibraryPreferences {
                     self,
                     move |res: Result<(u64, u64, u64), glib::error::Error>| {
                         if let Ok((bytes, _, _)) = res {
-                            this.imp().info_db_size.set_subtitle(&glib::format_size(bytes));
+                            this.imp()
+                                .info_db_size
+                                .set_subtitle(&glib::format_size(bytes));
                         }
-                        this.imp().n_async_in_progress.set(this.imp().n_async_in_progress.get() - 1);
+                        this.imp()
+                            .n_async_in_progress
+                            .set(this.imp().n_async_in_progress.get() - 1);
                     }
-                )
+                ),
             );
-        } 
+        }
     }
 }

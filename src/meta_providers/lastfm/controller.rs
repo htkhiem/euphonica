@@ -6,18 +6,22 @@ use reqwest::{
     header::USER_AGENT,
 };
 
-use crate::{common::{AlbumInfo, ArtistInfo}, config::APPLICATION_USER_AGENT, utils::meta_provider_settings};
+use crate::{
+    common::{AlbumInfo, ArtistInfo},
+    config::APPLICATION_USER_AGENT,
+    utils::meta_provider_settings,
+};
 
 use super::models::{LastfmAlbumResponse, LastfmArtistResponse};
 use super::{
-    super::{models, prelude::*, MetadataProvider},
+    super::{MetadataProvider, models, prelude::*},
     PROVIDER_KEY,
 };
 
 pub const API_ROOT: &str = "http://ws.audioscrobbler.com/2.0";
 
 pub struct LastfmWrapper {
-    client: Client
+    client: Client,
 }
 
 impl LastfmWrapper {
@@ -55,7 +59,7 @@ impl LastfmWrapper {
 impl MetadataProvider for LastfmWrapper {
     fn new() -> Self {
         Self {
-            client: Client::new()
+            client: Client::new(),
         }
     }
 
@@ -70,12 +74,10 @@ impl MetadataProvider for LastfmWrapper {
             let mut params: Vec<(&str, &str)> = Vec::new();
             if let Some(id) = key.mbid.as_ref() {
                 params.push(("mbid", id));
-            }
-            else if let (name, Some(artist)) = (&key.title, key.get_artist_tag().as_ref()) {
+            } else if let (name, Some(artist)) = (&key.title, key.get_artist_tag().as_ref()) {
                 params.push(("album", name));
                 params.push(("artist", artist));
-            }
-            else {
+            } else {
                 return existing;
             }
 
@@ -141,8 +143,7 @@ impl MetadataProvider for LastfmWrapper {
             let mut params: Vec<(&str, &str)> = Vec::new();
             if let Some(id) = key.mbid.as_ref() {
                 params.push(("mbid", id));
-            }
-            else {
+            } else {
                 params.push(("artist", &key.name))
             }
             if let Some(resp) = self.get_lastfm("artist.getinfo", &params) {
@@ -190,10 +191,7 @@ impl MetadataProvider for LastfmWrapper {
     }
 
     /// Last.fm does not provide lyrics.
-    fn get_lyrics(
-        &self,
-        _key: &crate::common::SongInfo
-    ) -> Option<models::Lyrics> {
+    fn get_lyrics(&self, _key: &crate::common::SongInfo) -> Option<models::Lyrics> {
         None
     }
 }

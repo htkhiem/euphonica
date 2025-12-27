@@ -1,7 +1,7 @@
-use adw::prelude::*;
 use ::glib::clone;
-use gtk::{subclass::prelude::*};
+use adw::prelude::*;
 use glib::subclass::Signal;
+use gtk::subclass::prelude::*;
 
 use adw::ColorScheme;
 
@@ -21,7 +21,7 @@ mod imp {
         #[template_child]
         pub light: TemplateChild<gtk::CheckButton>,
         #[template_child]
-        pub dark: TemplateChild<gtk::CheckButton>
+        pub dark: TemplateChild<gtk::CheckButton>,
     }
 
     #[glib::object_subclass]
@@ -47,7 +47,7 @@ mod imp {
                 vec![
                     Signal::builder("changed")
                         .param_types([ColorScheme::static_type()])
-                        .build()
+                        .build(),
                 ]
             })
         }
@@ -132,7 +132,7 @@ impl ThemeSelector {
         match scheme {
             ColorScheme::ForceDark | ColorScheme::PreferDark => {
                 self.imp().dark.set_active(true);
-            },
+            }
             ColorScheme::ForceLight | ColorScheme::PreferLight => {
                 self.imp().light.set_active(true);
             }

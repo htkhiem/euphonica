@@ -6,10 +6,13 @@ use musicbrainz_rs::{
     prelude::*,
 };
 
-use crate::{common::{AlbumInfo, ArtistInfo}, utils::meta_provider_settings};
+use crate::{
+    common::{AlbumInfo, ArtistInfo},
+    utils::meta_provider_settings,
+};
 
 use super::{
-    super::{models, prelude::*, MetadataProvider},
+    super::{MetadataProvider, models, prelude::*},
     PROVIDER_KEY,
 };
 
@@ -30,10 +33,7 @@ impl MetadataProvider for MusicBrainzWrapper {
         if meta_provider_settings(PROVIDER_KEY).boolean("enabled") {
             if let Some(mbid) = key.mbid.as_ref() {
                 println!("[MusicBrainz] Fetching release by MBID: {}", &mbid);
-                let res = Release::fetch()
-                    .id(mbid)
-                    .with_artist_credits()
-                    .execute();
+                let res = Release::fetch().id(mbid).with_artist_credits().execute();
                 if let Ok(release) = res {
                     let new: models::AlbumMeta = release.into();
                     println!("{:?}", &new);
@@ -106,10 +106,7 @@ impl MetadataProvider for MusicBrainzWrapper {
         if meta_provider_settings(PROVIDER_KEY).boolean("enabled") {
             if let Some(mbid) = key.mbid.as_ref() {
                 println!("[MusicBrainz] Fetching artist by MBID: {mbid}");
-                let res = Artist::fetch()
-                    .id(mbid)
-                    .with_url_relations()
-                    .execute();
+                let res = Artist::fetch().id(mbid).with_url_relations().execute();
                 if let Ok(artist) = res {
                     let new: models::ArtistMeta = artist.into();
                     println!("{:?}", &new);
@@ -131,13 +128,9 @@ impl MetadataProvider for MusicBrainzWrapper {
             else {
                 let name = &key.name;
                 println!("[MusicBrainz] Fetching artist with name = {}", &name);
-                let res = Artist::search(
-                    ArtistSearchQuery::query_builder()
-                        .artist(name)
-                        .build(),
-                )
-                .with_url_relations()
-                .execute();
+                let res = Artist::search(ArtistSearchQuery::query_builder().artist(name).build())
+                    .with_url_relations()
+                    .execute();
 
                 if let Ok(found) = res {
                     if let Some(first) = found.entities.into_iter().nth(0) {
@@ -166,10 +159,7 @@ impl MetadataProvider for MusicBrainzWrapper {
     }
 
     /// MusicBrainz does not provide lyrics.
-    fn get_lyrics(
-        &self,
-        _key: &crate::common::SongInfo
-    ) -> Option<models::Lyrics> {
+    fn get_lyrics(&self, _key: &crate::common::SongInfo) -> Option<models::Lyrics> {
         None
     }
 }

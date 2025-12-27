@@ -1,30 +1,38 @@
 use glib::{
-    closure_local, signal::SignalHandlerId, Object, clone,
-    ParamSpec, ParamSpecChar, ParamSpecString, ParamSpecInt
+    Object, ParamSpec, ParamSpecChar, ParamSpecInt, ParamSpecString, clone, closure_local,
+    signal::SignalHandlerId,
 };
-use gtk::{prelude::*, subclass::prelude::*, gdk, CompositeTemplate, Image, Label};
+use gtk::{CompositeTemplate, Image, Label, gdk, prelude::*, subclass::prelude::*};
+use once_cell::sync::Lazy;
 use std::{
-    cell::{OnceCell, RefCell, Cell},
+    cell::{Cell, OnceCell, RefCell},
     rc::Rc,
 };
-use once_cell::sync::Lazy;
+use derivative::Derivative;
 
 use crate::{
-    cache::{placeholders::{ALBUMART_THUMBNAIL_PLACEHOLDER, EMPTY_ALBUM_STRING, EMPTY_ARTIST_STRING}, Cache, CacheState},
-    common::{marquee::{Marquee, MarqueeWrapMode}, Album, AlbumInfo, CoverSource, Rating},
-  utils::settings_manager,
+    cache::{
+        Cache, CacheState,
+        placeholders::{ALBUMART_THUMBNAIL_PLACEHOLDER, EMPTY_ALBUM_STRING, EMPTY_ARTIST_STRING},
+    },
+    common::{
+        Album, AlbumInfo, CoverSource, Rating,
+        marquee::{Marquee, MarqueeWrapMode},
+    },
+    utils::settings_manager,
 };
 
 mod imp {
     use super::*;
 
-    #[derive(CompositeTemplate)]
+    #[derive(CompositeTemplate, Derivative)]
+    #[derivative(Default)]
     #[template(resource = "/io/github/htkhiem/Euphonica/gtk/library/album-cell.ui")]
     pub struct AlbumCell {
         #[template_child]
         pub inner: TemplateChild<gtk::Box>,
         #[template_child]
-        pub cover: TemplateChild<gtk::Picture>, // Use high-resolution version
+        pub cover: TemplateChild<gtk::Picture>, // Use thumbnail version
         #[template_child]
         pub title: TemplateChild<Marquee>,
         #[template_child]
@@ -33,13 +41,14 @@ mod imp {
         pub quality_grade: TemplateChild<Image>,
         #[template_child]
         pub rating: TemplateChild<Rating>,
+        #[derivative(Default(value = "Cell::new(128)"))]
         pub image_size: Cell<i32>,
+        #[derivative(Default(value = "Cell::new(-1)"))]
         pub rating_val: Cell<i8>,
         pub album: RefCell<Option<Album>>,
         // Vector holding the bindings to properties of the Album GObject
         pub cover_signal_ids: RefCell<Option<(SignalHandlerId, SignalHandlerId)>>,
-        pub cache: OnceCell<Rc<Cache>>,
-        pub cover_source: Cell<CoverSource>
+        pub cache: OnceCell<Rc<Cache>>
     }
 
     // The central trait for subclassing a GObject
@@ -59,25 +68,6 @@ mod imp {
         }
     }
 
-    impl Default for AlbumCell {
-        fn default() -> Self {
-            Self {
-                inner: TemplateChild::default(),
-                cover: TemplateChild::default(),
-                title: TemplateChild::default(),
-                artist: TemplateChild::default(),
-                quality_grade: TemplateChild::default(),
-                rating: TemplateChild::default(),
-                image_size: Cell::new(128),
-                rating_val: Cell::default(),
-                album: RefCell::default(),
-                cover_signal_ids: RefCell::default(),
-                cache: OnceCell::new(),
-                cover_source: Cell::default()
-            }
-        }
-    }
-
     impl ObjectImpl for AlbumCell {
         fn dispose(&self) {
             while let Some(child) = self.obj().first_child() {
@@ -85,11 +75,7 @@ mod imp {
             }
 
             if let Some((update_id, clear_id)) = self.cover_signal_ids.take() {
-                let cache_state = self
-                    .cache
-                    .get()
-                    .unwrap()
-                    .get_cache_state();
+                let cache_state = self.cache.get().unwrap().get_cache_state();
 
                 cache_state.disconnect(update_id);
                 cache_state.disconnect(clear_id);
@@ -106,7 +92,7 @@ mod imp {
 
             self.obj()
                 .bind_property("rating", &self.rating.get(), "visible")
-                .transform_to(|_, r: i8| {Some(r >= 0)})
+                .transform_to(|_, r: i8| Some(r >= 0))
                 .sync_create()
                 .build();
 
@@ -128,7 +114,7 @@ mod imp {
                     ParamSpecString::builder("artist").build(),
                     ParamSpecString::builder("quality-grade").build(),
                     ParamSpecChar::builder("rating").build(),
-                    ParamSpecInt::builder("image-size").build()
+                    ParamSpecInt::builder("image-size").build(),
                 ]
             });
             PROPERTIES.as_ref()
@@ -176,12 +162,12 @@ mod imp {
                             obj.notify("rating");
                         }
                     }
-                },
+                }
                 "image-size" => {
                     if let Ok(new) = value.get::<i32>() {
                         obj.set_image_size(new);
                     }
-                },
+                }
                 _ => unimplemented!(),
             }
         }
@@ -202,20 +188,21 @@ mod imp {
                 (
                     image_size,
                     image_size, // Always as wide as the image, no matter how long the title is
-                    -1,
-                    -1
+                    -1, -1,
                 )
             } else {
                 // Depend on the parent Box's measurements for height
-                
-                self.inner.get().measure(gtk::Orientation::Vertical, for_size)
+
+                self.inner
+                    .get()
+                    .measure(gtk::Orientation::Vertical, for_size)
             }
         }
 
         fn size_allocate(&self, w: i32, h: i32, baseline: i32) {
-            self.inner.get().size_allocate(&gtk::Allocation::new(
-                0, 0, w, h
-            ), baseline);
+            self.inner
+                .get()
+                .size_allocate(&gtk::Allocation::new(0, 0, w, h), baseline);
         }
 
         fn snapshot(&self, snapshot: &gtk::Snapshot) {
@@ -236,38 +223,34 @@ impl AlbumCell {
         let res: Self = Object::builder().build();
         let cache_state = cache.get_cache_state();
         res.imp()
-           .cache
-           .set(cache)
-           .expect("AlbumCell cannot bind to cache");
+            .cache
+            .set(cache)
+            .expect("AlbumCell cannot bind to cache");
         item.property_expression("item")
             .chain_property::<Album>("title")
-            .chain_closure::<String>(closure_local!(|_: Option<glib::Object>, title: Option<&str>| {
-                String::from(if title.is_none_or(|t| t.is_empty()) {
-                    *EMPTY_ALBUM_STRING
-                } else {
-                    title.unwrap()
-                })
-            }))
+            .chain_closure::<String>(closure_local!(
+                |_: Option<glib::Object>, title: Option<&str>| {
+                    String::from(if title.is_none_or(|t| t.is_empty()) {
+                        *EMPTY_ALBUM_STRING
+                    } else {
+                        title.unwrap()
+                    })
+                }
+            ))
             .bind(&res, "title", gtk::Widget::NONE);
         if let Some(wrap_mode) = wrap_mode {
             // Some views, like the Recent View, requires a specific mode due to UI constraints.
             res.imp().title.set_wrap_mode(wrap_mode);
-        }
-        else {
+        } else {
             // If unspecified, bind to GSettings
             settings_manager()
                 .child("ui")
-                .bind(
-                    "title-wrap-mode",
-                    &res.imp().title.get(),
-                    "wrap-mode"
-                )
+                .bind("title-wrap-mode", &res.imp().title.get(), "wrap-mode")
                 .mapping(|var, _| {
                     Some(
-                        MarqueeWrapMode
-                            ::try_from(var.get::<String>().unwrap().as_ref())
+                        MarqueeWrapMode::try_from(var.get::<String>().unwrap().as_ref())
                             .expect("Invalid title-wrap-mode setting value")
-                            .into()
+                            .into(),
                     )
                 })
                 .get_only()
@@ -276,13 +259,15 @@ impl AlbumCell {
 
         item.property_expression("item")
             .chain_property::<Album>("artist")
-            .chain_closure::<String>(closure_local!(|_: Option<glib::Object>, artist: Option<&str>| {
-                String::from(if artist.is_none_or(|a| a.is_empty()) {
-                    *EMPTY_ARTIST_STRING
-                } else {
-                    artist.unwrap()
-                })
-            }))
+            .chain_closure::<String>(closure_local!(
+                |_: Option<glib::Object>, artist: Option<&str>| {
+                    String::from(if artist.is_none_or(|a| a.is_empty()) {
+                        *EMPTY_ARTIST_STRING
+                    } else {
+                        artist.unwrap()
+                    })
+                }
+            ))
             .bind(&res, "artist", gtk::Widget::NONE);
 
         item.property_expression("item")
@@ -303,7 +288,6 @@ impl AlbumCell {
                 if this.imp().title.wrap_mode() == MarqueeWrapMode::Scroll {
                     this.imp().title.set_should_run_and_check(true);
                 }
-
             }
         ));
         hover_ctl.connect_leave(clone!(
@@ -315,85 +299,44 @@ impl AlbumCell {
         ));
         res.add_controller(hover_ctl);
         let _ = res.imp().cover_signal_ids.replace(Some((
-            cache_state
-                .connect_closure(
-                    "album-art-downloaded",
-                    false,
-                    closure_local!(
-                        #[weak(rename_to = this)]
-                        res,
-                        move |_: CacheState, uri: String, thumb: bool, tex: gdk::Texture| {
-                            if !thumb {
-                                return;
-                            }
-                            if let Some(album) = this.imp().album.borrow().as_ref() {
-                                if album.get_folder_uri() == uri {
-                                    // Force update since we might have been using an embedded cover
-                                    // temporarily
-                                    this.update_cover(tex, CoverSource::Folder);
-                                } else if this.imp().cover_source.get() != CoverSource::Folder
-                                    && album.get_example_uri() == uri {
-                                        this.update_cover(tex, CoverSource::Embedded);
-                                    }
-                            }
+            cache_state.connect_closure(
+                "folder-cover-set",
+                false,
+                closure_local!(
+                    #[weak(rename_to = this)]
+                    res,
+                    move |_: CacheState, uri: String, _: gdk::Texture, thumb: gdk::Texture| {
+                        if this.imp().album.borrow().as_ref().is_some_and(|a| a.get_folder_uri() == uri) {
+                            this.update_cover(thumb);
                         }
-                    ),
+                    }
                 ),
-            cache_state
-                .connect_closure(
-                    "album-art-cleared",
-                    false,
-                    closure_local!(
-                        #[weak(rename_to = this)]
-                        res,
-                        move |_: CacheState, uri: String| {
-                            if let Some(album) = this.imp().album.borrow().as_ref() {
-                                match this.imp().cover_source.get() {
-                                    CoverSource::Folder => {
-                                        if album.get_folder_uri() == uri {
-                                            this.clear_cover();
-                                        }
-                                    }
-                                    CoverSource::Embedded => {
-                                        if album.get_example_uri() == uri {
-                                            this.clear_cover();
-                                        }
-                                    }
-                                    _ => {}
-                                }
-                            }
+            ),
+            cache_state.connect_closure(
+                "folder-cover-cleared",
+                false,
+                closure_local!(
+                    #[weak(rename_to = this)]
+                    res,
+                    move |_: CacheState, uri: String| {
+                        if this.imp().album.borrow().as_ref().is_some_and(|a| a.get_folder_uri() == uri) {
+                            this.clear_cover();
                         }
-                    ),
+                    }
                 ),
+            ),
         )));
         res
     }
 
+    #[inline]
     fn clear_cover(&self) {
-        self.imp().cover_source.set(CoverSource::None);
         self.imp().cover.set_paintable(Some(&*ALBUMART_THUMBNAIL_PLACEHOLDER));
     }
 
-    fn schedule_cover(&self, info: &AlbumInfo) {
-        self.imp().cover_source.set(CoverSource::Unknown);
-        self.imp().cover.set_paintable(Some(&*ALBUMART_THUMBNAIL_PLACEHOLDER));
-        if let Some((tex, is_embedded)) = self
-            .imp()
-            .cache
-            .get()
-            .unwrap()
-            .clone()
-            .load_cached_folder_cover(info, true, true) {
-                self.imp().cover.set_paintable(Some(&tex));
-                self.imp().cover_source.set(
-                    if is_embedded {CoverSource::Embedded} else {CoverSource::Folder}
-                );
-            }
-    }
-
-    fn update_cover(&self, tex: gdk::Texture, src: CoverSource) {
+    #[inline]
+    fn update_cover(&self, tex: gdk::Texture) {
         self.imp().cover.set_paintable(Some(&tex));
-        self.imp().cover_source.set(src);
     }
 
     pub fn bind(&self, album: &Album) {
@@ -401,7 +344,24 @@ impl AlbumCell {
         // Fetch album cover once here.
         // Set once first (like sync_create)
         let _ = self.imp().album.replace(Some(album.clone()));
-        self.schedule_cover(album.get_info());
+        self.clear_cover();
+        glib::spawn_future_local(clone!(
+            #[weak(rename_to = this)]
+            self,
+            #[strong]
+            album,
+            async move {
+                match this.imp().cache.get().unwrap().clone().get_album_cover(
+                    album.get_info(), true, true
+                ).await {
+                    Ok(Some(tex)) => {
+                        this.update_cover(tex);
+                    }
+                    Ok(None) => {}
+                    Err(e) => {dbg!(e);}
+                }
+            }
+        ));
     }
 
     pub fn unbind(&self) {

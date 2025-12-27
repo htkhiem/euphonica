@@ -1,5 +1,5 @@
-use glib::{closure_local, signal::SignalHandlerId, Object, ParamSpec, ParamSpecString, clone};
-use gtk::{gdk, glib, prelude::*, subclass::prelude::*, CompositeTemplate};
+use glib::{Object, ParamSpec, ParamSpecString, clone, closure_local, signal::SignalHandlerId};
+use gtk::{CompositeTemplate, gdk, glib, prelude::*, subclass::prelude::*};
 use std::{
     cell::{OnceCell, RefCell},
     rc::Rc,
@@ -7,7 +7,8 @@ use std::{
 
 use crate::{
     cache::{Cache, CacheState},
-    common::{Artist, ArtistInfo}, window::EuphonicaWindow,
+    common::{Artist, ArtistInfo},
+    window::EuphonicaWindow,
 };
 
 mod imp {
@@ -73,11 +74,7 @@ mod imp {
 
         fn dispose(&self) {
             if let Some((update_id, clear_id)) = self.avatar_signal_ids.take() {
-                let cache = self
-                    .cache
-                    .get()
-                    .unwrap()
-                    .get_cache_state();
+                let cache = self.cache.get().unwrap().get_cache_state();
                 cache.disconnect(update_id);
                 cache.disconnect(clear_id);
             }
@@ -112,37 +109,37 @@ impl ArtistTag {
             .expect("ArtistTag cannot bind to Artist object");
 
         let _ = res.imp().avatar_signal_ids.replace(Some((
-            cache_state
-                .connect_closure(
-                    "artist-avatar-downloaded",
-                    false,
-                    closure_local!(
-                        #[weak(rename_to = this)]
-                        res,
-                        move |_: CacheState, name: String, thumb: bool, tex: gdk::Texture| {
-                            if !thumb {
-                                return;
-                            }
-                            if this.imp().artist.get().unwrap().get_name() == name {
-                                this.imp().avatar.set_custom_image(Some(&tex));
-                            }
+            cache_state.connect_closure(
+                "artist-avatar-downloaded",
+                false,
+                closure_local!(
+                    #[weak(rename_to = this)]
+                    res,
+                    move |_: CacheState, name: String, thumb: bool, tex: gdk::Texture| {
+                        if !thumb {
+                            return;
                         }
-                    ),
+                        if this.imp().artist.get().unwrap().get_name() == name {
+                            this.imp().avatar.set_custom_image(Some(&tex));
+                        }
+                    }
                 ),
-            cache_state
-               .connect_closure(
-                   "artist-avatar-cleared",
-                   false,
-                   closure_local!(
-                       #[weak(rename_to = this)]
-                       res,
-                       move |_: CacheState, tag: String| {
-                           if this.imp().artist.get().unwrap().get_name() == tag {
-                               this.imp().avatar.set_custom_image(Option::<gdk::Texture>::None.as_ref());
-                           }
-                       }
-                   ),
-               ),
+            ),
+            cache_state.connect_closure(
+                "artist-avatar-cleared",
+                false,
+                closure_local!(
+                    #[weak(rename_to = this)]
+                    res,
+                    move |_: CacheState, tag: String| {
+                        if this.imp().artist.get().unwrap().get_name() == tag {
+                            this.imp()
+                                .avatar
+                                .set_custom_image(Option::<gdk::Texture>::None.as_ref());
+                        }
+                    }
+                ),
+            ),
         )));
         res.update_artist_avatar(res.imp().artist.get().unwrap().get_info());
 
