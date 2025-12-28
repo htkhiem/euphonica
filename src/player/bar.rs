@@ -249,7 +249,9 @@ impl PlayerBar {
             "volume-changed",
             false,
             closure_local!(|_: Player, val: i8| {
-                knob.sync_value(val);
+                if !knob.is_muted() {
+                    knob.sync_value(val);
+                }
             }),
         );
     }
