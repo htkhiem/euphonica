@@ -3,7 +3,7 @@ use crate::{
     application::EuphonicaApplication,
     cache::{Cache, CacheState, get_image_cache_path, placeholders::ALBUMART_PLACEHOLDER, sqlite},
     client::{ClientState, ConnectionState, Error as ClientError, MpdWrapper, Result as ClientResult, StickerSetMode},
-    common::{CoverSource, QualityGrade, Song, SongInfo, Stickers},
+    common::{QualityGrade, Song, SongInfo, Stickers},
     config::APPLICATION_ID,
     meta_providers::models::Lyrics,
     utils::{
@@ -224,7 +224,6 @@ mod imp {
         pub use_visualizer: Cell<bool>,
         pub fft_backend_idx: Cell<i32>,
         pub outputs: gio::ListStore,
-        pub cover: RefCell<gdk::Texture>,
         pub saved_to_history: Cell<bool>,
         pub is_foreground: Cell<bool>,
         // To improve efficiency & avoid UI scroll resetting problems we'll
@@ -297,7 +296,6 @@ mod imp {
                 use_visualizer: Cell::new(false),
                 fft_backend_idx: Cell::new(0),
                 outputs: gio::ListStore::new::<BoxedAnyObject>(),
-                cover: RefCell::new(ALBUMART_PLACEHOLDER.clone()),
                 saved_to_history: Cell::new(false),
                 is_foreground: Cell::new(false),
                 queue_version: Cell::new(0),
@@ -383,7 +381,6 @@ mod imp {
                     ParamSpecUInt::builder("current-lyric-line")
                         .read_only()
                         .build(),
-                    ParamSpecObject::builder::<gdk::Texture>("cover").read_only().build(),
                     ParamSpecString::builder("title").read_only().build(),
                     ParamSpecString::builder("artist").read_only().build(),
                     ParamSpecString::builder("album").read_only().build(),
@@ -421,7 +418,6 @@ mod imp {
                 "replaygain" => get_replaygain_icon_name(self.replaygain.get()).to_value(),
                 "position" => obj.position().to_value(),
                 "current-lyric-line" => self.current_lyric_line.get().to_value(),
-                "cover" => self.cover.borrow().clone().to_value(),
                 // These are proxies for Song properties
                 "title" => obj.title().to_value(),
                 "artist" => obj.artist().to_value(),
@@ -539,7 +535,6 @@ mod imp {
                     Signal::builder("history-changed").build(),
                     // For simplicity we'll always use the hires version
                     Signal::builder("cover-changed")
-                        .param_types([Option::<gdk::Texture>::static_type()])
                         .build(),
                     Signal::builder("fft-param-changed")
                         .param_types([
@@ -674,6 +669,10 @@ impl Player {
         self.imp().outputs.clone()
     }
 
+    pub fn current_song(&self) -> Option<Song> {
+        self.imp().current_song.borrow().as_ref().cloned()
+    }
+
     pub fn clear(&self) {
         self.imp().queue.remove_all();
         self.imp().outputs.remove_all();
@@ -705,7 +704,7 @@ impl Player {
                 #[weak(rename_to = this)]
                 self,
                 move |state, _| {
-                    match state.get_connection_state() {
+                    match state.connection_state() {
                         ConnectionState::Connected => {
                             // Newly-connected? Get initial status.
                             this.populate();
@@ -1074,28 +1073,8 @@ impl Player {
                     self.notify("format-desc");
                     self.notify("album");
                     self.notify("queue-id");
-
                     // Update album art
-                    match self
-                        .imp()
-                        .cache
-                        .get()
-                        .unwrap()
-                        .clone()
-                        .get_song_cover(new_song.get_info(), false, true).await
-                    {
-                        Ok(Some(tex)) => {
-                            self.imp().cover.replace(tex);
-                        }
-                        Ok(None) => {
-                            self.imp().cover.replace(ALBUMART_PLACEHOLDER.clone());
-                        }
-                        Err(e) => {
-                            dbg!(e);
-                            self.imp().cover.replace(ALBUMART_PLACEHOLDER.clone());
-                        }
-                    }
-                    self.notify("cover");
+                    self.emit_by_name::<()>("cover-changed", &[]);
 
                     // Get new lyrics
                     // First remove all current lines
@@ -1139,7 +1118,7 @@ impl Player {
                 self.notify("rating");
                 self.notify("duration");
                 self.notify("queue-id");
-                self.notify("cover");
+                self.emit_by_name::<()>("cover-changed", &[]);
                 // Update MPRIS side
                 if self.imp().mpris_enabled.get() {
                     mpris_changes.push(Property::Metadata(

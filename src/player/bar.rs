@@ -5,12 +5,12 @@ use gtk::{
     prelude::*,
     subclass::prelude::*,
 };
-use std::cell::{Cell, RefCell};
+use std::{cell::{Cell, RefCell}, rc::Rc};
 use std::sync::OnceLock;
 
 use crate::{
-    cache::placeholders::{ALBUMART_PLACEHOLDER, EMPTY_ALBUM_STRING, EMPTY_ARTIST_STRING},
-    common::Marquee,
+    cache::{Cache, placeholders::{ALBUMART_PLACEHOLDER, EMPTY_ALBUM_STRING, EMPTY_ARTIST_STRING}},
+    common::{Marquee, Song, ImageStack},
     player::{ratio_center_box::RatioCenterBox, seekbar::Seekbar},
     utils::settings_manager,
 };
@@ -30,7 +30,7 @@ mod imp {
         pub full_layout_box: TemplateChild<RatioCenterBox>,
         // Left side: current song info
         #[template_child]
-        pub albumart: TemplateChild<gtk::Image>,
+        pub albumart: TemplateChild<ImageStack>,
         #[template_child]
         pub info_box: TemplateChild<gtk::Box>,
         #[template_child]
@@ -182,9 +182,9 @@ impl PlayerBar {
         Self::default()
     }
 
-    pub fn setup(&self, player: &Player) {
+    pub fn setup(&self, player: &Player, cache: Rc<Cache>) {
         self.setup_volume_knob(player);
-        self.bind_state(player);
+        self.bind_state(player, cache);
         self.imp().playback_controls.setup(player);
         self.imp().seekbar.setup(player);
     }
@@ -246,7 +246,7 @@ impl PlayerBar {
         );
     }
 
-    fn bind_state(&self, player: &Player) {
+    fn bind_state(&self, player: &Player, cache: Rc<Cache>) {
         let imp = self.imp();
 
         let infobox_revealer = imp.infobox_revealer.get();
@@ -308,27 +308,22 @@ impl PlayerBar {
             "outputs-changed",
             false,
             closure_local!(
-                #[weak(rename_to = this)]
-                self,
-                #[upgrade_or]
-                (),
+                #[weak(rename_to = this)] self,
                 move |player: Player| {
                     this.update_outputs(&player);
                 }
             ),
         );
 
-        self.update_album_art(player.current_song_cover());
+        self.update_album_art(player.current_song(), cache.clone());
         player.connect_closure(
             "cover-changed",
             false,
             closure_local!(
-                #[weak(rename_to = this)]
-                self,
-                #[upgrade_or]
-                (),
-                move |_: Player, tex: Option<gdk::Texture>| {
-                    this.update_album_art(tex);
+                #[weak(rename_to = this)] self,
+                #[weak] cache,
+                move |p: Player| {
+                    this.update_album_art(p.current_song(), cache.clone());
                 }
             ),
         );
@@ -350,15 +345,26 @@ impl PlayerBar {
         ));
     }
 
-    fn update_album_art(&self, tex: Option<gdk::Texture>) {
-        // Update cover paintable
-        if tex.is_some() {
-            self.imp().albumart.set_paintable(tex.as_ref());
-        } else {
-            self.imp()
-                .albumart
-                .set_paintable(Some(&*ALBUMART_PLACEHOLDER));
-        }
+    fn update_album_art(&self, song: Option<Song>, cache: Rc<Cache>) {
+        glib::spawn_future_local(clone!(
+            #[weak(rename_to = this)] self,
+            #[weak] cache,
+            async move {
+                if let Some(song) = song {
+                    this.imp().albumart.show_spinner();
+                    match cache.get_song_cover(song.get_info(), true, true).await {
+                        Ok(Some(tex)) => this.imp().albumart.show(&tex),
+                        Ok(None) => this.imp().albumart.clear(),
+                        Err(e) => {
+                            this.imp().albumart.clear();
+                            dbg!(e);
+                        }
+                    }
+                } else {
+                    this.imp().albumart.clear();
+                }
+            }
+        ));
     }
 
     fn update_outputs(&self, player: &Player) {

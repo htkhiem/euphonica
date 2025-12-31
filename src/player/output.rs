@@ -118,10 +118,18 @@ impl MpdOutput {
 
         let id = output.id;
         res.imp().enable_output.connect_active_notify(clone!(
-            #[weak]
-            player,
+            #[weak] player,
             move |sw| {
-                player.set_output(id, sw.is_active());
+                let active = sw.is_active();
+                glib::spawn_future_local(clone!(
+                    #[weak] player,
+                    async move {
+                        match player.set_output(id, active).await {
+                            Ok(()) => {}
+                            Err(e) => {dbg!(e);}
+                        }
+                    }
+                ));
             }
         ));
 

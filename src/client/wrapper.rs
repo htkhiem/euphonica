@@ -577,7 +577,7 @@ impl MpdWrapper {
         } else {
             StickersSupportLevel::All
         };
-        if self.state.get_stickers_support_level() >= min_lvl {
+        if self.state.stickers_support_level() >= min_lvl {
             let (s, r) = oneshot::channel();
             self.handle_sticker_error(
                 self.foreground(
@@ -597,7 +597,7 @@ impl MpdWrapper {
         } else {
             StickersSupportLevel::All
         };
-        if self.state.get_stickers_support_level() >= min_lvl {
+        if self.state.stickers_support_level() >= min_lvl {
             let (s, r) = oneshot::channel();
             self.handle_sticker_error(
                 self.foreground(Task::GetKnownStickers(typ, uri, s), r).await,
@@ -620,7 +620,7 @@ impl MpdWrapper {
         } else {
             StickersSupportLevel::All
         };
-        if self.state.get_stickers_support_level() >= min_lvl {
+        if self.state.stickers_support_level() >= min_lvl {
             let (s, r) = oneshot::channel();
             self.handle_sticker_error(
                 self.foreground(Task::SetSticker(typ, uri, name, value, mode, s), r).await,
@@ -636,7 +636,7 @@ impl MpdWrapper {
         } else {
             StickersSupportLevel::All
         };
-        if self.state.get_stickers_support_level() >= min_lvl {
+        if self.state.stickers_support_level() >= min_lvl {
             let (s, r) = oneshot::channel();
             self.handle_sticker_error(
                 self.foreground(

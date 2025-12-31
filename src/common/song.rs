@@ -1,5 +1,5 @@
 use crate::cache::{get_image_cache_path, sqlite};
-use crate::utils::get_time_ago_desc;
+use crate::utils::{get_time_ago_desc, strip_filename_linux};
 use core::time::Duration;
 use derivative::Derivative;
 use gtk::glib;
@@ -275,6 +275,10 @@ impl Song {
 
     pub fn get_uri(&self) -> &str {
         &self.get_info().uri
+    }
+
+    pub fn get_folder_uri(&self) -> &str {
+        strip_filename_linux(self.get_uri())
     }
 
     pub fn get_name(&self) -> &str {

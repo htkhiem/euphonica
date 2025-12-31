@@ -16,8 +16,9 @@ use crate::{
         placeholders::{ALBUMART_THUMBNAIL_PLACEHOLDER, EMPTY_ALBUM_STRING, EMPTY_ARTIST_STRING},
     },
     common::{
-        Album, AlbumInfo, CoverSource, Rating,
+        Album, AlbumInfo, Rating,
         marquee::{Marquee, MarqueeWrapMode},
+        ImageStack
     },
     utils::settings_manager,
 };
@@ -32,7 +33,7 @@ mod imp {
         #[template_child]
         pub inner: TemplateChild<gtk::Box>,
         #[template_child]
-        pub cover: TemplateChild<gtk::Picture>, // Use thumbnail version
+        pub cover: TemplateChild<ImageStack>, // Use thumbnail version
         #[template_child]
         pub title: TemplateChild<Marquee>,
         #[template_child]
@@ -97,12 +98,7 @@ mod imp {
                 .build();
 
             self.obj()
-                .bind_property("image-size", &self.cover.get(), "width-request")
-                .sync_create()
-                .build();
-
-            self.obj()
-                .bind_property("image-size", &self.cover.get(), "height-request")
+                .bind_property("image-size", &self.cover.get(), "size")
                 .sync_create()
                 .build();
         }
@@ -329,22 +325,12 @@ impl AlbumCell {
         res
     }
 
-    #[inline]
-    fn clear_cover(&self) {
-        self.imp().cover.set_paintable(Some(&*ALBUMART_THUMBNAIL_PLACEHOLDER));
-    }
-
-    #[inline]
-    fn update_cover(&self, tex: gdk::Texture) {
-        self.imp().cover.set_paintable(Some(&tex));
-    }
-
     pub fn bind(&self, album: &Album) {
         // The string properties are bound using property expressions in setup().
         // Fetch album cover once here.
         // Set once first (like sync_create)
         let _ = self.imp().album.replace(Some(album.clone()));
-        self.clear_cover();
+        self.imp().cover.show_spinner();
         glib::spawn_future_local(clone!(
             #[weak(rename_to = this)]
             self,
@@ -355,9 +341,11 @@ impl AlbumCell {
                     album.get_info(), true, true
                 ).await {
                     Ok(Some(tex)) => {
-                        this.update_cover(tex);
+                        this.imp().cover.show(&tex);
                     }
-                    Ok(None) => {}
+                    Ok(None) => {
+                        this.imp().cover.clear();
+                    }
                     Err(e) => {dbg!(e);}
                 }
             }

@@ -9,13 +9,13 @@ use gtk::{
 use std::{
     cell::{Cell, RefCell},
     fs::{self, File},
-    io::Write,
+    io::Write, rc::Rc,
 };
 
 use crate::{
-    cache::placeholders::{ALBUMART_PLACEHOLDER, EMPTY_ALBUM_STRING, EMPTY_ARTIST_STRING},
+    cache::{Cache, placeholders::{ALBUMART_PLACEHOLDER, EMPTY_ALBUM_STRING, EMPTY_ARTIST_STRING}},
     client::{ClientState, state::StickersSupportLevel},
-    common::{Rating, paintables::FadePaintable},
+    common::{ImageStack, Rating, Song, paintables::FadePaintable},
     player::seekbar::Seekbar,
     utils::{self, settings_manager},
 };
@@ -32,7 +32,7 @@ mod imp {
         #[template_child]
         pub info_box: TemplateChild<gtk::Box>,
         #[template_child]
-        pub albumart: TemplateChild<gtk::Picture>,
+        pub albumart: TemplateChild<ImageStack>,
         #[template_child]
         pub song_name: TemplateChild<gtk::Label>,
         #[template_child]
@@ -247,9 +247,9 @@ impl PlayerPane {
         }
     }
 
-    pub fn setup(&self, player: &Player, client_state: &ClientState) {
+    pub fn setup(&self, player: &Player, cache: Rc<Cache>, client_state: &ClientState) {
         self.setup_volume_knob(player);
-        self.bind_state(player, client_state);
+        self.bind_state(player, cache, client_state);
         self.imp().playback_controls.setup(player);
         self.imp().seekbar.setup(player);
     }
@@ -367,7 +367,7 @@ impl PlayerPane {
             .build();
     }
 
-    fn bind_state(&self, player: &Player, client_state: &ClientState) {
+    fn bind_state(&self, player: &Player, cache: Rc<Cache>, client_state: &ClientState) {
         let imp = self.imp();
         let info_box = imp.info_box.get();
         player
@@ -469,7 +469,7 @@ impl PlayerPane {
         // Labels at 20% opacity.
         let lyrics_box = imp.lyrics_box.get();
         lyrics_box.bind_model(
-            Some(&lyric_lines),
+            Some(player.lyrics()),
             clone!(
                 #[weak]
                 player,
@@ -526,15 +526,15 @@ impl PlayerPane {
             ),
         );
 
-        self.update_album_art(player.current_song_cover());
+        self.update_album_art(player.current_song(), cache.clone());
         player.connect_closure(
             "cover-changed",
             false,
             closure_local!(
-                #[weak(rename_to = this)]
-                self,
-                move |_: Player, tex: Option<gdk::Texture>| {
-                    this.update_album_art(tex);
+                #[weak(rename_to = this)] self,
+                #[strong] cache,
+                move |p: Player| {
+                    this.update_album_art(p.current_song(), cache.clone());
                 }
             ),
         );
@@ -706,16 +706,26 @@ impl PlayerPane {
         self.update_lyrics_state(player);
     }
 
-    fn update_album_art(&self, tex: Option<gdk::Texture>) {
-        // Use high-resolution version here
-        // Update cover paintable
-        if tex.is_some() {
-            self.imp().albumart.set_paintable(tex.as_ref());
-        } else {
-            self.imp()
-                .albumart
-                .set_paintable(Some(&*ALBUMART_PLACEHOLDER));
-        }
+    fn update_album_art(&self, song: Option<Song>, cache: Rc<Cache>) {
+        glib::spawn_future_local(clone!(
+            #[weak(rename_to = this)] self,
+            #[weak] cache,
+            async move {
+                if let Some(song) = song {
+                    this.imp().albumart.show_spinner();
+                    match cache.get_song_cover(song.get_info(), true, true).await {
+                        Ok(Some(tex)) => this.imp().albumart.show(&tex),
+                        Ok(None) => this.imp().albumart.clear(),
+                        Err(e) => {
+                            this.imp().albumart.clear();
+                            dbg!(e);
+                        }
+                    }
+                } else {
+                    this.imp().albumart.clear();
+                }
+            }
+        ));
     }
 
     fn update_outputs(&self, player: &Player) {

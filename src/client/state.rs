@@ -32,18 +32,26 @@ pub enum StickersSupportLevel {
 }
 
 mod imp {
+    use gio::glib::derived_properties;
+    use ::glib::Properties;
     use glib::{ParamSpec, ParamSpecBoolean, ParamSpecEnum, ParamSpecUInt64};
 
     use super::*;
     use once_cell::sync::Lazy;
 
-    #[derive(Debug, Default)]
+    #[derive(Debug, Default, Properties)]
+    #[properties(wrapper_type = super::ClientState)]
     pub struct ClientState {
+        #[property(get, set, default)]
         pub connection_state: Cell<ConnectionState>,
         // Used to indicate that the background client is busy.
-        pub n_tasks: Cell<u64>,
+        #[property(get)]
+        pub n_fg_tasks: Cell<u64>,
+        #[property(get)]
+        pub n_bg_tasks: Cell<u64>,
+        #[property(get, set)]
         pub supports_playlists: Cell<bool>,
-        pub queuing: Cell<bool>,
+        #[property(get, set, default)]
         pub stickers_support_level: Cell<StickersSupportLevel>,
     }
 
@@ -55,48 +63,16 @@ mod imp {
         fn new() -> Self {
             Self {
                 connection_state: Cell::default(),
-                n_tasks: Cell::new(0),
+                n_fg_tasks: Cell::new(0),
+                n_bg_tasks: Cell::new(0),
                 stickers_support_level: Cell::default(),
-                supports_playlists: Cell::new(true),
-                queuing: Cell::new(false),
+                supports_playlists: Cell::new(true)
             }
         }
     }
 
+    #[derived_properties]
     impl ObjectImpl for ClientState {
-        fn properties() -> &'static [ParamSpec] {
-            static PROPERTIES: Lazy<Vec<ParamSpec>> = Lazy::new(|| {
-                vec![
-                    ParamSpecUInt64::builder("n-background-tasks")
-                        .read_only()
-                        .build(),
-                    ParamSpecEnum::builder::<StickersSupportLevel>("stickers-support-level")
-                        .read_only()
-                        .build(),
-                    ParamSpecBoolean::builder("supports-playlists")
-                        .read_only()
-                        .build(),
-                    ParamSpecBoolean::builder("is-queuing").read_only().build(),
-                    ParamSpecEnum::builder::<ConnectionState>("connection-state")
-                        .read_only()
-                        .build(),
-                ]
-            });
-            PROPERTIES.as_ref()
-        }
-
-        fn property(&self, _id: usize, pspec: &ParamSpec) -> glib::Value {
-            let obj = self.obj();
-            match pspec.name() {
-                "connection-state" => obj.get_connection_state().to_value(),
-                "n-background-tasks" => self.n_tasks.get().to_value(),
-                "stickers-support-level" => obj.get_stickers_support_level().to_value(),
-                "supports-playlists" => obj.supports_playlists().to_value(),
-                "is-queuing" => self.queuing.get().to_value(),
-                _ => unimplemented!(),
-            }
-        }
-
         fn signals() -> &'static [Signal] {
             static SIGNALS: OnceLock<Vec<Signal>> = OnceLock::new();
             SIGNALS.get_or_init(|| {
@@ -105,86 +81,7 @@ mod imp {
                         .param_types([
                             BoxedAnyObject::static_type(), // mpd::Subsystem::to_str
                         ])
-                        .build(),
-                    Signal::builder("queue-changed")
-                        .param_types([
-                            BoxedAnyObject::static_type(), // Vec<PosIdChange> (diff only)
-                        ])
-                        .build(),
-                    Signal::builder("album-art-downloaded")
-                        .param_types([
-                            String::static_type(),         // folder URI
-                            BoxedAnyObject::static_type(), // hires
-                            BoxedAnyObject::static_type(), // thumbnail
-                        ])
-                        .build(),
-                    // Enough information about this album has been downloaded to display it
-                    // as a thumbnail in the album view
-                    Signal::builder("album-basic-info-downloaded")
-                        .param_types([Album::static_type()])
-                        .build(),
-                    Signal::builder("recent-album-downloaded")
-                        .param_types([Album::static_type()])
-                        .build(),
-                    // A chunk of an album's songs have been retrieved. Emit this
-                    // to make AlbumContentView append this chunk.
-                    Signal::builder("album-songs-downloaded")
-                        .param_types([
-                            String::static_type(),
-                            BoxedAnyObject::static_type(), // Vec<Song>
-                        ])
-                        .build(),
-                    // ArtistInfo downloaded. Should probably queue metadata retrieval.
-                    Signal::builder("artist-basic-info-downloaded")
-                        .param_types([Artist::static_type()])
-                        .build(),
-                    Signal::builder("recent-artist-downloaded")
-                        .param_types([Artist::static_type()])
-                        .build(),
-                    // A chunk of an artist's songs have been retrieved. Emit this
-                    // to make ArtistContentView append this chunk.
-                    Signal::builder("artist-songs-downloaded")
-                        .param_types([
-                            String::static_type(),
-                            BoxedAnyObject::static_type(), // Vec<Song>
-                        ])
-                        .build(),
-                    Signal::builder("artist-album-basic-info-downloaded")
-                        .param_types([String::static_type(), Album::static_type()])
-                        .build(),
-                    Signal::builder("folder-contents-downloaded")
-                        .param_types([
-                            str::static_type(),            // corresponding path
-                            BoxedAnyObject::static_type(), // Vec<INode>
-                        ])
-                        .build(),
-                    // A chunk of a playlist's songs have been retrieved. Emit this
-                    // to make PlaylistContentView append this chunk.
-                    Signal::builder("playlist-songs-downloaded")
-                        .param_types([
-                            String::static_type(),
-                            BoxedAnyObject::static_type(), // Vec<Song>
-                        ])
-                        .build(),
-                    Signal::builder("dynamic-playlist-songs-downloaded")
-                        .param_types([
-                            String::static_type(),
-                            BoxedAnyObject::static_type(), // Vec<Song>
-                        ])
-                        .build(),
-                    Signal::builder("recent-songs-downloaded")
-                        .param_types([
-                            BoxedAnyObject::static_type(), // Vec<Song>
-                        ])
-                        .build(),
-                    Signal::builder("client-error")
-                        .param_types([ClientError::static_type()])
-                        .build(),
-                    Signal::builder("queue-songs-downloaded")
-                        .param_types([
-                            BoxedAnyObject::static_type(), // Vec<Song>
-                        ])
-                        .build(),
+                        .build()
                 ]
             })
         }
@@ -202,72 +99,29 @@ impl Default for ClientState {
 }
 
 impl ClientState {
-    pub fn get_connection_state(&self) -> ConnectionState {
-        self.imp().connection_state.get()
-    }
-
-    pub fn set_connection_state(&self, new_state: ConnectionState) {
-        let old_state = self.imp().connection_state.replace(new_state);
-        if old_state != new_state {
-            self.notify("connection-state");
-        }
-    }
-
     // Convenience emit wrappers
-    pub fn emit_result<T: ToValue>(&self, signal_name: &str, val: T) {
-        self.emit_by_name::<()>(signal_name, &[&val])
-    }
-
     pub fn emit_boxed_result<T: 'static>(&self, signal_name: &str, to_box: T) {
         // T must be owned or static
         self.emit_by_name::<()>(signal_name, &[&BoxedAnyObject::new(to_box)]);
     }
 
-    pub fn emit_error(&self, err: ClientError) {
-        self.emit_by_name::<()>("client-error", &[&err]);
+    pub fn inc_bg(&self) {
+        self.imp().n_bg_tasks.set(self.imp().n_bg_tasks.get() + 1);
+        self.notify("n-background-tasks");
     }
 
-    pub fn get_stickers_support_level(&self) -> StickersSupportLevel {
-        self.imp().stickers_support_level.get()
+    pub fn dec_bg(&self) {
+        self.imp().n_bg_tasks.set(self.imp().n_bg_tasks.get() - 1);
+        self.notify("n-background-tasks");
     }
 
-    pub fn set_stickers_support_level(&self, new: StickersSupportLevel) {
-        let old = self.imp().stickers_support_level.replace(new);
-        if old != new {
-            self.notify("stickers-support-level");
-        }
+    pub fn inc_fg(&self) {
+        self.imp().n_fg_tasks.set(self.imp().n_fg_tasks.get() + 1);
+        self.notify("n-background-tasks");
     }
 
-    pub fn supports_playlists(&self) -> bool {
-        self.imp().supports_playlists.get()
-    }
-
-    pub fn set_supports_playlists(&self, state: bool) {
-        let old = self.imp().supports_playlists.replace(state);
-        if old != state {
-            self.notify("supports-playlists");
-        }
-    }
-
-    pub fn get_n_background_tasks(&self) -> u64 {
-        self.imp().n_tasks.get()
-    }
-
-    pub fn set_n_background_tasks(&self, n: u64) {
-        let old = self.imp().n_tasks.replace(n);
-        if old != n {
-            self.notify("n-background-tasks");
-        }
-    }
-
-    pub fn is_queuing(&self) -> bool {
-        self.imp().queuing.get()
-    }
-
-    pub fn set_queuing(&self, new: bool) {
-        let old = self.imp().queuing.replace(new);
-        if old != new {
-            self.notify("is-queuing");
-        }
+    pub fn dec_fg(&self) {
+        self.imp().n_fg_tasks.set(self.imp().n_fg_tasks.get() - 1);
+        self.notify("n-background-tasks");
     }
 }

@@ -38,9 +38,8 @@
           <class name="border-radius-6"/>
         </style>
         <child>
-          <object class="GtkImage" id="thumbnail">
-            <property name="pixel-size">36</property>
-            <property name="resource">io/github/htkhiem/Euphonica/albumart-placeholder-thumb.png</property>
+          <object class="EuphonicaImageStack" id="thumbnail">
+            <property name="size">36</property>
           </object>
         </child>
       </object>

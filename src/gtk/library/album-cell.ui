@@ -20,13 +20,7 @@
               <class name="border-radius-6"/>
             </style>
             <child>
-              <object class="GtkPicture" id="cover">
-                <property name="height-request">128</property>
-                <property name="width-request">128</property>
-                <property name="hexpand">true</property>
-                <property name="vexpand">true</property>
-                <property name="content-fit">2</property>
-              </object>
+              <object class="EuphonicaImageStack" id="cover"/>
             </child>
           </object>
         </child>
