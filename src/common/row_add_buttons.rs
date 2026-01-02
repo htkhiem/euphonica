@@ -66,7 +66,9 @@ impl RowAddButtons {
                 if let Some(song) = res.imp().song.borrow().as_ref() {
                     let uri = song.get_uri().to_owned();
                     glib::spawn_future_local(async move {
-                        library.queue_uri(uri, true, true, false).await;
+                        if let Err(e) = library.queue_uri(uri, true, true, false).await {
+                            dbg!(e);
+                        }
                     });
                 }
             }
@@ -83,7 +85,9 @@ impl RowAddButtons {
                 if let Some(song) = res.imp().song.borrow().as_ref() {
                     let uri = song.get_uri().to_owned();
                     glib::spawn_future_local(async move {
-                        library.queue_uri(uri, false, false, false).await;
+                        if let Err(e) = library.queue_uri(uri, false, false, false).await {
+                            dbg!(e);
+                        }
                     });
                 }
             }

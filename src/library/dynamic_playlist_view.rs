@@ -364,7 +364,7 @@ mod imp {
                                         }
                                     }
                                     if let Some(library) = this.library.upgrade() {
-                                        library.init_dyn_playlists(true);
+                                        if let Err(e) = library.init_dyn_playlists(true).await {dbg!(e);}
                                     }
                                 }
                             }
@@ -411,13 +411,13 @@ impl DynamicPlaylistView {
         self.imp().nav_view.pop();
     }
 
-    pub fn delete(&self, name: &str) {
+    pub async fn delete(&self, name: &str) {
         if let Some(library) = self.imp().library.upgrade() {
             self.imp().nav_view.pop();
             self.imp().content_view.unbind();
             match sqlite::delete_dynamic_playlist(name) {
                 Ok(_) => {
-                    library.init_dyn_playlists(true);
+                    if let Err(e) = library.init_dyn_playlists(true).await {dbg!(e);}
                 }
                 Err(err) => {
                     dbg!(err);

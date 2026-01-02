@@ -420,7 +420,9 @@ impl ArtistView {
 impl LazyInit for ArtistView {
     fn populate(&self) {
         if let Some(library) = self.imp().library.upgrade() {
-            library.init_artists(false);
+            glib::spawn_future_local(async move {
+                let _ = library.init_artists(false).await;
+            });
         }
     }
 }

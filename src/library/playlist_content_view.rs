@@ -945,7 +945,7 @@ impl PlaylistContentView {
                     move |songs| {
                         song_list.extend_from_slice(&songs);
                     }
-                );
+                ).await;
                 this.imp()
                     .track_count
                     .set_label(&this.imp().song_list.n_items().to_string());

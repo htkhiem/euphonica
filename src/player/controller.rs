@@ -437,87 +437,90 @@ mod imp {
         }
 
         fn set_property(&self, _id: usize, value: &glib::Value, pspec: &ParamSpec) {
-            let obj = self.obj();
-            match pspec.name() {
-                "crossfade" => {
-                    if let Ok(v) = value.get::<f64>() {
-                        obj.set_crossfade(v);
-                    }
-                }
-                "mixramp-db" => {
-                    if let Ok(v) = value.get::<f32>() {
-                        obj.set_mixramp_db(v);
-                    }
-                }
-                "mixramp-delay" => {
-                    if let Ok(v) = value.get::<f64>() {
-                        obj.set_mixramp_delay(v);
-                    }
-                }
-                "position" => {
-                    if let Ok(v) = value.get::<f64>() {
-                        obj.set_position(v);
-                    }
-                }
-                "random" => {
-                    if let Ok(state) = value.get::<bool>() {
-                        obj.set_random(state);
-                        // Don't actually set the property here yet.
-                        // Idle status will update it later.
-                    }
-                }
-                "consume" => {
-                    if let Ok(state) = value.get::<bool>() {
-                        obj.set_consume(state);
-                        // Don't actually set the property here yet.
-                        // Idle status will update it later.
-                    }
-                }
-                "supports-playlists" => {
-                    if let Ok(state) = value.get::<bool>() {
-                        self.supports_playlists.replace(state);
-                        obj.notify("supports-playlists");
-                    }
-                }
-                "use-visualizer" => {
-                    if let Ok(state) = value.get::<bool>() {
-                        self.use_visualizer.replace(state);
-                        obj.notify("use-visualizer");
 
-                        if state {
-                            // Visualiser turned on. Start FFT thread.
-                            self.obj().maybe_start_fft_thread();
-                        } else {
-                            // Visualiser turned off. FFT thread should
-                            // have stopped by itself. Join & yeet handle.
-                            self.obj().maybe_stop_fft_thread(false);
+            glib::spawn_future_local(clone!(#[weak(rename_to = this)] self, #[strong] value, #[strong] pspec, async move {
+                let obj = this.obj();
+                match pspec.name() {
+                    "crossfade" => {
+                        if let Ok(v) = value.get::<f64>() {
+                            if let Err(e) = obj.set_crossfade(v).await {dbg!(e);}
                         }
                     }
-                }
-                "fft-backend-idx" => {
-                    if let Ok(new) = value.get::<i32>() {
-                        let old = self.fft_backend_idx.replace(new);
+                    "mixramp-db" => {
+                        if let Ok(v) = value.get::<f32>() {
+                            if let Err(e) = obj.set_mixramp_db(v).await {dbg!(e);}
+                        }
+                    }
+                    "mixramp-delay" => {
+                        if let Ok(v) = value.get::<f64>() {
+                            if let Err(e) = obj.set_mixramp_delay(v).await {dbg!(e);}
+                        }
+                    }
+                    "position" => {
+                        if let Ok(v) = value.get::<f64>() {
+                            obj.set_position(v);
+                        }
+                    }
+                    "random" => {
+                        if let Ok(state) = value.get::<bool>() {
+                            if let Err(e) = obj.set_random(state).await {dbg!(e);}
+                            // Don't actually set the property here yet.
+                            // Idle status will update it later.
+                        }
+                    }
+                    "consume" => {
+                        if let Ok(state) = value.get::<bool>() {
+                            if let Err(e) = obj.set_consume(state).await {dbg!(e);}
+                            // Don't actually set the property here yet.
+                            // Idle status will update it later.
+                        }
+                    }
+                    "supports-playlists" => {
+                        if let Ok(state) = value.get::<bool>() {
+                            this.supports_playlists.replace(state);
+                            obj.notify("supports-playlists");
+                        }
+                    }
+                    "use-visualizer" => {
+                        if let Ok(state) = value.get::<bool>() {
+                            this.use_visualizer.replace(state);
+                            obj.notify("use-visualizer");
 
-                        if old != new {
-                            println!("Switching FFT backend...");
-                            self.obj().maybe_stop_fft_thread(true);
-                            self.fft_backend
-                                .replace(Some(self.obj().init_fft_backend()));
-                            self.obj().maybe_start_fft_thread();
-                            self.obj().notify("fft-backend-idx");
+                            if state {
+                                // Visualiser turned on. Start FFT thread.
+                                this.obj().maybe_start_fft_thread();
+                            } else {
+                                // Visualiser turned off. FFT thread should
+                                // have stopped by itthis. Join & yeet handle.
+                                this.obj().maybe_stop_fft_thread(false);
+                            }
                         }
                     }
-                }
-                "pipewire-restart-between-songs" => {
-                    if let Ok(state) = value.get::<bool>() {
-                        let old = self.pipewire_restart_between_songs.replace(state);
-                        if old != state {
-                            self.obj().notify("pipewire-restart-between-songs");
+                    "fft-backend-idx" => {
+                        if let Ok(new) = value.get::<i32>() {
+                            let old = this.fft_backend_idx.replace(new);
+
+                            if old != new {
+                                println!("Switching FFT backend...");
+                                this.obj().maybe_stop_fft_thread(true);
+                                this.fft_backend
+                                    .replace(Some(this.obj().init_fft_backend()));
+                                this.obj().maybe_start_fft_thread();
+                                this.obj().notify("fft-backend-idx");
+                            }
                         }
                     }
+                    "pipewire-restart-between-songs" => {
+                        if let Ok(state) = value.get::<bool>() {
+                            let old = this.pipewire_restart_between_songs.replace(state);
+                            if old != state {
+                                this.obj().notify("pipewire-restart-between-songs");
+                            }
+                        }
+                    }
+                    _ => unimplemented!(),
                 }
-                _ => unimplemented!(),
-            }
+            }));
         }
 
         fn signals() -> &'static [Signal] {
@@ -671,12 +674,12 @@ impl Player {
         self.imp().current_song.borrow().as_ref().cloned()
     }
 
-    pub fn clear(&self) {
+    pub async fn clear(&self) -> ClientResult<()> {
         self.imp().queue.remove_all();
         self.imp().outputs.remove_all();
         self.imp().queue_version.set(0);
         self.imp().expected_queue_version.set(0);
-        self.update_status();
+        self.update_status().await
     }
 
     pub async fn populate(&self) -> ClientResult<()> {
@@ -699,19 +702,21 @@ impl Player {
         client_state.connect_notify_local(
             Some("connection-state"),
             clone!(
-                #[weak(rename_to = this)]
-                self,
+                #[weak(rename_to = this)] self,
                 move |state, _| {
-                    match state.connection_state() {
-                        ConnectionState::Connected => {
-                            // Newly-connected? Get initial status.
-                            this.populate();
+                    let conn_state = state.connection_state();
+                    glib::spawn_future_local(clone!(#[weak] this, async move {
+                        match conn_state {
+                            ConnectionState::Connected => {
+                                // Newly-connected? Get initial status.
+                                if let Err(e) = this.populate().await {dbg!(e);}
+                            }
+                            ConnectionState::Connecting => {
+                                if let Err(e) = this.clear().await {dbg!(e);}
+                            }
+                            _ => {}
                         }
-                        ConnectionState::Connecting => {
-                            this.clear();
-                        }
-                        _ => {}
-                    }
+                    }));
                 }
             ),
         );
@@ -758,16 +763,18 @@ impl Player {
         settings.connect_changed(
             Some("enable-mpris"),
             clone!(
-                #[weak(rename_to = this)]
-                self,
+                #[weak(rename_to = this)] self,
                 move |settings, _| {
                     let new_state = settings.boolean("enable-mpris");
                     let _ = this.imp().mpris_enabled.replace(new_state);
                     if !new_state {
                         // Ping once to clear existing controls
-                        this.update_mpris_properties(vec![Property::Metadata(
-                            MprisMetadata::default(),
-                        )]);
+                        glib::spawn_future_local(clone!(#[weak] this, async move {
+                            this.update_mpris_properties(vec![Property::Metadata(
+                                MprisMetadata::default(),
+                            )]).await;
+                        }));
+
                     }
                 }
             ),
@@ -1745,40 +1752,33 @@ impl LocalRootInterface for Player {
 
 impl LocalPlayerInterface for Player {
     async fn next(&self) -> fdo::Result<()> {
-        self.next_song(false);
-        Ok(())
+        self.next_song(false).await.map_err(|_| fdo::Error::Failed("internal".to_string()))
     }
 
     async fn previous(&self) -> fdo::Result<()> {
-        self.prev_song(false);
-        Ok(())
+        self.prev_song(false).await.map_err(|_| fdo::Error::Failed("internal".to_string()))
     }
 
     async fn play(&self) -> fdo::Result<()> {
-        self.toggle_playback();
-        Ok(())
+        self.toggle_playback().await.map_err(|_| fdo::Error::Failed("internal".to_string()))
     }
 
     async fn pause(&self) -> fdo::Result<()> {
-        self.send_pause();
-        Ok(())
+        self.send_pause().await.map_err(|_| fdo::Error::Failed("internal".to_string()))
     }
 
     async fn play_pause(&self) -> fdo::Result<()> {
-        self.toggle_playback();
-        Ok(())
+        self.toggle_playback().await.map_err(|_| fdo::Error::Failed("internal".to_string()))
     }
 
     async fn stop(&self) -> fdo::Result<()> {
-        self.client().map_err(|_| fdo::Error::ZBus(zbus::Error::InterfaceNotFound))?.stop();
-        Ok(())
+        self.client().map_err(|_| fdo::Error::ZBus(zbus::Error::InterfaceNotFound))?.stop().await.map_err(|_| fdo::Error::Failed("internal".to_string()))
     }
 
     async fn seek(&self, offset: Time) -> fdo::Result<()> {
         let curr_pos = self.imp().position.get();
         let new_pos = curr_pos + (offset.as_millis() as f64 / 1000.0);
-        self.send_seek(new_pos);
-        Ok(())
+        self.send_seek(new_pos).await.map_err(|_| fdo::Error::Failed("internal".to_string()))
     }
 
     /// Use MPD's queue ID to construct track_id in this format:
@@ -1786,12 +1786,13 @@ impl LocalPlayerInterface for Player {
     async fn set_position(&self, track_id: TrackId, position: Time) -> fdo::Result<()> {
         if let Some(song) = self.imp().current_song.borrow().as_ref() {
             if track_id.as_str().split("/").last().unwrap() == song.get_queue_id().to_string() {
-                self.send_seek(position.as_millis() as f64 / 1000.0);
-                return Ok(());
+                self.send_seek(position.as_millis() as f64 / 1000.0).await.map_err(|_| fdo::Error::Failed("internal".to_string()))
+            } else {
+                Err(fdo::Error::Failed("Song has already changed".to_owned()))
             }
-            return Err(fdo::Error::Failed("Song has already changed".to_owned()));
+        } else {
+            Err(fdo::Error::Failed("No song is being played".to_owned()))
         }
-        Err(fdo::Error::Failed("No song is being played".to_owned()))
     }
 
     async fn open_uri(&self, _uri: String) -> fdo::Result<()> {
@@ -1810,8 +1811,7 @@ impl LocalPlayerInterface for Player {
 
     async fn set_loop_status(&self, loop_status: LoopStatus) -> zbus::Result<()> {
         let flow: PlaybackFlow = loop_status.into();
-        self.client().map_err(|_| zbus::Error::InterfaceNotFound)?.set_playback_flow(flow);
-        Ok(())
+        self.client().map_err(|_| zbus::Error::InterfaceNotFound)?.set_playback_flow(flow).await.map_err(|_| zbus::Error::InvalidReply)
     }
 
     async fn rate(&self) -> fdo::Result<PlaybackRate> {
@@ -1829,8 +1829,7 @@ impl LocalPlayerInterface for Player {
     }
 
     async fn set_shuffle(&self, shuffle: bool) -> zbus::Result<()> {
-        self.set_random(shuffle);
-        Ok(())
+        self.set_random(shuffle).await.map_err(|_| zbus::Error::InvalidReply)
     }
 
     async fn metadata(&self) -> fdo::Result<MprisMetadata> {
@@ -1846,8 +1845,7 @@ impl LocalPlayerInterface for Player {
     }
 
     async fn set_volume(&self, volume: Volume) -> zbus::Result<()> {
-        self.send_set_volume((volume * 100.0).round() as i8);
-        Ok(())
+        self.send_set_volume((volume * 100.0).round() as i8).await.map_err(|_| zbus::Error::InvalidReply)
     }
 
     async fn position(&self) -> fdo::Result<Time> {

@@ -437,7 +437,7 @@ impl ArtistContentView {
                             this.set_is_queuing(true);
                             let library = this.imp().library.upgrade().unwrap();
                             if this.imp().selecting_all.get() {
-                                library.queue_artist(artist, false, true, true).await;
+                                if let Err(e) = library.queue_artist(artist, false, true, true).await {dbg!(e);}
                             } else {
                                 let store = &this.imp().song_list;
                                 // Get list of selected songs
@@ -448,7 +448,7 @@ impl ArtistContentView {
                                 iter.for_each(|idx| {
                                     songs.push(store.item(idx).and_downcast::<Song>().unwrap())
                                 });
-                                library.queue_songs(&songs, true, true).await;
+                                if let Err(e) = library.queue_songs(&songs, true, true).await {dbg!(e);}
                             }
                             this.set_is_queuing(false);
                         }

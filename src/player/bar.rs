@@ -210,10 +210,12 @@ impl PlayerBar {
         knob.connect_notify_local(
             Some("value"),
             clone!(
-                #[weak]
-                player,
+                #[weak] player,
                 move |knob: &VolumeKnob, _| {
-                    player.send_set_volume(knob.value().round() as i8);
+                    let val = knob.value().round() as i8;
+                    glib::spawn_future_local(clone!(#[weak] player, async move {
+                        if let Err(e) = player.send_set_volume(val).await {dbg!(e);}
+                    }));
                 }
             ),
         );
@@ -221,15 +223,18 @@ impl PlayerBar {
         knob.connect_notify_local(
             Some("is-muted"),
             clone!(
-                #[weak]
-                player,
+                #[weak] player,
                 move |knob: &VolumeKnob, _| {
-                    if knob.is_muted() {
-                        player.send_set_volume(0);
-                    } else {
-                        // Restore previous volume
-                        player.send_set_volume(knob.value().round() as i8);
-                    }
+                    let val = knob.value().round() as i8;
+                    let muted = knob.is_muted();
+                    glib::spawn_future_local(clone!(#[weak] player, async move {
+                        if muted {
+                            if let Err(e) = player.send_set_volume(0).await {dbg!(e);}
+                        } else {
+                            // Restore previous volume
+                            if let Err(e) = player.send_set_volume(val).await {dbg!(e);}
+                        }
+                    }));
                 }
             ),
         );

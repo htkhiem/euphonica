@@ -261,10 +261,12 @@ impl PlayerPane {
         knob.connect_notify_local(
             Some("value"),
             clone!(
-                #[weak]
-                player,
+                #[weak] player,
                 move |knob: &VolumeKnob, _| {
-                    player.send_set_volume(knob.value().round() as i8);
+                    let val = knob.value().round() as i8;
+                    glib::spawn_future_local(clone!(#[weak] player, async move {
+                        if let Err(e) = player.send_set_volume(val).await {dbg!(e);}
+                    }));
                 }
             ),
         );
@@ -272,15 +274,18 @@ impl PlayerPane {
         knob.connect_notify_local(
             Some("is-muted"),
             clone!(
-                #[weak]
-                player,
+                #[weak] player,
                 move |knob: &VolumeKnob, _| {
-                    if knob.is_muted() {
-                        player.send_set_volume(0);
-                    } else {
-                        // Restore previous volume
-                        player.send_set_volume(knob.value().round() as i8);
-                    }
+                    let val = knob.value().round() as i8;
+                    let muted = knob.is_muted();
+                    glib::spawn_future_local(clone!(#[weak] player, async move {
+                        if muted {
+                            if let Err(e) = player.send_set_volume(0).await {dbg!(e);}
+                        } else {
+                            // Restore previous volume
+                            if let Err(e) = player.send_set_volume(val).await {dbg!(e);}
+                        }
+                    }));
                 }
             ),
         );
@@ -314,10 +319,11 @@ impl PlayerPane {
             .sync_create()
             .build();
         rg_btn.connect_clicked(clone!(
-            #[weak]
-            player,
+            #[weak] player,
             move |_| {
-                player.cycle_replaygain();
+                glib::spawn_future_local(async move {
+                    player.cycle_replaygain().await;
+                });
             }
         ));
 
@@ -433,8 +439,7 @@ impl PlayerPane {
             "changed",
             false,
             closure_local!(
-                #[weak]
-                player,
+                #[weak] player,
                 move |rating: Rating| {
                     let rating_val = rating.value();
                     let rating_opt = if rating_val > 0 {
@@ -442,7 +447,9 @@ impl PlayerPane {
                     } else {
                         None
                     };
-                    player.rate_current_song(rating_opt);
+                    glib::spawn_future_local(async move {
+                        player.rate_current_song(rating_opt).await;
+                    });
                 }
             ),
         );
@@ -494,7 +501,10 @@ impl PlayerPane {
             #[weak]
             player,
             move |_, row: &gtk::ListBoxRow| {
-                player.seek_to_lyric_line(row.index());
+                let idx = row.index();
+                glib::spawn_future_local(async move {
+                    player.seek_to_lyric_line(idx).await;
+                });
             }
         ));
 

@@ -179,21 +179,13 @@ mod imp {
                         }
                         if let (Some(name), Some(outer)) = (name, this.outer.upgrade()) {
                             let dialog = this.delete_dialog.get();
-                            let obj = this.obj();
-                            dialog.choose(
-                                obj.as_ref(),
-                                Option::<gio::Cancellable>::None.as_ref(),
-                                clone!(
-                                    #[weak]
-                                    outer,
-                                    move |resp| {
-                                        if resp == "delete" {
-                                            // Spawn async in outer
-                                            outer.delete(&name);
-                                        }
-                                    }
-                                ),
-                            );
+                            let obj = this.obj().clone();
+                            glib::spawn_future_local(async move {
+                                let res = dialog.choose_future(&obj).await;
+                                if res == "delete" {
+                                    outer.delete(&name).await;
+                                }
+                            });
                         }
                     }
                 ))
@@ -239,7 +231,7 @@ mod imp {
                                             None
                                         }
                                     }
-                                );
+                                ).expect("Broken oneshot sender");
 
                             });
                             glib::spawn_future_local(async move {
@@ -463,6 +455,36 @@ impl DynamicPlaylistContentView {
         }
     }
 
+    #[inline]
+    async fn get_cached(&self, name: String) {
+        if let Some(library) = self.imp().library.upgrade() {
+            // Block queue actions while refreshing
+            self.set_is_queuing(true);
+            let spinner = self.imp().content_spinner.get();
+            if spinner.visible_child_name().unwrap() != "spinner" {
+                spinner.set_visible_child_name("spinner");
+            }
+            self.imp().song_list.remove_all();
+            // Fetch from scratch & update cache
+            let res = library.get_dynamic_playlist_songs_cached(name).await;
+            spinner.set_visible_child_name("content");
+            match res {
+                // TODO: add empty StatusPAge
+                Ok(songs) => {
+                    self.imp().song_list.extend_from_slice(&songs);
+                    self.imp().last_refreshed.set_label(&get_time_ago_desc(
+                        OffsetDateTime::now_utc().unix_timestamp(),
+                    ));
+                }
+                Err(e) => {
+                    dbg!(e);
+                }
+            }
+            self.set_is_queuing(false);
+        }
+    }
+
+    #[inline]
     async fn force_refresh(&self, dp: DynamicPlaylist) {
         if let Some(library) = self.imp().library.upgrade() {
             // Block queue actions while refreshing
@@ -498,7 +520,6 @@ impl DynamicPlaylistContentView {
             .unwrap()
         {
             Ok(Some(dp)) => {
-                let library = self.get_library().unwrap();
                 self.imp().title.set_label(&dp.name);
                 // If we've got a cached version & it's not time for autorefresh
                 // yet, use it. Else resolve rules from scratch.
@@ -520,7 +541,7 @@ impl DynamicPlaylistContentView {
                         }
                         self.force_refresh(dp.clone()).await;
                     } else {
-                        library.get_dynamic_playlist_songs_cached(dp.name.to_owned());
+                        self.get_cached(dp.name.clone()).await;
                         self.imp()
                             .last_refreshed
                             .set_label(&get_time_ago_desc(last_refresh));

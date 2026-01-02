@@ -13,6 +13,7 @@ use glib::{Properties, WeakRef, clone, closure_local, subclass::Signal};
 use super::{AlbumCell, ArtistCell, Library};
 use crate::{
     cache::Cache,
+    client::{Result as ClientResult},
     common::{Album, Artist, RowAddButtons, Song, SongRow, marquee::MarqueeWrapMode},
     player::Player,
     utils::LazyInit,
@@ -110,11 +111,15 @@ mod imp {
             ));
 
             self.clear.connect_clicked(clone!(
-                #[weak(rename_to = this)]
-                self,
+                #[weak(rename_to = this)] self,
                 move |_| {
-                    this.library.upgrade().unwrap().clear_recent_songs();
-                    this.obj().on_history_changed();
+                    glib::spawn_future_local(clone!(#[weak] this, async move {
+                        if let Err(e) = this.library.upgrade().unwrap().clear_recent_songs().await {
+                            dbg!(e);
+                        } else {
+                            this.obj().on_history_changed();
+                        }
+                    }));
                 }
             ));
 
@@ -230,9 +235,9 @@ impl RecentView {
     pub fn on_history_changed(&self) {
         let library = self.imp().library.upgrade().unwrap();
         glib::spawn_future_local(async move {
-            library.get_recent_albums().await;
-            library.get_recent_artists().await;
-            library.get_recent_songs().await;
+            library.get_recent_albums().await?;
+            library.get_recent_artists().await?;
+            library.get_recent_songs().await
         });
     }
 

@@ -141,7 +141,9 @@ impl PlaylistRow {
                         this.imp().library.get(),
                         this.imp().playlist.borrow().as_ref(),
                     ) {
-                        library.queue_playlist(playlist.get_uri().to_owned(), true, true).await;
+                        if let Err(e) = library.queue_playlist(playlist.get_uri().to_owned(), true, true).await {
+                            dbg!(e);
+                        }
                     }
                 }));
             }
@@ -156,13 +158,16 @@ impl PlaylistRow {
                     this.imp().library.get(),
                     this.imp().playlist.borrow().as_ref(),
                 ) {
-                    library.queue_playlist(playlist.get_uri().to_owned(), false, false).await;
+                    if let Err(e) = library.queue_playlist(playlist.get_uri().to_owned(), false, false).await {
+                        dbg!(e);
+                    }
                 }
                 }));
             }
         ));
     }
 
+    #[inline]
     fn clear_thumbnail(&self) {
         self.imp()
             .thumbnail
@@ -170,9 +175,7 @@ impl PlaylistRow {
     }
 
     fn schedule_thumbnail(&self, uri: String) {
-        self.imp()
-            .thumbnail
-            .set_paintable(Some(&*ALBUMART_THUMBNAIL_PLACEHOLDER));
+        self.clear_thumbnail();
         glib::spawn_future_local(clone!(
             #[weak(rename_to = this)]
             self,
@@ -183,7 +186,7 @@ impl PlaylistRow {
                     true,
                 ).await {
                     Ok(Some(tex)) => {
-                        this.imp().thumbnail.set_paintable(Some(&tex));
+                        this.update_thumbnail(&tex);
                     }
                     Ok(None) => {}
                     Err(e) => {dbg!(e);}
@@ -192,6 +195,7 @@ impl PlaylistRow {
         ));
     }
 
+    #[inline]
     fn update_thumbnail(&self, tex: &gdk::Texture) {
         self.imp().thumbnail.set_paintable(Some(tex));
     }

@@ -333,7 +333,7 @@ impl SongRow {
             #[strong] song,
             async move {
                 this.imp().song.replace(Some(song));
-                this.schedule_thumbnail();
+                this.schedule_thumbnail().await;
             }
         ));
     }

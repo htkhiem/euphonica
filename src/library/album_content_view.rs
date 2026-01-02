@@ -171,27 +171,24 @@ mod imp {
             let obj = self.obj();
             let action_clear_rating = ActionEntry::builder("clear-rating")
                 .activate(clone!(
-                    #[weak]
-                    obj,
-                    #[upgrade_or]
-                    (),
+                    #[weak] obj,
                     move |_, _, _| {
-                        if let (Some(album), Some(library)) = (
-                            obj.imp().album.borrow().as_ref(),
-                            obj.imp().library.upgrade(),
-                        ) {
-                            library.rate_album(album, None);
-                            obj.imp().rating.set_value(-1);
-                        }
+                        glib::spawn_future_local(clone!(#[weak] obj, async move {
+                            if let (Some(album), Some(library)) = (
+                                obj.imp().album.borrow().as_ref(),
+                                obj.imp().library.upgrade(),
+                            ) {
+                                if let Err(e) = library.rate_album(album, None).await {dbg!(e);} else {
+                                    obj.imp().rating.set_value(-1);
+                                }
+                            }
+                        }));
                     }
                 ))
                 .build();
             let action_set_album_art = ActionEntry::builder("set-album-art")
                 .activate(clone!(
-                    #[weak]
-                    obj,
-                    #[upgrade_or]
-                    (),
+                    #[weak] obj,
                     move |_, _, _| {
                         let (sender, receiver) = oneshot::channel();
                         tokio_runtime().spawn(async move {
@@ -216,7 +213,7 @@ mod imp {
                                     println!("{maybe_files:?}");
                                     None
                                 }
-                            );
+                            ).expect("Broken oneshot sender");
                         });
                         glib::spawn_future_local(clone!(
                             #[weak]
@@ -232,8 +229,7 @@ mod imp {
                 .build();
             let action_clear_album_art = ActionEntry::builder("clear-album-art")
                 .activate(clone!(
-                    #[weak]
-                    obj,
+                    #[weak] obj,
                     move |_, _, _| {
                         glib::spawn_future_local(clone!(
                             #[weak]
@@ -243,7 +239,7 @@ mod imp {
                                     obj.imp().album.borrow().as_ref(),
                                     obj.imp().cache.get(),
                                 ) {
-                                    cache.clear_cover(album.get_folder_uri().to_owned()).await;
+                                    if let Err(e) = cache.clear_cover(album.get_folder_uri().to_owned()).await {dbg!(e);}
                                 }
                             }
                         ));
@@ -253,8 +249,7 @@ mod imp {
 
             let action_refetch_metadata = ActionEntry::builder("refetch-metadata")
                 .activate(clone!(
-                    #[weak]
-                    obj,
+                    #[weak] obj,
                     move |_, _, _| {
                         glib::spawn_future_local(clone!(
                             #[weak]
@@ -288,7 +283,7 @@ mod imp {
                                         for i in 0..store.n_items() {
                                             songs.push(store.item(i).and_downcast::<Song>().unwrap());
                                         }
-                                        library.insert_songs_next(&songs).await;
+                                        if let Err(e) = library.insert_songs_next(&songs).await {dbg!(e);}
                                     } else {
                                         // Get list of selected songs
                                         let sel = &obj.imp().sel_model.selection();
@@ -298,7 +293,7 @@ mod imp {
                                         iter.for_each(|idx| {
                                             songs.push(store.item(idx).and_downcast::<Song>().unwrap())
                                         });
-                                        library.insert_songs_next(&songs).await;
+                                        if let Err(e) = library.insert_songs_next(&songs).await {dbg!(e);}
                                     }
                                     obj.set_is_queuing(false);
                                 }
@@ -511,23 +506,22 @@ impl AlbumContentView {
             "changed",
             false,
             closure_local!(
-                #[weak(rename_to = this)]
-                self,
-                #[upgrade_or]
-                (),
+                #[weak(rename_to = this)] self,
                 move |rating: Rating| {
-                    if let (Some(album), Some(library)) =
-                        (this.imp().album.borrow().as_ref(), this.get_library())
-                    {
-                        let rating_val = rating.value();
-                        let rating_opt = if rating_val > 0 {
-                            Some(rating_val)
-                        } else {
-                            None
-                        };
-                        album.set_rating(rating_opt);
-                        library.rate_album(album, rating_opt);
-                    }
+                    glib::spawn_future_local(clone!(#[weak] this, #[weak] rating, async move {
+                        if let (Some(album), Some(library)) =
+                            (this.imp().album.borrow().as_ref(), this.get_library())
+                        {
+                            let rating_val = rating.value();
+                            let rating_opt = if rating_val > 0 {
+                                Some(rating_val)
+                            } else {
+                                None
+                            };
+                            album.set_rating(rating_opt);
+                            if let Err(e) = library.rate_album(album, rating_opt).await {dbg!(e);}
+                        }
+                    }));
                 }
             ),
         );
@@ -545,7 +539,7 @@ impl AlbumContentView {
                         {
                             this.set_is_queuing(true);
                             if this.imp().selecting_all.get() {
-                                library.queue_album(album.clone(), true, true, None).await;
+                                if let Err(e) = library.queue_album(album.clone(), true, true, None).await {dbg!(e);}
                             } else {
                                 let store = &this.imp().song_list;
                                 // Get list of selected songs
@@ -556,7 +550,7 @@ impl AlbumContentView {
                                 iter.for_each(|idx| {
                                     songs.push(store.item(idx).and_downcast::<Song>().unwrap())
                                 });
-                                library.queue_songs(&songs, true, true).await;
+                                if let Err(e) = library.queue_songs(&songs, true, true).await {dbg!(e);}
                             }
                             this.set_is_queuing(false);
                         }
@@ -580,7 +574,7 @@ impl AlbumContentView {
                         {
                             this.set_is_queuing(true);
                             if this.imp().selecting_all.get() {
-                                library.queue_album(album.clone(), false, false, None).await;
+                                if let Err(e) = library.queue_album(album.clone(), false, false, None).await {dbg!(e);}
                             } else {
                                 let store = &this.imp().song_list;
                                 // Get list of selected songs
@@ -591,7 +585,7 @@ impl AlbumContentView {
                                 iter.for_each(|idx| {
                                     songs.push(store.item(idx).and_downcast::<Song>().unwrap())
                                 });
-                                library.queue_songs(&songs, false, false).await;
+                                if let Err(e) = library.queue_songs(&songs, false, false).await {dbg!(e);}
                             }
                             this.set_is_queuing(false);
                         }
@@ -692,16 +686,16 @@ impl AlbumContentView {
 
         // Setup click action
         self.imp().content.connect_activate(clone!(
-            #[weak(rename_to = this)]
-            self,
-            #[upgrade_or]
-            (),
+            #[weak(rename_to = this)] self,
             move |_, position| {
-                if let (Some(album), Some(library)) =
-                    (this.imp().album.borrow().as_ref(), this.get_library())
-                {
-                    library.queue_album(album.clone(), true, true, Some(position));
-                }
+                glib::spawn_future_local(clone!(#[weak] this, async move {
+                    if let (Some(album), Some(library)) =
+                        (this.imp().album.borrow().as_ref(), this.get_library())
+                    {
+                        if let Err(e) = library.queue_album(album.clone(), true, true, Some(position)).await {dbg!(e);}
+                    }
+                }));
+
             }
         ));
     }

@@ -269,24 +269,23 @@ mod imp {
                 .build();
 
             self.refresh_btn.connect_clicked(clone!(
-                #[weak(rename_to = this)]
-                self,
+                #[weak(rename_to = this)] self,
                 move |_| {
-                    this.obj().preview_result();
+                    glib::spawn_future_local(clone!(#[weak] this, async move {
+                        this.obj().preview_result().await;
+                    }));
                 }
             ));
 
             self.exit_btn.connect_clicked(clone!(
-                #[weak(rename_to = this)]
-                self,
+                #[weak(rename_to = this)] self,
                 move |_| {
                     this.obj().exit(false);
                 }
             ));
 
             self.save_btn.connect_clicked(clone!(
-                #[weak(rename_to = this)]
-                self,
+                #[weak(rename_to = this)] self,
                 move |_| {
                     this.obj().on_save_btn_clicked();
                 }
@@ -351,10 +350,6 @@ impl DynamicPlaylistEditorView {
         self.imp().library.upgrade()
     }
 
-    fn get_cache(&self) -> Option<&Rc<Cache>> {
-        self.imp().cache.get()
-    }
-
     fn open_cover_file_dialog(&self) {
         let (sender, receiver) = oneshot::channel();
         tokio_runtime().spawn(async move {
@@ -379,7 +374,7 @@ impl DynamicPlaylistEditorView {
                     dbg!(e);
                     None
                 }
-            });
+            }).expect("Broken oneshot sender");
         });
         glib::spawn_future_local(clone!(
             #[weak(rename_to = this)]
@@ -710,38 +705,34 @@ impl DynamicPlaylistEditorView {
             });
     }
 
-    fn preview_result(&self) {
-        glib::spawn_future_local(clone!(
-            #[weak(rename_to = this)] self, async move {
-                this.imp().refresh_btn.set_sensitive(false);
-                this.imp().content_pages.set_visible_child_name("spinner");
-                this.imp().song_list.remove_all();
+    async fn preview_result(&self) {
+        self.imp().refresh_btn.set_sensitive(false);
+        self.imp().content_pages.set_visible_child_name("spinner");
+        self.imp().song_list.remove_all();
 
-                // Build a test DP instance with a random name to avoid confusion w/ late-coming
-                // background fetches of actual DPs.
-                let mut dp = this.build_dynamic_playlist();
-                let tmp_name = Uuid::new_v4().simple().to_string();
-                dp.name = tmp_name.clone();
-                this.imp().tmp_name.replace(tmp_name);
+        // Build a test DP instance with a random name to avoid confusion w/ late-coming
+        // background fetches of actual DPs.
+        let mut dp = self.build_dynamic_playlist();
+        let tmp_name = Uuid::new_v4().simple().to_string();
+        dp.name = tmp_name.clone();
+        self.imp().tmp_name.replace(tmp_name);
 
-                println!("{:?}", &dp);
+        println!("{:?}", &dp);
 
-                // Don't cache as this DP is still being edited
-                match this.get_library()
-                    .unwrap()
-                    .get_dynamic_playlist_songs(dp, false).await
-                {
-                    Ok(songs) => {
-                        this.imp().song_list.extend_from_slice(&songs);
-                        this.imp().content_pages.set_visible_child_name(
-                            if !songs.is_empty() {"content"} else {"empty"}
-                        );
-                    }
-                    Err(e) => {dbg!(e);}
-                };
-                this.imp().refresh_btn.set_sensitive(true);
+        // Don't cache as self DP is still being edited
+        match self.get_library()
+                  .unwrap()
+                  .get_dynamic_playlist_songs(dp, false).await
+        {
+            Ok(songs) => {
+                self.imp().song_list.extend_from_slice(&songs);
+                self.imp().content_pages.set_visible_child_name(
+                    if !songs.is_empty() {"content"} else {"empty"}
+                );
             }
-        ));
+            Err(e) => {dbg!(e);}
+        };
+        self.imp().refresh_btn.set_sensitive(true);
     }
 
     fn build_dynamic_playlist(&self) -> DynamicPlaylist {
@@ -890,97 +881,68 @@ impl DynamicPlaylistEditorView {
     }
 
     pub fn init(&self, dp: DynamicPlaylist) {
-        let imp = self.imp();
-        // Set editor into edit mode and not "create new"
-        imp.editing_name.replace(Some(dp.name.clone()));
-        imp.title.set_text(&dp.name);
+        glib::spawn_future_local(clone!(
+            #[weak(rename_to = this)] self, async move {
+                let imp = this.imp();
+                // Set editor into edit mode and not "create new"
+                imp.editing_name.replace(Some(dp.name.clone()));
+                imp.title.set_text(&dp.name);
 
-        // Init cover
-        self.schedule_existing_cover(&dp);
+                // Init cover
+                this.schedule_existing_cover(&dp).await;
 
-        // Init rules
-        let rules_box = imp.rules_box.get();
-        let add_btn = imp.add_rule_btn.get();
-        let mut last_btn: Option<RuleButton> = None;
-        for rule in dp.rules.into_iter() {
-            let btn = RuleButton::from_rule(rule, &rules_box);
-            rules_box.append(&btn);
-            // Validate once at creation
-            btn.validate();
-            btn.connect_notify_local(
-                Some("is-valid"),
-                clone!(
-                    #[weak(rename_to = this)]
-                    self,
-                    move |_, _| {
-                        this.validate_rules();
-                        this.on_change();
-                    }
-                ),
-            );
-            last_btn.replace(btn);
-        }
-        if let Some(last_btn) = last_btn {
-            rules_box.reorder_child_after(&add_btn, Some(&last_btn));
-        }
+                // Init rules
+                let rules_box = imp.rules_box.get();
+                let add_btn = imp.add_rule_btn.get();
+                let mut last_btn: Option<RuleButton> = None;
+                for rule in dp.rules.into_iter() {
+                    let btn = RuleButton::from_rule(rule, &rules_box);
+                    rules_box.append(&btn);
+                    // Validate once at creation
+                    btn.validate();
+                    btn.connect_notify_local(
+                        Some("is-valid"),
+                        clone!(
+                            #[weak(rename_to = this)]
+                            this,
+                            move |_, _| {
+                                this.validate_rules();
+                                this.on_change();
+                            }
+                        ),
+                    );
+                    last_btn.replace(btn);
+                }
+                if let Some(last_btn) = last_btn {
+                    rules_box.reorder_child_after(&add_btn, Some(&last_btn));
+                }
 
-        // Init orderings
-        let ordering_box = imp.ordering_box.get();
-        let add_btn = imp.add_ordering_btn.get();
-        let mut last_btn: Option<OrderingButton> = None;
-        for ordering in dp.ordering.into_iter() {
-            let btn = OrderingButton::new(ordering, &ordering_box);
-            ordering_box.append(&btn);
-            last_btn.replace(btn);
-        }
-        if let Some(last_btn) = last_btn {
-            ordering_box.reorder_child_after(&add_btn, Some(&last_btn));
-        }
+                // Init orderings
+                let ordering_box = imp.ordering_box.get();
+                let add_btn = imp.add_ordering_btn.get();
+                let mut last_btn: Option<OrderingButton> = None;
+                for ordering in dp.ordering.into_iter() {
+                    let btn = OrderingButton::new(ordering, &ordering_box);
+                    ordering_box.append(&btn);
+                    last_btn.replace(btn);
+                }
+                if let Some(last_btn) = last_btn {
+                    ordering_box.reorder_child_after(&add_btn, Some(&last_btn));
+                }
 
-        self.validate_rules();
-        self.on_ordering_changed();
+                this.validate_rules();
+                this.on_ordering_changed();
 
-        // Init the other settings
-        self.set_refresh_schedule(dp.auto_refresh);
-        if let Some(limit) = dp.limit {
-            imp.limit_mode.set_selected(1);
-            imp.limit.set_value(limit as f64);
-        }
+                // Init the other settings
+                this.set_refresh_schedule(dp.auto_refresh);
+                if let Some(limit) = dp.limit {
+                    imp.limit_mode.set_selected(1);
+                    imp.limit.set_value(limit as f64);
+                }
 
-        self.preview_result();
-        self.imp().unsaved.set(false);
-    }
-
-    fn add_songs(&self, songs: &[Song]) {
-        // If this is called with an empty list, it indicates the queried DP is empty.
-        if songs.is_empty() {
-            println!("dynamic_playlist_editor_view: end of response received");
-            if self
-                .imp()
-                .content_pages
-                .visible_child_name()
-                .is_some_and(|name| name.as_str() != "empty")
-                && self.imp().song_list.n_items() == 0
-            {
-                self.imp().content_pages.set_visible_child_name("empty");
+                this.preview_result().await;
+                this.imp().unsaved.set(false);
             }
-            self.imp().refresh_btn.set_sensitive(true);
-        } else {
-            self.imp().content_pages.set_visible_child_name("content");
-            self.imp().song_list.extend_from_slice(songs);
-        }
-
-        self.imp().runtime.set_label(&format_secs_as_duration(
-            self.imp()
-                .song_list
-                .iter()
-                .map(|item: Result<Song, _>| {
-                    if let Ok(song) = item {
-                        return song.get_duration();
-                    }
-                    0
-                })
-                .sum::<u64>() as f64,
         ));
     }
 

@@ -517,9 +517,9 @@ impl FolderView {
 impl LazyInit for FolderView {
     fn populate(&self) {
         if let Some(library) = self.imp().library.upgrade() {
-            glib::spawn_future_local(clone!(#[weak] library, async move {
-                library.get_folder_contents();
-            }));
+            glib::spawn_future_local(async move {
+                library.get_folder_contents().await;
+            });
         }
     }
 }

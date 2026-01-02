@@ -328,14 +328,18 @@ impl EuphonicaApplication {
     fn refresh(&self) {
         let client = self.get_client();
         glib::spawn_future_local(async move {
-            client.connect().await;
+            if let Err(e) = client.connect().await {
+                dbg!(e);
+            }
         });
     }
 
     fn update_db(&self) {
         let client = self.get_client();
         glib::spawn_future_local(async move {
-            client.update_db().await;
+            if let Err(e) = client.update_db().await {
+                dbg!(e);
+            }
         });
     }
 
