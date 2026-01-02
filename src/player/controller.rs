@@ -944,114 +944,65 @@ impl Player {
 
         // Update playing status of songs in the queue
         if let Some(new_queue_place) = status.song {
-            let mut needs_refresh: bool = false;
-
+            let needs_refresh: bool;
+            let prev_uri: Option<String>;
             {
-                // There is now a playing song. Fetch if we haven't already.
-                let mut local_curr_song = self.imp().current_song.borrow_mut();
+                let curr_song = self.imp().current_song.borrow();
+                needs_refresh = curr_song.as_ref().is_none_or(|s| s.get_queue_id() != new_queue_place.id.0);
+                prev_uri = curr_song.as_ref().map(|s| s.get_uri().to_owned());
+            };
 
-                // If there's a new song, check if we need to increment skipCount and set lastSkipped for the prev one.
-                if let Some(song) = local_curr_song.as_ref() {
-                    if song.get_queue_id() != new_queue_place.id.0 {
-                        needs_refresh = true;
-                        // Conform to myMPD's skipCount rule but take care not to mark a song as skipped if we've
-                        // already marked it as played this time (via playCount and lastPlayed).
-                        // We can't use status.elapsed here as it'd be for the new song, not the old one.
-                        if !self.imp().saved_to_history.get() && self.position() > 10.0 {
-                            // These are optional & can fail when stickers aren't enabled.
-                            // Don't use ? on their results.
-                            self.client()?.set_sticker(
-                                "song",
-                                song.get_uri().to_owned(),
-                                Stickers::SKIP_COUNT_KEY.into(),
-                                "1".into(),
-                                StickerSetMode::Inc,
-                            ).await;
-
-                            self.client()?.set_sticker(
-                                "song",
-                                song.get_uri().to_owned(),
-                                Stickers::LAST_SKIPPED_KEY.into(),
-                                current_unix_timestamp().to_string().into(),
-                                StickerSetMode::Set,
-                            ).await;
-                        }
-                    }
-                } else if local_curr_song.as_ref().is_none() {
-                    needs_refresh = true;
-                }
-
-                if needs_refresh {
-                    // Always fetch as the queue might not have been populated yet
-                    if let Some(new_song) = self
-                        .client()?
-                        .get_song_at_queue_id(new_queue_place.id, true).await?
-                    {
-                        // Update stickers
+            if needs_refresh {
+                if let Some(prev_uri) = prev_uri {
+                    // Conform to myMPD's skipCount rule but take care not to mark a song as skipped if we've
+                    // already marked it as played this time (via playCount and lastPlayed).
+                    // We can't use status.elapsed here as it'd be for the new song, not the old one.
+                    if !self.imp().saved_to_history.get() && self.position() > 10.0 {
+                        // These are optional & can fail when stickers aren't enabled.
+                        // Don't use ? on their results.
                         self.client()?.set_sticker(
                             "song",
-                            new_song.get_uri().to_owned(),
-                            Stickers::LAST_PLAYED_KEY.into(),
+                            prev_uri.clone(),
+                            Stickers::SKIP_COUNT_KEY.into(),
+                            "1".into(),
+                            StickerSetMode::Inc,
+                        ).await;
+
+                        self.client()?.set_sticker(
+                            "song",
+                            prev_uri,
+                            Stickers::LAST_SKIPPED_KEY.into(),
                             current_unix_timestamp().to_string().into(),
                             StickerSetMode::Set,
                         ).await;
-                        local_curr_song.replace(new_song.clone());
-                        // If using PipeWire visualiser, might need to restart it
-                        if self.imp().pipewire_restart_between_songs.get()
-                            && self
-                                .imp()
-                                .fft_backend
-                                .borrow()
-                                .as_ref()
-                                .is_some_and(|backend| backend.name() == "pipewire")
-                        {
-                            println!("Starting PipeWire backend again after song change...");
-                            self.maybe_start_fft_thread();
-                        }
-                    }
-                } else if let Some(curr_song) = local_curr_song.as_ref() {
-                    // Same old song. Might want to record into playback history.
-                    if !settings_manager().child("library").boolean("pause-recent") {
-                        let dur = curr_song.get_duration() as f32;
-                        // Conform to myMPD's standards: song must be longer than 10 seconds and played for
-                        // at least 4 minutes or half of its duration, whichever comes first.
-                        if dur >= 10.0 {
-                            if let Some(new_position_dur) = status.elapsed {
-                                if !self.imp().saved_to_history.get()
-                                    && (new_position_dur.as_secs_f32() / dur >= 0.5
-                                        || new_position_dur.as_secs_f32() >= 240.0)
-                                {
-                                    if let Ok(()) = sqlite::add_to_history(curr_song.get_info()) {
-                                        self.emit_by_name::<()>("history-changed", &[]);
-                                    }
-                                    self.client()?.set_sticker(
-                                        "song",
-                                        curr_song.get_uri().to_owned(),
-                                        Stickers::PLAY_COUNT_KEY.into(),
-                                        "1".into(),
-                                        StickerSetMode::Inc,
-                                    ).await;
-
-                                    self.imp().saved_to_history.set(true);
-                                }
-                            }
-                        }
                     }
                 }
-            }
-            if needs_refresh {
-                if let Some(new_song) = self.imp().current_song.borrow().as_ref() {
-                    self.imp().saved_to_history.set(false);
-                    self.notify("title");
-                    self.notify("artist");
-                    self.notify("duration");
-                    self.notify("rating");
-                    self.notify("quality-grade");
-                    self.notify("format-desc");
-                    self.notify("album");
-                    self.notify("queue-id");
-                    // Update album art
-                    self.emit_by_name::<()>("cover-changed", &[]);
+
+                // Always fetch as the queue might not have been populated yet
+                if let Some(new_song) = self
+                    .client()?
+                    .get_song_at_queue_id(new_queue_place.id, true).await?
+                {
+                    // Update stickers
+                    self.client()?.set_sticker(
+                        "song",
+                        new_song.get_uri().to_owned(),
+                        Stickers::LAST_PLAYED_KEY.into(),
+                        current_unix_timestamp().to_string().into(),
+                        StickerSetMode::Set,
+                    ).await;
+                    // If using PipeWire visualiser, might need to restart it
+                    if self.imp().pipewire_restart_between_songs.get()
+                        && self
+                        .imp()
+                        .fft_backend
+                        .borrow()
+                        .as_ref()
+                        .is_some_and(|backend| backend.name() == "pipewire")
+                    {
+                        println!("Starting PipeWire backend again after song change...");
+                        self.maybe_start_fft_thread();
+                    }
 
                     // Get new lyrics
                     // First remove all current lines
@@ -1078,6 +1029,48 @@ impl Player {
                     // Update MPRIS side
                     if self.imp().mpris_enabled.get() {
                         mpris_changes.push(Property::Metadata(new_song.get_mpris_metadata()));
+                    }
+
+                    // We're now ready to update the UI elements
+                    self.imp().current_song.replace(Some(new_song));
+                    self.imp().saved_to_history.set(false);
+                    self.notify("title");
+                    self.notify("artist");
+                    self.notify("duration");
+                    self.notify("rating");
+                    self.notify("quality-grade");
+                    self.notify("format-desc");
+                    self.notify("album");
+                    self.notify("queue-id");
+                    // Update album art
+                    self.emit_by_name::<()>("cover-changed", &[]);
+                } else if let Some(curr_song) = self.imp().current_song.borrow().as_ref() {
+                    // Same old song. Might want to record into playback history.
+                    if !settings_manager().child("library").boolean("pause-recent") {
+                        let dur = curr_song.get_duration() as f32;
+                        // Conform to myMPD's standards: song must be longer than 10 seconds and played for
+                        // at least 4 minutes or half of its duration, whichever comes first.
+                        if dur >= 10.0 {
+                            if let Some(new_position_dur) = status.elapsed {
+                                if !self.imp().saved_to_history.get()
+                                    && (new_position_dur.as_secs_f32() / dur >= 0.5
+                                        || new_position_dur.as_secs_f32() >= 240.0)
+                                {
+                                    if let Ok(()) = sqlite::add_to_history(curr_song.get_info()) {
+                                        self.emit_by_name::<()>("history-changed", &[]);
+                                    }
+                                    self.client()?.set_sticker(
+                                        "song",
+                                        curr_song.get_uri().to_owned(),
+                                        Stickers::PLAY_COUNT_KEY.into(),
+                                        "1".into(),
+                                        StickerSetMode::Inc,
+                                    ).await;
+
+                                    self.imp().saved_to_history.set(true);
+                                }
+                            }
+                        }
                     }
                 }
             }

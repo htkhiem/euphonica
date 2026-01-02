@@ -483,6 +483,7 @@ impl MpdWrapper {
         let (s, r) = oneshot::channel();
         self.bg_sender.send(Task::Connect(s)).await.expect("Broken BG sender");
         self.handle_connect_error(r.await.expect("Broken oneshot receiver")).await?;
+        self.state.set_connection_state(ConnectionState::Connected);
         println!("Connected background client");
 
         Ok(())

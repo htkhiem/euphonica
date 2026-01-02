@@ -110,17 +110,14 @@ impl ArtistTag {
 
         let _ = res.imp().avatar_signal_ids.replace(Some((
             cache_state.connect_closure(
-                "artist-avatar-downloaded",
+                "artist-avatar-set",
                 false,
                 closure_local!(
                     #[weak(rename_to = this)]
                     res,
-                    move |_: CacheState, name: String, thumb: bool, tex: gdk::Texture| {
-                        if !thumb {
-                            return;
-                        }
-                        if this.imp().artist.get().unwrap().get_name() == name {
-                            this.imp().avatar.set_custom_image(Some(&tex));
+                    move |_: CacheState, name: String, _: gdk::Texture, thumb: gdk::Texture| {
+                        if this.imp().artist.get().is_some_and(|a| a.get_name() == name) {
+                            this.imp().avatar.set_custom_image(Some(&thumb));
                         }
                     }
                 ),
@@ -131,11 +128,9 @@ impl ArtistTag {
                 closure_local!(
                     #[weak(rename_to = this)]
                     res,
-                    move |_: CacheState, tag: String| {
-                        if this.imp().artist.get().unwrap().get_name() == tag {
-                            this.imp()
-                                .avatar
-                                .set_custom_image(Option::<gdk::Texture>::None.as_ref());
+                    move |_: CacheState, name: String| {
+                        if this.imp().artist.get().is_some_and(|a| a.get_name() == name) {
+                            this.imp().avatar.set_custom_image(Option::<&gdk::Texture>::None);
                         }
                     }
                 ),

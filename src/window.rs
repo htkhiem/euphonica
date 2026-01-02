@@ -947,7 +947,7 @@ impl EuphonicaWindow {
             closure_local!(
                 #[weak(rename_to = this)]
                 win,
-                move |_: Player, _: Option<gdk::Texture>| {
+                move |_: Player| {
                     this.queue_new_background();
                 }
             ),
