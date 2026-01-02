@@ -2,8 +2,9 @@ use glib::{
     BoxedAnyObject,
     prelude::*,
     subclass::{Signal, prelude::*},
+    ParamSpec, ParamSpecBoolean, ParamSpecEnum, ParamSpecUInt64, Properties, derived_properties
 };
-use gtk::glib;
+use once_cell::sync::Lazy;
 use std::{cell::Cell, sync::OnceLock};
 
 use crate::common::{Album, Artist};
@@ -32,17 +33,12 @@ pub enum StickersSupportLevel {
 }
 
 mod imp {
-    use gio::glib::derived_properties;
-    use ::glib::Properties;
-    use glib::{ParamSpec, ParamSpecBoolean, ParamSpecEnum, ParamSpecUInt64};
-
     use super::*;
-    use once_cell::sync::Lazy;
 
     #[derive(Debug, Default, Properties)]
     #[properties(wrapper_type = super::ClientState)]
     pub struct ClientState {
-        #[property(get, set, default)]
+        #[property(get, set, builder(ConnectionState::default()))]
         pub connection_state: Cell<ConnectionState>,
         // Used to indicate that the background client is busy.
         #[property(get)]
@@ -51,7 +47,7 @@ mod imp {
         pub n_bg_tasks: Cell<u64>,
         #[property(get, set)]
         pub supports_playlists: Cell<bool>,
-        #[property(get, set, default)]
+        #[property(get, set, builder(StickersSupportLevel::default()))]
         pub stickers_support_level: Cell<StickersSupportLevel>,
     }
 

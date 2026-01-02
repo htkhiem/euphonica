@@ -6,7 +6,7 @@ use crate::{
     },
     client::{ClientState, state::StickersSupportLevel},
     common::{
-        Album, AlbumInfo, Artist, ContentView, CoverSource, Rating, RowAddButtons, Song, SongRow,
+        Album, AlbumInfo, Artist, ContentView, Rating, RowAddButtons, Song, SongRow,
     },
     library::add_to_playlist::AddToPlaylistButton,
     utils::{format_secs_as_duration, tokio_runtime},

@@ -5,15 +5,19 @@ use crate::{
 };
 use gtk::{gdk, prelude::*};
 use reqwest::blocking::Client;
-use std::{thread, time::Duration};
+use std::{thread, time::{Duration, SystemTime}};
 
 use super::models;
 
-pub fn sleep_after_request() {
+pub fn sleep_between_requests(request_time: SystemTime) {
     let settings = settings_manager().child("metaprovider");
-    thread::sleep(Duration::from_millis(
-        (settings.double("delay-between-requests-s") * 1000.0) as u64,
-    ));
+    let wake_time = request_time + Duration::from_secs_f64(settings.double("delay-between-requests-s"));
+    let now = SystemTime::now();
+    // .duration_since returns an Err if the target_time is in the past
+    if let Ok(remaining) = wake_time.duration_since(now) {
+        println!("Sleeping for {:?}", remaining);
+        thread::sleep(remaining);
+    }
 }
 
 /// Enum for communication with provider threads from the cache controller living on the main thread.
@@ -112,7 +116,7 @@ pub trait MetadataProvider: Send + Sync {
     /// etc. A new AlbumMeta object containing data from both the existing AlbumMeta and newly fetched data. New
     /// data will always overwrite existing fields.
     fn get_album_meta(
-        &self,
+        &mut self,
         key: &mut AlbumInfo,
         existing: Option<models::AlbumMeta>,
     ) -> Option<models::AlbumMeta>;
@@ -121,7 +125,7 @@ pub trait MetadataProvider: Send + Sync {
     /// A new ArtistMeta object containing data from both the existing ArtistMeta and newly fetched data. New
     /// data will always overwrite existing fields.
     fn get_artist_meta(
-        &self,
+        &mut self,
         key: &mut ArtistInfo,
         existing: Option<models::ArtistMeta>,
     ) -> Option<models::ArtistMeta>;
@@ -130,5 +134,5 @@ pub trait MetadataProvider: Send + Sync {
     /// duration to the song is returned.
     ///
     /// Unlike with album and artist metadata, we stop when one metadata provider returns lyrics.
-    fn get_lyrics(&self, key: &SongInfo) -> Option<models::Lyrics>;
+    fn get_lyrics(&mut self, key: &SongInfo) -> Option<models::Lyrics>;
 }

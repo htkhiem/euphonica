@@ -444,7 +444,7 @@ impl AlbumView {
         // - Bind AlbumContentView to that album. The content view should then populate itself.
         let content_view = self.imp().content_view.get();
         content_view.unbind();
-        content_view.bind(album.clone());
+        content_view.bind(album);
         if self
             .imp()
             .nav_view

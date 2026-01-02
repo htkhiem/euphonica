@@ -17,6 +17,8 @@
             <property name="name">image</property>
             <property name="child">
               <object class="GtkPicture" id="image">
+                <property name="height-request">128</property>
+                <property name="width-request">128</property>
                 <property name="hexpand">true</property>
                 <property name="vexpand">true</property>
                 <property name="content-fit">2</property>

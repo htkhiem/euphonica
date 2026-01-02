@@ -452,7 +452,7 @@ impl DynamicPlaylistView {
                 #[weak]
                 library,
                 move |state, _| {
-                    if state.get_connection_state() == ConnectionState::Connected {
+                    if state.connection_state() == ConnectionState::Connected {
                         glib::spawn_future_local(clone!(#[weak] library, async move {
                             library.init_dyn_playlists(false).await;
                         }));

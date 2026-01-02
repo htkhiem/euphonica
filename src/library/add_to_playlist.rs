@@ -202,7 +202,7 @@ mod imp {
                             }
                         }
                         let _ = this.library.upgrade().unwrap().add_songs_to_playlist(
-                            &name,
+                            name,
                             &songs,
                             SaveMode::Append,
                         );

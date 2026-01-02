@@ -303,7 +303,7 @@ impl AlbumCell {
                     res,
                     move |_: CacheState, uri: String, _: gdk::Texture, thumb: gdk::Texture| {
                         if this.imp().album.borrow().as_ref().is_some_and(|a| a.get_folder_uri() == uri) {
-                            this.update_cover(thumb);
+                            this.imp().cover.show(&thumb);
                         }
                     }
                 ),
@@ -316,7 +316,7 @@ impl AlbumCell {
                     res,
                     move |_: CacheState, uri: String| {
                         if this.imp().album.borrow().as_ref().is_some_and(|a| a.get_folder_uri() == uri) {
-                            this.clear_cover();
+                            this.imp().cover.clear();
                         }
                     }
                 ),
@@ -355,7 +355,7 @@ impl AlbumCell {
     pub fn unbind(&self) {
         if let Some(_) = self.imp().album.take() {
             // Clear cover reference
-            self.clear_cover();
+            self.imp().cover.clear();
         }
     }
 

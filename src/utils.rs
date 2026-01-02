@@ -1,3 +1,4 @@
+use crate::cache::sqlite;
 use crate::config::APPLICATION_ID;
 use aho_corasick::AhoCorasick;
 use gio::prelude::*;
@@ -8,9 +9,11 @@ use mpd::status::AudioFormat;
 use once_cell::sync::Lazy;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
+use uuid::Uuid;
 use std::fmt::Write;
 use std::fs::File;
 use std::io::{BufReader, BufWriter};
+use std::path::PathBuf;
 use std::sync::OnceLock;
 use std::sync::RwLock;
 use std::time::SystemTime;
@@ -20,6 +23,36 @@ use time::UtcOffset;
 use time::error::IndeterminateOffset;
 use time::format_description::{OwnedFormatItem, parse_owned};
 use tokio::runtime::Runtime;
+
+static APP_CACHE_PATH: Lazy<PathBuf> = Lazy::new(|| {
+    let mut res = glib::user_cache_dir();
+    res.push("euphonica");
+    res
+});
+
+pub fn get_app_cache_path() -> PathBuf {
+    APP_CACHE_PATH.clone()
+}
+
+pub fn get_image_cache_path() -> PathBuf {
+    let mut res = get_app_cache_path();
+    res.push("images");
+    res
+}
+
+pub fn get_doc_cache_path() -> PathBuf {
+    let mut res = get_app_cache_path();
+    res.push("metadata.sqlite");
+    res
+}
+
+pub fn get_new_image_paths() -> (PathBuf, PathBuf) {
+    let mut path = get_image_cache_path();
+    let mut thumbnail_path = path.clone();
+    path.push(Uuid::new_v4().simple().to_string() + ".png");
+    thumbnail_path.push(Uuid::new_v4().simple().to_string() + ".png");
+    (path, thumbnail_path)
+}
 
 /// Spawn a Tokio runtime on a new thread. This is needed by the zbus dependency.
 pub fn tokio_runtime() -> &'static Runtime {
@@ -215,6 +248,31 @@ pub fn resize_convert_image(dyn_img: DynamicImage) -> (RgbImage, RgbImage) {
             .thumbnail(thumbnail_sizes.0, thumbnail_sizes.1)
             .into_rgb8(),
     )
+}
+
+pub fn save_and_register_image(
+    dyn_img: Option<DynamicImage>, key: &str, prefix: Option<&'static str>
+) -> Option<(String, String)> {
+    if let Some(dyn_img) = dyn_img {
+        let (hires_img, thumb_img) = resize_convert_image(dyn_img);
+        let (hires_path, thumb_path) = get_new_image_paths();
+        hires_img
+            .save(&hires_path)
+            .unwrap_or_else(|_| panic!("Couldn't save downloaded cover to {:?}", &hires_path));
+        thumb_img
+            .save(&thumb_path)
+            .unwrap_or_else(|_| panic!("Couldn't save downloaded thumbnail cover to {:?}", &thumb_path));
+        let hires = hires_path.file_name().unwrap().to_str().unwrap().to_string();
+        let thumb = thumb_path.file_name().unwrap().to_str().unwrap().to_string();
+        sqlite::register_image_key(key, prefix, Some(&hires), false).expect("Sqlite error");
+        sqlite::register_image_key(key, prefix, Some(&thumb), true).expect("Sqlite error");
+        Some((hires_path.to_str().unwrap().to_owned(), thumb_path.to_str().unwrap().to_owned()))
+    } else {
+        // Register with empty paths to indicate "failed once, don't try again"
+        sqlite::register_image_key(key, prefix, None, false).expect("Sqlite error");
+        sqlite::register_image_key(key, prefix, None, true).expect("Sqlite error");
+        None
+    }
 }
 
 pub fn current_unix_timestamp() -> u64 {

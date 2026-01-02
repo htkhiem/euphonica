@@ -20,7 +20,7 @@
 
 use crate::{
     application::EuphonicaApplication,
-    client::{ClientError, ClientState, ConnectionState},
+    client::{Result as ClientResult, ClientState, ConnectionState},
     common::{Album, Artist, INode, ThemeSelector, blend_mode::*, paintables::FadePaintable},
     library::{
         AlbumView, ArtistContentView, ArtistView, DynamicPlaylistView, FolderView, PlaylistView,
@@ -430,6 +430,7 @@ mod imp {
             }
 
             // Set up blur & accent thread
+            // TODO: Use asyncified
             let (sender_to_bg, bg_receiver) = async_channel::unbounded::<WindowMessage>();
             let _ = self.sender_to_bg.set(sender_to_bg);
             let (sender_to_fg, fg_receiver) = async_channel::bounded::<WindowMessage>(1); // block background thread until sent
@@ -887,7 +888,6 @@ impl EuphonicaWindow {
         );
         win.imp().artist_view.setup(
             app.get_library(),
-            &app.get_client().get_client_state(),
             app.get_cache(),
         );
         win.imp()
@@ -906,7 +906,7 @@ impl EuphonicaWindow {
             &win,
         );
         win.imp().sidebar.setup(&win, &app);
-        win.imp().player_bar.setup(app.get_player());
+        win.imp().player_bar.setup(app.get_player(), app.get_cache());
 
         // Now that all the components are ready, we can start handling backend state changes
         win.imp()
@@ -915,17 +915,7 @@ impl EuphonicaWindow {
             .expect("Unable to bind FFT data to visualiser widget");
 
         win.queue_new_background();
-        client_state.connect_closure(
-            "client-error",
-            false,
-            closure_local!(
-                #[weak(rename_to = this)]
-                win,
-                move |_: ClientState, err: ClientError| {
-                    this.handle_client_error(err);
-                }
-            ),
-        );
+
         client_state.connect_closure(
             "idle",
             false,
@@ -939,14 +929,14 @@ impl EuphonicaWindow {
                 }
             ),
         );
-        win.handle_connection_state(client_state.get_connection_state());
+        win.handle_connection_state(client_state.connection_state());
         client_state.connect_notify_local(
             Some("connection-state"),
             clone!(
                 #[weak(rename_to = this)]
                 win,
                 move |state: &ClientState, _| {
-                    this.handle_connection_state(state.get_connection_state());
+                    this.handle_connection_state(state.connection_state());
                 }
             ),
         );
@@ -1128,14 +1118,6 @@ impl EuphonicaWindow {
                     true
                 );
             }
-            ConnectionState::PasswordNotAvailable => {
-                self.imp().title.set_subtitle("Not connected");
-                self.show_error_dialog(
-                    "No password available",
-                    "Your MPD instance requires a password, but Euphonica could not find one from the default keyring. If the keyring is still locked, please unlock it first.",
-                    true
-                );
-            }
             ConnectionState::CredentialStoreError => {
                 self.imp().title.set_subtitle("Unauthenticated");
                 self.show_error_dialog(
@@ -1183,14 +1165,6 @@ impl EuphonicaWindow {
                     _ => {}
                 }
             }
-        }
-    }
-
-    pub fn handle_client_error(&self, err: ClientError) {
-        match err {
-            ClientError::Queuing => {
-                self.send_simple_toast("Some songs could not be queued", 3);
-            } // _ => {}
         }
     }
 
@@ -1261,22 +1235,28 @@ impl EuphonicaWindow {
     fn queue_new_background(&self) {
         if let Some(player) = self.imp().player.upgrade() {
             if let Some(sender) = self.imp().sender_to_bg.get() {
-                if let Some(path) = player
-                    .current_song_cover_path(true)
-                    .and_then(|path| if path.exists() { Some(path) } else { None })
-                {
-                    let settings = settings_manager().child("ui");
-                    let config = BlurConfig {
-                        width: self.width() as u32,
-                        height: self.height() as u32,
-                        radius: settings.uint("bg-blur-radius"),
-                        fade: true, // new image, must fade
-                    };
-                    let _ = sender.send_blocking(WindowMessage::NewBackground(path, config));
-                } else {
-                    let _ = sender.send_blocking(WindowMessage::ClearBackground);
-                    self.imp().push_tex(None, true);
-                }
+                glib::spawn_future_local(clone!(
+                    #[weak(rename_to = this)] self,
+                    #[weak] player, #[strong] sender, #[upgrade_or] ClientResult::Ok(()), async move {
+                        if let Some(path) = player
+                            .current_song_cover_path(true)
+                            .await?
+                            .and_then(|path| if path.exists() { Some(path) } else { None })
+                        {
+                            let settings = settings_manager().child("ui");
+                            let config = BlurConfig {
+                                width: this.width() as u32,
+                                height: this.height() as u32,
+                                radius: settings.uint("bg-blur-radius"),
+                                fade: true, // new image, must fade
+                            };
+                            let _ = sender.send_blocking(WindowMessage::NewBackground(path, config));
+                        } else {
+                            let _ = sender.send_blocking(WindowMessage::ClearBackground);
+                            this.imp().push_tex(None, true);
+                        }
+                        Ok(())
+                    }));
             } else {
                 self.imp().push_tex(None, true);
             }

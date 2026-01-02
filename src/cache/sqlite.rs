@@ -15,10 +15,8 @@ use crate::{
         inode::INodeInfo,
     },
     meta_providers::models::{AlbumMeta, ArtistMeta, Lyrics, LyricsParseError},
-    utils::{format_datetime_local_tz, strip_filename_linux},
+    utils::{format_datetime_local_tz, get_doc_cache_path, strip_filename_linux},
 };
-
-use super::controller::get_doc_cache_path;
 
 static SQLITE_POOL: Lazy<r2d2::Pool<SqliteConnectionManager>> = Lazy::new(|| {
     let manager = SqliteConnectionManager::file(get_doc_cache_path());

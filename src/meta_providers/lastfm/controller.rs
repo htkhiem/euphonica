@@ -1,5 +1,7 @@
 extern crate bson;
 
+use std::time::SystemTime;
+
 use gtk::prelude::*;
 use reqwest::{
     blocking::{Client, Response},
@@ -15,17 +17,19 @@ use crate::{
 use super::models::{LastfmAlbumResponse, LastfmArtistResponse};
 use super::{
     super::{MetadataProvider, models, prelude::*},
-    PROVIDER_KEY,
+    PROVIDER_KEY
 };
 
 pub const API_ROOT: &str = "http://ws.audioscrobbler.com/2.0";
 
 pub struct LastfmWrapper {
     client: Client,
+    last_request_time: SystemTime
 }
 
 impl LastfmWrapper {
-    fn get_lastfm(&self, method: &str, params: &[(&str, &str)]) -> Option<Response> {
+    fn get_lastfm(&mut self, method: &str, params: &[(&str, &str)]) -> Option<Response> {
+        sleep_between_requests(self.last_request_time);
         let settings = meta_provider_settings(PROVIDER_KEY);
         let key = settings.string("api-key").to_string();
         // Return None if there is no API key specified.
@@ -42,6 +46,7 @@ impl LastfmWrapper {
                 .query(params)
                 .header(USER_AGENT, APPLICATION_USER_AGENT)
                 .send();
+            self.last_request_time = SystemTime::now();
             match resp {
                 Ok(res) => {
                     return Some(res);
@@ -60,13 +65,14 @@ impl MetadataProvider for LastfmWrapper {
     fn new() -> Self {
         Self {
             client: Client::new(),
+            last_request_time: SystemTime::now()
         }
     }
 
     /// Schedule getting album metadata from Last.fm.
     /// A signal will be emitted to notify the caller when the result arrives.
     fn get_album_meta(
-        &self,
+        &mut self,
         key: &mut AlbumInfo,
         existing: Option<models::AlbumMeta>,
     ) -> Option<models::AlbumMeta> {
@@ -135,7 +141,7 @@ impl MetadataProvider for LastfmWrapper {
     /// a white star on grey background placeholder). For this reason, we will not parse
     /// artist image URLs.
     fn get_artist_meta(
-        &self,
+        &mut self,
         key: &mut ArtistInfo,
         existing: std::option::Option<models::ArtistMeta>,
     ) -> Option<models::ArtistMeta> {
@@ -191,7 +197,7 @@ impl MetadataProvider for LastfmWrapper {
     }
 
     /// Last.fm does not provide lyrics.
-    fn get_lyrics(&self, _key: &crate::common::SongInfo) -> Option<models::Lyrics> {
+    fn get_lyrics(&mut self, _key: &crate::common::SongInfo) -> Option<models::Lyrics> {
         None
     }
 }

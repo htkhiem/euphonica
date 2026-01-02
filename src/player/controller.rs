@@ -1,13 +1,13 @@
 extern crate mpd;
 use crate::{
     application::EuphonicaApplication,
-    cache::{Cache, CacheState, get_image_cache_path, placeholders::ALBUMART_PLACEHOLDER, sqlite},
+    cache::{Cache, CacheState, placeholders::ALBUMART_PLACEHOLDER, sqlite},
     client::{ClientState, ConnectionState, Error as ClientError, MpdWrapper, Result as ClientResult, StickerSetMode},
     common::{QualityGrade, Song, SongInfo, Stickers},
     config::APPLICATION_ID,
     meta_providers::models::Lyrics,
     utils::{
-        current_unix_timestamp, prettify_audio_format, settings_manager, strip_filename_linux,
+        current_unix_timestamp, get_image_cache_path, prettify_audio_format, settings_manager, strip_filename_linux
     },
 };
 use async_lock::OnceCell as AsyncOnceCell;
@@ -678,12 +678,12 @@ impl Player {
         self.imp().outputs.remove_all();
         self.imp().queue_version.set(0);
         self.imp().expected_queue_version.set(0);
-        self.update_status(&mpd::Status::default());
+        self.update_status();
     }
 
     pub async fn populate(&self) -> ClientResult<()> {
-        self.update_status(&self.client().get_status().await?);
-        self.update_outputs(self.client().get_outputs().await?);
+        self.update_status().await?;
+        self.update_outputs().await?;
         Ok(())
     }
 
@@ -730,57 +730,23 @@ impl Player {
                 #[weak(rename_to = this)]
                 self,
                 move |_: ClientState, subsys: glib::BoxedAnyObject| {
-                    glib::spawn_future_local(clone!(#[weak] this, async move {
+                    glib::spawn_future_local(clone!(#[weak] this, #[upgrade_or] ClientResult::Ok(()), async move {
                         match subsys.borrow::<Subsystem>().deref() {
                             Subsystem::Player | Subsystem::Options => {
-                                if let Ok(status) = this.client().get_status().await {
-                                    this.update_status(&status).await;
-                                }
+                                this.update_status().await?;
                             }
                             Subsystem::Queue => {
-                                if let Ok(status) = this.client().get_status().await {
-                                    let old_version = this.imp().queue_version.replace(status.queue_version);
-                                    if status.queue_version > old_version
-                                        && status.queue_version > this.imp().expected_queue_version.get()
-                                    {
-                                        this.imp().expected_queue_version.set(status.queue_version);
-                                        if old_version == 0 {
-                                            let queue = this.imp().queue.clone();
-                                            this.client().get_current_queue(clone!(
-                                                #[weak]
-                                                queue,
-                                                move |songs| {
-                                                    queue.extend_from_slice(&songs);
-                                                }
-                                            )).await;
-                                        } else {
-                                            this.client().get_queue_changes(
-                                                old_version,
-                                                status.queue_len,
-                                                clone!(
-                                                    #[weak]
-                                                    this,
-                                                    move |changed_songs| {
-                                                        this.update_queue(&changed_songs);
-                                                    }
-                                                )
-                                            ).await;
-                                        }
-                                    }
-                                }
+                                this.update_queue().await?;
                             }
                             Subsystem::Output => {
-                                if let Ok(outs) = this.client().get_outputs().await {
-                                    this.update_outputs(outs);
-                                }
+                                this.update_outputs().await?;
                             }
                             Subsystem::Mixer => {
-                                if let Ok(vol) = this.client().get_volume().await {
-                                    this.emit_by_name::<()>("volume-changed", &[&vol]);
-                                }
+                                this.emit_by_name::<()>("volume-changed", &[&this.client()?.get_volume().await?]);
                             }
                             _ => {}
-                        }
+                        };
+                        Ok(())
                     }));
                 }
             ),
@@ -848,7 +814,13 @@ impl Player {
     /// Main update function. MPD's protocol has a single "status" commands
     /// that returns everything at once. This update function will take what's
     /// relevant and update the GObject properties accordingly.
-    pub async fn update_status(&self, status: &Status) -> ClientResult<()> {
+    pub async fn update_status(&self) -> ClientResult<()> {
+        let status;
+        if let Ok(client) = self.client() {
+            status = client.get_status().await.unwrap_or_default();
+        } else {
+            status = mpd::Status::default();
+        }
         let mut mpris_changes: Vec<Property> = Vec::new();
         match status.state {
             State::Play => {
@@ -893,7 +865,7 @@ impl Player {
             self.notify("replaygain");
         }
 
-        let new_flow = PlaybackFlow::from_status(status);
+        let new_flow = PlaybackFlow::from_status(&status);
         let old_flow = self.imp().flow.replace(new_flow);
         if old_flow != new_flow {
             self.notify("playback-flow");
@@ -983,7 +955,7 @@ impl Player {
                         if !self.imp().saved_to_history.get() && self.position() > 10.0 {
                             // These are optional & can fail when stickers aren't enabled.
                             // Don't use ? on their results.
-                            self.client().set_sticker(
+                            self.client()?.set_sticker(
                                 "song",
                                 song.get_uri().to_owned(),
                                 Stickers::SKIP_COUNT_KEY.into(),
@@ -991,7 +963,7 @@ impl Player {
                                 StickerSetMode::Inc,
                             ).await;
 
-                            self.client().set_sticker(
+                            self.client()?.set_sticker(
                                 "song",
                                 song.get_uri().to_owned(),
                                 Stickers::LAST_SKIPPED_KEY.into(),
@@ -1007,11 +979,11 @@ impl Player {
                 if needs_refresh {
                     // Always fetch as the queue might not have been populated yet
                     if let Some(new_song) = self
-                        .client()
+                        .client()?
                         .get_song_at_queue_id(new_queue_place.id, true).await?
                     {
                         // Update stickers
-                        self.client().set_sticker(
+                        self.client()?.set_sticker(
                             "song",
                             new_song.get_uri().to_owned(),
                             Stickers::LAST_PLAYED_KEY.into(),
@@ -1047,7 +1019,7 @@ impl Player {
                                     if let Ok(()) = sqlite::add_to_history(curr_song.get_info()) {
                                         self.emit_by_name::<()>("history-changed", &[]);
                                     }
-                                    self.client().set_sticker(
+                                    self.client()?.set_sticker(
                                         "song",
                                         curr_song.get_uri().to_owned(),
                                         Stickers::PLAY_COUNT_KEY.into(),
@@ -1225,7 +1197,38 @@ impl Player {
     /// new queue length. The update_status() function will instead truncate the queue to the new
     /// length for us once called.
     /// If an MPRIS server is running, it will also emit property change signals.
-    pub fn update_queue(&self, changes: &[Song]) {
+    pub async fn update_queue(&self) -> ClientResult<()> {
+        let status = self.client()?.get_status().await?;
+        let old_version = self.imp().queue_version.replace(status.queue_version);
+        if status.queue_version > old_version
+            && status.queue_version > self.imp().expected_queue_version.get()
+        {
+            self.imp().expected_queue_version.set(status.queue_version);
+            if old_version == 0 {
+                let queue = self.imp().queue.clone();
+                self.client()?.get_current_queue(clone!(
+                    #[weak] queue,
+                    move |songs| {
+                        queue.extend_from_slice(&songs);
+                    }
+                )).await?;
+            } else {
+                self.client()?.get_queue_changes(
+                    old_version,
+                    status.queue_len,
+                    clone!(
+                        #[weak(rename_to = this)] self,
+                        move |changed_songs| {
+                            this.update_queue_internal(&changed_songs);
+                        }
+                    )
+                ).await?;
+            }
+        }
+        Ok(())
+    }
+
+    fn update_queue_internal(&self, changes: &[Song]) {
         let queue = &self.imp().queue;
         if !changes.is_empty() {
             // Find queue range covered by the changes vec
@@ -1280,11 +1283,12 @@ impl Player {
         }
     }
 
-    pub fn client(&self) -> &Rc<MpdWrapper> {
-        self.imp().client.get().unwrap()
+    pub fn client(&self) -> ClientResult<&Rc<MpdWrapper>> {
+        self.imp().client.get().ok_or(ClientError::NotConnected)
     }
 
-    fn update_outputs(&self, outputs: Vec<mpd::Output>) {
+    async fn update_outputs(&self) -> ClientResult<()> {
+        let outputs = self.client()?.get_outputs().await?;
         self.imp().outputs.remove_all();
         self.imp().outputs.extend_from_slice(
             &outputs
@@ -1293,10 +1297,11 @@ impl Player {
                 .collect::<Vec<glib::BoxedAnyObject>>(),
         );
         self.emit_by_name::<()>("outputs-changed", &[]);
+        Ok(())
     }
 
     pub async fn set_output(&self, id: u32, state: bool) -> ClientResult<()> {
-        self.client().set_output(id, state).await
+        self.client()?.set_output(id, state).await
     }
 
     // Here we try to define getters and setters in terms of the GObject
@@ -1304,32 +1309,32 @@ impl Player {
     // internal fields.
     pub async fn cycle_playback_flow(&self) -> ClientResult<()> {
         let next_flow = self.imp().flow.get().next_in_cycle();
-        self.client().set_playback_flow(next_flow).await
+        self.client()?.set_playback_flow(next_flow).await
     }
 
     pub async fn cycle_replaygain(&self) -> ClientResult<()> {
         let next_rg = cycle_replaygain(self.imp().replaygain.get());
-        self.client().set_replaygain(next_rg).await
+        self.client()?.set_replaygain(next_rg).await
     }
 
     pub async fn set_random(&self, new: bool) -> ClientResult<()> {
-        self.client().set_random(new).await
+        self.client()?.set_random(new).await
     }
 
     pub async fn set_consume(&self, new: bool) -> ClientResult<()> {
-        self.client().set_consume(new).await
+        self.client()?.set_consume(new).await
     }
 
     pub async fn set_crossfade(&self, new: f64) -> ClientResult<()> {
-        self.client().set_crossfade(new).await
+        self.client()?.set_crossfade(new).await
     }
 
     pub async fn set_mixramp_db(&self, new: f32) -> ClientResult<()> {
-        self.client().set_mixramp_db(new).await
+        self.client()?.set_mixramp_db(new).await
     }
 
     pub async fn set_mixramp_delay(&self, new: f64) -> ClientResult<()> {
-        self.client().set_mixramp_delay(new).await
+        self.client()?.set_mixramp_delay(new).await
     }
 
     pub fn title(&self) -> Option<String> {
@@ -1431,14 +1436,14 @@ impl Player {
 
     /// Seek to current position. Called when the seekbar is released.
     pub async fn send_seek(&self, new_pos: f64) -> ClientResult<()> {
-        self.client().seek_current_song(new_pos).await
+        self.client()?.seek_current_song(new_pos).await
     }
 
     /// Seek to the timestamp of a lyric line
     pub async fn seek_to_lyric_line(&self, line: i32) -> ClientResult<()> {
         if let Some(lyrics) = self.imp().lyrics.borrow().as_ref() {
             if lyrics.synced && line >= 0 && line < lyrics.lines.len() as i32 {
-                self.client()
+                self.client()?
                     .seek_current_song(lyrics.lines[line as usize].0 as f64).await?;
             }
         }
@@ -1454,11 +1459,11 @@ impl Player {
     }
 
     async fn send_play(&self) -> ClientResult<()> {
-        self.client().pause(false).await
+        self.client()?.pause(false).await
     }
 
     async fn send_pause(&self) -> ClientResult<()> {
-        self.client().pause(true).await
+        self.client()?.pause(true).await
     }
 
     /// If state is stopped, there won't be a "current song".
@@ -1471,7 +1476,7 @@ impl Player {
                 // Check if queue is not empty
                 if self.queue().n_items() > 0 {
                     // Start playing first song in queue.
-                    self.client().play_at(0, false).await
+                    self.client()?.play_at(0, false).await
                 } else {
                     println!("Queue is empty; nothing to play");
                     Ok(())
@@ -1500,7 +1505,7 @@ impl Player {
             println!("Stopping PipeWire backend to allow samplerate change...");
             self.maybe_stop_fft_thread(block);
         }
-        self.client().prev().await
+        self.client()?.prev().await
     }
 
     pub async fn next_song(&self, block: bool) -> ClientResult<()> {
@@ -1517,17 +1522,17 @@ impl Player {
             println!("Stopping PipeWire backend to allow samplerate change...");
             self.maybe_stop_fft_thread(block);
         }
-        self.client().next().await
+        self.client()?.next().await
     }
 
     pub async fn clear_queue(&self) -> ClientResult<()> {
-        self.client().clear_queue().await
+        self.client()?.clear_queue().await
     }
 
     pub async fn send_set_volume(&self, val: i8) -> ClientResult<()> {
         let old_vol = self.imp().volume.replace(val);
         if old_vol != val {
-            self.client().set_volume(val).await?;
+            self.client()?.set_volume(val).await?;
         }
         Ok(())
     }
@@ -1546,14 +1551,14 @@ impl Player {
             println!("Stopping PipeWire backend to allow samplerate change...");
             self.maybe_stop_fft_thread(true);
         }
-        self.client().play_at(song.get_queue_id(), true).await
+        self.client()?.play_at(song.get_queue_id(), true).await
     }
 
     /// Remove given song from queue.
     pub async fn remove_pos(&self, pos: u32) -> ClientResult<()> {
         self.register_local_queue_changes(1);
         self.queue().remove(pos);
-        self.client().delete_at_pos(pos).await
+        self.client()?.delete_at_pos(pos).await
     }
 
     pub async fn swap_dir(&self, pos: u32, direction: SwapDirection) -> ClientResult<()> {
@@ -1576,7 +1581,7 @@ impl Player {
                             upper.upcast::<glib::Object>(),
                         ],
                     );
-                    self.client().swap_pos(pos, pos - 1).await?;
+                    self.client()?.swap_pos(pos, pos - 1).await?;
                 }
             }
             SwapDirection::Down => {
@@ -1595,7 +1600,7 @@ impl Player {
                             target.clone().upcast::<glib::Object>(),
                         ],
                     );
-                    self.client().swap_pos(pos, pos + 1).await?;
+                    self.client()?.swap_pos(pos, pos + 1).await?;
                 }
             }
         }
@@ -1603,23 +1608,19 @@ impl Player {
     }
 
     pub async fn save_queue(&self, name: String, save_mode: SaveMode) -> ClientResult<()> {
-        self.client().save_queue_as_playlist(name, save_mode).await
+        self.client()?.save_queue_as_playlist(name, save_mode).await
     }
 
     /// Periodically poll for player progress to update seekbar.
     /// Won't start a new loop if there is already one or when polling is blocked by a seekbar.
     pub fn maybe_start_polling(&self) {
         let this = self.clone();
-        let client = self.client().clone();
         if self.imp().poller_handle.borrow().is_none() {
             let poller_handle = glib::spawn_future_local(async move {
                 loop {
                     // Don't poll if not playing
                     if this.imp().state.get() == PlaybackState::Playing {
-                        match client.clone().get_status().await {
-                            Ok(status) => {this.update_status(&status).await;},
-                            Err(e) => {dbg!(e);}
-                        }
+                        this.update_status().await;
                     }
                     glib::timeout_future_seconds(1).await;
                 }
@@ -1675,7 +1676,7 @@ impl Player {
             // Set locally first
             song.set_rating(score);
             if let Some(score) = score {
-                self.client().set_sticker(
+                self.client()?.set_sticker(
                     "song",
                     song.get_uri().to_owned(),
                     Stickers::RATING_KEY.into(),
@@ -1683,7 +1684,7 @@ impl Player {
                     StickerSetMode::Set,
                 ).await?;
             } else {
-                self.client()
+                self.client()?
                     .delete_sticker("song", song.get_uri().to_owned(), Stickers::RATING_KEY.into()).await?;
             }
             self.notify("rating");
@@ -1774,7 +1775,7 @@ impl LocalPlayerInterface for Player {
     }
 
     async fn stop(&self) -> fdo::Result<()> {
-        self.client().stop();
+        self.client().map_err(|_| fdo::Error::ZBus(zbus::Error::InterfaceNotFound))?.stop();
         Ok(())
     }
 
@@ -1814,7 +1815,7 @@ impl LocalPlayerInterface for Player {
 
     async fn set_loop_status(&self, loop_status: LoopStatus) -> zbus::Result<()> {
         let flow: PlaybackFlow = loop_status.into();
-        self.client().set_playback_flow(flow);
+        self.client().map_err(|_| zbus::Error::InterfaceNotFound)?.set_playback_flow(flow);
         Ok(())
     }
 

@@ -318,7 +318,7 @@ impl PlaylistView {
                 #[weak(rename_to = this)]
                 self,
                 move |state, _| {
-                    if state.get_connection_state() == ConnectionState::Connected {
+                    if state.connection_state() == ConnectionState::Connected {
                         // Newly-connected? Get all playlists.
                         glib::spawn_future_local(clone!(#[weak] this, async move {
                             this.imp().library.upgrade().unwrap().init_playlists(false).await;

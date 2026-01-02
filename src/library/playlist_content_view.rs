@@ -761,29 +761,20 @@ impl PlaylistContentView {
                     item,
                     // Raise action
                     clone!(
-                        #[weak]
-                        this,
-                        #[upgrade_or]
-                        (),
-                        move |idx| {
+                        #[weak] this,
+                        move |_, idx| {
                             this.shift_backward(idx);
                         }
                     ),
                     clone!(
-                        #[weak]
-                        this,
-                        #[upgrade_or]
-                        (),
-                        move |idx| {
+                        #[weak] this,
+                        move |_, idx| {
                             this.shift_forward(idx);
                         }
                     ),
                     clone!(
-                        #[weak]
-                        this,
-                        #[upgrade_or]
-                        (),
-                        move |idx| {
+                        #[weak] this,
+                        move |_, idx| {
                             this.remove(idx);
                         }
                     ),

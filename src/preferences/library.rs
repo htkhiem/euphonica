@@ -1,19 +1,13 @@
+use std::cell::Cell;
 use adw::prelude::*;
 use adw::subclass::prelude::*;
 use gtk::{CompositeTemplate, gio, glib};
 
 use glib::clone;
 
-use crate::{
-    cache::{get_doc_cache_path, get_image_cache_path},
-    utils,
-};
+use crate::utils;
 
 mod imp {
-    use std::cell::Cell;
-
-    use crate::cache::get_app_cache_path;
-
     use super::*;
 
     #[derive(Debug, Default, CompositeTemplate)]
@@ -85,7 +79,7 @@ mod imp {
             ));
 
             self.open_cache_folder.connect_activated(|_| {
-                let _ = open::that(get_app_cache_path());
+                let _ = open::that(utils::get_app_cache_path());
             });
         }
     }
@@ -230,7 +224,7 @@ impl LibraryPreferences {
             self.imp().info_db_size.set_subtitle("Computing...");
             self.imp().n_async_in_progress.set(3);
 
-            gio::File::for_path(get_image_cache_path()).measure_disk_usage_async(
+            gio::File::for_path(utils::get_image_cache_path()).measure_disk_usage_async(
                 gio::FileMeasureFlags::NONE,
                 glib::source::Priority::DEFAULT,
                 Option::<&gio::Cancellable>::None,
@@ -252,7 +246,7 @@ impl LibraryPreferences {
                 ),
             );
 
-            gio::File::for_path(get_doc_cache_path()).measure_disk_usage_async(
+            gio::File::for_path(utils::get_doc_cache_path()).measure_disk_usage_async(
                 gio::FileMeasureFlags::NONE,
                 glib::source::Priority::DEFAULT,
                 Option::<&gio::Cancellable>::None,

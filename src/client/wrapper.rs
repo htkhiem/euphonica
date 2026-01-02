@@ -49,7 +49,6 @@ use crate::{
     utils,
 };
 
-use super::background;
 use super::connection::{Connection, Error as ClientError, Result as ClientResult, Task};
 use super::password::get_mpd_password;
 use super::state::{ClientState, ConnectionState, StickersSupportLevel};
@@ -146,15 +145,8 @@ pub fn build_comparator(
                         song_b.album.as_ref().map(|album: &AlbumInfo| &album.title),
                     ),
                     Ordering::Track => {
-                        // Since nulls are -1, replace them with i64::MAX instead.
-                        let mut track_a = song_a.track.get();
-                        if track_a < 0 {
-                            track_a = i64::MAX;
-                        }
-                        let mut track_b = song_b.track.get();
-                        if track_b < 0 {
-                            track_b = i64::MAX;
-                        }
+                        let track_a = song_a.track.unwrap_or(i64::MAX);
+                        let track_b = song_b.track.unwrap_or(i64::MAX);
                         track_a.cmp(&track_b)
                     }
                     Ordering::AscReleaseDate => cmp_options_nulls_last(
@@ -273,20 +265,7 @@ impl MpdWrapper {
             ))
         });
 
-        // Loop to handle idle changes
-        glib::MainContext::default().spawn_local(clone!(
-            #[weak]
-            wrapper,
-            async move {
-                use futures::prelude::*;
-                let mut receiver =
-                    std::pin::pin!(idle_receiver);
-
-                while let Some(change) = receiver.next().await {
-                    wrapper.handle_idle_changes(change);
-                }
-            })
-        );
+        wrapper.clone().setup_channel(idle_receiver);
 
         wrapper
     }
@@ -295,7 +274,22 @@ impl MpdWrapper {
         self.state.clone()
     }
 
-    fn setup_channel(self: Rc<Self>) {
+    fn setup_channel(self: Rc<Self>, idle_receiver: Receiver<Subsystem>) {
+        // Loop to handle idle changes
+        glib::MainContext::default().spawn_local(clone!(
+            #[weak(rename_to = this)]
+            self,
+            async move {
+                use futures::prelude::*;
+                let mut receiver =
+                    std::pin::pin!(idle_receiver);
+
+                while let Some(change) = receiver.next().await {
+                    this.handle_idle_changes(change).await;
+                }
+            })
+        );
+
         // Set up a ping loop. Main client does not use idle mode, so it needs to ping periodically.
         // If there is no client connected, it will simply skip pinging.
         let conn = utils::settings_manager().child("client");
@@ -344,19 +338,19 @@ impl MpdWrapper {
                     if going_to_sleep {
                         println!("System is preparing to suspend. Disconnecting...");
                         let (s, r) = oneshot::channel();
-                        fg_sender.send(Task::Disconnect(false, s)).await;
-                        r.await;
+                        fg_sender.send(Task::Disconnect(false, s)).await.expect("Broken FG sender");
+                        let _ = r.await.expect("Broken oneshot receiver");
                         let (s, r) = oneshot::channel();
-                        bg_sender.send(Task::Disconnect(false, s)).await;
-                        r.await;
+                        bg_sender.send(Task::Disconnect(false, s)).await.expect("Broken BG sender");
+                        let _ = r.await.expect("Broken oneshot receiver");
                     } else {
                         println!("System has woken up. Reconnecting...");
                         let (s, r) = oneshot::channel();
-                        fg_sender.send(Task::Connect(s)).await;
-                        r.await;
+                        fg_sender.send(Task::Connect(s)).await.expect("Broken FG sender");
+                        let _ = r.await.expect("Broken oneshot receiver");
                         let (s, r) = oneshot::channel();
-                        bg_sender.send(Task::Connect(s)).await;
-                        r.await;
+                        bg_sender.send(Task::Connect(s)).await.expect("Broken BG sender");
+                        let _ = r.await.expect("Broken oneshot receiver");
                     }
                 }
             }
@@ -379,11 +373,11 @@ impl MpdWrapper {
 
     pub async fn disconnect(&self, stop: bool) -> ClientResult<()> {
         let (s, r) = oneshot::channel();
-        self.fg_sender.send(Task::Disconnect(stop, s)).await;
+        self.fg_sender.send(Task::Disconnect(stop, s)).await.expect("Broken FG sender");
         r.await.expect("Broken oneshot receiver")?;
         println!("Stopped foreground client");
         let (s, r) = oneshot::channel();
-        self.bg_sender.send(Task::Disconnect(stop, s)).await;
+        self.bg_sender.send(Task::Disconnect(stop, s)).await.expect("Broken BG sender");
         r.await.expect("Broken oneshot receiver")?;
         println!("Stopped background client");
         self.state
@@ -480,12 +474,12 @@ impl MpdWrapper {
 
     pub async fn connect(&self) -> ClientResult<()> {
         // Close current clients
-        self.disconnect(false).await;
+        self.disconnect(false).await?;
 
         self.state.set_connection_state(ConnectionState::Connecting);
 
         let (s, r) = oneshot::channel();
-        self.fg_sender.send(Task::Connect(s)).await;
+        self.fg_sender.send(Task::Connect(s)).await.expect("Broken FG sender");
         let version = self.handle_connect_error(r.await.expect("Broken oneshot receiver")).await?;
         // Set to maximum supported level first. Any subsequent sticker command will then
         // update it to a lower state upon encountering related errors.
@@ -502,7 +496,7 @@ impl MpdWrapper {
         println!("Connected foreground client");
 
         let (s, r) = oneshot::channel();
-        self.bg_sender.send(Task::Connect(s)).await;
+        self.bg_sender.send(Task::Connect(s)).await.expect("Broken BG sender");
         self.handle_connect_error(r.await.expect("Broken oneshot receiver")).await?;
         println!("Connected background client");
 
@@ -514,7 +508,7 @@ impl MpdWrapper {
         task: Task,
         receiver: oneshot::Receiver<ClientResult<T>>,
     ) -> ClientResult<T> {
-        self.fg_sender.send(task).await;
+        self.fg_sender.send(task).await.expect("Broken FG sender");
         self.handle_error(receiver.await.expect("Broken oneshot receiver"))
             .await
     }
@@ -524,7 +518,7 @@ impl MpdWrapper {
         task: Task,
         receiver: oneshot::Receiver<ClientResult<T>>,
     ) -> ClientResult<T> {
-        self.bg_sender.send(task).await;
+        self.bg_sender.send(task).await.expect("Broken BG sender");
         // Wake background thread
         let (s, r) = oneshot::channel();
         self.foreground(Task::SendMessage(String::from("wake"), s), r)
@@ -1311,7 +1305,7 @@ impl MpdWrapper {
             for song in batch.into_iter() {
                 res.insert(song.uri);
             }
-        });
+        }).await?;
         println!("Length after query_clauses: {}", res.len());
 
         // Get matching URIs for each sticker condition
@@ -1332,7 +1326,7 @@ impl MpdWrapper {
                                 set.insert(uri);
                             }
                         }
-                    );
+                    ).await?;
                 }
                 _ => {
                     self.get_uris_by_sticker(
@@ -1346,7 +1340,7 @@ impl MpdWrapper {
                                 set.insert(uri);
                             }
                         }
-                    );
+                    ).await?;
                 }
             }
 
@@ -1544,28 +1538,14 @@ impl MpdWrapper {
     // }
 }
 
-// impl Drop for MpdWrapper {
-//     fn drop(&mut self) {
-//         println!("App closed. Closing clients...");
+impl Drop for MpdWrapper {
+    fn drop(&mut self) {
+        println!("App closed. Closing clients...");
 
-//         executor::block_on(clone!(
-//             #[strong(rename_to = this)]
-//             self,
-//             async move {
-//                 this.disconnect(true).await;
-//             }
-//         ));
-//         if let Some(mut main_client) = self.main_client.borrow_mut().take() {
-
-//             // First, send stop message
-//             let _ = main_client.sendmessage(self.wake_channel.clone(), "STOP");
-//             // Now close the main client, which will trigger an idle message.
-//             let _ = main_client.close();
-//             // Now the child thread really should have read the stop_flag.
-//             // Wait for it to stop.
-//             if let Some(handle) = self.bg_handle.take() {
-//                 let _ = executor::block_on(handle);
-//             }
-//         }
-//     }
-// }
+        executor::block_on(
+            async move {
+                let _ = self.disconnect(true).await;
+            }
+        );
+    }
+}

@@ -59,28 +59,24 @@ impl RowEditButtons {
         on_remove_clicked: F3,
     ) -> Self
     where
-        F1: Fn(u32) + 'static,
-        F2: Fn(u32) + 'static,
-        F3: Fn(u32) + 'static,
+        F1: Fn(&gtk::Button, u32) + 'static,
+        F2: Fn(&gtk::Button, u32) + 'static,
+        F3: Fn(&gtk::Button, u32) + 'static,
     {
         let res: Self = Object::builder().build();
         res.imp().raise.connect_clicked(clone!(
             #[weak]
             item,
-            #[upgrade_or]
-            (),
-            move |_| {
-                on_raise_clicked(item.position());
+            move |btn| {
+                on_raise_clicked(btn, item.position());
             }
         ));
 
         res.imp().lower.connect_clicked(clone!(
             #[weak]
             item,
-            #[upgrade_or]
-            (),
-            move |_| {
-                on_lower_clicked(item.position());
+            move |btn| {
+                on_lower_clicked(btn, item.position());
             }
         ));
 
@@ -89,8 +85,8 @@ impl RowEditButtons {
             item,
             #[upgrade_or]
             (),
-            move |_| {
-                on_remove_clicked(item.position());
+            move |btn| {
+                on_remove_clicked(btn, item.position());
             }
         ));
 

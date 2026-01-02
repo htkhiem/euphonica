@@ -141,7 +141,7 @@ impl ArtistTag {
                 ),
             ),
         )));
-        res.update_artist_avatar(res.imp().artist.get().unwrap().get_info());
+        res.update_artist_avatar();
 
         res.connect_clicked(clone!(
             #[weak(rename_to = this)]
@@ -156,16 +156,25 @@ impl ArtistTag {
         res
     }
 
-    fn update_artist_avatar(&self, info: &ArtistInfo) {
-        self.imp().avatar.set_custom_image(
-            self.imp()
-                .cache
-                .get()
-                .unwrap()
-                .clone()
-                .load_cached_artist_avatar(info, true)
-                .as_ref(),
-        );
+    fn update_artist_avatar(&self) {
+        glib::spawn_future_local(clone!(#[weak(rename_to = this)] self, async move {
+            if let Some(info) = this.imp().artist.get().map(|a| a.get_info()) {
+                match &this.imp()
+                        .cache
+                        .get()
+                        .unwrap()
+                        .clone()
+                        .get_artist_avatar(info, true, true).await
+                {
+                    Ok(maybe_tex) => {
+                        this.imp().avatar.set_custom_image(maybe_tex.as_ref());
+                    }
+                    Err(e) => {
+                        dbg!(e);
+                    }
+                }
+            }
+        }));
     }
 
     pub fn get_name(&self) -> glib::GString {

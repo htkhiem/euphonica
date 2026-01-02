@@ -1,4 +1,3 @@
-mod background;
 mod connection;
 mod stream;
 

@@ -14,7 +14,7 @@ use super::PlayerPane;
 
 use crate::{
     cache::Cache,
-    client::ClientState,
+    client::{ClientState, Error as ClientError},
     common::{RowEditButtons, Song, SongRow},
     player::controller::SwapDirection,
     utils::LazyInit,
@@ -147,9 +147,11 @@ mod imp {
                     #[weak]
                     obj,
                     move |_, _, _| {
-                        if let Some(player) = obj.imp().player.upgrade() {
-                            player.rate_current_song(None);
-                        }
+                        glib::spawn_future_local(clone!(#[weak] obj, async move {
+                            if let Some(player) = obj.imp().player.upgrade() {
+                                player.rate_current_song(None).await;
+                            }
+                        }));
                     }
                 ))
                 .build();
@@ -253,30 +255,33 @@ impl QueueView {
                     item,
                     // Raise action
                     clone!(
-                        #[weak]
-                        player,
-                        #[upgrade_or]
-                        (),
-                        move |idx| {
-                            player.swap_dir(idx, SwapDirection::Up);
+                        #[weak] player,
+                        move |btn, idx| {
+                            glib::spawn_future_local(clone!(#[weak] btn, #[weak] player, async move {
+                                btn.set_sensitive(false);
+                                player.swap_dir(idx, SwapDirection::Up).await;
+                                btn.set_sensitive(true);
+                            }));
                         }
                     ),
                     clone!(
-                        #[weak]
-                        player,
-                        #[upgrade_or]
-                        (),
-                        move |idx| {
-                            player.swap_dir(idx, SwapDirection::Down);
+                        #[weak] player,
+                        move |btn, idx| {
+                            glib::spawn_future_local(clone!(#[weak] btn, #[weak] player, async move {
+                                btn.set_sensitive(false);
+                                player.swap_dir(idx, SwapDirection::Down).await;
+                                btn.set_sensitive(true);
+                            }));
                         }
                     ),
                     clone!(
-                        #[weak]
-                        player,
-                        #[upgrade_or]
-                        (),
-                        move |idx| {
-                            player.remove_pos(idx);
+                        #[weak] player,
+                        move |btn, idx| {
+                            glib::spawn_future_local(clone!(#[weak] btn, #[weak] player, async move {
+                                btn.set_sensitive(false);
+                                player.remove_pos(idx).await;
+                                btn.set_sensitive(true);
+                            }));
                         }
                     ),
                 );
@@ -341,20 +346,21 @@ impl QueueView {
 
         // Setup click action
         self.imp().queue.connect_activate(clone!(
-            #[weak]
-            player,
+            #[weak] player,
             move |queue, position| {
-                let model = queue.model().expect("The model has to exist.");
-                let song = model
-                    .item(position)
-                    .and_downcast::<Song>()
-                    .expect("The item has to be a `common::Song`.");
-                player.on_song_clicked(song);
+                glib::spawn_future_local(clone!(#[weak] player, #[weak] queue, async move {
+                    let model = queue.model().expect("The model has to exist.");
+                    let song = model
+                        .item(position)
+                        .and_downcast::<Song>()
+                        .expect("The item has to be a `common::Song`.");
+                    player.on_song_clicked(song).await;
+                }));
             }
         ));
     }
 
-    fn show_save_error_dialog(&self, name: String, player: Player) {
+    async fn show_save_error_dialog(&self, name: String, player: Player) {
         // TODO: translatable
         let diag = adw::AlertDialog::builder()
             .heading("Playlist Exists")
@@ -365,19 +371,15 @@ impl QueueView {
         diag.add_response("overwrite", "_Overwrite");
         diag.set_response_appearance("append", adw::ResponseAppearance::Suggested);
         diag.set_response_appearance("overwrite", adw::ResponseAppearance::Destructive);
-        diag.choose(
-            self.imp().window.get().unwrap(),
-            Option::<gio::Cancellable>::None.as_ref(),
-            move |resp| match resp.as_str() {
-                "append" => {
-                    let _ = player.save_queue(&name, SaveMode::Append);
-                }
-                "overwrite" => {
-                    let _ = player.save_queue(&name, SaveMode::Replace);
-                }
-                _ => {}
-            },
-        );
+        match diag.choose_future(self.imp().window.get().unwrap()).await.as_str() {
+            "append" => {
+                player.save_queue(name, SaveMode::Append).await;
+            }
+            "overwrite" => {
+                player.save_queue(name, SaveMode::Replace).await;
+            }
+            _ => {}
+        };
     }
 
     pub fn bind_state(&self, player: &Player) {
@@ -434,37 +436,36 @@ impl QueueView {
             "changed",
             false,
             closure_local!(
-                #[weak]
-                save_confirm,
+                #[weak] save_confirm,
                 move |entry: gtk::Entry| { save_confirm.set_sensitive(entry.text_length() > 0) }
             ),
         );
 
         save_confirm.connect_clicked(clone!(
-            #[weak(rename_to = this)]
-            self,
-            #[weak]
-            player,
-            #[weak]
-            save,
+            #[weak(rename_to = this)] self,
+            #[weak] player,
+            #[weak] save,
+            #[weak] save_name,
             move |_| {
-                // Close the popover first, then save.
-                save.set_active(false);
-                let name = save_name.buffer().text().as_str().to_owned();
-                match player.save_queue(&name, SaveMode::Create) {
-                    Ok(()) => {}
-                    Err(e) => {
-                        if let Some(MpdError::Server(ServerError {
+                glib::spawn_future_local(clone!(#[weak] this, #[weak] player, #[weak] save, async move {
+                    // Close the popover first, then save.
+                    save.set_active(false);
+                    let name = save_name.buffer().text().as_str().to_owned();
+                    match player.save_queue(name.clone(), SaveMode::Create).await {
+                        Ok(()) => {}
+                        Err(ClientError::Mpd(MpdError::Server(ServerError {
                             code: MpdErrorCode::Exist,
                             pos: _,
                             command: _,
                             detail: _,
-                        })) = e
-                        {
-                            this.show_save_error_dialog(name, player);
+                        }))) => {
+                            this.show_save_error_dialog(name, player).await
+                        }
+                        Err(e) => {
+                            dbg!(e);
                         }
                     }
-                }
+                }));
             }
         ));
 
@@ -499,19 +500,21 @@ impl QueueView {
             .sync_create()
             .build();
 
-        consume.connect_clicked(clone!(
-            #[weak]
-            player,
-            move |btn| { player.set_consume(btn.is_active()) }
-        ));
+        consume.connect_clicked(clone!(#[weak] player, move |btn| {
+            glib::spawn_future_local(clone!(#[weak] player, #[weak] btn, async move {
+                btn.set_sensitive(false);
+                player.set_consume(btn.is_active()).await;
+                btn.set_sensitive(true);
+            }));
+        }));
 
-        clear_queue_btn.connect_clicked(clone!(
-            #[weak]
-            player,
-            move |_| {
-                player.clear_queue();
-            }
-        ));
+        clear_queue_btn.connect_clicked(clone!(#[weak] player, move |btn| {
+            glib::spawn_future_local(clone!(#[weak] player, #[weak] btn, async move {
+                btn.set_sensitive(false);
+                player.clear_queue().await;
+                btn.set_sensitive(true);
+            }));
+        }));
     }
 
     pub fn setup(
@@ -522,8 +525,8 @@ impl QueueView {
         window: EuphonicaWindow,
     ) {
         let _ = self.imp().window.set(window);
-        self.setup_listview(player, cache);
-        self.imp().player_pane.setup(player, client_state);
+        self.setup_listview(player, cache.clone());
+        self.imp().player_pane.setup(player, cache, client_state);
         self.bind_state(player);
         self.imp().player.set(Some(player));
     }
@@ -532,9 +535,9 @@ impl QueueView {
 impl LazyInit for QueueView {
     fn populate(&self) {
         if let Some(player) = self.imp().player.upgrade() {
-            if let Some(status) = player.client().get_status(true) {
-                player.update_status(&status);
-            }
+            glib::spawn_future_local(clone!(#[weak] player, async move {
+                player.update_queue().await;
+            }));
         }
     }
 }

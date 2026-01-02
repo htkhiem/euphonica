@@ -9,6 +9,6 @@ pub use base::{MetadataProvider, ProviderMessage, utils};
 pub use chain::{MetadataChain, get_provider};
 
 pub mod prelude {
-    pub use super::base::{MetadataProvider, sleep_after_request};
+    pub use super::base::{MetadataProvider, sleep_between_requests};
     pub use super::models::Merge;
 }

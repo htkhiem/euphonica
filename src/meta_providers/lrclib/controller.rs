@@ -1,3 +1,5 @@
+use std::time::SystemTime;
+
 use crate::{
     common::{AlbumInfo, ArtistInfo, SongInfo},
     config::APPLICATION_USER_AGENT,
@@ -11,7 +13,7 @@ use reqwest::{
 };
 
 use super::{
-    super::{MetadataProvider, models},
+    super::{MetadataProvider, models, prelude::*},
     LrcLibResponse, PROVIDER_KEY,
 };
 
@@ -19,16 +21,19 @@ pub const API_ROOT: &str = "https://lrclib.net/api/";
 
 pub struct LrcLibWrapper {
     client: Client,
+    last_request_time: SystemTime
 }
 
 impl LrcLibWrapper {
-    fn get_lrclib(&self, params: &[(&str, &str)]) -> Option<Response> {
+    fn get_lrclib(&mut self, params: &[(&str, &str)]) -> Option<Response> {
+        sleep_between_requests(self.last_request_time);
         let resp = self
             .client
             .get(format!("{API_ROOT}search"))
             .query(params)
             .header(USER_AGENT, APPLICATION_USER_AGENT)
             .send();
+        self.last_request_time = SystemTime::now();
         if let Ok(res) = resp {
             return Some(res);
         }
@@ -40,12 +45,13 @@ impl MetadataProvider for LrcLibWrapper {
     fn new() -> Self {
         Self {
             client: Client::new(),
+            last_request_time: SystemTime::now()
         }
     }
 
     /// LRCLIB only provides song lyrics.
     fn get_album_meta(
-        &self,
+        &mut self,
         _key: &mut AlbumInfo,
         existing: Option<models::AlbumMeta>,
     ) -> Option<models::AlbumMeta> {
@@ -54,14 +60,14 @@ impl MetadataProvider for LrcLibWrapper {
 
     /// LRCLIB only provides song lyrics.
     fn get_artist_meta(
-        &self,
+        &mut self,
         _key: &mut ArtistInfo,
         existing: Option<models::ArtistMeta>,
     ) -> Option<models::ArtistMeta> {
         existing
     }
 
-    fn get_lyrics(&self, key: &SongInfo) -> Option<models::Lyrics> {
+    fn get_lyrics(&mut self, key: &SongInfo) -> Option<models::Lyrics> {
         if meta_provider_settings(PROVIDER_KEY).boolean("enabled") {
             let mut params: Vec<(&str, &str)> = Vec::new();
             params.push(("track_name", &key.title));

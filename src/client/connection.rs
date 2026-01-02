@@ -10,7 +10,7 @@ use std::{
 };
 
 use crate::{
-    cache::{get_new_image_paths, sqlite}, client::stream::StreamWrapper, common::{SongInfo, Stickers, inode::INodeInfo}, player::PlaybackFlow, utils
+    cache::sqlite, client::stream::StreamWrapper, common::{SongInfo, Stickers, inode::INodeInfo}, player::PlaybackFlow, utils::{self, save_and_register_image}
 };
 
 use super::password;
@@ -166,7 +166,7 @@ pub enum Task {
     GetEmbeddedCover(
         /// URI to song file
         String,
-        /// SQLite keys to high-resolution and low-resolution file, respectively
+        /// Full paths to high-resolution and low-resolution file, respectively
         Responder<Option<(String, String)>>
     ),
     /// Get a song's folder cover (cover.jpg/png/webp in the same folder).
@@ -174,7 +174,7 @@ pub enum Task {
     GetFolderCover(
         /// URI to folder with trailing slash
         String,
-        /// SQLite keys to high-resolution and low-resolution file, respectively
+        /// Full paths to high-resolution and low-resolution file, respectively
         Responder<Option<(String, String)>>
     ),
     /// Query distinct values of a tag, optionally grouped by another
@@ -322,13 +322,14 @@ impl Connection {
     // Subsequent attempts
     fn client_then<F, T>(&mut self, then: F, resp: Responder<T>)
     where
-        F: Fn(&mut Self, &mut Client<StreamWrapper>) -> MpdResult<T>,
+        F: Fn(&mut Client<StreamWrapper>) -> MpdResult<T>,
     {
         let final_res: Result<T>;
         loop {
-            match self.client.as_mut().map_or(Err(Error::NotConnected), |client| then(self, client).map_err(Error::Mpd)) {
+            match self.client.as_mut().map_or(Err(Error::NotConnected), |client| then(client).map_err(Error::Mpd)) {
                 Ok(res) => {
                     final_res = Ok(res);
+                    self.retries_left = self.max_retries;
                     break;
                 }
                 Err(e) => {
@@ -363,28 +364,15 @@ impl Connection {
         let hires = sqlite::find_image_by_key(&uri, None, false).expect("Sqlite DB error");
         let thumb = sqlite::find_image_by_key(&uri, None, true).expect("Sqlite DB error");
         if let (Some(hires), Some(thumb)) = (hires, thumb) {
-            resp.send(Ok(Some((hires, thumb))));
+            resp.send(Ok(Some((hires, thumb)))).expect("Broken oneshot sender");
             return;
         } else {
             // Not available locally => try to download
-            self.client_then(|_, c| {
+            self.client_then(|c| {
                 match download_func(c, &uri) {
                     Ok(bytes) => {
                         let dyn_img = image::load_from_memory(&bytes).expect("Unable to read image from bytes");
-                        let (hires_img, thumb_img) = utils::resize_convert_image(dyn_img);
-                        let (hires_path, thumb_path) = get_new_image_paths();
-                        hires_img
-                            .save(&hires_path)
-                            .unwrap_or_else(|_| panic!("Couldn't save downloaded cover to {:?}", &hires_path));
-                        thumb_img
-                            .save(&thumb_path)
-                            .unwrap_or_else(|_| panic!("Couldn't save downloaded thumbnail cover to {:?}", &thumb_path));
-                        let hires = hires_path.file_name().unwrap().to_str().unwrap().to_string();
-                        let thumb = thumb_path.file_name().unwrap().to_str().unwrap().to_string();
-                        sqlite::register_image_key(&uri, None, Some(&hires), false).expect("Sqlite error");
-                        sqlite::register_image_key(&uri, None, Some(&thumb), false).expect("Sqlite error");
-
-                        Ok(Some((hires, thumb)))
+                        Ok(save_and_register_image(Some(dyn_img), &uri, None))
                     }
                     Err(MpdError::Proto(ProtoError::NotPair)) => {
                         println!("GetEmbeddedCover: empty output");
@@ -424,24 +412,27 @@ impl Connection {
                         }
                     }
                     Task::Ping(resp) => {
-                        self.client_then(move |_, c| c.ping(), resp);
+                        self.client_then(move |c| c.ping(), resp);
                     }
-                    Task::SendMessage(content, resp) => self.client_then(
-                        move |this, c| c.sendmessage(&this.wake_channel, &content), resp
-                    ),
-                    Task::GetVolume(resp) => self.client_then(|_, c| c.getvol(), resp),
-                    Task::SetVolume(val, resp) => self.client_then(|_, c| c.volume(val), resp),
-                    Task::GetOutputs(resp) => self.client_then(|_, c| c.outputs(), resp),
+                    Task::SendMessage(content, resp) => {
+                        let wake_channel = self.wake_channel.clone();
+                        self.client_then(
+                            move |c| c.sendmessage(&wake_channel, &content), resp
+                        )
+                    },
+                    Task::GetVolume(resp) => self.client_then(|c| c.getvol(), resp),
+                    Task::SetVolume(val, resp) => self.client_then(|c| c.volume(val), resp),
+                    Task::GetOutputs(resp) => self.client_then(|c| c.outputs(), resp),
                     Task::SetOutput(id, state, resp) => self.client_then(
-                        |_, c| c.output(id, state), resp
+                        |c| c.output(id, state), resp
                     ),
                     Task::GetSticker(typ, uri, name, resp) => self.client_then(
-                        |_, c| c.sticker(&typ, &uri, &name), resp
+                        |c| c.sticker(&typ, &uri, &name), resp
                     ),
                     Task::GetKnownStickers(typ, uri, resp) => self
-                        .client_then(|_, c| c.stickers(&typ, &uri).map(Stickers::from_mpd_kv), resp),
+                        .client_then(|c| c.stickers(&typ, &uri).map(Stickers::from_mpd_kv), resp),
                     Task::SetSticker(typ, uri, name, val, mode, resp) => self.client_then(
-                        |_, c| match mode {
+                        |c| match mode {
                             StickerSetMode::Inc => c.inc_sticker(&typ, &uri, &name, &val),
                             StickerSetMode::Set => c.set_sticker(&typ, &uri, &name, &val),
                             StickerSetMode::Dec => c.dec_sticker(&typ, &uri, &name, &val),
@@ -449,32 +440,32 @@ impl Connection {
                         resp,
                     ),
                     Task::DeleteSticker(typ, uri, name, resp) => self.client_then(
-                        |_, c| c.delete_sticker(typ, &uri, &name), resp
+                        |c| c.delete_sticker(typ, &uri, &name), resp
                     ),
                     Task::FindStickerOp(typ, base_uri, name, op, value, window, resp) => self.client_then(
-                        |_, c| c.find_sticker_op(typ, &base_uri, &name, op, &value, window), resp
+                        |c| c.find_sticker_op(typ, &base_uri, &name, op, &value, window), resp
                     ),
                     Task::GetPlaylists(resp) => self.client_then(
-                        |_, c| c.playlists().map(
+                        |c| c.playlists().map(
                             |playlists| playlists.into_iter().map(INodeInfo::from).collect()
                         ), resp
                     ),
-                    Task::LoadPlaylist(name, resp) => self.client_then(|_, c| c.load(&name, ..), resp),
+                    Task::LoadPlaylist(name, resp) => self.client_then(|c| c.load(&name, ..), resp),
                     Task::SaveQueueAsPlaylist(name, mode, resp) => self.client_then(
-                        |_, c| c.save(&name, Some(mode)), resp
+                        |c| c.save(&name, Some(mode)), resp
                     ),
                     Task::RenamePlaylist(old, new, resp) => self.client_then(
-                        |_, c| c.pl_rename(&old, &new), resp
+                        |c| c.pl_rename(&old, &new), resp
                     ),
                     Task::EditPlaylist(actions, resp) => {
-                        self.client_then(|_, c| c.pl_edit(&actions), resp)
+                        self.client_then(|c| c.pl_edit(&actions), resp)
                     }
                     Task::DeletePlaylist(name, resp) => {
-                        self.client_then(|_, c| c.pl_remove(&name), resp)
+                        self.client_then(|c| c.pl_remove(&name), resp)
                     }
-                    Task::GetStatus(resp) => self.client_then(|_, c| c.status(), resp),
+                    Task::GetStatus(resp) => self.client_then(|c| c.status(), resp),
                     Task::GetSongAtQueueId(id, resp) => self.client_then(
-                        |_, c| {
+                        |c| {
                             c.songs(id).map(|mut songs| {
                                 if !songs.is_empty() {
                                     // Found a song. Now fetch its stickers.
@@ -488,7 +479,7 @@ impl Connection {
                         resp,
                     ),
                     Task::SetPlaybackFlow(flow, resp) => self.client_then(
-                        |_, c| {
+                        |c| {
                             let repeat: bool;
                             let single: bool;
                             match flow {
@@ -513,36 +504,36 @@ impl Connection {
                         },
                         resp,
                     ),
-                    Task::SetCrossfade(fade, resp) => self.client_then(|_, c| c.crossfade(fade), resp),
+                    Task::SetCrossfade(fade, resp) => self.client_then(|c| c.crossfade(fade), resp),
                     Task::SetReplayGain(mode, resp) => {
-                        self.client_then(|_, c| c.replaygain(mode), resp)
+                        self.client_then(|c| c.replaygain(mode), resp)
                     }
-                    Task::SetMixRampDb(db, resp) => self.client_then(|_, c| c.mixrampdb(db), resp),
+                    Task::SetMixRampDb(db, resp) => self.client_then(|c| c.mixrampdb(db), resp),
                     Task::SetMixRampDelay(delay, resp) => {
-                        self.client_then(|_, c| c.mixrampdelay(delay), resp)
+                        self.client_then(|c| c.mixrampdelay(delay), resp)
                     }
-                    Task::SetRandom(state, resp) => self.client_then(|_, c| c.random(state), resp),
-                    Task::SetConsume(state, resp) => self.client_then(|_, c| c.consume(state), resp),
-                    Task::Pause(state, resp) => self.client_then(|_, c| c.pause(state), resp),
-                    Task::Stop(resp) => self.client_then(|_, c| c.stop(), resp),
-                    Task::Prev(resp) => self.client_then(|_, c| c.prev(), resp),
-                    Task::Next(resp) => self.client_then(|_, c| c.next(), resp),
-                    Task::PlayAtId(id, resp) => self.client_then(|_, c| c.switch(id), resp),
-                    Task::PlayAtPos(pos, resp) => self.client_then(|_, c| c.switch(pos), resp),
-                    Task::SwapPos(p1, p2, resp) => self.client_then(|_, c| c.swap(p1, p2), resp),
-                    Task::DeleteAtPos(p, resp) => self.client_then(|_, c| c.delete(p), resp),
-                    Task::ClearQueue(resp) => self.client_then(|_, c| c.clear(), resp),
-                    Task::Seek(pos, resp) => self.client_then(|_, c| c.rewind(pos), resp),
+                    Task::SetRandom(state, resp) => self.client_then(|c| c.random(state), resp),
+                    Task::SetConsume(state, resp) => self.client_then(|c| c.consume(state), resp),
+                    Task::Pause(state, resp) => self.client_then(|c| c.pause(state), resp),
+                    Task::Stop(resp) => self.client_then(|c| c.stop(), resp),
+                    Task::Prev(resp) => self.client_then(|c| c.prev(), resp),
+                    Task::Next(resp) => self.client_then(|c| c.next(), resp),
+                    Task::PlayAtId(id, resp) => self.client_then(|c| c.switch(id), resp),
+                    Task::PlayAtPos(pos, resp) => self.client_then(|c| c.switch(pos), resp),
+                    Task::SwapPos(p1, p2, resp) => self.client_then(|c| c.swap(p1, p2), resp),
+                    Task::DeleteAtPos(p, resp) => self.client_then(|c| c.delete(p), resp),
+                    Task::ClearQueue(resp) => self.client_then(|c| c.clear(), resp),
+                    Task::Seek(pos, resp) => self.client_then(|c| c.rewind(pos), resp),
                     Task::GetQueue(window, resp) => self.client_then(
-                        |_, c| c.queue(window).map(
+                        |c| c.queue(window).map(
                             |mpd_songs| mpd_songs.into_iter().map(SongInfo::from).collect()
                         ),
                         resp
                     ),
                     Task::GetQueueChanges(since, window, resp) => self.client_then(
-                        |_, c| c.changesposid(since, window), resp
+                        |c| c.changesposid(since, window), resp
                     ),
-                    Task::UpdateDb(resp) => self.client_then(|_, c| c.update(), resp),
+                    Task::UpdateDb(resp) => self.client_then(|c| c.update(), resp),
                     Task::GetEmbeddedCover(uri, resp) => self.maybe_download_image(
                         uri,
                         |client, uri| {client.readpicture(uri)},
@@ -554,29 +545,29 @@ impl Connection {
                         resp
                     ),
                     Task::List(term, query, groupby, resp) => self.client_then(
-                        |_, c| c.list(&term, &query, groupby), resp
+                        |c| c.list(&term, &query, groupby), resp
                     ),
                     Task::Find(query, window, resp) => self.client_then(
-                        |_, c| c.find(&query, window).map(|mpd_songs| {
+                        |c| c.find(&query, window).map(|mpd_songs| {
                             mpd_songs.into_iter().map(SongInfo::from).collect()
                         }
                     ), resp),
-                    Task::LsInfo(path, resp) => self.client_then(|_, c| {
+                    Task::LsInfo(path, resp) => self.client_then(|c| {
                         c.lsinfo(&path)
                          .map(|entries| entries.into_iter().map(INodeInfo::from).collect())
                     }, resp),
                     Task::GetPlaylist(name, window, resp) => self.client_then(
-                        |_, c| c.playlist(&name, window.clone()).map(
+                        |c| c.playlist(&name, window.clone()).map(
                             |mpd_songs| mpd_songs.into_iter().map(SongInfo::from).collect()
                         ), resp
                     ),
-                    Task::Add(uri, resp) => self.client_then(|_, c| c.push(&uri), resp),
-                    Task::AddMultiple(uris, resp) => self.client_then(|_, c| c.push_multiple(&uris), resp),
-                    Task::Insert(uri, pos, resp) => self.client_then(|_, c| c.insert(&uri, pos), resp),
-                    Task::InsertMultiple(uris, pos, resp) => self.client_then(|_, c| c.insert_multiple(&uris, pos), resp),
-                    Task::FindAdd(query, resp) => self.client_then(|_, c| c.findadd(&query), resp),
-                    Task::ClearTagTypes(resp) => self.client_then(|_, c| c.tagtypes_clear(), resp),
-                    Task::EnableTagTypes(types, resp) => self.client_then(move |_, c| {
+                    Task::Add(uri, resp) => self.client_then(|c| c.push(&uri), resp),
+                    Task::AddMultiple(uris, resp) => self.client_then(|c| c.push_multiple(&uris), resp),
+                    Task::Insert(uri, pos, resp) => self.client_then(|c| c.insert(&uri, pos), resp),
+                    Task::InsertMultiple(uris, pos, resp) => self.client_then(|c| c.insert_multiple(&uris, pos), resp),
+                    Task::FindAdd(query, resp) => self.client_then(|c| c.findadd(&query), resp),
+                    Task::ClearTagTypes(resp) => self.client_then(|c| c.tagtypes_clear(), resp),
+                    Task::EnableTagTypes(types, resp) => self.client_then(move |c| {
                         if let Some(types) = types.as_deref() {
                             c.tagtypes_enable(types)
                         } else {

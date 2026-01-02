@@ -1,5 +1,5 @@
-use crate::cache::{get_image_cache_path, sqlite};
-use crate::utils::{get_time_ago_desc, strip_filename_linux};
+use crate::cache::sqlite;
+use crate::utils::{get_image_cache_path, get_time_ago_desc, strip_filename_linux};
 use core::time::Duration;
 use derivative::Derivative;
 use gtk::glib;
@@ -94,10 +94,8 @@ pub struct SongInfo {
     pub queue_pos: Option<u32>, // Only set once at creation. Subsequent updates are kept in the Song GObject.
     // range: Option<Range>,
     pub album: Option<AlbumInfo>,
-    #[derivative(Default(value = "Cell::new(-1)"))]
-    pub track: Cell<i64>,
-    #[derivative(Default(value = "Cell::new(-1)"))]
-    pub disc: Cell<i64>,
+    pub track: Option<i64>,
+    pub disc: Option<i64>,
     // TODO: add albumsort
     // Store Date instead of string to save a tiny bit of memory.
     // Also gives us formatting flexibility in the future.
@@ -105,7 +103,7 @@ pub struct SongInfo {
     // TODO: Add more fields for managing classical music, such as composer, ensemble and movement number
     quality_grade: QualityGrade,
     // MusicBrainz stuff
-    mbid: Option<String>,
+    pub mbid: Option<String>,
     pub last_modified: Option<String>,
     pub last_played: Option<OffsetDateTime>,
 }
@@ -351,11 +349,11 @@ impl Song {
     }
 
     pub fn get_track(&self) -> i64 {
-        self.get_info().track.get()
+        self.get_info().track.unwrap_or(-1)
     }
 
     pub fn get_disc(&self) -> i64 {
-        self.get_info().disc.get()
+        self.get_info().disc.unwrap_or(-1)
     }
 
     pub fn is_playing(&self) -> bool {
@@ -467,8 +465,8 @@ impl From<mpd::song::Song> for SongInfo {
             queue_id: None,
             queue_pos: None,
             album: None,
-            track: Cell::new(-1),
-            disc: Cell::new(-1),
+            track: None,
+            disc: None,
             release_date: None,
             quality_grade: QualityGrade::Unknown,
             mbid: None,

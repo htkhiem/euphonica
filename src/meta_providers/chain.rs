@@ -26,11 +26,11 @@ impl MetadataProvider for MetadataChain {
     }
 
     fn get_album_meta(
-        &self,
+        &mut self,
         key: &mut AlbumInfo,
         mut existing: Option<models::AlbumMeta>,
     ) -> Option<models::AlbumMeta> {
-        for provider in self.providers.iter() {
+        for provider in self.providers.iter_mut() {
             existing = provider.get_album_meta(key, existing);
             // Update key document with new fields
             if let Some(meta) = &existing {
@@ -43,11 +43,11 @@ impl MetadataProvider for MetadataChain {
     }
 
     fn get_artist_meta(
-        &self,
+        &mut self,
         key: &mut ArtistInfo,
         mut existing: Option<models::ArtistMeta>,
     ) -> Option<models::ArtistMeta> {
-        for provider in self.providers.iter() {
+        for provider in self.providers.iter_mut() {
             existing = provider.get_artist_meta(key, existing);
             // Update key document with new fields
             if let Some(meta) = &existing {
@@ -59,8 +59,8 @@ impl MetadataProvider for MetadataChain {
         existing
     }
 
-    fn get_lyrics(&self, key: &SongInfo) -> Option<models::Lyrics> {
-        for provider in self.providers.iter() {
+    fn get_lyrics(&mut self, key: &SongInfo) -> Option<models::Lyrics> {
+        for provider in self.providers.iter_mut() {
             if let Some(lyrics) = provider.get_lyrics(key) {
                 return Some(lyrics);
             }

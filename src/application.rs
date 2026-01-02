@@ -21,7 +21,7 @@
 use crate::{
     EuphonicaWindow,
     cache::Cache,
-    client::{BackgroundTask, MpdWrapper},
+    client::MpdWrapper,
     config::{APPLICATION_USER_AGENT, VERSION},
     library::Library,
     player::Player,
@@ -148,18 +148,26 @@ mod imp {
                 // the background, and the the easiest way to call it back to foreground is to
                 // click on the desktop icon again, spawning another instance which should
                 // only live briefly to pass args to the primary one).
-                // Create cache controller
-                let cache = Cache::new();
-                let meta_sender = cache.get_sender();
 
                 // Create client instance (not connected yet)
-                let client = MpdWrapper::new(meta_sender.clone());
+                let client = MpdWrapper::new();
+
+                // Create cache controller
+                let cache = Cache::new(client.clone());
 
                 // Create controllers
                 // These two are GObjects (already refcounted by GLib)
                 let player = Player::default();
+                player.setup(
+                    self.obj().clone(),
+                    client.clone(),
+                    cache.clone(),
+                );
                 let library = Library::default();
-                cache.set_mpd_client(client.clone());
+                library.setup(
+                    client.clone(),
+                    player.clone(),
+                );
 
                 let _ = self.cache.set(cache);
                 let _ = self.client.set(client);
@@ -171,17 +179,6 @@ mod imp {
                 obj.set_accels_for_action("app.quit", &["<primary>q"]);
                 obj.set_accels_for_action("app.fullscreen", &["F11"]);
                 obj.set_accels_for_action("app.refresh", &["F5"]);
-
-                self.library.get().unwrap().setup(
-                    self.client.get().unwrap().clone(),
-                    self.cache.get().unwrap().clone(),
-                    self.player.get().unwrap().clone(),
-                );
-                self.player.get().unwrap().setup(
-                    self.obj().clone(),
-                    self.client.get().unwrap().clone(),
-                    self.cache.get().unwrap().clone(),
-                );
 
                 application.refresh();
 
@@ -223,7 +220,7 @@ impl EuphonicaApplication {
             if vd.lookup_value("minimized", None).is_some() {
                 this.imp().start_minimized.set(true);
             }
-            ControlFlow::Continue(()) // let execution continue
+            -1 // let execution continue
         });
 
         // Background mode
@@ -330,13 +327,17 @@ impl EuphonicaApplication {
     }
 
     fn refresh(&self) {
-        self.get_library().clear();
-        self.get_client().queue_connect();
+        let client = self.get_client();
+        glib::spawn_future_local(async move {
+            client.connect().await;
+        });
     }
 
     fn update_db(&self) {
-        self.get_client()
-            .queue_background(BackgroundTask::Update, true);
+        let client = self.get_client();
+        glib::spawn_future_local(async move {
+            client.update_db().await;
+        });
     }
 
     pub fn show_about(&self) {
@@ -348,7 +349,7 @@ impl EuphonicaApplication {
             .version(VERSION)
             .developers(vec!["htkhiem2000", "sonicv6"])
             .license_type(gtk::License::Gpl30)
-            .copyright("© 2025 htkhiem2000")
+            .copyright("© 2026 htkhiem2000")
             .build();
 
         about.add_credit_section(

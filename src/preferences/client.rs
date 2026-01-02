@@ -13,7 +13,7 @@ use mpd::status::AudioFormat;
 use crate::{
     client::{
         ClientState, ConnectionState, MpdWrapper,
-        password::{get_mpd_password, set_mpd_password},
+        password::{get_mpd_password, get_mpd_password_async, set_mpd_password},
         state::StickersSupportLevel,
     },
     player::{FftStatus, Player},
@@ -280,7 +280,7 @@ impl Default for ClientPreferences {
 
 impl ClientPreferences {
     fn on_connection_state_changed(&self, cs: &ClientState) {
-        match cs.get_connection_state() {
+        match cs.connection_state() {
             ConnectionState::NotConnected => {
                 self.imp().mpd_status.set_subtitle("Failed to connect");
                 self.imp().mpd_status.set_enable_expansion(false);
@@ -295,7 +295,7 @@ impl ClientPreferences {
                 set_status_icon(&self.imp().mpd_status_icon.get(), StatusIconState::Loading);
                 self.imp().reconnect.set_sensitive(false);
             }
-            ConnectionState::Unauthenticated | ConnectionState::PasswordNotAvailable => {
+            ConnectionState::Unauthenticated => {
                 self.imp().mpd_status.set_subtitle("Authentication failed");
                 self.imp().mpd_status.set_enable_expansion(false);
                 set_status_icon(&self.imp().mpd_status_icon.get(), StatusIconState::Disabled);
@@ -365,7 +365,7 @@ impl ClientPreferences {
         let row = self.imp().stickers_status.get();
         let icon = self.imp().stickers_status_icon.get();
 
-        let (icon_state, title, subtitle) = cs.get_stickers_support_level().get_ui_elements();
+        let (icon_state, title, subtitle) = cs.stickers_support_level().get_ui_elements();
         set_status_icon(&icon, icon_state);
         row.set_title(&title);
         row.set_subtitle(&subtitle);
@@ -394,7 +394,7 @@ impl ClientPreferences {
             .set_text(&conn_settings.uint("mpd-port").to_string());
         let password_field = imp.mpd_password.get();
         glib::spawn_future_local(async move {
-            match get_mpd_password().await {
+            match get_mpd_password_async().await {
                 Ok(maybe_password) => {
                     // At startup the password entry is disabled with a tooltip stating that
                     // the credential store is not available.
@@ -503,7 +503,7 @@ impl ClientPreferences {
                         };
                         match set_mpd_password(password).await {
                             Ok(()) => {
-                                client.connect_async().await;
+                                client.connect().await;
                             }
                             Err(msg) => {
                                 println!("{msg}");
