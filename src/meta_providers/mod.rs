@@ -5,7 +5,7 @@ pub mod lrclib;
 pub mod models;
 pub mod musicbrainz;
 
-pub use base::{MetadataProvider, ProviderMessage, utils};
+pub use base::{MetadataProvider, utils};
 pub use chain::{MetadataChain, get_provider};
 
 pub mod prelude {

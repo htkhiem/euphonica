@@ -287,7 +287,7 @@ pub static LOCAL_TZ_OFFSET: OnceLock<Result<UtcOffset, IndeterminateOffset>> = O
 /// Safely retrieve the initialized local UTC offset, computing it if necessary.
 /// Returns the UtcOffset or the error encountered during system lookup.
 fn get_local_tz_offset() -> Result<UtcOffset, IndeterminateOffset> {
-    *LOCAL_TZ_OFFSET.get_or_init(|| UtcOffset::current_local_offset())
+    *LOCAL_TZ_OFFSET.get_or_init(UtcOffset::current_local_offset)
 }
 
 /// Static storage for the determined locale format string.

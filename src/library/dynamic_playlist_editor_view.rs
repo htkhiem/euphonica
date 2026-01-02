@@ -14,7 +14,6 @@ use strum::{EnumCount, IntoEnumIterator, VariantArray};
 
 use crate::{
     cache::{Cache, ImageAction, placeholders::ALBUMART_PLACEHOLDER, sqlite},
-    client::ClientState,
     common::{
         DynamicPlaylist, Song, SongRow,
         dynamic_playlist::{AutoRefresh, Ordering, Rule},
@@ -735,7 +734,7 @@ impl DynamicPlaylistEditorView {
                     Ok(songs) => {
                         this.imp().song_list.extend_from_slice(&songs);
                         this.imp().content_pages.set_visible_child_name(
-                            if songs.len() > 0 {"content"} else {"empty"}
+                            if !songs.is_empty() {"content"} else {"empty"}
                         );
                     }
                     Err(e) => {dbg!(e);}

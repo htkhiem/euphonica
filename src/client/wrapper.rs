@@ -1,25 +1,19 @@
 use async_channel::{Receiver, Sender};
 use chrono::{DateTime, Duration, Local};
 use futures::executor;
-use ::glib::WeakRef;
 use glib::clone;
 use gtk::{gio, glib};
-use gtk::{gio::prelude::*, glib::BoxedAnyObject};
+use gtk::gio::prelude::*;
 use lru::LruCache;
 use mpd::{Query, Status, Term};
-use mpd::error::ServerError;
 use mpd::search::{Operation as QueryOperation, Window};
 use mpd::{
-    Channel, EditAction, Idle, Output, SaveMode, Subsystem, Version,
-    client::Client,
+    Channel, EditAction, Output, SaveMode, Subsystem, Version,
     error::{Error as MpdError, ErrorCode as MpdErrorCode},
-    lsinfo::LsInfoEntry,
     song::Id,
 };
 use nohash_hasher::NoHashHasher;
-use once_cell::sync::Lazy;
 use rand::seq::SliceRandom;
-use resolve_path::PathResolveExt;
 use rustc_hash::FxHashSet;
 use time::OffsetDateTime;
 use zbus::{Connection as ZConnection, Proxy as ZProxy};
@@ -27,13 +21,10 @@ use zbus::{Connection as ZConnection, Proxy as ZProxy};
 use std::borrow::Cow;
 use std::cmp::Ordering as StdOrdering;
 use std::hash::BuildHasherDefault;
-use std::net::TcpStream;
 use std::num::NonZero;
-use std::os::unix::net::UnixStream;
-use std::sync::{Arc, Mutex};
 use std::thread;
 use std::{
-    cell::{Cell, RefCell},
+    cell::RefCell,
     rc::Rc,
 };
 use uuid::Uuid;
@@ -42,7 +33,6 @@ use crate::cache::sqlite;
 use crate::common::DynamicPlaylist;
 use crate::common::dynamic_playlist::{QueryLhs, StickerObjectType, StickerOperation, Ordering};
 use crate::utils::settings_manager;
-use crate::window::EuphonicaWindow;
 use crate::{
     common::{Album, AlbumInfo, Artist, INode, Song, SongInfo, Stickers, dynamic_playlist::{Rule}},
     player::PlaybackFlow,
@@ -50,9 +40,7 @@ use crate::{
 };
 
 use super::connection::{Connection, Error as ClientError, Result as ClientResult, Task};
-use super::password::get_mpd_password;
 use super::state::{ClientState, ConnectionState, StickersSupportLevel};
-use super::stream::StreamWrapper;
 use super::StickerSetMode;
 
 static MAX_RETRIES: u32 = 3;
@@ -387,45 +375,42 @@ impl MpdWrapper {
     }
 
     async fn handle_error<T>(&self, res: ClientResult<T>) -> ClientResult<T> {
-        match &res {
-            Err(e) => {
-                match e {
-                    ClientError::Mpd(e) => {
-                        match e {
-                            MpdError::Io(_e) => {
-                                self.state
-                                    .set_connection_state(ConnectionState::NotConnected);
-                                // TODO
-                            }
-                            MpdError::Parse(_e) => {}
-                            MpdError::Proto(_e) => {}
-                            MpdError::Server(e) => {
-                                match e.code {
-                                    MpdErrorCode::Password => {
-                                        self.state
-                                            .set_connection_state(ConnectionState::WrongPassword);
-                                    }
-                                    MpdErrorCode::Permission => {
-                                        self.state
-                                            .set_connection_state(ConnectionState::Unauthenticated);
-                                    }
-                                    _ => {
-                                        // TODO
-                                    }
+        if let Err(e) = &res {
+            match e {
+                ClientError::Mpd(e) => {
+                    match e {
+                        MpdError::Io(_e) => {
+                            self.state
+                                .set_connection_state(ConnectionState::NotConnected);
+                            // TODO
+                        }
+                        MpdError::Parse(_e) => {}
+                        MpdError::Proto(_e) => {}
+                        MpdError::Server(e) => {
+                            match e.code {
+                                MpdErrorCode::Password => {
+                                    self.state
+                                        .set_connection_state(ConnectionState::WrongPassword);
+                                }
+                                MpdErrorCode::Permission => {
+                                    self.state
+                                        .set_connection_state(ConnectionState::Unauthenticated);
+                                }
+                                _ => {
+                                    // TODO
                                 }
                             }
                         }
                     }
-                    ClientError::NotConnected | ClientError::Socket | ClientError::Tcp => {
-                        self.state
-                            .set_connection_state(ConnectionState::NotConnected);
-                    }
-                    _ => {
-                        // TODO
-                    }
+                }
+                ClientError::NotConnected | ClientError::Socket | ClientError::Tcp => {
+                    self.state
+                        .set_connection_state(ConnectionState::NotConnected);
+                }
+                _ => {
+                    // TODO
                 }
             }
-            _ => {}
         }
 
         res
@@ -715,7 +700,7 @@ impl MpdWrapper {
 
     /// Fetch the current queue in an asynchronous batchwise manner.
     pub async fn get_current_queue<F>(&self, respond: F) -> ClientResult<()>
-    where F: Fn(Vec<Song>) -> () {
+    where F: Fn(Vec<Song>) {
         // This command is only called upon connection so we should drop the entire cache
         {
             self.song_cache.borrow_mut().clear();
@@ -767,7 +752,7 @@ impl MpdWrapper {
                 for change in changes.into_iter() {
                     let cached_song;
                     {
-                        cached_song = self.song_cache.borrow_mut().get(&change.id.0).map(|s| s.clone());
+                        cached_song = self.song_cache.borrow_mut().get(&change.id.0).cloned();
                     }
                     if let Some(cached_song) = cached_song {
                         cached_song.set_queue_pos(change.pos);
@@ -975,7 +960,7 @@ impl MpdWrapper {
                 s
             ), r).await?;
             if !songs.is_empty() {
-                let _ = respond(songs);
+                respond(songs);
                 curr_len += BATCH_SIZE;
             } else {
                 more = false;
@@ -1059,7 +1044,7 @@ impl MpdWrapper {
             let (s, r) = oneshot::channel();
             let mut songs = self.background(Task::Find(query, Window::from((0, 1)), s), r).await?;
             if !songs.is_empty() {
-                let artists = SongInfo::from(std::mem::take(&mut songs[0])).into_artist_infos();
+                let artists = std::mem::take(&mut songs[0]).into_artist_infos();
                 for artist in artists.into_iter() {
                     if recent_names_set.contains(&artist.name)
                         && already_parsed.insert(artist.name.clone())
@@ -1175,7 +1160,7 @@ impl MpdWrapper {
             while inserted < uris.len() {
                 let to_insert = (uris.len() - inserted).min(BATCH_SIZE);
                 let batch = uris[inserted..(inserted + to_insert)].iter_mut().map(
-                    |uri| std::mem::take(uri)
+                    std::mem::take
                 ).collect();
                 if let Some(pos) = insert_pos {
                     let (s, r) = oneshot::channel();
@@ -1186,19 +1171,17 @@ impl MpdWrapper {
                 }
                 inserted += to_insert;
             }
+        } else if recursive {
+            // TODO: support inserting at specific location in queue
+            let mut query = Query::new();
+            query.and(Term::Base, std::mem::take(&mut uris[0]));
+            self.find_add(query).await?;
+        } else if let Some(pos) = insert_pos {
+            let (s, r) = oneshot::channel();
+            self.foreground(Task::Insert(std::mem::take(&mut uris[0]), pos, s), r).await?;
         } else {
-            if recursive {
-                // TODO: support inserting at specific location in queue
-                let mut query = Query::new();
-                query.and(Term::Base, std::mem::take(&mut uris[0]));
-                self.find_add(query).await?;
-            } else if let Some(pos) = insert_pos {
-                let (s, r) = oneshot::channel();
-                self.foreground(Task::Insert(std::mem::take(&mut uris[0]), pos, s), r).await?;
-            } else {
-                let (s, r) = oneshot::channel();
-                self.foreground(Task::Add(std::mem::take(&mut uris[0]), s), r).await?;
-            };
+            let (s, r) = oneshot::channel();
+            self.foreground(Task::Add(std::mem::take(&mut uris[0]), s), r).await?;
         }
 
         Ok(())
@@ -1233,7 +1216,7 @@ impl MpdWrapper {
                 match obj {
                     StickerObjectType::Song => {
                         // In this case the names are the URIs themselves
-                        let _ = respond(names);
+                        respond(names);
                         curr_len += BATCH_SIZE;
                     }
                     StickerObjectType::Playlist => {
@@ -1242,7 +1225,7 @@ impl MpdWrapper {
                             self.get_playlist_song_infos(
                                 playlist_name,
                                 &mut |batch: Vec<SongInfo>| {
-                                    let _ = respond(
+                                    respond(
                                         batch.into_iter().map(|song| song.uri).collect(),
                                     );
                                 }

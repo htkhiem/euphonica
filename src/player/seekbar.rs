@@ -224,6 +224,6 @@ impl Seekbar {
             .sync_create()
             .build();
 
-        let _ = self.imp().player.set(Some(&player));
+        self.imp().player.set(Some(player));
     }
 }

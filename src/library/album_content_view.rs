@@ -6,7 +6,7 @@ use crate::{
     },
     client::{ClientState, state::StickersSupportLevel},
     common::{
-        Album, AlbumInfo, Artist, ContentView, Rating, RowAddButtons, Song, SongRow,
+        Album, Artist, ContentView, Rating, RowAddButtons, Song, SongRow,
     },
     library::add_to_playlist::AddToPlaylistButton,
     utils::{format_secs_as_duration, tokio_runtime},
@@ -445,10 +445,7 @@ impl AlbumContentView {
             self.imp().album.borrow().as_ref(),
             self.imp().cache.get()
         ) {
-            match cache.set_cover(album.get_folder_uri().to_owned(), path).await {
-                Err(e) => {dbg!(e);},
-                _ => {}
-            }
+            if let Err(e) = cache.set_cover(album.get_folder_uri().to_owned(), path).await {dbg!(e);}
         }
     }
 

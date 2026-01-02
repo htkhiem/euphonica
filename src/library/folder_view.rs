@@ -448,7 +448,7 @@ impl FolderView {
         glib::spawn_future_local(clone!(#[weak(rename_to = this)] self, #[weak] inode, async move {
             if let Some(name) = inode.get_name() {
                 if inode.get_info().inode_type == INodeType::Folder {
-                    this.library().navigate_to(&name).await;
+                    this.library().navigate_to(name).await;
                 }
             }
         }));

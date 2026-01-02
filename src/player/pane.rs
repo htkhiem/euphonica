@@ -1,7 +1,7 @@
 use ashpd::desktop::file_chooser::{FileFilter, SelectedFiles};
 use glib::{clone, closure_local};
 use gtk::{
-    CompositeTemplate, gdk,
+    CompositeTemplate,
     glib::{self, Variant},
     prelude::*,
     subclass::prelude::*,
@@ -13,7 +13,7 @@ use std::{
 };
 
 use crate::{
-    cache::{Cache, placeholders::{ALBUMART_PLACEHOLDER, EMPTY_ALBUM_STRING, EMPTY_ARTIST_STRING}},
+    cache::{Cache, placeholders::{EMPTY_ALBUM_STRING, EMPTY_ARTIST_STRING}},
     client::{ClientState, state::StickersSupportLevel},
     common::{ImageStack, Rating, Song, paintables::FadePaintable},
     player::seekbar::Seekbar,

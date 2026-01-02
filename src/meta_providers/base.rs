@@ -15,7 +15,7 @@ pub fn sleep_between_requests(request_time: SystemTime) {
     let now = SystemTime::now();
     // .duration_since returns an Err if the target_time is in the past
     if let Ok(remaining) = wake_time.duration_since(now) {
-        println!("Sleeping for {:?}", remaining);
+        println!("Sleeping for {remaining:?}");
         thread::sleep(remaining);
     }
 }

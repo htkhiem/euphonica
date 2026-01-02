@@ -6,7 +6,7 @@ use mpd::{
 use oneshot::Sender as OneShotSender;
 use resolve_path::PathResolveExt;
 use std::{
-    borrow::Cow, cell::RefCell, net::TcpStream, os::unix::net::UnixStream, path::Path, result,
+    borrow::Cow, net::TcpStream, os::unix::net::UnixStream, result,
 };
 
 use crate::{
@@ -15,7 +15,6 @@ use crate::{
 
 use super::password;
 use super::StickerSetMode;
-use super::state::StickersSupportLevel;
 
 #[derive(Debug)]
 pub enum Error {
@@ -365,7 +364,6 @@ impl Connection {
         let thumb = sqlite::find_image_by_key(&uri, None, true).expect("Sqlite DB error");
         if let (Some(hires), Some(thumb)) = (hires, thumb) {
             resp.send(Ok(Some((hires, thumb)))).expect("Broken oneshot sender");
-            return;
         } else {
             // Not available locally => try to download
             self.client_then(|c| {
@@ -427,15 +425,15 @@ impl Connection {
                         |c| c.output(id, state), resp
                     ),
                     Task::GetSticker(typ, uri, name, resp) => self.client_then(
-                        |c| c.sticker(&typ, &uri, &name), resp
+                        |c| c.sticker(typ, &uri, &name), resp
                     ),
                     Task::GetKnownStickers(typ, uri, resp) => self
-                        .client_then(|c| c.stickers(&typ, &uri).map(Stickers::from_mpd_kv), resp),
+                        .client_then(|c| c.stickers(typ, &uri).map(Stickers::from_mpd_kv), resp),
                     Task::SetSticker(typ, uri, name, val, mode, resp) => self.client_then(
                         |c| match mode {
-                            StickerSetMode::Inc => c.inc_sticker(&typ, &uri, &name, &val),
-                            StickerSetMode::Set => c.set_sticker(&typ, &uri, &name, &val),
-                            StickerSetMode::Dec => c.dec_sticker(&typ, &uri, &name, &val),
+                            StickerSetMode::Inc => c.inc_sticker(typ, &uri, &name, &val),
+                            StickerSetMode::Set => c.set_sticker(typ, &uri, &name, &val),
+                            StickerSetMode::Dec => c.dec_sticker(typ, &uri, &name, &val),
                         },
                         resp,
                     ),
@@ -586,7 +584,7 @@ impl Connection {
                                 for msg in msgs {
                                     let content = msg.message.as_str();
                                     // Send any message to get out of wait().
-                                    println!("Client received message: {}", content);
+                                    println!("Client received message: {content}");
                                 }
                             }
                         }

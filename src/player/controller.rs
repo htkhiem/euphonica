@@ -1,13 +1,13 @@
 extern crate mpd;
 use crate::{
     application::EuphonicaApplication,
-    cache::{Cache, CacheState, placeholders::ALBUMART_PLACEHOLDER, sqlite},
+    cache::{Cache, sqlite},
     client::{ClientState, ConnectionState, Error as ClientError, MpdWrapper, Result as ClientResult, StickerSetMode},
-    common::{QualityGrade, Song, SongInfo, Stickers},
+    common::{QualityGrade, Song, Stickers},
     config::APPLICATION_ID,
     meta_providers::models::Lyrics,
     utils::{
-        current_unix_timestamp, get_image_cache_path, prettify_audio_format, settings_manager, strip_filename_linux
+        current_unix_timestamp, get_image_cache_path, prettify_audio_format, settings_manager
     },
 };
 use async_lock::OnceCell as AsyncOnceCell;
@@ -20,12 +20,10 @@ use mpris_server::{
 
 use adw::subclass::prelude::*;
 use glib::{BoxedAnyObject, clone, closure_local, subclass::Signal};
-use gtk::gdk::{self, Texture};
 use gtk::{gio, glib, prelude::*};
 use mpd::{
     ReplayGain, SaveMode, Subsystem,
-    error::Error as MpdError,
-    status::{AudioFormat, State, Status},
+    status::{AudioFormat, State},
 };
 use std::{
     cell::{Cell, OnceCell, RefCell},
@@ -174,7 +172,7 @@ mod imp {
     use crate::{
         application::EuphonicaApplication, meta_providers::models::Lyrics
     };
-    use ::glib::ParamSpecObject;
+    
     use glib::{
         ParamSpec, ParamSpecBoolean, ParamSpecChar, ParamSpecDouble, ParamSpecEnum, ParamSpecFloat,
         ParamSpecInt, ParamSpecString, ParamSpecUInt, ParamSpecUInt64,
@@ -1169,7 +1167,7 @@ impl Player {
 
     /// Returns true if we have lyrics for the current song and it is synced; false otherwise.
     pub fn lyrics_are_synced(&self) -> bool {
-        self.imp().lyrics.borrow().as_ref().map_or(false, |lyrics| lyrics.synced)
+        self.imp().lyrics.borrow().as_ref().is_some_and(|lyrics| lyrics.synced)
     }
 
     pub fn current_lyric_line(&self) -> u32 {
@@ -1266,7 +1264,7 @@ impl Player {
                 } else {
                     // This position changed. Push newly received song into it.
                     // TODO: reduce cloning
-                    new_segment.push(Song::from(changes[change_idx].clone()).upcast());
+                    new_segment.push(changes[change_idx].clone().upcast());
                     change_idx += 1;
                 }
             }
@@ -1342,11 +1340,11 @@ impl Player {
     }
 
     pub fn artist(&self) -> Option<String> {
-        self.imp().current_song.borrow().as_ref().map(|s| s.get_artist_str()).flatten()
+        self.imp().current_song.borrow().as_ref().and_then(|s| s.get_artist_str())
     }
 
     pub fn album(&self) -> Option<String> {
-        self.imp().current_song.borrow().as_ref().map(|s| s.get_album()).flatten().map(|a| a.title.to_owned())
+        self.imp().current_song.borrow().as_ref().and_then(|s| s.get_album()).map(|a| a.title.to_owned())
     }
 
     pub async fn current_song_cover_path(&self, thumbnail: bool) -> ClientResult<Option<PathBuf>> {
@@ -1354,14 +1352,11 @@ impl Player {
             gio::spawn_blocking(move || Ok(
                 sqlite::find_cover_by_uri(&uri, thumbnail)
                     .map_err(|_| ClientError::Internal)?
-                    .map(
-                        |name| if !name.is_empty() {
+                    .and_then(|name| if !name.is_empty() {
                             let mut path = get_image_cache_path();
                             path.push(name);
                             Some(path)
-                        } else {None}
-                    )
-                    .flatten()
+                        } else {None})
             )).await.unwrap()
         } else {
             Ok(None)

@@ -7,7 +7,7 @@ use std::{
 
 use crate::{
     cache::{Cache, CacheState},
-    common::{Artist, ArtistInfo},
+    common::Artist,
     window::EuphonicaWindow,
 };
 

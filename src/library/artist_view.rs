@@ -8,7 +8,6 @@ use glib::{Properties, WeakRef, clone, subclass::Signal};
 use super::{ArtistCell, ArtistContentView, Library};
 use crate::{
     cache::Cache,
-    client::ClientState,
     common::Artist,
     utils::{LazyInit, g_cmp_str_options, g_search_substr, settings_manager},
 };

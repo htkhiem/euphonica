@@ -1,13 +1,13 @@
 use crate::{
     cache::{Cache, sqlite},
-    client::{ClientState, MpdWrapper, StickerSetMode, Result as ClientResult, Error as ClientError},
+    client::{MpdWrapper, StickerSetMode, Result as ClientResult, Error as ClientError},
     common::{Album, Artist, DynamicPlaylist, INode, Song, Stickers},
     player::Player,
     utils::settings_manager,
 };
 use chrono::Local;
 use derivative::Derivative;
-use glib::{clone, closure_local, subclass::Signal};
+use glib::subclass::Signal;
 use gtk::{gio, glib, prelude::*};
 use std::{borrow::Cow, cell::OnceCell, rc::Rc, sync::OnceLock, vec::Vec};
 use std::cell::{Cell, RefCell};
@@ -17,7 +17,7 @@ use once_cell::sync::Lazy;
 
 use adw::subclass::prelude::*;
 
-use mpd::{EditAction, Query, SaveMode, Term, error::Error as MpdError, search::Operation as QueryOperation};
+use mpd::{EditAction, Query, SaveMode, Term, search::Operation as QueryOperation};
 
 mod imp {
 
@@ -356,7 +356,7 @@ impl Library {
     pub async fn init_dyn_playlists(&self, refresh: bool) -> ClientResult<()> {
         if !self.imp().dyn_playlists_initialized.get() || refresh {
             self.imp().dyn_playlists.remove_all();
-            let inode_infos = gio::spawn_blocking(|| sqlite::get_dynamic_playlists())
+            let inode_infos = gio::spawn_blocking(sqlite::get_dynamic_playlists)
                 .await
                 .unwrap()
                 .map_err(|_| ClientError::Internal)?;
@@ -379,7 +379,7 @@ impl Library {
 
     pub async fn clear_recent_songs(&self) -> ClientResult<()> {
         self.imp().recent_songs.remove_all(); // Will make Recent View switch to the empty StatusPage
-        gio::spawn_blocking(|| sqlite::clear_history()).await.unwrap().map_err(|_| ClientError::Internal)
+        gio::spawn_blocking(sqlite::clear_history).await.unwrap().map_err(|_| ClientError::Internal)
     }
 
     /// Get a reference to the local playlists store

@@ -8,7 +8,7 @@ use std::{
 
 use crate::{
     cache::{Cache, placeholders::ALBUMART_THUMBNAIL_PLACEHOLDER},
-    common::{INode, inode::INodeInfo},
+    common::INode,
 };
 
 use super::Library;

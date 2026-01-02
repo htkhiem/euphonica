@@ -1,26 +1,10 @@
 use glib::{
-    Object, ParamSpec, ParamSpecChar, ParamSpecInt, ParamSpecString, clone, closure_local,
-    signal::SignalHandlerId, Properties, derived_properties
+    Properties, derived_properties
 };
-use gtk::{CompositeTemplate, Image, Label, gdk::{self, Paintable}, prelude::*, subclass::prelude::*};
-use once_cell::sync::Lazy;
-use std::{
-    cell::{Cell, OnceCell, RefCell},
-    rc::Rc,
-};
-use derivative::Derivative;
+use gtk::{CompositeTemplate, gdk::{self}, prelude::*, subclass::prelude::*};
+use std::cell::Cell;
 
-use crate::{
-    cache::{
-        Cache, CacheState,
-        placeholders::{ALBUMART_PLACEHOLDER, ALBUMART_THUMBNAIL_PLACEHOLDER, EMPTY_ALBUM_STRING, EMPTY_ARTIST_STRING},
-    },
-    common::{
-        Album, AlbumInfo, Rating,
-        marquee::{Marquee, MarqueeWrapMode},
-    },
-    utils::settings_manager,
-};
+use crate::cache::placeholders::{ALBUMART_PLACEHOLDER, ALBUMART_THUMBNAIL_PLACEHOLDER};
 
 #[derive(Clone, Copy, Eq, PartialEq, Debug, Default)]
 pub enum ImageState {
@@ -90,6 +74,12 @@ glib::wrapper! {
     pub struct ImageStack(ObjectSubclass<imp::ImageStack>)
         @extends gtk::Widget,
         @implements gtk::Accessible, gtk::Buildable, gtk::ConstraintTarget;
+}
+
+impl Default for ImageStack {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ImageStack {

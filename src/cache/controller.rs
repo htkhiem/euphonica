@@ -12,9 +12,7 @@
 use futures::TryFutureExt;
 extern crate bson;
 use asyncified::Asyncified;
-use async_channel::{Receiver, Sender};
 use gio::prelude::*;
-use glib::clone;
 use gtk::{
     gdk::{self, Texture},
     gio, glib,
@@ -23,15 +21,14 @@ use image::ImageReader;
 use lru::LruCache;
 use once_cell::sync::Lazy;
 use std::{
-    cell::OnceCell, fmt, fs::create_dir_all, path::PathBuf, rc::Rc, result, sync::{Arc, RwLock, Mutex}
+    fmt, fs::create_dir_all, rc::Rc, result, sync::{Arc, Mutex}
 };
 use std::{num::NonZeroUsize};
-use uuid::Uuid;
 
 use crate::{
-    client::{Error as ClientError, MpdWrapper, Result as ClientResult},
+    client::{Error as ClientError, MpdWrapper},
     common::{AlbumInfo, ArtistInfo},
-    meta_providers::{MetadataChain, ProviderMessage, models, prelude::*, utils::get_best_image},
+    meta_providers::{MetadataChain, models, prelude::*, utils::get_best_image},
     utils::{get_app_cache_path, get_image_cache_path, get_new_image_paths, resize_convert_image, save_and_register_image, settings_manager},
 };
 use crate::{
@@ -154,7 +151,7 @@ fn get_image_internal(key: &str, prefix: Option<&'static str>, thumbnail: bool) 
             let tex;
             {
                 // Cloning GObjects is cheap since they're just references
-                tex = IMAGE_CACHE.lock().unwrap().get(&filename).map(|tex| tex.clone());
+                tex = IMAGE_CACHE.lock().unwrap().get(&filename).cloned();
             }
             if tex.is_some() {
                 Ok(tex)
@@ -260,9 +257,9 @@ impl Cache {
             ).unwrap(),
             state: CacheState::default(),
         };
-        let res = Rc::new(cache);
+        
 
-        res
+        Rc::new(cache)
     }
     /// Re-initialise list of providers when priority order is changed
     pub fn reinit_meta_providers(&self) {
@@ -447,7 +444,7 @@ impl Cache {
             }
             if let (false, Some(meta)) = (
                 folder_failed_before,
-                self.get_album_meta(&album, true, false).await?
+                self.get_album_meta(album, true, false).await?
             ) {
                 let album = album.to_owned();
                 return self.external.call(move |_| {
@@ -490,7 +487,7 @@ impl Cache {
         let filepath = String::from(urlencoding::decode(if path.starts_with("file://") {
             &path[7..]
         } else {
-            &path
+            path
         })
         .map_err(|_| Error::Path)?);
         let state = self.get_cache_state();
@@ -661,7 +658,7 @@ impl Cache {
 
         // Failing the above, ask external providers
         if external && !failed_before {
-            if let Some(meta) = self.get_artist_meta(&artist, true, false).await? {
+            if let Some(meta) = self.get_artist_meta(artist, true, false).await? {
                 let artist = artist.to_owned();
                 return self.external.call(move |_| {
                     // Always check with our DB first as a prior call might have downloaded the

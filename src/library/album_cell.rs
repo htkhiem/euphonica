@@ -13,10 +13,10 @@ use derivative::Derivative;
 use crate::{
     cache::{
         Cache, CacheState,
-        placeholders::{ALBUMART_THUMBNAIL_PLACEHOLDER, EMPTY_ALBUM_STRING, EMPTY_ARTIST_STRING},
+        placeholders::{EMPTY_ALBUM_STRING, EMPTY_ARTIST_STRING},
     },
     common::{
-        Album, AlbumInfo, Rating,
+        Album, Rating,
         marquee::{Marquee, MarqueeWrapMode},
         ImageStack
     },

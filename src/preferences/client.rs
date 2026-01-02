@@ -13,7 +13,7 @@ use mpd::status::AudioFormat;
 use crate::{
     client::{
         ClientState, ConnectionState, MpdWrapper,
-        password::{get_mpd_password, get_mpd_password_async, set_mpd_password},
+        password::{get_mpd_password_async, set_mpd_password},
         state::StickersSupportLevel,
     },
     player::{FftStatus, Player},

@@ -81,7 +81,7 @@ mod imp {
     use std::cell::Cell;
 
     use ashpd::desktop::file_chooser::SelectedFiles;
-    use async_channel::Sender;
+    
     use gio::{ActionEntry, SimpleActionGroup};
     use mpd::SaveMode;
 
@@ -417,14 +417,11 @@ mod imp {
                                     .clone(),
                             );
                         }
-                        match this.library.get().unwrap().add_songs_to_playlist(
+                        if let Err(e) = this.library.get().unwrap().add_songs_to_playlist(
                             this.playlist.borrow().as_ref().unwrap().get_uri().to_owned(),
                             &song_list,
                             SaveMode::Replace,
-                        ).await {
-                            Err(e) => {dbg!(e);}
-                            _ => {}
-                        };
+                        ).await {dbg!(e);};
                         this.history_idx.replace(0);
                     }
                     this.history.borrow_mut().clear();
@@ -654,7 +651,7 @@ impl PlaylistContentView {
                                 );
                             }
                             Err(e) => {
-                                this.imp().window.get().unwrap().show_dialog("Rename Failed", &format!("{:?}", e));
+                                this.imp().window.get().unwrap().show_dialog("Rename Failed", &format!("{e:?}"));
                             }
                         }
                     }

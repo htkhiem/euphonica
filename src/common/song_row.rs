@@ -5,15 +5,14 @@ use glib::{
 use gtk::{CompositeTemplate, gdk, glib, prelude::*, subclass::prelude::*};
 use once_cell::sync::Lazy;
 use std::{
-    cell::{Cell, OnceCell, Ref, RefCell},
+    cell::{OnceCell, Ref, RefCell},
     rc::Rc,
 };
 
 use crate::{
-    cache::{Cache, CacheState, placeholders::ALBUMART_THUMBNAIL_PLACEHOLDER},
-    common::{QualityGrade, ImageStack, ImageState, Marquee, Song, SongInfo},
+    cache::{Cache, CacheState},
+    common::{QualityGrade, ImageStack, ImageState, Marquee, Song},
     player::Player,
-    utils::strip_filename_linux,
 };
 
 // Wrapper around the common row object to implement song thumbnail fetch logic.
@@ -251,11 +250,10 @@ impl SongRow {
                             // This signal is only emitted when an album cover is set manually.
                             // This only affects folder-level arts, so only use them when we currently
                             // don't have any art.
-                            if res.imp().thumbnail.get_state() == ImageState::Empty {
-                                if res.imp().song.borrow().as_ref().is_some_and(|s| s.get_folder_uri() == uri) {
+                            if res.imp().thumbnail.get_state() == ImageState::Empty
+                                && res.imp().song.borrow().as_ref().is_some_and(|s| s.get_folder_uri() == uri) {
                                     res.imp().thumbnail.show(&thumb);
                                 }
-                            }
 
                         }
                     ),

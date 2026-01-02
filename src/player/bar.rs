@@ -1,6 +1,6 @@
 use glib::{clone, closure_local};
 use gtk::{
-    CompositeTemplate, gdk,
+    CompositeTemplate,
     glib::{self, Properties, Variant, subclass::Signal},
     prelude::*,
     subclass::prelude::*,
@@ -9,7 +9,7 @@ use std::{cell::{Cell, RefCell}, rc::Rc};
 use std::sync::OnceLock;
 
 use crate::{
-    cache::{Cache, placeholders::{ALBUMART_PLACEHOLDER, EMPTY_ALBUM_STRING, EMPTY_ARTIST_STRING}},
+    cache::{Cache, placeholders::{EMPTY_ALBUM_STRING, EMPTY_ARTIST_STRING}},
     common::{Marquee, Song, ImageStack},
     player::{ratio_center_box::RatioCenterBox, seekbar::Seekbar},
     utils::settings_manager,

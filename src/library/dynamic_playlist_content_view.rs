@@ -1,7 +1,6 @@
 use super::{DynamicPlaylistView, Library, artist_tag::ArtistTag};
 use crate::{
     cache::{Cache, placeholders::ALBUMART_PLACEHOLDER, sqlite},
-    client::ClientState,
     common::{ContentView, DynamicPlaylist, Song, SongRow, dynamic_playlist::AutoRefresh},
     utils::{self, format_secs_as_duration, get_time_ago_desc},
     window::EuphonicaWindow,

@@ -1,13 +1,10 @@
 use glib::{
     BoxedAnyObject,
     prelude::*,
-    subclass::{Signal, prelude::*},
-    ParamSpec, ParamSpecBoolean, ParamSpecEnum, ParamSpecUInt64, Properties, derived_properties
+    subclass::{Signal, prelude::*}, Properties, derived_properties
 };
-use once_cell::sync::Lazy;
 use std::{cell::Cell, sync::OnceLock};
 
-use crate::common::{Album, Artist};
 
 #[derive(Default, Debug, Copy, Clone, PartialEq, Eq, glib::Enum)]
 #[enum_type(name = "EuphonicaConnectionState")]

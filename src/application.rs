@@ -34,7 +34,6 @@ use gtk::{gio, glib};
 use std::{
     cell::{Cell, OnceCell, RefCell},
     fs::create_dir_all,
-    ops::ControlFlow,
     path::PathBuf,
     rc::Rc,
 };
