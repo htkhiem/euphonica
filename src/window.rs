@@ -1298,13 +1298,13 @@ impl EuphonicaWindow {
         let spinner = self.imp().busy_spinner.get();
 
         state
-            .bind_property("n-background-tasks", &spinner, "visible")
+            .bind_property("n-bg-tasks", &spinner, "visible")
             .transform_to(|_, val: u64| Some((val > 0).to_value()))
             .sync_create()
             .build();
 
         state
-            .bind_property("n-background-tasks", &spinner, "tooltip-text")
+            .bind_property("n-bg-tasks", &spinner, "tooltip-text")
             .transform_to(|_, val: u64| Some(format!("Background task(s): {val}").to_value()))
             .sync_create()
             .build();

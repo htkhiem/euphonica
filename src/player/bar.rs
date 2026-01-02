@@ -109,7 +109,7 @@ mod imp {
                 .sync_create()
                 .build();
 
-            obj.bind_property("collapsed", &self.albumart.get(), "pixel-size")
+            obj.bind_property("collapsed", &self.albumart.get(), "size")
                 .transform_to(
                     |_, collapsed: bool| {
                         if collapsed { Some(48) } else { Some(115) }

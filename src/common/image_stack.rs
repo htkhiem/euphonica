@@ -56,12 +56,12 @@ mod imp {
             self.parent_constructed();
 
             self.obj()
-                .bind_property("image-size", &self.image.get(), "width-request")
+                .bind_property("size", &self.image.get(), "width-request")
                 .sync_create()
                 .build();
 
             self.obj()
-                .bind_property("image-size", &self.image.get(), "height-request")
+                .bind_property("size", &self.image.get(), "height-request")
                 .sync_create()
                 .build();
         }
