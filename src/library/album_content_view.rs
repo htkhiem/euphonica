@@ -472,9 +472,9 @@ impl AlbumContentView {
             closure_local!(
                 #[weak(rename_to = this)]
                 self,
-                move |_: CacheState, uri: String, _: gdk::Texture, thumb: gdk::Texture| {
+                move |_: CacheState, uri: String, hires: gdk::Texture, _: gdk::Texture| {
                     if this.imp().album.borrow().as_ref().is_some_and(|a| a.get_folder_uri() == uri) {
-                        this.update_cover(thumb);
+                        this.update_cover(hires);
                     }
                 }
             ),

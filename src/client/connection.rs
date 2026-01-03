@@ -260,6 +260,7 @@ impl Connection {
     pub fn connect(&mut self) -> Result<Version> {
         self.disconnect()?;
         let settings = utils::settings_manager().child("client");
+        dbg!("Disconnected successfully");
 
         // self.state.set_connection_state(ConnectionState::Connecting);
         let use_unix_socket = settings.boolean("mpd-use-unix-socket");
@@ -291,15 +292,22 @@ impl Connection {
             .map_err(Error::Mpd)?
         };
 
+        dbg!("Connected, now authenticating");
+
         // If there is a password configured, use it to authenticate.
         if let Some(password) = password::get_mpd_password().map_err(|_| Error::CredentialStore)? {
             client.login(&password).map_err(Error::Mpd)?;
         }
 
+        dbg!("Successfully authenticated");
+
         // Doubles as a litmus test to see if we are authenticated.
         client
             .subscribe(&self.wake_channel)
             .map_err(Error::Mpd)?;
+
+        dbg!("Subscribed to wake channel");
+
         let version = client.version;
         self.client.replace(client);
 
@@ -333,7 +341,9 @@ impl Connection {
                 }
                 Err(e) => {
                     match e {
-                        Error::Mpd(MpdError::Io(_)) | Error::NotConnected => {
+                        Error::Mpd(MpdError::Io(_)) => {
+                            println!("Connection error while performing an action. Reconnecting...");
+                            dbg!(&e);
                             let _ = self.disconnect();
                             if self.retries_left > 0 {
                                 self.retries_left -= 1;

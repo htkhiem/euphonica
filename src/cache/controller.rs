@@ -490,15 +490,17 @@ impl Cache {
             path
         })
         .map_err(|_| Error::Path)?);
-        let state = self.get_cache_state();
-        self.local.call(move |_| {
-            let (hires, thumb) = set_image_internal(&key, key_prefix, &filepath)?;
-            // For updates, still notify via signals to update all widgets wherever they are.
-            if let Some(signal) = notify_signal {
-                state.emit_texture(signal, &key, &hires, &thumb);
-            }
+        let cloned_key = key.clone();
+        let res = self.local.call(move |_| {
+            let (hires, thumb) = set_image_internal(&cloned_key, key_prefix, &filepath)?;
             Ok((hires, thumb))
-        }).await
+        }).await;
+
+        if let (Ok(texs), Some(signal)) = (res.as_ref(), notify_signal) {
+            // For updates, still notify via signals to update all widgets wherever they are.
+            self.get_cache_state().emit_texture(signal, &key, &texs.0, &texs.1);
+        }
+        res
     }
 
     /// Evict the image from cache and delete from cache folder on disk.
@@ -512,22 +514,24 @@ impl Cache {
     ) -> Result<()> {
         // Assume ashpd always return filesystem spec
         let state = self.get_cache_state();
+        let cloned_key = key.clone();
         self.local.call(move |_| {
-            clear_image_internal(&key, key_prefix)?;
-            // For updates, still notify via signals to update all widgets wherever they are.
-            if let Some(signal) = notify_signal {
-                state.emit_with_param(signal, &key);
-            }
+            clear_image_internal(&cloned_key, key_prefix)?;
             Ok(())
-        }).await
+        }).await?;
+        // For updates, still notify via signals to update all widgets wherever they are.
+        if let Some(signal) = notify_signal {
+            state.emit_with_param(signal, &key);
+        }
+        Ok(())
     }
 
     pub async fn set_cover(&self, folder_uri: String, path: &str) -> Result<(gdk::Texture, gdk::Texture)> {
-        self.set_image(folder_uri, None, path, Some("album-art-set")).await
+        self.set_image(folder_uri, None, path, Some("folder-cover-set")).await
     }
 
     pub async fn clear_cover(&self, folder_uri: String) -> Result<()> {
-        self.clear_image(folder_uri, None, Some("album-art-cleared")).await
+        self.clear_image(folder_uri, None, Some("folder-cover-cleared")).await
     }
 
     pub async fn set_artist_avatar(&self, tag: String, path: &str) -> Result<(gdk::Texture, gdk::Texture)> {

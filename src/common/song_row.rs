@@ -5,7 +5,7 @@ use glib::{
 use gtk::{CompositeTemplate, gdk, glib, prelude::*, subclass::prelude::*};
 use once_cell::sync::Lazy;
 use std::{
-    cell::{OnceCell, Ref, RefCell},
+    cell::{OnceCell, RefCell},
     rc::Rc,
 };
 
@@ -46,7 +46,7 @@ mod imp {
         pub third_attrib_icon: TemplateChild<gtk::Image>,
         #[template_child]
         pub third_attrib_text: TemplateChild<gtk::Label>,
-        pub song: RefCell<Option<Song>>,
+        pub song: WeakRef<Song>,
         pub thumbnail_signal_ids: RefCell<Option<(SignalHandlerId, SignalHandlerId)>>,
         pub playing_signal_id: RefCell<Option<SignalHandlerId>>,
         pub cache: OnceCell<Rc<Cache>>,
@@ -251,7 +251,7 @@ impl SongRow {
                             // This only affects folder-level arts, so only use them when we currently
                             // don't have any art.
                             if res.imp().thumbnail.get_state() == ImageState::Empty
-                                && res.imp().song.borrow().as_ref().is_some_and(|s| s.get_folder_uri() == uri) {
+                                && res.imp().song.upgrade().is_some_and(|s| s.get_folder_uri() == uri) {
                                     res.imp().thumbnail.show(&thumb);
                                 }
 
@@ -265,7 +265,7 @@ impl SongRow {
                         #[weak]
                         res,
                         move |_: CacheState, uri: &str| {
-                            if res.imp().song.borrow().as_ref().is_some_and(|s| s.get_folder_uri() == uri) {
+                            if res.imp().song.upgrade().is_some_and(|s| s.get_folder_uri() == uri) {
                                 res.imp().thumbnail.clear();
                             }
                         }
@@ -299,7 +299,7 @@ impl SongRow {
     fn update_playing_indicator(&self, player: &Player) {
         match (
             player.queue_id(),
-            self.song().as_ref().map(|s| s.get_queue_id()),
+            self.imp().song.upgrade().map(|s| s.get_queue_id()),
         ) {
             (Some(id), Some(own_id)) => {
                 self.set_is_playing(id == own_id);
@@ -313,10 +313,10 @@ impl SongRow {
     async fn schedule_thumbnail(&self) {
         if let (Some(cache), Some(song)) = (
             self.imp().cache.get(),
-            self.imp().song.borrow().as_ref().map(|s| s.get_info())
+            self.imp().song.upgrade()
         ) {
             self.imp().thumbnail.show_spinner();
-            match cache.clone().get_song_cover(song, true, true).await {
+            match cache.clone().get_song_cover(song.get_info(), true, true).await {
                 Ok(Some(tex)) => self.imp().thumbnail.show(&tex),
                 Ok(None) => self.imp().thumbnail.clear(),
                 Err(e) => {
@@ -328,20 +328,18 @@ impl SongRow {
     }
 
     pub fn on_bind(&self, song: &Song) {
+        self.imp().song.set(Some(song));
         glib::spawn_future_local(clone!(
             #[weak(rename_to = this)] self,
-            #[strong] song,
             async move {
-                this.imp().song.replace(Some(song));
                 this.schedule_thumbnail().await;
             }
         ));
     }
 
     pub fn on_unbind(&self) {
-        if let Some(_) = self.imp().song.take() {
-            self.imp().thumbnail.clear();
-        }
+        self.imp().thumbnail.clear();
+        self.imp().song.set(None);
     }
 
     pub fn set_playing_indicator_visible(&self, vis: bool) {
@@ -410,9 +408,5 @@ impl SongRow {
 
     pub fn end_widget(&self) -> Option<gtk::Widget> {
         self.imp().center_box.end_widget()
-    }
-
-    pub fn song<'a>(&'a self) -> Ref<'a, Option<Song>> {
-        self.imp().song.borrow()
     }
 }

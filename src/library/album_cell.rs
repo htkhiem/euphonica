@@ -1,6 +1,6 @@
 use glib::{
     Object, ParamSpec, ParamSpecChar, ParamSpecInt, ParamSpecString, clone, closure_local,
-    signal::SignalHandlerId,
+    signal::SignalHandlerId, WeakRef
 };
 use gtk::{CompositeTemplate, Image, Label, gdk, prelude::*, subclass::prelude::*};
 use once_cell::sync::Lazy;
@@ -46,7 +46,7 @@ mod imp {
         pub image_size: Cell<i32>,
         #[derivative(Default(value = "Cell::new(-1)"))]
         pub rating_val: Cell<i8>,
-        pub album: RefCell<Option<Album>>,
+        pub album: WeakRef<Album>,
         // Vector holding the bindings to properties of the Album GObject
         pub cover_signal_ids: RefCell<Option<(SignalHandlerId, SignalHandlerId)>>,
         pub cache: OnceCell<Rc<Cache>>
@@ -302,7 +302,7 @@ impl AlbumCell {
                     #[weak(rename_to = this)]
                     res,
                     move |_: CacheState, uri: String, _: gdk::Texture, thumb: gdk::Texture| {
-                        if this.imp().album.borrow().as_ref().is_some_and(|a| a.get_folder_uri() == uri) {
+                        if this.imp().album.upgrade().is_some_and(|a| a.get_folder_uri() == uri) {
                             this.imp().cover.show(&thumb);
                         }
                     }
@@ -315,7 +315,7 @@ impl AlbumCell {
                     #[weak(rename_to = this)]
                     res,
                     move |_: CacheState, uri: String| {
-                        if this.imp().album.borrow().as_ref().is_some_and(|a| a.get_folder_uri() == uri) {
+                        if this.imp().album.upgrade().is_some_and(|a| a.get_folder_uri() == uri) {
                             this.imp().cover.clear();
                         }
                     }
@@ -329,7 +329,7 @@ impl AlbumCell {
         // The string properties are bound using property expressions in setup().
         // Fetch album cover once here.
         // Set once first (like sync_create)
-        let _ = self.imp().album.replace(Some(album.clone()));
+        let _ = self.imp().album.set(Some(album));
         self.imp().cover.show_spinner();
         glib::spawn_future_local(clone!(
             #[weak(rename_to = this)]
@@ -353,10 +353,8 @@ impl AlbumCell {
     }
 
     pub fn unbind(&self) {
-        if let Some(_) = self.imp().album.take() {
-            // Clear cover reference
-            self.imp().cover.clear();
-        }
+        self.imp().cover.clear();
+        self.imp().album.set(None);
     }
 
     pub fn image_size(&self) -> i32 {

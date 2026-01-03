@@ -458,9 +458,6 @@ impl MpdWrapper {
     }
 
     pub async fn connect(&self) -> ClientResult<()> {
-        // Close current clients
-        self.disconnect(false).await?;
-
         self.state.set_connection_state(ConnectionState::Connecting);
 
         let (s, r) = oneshot::channel();
@@ -478,14 +475,12 @@ impl MpdWrapper {
                 .set_stickers_support_level(StickersSupportLevel::All);
         }
         self.client_version.replace(Some(version));
-        println!("Connected foreground client");
 
         let (s, r) = oneshot::channel();
         self.bg_sender.send(Task::Connect(s)).await.expect("Broken BG sender");
         self.handle_connect_error(r.await.expect("Broken oneshot receiver")).await?;
-        self.state.set_connection_state(ConnectionState::Connected);
-        println!("Connected background client");
 
+        self.state.set_connection_state(ConnectionState::Connected);
         Ok(())
     }
 

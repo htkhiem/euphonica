@@ -52,6 +52,11 @@ mod imp {
 
     #[derived_properties]
     impl ObjectImpl for ImageStack {
+        fn dispose(&self) {
+            while let Some(child) = self.obj().first_child() {
+                child.unparent();
+            }
+        }
         fn constructed(&self) {
             self.parent_constructed();
 

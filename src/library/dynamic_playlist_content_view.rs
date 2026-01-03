@@ -72,7 +72,6 @@ mod imp {
         pub library: WeakRef<Library>,
         pub outer: WeakRef<DynamicPlaylistView>,
         pub window: WeakRef<EuphonicaWindow>,
-        pub cover_signal_id: RefCell<Option<SignalHandlerId>>,
         pub cache: OnceCell<Rc<Cache>>,
     }
 

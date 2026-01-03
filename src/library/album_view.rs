@@ -1,7 +1,7 @@
 use adw::prelude::*;
 use adw::subclass::prelude::*;
 use gio::{ActionEntry, SimpleActionGroup};
-use glib::{Properties, clone, subclass::Signal};
+use glib::{Properties, clone, subclass::Signal, WeakRef};
 use gtk::{
     CompositeTemplate, ListItem, SignalListItemFactory, SingleSelection,
     glib::{self},
@@ -62,7 +62,7 @@ mod imp {
         // If search term is now shorter, only check non-matching items to see
         // if they now match.
         pub last_search_len: Cell<usize>,
-        pub library: OnceCell<Library>,
+        pub library: WeakRef<Library>,
 
         #[property(get, set)]
         pub collapsed: Cell<bool>,
@@ -427,8 +427,7 @@ impl AlbumView {
     ) {
         self.imp()
             .library
-            .set(library.clone())
-            .expect("Cannot init AlbumView with Library");
+            .set(Some(&library));
         self.setup_gridview(cache.clone());
 
         let content_view = self.imp().content_view.get();
@@ -458,7 +457,7 @@ impl AlbumView {
     fn setup_gridview(&self, cache: Rc<Cache>) {
         let settings = settings_manager().child("ui");
         // Setup search bar
-        let album_list = self.imp().library.get().unwrap().albums();
+        let album_list = self.imp().library.upgrade().unwrap().albums();
         let search_bar = self.imp().search_bar.get();
         let search_entry = self.imp().search_entry.get();
         search_bar.connect_entry(&search_entry);
@@ -561,7 +560,7 @@ impl AlbumView {
 
 impl LazyInit for AlbumView {
     fn populate(&self) {
-        if let Some(library) = self.imp().library.get().cloned() {
+        if let Some(library) = self.imp().library.upgrade() {
             // TODO: add spinner
             glib::spawn_future_local(async move {
                 let _ = library.init_albums().await;

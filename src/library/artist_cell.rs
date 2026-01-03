@@ -1,10 +1,11 @@
-use ::glib::clone;
-use glib::{Object, closure_local, signal::SignalHandlerId};
-use gtk::{CompositeTemplate, gdk, glib, prelude::*, subclass::prelude::*};
+use once_cell::sync::Lazy;
 use std::{
     cell::{OnceCell, RefCell},
     rc::Rc,
 };
+
+use glib::{clone, Object, closure_local, signal::SignalHandlerId, ParamSpec, ParamSpecString, WeakRef};
+use gtk::{CompositeTemplate, gdk, glib, prelude::*, subclass::prelude::*};
 
 use crate::{
     cache::{Cache, CacheState, placeholders::EMPTY_ARTIST_STRING},
@@ -13,8 +14,6 @@ use crate::{
 
 mod imp {
     use super::*;
-    use glib::{ParamSpec, ParamSpecString};
-    use once_cell::sync::Lazy;
 
     #[derive(Default, CompositeTemplate)]
     #[template(resource = "/io/github/htkhiem/Euphonica/gtk/library/artist-cell.ui")]
@@ -25,7 +24,7 @@ mod imp {
         pub name: TemplateChild<gtk::Label>,
         pub avatar_signal_ids: RefCell<Option<(SignalHandlerId, SignalHandlerId)>>,
         pub cache: OnceCell<Rc<Cache>>,
-        pub artist: RefCell<Option<Artist>>,
+        pub artist: WeakRef<Artist>,
     }
 
     // The central trait for subclassing a GObject
@@ -112,7 +111,7 @@ impl ArtistCell {
                     #[weak(rename_to = this)]
                     res,
                     move |_: CacheState, name: String, _: gdk::Texture, thumb: gdk::Texture| {
-                        if this.imp().artist.borrow().as_ref().is_some_and(|a| a.get_name() == name) {
+                        if this.imp().artist.upgrade().is_some_and(|a| a.get_name() == name) {
                             this.update_avatar(Some(&thumb));
                         }
                     }
@@ -125,7 +124,7 @@ impl ArtistCell {
                     #[weak(rename_to = this)]
                     res,
                     move |_: CacheState, name: String| {
-                        if this.imp().artist.borrow().as_ref().is_some_and(|a| a.get_name() == name) {
+                        if this.imp().artist.upgrade().is_some_and(|a| a.get_name() == name) {
                             this.update_avatar(None);
                         }
                     }
@@ -165,7 +164,7 @@ impl ArtistCell {
     }
 
     pub fn bind(&self, artist: &Artist) {
-        let _ = self.imp().artist.replace(Some(artist.clone()));
+        let _ = self.imp().artist.set(Some(artist));
         // Try to get from cache (or from disk asynchronously)
         glib::spawn_future_local(clone!(
             #[weak(rename_to = this)]
@@ -189,6 +188,6 @@ impl ArtistCell {
     }
 
     pub fn unbind(&self) {
-        self.imp().artist.replace(None).unwrap();
+        self.imp().artist.set(None);
     }
 }
