@@ -12,13 +12,13 @@ mod imp {
     use super::*;
 
     #[derive(CompositeTemplate, Default, Properties)]
-    #[template(resource = "/io/github/htkhiem/Euphonica/gtk/image-stack.ui")]
-    #[properties(wrapper_type = super::ImageStack)]
-    pub struct ImageStack {
+    #[template(resource = "/io/github/htkhiem/Euphonica/gtk/picture-stack.ui")]
+    #[properties(wrapper_type = super::PictureStack)]
+    pub struct PictureStack {
         #[template_child]
         pub stack: TemplateChild<gtk::Stack>,
         #[template_child]
-        pub image: TemplateChild<gtk::Image>,
+        pub picture: TemplateChild<gtk::Picture>,
         pub state: Cell<ImageState>,
         #[property(get, set)]
         pub size: Cell<i32>,
@@ -28,10 +28,10 @@ mod imp {
 
     // The central trait for subclassing a GObject
     #[glib::object_subclass]
-    impl ObjectSubclass for ImageStack {
+    impl ObjectSubclass for PictureStack {
         // `NAME` needs to match `class` attribute of template
-        const NAME: &'static str = "EuphonicaImageStack";
-        type Type = super::ImageStack;
+        const NAME: &'static str = "EuphonicaPictureStack";
+        type Type = super::PictureStack;
         type ParentType = gtk::Widget;
 
         fn class_init(klass: &mut Self::Class) {
@@ -45,7 +45,7 @@ mod imp {
     }
 
     #[derived_properties]
-    impl ObjectImpl for ImageStack {
+    impl ObjectImpl for PictureStack {
         fn dispose(&self) {
             while let Some(child) = self.obj().first_child() {
                 child.unparent();
@@ -53,29 +53,35 @@ mod imp {
         }
         fn constructed(&self) {
             self.parent_constructed();
+
             self.obj()
-                .bind_property("size", &self.image.get(), "pixel-size")
+                .bind_property("size", &self.stack.get(), "width-request")
+                .sync_create()
+                .build();
+
+            self.obj()
+                .bind_property("size", &self.stack.get(), "height-request")
                 .sync_create()
                 .build();
         }
     }
 
-    impl WidgetImpl for ImageStack {}
+    impl WidgetImpl for PictureStack {}
 }
 
 glib::wrapper! {
-    pub struct ImageStack(ObjectSubclass<imp::ImageStack>)
+    pub struct PictureStack(ObjectSubclass<imp::PictureStack>)
         @extends gtk::Widget,
         @implements gtk::Accessible, gtk::Buildable, gtk::ConstraintTarget;
 }
 
-impl Default for ImageStack {
+impl Default for PictureStack {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl ImageStack {
+impl PictureStack {
     pub fn new() -> Self {
         let res: Self = glib::Object::new();
 
@@ -94,7 +100,7 @@ impl ImageStack {
 
     #[inline]
     fn show_placeholder(&self, thumb: bool) {
-        self.imp().image.set_paintable(Some(
+        self.imp().picture.set_paintable(Some(
             if thumb {
                 &*ALBUMART_THUMBNAIL_PLACEHOLDER
             } else {
@@ -117,8 +123,8 @@ impl ImageStack {
 
     pub fn clear(&self) {
         self.show_placeholder(self.imp().is_thumbnail.get());
-        if self.imp().stack.visible_child_name().is_none_or(|name| name != "image")  {
-            self.imp().stack.set_visible_child_name("image");
+        if self.imp().stack.visible_child_name().is_none_or(|name| name != "picture")  {
+            self.imp().stack.set_visible_child_name("picture");
         }
         self.set_state(ImageState::Empty);
     }
@@ -134,9 +140,9 @@ impl ImageStack {
     }
 
     pub fn show(&self, paintable: &impl IsA<gdk::Paintable>) {
-        self.imp().image.set_paintable(Some(paintable));
-        if self.imp().stack.visible_child_name().is_none_or(|name| name != "image")  {
-            self.imp().stack.set_visible_child_name("image");
+        self.imp().picture.set_paintable(Some(paintable));
+        if self.imp().stack.visible_child_name().is_none_or(|name| name != "picture")  {
+            self.imp().stack.set_visible_child_name("picture");
         }
         self.set_state(ImageState::Image);
     }

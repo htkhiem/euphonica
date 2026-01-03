@@ -15,7 +15,7 @@ use std::{
 use crate::{
     cache::{Cache, placeholders::{EMPTY_ALBUM_STRING, EMPTY_ARTIST_STRING}},
     client::{ClientState, state::StickersSupportLevel},
-    common::{ImageStack, Rating, Song, paintables::FadePaintable},
+    common::{PictureStack, Rating, Song, paintables::FadePaintable},
     player::seekbar::Seekbar,
     utils::{self, settings_manager},
 };
@@ -32,7 +32,7 @@ mod imp {
         #[template_child]
         pub info_box: TemplateChild<gtk::Box>,
         #[template_child]
-        pub albumart: TemplateChild<ImageStack>,
+        pub albumart: TemplateChild<PictureStack>,
         #[template_child]
         pub song_name: TemplateChild<gtk::Label>,
         #[template_child]

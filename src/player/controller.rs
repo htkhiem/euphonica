@@ -1044,7 +1044,7 @@ impl Player {
                     self.notify("queue-id");
                     // Update album art
                     self.emit_by_name::<()>("cover-changed", &[]);
-                } else if let Some(curr_song) = self.imp().current_song.borrow().as_ref() {
+                } else if let Some(curr_song) = self.current_song() { // Don't borrow across awaits.
                     // Same old song. Might want to record into playback history.
                     if !settings_manager().child("library").boolean("pause-recent") {
                         let dur = curr_song.get_duration() as f32;
@@ -1059,13 +1059,15 @@ impl Player {
                                     if let Ok(()) = sqlite::add_to_history(curr_song.get_info()) {
                                         self.emit_by_name::<()>("history-changed", &[]);
                                     }
-                                    self.client()?.set_sticker(
+                                    if let Err(e) = self.client()?.set_sticker(
                                         "song",
                                         curr_song.get_uri().to_owned(),
                                         Stickers::PLAY_COUNT_KEY.into(),
                                         "1".into(),
                                         StickerSetMode::Inc,
-                                    ).await;
+                                    ).await {
+                                        dbg!(e);
+                                    }
 
                                     self.imp().saved_to_history.set(true);
                                 }
@@ -1667,23 +1669,32 @@ impl Player {
     }
 
     pub async fn rate_current_song(&self, score: Option<i8>) -> ClientResult<()> {
-        if let Some(song) = self.imp().current_song.borrow().as_ref() {
-            // Set locally first
-            song.set_rating(score);
-            if let Some(score) = score {
-                self.client()?.set_sticker(
-                    "song",
-                    song.get_uri().to_owned(),
-                    Stickers::RATING_KEY.into(),
-                    score.to_string().into(),
-                    StickerSetMode::Set,
-                ).await?;
+        let uri;
+        {
+            if let Some(song) = self.imp().current_song.borrow().as_ref() {
+                // Set locally first
+                song.set_rating(score);
+                uri = song.get_uri().to_owned();
             } else {
-                self.client()?
-                    .delete_sticker("song", song.get_uri().to_owned(), Stickers::RATING_KEY.into()).await?;
+                return Ok(());
             }
-            self.notify("rating");
+            // End borrow
         }
+
+        if let Some(score) = score {
+            self.client()?.set_sticker(
+                "song",
+                uri,
+                Stickers::RATING_KEY.into(),
+                score.to_string().into(),
+                StickerSetMode::Set,
+            ).await?;
+        } else {
+            self.client()?
+                .delete_sticker("song", uri, Stickers::RATING_KEY.into()).await?;
+        }
+        self.notify("rating");
+
         Ok(())
     }
 }
@@ -1777,14 +1788,17 @@ impl LocalPlayerInterface for Player {
     /// Use MPD's queue ID to construct track_id in this format:
     /// io/github/htkhiem/Euphonica/<queue_id>
     async fn set_position(&self, track_id: TrackId, position: Time) -> fdo::Result<()> {
-        if let Some(song) = self.imp().current_song.borrow().as_ref() {
-            if track_id.as_str().split("/").last().unwrap() == song.get_queue_id().to_string() {
-                self.send_seek(position.as_millis() as f64 / 1000.0).await.map_err(|_| fdo::Error::Failed("internal".to_string()))
-            } else {
-                Err(fdo::Error::Failed("Song has already changed".to_owned()))
-            }
+        let should_seek;
+        {
+            should_seek = self.imp().current_song.borrow().as_ref().is_some_and(
+                |s| track_id.as_str().split("/").last().unwrap() == s.get_queue_id().to_string()
+            );
+            // End borrow
+        }
+        if should_seek {
+            self.send_seek(position.as_millis() as f64 / 1000.0).await.map_err(|_| fdo::Error::Failed("internal".to_string()))
         } else {
-            Err(fdo::Error::Failed("No song is being played".to_owned()))
+            Err(fdo::Error::Failed("Song has already changed or player is in the Stopped state".to_owned()))
         }
     }
 
