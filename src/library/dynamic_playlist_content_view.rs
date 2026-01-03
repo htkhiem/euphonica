@@ -11,7 +11,7 @@ use ashpd::desktop::file_chooser::SelectedFiles;
 use derivative::Derivative;
 use gio::{ActionEntry, SimpleActionGroup};
 use glib::WeakRef;
-use glib::{clone, closure_local, signal::SignalHandlerId};
+use glib::{clone, closure_local};
 use gtk::{CompositeTemplate, ListItem, SignalListItemFactory, gio, glib};
 use std::{
     cell::{OnceCell, RefCell},
@@ -99,6 +99,7 @@ mod imp {
             while let Some(child) = self.obj().first_child() {
                 child.unparent();
             }
+            println!("Disposing DPC view");
         }
 
         fn constructed(&self) {

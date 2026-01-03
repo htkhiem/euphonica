@@ -164,7 +164,7 @@ impl ArtistCell {
     }
 
     pub fn bind(&self, artist: &Artist) {
-        let _ = self.imp().artist.set(Some(artist));
+        self.imp().artist.set(Some(artist));
         // Try to get from cache (or from disk asynchronously)
         glib::spawn_future_local(clone!(
             #[weak(rename_to = this)]

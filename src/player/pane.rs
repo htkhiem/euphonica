@@ -15,7 +15,7 @@ use std::{
 use crate::{
     cache::{Cache, placeholders::{EMPTY_ALBUM_STRING, EMPTY_ARTIST_STRING}},
     client::{ClientState, state::StickersSupportLevel},
-    common::{PictureStack, Rating, Song, paintables::FadePaintable},
+    common::{PictureStack, Rating, Song},
     player::seekbar::Seekbar,
     utils::{self, settings_manager},
 };
@@ -93,7 +93,6 @@ mod imp {
         pub vol_knob: TemplateChild<VolumeKnob>,
 
         // Kept here so we can access it in snapshot()
-        pub bg_paintable: FadePaintable,
         pub output_widgets: RefCell<Vec<MpdOutput>>,
 
         // Index of visible child in output_widgets

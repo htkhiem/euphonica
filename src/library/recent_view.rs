@@ -13,7 +13,6 @@ use glib::{Properties, WeakRef, clone, closure_local, subclass::Signal};
 use super::{AlbumCell, ArtistCell, Library};
 use crate::{
     cache::Cache,
-    client::{Result as ClientResult},
     common::{Album, Artist, RowAddButtons, Song, SongRow, marquee::MarqueeWrapMode},
     player::Player,
     utils::LazyInit,

@@ -98,6 +98,7 @@ mod imp {
             while let Some(child) = self.obj().first_child() {
                 child.unparent();
             }
+            println!("Disposing folder view");
         }
 
         fn constructed(&self) {

@@ -32,7 +32,7 @@ use crate::{
 };
 use adw::{ColorScheme, StyleManager, prelude::*, subclass::prelude::*};
 use auto_palette::{ImageData, Palette, Theme, color::RGB};
-use glib::{WeakRef, signal::SignalHandlerId};
+use glib::WeakRef;
 use gtk::{
     CssProvider, gdk, gio,
     glib::{self, BoxedAnyObject, clone, closure_local},
@@ -172,11 +172,6 @@ mod imp {
         #[template_child]
         pub player_bar: TemplateChild<PlayerBar>,
 
-        // RefCells to notify IDs so we can unbind later
-        pub notify_position_id: RefCell<Option<SignalHandlerId>>,
-        pub notify_playback_state_id: RefCell<Option<SignalHandlerId>>,
-        pub notify_duration_id: RefCell<Option<SignalHandlerId>>,
-
         // Blurred album art background
         #[property(get, set)]
         pub use_album_art_bg: Cell<bool>,
@@ -185,7 +180,7 @@ mod imp {
         pub bg_paintable: FadePaintable,
         pub player: WeakRef<Player>,
         pub sender_to_bg: OnceCell<Sender<WindowMessage>>, // sending a None will terminate the thread
-        pub bg_handle: OnceCell<gio::JoinHandle<()>>,
+        pub bg_handle: RefCell<Option<gio::JoinHandle<()>>>,
         pub prev_size: Cell<(u32, u32)>,
 
         // Visualiser on the bottom edge
@@ -507,7 +502,7 @@ mod imp {
                     }
                 }
             });
-            let _ = self.bg_handle.set(bg_handle);
+            let _ = self.bg_handle.replace(Some(bg_handle));
 
             // Use an async loop to wait for messages from the blur thread.
             // The blur thread will send us handles to GPU textures. Upon receiving one,
@@ -875,7 +870,7 @@ impl EuphonicaWindow {
             app.get_player(),
             app.get_cache(),
             &client_state,
-            win.clone(),
+            &win,
         );
         win.imp()
             .recent_view
@@ -1012,32 +1007,12 @@ impl EuphonicaWindow {
         self.imp().split_view.get()
     }
 
-    pub fn get_recent_view(&self) -> RecentView {
-        self.imp().recent_view.get()
-    }
-
-    pub fn get_album_view(&self) -> AlbumView {
-        self.imp().album_view.get()
-    }
-
-    pub fn get_artist_view(&self) -> ArtistView {
-        self.imp().artist_view.get()
-    }
-
-    pub fn get_folder_view(&self) -> FolderView {
-        self.imp().folder_view.get()
-    }
-
     pub fn get_playlist_view(&self) -> PlaylistView {
         self.imp().playlist_view.get()
     }
 
     pub fn get_dyn_playlist_view(&self) -> DynamicPlaylistView {
         self.imp().dyn_playlist_view.get()
-    }
-
-    pub fn get_queue_view(&self) -> QueueView {
-        self.imp().queue_view.get()
     }
 
     pub fn send_simple_toast(&self, title: &str, timeout: u32) {
@@ -1334,10 +1309,16 @@ impl EuphonicaWindow {
                 .set_int("last-window-height", height)
                 .expect("Unable to stop last-window-height");
 
+            // Stop everything
+            // Tick callback for resizing detection
+            if let Some(tick) = window.imp().tick_callback.take() {
+                tick.remove();
+            }
+
             // Stop blur thread when closing window.
             // We need to take care of this now that the app's lifetime is decoupled from the window
             // (background running support)
-            if window.imp().bg_handle.get().is_some() {
+            if let Some(handle) = window.imp().bg_handle.take() {
                 window
                     .imp()
                     .sender_to_bg
@@ -1345,6 +1326,10 @@ impl EuphonicaWindow {
                     .unwrap()
                     .send_blocking(WindowMessage::Stop)
                     .expect("Could not stop background blur thread");
+
+                glib::MainContext::default().block_on(async move {
+                    if let Err(e) = handle.await {dbg!(e);}
+                });
             }
 
             window.downcast_application().on_window_closed();

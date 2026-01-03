@@ -316,12 +316,11 @@ impl EuphonicaApplication {
         let settings = settings_manager().child("state");
         if settings.boolean("run-in-background") {
             self.imp().player.get().unwrap().set_is_foreground(false);
-            if let Some(_) = self.imp().hold_guard.replace(Some(self.hold())) {
-                println!("Created a new hold guard");
-            }
+            let _ = self.imp().hold_guard.replace(Some(self.hold()));
+            println!("Created a new hold guard");
         } else {
             println!("Dropping hold guard");
-            self.imp().hold_guard.take();
+            let _ = self.imp().hold_guard.take();
         }
     }
 

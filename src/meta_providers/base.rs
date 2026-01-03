@@ -3,7 +3,7 @@ use crate::{
     common::{AlbumInfo, ArtistInfo, SongInfo},
     utils::settings_manager,
 };
-use gtk::{gdk, prelude::*};
+use gtk::prelude::*;
 use reqwest::blocking::Client;
 use std::{thread, time::{Duration, SystemTime}};
 

@@ -2,9 +2,8 @@ use std::rc::Rc;
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
-use gio::glib::closure_local;
-use glib::clone;
-use gtk::{CompositeTemplate, ListItem, SignalListItemFactory, SingleSelection, gio, glib};
+use glib::{clone, closure_local};
+use gtk::{CompositeTemplate, ListItem, SignalListItemFactory, SingleSelection, gio};
 use mpd::{
     SaveMode,
     error::{Error as MpdError, ErrorCode as MpdErrorCode, ServerError},
@@ -25,7 +24,7 @@ use super::Player;
 
 mod imp {
     use std::{
-        cell::{Cell, OnceCell},
+        cell::Cell,
         sync::OnceLock,
     };
 
@@ -64,7 +63,7 @@ mod imp {
         #[template_child]
         pub save_confirm: TemplateChild<gtk::Button>,
 
-        pub window: OnceCell<EuphonicaWindow>,
+        pub window: WeakRef<EuphonicaWindow>,
 
         #[property(get, set)]
         pub pane_collapsed: Cell<bool>,
@@ -114,6 +113,7 @@ mod imp {
             while let Some(child) = self.obj().first_child() {
                 child.unparent();
             }
+            println!("Disposing queue view");
         }
 
         fn constructed(&self) {
@@ -371,7 +371,7 @@ impl QueueView {
         diag.add_response("overwrite", "_Overwrite");
         diag.set_response_appearance("append", adw::ResponseAppearance::Suggested);
         diag.set_response_appearance("overwrite", adw::ResponseAppearance::Destructive);
-        match diag.choose_future(self.imp().window.get().unwrap()).await.as_str() {
+        match diag.choose_future(&self.imp().window.upgrade().unwrap()).await.as_str() {
             "append" => {
                 player.save_queue(name, SaveMode::Append).await;
             }
@@ -522,9 +522,9 @@ impl QueueView {
         player: &Player,
         cache: Rc<Cache>,
         client_state: &ClientState,
-        window: EuphonicaWindow,
+        window: &EuphonicaWindow,
     ) {
-        let _ = self.imp().window.set(window);
+        self.imp().window.set(Some(window));
         self.setup_listview(player, cache.clone());
         self.imp().player_pane.setup(player, cache, client_state);
         self.bind_state(player);

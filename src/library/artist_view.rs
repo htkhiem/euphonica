@@ -81,6 +81,7 @@ mod imp {
             while let Some(child) = self.obj().first_child() {
                 child.unparent();
             }
+            println!("Disposing artist view");
         }
 
         fn constructed(&self) {

@@ -753,7 +753,7 @@ impl AlbumContentView {
             .iter()
             .map(|info| {
                 ArtistTag::new(
-                    Artist::from(info.clone()),
+                    &Artist::from(info.clone()),
                     self.imp().cache.get().unwrap().clone(),
                     &self.imp().window.upgrade().unwrap(),
                 )

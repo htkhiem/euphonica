@@ -1,6 +1,6 @@
 use adw::subclass::prelude::*;
 use derivative::Derivative;
-use glib::{Binding, clone, closure_local, signal::SignalHandlerId};
+use glib::{Binding, clone, closure_local, signal::SignalHandlerId, WeakRef};
 use gtk::{
     BitsetIter, CompositeTemplate, ListItem, SignalListItemFactory, gdk, gio, glib, prelude::*,
 };
@@ -171,8 +171,8 @@ mod imp {
         pub cache: OnceCell<Rc<Cache>>,
         #[derivative(Default(value = "Cell::new(true)"))]
         pub selecting_all: Cell<bool>, // Enables queuing the entire playlist efficiently
-        pub window: OnceCell<EuphonicaWindow>,
-        pub library: OnceCell<Library>,
+        pub window: WeakRef<EuphonicaWindow>,
+        pub library: WeakRef<Library>,
 
         // FIXME: Working around the scroll position bug. See src/player/queue_view.rs (same issue).
         pub last_scroll_pos: Cell<f64>,
@@ -203,6 +203,7 @@ mod imp {
             while let Some(child) = self.obj().first_child() {
                 child.unparent();
             }
+            println!("Disposing playlist content view");
         }
 
         fn constructed(&self) {
@@ -417,7 +418,7 @@ mod imp {
                                     .clone(),
                             );
                         }
-                        if let Err(e) = this.library.get().unwrap().add_songs_to_playlist(
+                        if let Err(e) = this.library.upgrade().unwrap().add_songs_to_playlist(
                             this.playlist.borrow().as_ref().unwrap().get_uri().to_owned(),
                             &song_list,
                             SaveMode::Replace,
@@ -503,12 +504,10 @@ impl PlaylistContentView {
     ) {
         self.imp()
             .window
-            .set(window.clone())
-            .expect("PlaylistContentView: Cannot set reference to window");
+            .set(Some(window));
         self.imp()
             .library
-            .set(library.clone())
-            .expect("PlaylistContentView: Cannot set reference to library controller");
+            .set(Some(library));
 
         let _ = self.imp().cache.set(cache.clone());
         let infobox_revealer = self.imp().infobox_revealer.get();
@@ -538,7 +537,7 @@ impl PlaylistContentView {
             self,
             move |_| {
                 glib::spawn_future_local(clone!(#[weak] this, async move {
-                    let library = this.imp().library.get().unwrap();
+                    let library = this.imp().library.upgrade().unwrap();
                     if let Some(playlist) = this.imp().playlist.borrow().as_ref() {
                         if this.imp().selecting_all.get() {
                             library.queue_playlist(playlist.get_name().unwrap().to_owned(), true, true).await;
@@ -564,7 +563,7 @@ impl PlaylistContentView {
             self,
             move |_| {
                 glib::spawn_future_local(clone!(#[weak] this, async move {
-                    let library = this.imp().library.get().unwrap();
+                    let library = this.imp().library.upgrade().unwrap();
                     if let Some(playlist) = this.imp().playlist.borrow().as_ref() {
                         if this.imp().selecting_all.get() {
                             library.queue_playlist(playlist.get_name().unwrap().to_owned(), false, false).await;
@@ -618,7 +617,7 @@ impl PlaylistContentView {
             move |_| {
                 glib::spawn_future_local(clone!(#[weak] this, #[weak] new_name, async move {
                     this.imp().rename_menu_btn.set_active(false);
-                    let library = this.imp().library.get().unwrap();
+                    let library = this.imp().library.upgrade().unwrap();
                     let rename_from: Option<String>;
                     {
                         if let Some(playlist) = this.imp().playlist.borrow().as_ref() {
@@ -641,7 +640,7 @@ impl PlaylistContentView {
                         match library.rename_playlist(rename_from, rename_to.clone()).await {
                             Ok(()) => {} // Wait for idle to trigger a playlist refresh
                             Err(ClientError::Mpd(e)) => if let MpdError::Server(ServerError {code, pos: _, command: _, detail: _}) = e {
-                                this.imp().window.get().unwrap().show_dialog(
+                                this.imp().window.upgrade().unwrap().show_dialog(
                                     "Rename Failed",
                                     &(match code {
                                         MpdErrorCode::Exist => format!("There is already another playlist named \"{}\". Please pick another name.", &rename_to),
@@ -651,7 +650,7 @@ impl PlaylistContentView {
                                 );
                             }
                             Err(e) => {
-                                this.imp().window.get().unwrap().show_dialog("Rename Failed", &format!("{e:?}"));
+                                this.imp().window.upgrade().unwrap().show_dialog("Rename Failed", &format!("{e:?}"));
                             }
                         }
                     }
@@ -664,11 +663,11 @@ impl PlaylistContentView {
             self,
             move |_| {
                 glib::spawn_future_local(clone!(#[weak] this, async move {
-                    let library = this.imp().library.get().unwrap();
+                    let library = this.imp().library.upgrade().unwrap();
                     if let Some(playlist) = this.imp().playlist.borrow().as_ref() {
                         // Close popover and exit view
                         this.imp().delete_menu_btn.set_active(false);
-                        this.imp().window.get().unwrap().get_playlist_view().pop();
+                        this.imp().window.upgrade().unwrap().get_playlist_view().pop();
                         let _ = library.delete_playlist(playlist.get_name().unwrap().to_owned()).await;
                     }
                 }));
@@ -940,7 +939,7 @@ impl PlaylistContentView {
 
                 let song_list = this.imp().song_list.clone();
                 song_list.remove_all();
-                this.imp().library.get().unwrap().get_playlist_songs(
+                this.imp().library.upgrade().unwrap().get_playlist_songs(
                     name,
                     move |songs| {
                         song_list.extend_from_slice(&songs);

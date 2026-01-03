@@ -329,7 +329,7 @@ impl AlbumCell {
         // The string properties are bound using property expressions in setup().
         // Fetch album cover once here.
         // Set once first (like sync_create)
-        let _ = self.imp().album.set(Some(album));
+        self.imp().album.set(Some(album));
         self.imp().cover.show_spinner();
         glib::spawn_future_local(clone!(
             #[weak(rename_to = this)]

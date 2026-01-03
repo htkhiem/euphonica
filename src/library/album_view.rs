@@ -6,7 +6,7 @@ use gtk::{
     CompositeTemplate, ListItem, SignalListItemFactory, SingleSelection,
     glib::{self},
 };
-use std::{cell::Cell, cell::OnceCell, cmp::Ordering, rc::Rc, sync::OnceLock};
+use std::{cell::Cell, cmp::Ordering, rc::Rc, sync::OnceLock};
 
 use super::{AlbumCell, AlbumContentView, Library};
 use crate::{
@@ -90,6 +90,7 @@ mod imp {
             while let Some(child) = self.obj().first_child() {
                 child.unparent();
             }
+            println!("Disposing album view");
         }
 
         fn constructed(&self) {
@@ -427,7 +428,7 @@ impl AlbumView {
     ) {
         self.imp()
             .library
-            .set(Some(&library));
+            .set(Some(library));
         self.setup_gridview(cache.clone());
 
         let content_view = self.imp().content_view.get();

@@ -35,7 +35,11 @@ mod imp {
     }
 
     #[glib::derived_properties]
-    impl ObjectImpl for FadePaintable {}
+    impl ObjectImpl for FadePaintable {
+        fn dispose(&self) {
+            println!("Disposing FadePaintable");
+        }
+    }
 
     impl PaintableImpl for FadePaintable {
         fn current_image(&self) -> gdk::Paintable {
