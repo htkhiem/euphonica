@@ -247,12 +247,12 @@ impl Cache {
             meta_providers: Arc::new(Mutex::new(init_meta_provider_chain())),
             local: glib::MainContext::default().block_on(
                 glib::spawn_future_local(async move {
-                    Asyncified::builder().channel_size(128).build_ok(|| ()).await
+                    Asyncified::builder().channel_size(usize::MAX).build_ok(|| ()).await
                 })
             ).unwrap(),
             external: glib::MainContext::default().block_on(
                 glib::spawn_future_local(async move {
-                    Asyncified::builder().channel_size(32768).build_ok(|| ()).await
+                    Asyncified::builder().channel_size(usize::MAX).build_ok(|| ()).await
                 })
             ).unwrap(),
             state: CacheState::default(),

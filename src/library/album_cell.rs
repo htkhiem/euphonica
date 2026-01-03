@@ -346,7 +346,10 @@ impl AlbumCell {
                     Ok(None) => {
                         this.imp().cover.clear();
                     }
-                    Err(e) => {dbg!(e);}
+                    Err(e) => {
+                        this.imp().cover.clear();
+                        dbg!(e);
+                    }
                 }
             }
         ));
