@@ -226,6 +226,10 @@ mod imp {
 
     #[glib::derived_properties]
     impl ObjectImpl for EuphonicaWindow {
+        fn dispose(&self) {
+            println!("Disposing EuphonicaWindow");
+        }
+
         fn constructed(&self) {
             self.parent_constructed();
             let settings = settings_manager().child("ui");
@@ -372,6 +376,8 @@ mod imp {
             );
 
             let view = self.split_view.get();
+            // Take care not to cause strong references here or we won't be able to
+            // dispose window content properly.
             [
                 self.recent_view.upcast_ref::<gtk::Widget>(),
                 self.album_view.upcast_ref::<gtk::Widget>(),
@@ -381,17 +387,22 @@ mod imp {
                 self.dyn_playlist_view.upcast_ref::<gtk::Widget>(),
                 self.queue_view.upcast_ref::<gtk::Widget>(),
             ]
-            .iter()
-            .for_each(clone!(
-                #[weak]
-                view,
-                move |item| {
-                    item.connect_local("show-sidebar-clicked", false, move |_| {
-                        view.set_show_sidebar(true);
-                        None
-                    });
-                }
-            ));
+                .iter()
+                .for_each(clone!(
+                    #[weak] view,
+                    move |item| {
+                        item.connect_closure(
+                            "show-sidebar-clicked",
+                            false,
+                            closure_local!(
+                                #[weak] view,
+                                move |_: &gtk::Widget| {
+                                    view.set_show_sidebar(true);
+                                }
+                            )
+                        );
+                    }
+                ));
 
             self.queue_view.connect_notify_local(
                 Some("show-content"),
