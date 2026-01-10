@@ -960,7 +960,7 @@ impl Player {
                     if !self.imp().saved_to_history.get() && self.position() > 10.0 {
                         // These are optional & can fail when stickers aren't enabled.
                         // Don't use ? on their results.
-                        self.client()?.set_sticker(
+                        let _ = self.client()?.set_sticker(
                             "song",
                             prev_uri.clone(),
                             Stickers::SKIP_COUNT_KEY.into(),
@@ -968,7 +968,7 @@ impl Player {
                             StickerSetMode::Inc,
                         ).await;
 
-                        self.client()?.set_sticker(
+                        let _ = self.client()?.set_sticker(
                             "song",
                             prev_uri,
                             Stickers::LAST_SKIPPED_KEY.into(),
@@ -979,98 +979,109 @@ impl Player {
                 }
 
                 // Always fetch as the queue might not have been populated yet
-                if let Some(new_song) = self
+                match self
                     .client()?
-                    .get_song_at_queue_id(new_queue_place.id, true).await?
+                    .get_song_at_queue_id(new_queue_place.id, true).await
                 {
-                    // Update stickers
-                    self.client()?.set_sticker(
-                        "song",
-                        new_song.get_uri().to_owned(),
-                        Stickers::LAST_PLAYED_KEY.into(),
-                        current_unix_timestamp().to_string().into(),
-                        StickerSetMode::Set,
-                    ).await;
-                    // If using PipeWire visualiser, might need to restart it
-                    if self.imp().pipewire_restart_between_songs.get()
-                        && self
-                        .imp()
-                        .fft_backend
-                        .borrow()
-                        .as_ref()
-                        .is_some_and(|backend| backend.name() == "pipewire")
-                    {
-                        println!("Starting PipeWire backend again after song change...");
-                        self.maybe_start_fft_thread();
-                    }
-
-                    // Get new lyrics
-                    // First remove all current lines
-                    self.imp()
-                        .lyric_lines
-                        .splice(0, self.imp().lyric_lines.n_items(), &[]);
-                    let _ = self.imp().lyrics.take();
-
-                    // Fetch new lyrics: done by the panel itself
-                    match self
-                        .imp()
-                        .cache
-                        .get()
-                        .unwrap()
-                        .get_lyrics(new_song.get_info(), true)
-                        .await
-                    {
-                        Ok(Some(lyrics)) => {
-                            self.update_lyrics(lyrics);
+                    Ok(Some(new_song)) => {
+                        // Update stickers
+                        let _ = self.client()?.set_sticker(
+                            "song",
+                            new_song.get_uri().to_owned(),
+                            Stickers::LAST_PLAYED_KEY.into(),
+                            current_unix_timestamp().to_string().into(),
+                            StickerSetMode::Set,
+                        ).await;
+                        // If using PipeWire visualiser, might need to restart it
+                        if self.imp().pipewire_restart_between_songs.get()
+                            && self
+                            .imp()
+                            .fft_backend
+                            .borrow()
+                            .as_ref()
+                            .is_some_and(|backend| backend.name() == "pipewire")
+                        {
+                            println!("Starting PipeWire backend again after song change...");
+                            self.maybe_start_fft_thread();
                         }
-                        Ok(None) => {}
-                        Err(e) => {dbg!(e);}
-                    }
-                    // Update MPRIS side
-                    if self.imp().mpris_enabled.get() {
-                        mpris_changes.push(Property::Metadata(new_song.get_mpris_metadata()));
-                    }
 
-                    // We're now ready to update the UI elements
-                    self.imp().current_song.replace(Some(new_song));
-                    self.imp().saved_to_history.set(false);
-                    self.notify("title");
-                    self.notify("artist");
-                    self.notify("duration");
-                    self.notify("rating");
-                    self.notify("quality-grade");
-                    self.notify("format-desc");
-                    self.notify("album");
-                    self.notify("queue-id");
-                    // Update album art
-                    self.emit_by_name::<()>("cover-changed", &[]);
-                } else if let Some(curr_song) = self.current_song() { // Don't borrow across awaits.
-                    // Same old song. Might want to record into playback history.
-                    if !settings_manager().child("library").boolean("pause-recent") {
-                        let dur = curr_song.get_duration() as f32;
-                        // Conform to myMPD's standards: song must be longer than 10 seconds and played for
-                        // at least 4 minutes or half of its duration, whichever comes first.
-                        if dur >= 10.0 {
-                            if let Some(new_position_dur) = status.elapsed {
-                                if !self.imp().saved_to_history.get()
-                                    && (new_position_dur.as_secs_f32() / dur >= 0.5
-                                        || new_position_dur.as_secs_f32() >= 240.0)
-                                {
-                                    if let Ok(()) = sqlite::add_to_history(curr_song.get_info()) {
+                        // Get new lyrics
+                        // First remove all current lines
+                        self.imp()
+                            .lyric_lines
+                            .splice(0, self.imp().lyric_lines.n_items(), &[]);
+                        let _ = self.imp().lyrics.take();
+
+                        // Fetch new lyrics: done by the panel itself
+                        match self
+                            .imp()
+                            .cache
+                            .get()
+                            .unwrap()
+                            .get_lyrics(new_song.get_info(), true)
+                            .await
+                        {
+                            Ok(Some(lyrics)) => {
+                                self.update_lyrics(lyrics);
+                            }
+                            Ok(None) => {}
+                            Err(e) => {dbg!(e);}
+                        }
+                        // Update MPRIS side
+                        if self.imp().mpris_enabled.get() {
+                            mpris_changes.push(Property::Metadata(new_song.get_mpris_metadata()));
+                        }
+
+                        // We're now ready to update the UI elements
+                        self.imp().current_song.replace(Some(new_song));
+                        self.imp().saved_to_history.set(false);
+                        self.notify("title");
+                        self.notify("artist");
+                        self.notify("duration");
+                        self.notify("rating");
+                        self.notify("quality-grade");
+                        self.notify("format-desc");
+                        self.notify("album");
+                        self.notify("queue-id");
+                        // Update album art
+                        self.emit_by_name::<()>("cover-changed", &[]);
+                    }
+                    Ok(None) => {
+                        println!("[WARNING] returned status says there is a song playing but none can be fetched. Slow connection?");
+                    }
+                    Err(e) => {
+                        dbg!(e);
+                    }
+                }
+            } else if let Some(curr_song) = self.current_song() { // Don't borrow across awaits.
+                // Same old song. Might want to record into playback history.
+                if !settings_manager().child("library").boolean("pause-recent") {
+                    let dur = curr_song.get_duration() as f32;
+                    // Conform to myMPD's standards: song must be longer than 10 seconds and played for
+                    // at least 4 minutes or half of its duration, whichever comes first.
+                    if dur >= 10.0 {
+                        if let Some(new_position_dur) = status.elapsed {
+                            if !self.imp().saved_to_history.get()
+                                && (new_position_dur.as_secs_f32() / dur >= 0.5
+                                    || new_position_dur.as_secs_f32() >= 240.0)
+                            {
+                                match sqlite::add_to_history(curr_song.get_info()) {
+                                    Ok(()) => {
                                         self.emit_by_name::<()>("history-changed", &[]);
                                     }
-                                    if let Err(e) = self.client()?.set_sticker(
-                                        "song",
-                                        curr_song.get_uri().to_owned(),
-                                        Stickers::PLAY_COUNT_KEY.into(),
-                                        "1".into(),
-                                        StickerSetMode::Inc,
-                                    ).await {
-                                        dbg!(e);
-                                    }
-
-                                    self.imp().saved_to_history.set(true);
+                                    Err(e) => {dbg!(e);}
                                 }
+                                if let Err(e) = self.client()?.set_sticker(
+                                    "song",
+                                    curr_song.get_uri().to_owned(),
+                                    Stickers::PLAY_COUNT_KEY.into(),
+                                    "1".into(),
+                                    StickerSetMode::Inc,
+                                ).await {
+                                    dbg!(e);
+                                }
+
+                                self.imp().saved_to_history.set(true);
                             }
                         }
                     }
@@ -1112,14 +1123,14 @@ impl Player {
             let secs_to_end = self.duration() as f64 - new;
             if self.imp().pipewire_restart_between_songs.get()
                 && self
-                    .imp()
-                    .fft_backend
-                    .borrow()
-                    .as_ref()
-                    .is_some_and(|backend| {
-                        backend.name() == "pipewire"
-                            && backend.status() != FftStatus::ValidNotReading
-                    })
+                .imp()
+                .fft_backend
+                .borrow()
+                .as_ref()
+                .is_some_and(|backend| {
+                    backend.name() == "pipewire"
+                        && backend.status() != FftStatus::ValidNotReading
+                })
                 && (0.0..1.5).contains(&secs_to_end)
             {
                 println!("Stopping PipeWire backend to allow samplerate change...");
@@ -1355,10 +1366,10 @@ impl Player {
                 sqlite::find_cover_by_uri(&uri, thumbnail)
                     .map_err(|_| ClientError::Internal)?
                     .and_then(|name| if !name.is_empty() {
-                            let mut path = get_image_cache_path();
-                            path.push(name);
-                            Some(path)
-                        } else {None})
+                        let mut path = get_image_cache_path();
+                        path.push(name);
+                        Some(path)
+                    } else {None})
             )).await.unwrap()
         } else {
             Ok(None)
@@ -1491,13 +1502,13 @@ impl Player {
     pub async fn prev_song(&self, block: bool) -> ClientResult<()> {
         if self.imp().pipewire_restart_between_songs.get()
             && self
-                .imp()
-                .fft_backend
-                .borrow()
-                .as_ref()
-                .is_some_and(|backend| {
-                    backend.name() == "pipewire" && backend.status() != FftStatus::ValidNotReading
-                })
+            .imp()
+            .fft_backend
+            .borrow()
+            .as_ref()
+            .is_some_and(|backend| {
+                backend.name() == "pipewire" && backend.status() != FftStatus::ValidNotReading
+            })
         {
             println!("Stopping PipeWire backend to allow samplerate change...");
             self.maybe_stop_fft_thread(block);
@@ -1508,13 +1519,13 @@ impl Player {
     pub async fn next_song(&self, block: bool) -> ClientResult<()> {
         if self.imp().pipewire_restart_between_songs.get()
             && self
-                .imp()
-                .fft_backend
-                .borrow()
-                .as_ref()
-                .is_some_and(|backend| {
-                    backend.name() == "pipewire" && backend.status() != FftStatus::ValidNotReading
-                })
+            .imp()
+            .fft_backend
+            .borrow()
+            .as_ref()
+            .is_some_and(|backend| {
+                backend.name() == "pipewire" && backend.status() != FftStatus::ValidNotReading
+            })
         {
             println!("Stopping PipeWire backend to allow samplerate change...");
             self.maybe_stop_fft_thread(block);
@@ -1537,13 +1548,13 @@ impl Player {
     pub async fn on_song_clicked(&self, song: Song) -> ClientResult<()> {
         if self.imp().pipewire_restart_between_songs.get()
             && self
-                .imp()
-                .fft_backend
-                .borrow()
-                .as_ref()
-                .is_some_and(|backend| {
-                    backend.name() == "pipewire" && backend.status() != FftStatus::ValidNotReading
-                })
+            .imp()
+            .fft_backend
+            .borrow()
+            .as_ref()
+            .is_some_and(|backend| {
+                backend.name() == "pipewire" && backend.status() != FftStatus::ValidNotReading
+            })
         {
             println!("Stopping PipeWire backend to allow samplerate change...");
             self.maybe_stop_fft_thread(true);
@@ -1644,10 +1655,6 @@ impl Player {
     pub fn import_lyrics(&self, text: &str) {
         if let Some(curr_song) = self.imp().current_song.borrow().as_ref() {
             if let Ok(lyrics) = Lyrics::try_from_synced_lrclib_str(text)
-                // .map_err(|res| {
-                //     println!("Synced lyrics parse error: {:?}", &res);
-                //     return res;
-                // })
                 .or_else(|_| Lyrics::try_from_plain_lrclib_str(text))
             {
                 sqlite::write_lyrics(curr_song.get_info(), Some(&lyrics))
