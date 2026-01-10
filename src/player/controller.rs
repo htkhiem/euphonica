@@ -1053,35 +1053,42 @@ impl Player {
                         dbg!(e);
                     }
                 }
-            } else if let Some(curr_song) = self.current_song() { // Don't borrow across awaits.
-                // Same old song. Might want to record into playback history.
-                if !settings_manager().child("library").boolean("pause-recent") {
-                    let dur = curr_song.get_duration() as f32;
-                    // Conform to myMPD's standards: song must be longer than 10 seconds and played for
-                    // at least 4 minutes or half of its duration, whichever comes first.
-                    if dur >= 10.0 {
-                        if let Some(new_position_dur) = status.elapsed {
-                            if !self.imp().saved_to_history.get()
-                                && (new_position_dur.as_secs_f32() / dur >= 0.5
-                                    || new_position_dur.as_secs_f32() >= 240.0)
-                            {
-                                match sqlite::add_to_history(curr_song.get_info()) {
-                                    Ok(()) => {
-                                        self.emit_by_name::<()>("history-changed", &[]);
+            } else {
+                let curr_song;
+                {
+                    // Don't borrow across awaits.
+                    curr_song = self.current_song();
+                }
+                if let Some(curr_song) = curr_song {
+                    // Same old song. Might want to record into playback history.
+                    if !settings_manager().child("library").boolean("pause-recent") {
+                        let dur = curr_song.get_duration() as f32;
+                        // Conform to myMPD's standards: song must be longer than 10 seconds and played for
+                        // at least 4 minutes or half of its duration, whichever comes first.
+                        if dur >= 10.0 {
+                            if let Some(new_position_dur) = status.elapsed {
+                                if !self.imp().saved_to_history.get()
+                                    && (new_position_dur.as_secs_f32() / dur >= 0.5
+                                        || new_position_dur.as_secs_f32() >= 240.0)
+                                {
+                                    match sqlite::add_to_history(curr_song.get_info()) {
+                                        Ok(()) => {
+                                            self.emit_by_name::<()>("history-changed", &[]);
+                                        }
+                                        Err(e) => {dbg!(e);}
                                     }
-                                    Err(e) => {dbg!(e);}
-                                }
-                                if let Err(e) = self.client()?.set_sticker(
-                                    "song",
-                                    curr_song.get_uri().to_owned(),
-                                    Stickers::PLAY_COUNT_KEY.into(),
-                                    "1".into(),
-                                    StickerSetMode::Inc,
-                                ).await {
-                                    dbg!(e);
-                                }
+                                    if let Err(e) = self.client()?.set_sticker(
+                                        "song",
+                                        curr_song.get_uri().to_owned(),
+                                        Stickers::PLAY_COUNT_KEY.into(),
+                                        "1".into(),
+                                        StickerSetMode::Inc,
+                                    ).await {
+                                        dbg!(e);
+                                    }
 
-                                self.imp().saved_to_history.set(true);
+                                    self.imp().saved_to_history.set(true);
+                                }
                             }
                         }
                     }
@@ -1628,7 +1635,9 @@ impl Player {
                 loop {
                     // Don't poll if not playing
                     if this.imp().state.get() == PlaybackState::Playing {
-                        this.update_status().await;
+                        if let Err(e) = this.update_status().await {
+                            dbg!(e);
+                        }
                     }
                     glib::timeout_future_seconds(1).await;
                 }

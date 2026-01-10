@@ -28,6 +28,7 @@ mod imp {
     #[derivative(Default)]
     pub struct Library {
         pub client: OnceCell<Rc<MpdWrapper>>,
+        pub recent_initialized: Cell<bool>,
         #[derivative(Default(value = "gio::ListStore::new::<Song>()"))]
         pub recent_songs: gio::ListStore,
         #[derivative(Default(value = "gio::ListStore::new::<INode>()"))]
@@ -531,6 +532,29 @@ impl Library {
         Ok(())
     }
 
+    pub async fn init_recent(&self, refresh: bool) -> ClientResult<()> {
+        if !self.imp().recent_initialized.get() || refresh {
+            let model = self.imp().recent_albums.clone();
+            model.remove_all();
+            self.client().get_recent_albums(&mut |album| {
+                println!("Appending new recent album: {:?}", &album);
+                model.append(&album);
+            }).await?;
+
+            let model = self.imp().recent_artists.clone();
+            model.remove_all();
+            self.client().get_recent_artists(&mut |artist| {model.append(&artist);}).await?;
+
+            let model = self.imp().recent_songs.clone();
+            model.remove_all();
+            let settings = settings_manager().child("library");
+            model.extend_from_slice(&self.client().get_recent_songs(settings.uint("n-recent-songs")).await?);
+
+            self.imp().recent_initialized.set(true);
+        }
+        Ok(())
+    }
+
     pub async fn init_albums(&self) -> ClientResult<()> {
         if !self.imp().albums_initialized.get() {
             let model = self.imp().albums.clone();
@@ -542,13 +566,6 @@ impl Library {
             self.imp().albums_initialized.set(true);
         }
         Ok(())
-    }
-
-    pub async fn get_recent_albums(&self) -> ClientResult<()> {
-        let model = self.imp().recent_albums.clone();
-        model.remove_all();
-
-        self.client().get_recent_albums(&mut |album| {model.append(&album);}).await
     }
 
     pub async fn init_artists(&self, use_album_artist: bool) -> ClientResult<()> {
@@ -584,19 +601,5 @@ impl Library {
             artist.get_name().to_owned(),
         );
         self.client().get_songs_by_query(query, &mut respond).await
-    }
-
-    pub async fn get_recent_artists(&self) -> ClientResult<()> {
-        let model = self.imp().recent_artists.clone();
-        model.remove_all();
-
-        self.client().get_recent_artists(&mut |artist| {model.append(&artist);}).await
-    }
-
-    pub async fn get_recent_songs(&self) -> ClientResult<Vec<Song>> {
-        let model = self.imp().recent_songs.clone();
-        model.remove_all();
-        let settings = settings_manager().child("library");
-        self.client().get_recent_songs(settings.uint("n-recent-songs")).await
     }
 }

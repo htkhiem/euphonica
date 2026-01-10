@@ -977,15 +977,6 @@ impl MpdWrapper {
         }).await
     }
 
-    // Should handle this in Library controller
-    // pub async fn get_album_songs<F>(&self, tag: &str, respond: F) -> ClientResult<()>
-    // where F: Fn(Vec<Song>) {
-    //     let mut query = Query::new();
-    //     query.and(Term::Tag(Cow::Borrowed("album")), tag.to_string());
-    //     self.get_songs_by_query(query, &respond).await
-    // }
-
-
     pub async fn get_artists<F>(&self, use_album_artist: bool, respond: &mut F) -> ClientResult<()>
     where F: FnMut(Artist) {
         // Fetching artists is a bit more involved: artist tags usually contain multiple artists.
@@ -1012,10 +1003,8 @@ impl MpdWrapper {
             ).await?;
             if !songs.is_empty() {
                 let artists = std::mem::take(&mut songs[0]).into_artist_infos();
-                // println!("Got these artists: {artists:?}");
                 for artist in artists.into_iter() {
                     if already_parsed.insert(artist.name.clone()) {
-                        // println!("Never seen {artist:?} before, inserting...");
                         respond(artist.into());
                     }
                 }
@@ -1255,7 +1244,6 @@ impl MpdWrapper {
         let mut sticker_clauses: Vec<(StickerObjectType, String, StickerOperation, String)> =
             Vec::new();
         for rule in rules.into_iter() {
-            println!("{rule:?}");
             match rule {
                 Rule::Sticker(obj, key, op, rhs) => {
                     sticker_clauses.push((obj, key, op, rhs));
