@@ -20,7 +20,7 @@
           <object class="AdwBreakpoint">
             <condition>max-width: 550px</condition>
             <setter object="infobox" property="orientation">1</setter>
-            <setter object="cover" property="pixel-size">128</setter>
+            <setter object="cover" property="size">128</setter>
             <setter object="append_queue_text" property="visible">false</setter>
             <setter object="edit_text" property="visible">false</setter>
 
@@ -49,9 +49,8 @@
                       <class name="border-radius-6" />
                     </style>
                     <child>
-                      <object class="GtkImage" id="cover">
-                        <property name="pixel-size">256</property>
-                        <property name="resource">io/github/htkhiem/Euphonica/albumart-placeholder.png</property>
+                      <object class="EuphonicaImageStack" id="cover">
+                        <property name="size">256</property>
                       </object>
                     </child>
                   </object>

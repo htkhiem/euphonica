@@ -123,9 +123,8 @@
                                   <class name="flat"/>
                                 </style>
                                 <child>
-                                  <object class="GtkImage" id="cover">
-                                    <property name="pixel-size">36</property>  <!-- FIXME: find a better way than hardcoding Entry height with h3 style. -->
-                                    <property name="resource">/io/github/htkhiem/Euphonica/albumart-placeholder.svg</property>
+                                  <object class="EuphonicaImageStack" id="cover">
+                                    <property name="size">36</property>  <!-- FIXME: find a better way than hardcoding Entry height with h3 style. -->
                                   </object>
                                 </child>
                               </object>

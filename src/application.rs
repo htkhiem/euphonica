@@ -19,14 +19,7 @@
  */
 
 use crate::{
-    EuphonicaWindow,
-    cache::Cache,
-    client::MpdWrapper,
-    config::{APPLICATION_USER_AGENT, VERSION},
-    library::Library,
-    player::Player,
-    preferences::Preferences,
-    utils::{settings_manager, tokio_runtime},
+    EuphonicaWindow, cache::Cache, client::MpdWrapper, config::{APPLICATION_USER_AGENT, VERSION}, library::Library, player::Player, preferences::Preferences, utils::{settings_manager, tokio_runtime}
 };
 use adw::prelude::*;
 use adw::subclass::prelude::*;

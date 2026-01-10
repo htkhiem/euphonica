@@ -101,6 +101,8 @@ mod imp {
                 .bind_property("image-size", &self.cover.get(), "size")
                 .sync_create()
                 .build();
+
+            self.cover.set_is_thumbnail(true);
         }
 
         fn properties() -> &'static [ParamSpec] {

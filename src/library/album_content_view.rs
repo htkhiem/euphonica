@@ -2,11 +2,12 @@ use super::{Library, artist_tag::ArtistTag};
 use crate::{
     cache::{
         Cache, CacheState,
-        placeholders::{ALBUMART_PLACEHOLDER, EMPTY_ALBUM_STRING},
+        placeholders::EMPTY_ALBUM_STRING,
     },
     client::{ClientState, state::StickersSupportLevel},
     common::{
         Album, Artist, ContentView, Rating, RowAddButtons, Song, SongRow,
+        ImageStack
     },
     library::add_to_playlist::AddToPlaylistButton,
     utils::{format_secs_as_duration, tokio_runtime},
@@ -36,7 +37,7 @@ mod imp {
         #[template_child]
         pub inner: TemplateChild<ContentView>,
         #[template_child]
-        pub cover: TemplateChild<gtk::Image>,
+        pub cover: TemplateChild<ImageStack>,
 
         #[template_child]
         pub infobox_spinner: TemplateChild<gtk::Stack>,
@@ -702,16 +703,16 @@ impl AlbumContentView {
 
     #[inline]
     fn clear_cover(&self) {
-        self.imp().cover.set_paintable(Some(&*ALBUMART_PLACEHOLDER));
+        self.imp().cover.clear();
     }
 
     #[inline]
     fn update_cover(&self, tex: gdk::Texture) {
-        self.imp().cover.set_paintable(Some(&tex));
+        self.imp().cover.show(&tex);
     }
 
     async fn schedule_cover(&self) {
-        self.clear_cover();
+        self.imp().cover.show_spinner();
         if let Some(info) = self.imp().album.borrow().as_ref().map(|a| a.get_info()) {
             match self.imp().cache.get().unwrap().clone().get_album_cover(
                 info, false, true
@@ -719,7 +720,9 @@ impl AlbumContentView {
                 Ok(Some(tex)) => {
                     self.update_cover(tex);
                 }
-                Ok(None) => {}
+                Ok(None) => {
+                    self.clear_cover();
+                }
                 Err(e) => {dbg!(e);}
             }
         }

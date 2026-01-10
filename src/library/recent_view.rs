@@ -233,10 +233,7 @@ impl RecentView {
 
     pub fn on_history_changed(&self) {
         glib::spawn_future_local(clone!(#[weak(rename_to = this)] self, async move {
-            match this.imp().library.upgrade().unwrap().init_recent(true).await {
-                Err(e) => {dbg!(e);}
-                _ => {}
-            }
+            if let Err(e) = this.imp().library.upgrade().unwrap().init_recent(true).await {dbg!(e);}
         }));
     }
 
@@ -481,10 +478,7 @@ impl RecentView {
 impl LazyInit for RecentView {
     fn populate(&self) {
         glib::spawn_future_local(clone!(#[weak(rename_to = this)] self, async move {
-            match this.imp().library.upgrade().unwrap().init_recent(false).await {
-                Err(e) => {dbg!(e);}
-                _ => {}
-            }
+            if let Err(e) = this.imp().library.upgrade().unwrap().init_recent(false).await {dbg!(e);}
         }));
     }
 }

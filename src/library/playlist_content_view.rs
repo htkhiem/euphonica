@@ -1,3 +1,4 @@
+use ashpd::desktop::file_chooser::SelectedFiles;
 use adw::subclass::prelude::*;
 use derivative::Derivative;
 use glib::{Binding, clone, closure_local, signal::SignalHandlerId, WeakRef};
@@ -6,16 +7,18 @@ use gtk::{
 };
 use mpd::error::{Error as MpdError, ErrorCode as MpdErrorCode, ServerError};
 use std::{
-    cell::{OnceCell, RefCell},
+    cell::{OnceCell, RefCell, Cell},
     rc::Rc,
 };
+use gio::{ActionEntry, SimpleActionGroup};
+use mpd::SaveMode;
 
 use super::Library;
 use crate::{
-    cache::{Cache, placeholders::ALBUMART_PLACEHOLDER},
+    cache::Cache,
     client::Error as ClientError,
-    common::{INode, RowAddButtons, RowEditButtons, Song, SongRow},
-    utils::format_secs_as_duration,
+    common::{INode, RowAddButtons, RowEditButtons, Song, SongRow, ImageStack},
+    utils::{format_secs_as_duration, tokio_runtime},
     window::EuphonicaWindow,
 };
 
@@ -78,15 +81,6 @@ impl HistoryStep {
 // To facilitate this, we have to enter an "edit mode" with a separate song ListStore
 // and UI.
 mod imp {
-    use std::cell::Cell;
-
-    use ashpd::desktop::file_chooser::SelectedFiles;
-    
-    use gio::{ActionEntry, SimpleActionGroup};
-    use mpd::SaveMode;
-
-    use crate::utils::{tokio_runtime};
-
     use super::*;
 
     #[derive(Debug, CompositeTemplate, Derivative)]
@@ -98,7 +92,7 @@ mod imp {
         #[template_child]
         pub collapse_infobox: TemplateChild<gtk::ToggleButton>,
         #[template_child]
-        pub cover: TemplateChild<gtk::Image>,
+        pub cover: TemplateChild<ImageStack>,
         #[template_child]
         pub content_stack: TemplateChild<gtk::Stack>,
         #[template_child]
@@ -919,6 +913,7 @@ impl PlaylistContentView {
             async move {
                 let name = playlist.get_uri().to_owned();
                 // Fetch high resolution playlist cover
+                this.imp().cover.show_spinner();
                 match this.imp().cache.get().unwrap().get_playlist_cover(
                     name.clone(),
                     false,
@@ -939,7 +934,7 @@ impl PlaylistContentView {
 
                 let song_list = this.imp().song_list.clone();
                 song_list.remove_all();
-                this.imp().library.upgrade().unwrap().get_playlist_songs(
+                let _ = this.imp().library.upgrade().unwrap().get_playlist_songs(
                     name,
                     move |songs| {
                         song_list.extend_from_slice(&songs);
@@ -997,15 +992,18 @@ impl PlaylistContentView {
         }));
     }
 
+    #[inline]
     fn update_cover(&self, tex: &gdk::Texture) {
         // Set text in case there is no image
-        self.imp().cover.set_paintable(Some(tex));
+        self.imp().cover.show(tex);
     }
 
+    #[inline]
     fn clear_cover(&self) {
-        self.imp().cover.set_paintable(Some(&*ALBUMART_PLACEHOLDER));
+        self.imp().cover.clear();
     }
 
+    #[inline]
     pub fn current_playlist(&self) -> Option<INode> {
         self.imp().playlist.borrow().clone()
     }

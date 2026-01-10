@@ -1,10 +1,11 @@
 use adw::prelude::*;
 use adw::subclass::prelude::*;
 use ashpd::desktop::file_chooser::SelectedFiles;
-use glib::{WeakRef, clone, closure_local};
-use gtk::{CompositeTemplate, ListItem, SignalListItemFactory, gio, glib};
+use glib::{WeakRef, clone, closure_local, subclass::Signal};
+use gtk::{CompositeTemplate, ListItem, SignalListItemFactory, gio, glib, gdk::Texture};
 use std::{
-    cell::{OnceCell, RefCell},
+    cell::{OnceCell, RefCell, Cell},
+    sync::OnceLock,
     rc::Rc,
 };
 use uuid::Uuid;
@@ -13,10 +14,11 @@ use derivative::Derivative;
 use strum::{EnumCount, IntoEnumIterator, VariantArray};
 
 use crate::{
-    cache::{Cache, ImageAction, placeholders::ALBUMART_PLACEHOLDER, sqlite},
+    cache::{Cache, ImageAction, sqlite},
     common::{
         DynamicPlaylist, Song, SongRow,
         dynamic_playlist::{AutoRefresh, Ordering, Rule},
+        ImageStack,
     },
     utils::{format_secs_as_duration, tokio_runtime},
     window::EuphonicaWindow,
@@ -25,10 +27,6 @@ use crate::{
 use super::{Library, ordering_button::OrderingButton, rule_button::RuleButton};
 
 mod imp {
-    use std::{cell::Cell, sync::OnceLock};
-
-    use glib::subclass::Signal;
-
     use super::*;
 
     #[derive(Debug, CompositeTemplate, Derivative)]
@@ -50,7 +48,7 @@ mod imp {
         #[template_child]
         pub cover_btn: TemplateChild<gtk::Button>,
         #[template_child]
-        pub cover: TemplateChild<gtk::Image>,
+        pub cover: TemplateChild<ImageStack>,
 
         #[template_child]
         pub exit_btn: TemplateChild<gtk::Button>,
@@ -149,6 +147,9 @@ mod imp {
                     this.obj().on_change();
                 }
             ));
+
+            self.cover.set_is_thumbnail(true);
+            self.cover.clear();
 
             self.refresh_schedule.connect_selected_notify(clone!(
                 #[weak(rename_to = this)]
@@ -643,13 +644,13 @@ impl DynamicPlaylistEditorView {
         self.imp()
             .cover_action
             .replace(ImageAction::New(filepath.clone()));
-        self.imp().cover.set_from_file(Some(filepath)); // FIXME: use libglycin
+        self.imp().cover.show(&Texture::from_filename(filepath).unwrap());
         self.on_change();
     }
 
     fn clear_cover(&self) {
         self.imp().cover_action.replace(ImageAction::Clear);
-        self.imp().cover.set_paintable(Some(&*ALBUMART_PLACEHOLDER));
+        self.imp().cover.clear();
         self.on_change();
     }
 
@@ -657,15 +658,17 @@ impl DynamicPlaylistEditorView {
         self.imp()
             .cover_action
             .replace(ImageAction::Existing(false)); // for now
-        self.imp().cover.set_paintable(Some(&*ALBUMART_PLACEHOLDER));
+        self.imp().cover.show_spinner();
 
         // Fetch high resolution playlist cover
         match self.imp().cache.get().unwrap().get_playlist_cover(dp.name.to_owned(), true, false).await {
             Ok(Some(tex)) => {
                 self.imp().cover_action.replace(ImageAction::Existing(true));
-                self.imp().cover.set_paintable(Some(&tex));
+                self.imp().cover.show(&tex);
             }
-            Ok(None) => {}
+            Ok(None) => {
+                self.imp().cover.clear();
+            }
             Err(e) => {dbg!(e);}
         }
     }

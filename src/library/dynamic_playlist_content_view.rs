@@ -1,7 +1,7 @@
 use super::{DynamicPlaylistView, Library, artist_tag::ArtistTag};
 use crate::{
-    cache::{Cache, placeholders::ALBUMART_PLACEHOLDER, sqlite},
-    common::{ContentView, DynamicPlaylist, Song, SongRow, dynamic_playlist::AutoRefresh},
+    cache::{Cache, sqlite},
+    common::{ContentView, DynamicPlaylist, Song, SongRow, dynamic_playlist::AutoRefresh, INodeType, inode::INodeInfo, ImageStack},
     utils::{self, format_secs_as_duration, get_time_ago_desc},
     window::EuphonicaWindow,
 };
@@ -20,7 +20,6 @@ use std::{
 use time::OffsetDateTime;
 
 mod imp {
-    use crate::common::{INodeType, inode::INodeInfo};
 
     use super::*;
 
@@ -35,7 +34,7 @@ mod imp {
         #[template_child]
         pub inner: TemplateChild<ContentView>,
         #[template_child]
-        pub cover: TemplateChild<gtk::Image>,
+        pub cover: TemplateChild<ImageStack>,
 
         #[template_child]
         pub title: TemplateChild<gtk::Label>,
@@ -441,16 +440,18 @@ impl DynamicPlaylistContentView {
 
     #[inline]
     fn clear_cover(&self) {
-        self.imp().cover.set_paintable(Some(&*ALBUMART_PLACEHOLDER));
+        self.imp().cover.clear();
     }
 
     async fn update_cover(&self, name: String) {
-        self.clear_cover();
+        self.imp().cover.show_spinner();
         match self.imp().cache.get().unwrap().get_playlist_cover(name, true, false).await {
             Ok(Some(tex)) => {
-                self.imp().cover.set_paintable(Some(&tex));
+                self.imp().cover.show(&tex);
             }
-            Ok(None) => {}
+            Ok(None) => {
+                self.imp().cover.clear();
+            }
             Err(e) => {dbg!(e);}
         }
     }
