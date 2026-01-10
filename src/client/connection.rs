@@ -258,7 +258,9 @@ impl Connection {
     }
 
     pub fn connect(&mut self) -> Result<Version> {
-        self.disconnect()?;
+        if let Err(e) = self.disconnect() {
+            println!("Warning: did not cleanly disconnect");
+        }
         let settings = utils::settings_manager().child("client");
         dbg!("Disconnected successfully");
 
