@@ -232,12 +232,12 @@ impl RecentView {
     }
 
     pub fn on_history_changed(&self) {
-        let library = self.imp().library.upgrade().unwrap();
-        glib::spawn_future_local(async move {
-            library.get_recent_albums().await?;
-            library.get_recent_artists().await?;
-            library.get_recent_songs().await
-        });
+        glib::spawn_future_local(clone!(#[weak(rename_to = this)] self, async move {
+            match this.imp().library.upgrade().unwrap().init_recent(true).await {
+                Err(e) => {dbg!(e);}
+                _ => {}
+            }
+        }));
     }
 
     fn setup_album_row(&self, window: &EuphonicaWindow, cache: Rc<Cache>) {
@@ -480,6 +480,11 @@ impl RecentView {
 
 impl LazyInit for RecentView {
     fn populate(&self) {
-        self.on_history_changed();
+        glib::spawn_future_local(clone!(#[weak(rename_to = this)] self, async move {
+            match this.imp().library.upgrade().unwrap().init_recent(false).await {
+                Err(e) => {dbg!(e);}
+                _ => {}
+            }
+        }));
     }
 }
