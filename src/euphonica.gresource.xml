@@ -49,6 +49,9 @@
     <file alias="albumart-placeholder-thumb.png">gtk/textures/albumart-placeholder-thumb.png</file>
   </gresource>
   <gresource prefix="/io/github/htkhiem/Euphonica/icons/scalable/actions/">
+    <file preprocess="xml-stripblanks" alias="view-sort-descending-symbolic.svg">gtk/icons/view-sort-descending-symbolic.svg</file>
+    <file preprocess="xml-stripblanks" alias="view-sort-ascending-symbolic.svg">gtk/icons/view-sort-ascending-symbolic.svg</file>
+    <file preprocess="xml-stripblanks" alias="dock-right-symbolic.svg">gtk/icons/dock-right-symbolic.svg</file>
     <file preprocess="xml-stripblanks" alias="settings-symbolic.svg">gtk/icons/settings-symbolic.svg</file>
     <file preprocess="xml-stripblanks" alias="mixramp-off-symbolic.svg">gtk/icons/mixramp-off-symbolic.svg</file>
     <file preprocess="xml-stripblanks" alias="mixramp-symbolic.svg">gtk/icons/mixramp-symbolic.svg</file>

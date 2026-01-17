@@ -18,7 +18,7 @@ use mpd::{
 };
 use rustc_hash::FxHashSet;
 
-use crate::{cache::{get_new_image_paths, sqlite}, common::{dynamic_playlist::{Ordering, QueryLhs, Rule, StickerObjectType, StickerOperation}, SongInfo}, meta_providers::ProviderMessage, utils::{self, strip_filename_linux}};
+use crate::{cache::{get_new_image_paths, sqlite}, common::{SongInfo, dynamic_playlist::{Ordering, QueryLhs, Rule, StickerObjectType, StickerOperation}, parse_mb_artist_tag}, meta_providers::ProviderMessage, utils::{self, strip_filename_linux}};
 
 use super::*;
 
@@ -373,10 +373,10 @@ pub fn download_folder_cover(
 fn fetch_albums_by_query<F>(
     client: &mut mpd::Client<stream::StreamWrapper>,
     query: &Query,
-    respond: F,
+    mut respond: F,
 ) -> Result<(), MpdError>
 where
-    F: Fn(AlbumInfo) -> Result<(), SendError<AsyncClientMessage>>,
+    F: FnMut(AlbumInfo) -> Result<(), SendError<AsyncClientMessage>>,
 {
     // TODO: batched windowed retrieval
     // Get list of unique album tags, grouped by albumartist
@@ -397,10 +397,12 @@ where
                     ) {
                         Ok(mut songs) => {
                             if !songs.is_empty() {
-                                let info = SongInfo::from(std::mem::take(&mut songs[0]))
-                                    .into_album_info()
-                                    .unwrap_or_default();
-                                let _ = respond(info);
+                                let _ = respond(
+                                    SongInfo
+                                        ::from(std::mem::take(&mut songs[0]))
+                                        .into_album_info()
+                                        .unwrap_or_default()
+                                );
                             }
                         }
                         Err(e) => {
@@ -561,22 +563,49 @@ pub fn fetch_albums_of_artist(
     sender_to_fg: &Sender<AsyncClientMessage>,
     artist_name: String,
 ) {
-    if let Err(mpd_error) = fetch_albums_by_query(
-        client,
+    // fetch_albums_by_query uses substring search & may lead to false positives
+    // so we need to use a bespoke version here.
+    // First use substring search to get unique artist tags, not albumartists
+    // as we want to show all albums containing at least one song with this
+    // artist tagged.
+    match client.list(
+        &Term::Tag(Cow::Borrowed("artist")),
         Query::new().and_with_op(
             Term::Tag(Cow::Borrowed("artist")),
             QueryOperation::Contains,
             artist_name.clone(),
         ),
-        |info| {
-            sender_to_fg.send_blocking(AsyncClientMessage::ArtistAlbumBasicInfoDownloaded(
-                artist_name.clone(),
-                info,
-            ))
-        },
+        None
     ) {
-        let _ = sender_to_fg.send_blocking(AsyncClientMessage::BackgroundError(mpd_error, None));
+        Ok(grouped_vals) => {
+            let mut already_parsed: FxHashSet<String> = FxHashSet::default();
+            for tag in grouped_vals.groups[0].1.iter() {
+                // If this artist tag really contains this artist and not a coincidental
+                // substring, then fetch all albums containing songs with this artist tag.
+                if parse_mb_artist_tag(tag).iter().any(|a| a == &artist_name) {
+                    if let Err(mpd_error) = fetch_albums_by_query(
+                        client,
+                        Query::new().and(Term::Tag("artist".into()), tag),
+                        |info| {
+                            if already_parsed.insert(info.title.clone()) {
+                                let _ = sender_to_fg.send_blocking(AsyncClientMessage::ArtistAlbumBasicInfoDownloaded(
+                                    artist_name.clone(),
+                                    info
+                                ));
+                            }
+                            Ok(())
+                        },
+                    ) {
+                        let _ = sender_to_fg.send_blocking(AsyncClientMessage::BackgroundError(mpd_error, None));
+                    }
+                }
+            }
+        }
+        Err(mpd_error) => {
+            let _ = sender_to_fg.send_blocking(AsyncClientMessage::BackgroundError(mpd_error, None));
+        }
     }
+
 }
 
 pub fn fetch_album_songs(
@@ -704,7 +733,8 @@ pub fn fetch_songs_of_artist(
         |songs| {
             sender_to_fg.send_blocking(AsyncClientMessage::ArtistSongInfoDownloaded(
                 name.clone(),
-                songs,
+                // Substring search may lead to false positives so filter once more.
+                songs.into_iter().filter(|s| s.artists.iter().any(|a| a.name == name)).collect()
             ))
         },
     );

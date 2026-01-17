@@ -137,7 +137,7 @@
                                   <class name="flat"/>
                                 </style>
                                 <property name="visible">false</property>
-                                <property name="icon-name">sidebar-show-right-symbolic</property>
+                                <property name="icon-name">dock-right-symbolic</property>
                               </object>
                             </child>
                           </object>

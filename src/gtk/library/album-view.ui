@@ -138,10 +138,15 @@
         <item>
           <attribute name="label">AlbumArtist</attribute>  <!-- Don't translate this as this is referring to the tag itself -->
           <attribute name="action">album-view.sort-by</attribute>
-          <attribute name="target">5</attribute> <!-- See sortby enum -->
+          <attribute name="target">4</attribute> <!-- See sortby enum -->
         </item>
         <item>
           <attribute name="label" translatable="true">Release Date</attribute>
+          <attribute name="action">album-view.sort-by</attribute>
+          <attribute name="target">5</attribute> <!-- See sortby enum -->
+        </item>
+        <item>
+          <attribute name="label" translatable="true">Rating</attribute>
           <attribute name="action">album-view.sort-by</attribute>
           <attribute name="target">8</attribute> <!-- See sortby enum -->
         </item>
