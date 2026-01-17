@@ -66,6 +66,7 @@ pub struct BlurConfig {
     width: u32,
     height: u32,
     radius: u32,
+    is_dark: bool,
     fade: bool, // Whether this update requires fading to it. Those for updating radius shouldn't be faded.
 }
 
@@ -94,7 +95,7 @@ fn run_blur(di: &DynamicImage, config: &BlurConfig) -> gdk::MemoryTexture {
     )
 }
 
-fn get_dominant_color(img: &DynamicImage) -> RGB {
+fn get_dominant_color(img: &DynamicImage, is_dark: bool) -> RGB {
     let colors = img
         .as_rgb8()
         .unwrap()
@@ -106,19 +107,31 @@ fn get_dominant_color(img: &DynamicImage) -> RGB {
         Palette::<f32>::extract(&ImageData::new(img.width(), img.height(), &colors).unwrap())
             .unwrap();
 
-    palette
+    let mut dominant = palette
         .find_swatches_with_theme(1, Theme::Colorful)
         .first()
         .unwrap()
         .color()
-        .to_rgb()
+        .to_hsl();
+
+    if is_dark {
+        // If is_dark, ensure the dominant colour is at least this level
+        dominant.l = dominant.l.max(0.6);
+    } else {
+        // Conversely if in light mode, ensure it is at most this level
+        dominant.l = dominant.l.min(0.3);
+    }
+
+    RGB::from(&dominant)
 }
 
 pub enum WindowMessage {
     NewBackground(PathBuf, BlurConfig), // Load new image at FULL PATH & blur with given configuration. Will fade.
     UpdateBackground(BlurConfig),       // Re-blur current image but do not fade.
+    UpdateAccent(bool),                 // is_dark
     ClearBackground,                    // Clears last-blurred cache.
     Result(gdk::MemoryTexture, Option<RGB>, bool), // GPU texture and whether to fade to this one.
+    AccentResult(RGB),
     Stop,
 }
 
@@ -268,14 +281,23 @@ mod imp {
                 .unwrap();
             let theme_selector = ThemeSelector::new();
             primary_menu.add_child(&theme_selector, "theme_selector");
+
             theme_selector.connect_closure(
                 "changed",
                 false,
                 closure_local!(
-                    |_: ThemeSelector, scheme: ColorScheme| {
+                    #[watch(rename_to = this)] obj,
+                    move |_: ThemeSelector, scheme: ColorScheme| {
                     let style = StyleManager::default();
                     println!("Setting theme to {:?}", &scheme);
                     style.set_color_scheme(scheme);
+
+                    // Trigger a background update which will update accent colour too
+                    if let Some(sender) = this.imp().sender_to_bg.get() {
+                        let _ = sender.send_blocking(WindowMessage::UpdateAccent(
+                            adw::StyleManager::default().is_dark()
+                        ));
+                    }
 
                     // Save setting
                     let settings = settings_manager().child("ui");
@@ -484,7 +506,7 @@ mod imp {
                                 if config.width > 0 && config.height > 0 {
                                     let _ = sender_to_fg.send_blocking(WindowMessage::Result(
                                         run_blur(&di, &config),
-                                        Some(get_dominant_color(&di)),
+                                        Some(get_dominant_color(&di, config.is_dark)),
                                         true,
                                     ));
                                     thread::sleep(Duration::from_millis(
@@ -503,7 +525,7 @@ mod imp {
                                 if config.width > 0 && config.height > 0 {
                                     let _ = sender_to_fg.send_blocking(WindowMessage::Result(
                                         run_blur(data, &config),
-                                        Some(get_dominant_color(data)), // No need to update accent colour
+                                        None, // No need to update accent colour
                                         config.fade,
                                     ));
                                 }
@@ -513,6 +535,11 @@ mod imp {
                                             as u64,
                                     ));
                                 }
+                            }
+                        }
+                        WindowMessage::UpdateAccent(is_dark) => {
+                            if let Some(data) = curr_data.as_ref() {
+                                let _ = sender_to_fg.send_blocking(WindowMessage::AccentResult(get_dominant_color(data, is_dark)));
                             }
                         }
                         WindowMessage::ClearBackground => {
@@ -545,6 +572,10 @@ mod imp {
                             WindowMessage::Result(tex, maybe_accent, do_fade) => {
                                 this.push_tex(Some(tex), do_fade);
                                 let _ = this.accent_color.replace(maybe_accent);
+                                this.update_accent_color();
+                            }
+                            WindowMessage::AccentResult(accent) => {
+                                let _ = this.accent_color.replace(Some(accent));
                                 this.update_accent_color();
                             }
                             _ => unreachable!(),
@@ -1248,6 +1279,7 @@ impl EuphonicaWindow {
                                 width: this.width() as u32,
                                 height: this.height() as u32,
                                 radius: settings.uint("bg-blur-radius"),
+                                is_dark: adw::StyleManager::default().is_dark(),
                                 fade: true, // new image, must fade
                             };
                             let _ = sender.send_blocking(WindowMessage::NewBackground(path, config));
@@ -1270,6 +1302,7 @@ impl EuphonicaWindow {
                 width: self.width() as u32,
                 height: self.height() as u32,
                 radius: settings.uint("bg-blur-radius"),
+                is_dark: adw::StyleManager::default().is_dark(),
                 fade,
             };
             let _ = sender.send_blocking(WindowMessage::UpdateBackground(config));
