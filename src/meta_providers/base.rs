@@ -9,9 +9,9 @@ use std::{thread, time::{Duration, SystemTime}};
 
 use super::models;
 
-pub fn sleep_between_requests(request_time: SystemTime) {
+pub fn sleep_between_requests(last_request_time: SystemTime) {
     let settings = settings_manager().child("metaprovider");
-    let wake_time = request_time + Duration::from_secs_f64(settings.double("delay-between-requests-s"));
+    let wake_time = last_request_time + Duration::from_secs_f64(settings.double("delay-between-requests-s"));
     let now = SystemTime::now();
     // .duration_since returns an Err if the target_time is in the past
     if let Ok(remaining) = wake_time.duration_since(now) {

@@ -1012,21 +1012,23 @@ impl Player {
                             .splice(0, self.imp().lyric_lines.n_items(), &[]);
                         let _ = self.imp().lyrics.take();
 
-                        // Fetch new lyrics: done by the panel itself
-                        match self
-                            .imp()
-                            .cache
-                            .get()
-                            .unwrap()
-                            .get_lyrics(new_song.get_info(), true)
-                            .await
-                        {
-                            Ok(Some(lyrics)) => {
-                                self.update_lyrics(lyrics);
+                        // Fetch new lyrics in another future (don't await using this function as it will sleep after the request)
+                        glib::spawn_future_local(clone!(
+                            #[weak(rename_to = this)] self, #[strong] new_song, async move {
+                                println!("Fetching new lyrics...");
+                                match this.imp().cache.get().unwrap().get_lyrics(new_song.get_info(), true).await {
+                                    Ok(Some(lyrics)) => {
+                                        this.update_lyrics(lyrics);
+                                        println!("Fetched new lyrics");
+                                    }
+                                    Ok(None) => {
+                                        println!("No lyrics found");
+                                    }
+                                    Err(e) => {dbg!(e);}
+                                }
                             }
-                            Ok(None) => {}
-                            Err(e) => {dbg!(e);}
-                        }
+                        ));
+
                         // Update MPRIS side
                         if self.imp().mpris_enabled.get() {
                             mpris_changes.push(Property::Metadata(new_song.get_mpris_metadata()));
@@ -1356,19 +1358,19 @@ impl Player {
     }
 
     pub fn title(&self) -> Option<String> {
-        self.imp().current_song.borrow().as_ref().map(|s| s.get_name().to_owned())
+        self.current_song().map(|s| s.get_name().to_owned())
     }
 
     pub fn artist(&self) -> Option<String> {
-        self.imp().current_song.borrow().as_ref().and_then(|s| s.get_artist_str())
+        self.current_song().and_then(|s| s.get_artist_str())
     }
 
     pub fn album(&self) -> Option<String> {
-        self.imp().current_song.borrow().as_ref().and_then(|s| s.get_album()).map(|a| a.title.to_owned())
+        self.current_song().as_ref().and_then(|s| s.get_album()).map(|a| a.title.to_owned())
     }
 
     pub async fn current_song_cover_path(&self, thumbnail: bool) -> ClientResult<Option<PathBuf>> {
-        if let Some(uri) = self.imp().current_song.borrow().as_ref().map(|s| s.get_uri().to_owned()) {
+        if let Some(uri) = self.current_song().map(|s| s.get_uri().to_owned()) {
             gio::spawn_blocking(move || Ok(
                 sqlite::find_cover_by_uri(&uri, thumbnail)
                     .map_err(|_| ClientError::Internal)?
@@ -1384,15 +1386,11 @@ impl Player {
     }
 
     pub fn rating(&self) -> Option<i8> {
-        self.imp()
-            .current_song
-            .borrow()
-            .as_ref()
-            .and_then(|s| s.get_rating())
+        self.current_song().and_then(|s| s.get_rating())
     }
 
     pub fn quality_grade(&self) -> QualityGrade {
-        self.imp().current_song.borrow().as_ref().map_or(QualityGrade::Unknown, |s| s.get_quality_grade())
+        self.current_song().map_or(QualityGrade::Unknown, |s| s.get_quality_grade())
     }
 
     pub fn fft_status(&self) -> FftStatus {
@@ -1411,7 +1409,7 @@ impl Player {
     }
 
     pub fn duration(&self) -> u64 {
-        self.imp().current_song.borrow().as_ref().map_or(0, |s| s.get_duration())
+        self.current_song().map_or(0, |s| s.get_duration())
     }
 
     pub fn mpd_volume(&self) -> i8 {
@@ -1419,19 +1417,11 @@ impl Player {
     }
 
     pub fn queue_id(&self) -> Option<u32> {
-        self.imp()
-            .current_song
-            .borrow()
-            .as_ref()
-            .map(|s| s.get_queue_id())
+        self.current_song().map(|s| s.get_queue_id())
     }
 
     pub fn queue_pos(&self) -> Option<u32> {
-        self.imp()
-            .current_song
-            .borrow()
-            .as_ref()
-            .map(|s| s.get_queue_pos())
+        self.current_song().map(|s| s.get_queue_pos())
     }
 
     pub fn position(&self) -> f64 {
@@ -1662,7 +1652,7 @@ impl Player {
     }
 
     pub fn import_lyrics(&self, text: &str) {
-        if let Some(curr_song) = self.imp().current_song.borrow().as_ref() {
+        if let Some(curr_song) = self.current_song() {
             if let Ok(lyrics) = Lyrics::try_from_synced_lrclib_str(text)
                 .or_else(|_| Lyrics::try_from_plain_lrclib_str(text))
             {
@@ -1674,7 +1664,7 @@ impl Player {
     }
 
     pub fn clear_lyrics(&self) {
-        if let Some(curr_song) = self.imp().current_song.borrow().as_ref() {
+        if let Some(curr_song) = self.current_song() {
             sqlite::write_lyrics(curr_song.get_info(), None)
                 .expect("Unable to clear lyrics from DB");
             self.imp()
@@ -1687,7 +1677,7 @@ impl Player {
     pub async fn rate_current_song(&self, score: Option<i8>) -> ClientResult<()> {
         let uri;
         {
-            if let Some(song) = self.imp().current_song.borrow().as_ref() {
+            if let Some(song) = self.current_song() {
                 // Set locally first
                 song.set_rating(score);
                 uri = song.get_uri().to_owned();
@@ -1806,7 +1796,7 @@ impl LocalPlayerInterface for Player {
     async fn set_position(&self, track_id: TrackId, position: Time) -> fdo::Result<()> {
         let should_seek;
         {
-            should_seek = self.imp().current_song.borrow().as_ref().is_some_and(
+            should_seek = self.current_song().is_some_and(
                 |s| track_id.as_str().split("/").last().unwrap() == s.get_queue_id().to_string()
             );
             // End borrow
@@ -1856,7 +1846,7 @@ impl LocalPlayerInterface for Player {
     }
 
     async fn metadata(&self) -> fdo::Result<MprisMetadata> {
-        if let Some(song) = self.imp().current_song.borrow().as_ref() {
+        if let Some(song) = self.current_song() {
             Ok(song.get_mpris_metadata())
         } else {
             Ok(MprisMetadata::builder().trackid(TrackId::NO_TRACK).build())
