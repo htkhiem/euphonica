@@ -20,9 +20,7 @@
   </supports>
 
   <description>
-    <p>
-      MPD client with dynamic playlists, integrated spectrum visualiser, synced lyrics &amp; more.
-    </p>
+    <p>Dynamic playlists, integrated spectrum visualiser, background blur, synced lyrics &amp; more. </p>
     <p>**Features**</p>
     <ul>
       <li>Supports most MPD features, from queue reordering and ReplayGain to output control, crossfade and MixRamp.</li>
@@ -72,6 +70,15 @@
   </screenshots>
 
   <releases>
+    <release version="0.98.1-beta" date="2026-01-17">
+      <url type="details">https://github.com/htkhiem/euphonica/releases/tag/v0.98.1-beta</url>
+      <description>
+        <p>Fix: re-added sort by rating and fixed other sort options in Album View.</p>
+        <p>Fix: volume level is now restored upon unmuting.</p>
+        <p>Fix: some missing icons on other DEs such as KDE Plasma.</p>
+        <p>Fix: some icons were rendered at the wrong scale, appearing tiny in a corner.</p>
+      </description>
+    </release>
     <release version="0.98.0-beta" date="2025-11-30">
       <url type="details">https://github.com/htkhiem/euphonica/releases/tag/v0.98.0-beta</url>
       <description>
