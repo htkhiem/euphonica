@@ -226,7 +226,7 @@ mod imp {
                             )
                         }
                         8 => {
-                            // Release date
+                            // Rating
                             g_cmp_options(
                                 album1.get_rating().as_ref(),
                                 album2.get_rating().as_ref(),
