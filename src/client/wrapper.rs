@@ -489,9 +489,12 @@ impl MpdWrapper {
         task: Task,
         receiver: oneshot::Receiver<ClientResult<T>>,
     ) -> ClientResult<T> {
+        self.state.inc_fg();
         self.fg_sender.send(task).await.expect("Broken FG sender");
-        self.handle_error(receiver.await.expect("Broken oneshot receiver"))
-            .await
+        let res = self.handle_error(receiver.await.expect("Broken oneshot receiver"))
+            .await;
+        self.state.dec_fg();
+        res
     }
 
     async fn background<T>(
@@ -499,13 +502,16 @@ impl MpdWrapper {
         task: Task,
         receiver: oneshot::Receiver<ClientResult<T>>,
     ) -> ClientResult<T> {
+        self.state.inc.bg();
         self.bg_sender.send(task).await.expect("Broken BG sender");
         // Wake background thread
         let (s, r) = oneshot::channel();
         self.foreground(Task::SendMessage(String::from("wake"), s), r)
             .await?;
-        self.handle_error(receiver.await.expect("Broken oneshot receiver"))
-            .await
+        let res = self.handle_error(receiver.await.expect("Broken oneshot receiver"))
+            .await;
+        self.state.dec_bg();
+        res
     }
 
     pub async fn get_volume(&self) -> ClientResult<i8> {

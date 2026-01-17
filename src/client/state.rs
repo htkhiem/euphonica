@@ -41,9 +41,19 @@ mod imp {
         #[property(get)]
         pub n_fg_tasks: Cell<u64>,
         #[property(get)]
+        pub n_done_fg_tasks: Cell<u64>,
+        #[property(get)]
+        pub pct_done_fg_tasks: Cell<f64>,
+        #[property(get)]
         pub n_bg_tasks: Cell<u64>,
+        #[property(get)]
+        pub n_done_bg_tasks: Cell<u64>,
+        #[property(get)]
+        pub pct_done_bg_tasks: Cell<f64>,
         #[property(get, set)]
         pub supports_playlists: Cell<bool>,
+        #[property(get)]
+        pub has_pending: Cell<bool>,
         #[property(get, set, builder(StickersSupportLevel::default()))]
         pub stickers_support_level: Cell<StickersSupportLevel>,
     }
@@ -57,7 +67,12 @@ mod imp {
             Self {
                 connection_state: Cell::default(),
                 n_fg_tasks: Cell::new(0),
+                n_done_fg_tasks: Cell::new(0),
+                pct_done_fg_tasks: Cell::new(0.0),
                 n_bg_tasks: Cell::new(0),
+                n_done_bg_tasks: Cell::new(0),
+                pct_done_bg_tasks: Cell::new(0.0),
+                has_pending: Cell::new(false),
                 stickers_support_level: Cell::default(),
                 supports_playlists: Cell::new(true)
             }
@@ -98,23 +113,86 @@ impl ClientState {
         self.emit_by_name::<()>(signal_name, &[&BoxedAnyObject::new(to_box)]);
     }
 
+    #[inline]
+    fn update_has_pending(&self) {
+        let new = self.imp().n_bg_tasks.get() + self.imp().n_fg_tasks.get() > 0;
+        let old = self.imp().has_pending.replace(new);
+        if old != new {
+            self.notify("has-pending");
+        }
+    }
+
+    #[inline]
+    fn update_pct_done_bg(&self) {
+        let n_bg_tasks = self.imp().n_bg_tasks.get();
+        let new_pct = if n_bg_tasks == 0 {
+            0.0
+        } else {
+            self.imp().n_done_bg_tasks.get() as f64 / n_bg_tasks as f64
+        };
+        let old_pct = self.imp().pct_done_bg_tasks.replace(new_pct);
+        if old_pct != new_pct {
+            self.notify("pct-done-bg-tasks");
+        }
+        self.update_has_pending();
+    }
+
     pub fn inc_bg(&self) {
         self.imp().n_bg_tasks.set(self.imp().n_bg_tasks.get() + 1);
-        self.notify("n-background-tasks");
+        self.notify("n-bg-tasks");
+        self.update_pct_done_bg();
     }
 
     pub fn dec_bg(&self) {
-        self.imp().n_bg_tasks.set(self.imp().n_bg_tasks.get() - 1);
-        self.notify("n-background-tasks");
+        let curr_done = self.imp().n_done_bg_tasks.get();
+        let all = self.imp().n_bg_tasks.get();
+        if curr_done + 1 == all {
+            // Completed everything, reset to zero
+            self.imp().n_done_bg_tasks.set(0);
+            self.imp().n_bg_tasks.set(0);
+            self.notify("n-done-bg-tasks");
+            self.notify("n-bg-tasks");
+        } else {
+            self.imp().n_done_bg_tasks.set(curr_done + 1);
+            self.notify("n-done-bg-tasks");
+        }
+        self.update_pct_done_bg();
+    }
+
+    #[inline]
+    fn update_pct_done_fg(&self) {
+        let n_fg_tasks = self.imp().n_fg_tasks.get();
+        let new_pct = if n_fg_tasks == 0 {
+            0.0
+        } else {
+            self.imp().n_done_fg_tasks.get() as f64 / n_fg_tasks as f64
+        };
+        let old_pct = self.imp().pct_done_fg_tasks.replace(new_pct);
+        if old_pct != new_pct {
+            self.notify("pct-done-fg-tasks");
+        }
+        self.update_has_pending();
     }
 
     pub fn inc_fg(&self) {
         self.imp().n_fg_tasks.set(self.imp().n_fg_tasks.get() + 1);
-        self.notify("n-background-tasks");
+        self.notify("n-fg-tasks");
+        self.update_pct_done_fg();
     }
 
     pub fn dec_fg(&self) {
-        self.imp().n_fg_tasks.set(self.imp().n_fg_tasks.get() - 1);
-        self.notify("n-background-tasks");
+        let curr_done = self.imp().n_done_fg_tasks.get();
+        let all = self.imp().n_fg_tasks.get();
+        if curr_done + 1 == all {
+            // Completed everything, reset to zero
+            self.imp().n_done_fg_tasks.set(0);
+            self.imp().n_fg_tasks.set(0);
+            self.notify("n-done-fg-tasks");
+            self.notify("n-fg-tasks");
+        } else {
+            self.imp().n_done_fg_tasks.set(curr_done + 1);
+            self.notify("n-done-fg-tasks");
+        }
+        self.update_pct_done_fg();
     }
 }

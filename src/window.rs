@@ -160,7 +160,20 @@ mod imp {
         pub stack: TemplateChild<gtk::Stack>,
         // Sidebar
         #[template_child]
-        pub busy_spinner: TemplateChild<adw::Spinner>,
+        pub pending_tasks_btn: TemplateChild<gtk::MenuButton>,
+        #[template_child]
+        pub pending_fg_stack: TemplateChild<gtk::Stack>,
+        #[template_child]
+        pub fg_progress: TemplateChild<gtk::ProgressBar>,
+        #[template_child]
+        pub fg_task_count: TemplateChild<gtk::Label>,
+        #[template_child]
+        pub pending_bg_stack: TemplateChild<gtk::Stack>,
+        #[template_child]
+        pub bg_progress: TemplateChild<gtk::ProgressBar>,
+        #[template_child]
+        pub bg_task_count: TemplateChild<gtk::Label>,
+
         #[template_child]
         pub title: TemplateChild<adw::WindowTitle>,
         #[template_child]
@@ -1281,11 +1294,9 @@ impl EuphonicaWindow {
         // Bind client state to app name widget
         let client = self.downcast_application().get_client();
         let state = client.get_client_state();
-        let spinner = self.imp().busy_spinner.get();
 
         state
-            .bind_property("n-bg-tasks", &spinner, "visible")
-            .transform_to(|_, val: u64| Some((val > 0).to_value()))
+            .bind_property("has-pending", &self.imp().pending_tasks_btn.get(), "visible")
             .sync_create()
             .build();
 
