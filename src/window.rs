@@ -218,7 +218,7 @@ mod imp {
         pub accent_color: RefCell<Option<RGB>>,
         pub should_populate_visible: Cell<bool>,
 
-        pub provider: CssProvider,
+        pub provider: CssProvider
     }
 
     #[glib::object_subclass]
@@ -271,7 +271,8 @@ mod imp {
             theme_selector.connect_closure(
                 "changed",
                 false,
-                closure_local!(|_: ThemeSelector, scheme: ColorScheme| {
+                closure_local!(
+                    |_: ThemeSelector, scheme: ColorScheme| {
                     let style = StyleManager::default();
                     println!("Setting theme to {:?}", &scheme);
                     style.set_color_scheme(scheme);
@@ -313,6 +314,16 @@ mod imp {
                     move |_, _| {
                         // Blur radius updates need not fade
                         this.obj().queue_background_update(false);
+                    }
+                ),
+            );
+            settings.connect_changed(
+                Some("use-visualizer"),
+                clone!(
+                    #[weak(rename_to = this)]
+                    self,
+                    move |settings, key| {
+                        this.set_always_redraw(settings.boolean(key));
                     }
                 ),
             );
@@ -366,16 +377,6 @@ mod imp {
                 .build();
 
             self.set_always_redraw(self.use_visualizer.get());
-            settings.connect_changed(
-                Some("use-visualizer"),
-                clone!(
-                    #[weak(rename_to = this)]
-                    self,
-                    move |settings, key| {
-                        this.set_always_redraw(settings.boolean(key));
-                    }
-                ),
-            );
 
             self.sidebar.connect_notify_local(
                 Some("showing-queue-view"),
@@ -408,7 +409,7 @@ mod imp {
                             "show-sidebar-clicked",
                             false,
                             closure_local!(
-                                #[weak] view,
+                                #[watch] view,
                                 move |_: &gtk::Widget| {
                                     view.set_show_sidebar(true);
                                 }
@@ -939,7 +940,7 @@ impl EuphonicaWindow {
             "idle",
             false,
             closure_local!(
-                #[weak(rename_to = this)]
+                #[watch(rename_to = this)]
                 win,
                 move |_: ClientState, subsys: BoxedAnyObject| {
                     if subsys.borrow::<Subsystem>().deref() == &Subsystem::Database {
@@ -964,7 +965,7 @@ impl EuphonicaWindow {
             "cover-changed",
             false,
             closure_local!(
-                #[weak(rename_to = this)]
+                #[watch(rename_to = this)]
                 win,
                 move |_: Player| {
                     this.queue_new_background();
@@ -985,7 +986,7 @@ impl EuphonicaWindow {
             "goto-pane-clicked",
             false,
             closure_local!(
-                #[weak(rename_to = this)]
+                #[watch(rename_to = this)]
                 win,
                 move |_: PlayerBar| {
                     this.goto_pane();
@@ -997,7 +998,7 @@ impl EuphonicaWindow {
             "album-clicked",
             false,
             closure_local!(
-                #[weak(rename_to = this)]
+                #[watch(rename_to = this)]
                 win,
                 move |_: ArtistContentView, album: Album| {
                     this.goto_album(&album);
@@ -1300,11 +1301,45 @@ impl EuphonicaWindow {
             .sync_create()
             .build();
 
-        state
-            .bind_property("n-bg-tasks", &spinner, "tooltip-text")
-            .transform_to(|_, val: u64| Some(format!("Background task(s): {val}").to_value()))
+        state.bind_property("n-fg-tasks", &self.imp().pending_fg_stack.get(), "visible-child-name")
+            .transform_to(|_, n: u64| {
+                Some((if n > 0 {"pending"} else {"idle"}).to_value())
+            })
             .sync_create()
             .build();
+
+        state.bind_property("n-bg-tasks", &self.imp().pending_bg_stack.get(), "visible-child-name")
+            .transform_to(|_, n: u64| {
+                Some((if n > 0 {"pending"} else {"idle"}).to_value())
+            })
+            .sync_create()
+            .build();
+
+
+        state.connect_notify_local(Some("pct-done-fg-tasks"), clone!(
+            #[weak(rename_to = this)] self,
+            move |state: &ClientState, _| {
+                let pct = state.pct_done_fg_tasks();
+                this.imp().fg_progress.set_fraction(pct);
+                this.imp().fg_task_count.set_label(&format!(
+                    "{}/{}",
+                    &state.n_done_fg_tasks(),
+                    &state.n_fg_tasks()
+                ));
+            }
+        ));
+        state.connect_notify_local(Some("pct-done-bg-tasks"), clone!(
+            #[weak(rename_to = this)] self,
+            move |state: &ClientState, _| {
+                let pct = state.pct_done_bg_tasks();
+                this.imp().bg_progress.set_fraction(pct);
+                this.imp().bg_task_count.set_label(&format!(
+                    "{}/{}",
+                    &state.n_done_bg_tasks(),
+                    &state.n_bg_tasks()
+                ));
+            }
+        ));
 
         // Remove default libadwaita sidebar backgrounds when using
         // album art as background, or the visualiser is enabled, or both.

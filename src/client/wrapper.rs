@@ -352,7 +352,7 @@ impl MpdWrapper {
                 // Database changed after updating. Perform a reconnection,
                 // which will also trigger views to refresh their contents.
                 let (s, r) = oneshot::channel();
-                let _ = self.background(Task::UpdateDb(s), r).await;
+                let _ = self.background(Task::Connect(s), r).await;
             }
             // More to come
             _ => {}
@@ -502,7 +502,7 @@ impl MpdWrapper {
         task: Task,
         receiver: oneshot::Receiver<ClientResult<T>>,
     ) -> ClientResult<T> {
-        self.state.inc.bg();
+        self.state.inc_bg();
         self.bg_sender.send(task).await.expect("Broken BG sender");
         // Wake background thread
         let (s, r) = oneshot::channel();

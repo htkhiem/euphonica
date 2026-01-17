@@ -40,6 +40,9 @@
       <property name="name">pending_tasks_popover</property>
       <property name="child">
         <object class="GtkBox">
+          <style>
+            <class name="padding-6"/>
+          </style>
           <property name="orientation">1</property>
           <child>
             <object class="GtkLabel">
@@ -72,6 +75,7 @@
                       <property name="hexpand">true</property>
                       <child>
                         <object class="GtkProgressBar" id="fg_progress">
+                          <property name="margin-top">5</property>
                         </object>
                       </child>
                       <child>
@@ -84,6 +88,9 @@
                       <child>
                         <object class="GtkLabel" id="fg_task_count">
                           <property name="label">0/0</property>
+                          <style>
+                            <class name="caption"/>
+                          </style>
                         </object>
                       </child>
                     </object>
@@ -93,7 +100,11 @@
             </object>
           </child>
           <child>
-            <object class="GtkSeparator"/>
+            <object class="GtkSeparator">
+              <style>
+                <class name="spacer"/>
+              </style>
+            </object>
           </child>
           <child>
             <object class="GtkLabel">
@@ -126,6 +137,7 @@
                       <property name="hexpand">true</property>
                       <child>
                         <object class="GtkProgressBar" id="bg_progress">
+                          <property name="margin-top">5</property>
                         </object>
                       </child>
                       <child>
@@ -138,6 +150,9 @@
                       <child>
                         <object class="GtkLabel" id="bg_task_count">
                           <property name="label">0/0</property>
+                          <style>
+                            <class name="caption"/>
+                          </style>
                         </object>
                       </child>
                     </object>
@@ -171,10 +186,11 @@
                             <child type="start">
                               <object class="GtkMenuButton" id="pending_tasks_btn">
                                 <child>
-                                  <object class="AdwSpinner">
-                                    <property name="margin-start">12</property>
-                                  </object>
+                                  <object class="AdwSpinner"/>
                                 </child>
+                                <style>
+                                  <class name="flat"/>
+                                </style>
                                 <property name="visible">false</property>
                                 <property name="popover">pending_tasks_popover</property>
                               </object>
