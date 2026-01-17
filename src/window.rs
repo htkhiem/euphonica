@@ -525,7 +525,7 @@ mod imp {
                                 if config.width > 0 && config.height > 0 {
                                     let _ = sender_to_fg.send_blocking(WindowMessage::Result(
                                         run_blur(data, &config),
-                                        None, // No need to update accent colour
+                                        Some(get_dominant_color(data, config.is_dark)),
                                         config.fade,
                                     ));
                                 }
