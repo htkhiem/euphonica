@@ -115,10 +115,21 @@ impl ClientState {
 
     #[inline]
     fn update_has_pending(&self) {
-        let new = self.imp().n_bg_tasks.get() + self.imp().n_fg_tasks.get() > 0;
-        let old = self.imp().has_pending.replace(new);
-        if old != new {
-            self.notify("has-pending");
+        let total = self.imp().n_bg_tasks.get() + self.imp().n_fg_tasks.get();
+        let old = self.imp().has_pending.get();
+        if old {
+            if total == 0 {
+                self.imp().has_pending.set(false);
+                self.notify("has-pending");
+            }
+        } else {
+            // Only start showing the popover when there are more than 3 queued tasks,
+            // else the thing will look strobey.
+            let new = total >= 3;
+            self.imp().has_pending.set(new);
+            if old != new {
+                self.notify("has-pending");
+            }
         }
     }
 
