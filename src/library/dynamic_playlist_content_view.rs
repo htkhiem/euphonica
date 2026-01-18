@@ -457,6 +457,22 @@ impl DynamicPlaylistContentView {
     }
 
     #[inline]
+    fn update_song_list(&self, songs: &[Song]) {
+        self.imp()
+            .runtime
+            .set_label(
+                &format_secs_as_duration(
+                    songs.iter().map(|s| s.get_duration()).sum::<u64>() as f64
+                )
+            );
+        self.imp().track_count.set_label(&songs.len().to_string());
+        self.imp().song_list.extend_from_slice(&songs);
+        self.imp().last_refreshed.set_label(&get_time_ago_desc(
+            OffsetDateTime::now_utc().unix_timestamp(),
+        ));
+    }
+
+    #[inline]
     async fn get_cached(&self, name: String) {
         if let Some(library) = self.imp().library.upgrade() {
             // Block queue actions while refreshing
@@ -472,10 +488,7 @@ impl DynamicPlaylistContentView {
             match res {
                 // TODO: add empty StatusPAge
                 Ok(songs) => {
-                    self.imp().song_list.extend_from_slice(&songs);
-                    self.imp().last_refreshed.set_label(&get_time_ago_desc(
-                        OffsetDateTime::now_utc().unix_timestamp(),
-                    ));
+                    self.update_song_list(&songs);
                 }
                 Err(e) => {
                     dbg!(e);
@@ -501,10 +514,7 @@ impl DynamicPlaylistContentView {
             match res {
                 // TODO: add empty StatusPAge
                 Ok(songs) => {
-                    self.imp().song_list.extend_from_slice(&songs);
-                    self.imp().last_refreshed.set_label(&get_time_ago_desc(
-                        OffsetDateTime::now_utc().unix_timestamp(),
-                    ));
+                    self.update_song_list(&songs);
                 }
                 Err(e) => {
                     dbg!(e);

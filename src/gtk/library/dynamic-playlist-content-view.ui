@@ -252,7 +252,9 @@
                   <object class="GtkStackPage">
                     <property name="name">spinner</property>
                     <property name="child">
-                      <object class="AdwSpinner"/>
+                      <object class="AdwSpinner">
+                        <property name="margin-top">24</property>
+                      </object>
                     </property>
                   </object>
                 </child>
