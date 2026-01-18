@@ -549,7 +549,9 @@ impl DynamicPlaylistView {
         glib::spawn_future_local(clone!(#[weak(rename_to = this)] self, async move {
             let content_view = this.imp().content_view.get();
             content_view.unbind();
-            content_view.bind_by_name(uri).await;
+            // Switch view first before binding again, as binding involves awaiting
+            // rule resolution & we'd like to use the content view to show a loading
+            // spinner while that happens.
             if this
                 .imp()
                 .nav_view
@@ -558,6 +560,7 @@ impl DynamicPlaylistView {
             {
                 this.imp().nav_view.push_by_tag("content");
             }
+            content_view.bind_by_name(uri).await;
         }));
     }
 
