@@ -524,11 +524,11 @@ impl DynamicPlaylistView {
                         #[weak] this, #[weak] library, async move {
                             let content_view = this.imp().content_view.get();
                             content_view.unbind();
+                            this.imp().nav_view.pop();
                             content_view.bind_by_name(editor.get_current_name()).await;
                             if should_refresh {
                                 library.init_dyn_playlists(true).await;
                             }
-                            this.imp().nav_view.pop();
                         }
                     ));
                 }

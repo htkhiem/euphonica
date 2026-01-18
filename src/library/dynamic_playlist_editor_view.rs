@@ -729,6 +729,11 @@ impl DynamicPlaylistEditorView {
         {
             Ok(songs) => {
                 self.imp().song_list.extend_from_slice(&songs);
+                self.imp().runtime.set_label(
+                    &format_secs_as_duration(
+                        songs.iter().map(|s| s.get_duration()).sum::<u64>() as f64
+                    )
+                );
                 self.imp().content_pages.set_visible_child_name(
                     if !songs.is_empty() {"content"} else {"empty"}
                 );
