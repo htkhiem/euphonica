@@ -1,9 +1,10 @@
-use std::borrow::Cow;
+use std::{borrow::Cow, fmt};
 use std::str::FromStr;
 
 use mpd::{Query, Term, search::Operation as TagOperation};
 use once_cell::sync::Lazy;
-use serde::{Deserialize, Serialize};
+use serde::de;
+use serde::{Deserialize, Deserializer, Serialize, de::Visitor};
 use strum::EnumCount;
 use strum_macros::{EnumCount as EnumCountMacro, EnumIter, VariantArray};
 
@@ -236,11 +237,60 @@ pub enum QueryLhs {
     Base, // from this directory
     // Tags
     LastMod,
-    Any(TagOperation), // will match any tag
-    Album(TagOperation),
-    AlbumArtist(TagOperation),
-    Artist(TagOperation),
+    Any(
+        #[serde(deserialize_with = "deserialize_tag_op")]
+        TagOperation
+    ), // will match any tag
+    Album(
+        #[serde(deserialize_with = "deserialize_tag_op")]
+        TagOperation
+    ),
+    AlbumArtist(
+        #[serde(deserialize_with = "deserialize_tag_op")]
+        TagOperation
+    ),
+    Artist(
+        #[serde(deserialize_with = "deserialize_tag_op")]
+        TagOperation
+    ),
     // more to come
+}
+
+// This whole mess is due to rust-mpd's original serde implementation using untagged enum strategies
+// on Operation. All variants would be stored as a null as none of them had any fields.
+// This allows us to remain compatible with DPs saved by v0.98.1-, defaulting all tag operations to ==.
+struct TagOperationVisitor;
+impl<'de> Visitor<'de> for TagOperationVisitor {
+    type Value = TagOperation;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str("null or a string")
+    }
+
+    fn visit_unit<E>(self) -> Result<Self::Value, E>
+    where
+        E: serde::de::Error, {
+        Ok(TagOperation::Equals)
+    }
+
+    fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        // rename_all = "lowercase", see rust-mpd
+        match value {
+            "equals" => Ok(TagOperation::Equals),
+            "notequals" => Ok(TagOperation::NotEquals),
+            "contains" => Ok(TagOperation::Contains),
+            "startswith" => Ok(TagOperation::StartsWith),
+            _ => Err(E::custom(format!("{value} is not one of (equals, notequals, contains, startswith)")))
+        }
+    }
+}
+
+
+fn deserialize_tag_op<'de, D>(deser: D) -> Result<TagOperation, D::Error> where D: Deserializer<'de> {
+    deser.deserialize_any(TagOperationVisitor)
 }
 
 impl<'a, 'b: 'a> QueryLhs {
