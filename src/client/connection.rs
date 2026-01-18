@@ -400,11 +400,11 @@ impl Connection {
     pub fn run(&mut self) -> Result<()> {
         loop {
             let mut curr_task: Option<Task> = None;
-            if !self.receiver.is_empty() {
+            if !self.receiver.is_empty() || self.idle_sender.is_none() {
                 curr_task = Some(
                     self.receiver
                         .recv_blocking()
-                        .expect("Unable to read from high-priority queue"),
+                        .expect("Unable to read from task queue"),
                 );
             }
 

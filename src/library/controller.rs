@@ -608,7 +608,7 @@ impl Library {
             for song in filtered.iter() {
                 if let Some(album) = song.album.as_ref() {
                     if visited_albums.insert(album.get_comp_id().to_owned()) {
-                        respond_album(Album::from(album.clone()));
+                        respond_album(album.clone().into());
                     }
                 }
             }
