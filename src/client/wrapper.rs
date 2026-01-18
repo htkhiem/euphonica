@@ -12,13 +12,11 @@ use mpd::{
     song::Id,
 };
 use nohash_hasher::NoHashHasher;
-use rand::seq::SliceRandom;
 use rustc_hash::FxHashSet;
 use time::OffsetDateTime;
 use zbus::{Connection as ZConnection, Proxy as ZProxy};
 
 use std::borrow::Cow;
-use std::cmp::Ordering as StdOrdering;
 use std::hash::BuildHasherDefault;
 use std::num::NonZero;
 use std::thread;
@@ -30,17 +28,16 @@ use uuid::Uuid;
 
 use crate::cache::sqlite;
 use crate::common::DynamicPlaylist;
-use crate::common::dynamic_playlist::{QueryLhs, StickerObjectType, StickerOperation, Ordering};
 use crate::utils::settings_manager;
 use crate::{
-    common::{Album, AlbumInfo, Artist, INode, Song, SongInfo, Stickers, dynamic_playlist::{Rule}},
+    common::{Album, Artist, INode, Song, SongInfo, Stickers},
     player::PlaybackFlow,
     utils,
 };
 
 use super::connection::{Connection, Error as ClientError, Result as ClientResult, Task};
 use super::state::{ClientState, ConnectionState, StickersSupportLevel};
-use super::{BATCH_SIZE, FETCH_LIMIT, StickerSetMode, get_past_unix_timestamp};
+use super::{BATCH_SIZE, FETCH_LIMIT, StickerSetMode};
 
 static MAX_RETRIES: u32 = 3;
 

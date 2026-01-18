@@ -566,10 +566,10 @@ impl Connection {
                                 // to SongInfo. Instead we pluck the URI straight from the raw mpd::Song
                                 // object. Should be faster.
                                 if c.version.1 < 24 {
-                                    return Ok(
+                                    Ok(
                                         c.playlist(&playlist_name, None::<Range<u32>>)?
                                          .into_iter().map(|s| s.file).collect::<Vec<String>>()
-                                    );
+                                    )
                                 } else {
                                     // For MPD 0.24+, use the new paged loading
                                     let mut curr_len: u32 = 0;
@@ -583,7 +583,7 @@ impl Connection {
                                             inner_res.append(&mut songs.into_iter().map(|s| s.file).collect());
                                         }
                                     }
-                                    return Ok(inner_res);
+                                    Ok(inner_res)
                                 }
                             })?);
                         }
