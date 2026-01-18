@@ -726,9 +726,12 @@ impl ArtistContentView {
                 let song_list = this.imp().song_list.clone();
                 song_list.remove_all();
                 // Important, MPD-side content first
-                library.get_albums_of_artist(&artist, move |album| {album_list.append(&album);}).await;
+                library.get_artist_content(
+                    &artist,
+                    |album| {album_list.append(&album);},
+                    |songs| {song_list.extend_from_slice(&songs);}
+                ).await;
                 album_spinner.set_visible_child_name("content");
-                library.get_songs_of_artist(&artist, move |songs| {song_list.extend_from_slice(&songs);}).await;
                 song_spinner.set_visible_child_name("content");
                 this.imp()
                     .song_count

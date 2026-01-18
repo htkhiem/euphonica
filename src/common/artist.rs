@@ -24,6 +24,14 @@ impl ArtistInfo {
             is_composer,
         }
     }
+
+    /// Get something to serve as this artist's internal ID for
+    /// filtering/comparison purposes.
+    /// If an artist has a MusicBrainz ID, use it. If not, fall
+    /// back to their readable name.
+    pub fn get_comp_id(&self) -> &str {
+        self.mbid.as_deref().unwrap_or(self.name.as_ref())
+    }
 }
 
 impl Default for ArtistInfo {

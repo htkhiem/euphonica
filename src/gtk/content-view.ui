@@ -13,6 +13,7 @@
           <object class="GtkBox">
             <property name="orientation">1</property>
             <property name="hexpand">true</property>
+            <property name="valign">start</property>
             <child>
               <!-- Header. Contains two parts: a collapsible infobox and an
                    always-visible action button row beneath it.

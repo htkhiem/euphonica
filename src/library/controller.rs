@@ -1,7 +1,7 @@
 use crate::{
     cache::{Cache, sqlite},
-    client::{MpdWrapper, StickerSetMode, Result as ClientResult, Error as ClientError},
-    common::{Album, Artist, DynamicPlaylist, INode, Song, Stickers},
+    client::{Error as ClientError, MpdWrapper, Result as ClientResult, StickerSetMode},
+    common::{Album, Artist, DynamicPlaylist, INode, Song, SongInfo, Stickers},
     player::Player,
     utils::settings_manager,
 };
@@ -9,6 +9,7 @@ use chrono::Local;
 use derivative::Derivative;
 use glib::subclass::Signal;
 use gtk::{gio, glib, prelude::*};
+use rustc_hash::FxHashSet;
 use std::{borrow::Cow, cell::OnceCell, rc::Rc, sync::OnceLock, vec::Vec};
 use std::cell::{Cell, RefCell};
 
@@ -581,25 +582,40 @@ impl Library {
         Ok(())
     }
 
-    pub async fn get_albums_of_artist<F>(&self, artist: &Artist, mut respond: F) -> ClientResult<()>
-    where F: FnMut(Album) {
-        let mut query = Query::new();
-        query.and_with_op(
+    /// Get songs and albums of an artist. This fetches albums that they
+    /// were involved in (i.e., mentioned in an artist tag in at least one song),
+    /// not just those released by them. An additional check is performed locally
+    /// to filter out spurious substring matches.
+    ///
+    /// From v0.99.0 onward, we fetch both songs and albums at the same time as
+    /// it is more efficient to do those together in light of the above check.
+    pub async fn get_artist_content<FA, FS>(&self, artist: &Artist, mut respond_album: FA, mut respond_song: FS) -> ClientResult<()>
+    where FA: FnMut(Album), FS: FnMut(Vec<Song>) {
+        let mut song_query = Query::new();
+        song_query.and_with_op(
             Term::Tag("artist".into()),
             QueryOperation::Contains,
             artist.get_name().to_owned(),
         );
-        self.client().get_albums_by_query(query, &mut respond).await
-    }
 
-    pub async fn get_songs_of_artist<F>(&self, artist: &Artist, mut respond: F) -> ClientResult<()>
-    where F: FnMut(Vec<Song>) {
-        let mut query = Query::new();
-        query.and_with_op(
-            Term::Tag("artist".into()),
-            QueryOperation::Contains,
-            artist.get_name().to_owned(),
-        );
-        self.client().get_songs_by_query(query, &mut respond).await
+        let comp_id = artist.get_info().get_comp_id();
+        let mut visited_albums = FxHashSet::default();
+        self.client().get_song_infos_by_query(song_query, &mut |batch| {
+            let filtered: Vec<SongInfo> = batch
+                .into_iter()
+                .filter(|s| s.artists.iter().any(|a| a.get_comp_id() == comp_id))
+                .collect();
+            for song in filtered.iter() {
+                if let Some(album) = song.album.as_ref() {
+                    if visited_albums.insert(album.get_comp_id().to_owned()) {
+                        respond_album(Album::from(album.clone()));
+                    }
+                }
+            }
+            respond_song(filtered.into_iter().map(|si| si.into()).collect());
+
+        }).await?;
+
+        Ok(())
     }
 }

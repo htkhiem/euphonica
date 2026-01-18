@@ -56,6 +56,14 @@ impl AlbumInfo {
         }
     }
 
+    /// Get something to serve as this album's internal ID for
+    /// filtering/comparison purposes.
+    /// If an album has a MusicBrainz ID, use it. If not, fall
+    /// back to their folder URI.
+    pub fn get_comp_id(&self) -> &str {
+        self.mbid.as_deref().unwrap_or(self.folder_uri.as_ref())
+    }
+
     /// Add artists from more artist tags, separated from existing ones by simple commas.
     pub fn add_artists_from_string(&mut self, tag: &str) {
         if let Some(existing_tag) = &mut self.albumartist {

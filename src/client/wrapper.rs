@@ -950,7 +950,9 @@ impl MpdWrapper {
         Ok(())
     }
 
-    async fn get_song_infos_by_query<F>(&self, query: Query<'static>, respond: &mut F) -> ClientResult<()>
+    /// Alternative to get_songs_by_query that does not wrap SongInfos in GObjects for efficiency
+    /// in downstream processing.
+    pub async fn get_song_infos_by_query<F>(&self, query: Query<'static>, respond: &mut F) -> ClientResult<()>
     where F: FnMut(Vec<SongInfo>) {
         let mut curr_len: usize = 0;
         let mut more: bool = true;
@@ -1010,7 +1012,7 @@ impl MpdWrapper {
             if !songs.is_empty() {
                 let artists = std::mem::take(&mut songs[0]).into_artist_infos();
                 for artist in artists.into_iter() {
-                    if already_parsed.insert(artist.name.clone()) {
+                    if already_parsed.insert(artist.get_comp_id().to_owned()) {
                         respond(artist.into());
                     }
                 }
@@ -1038,7 +1040,7 @@ impl MpdWrapper {
                 let artists = std::mem::take(&mut songs[0]).into_artist_infos();
                 for artist in artists.into_iter() {
                     if recent_names_set.contains(&artist.name)
-                        && already_parsed.insert(artist.name.clone())
+                        && already_parsed.insert(artist.get_comp_id().to_owned())
                     {
                         respond(artist.into());
                     }
@@ -1413,102 +1415,6 @@ impl MpdWrapper {
         let (s, r) = oneshot::channel();
         self.background(Task::AddMultiple(uris, s), r).await
     }
-
-
-    // Should handle in Library controller
-    // pub async fn get_songs_of_artist<F>(&self, name: String, respond: F) -> ClientResult<()>
-    // where F: Fn(Song) {
-    //     let mut query = Query::new();
-    //     query.and_with_op(
-    //         Term::Tag(Cow::Borrowed("artist")),
-    //         QueryOperation::Contains,
-    //         name,
-    //     );
-    //     self.get_songs_by_query(Query::new(), respond);
-    // }
-    //
-    // pub fn fetch_albums_of_artist(
-    //     client: &mut mpd::Client<stream::StreamWrapper>,
-    //     sender_to_fg: &Sender<AsyncClientMessage>,
-    //     artist_name: String,
-    // ) {
-    //     if let Err(mpd_error) = fetch_albums_by_query(
-    //         client,
-    //         Query::new().and_with_op(
-    //             Term::Tag(Cow::Borrowed("artist")),
-    //             QueryOperation::Contains,
-    //             artist_name.clone(),
-    //         ),
-    //         |info| {
-    //             sender_to_fg.send_blocking(AsyncClientMessage::ArtistAlbumBasicInfoDownloaded(
-    //                 artist_name.clone(),
-    //                 info,
-    //             ))
-    //         },
-    //     ) {
-    //         let _ = sender_to_fg.send_blocking(AsyncClientMessage::BackgroundError(mpd_error, None));
-    //     }
-    // }
-
-
-
-    // fn on_songs_downloaded(&self, signal_name: &str, tag: Option<String>, songs: Vec<SongInfo>) {
-    //     if let Some(tag) = tag {
-    //         self.state.emit_by_name::<()>(
-    //             signal_name,
-    //             &[
-    //                 &tag,
-    //                 &BoxedAnyObject::new(songs.into_iter().map(Song::from).collect::<Vec<Song>>()),
-    //             ],
-    //         );
-    //     } else {
-    //         self.state.emit_by_name::<()>(
-    //             signal_name,
-    //             &[&BoxedAnyObject::new(
-    //                 songs.into_iter().map(Song::from).collect::<Vec<Song>>(),
-    //             )],
-    //         );
-    //     }
-    // }
-
-    // fn on_album_downloaded(&self, signal_name: &str, tag: Option<&str>, info: AlbumInfo) {
-    //     let album = Album::from(info);
-    //     {
-    //         let mut stickers = album.get_stickers().borrow_mut();
-    //         if let Some(val) = self.get_sticker("album", album.get_title(), Stickers::RATING_KEY) {
-    //             stickers.set_rating(&val);
-    //         }
-    //     }
-    //     // Append to listener lists
-    //     if let Some(tag) = tag {
-    //         self.state.emit_by_name::<()>(signal_name, &[&tag, &album]);
-    //     } else {
-    //         self.state.emit_by_name::<()>(signal_name, &[&album]);
-    //     }
-    // }
-
-    // pub fn get_artist_content(&self, name: String) {
-    //     // For artists, we will need to find by substring to include songs and albums that they
-    //     // took part in
-    //     self.queue_background(BackgroundTask::FetchArtistSongs(name.clone()), true);
-    //     self.queue_background(BackgroundTask::FetchArtistAlbums(name.clone()), true);
-    // }
-
-    // pub fn on_folder_contents_downloaded(&self, uri: String, contents: Vec<LsInfoEntry>) {
-    //     self.state.emit_by_name::<()>(
-    //         "folder-contents-downloaded",
-    //         &[
-    //             &uri.to_value(),
-    //             &BoxedAnyObject::new(
-    //                 contents
-    //                     .into_iter()
-    //                     .map(INode::from)
-    //                     .collect::<Vec<INode>>(),
-    //             )
-    //             .to_value(),
-    //         ],
-    //     );
-    // }
 }
 
 impl Drop for MpdWrapper {
