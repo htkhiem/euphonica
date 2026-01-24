@@ -24,7 +24,8 @@ mod imp {
         pub name: TemplateChild<gtk::Label>,
         pub avatar_signal_ids: RefCell<Option<(SignalHandlerId, SignalHandlerId)>>,
         pub cache: OnceCell<Rc<Cache>>,
-        pub artist: WeakRef<Artist>,
+        // Hold strong ref to Artist since this UI elem is usually its only user
+        pub artist: OnceCell<Artist>
     }
 
     // The central trait for subclassing a GObject
@@ -103,7 +104,7 @@ impl ArtistTag {
 
         res.imp().name.set_label(artist.get_name());
 
-        res.imp().artist.set(Some(artist));
+        res.imp().artist.set(artist.clone());
 
         let _ = res.imp().avatar_signal_ids.replace(Some((
             cache_state.connect_closure(
@@ -113,7 +114,7 @@ impl ArtistTag {
                     #[weak(rename_to = this)]
                     res,
                     move |_: CacheState, name: String, _: gdk::Texture, thumb: gdk::Texture| {
-                        if this.imp().artist.upgrade().is_some_and(|a| a.get_name() == name) {
+                        if this.imp().artist.get().is_some_and(|a| a.get_name() == name) {
                             this.imp().avatar.set_custom_image(Some(&thumb));
                         }
                     }
@@ -126,7 +127,7 @@ impl ArtistTag {
                     #[weak(rename_to = this)]
                     res,
                     move |_: CacheState, name: String| {
-                        if this.imp().artist.upgrade().is_some_and(|a| a.get_name() == name) {
+                        if this.imp().artist.get().is_some_and(|a| a.get_name() == name) {
                             this.imp().avatar.set_custom_image(Option::<&gdk::Texture>::None);
                         }
                     }
@@ -141,7 +142,7 @@ impl ArtistTag {
             #[weak]
             window,
             move |_| {
-                window.goto_artist(&this.imp().artist.upgrade().unwrap());
+                window.goto_artist(&this.imp().artist.get().unwrap());
             }
         ));
 
@@ -150,7 +151,7 @@ impl ArtistTag {
 
     fn update_artist_avatar(&self) {
         glib::spawn_future_local(clone!(#[weak(rename_to = this)] self, async move {
-            if let Some(artist) = this.imp().artist.upgrade() {
+            if let Some(artist) = this.imp().artist.get() {
                 match &this.imp()
                         .cache
                         .get()

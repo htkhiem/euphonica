@@ -1012,14 +1012,19 @@ impl Player {
                             .splice(0, self.imp().lyric_lines.n_items(), &[]);
                         let _ = self.imp().lyrics.take();
 
-                        // Fetch new lyrics in another future (don't await using this function as it will sleep after the request)
+                        // Fetch new lyrics in another future (don't await using this function as it will sleep after the request).
+                        // We'll have to check which song is playing again by the time we come back with the lyrics.
                         glib::spawn_future_local(clone!(
                             #[weak(rename_to = this)] self, #[strong] new_song, async move {
                                 println!("Fetching new lyrics...");
                                 match this.imp().cache.get().unwrap().get_lyrics(new_song.get_info(), true).await {
                                     Ok(Some(lyrics)) => {
-                                        this.update_lyrics(lyrics);
-                                        println!("Fetched new lyrics");
+                                        if this.current_song().is_some_and(
+                                            |s| s.get_info().get_comp_id() == new_song.get_info().get_comp_id()
+                                        ) {
+                                            this.update_lyrics(lyrics);
+                                            println!("Fetched new lyrics");
+                                        }
                                     }
                                     Ok(None) => {
                                         println!("No lyrics found");

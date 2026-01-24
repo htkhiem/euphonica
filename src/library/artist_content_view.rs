@@ -168,7 +168,12 @@ mod imp {
                         .emit_by_name::<()>("album-clicked", &[&album.to_value()]);
                 }
             ));
+            self.album_list
+                .bind_property("n-items", &self.album_count.get(), "label")
+                .sync_create()
+                .build();
 
+            // Set up song subview
             self.all_songs_btn
                 .bind_property("active", &self.subview_stack.get(), "visible-child-name")
                 .transform_to(|_, active| {
@@ -178,6 +183,10 @@ mod imp {
                         Some("albums")
                     }
                 })
+                .sync_create()
+                .build();
+            self.song_list
+                .bind_property("n-items", &self.song_count.get(), "label")
                 .sync_create()
                 .build();
 
@@ -733,9 +742,6 @@ impl ArtistContentView {
                 ).await;
                 album_spinner.set_visible_child_name("content");
                 song_spinner.set_visible_child_name("content");
-                this.imp()
-                    .song_count
-                    .set_label(&this.imp().song_list.n_items().to_string());
 
                 // The extra fluff later
                 this.schedule_avatar().await;

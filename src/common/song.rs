@@ -120,6 +120,15 @@ impl SongInfo {
     pub fn into_artist_infos(self) -> Vec<ArtistInfo> {
         self.artists
     }
+
+    /// Get something to serve as this song's internal ID for
+    /// filtering/comparison purposes.
+    /// Order of preference:
+    /// 1. MBID
+    /// 2. URI
+    pub fn get_comp_id(&self) -> &str {
+        self.mbid.as_deref().unwrap_or(self.uri.as_ref())
+    }
 }
 
 mod imp {
