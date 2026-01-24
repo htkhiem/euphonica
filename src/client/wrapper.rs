@@ -785,12 +785,14 @@ impl MpdWrapper {
                 let (s, r) = oneshot::channel();
                 let mut songs = self.background(Task::Find(query, Window::from((0, 1)), s), r).await?;
                 if !songs.is_empty() {
-                    respond(
-                        std::mem::take(&mut songs[0])
-                            .into_album_info()
-                            .expect("Fetched song by album tag but did not find album info")
-                            .into()
-                    );
+                    if let Some(album_info) = std::mem::take(&mut songs[0])
+                        .into_album_info()
+                    {
+                        respond(album_info.into());
+                    } else {
+                        dbg!("No album info found for {tag}");
+                    }
+
                 }
             }
         }

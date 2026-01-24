@@ -1,7 +1,7 @@
 use async_channel::{Receiver, Sender};
 use gio::prelude::SettingsExt;
 use mpd::{
-    Channel, Client, EditAction, GroupedValues, Id, Idle, Output, Query, ReplayGain, SaveMode, Status, Subsystem, Term, Version, error::{Error as MpdError, ProtoError, Result as MpdResult}, search::Window, song::PosIdChange
+    Channel, Client, EditAction, GroupedValues, Id, Idle, Output, Query, ReplayGain, SaveMode, Status, Subsystem, Term, Version, error::{Error as MpdError, ProtoError, Result as MpdResult, ServerError, ErrorCode as MpdErrorCode}, search::Window, song::PosIdChange
 };
 use oneshot::Sender as OneShotSender;
 use rand::seq::SliceRandom;
@@ -134,6 +134,7 @@ pub fn build_comparator(
 
 #[derive(Debug)]
 pub enum Error {
+    NoExist,
     Mpd(MpdError),
     Internal,
     Socket,
@@ -519,6 +520,9 @@ impl Connection {
                     Err(MpdError::Proto(ProtoError::NotPair)) => {
                         println!("GetEmbeddedCover: empty output");
                         // Empty output. Treat as not available.
+                        Ok(None)
+                    }
+                    Err(MpdError::Server(ServerError {code: MpdErrorCode::NoExist, pos: _, command: _, detail: _})) => {
                         Ok(None)
                     }
                     Err(e) => {

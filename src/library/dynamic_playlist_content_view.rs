@@ -466,7 +466,7 @@ impl DynamicPlaylistContentView {
                 )
             );
         self.imp().track_count.set_label(&songs.len().to_string());
-        self.imp().song_list.extend_from_slice(&songs);
+        self.imp().song_list.extend_from_slice(songs);
         self.imp().last_refreshed.set_label(&get_time_ago_desc(
             OffsetDateTime::now_utc().unix_timestamp(),
         ));
