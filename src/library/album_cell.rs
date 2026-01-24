@@ -18,7 +18,7 @@ use crate::{
     common::{
         Album, Rating,
         marquee::{Marquee, MarqueeWrapMode},
-        ImageStack
+        PictureStack
     },
     utils::settings_manager,
 };
@@ -33,7 +33,7 @@ mod imp {
         #[template_child]
         pub inner: TemplateChild<gtk::Box>,
         #[template_child]
-        pub cover: TemplateChild<ImageStack>, // Use thumbnail version
+        pub cover: TemplateChild<PictureStack>, // Use thumbnail version
         #[template_child]
         pub title: TemplateChild<Marquee>,
         #[template_child]
@@ -181,19 +181,32 @@ mod imp {
         }
 
         fn measure(&self, orientation: gtk::Orientation, for_size: i32) -> (i32, i32, i32, i32) {
+            // Always as wide as the image, no matter how long the title is.
             let image_size = self.image_size.get();
             if orientation == gtk::Orientation::Horizontal {
                 (
                     image_size,
-                    image_size, // Always as wide as the image, no matter how long the title is
+                    image_size,
                     -1, -1,
                 )
             } else {
-                // Depend on the parent Box's measurements for height
-
-                self.inner
-                    .get()
-                    .measure(gtk::Orientation::Vertical, for_size)
+                // Ensure we request enough vertical space for a square cover at the
+                // given width. Horizontal rectangular album covers look really weird.
+                // Calculating the actual total height is rather involved due to gaps and
+                // the like. Instead of re-implementing the sum, we simply calculate the
+                // "as usual" height of the cover art when allocated using GTK4 rules to
+                // its width and adjust the total accordingly.
+                // TODO: this is still hacky. Find a better way later.
+                // Return order reminder: min, natural, min baseline, natural baseline.
+                let raw_cover_size = dbg!(self.cover.measure(gtk::Orientation::Vertical, for_size));
+                let diff = (for_size - raw_cover_size.0).max(0);
+                let res = self.inner.get().measure(gtk::Orientation::Vertical, for_size);
+                dbg!((
+                    res.0 + diff,
+                    res.1,
+                    res.2,
+                    res.3
+                ))
             }
         }
 

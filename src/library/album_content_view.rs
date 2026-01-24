@@ -372,6 +372,10 @@ impl AlbumContentView {
         self.imp().library.upgrade()
     }
 
+    fn album(&self) -> Option<Album> {
+        self.imp().album.borrow().as_ref().cloned()
+    }
+
     #[inline]
     fn hide_wiki(&self) {
         self.imp().infobox_spinner.set_visible(false);
@@ -384,7 +388,7 @@ impl AlbumContentView {
     }
 
     async fn update_meta(&self, overwrite: bool) {
-        if let Some(album) = self.imp().album.borrow().as_ref() {
+        if let Some(album) = self.album() {
             let stack = self.imp().infobox_spinner.get();
             // If the current album is the "untitled" one (i.e. for songs without an album tag),
             // don't attempt to update metadata.
@@ -437,10 +441,7 @@ impl AlbumContentView {
 
     /// Set a user-selected path as the new local cover.
     pub async fn set_cover(&self, path: &str) {
-        if let (Some(album), Some(cache)) = (
-            self.imp().album.borrow().as_ref(),
-            self.imp().cache.get()
-        ) {
+        if let (Some(album), Some(cache)) = (self.album(), self.imp().cache.get()) {
             if let Err(e) = cache.set_cover(album.get_folder_uri().to_owned(), path).await {dbg!(e);}
         }
     }
@@ -474,7 +475,7 @@ impl AlbumContentView {
                 #[weak(rename_to = this)]
                 self,
                 move |_: CacheState, uri: String, hires: gdk::Texture, _: gdk::Texture| {
-                    if this.imp().album.borrow().as_ref().is_some_and(|a| a.get_folder_uri() == uri) {
+                    if this.album().is_some_and(|a| a.get_folder_uri() == uri) {
                         this.update_cover(hires);
                     }
                 }
@@ -487,7 +488,7 @@ impl AlbumContentView {
                 #[weak(rename_to = this)]
                 self,
                 move |_: CacheState, uri: String| {
-                    if this.imp().album.borrow().as_ref().is_some_and(|a| a.get_folder_uri() == uri) {
+                    if this.album().is_some_and(|a| a.get_folder_uri() == uri) {
                         this.clear_cover();
                     }
                 }
@@ -511,7 +512,7 @@ impl AlbumContentView {
                 move |rating: Rating| {
                     glib::spawn_future_local(clone!(#[weak] this, #[weak] rating, async move {
                         if let (Some(album), Some(library)) =
-                            (this.imp().album.borrow().as_ref(), this.get_library())
+                            (this.album(), this.get_library())
                         {
                             let rating_val = rating.value();
                             let rating_opt = if rating_val > 0 {
@@ -520,7 +521,7 @@ impl AlbumContentView {
                                 None
                             };
                             album.set_rating(rating_opt);
-                            if let Err(e) = library.rate_album(album, rating_opt).await {dbg!(e);}
+                            if let Err(e) = library.rate_album(&album, rating_opt).await {dbg!(e);}
                         }
                     }));
                 }
@@ -536,7 +537,7 @@ impl AlbumContentView {
                     this,
                     async move {
                         if let (Some(album), Some(library)) =
-                            (this.imp().album.borrow().as_ref(), this.get_library())
+                            (this.album(), this.get_library())
                         {
                             this.set_is_queuing(true);
                             if this.imp().selecting_all.get() {
@@ -571,7 +572,7 @@ impl AlbumContentView {
                     this,
                     async move {
                         if let (Some(album), Some(library)) =
-                            (this.imp().album.borrow().as_ref(), this.get_library())
+                            (this.album(), this.get_library())
                         {
                             this.set_is_queuing(true);
                             if this.imp().selecting_all.get() {
@@ -691,7 +692,7 @@ impl AlbumContentView {
             move |_, position| {
                 glib::spawn_future_local(clone!(#[weak] this, async move {
                     if let (Some(album), Some(library)) =
-                        (this.imp().album.borrow().as_ref(), this.get_library())
+                        (this.album(), this.get_library())
                     {
                         if let Err(e) = library.queue_album(album.clone(), true, true, Some(position)).await {dbg!(e);}
                     }
@@ -713,7 +714,7 @@ impl AlbumContentView {
 
     async fn schedule_cover(&self) {
         self.imp().cover.show_spinner();
-        if let Some(info) = self.imp().album.borrow().as_ref().map(|a| a.get_info()) {
+        if let Some(info) = self.album().as_ref().map(|a| a.get_info()) {
             match self.imp().cache.get().unwrap().clone().get_album_cover(
                 info, false, true
             ).await {
