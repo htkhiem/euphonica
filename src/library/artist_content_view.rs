@@ -14,7 +14,7 @@ use std::{
 use super::{AlbumCell, Library};
 use crate::{
     cache::{Cache, CacheState, placeholders::EMPTY_ARTIST_STRING},
-    common::{Album, Artist, ContentView, RowAddButtons, Song, SongRow},
+    common::{Album, Artist, ContentView, RowAddButtons, Song, SongRow, ContentStack},
     library::add_to_playlist::AddToPlaylistButton,
     utils::{format_secs_as_duration, settings_manager, tokio_runtime},
 };
@@ -56,7 +56,7 @@ mod imp {
 
         // All songs sub-view
         #[template_child]
-        pub song_spinner: TemplateChild<gtk::Stack>,
+        pub song_stack: TemplateChild<ContentStack>,
         #[template_child]
         pub song_subview: TemplateChild<gtk::ListView>,
         #[derivative(Default(value = "gio::ListStore::new::<Song>()"))]
@@ -80,7 +80,7 @@ mod imp {
 
         // Discography sub-view
         #[template_child]
-        pub album_spinner: TemplateChild<gtk::Stack>,
+        pub album_stack: TemplateChild<ContentStack>,
         #[template_child]
         pub album_subview: TemplateChild<gtk::GridView>,
         #[derivative(Default(value = "gio::ListStore::new::<Album>()"))]
@@ -725,27 +725,33 @@ impl ArtistContentView {
             #[strong]
             artist,
             async move {
-                let album_spinner = this.imp().album_spinner.get();
+                let album_stack = this.imp().album_stack.get();
                 let library = this.imp().library.upgrade().unwrap();
-                if album_spinner.visible_child_name().is_none_or(|name| name != "spinner") {
-                    album_spinner.set_visible_child_name("spinner");
-                }
+                album_stack.show_spinner();
                 let album_list = this.imp().album_list.clone();
                 album_list.remove_all();
-                let song_spinner = this.imp().song_spinner.get();
-                if song_spinner.visible_child_name().is_none_or(|name| name != "spinner") {
-                    song_spinner.set_visible_child_name("spinner");
-                }
+                let song_stack = this.imp().song_stack.get();
+                song_stack.show_spinner();
                 let song_list = this.imp().song_list.clone();
                 song_list.remove_all();
                 // Important, MPD-side content first
                 let _ = library.get_artist_content(
                     &artist,
                     |album| {album_list.append(&album);},
-                    |songs| {song_list.extend_from_slice(&songs);}
+                    |songs| {
+                        song_list.extend_from_slice(&songs);
+                    }
                 ).await;
-                album_spinner.set_visible_child_name("content");
-                song_spinner.set_visible_child_name("content");
+                if album_list.n_items() > 0 {
+                    album_stack.show_content();
+                } else {
+                    album_stack.show_placeholder();
+                }
+                if song_list.n_items() > 0 {
+                    song_stack.show_content();
+                } else {
+                    song_stack.show_placeholder();
+                }
 
                 // The extra fluff later
                 this.schedule_avatar().await;
@@ -766,12 +772,8 @@ impl ArtistContentView {
         // Unset metadata widgets
         self.imp().avatar.set_text(None);
         self.clear_content();
-        duplicate! {
-            [stack; [infobox_spinner]; [song_spinner]; [album_spinner];]
-            if self.imp().stack.visible_child_name().unwrap() != "spinner" {
-                self.imp().stack.set_visible_child_name("spinner");
-            }
-        }
+        self.imp().album_stack.show_placeholder();
+        self.imp().song_stack.show_placeholder();
         self.imp().infobox_spinner.set_visible(true);
     }
 

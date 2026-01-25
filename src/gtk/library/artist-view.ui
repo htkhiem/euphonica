@@ -60,22 +60,31 @@
                   </object>
                 </child>
 				        <property name="content">
-					        <object class="GtkScrolledWindow">
-                    <property name="hscrollbar-policy">never</property>
-                    <property name="vscrollbar-policy">automatic</property>
-                    <property name="propagate-natural-height">true</property>
-                    <property name="has-frame">false</property>
-                    <property name="vexpand">true</property>
-                    <property name="child">
-                      <object class="GtkGridView" id="grid_view">
-                        <property name="orientation">1</property>
-                        <property name="min-columns">1</property>
-                        <property name="max-columns">10</property>
-                        <property name="single-click-activate">true</property>
-                        <style>
-                          <class name="no-bg"/>
-                          <class name="padding-12"/>
-                        </style>
+                  <object class="EuphonicaContentStack" id="stack">
+                    <property name="placeholder">
+                      <object class="AdwStatusPage">
+                        <property name="title" translatable="true">No Artists</property>
+                      </object>
+                    </property>
+                    <property name="content">
+                      <object class="GtkScrolledWindow">
+                        <property name="hscrollbar-policy">never</property>
+                        <property name="vscrollbar-policy">automatic</property>
+                        <property name="propagate-natural-height">true</property>
+                        <property name="has-frame">false</property>
+                        <property name="vexpand">true</property>
+                        <property name="child">
+                          <object class="GtkGridView" id="grid_view">
+                            <property name="orientation">1</property>
+                            <property name="min-columns">1</property>
+                            <property name="max-columns">10</property>
+                            <property name="single-click-activate">true</property>
+                            <style>
+                              <class name="no-bg"/>
+                              <class name="padding-12"/>
+                            </style>
+                          </object>
+                        </property>
                       </object>
                     </property>
                   </object>

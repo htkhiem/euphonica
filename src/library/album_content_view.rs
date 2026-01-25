@@ -7,7 +7,7 @@ use crate::{
     client::{ClientState, state::StickersSupportLevel},
     common::{
         Album, Artist, ContentView, Rating, RowAddButtons, Song, SongRow,
-        ImageStack
+        ImageStack, ContentStack
     },
     library::add_to_playlist::AddToPlaylistButton,
     utils::{format_secs_as_duration, tokio_runtime},
@@ -80,7 +80,7 @@ mod imp {
         pub sel_none: TemplateChild<gtk::Button>,
 
         #[template_child]
-        pub content_spinner: TemplateChild<gtk::Stack>,
+        pub content_stack: TemplateChild<ContentStack>,
         #[template_child]
         pub content: TemplateChild<gtk::ListView>,
 
@@ -153,6 +153,15 @@ mod imp {
                     sel_model.unselect_all();
                 }
             ));
+
+            self.song_list
+                .bind_property(
+                    "n-items",
+                    &self.track_count.get(),
+                    "label"
+                )
+                .sync_create()
+                .build();
 
             // Rating readout
             self.rating
@@ -813,22 +822,23 @@ impl AlbumContentView {
             async move {
                 let library = this.imp().library.upgrade().unwrap();
                 // Important, MPD-side content first
-                let content_spinner = this.imp().content_spinner.get();
-                if content_spinner.visible_child_name().unwrap() != "spinner" {
-                    content_spinner.set_visible_child_name("spinner");
-                }
+                let stack = this.imp().content_stack.get();
+                stack.show_spinner();
                 let song_list = this.imp().song_list.clone();
                 song_list.remove_all();
                 match library.get_album_songs(
                     album.get_title().to_owned(),
                     &mut |songs| {song_list.extend_from_slice(&songs);}
                 ).await {
-                    Ok(()) => {},
+                    Ok(()) => {
+                        if song_list.n_items() > 0 {
+                            stack.show_content();
+                        } else {
+                            stack.show_placeholder();
+                        }
+                    },
                     Err(e) => {dbg!(e);}
                 };
-                content_spinner.set_visible_child_name("content");
-                let song_list = &this.imp().song_list;
-                this.imp().track_count.set_label(&song_list.n_items().to_string());
                 this.imp().runtime.set_label(&format_secs_as_duration(
                     song_list
                         .iter()
@@ -869,10 +879,7 @@ impl AlbumContentView {
 
         // Unset metadata widgets
         self.imp().song_list.remove_all();
-        let content_spinner = self.imp().content_spinner.get();
-        if content_spinner.visible_child_name().unwrap() != "spinner" {
-            content_spinner.set_visible_child_name("spinner");
-        }
+        self.imp().content_stack.show_placeholder();
         let infobox_spinner = self.imp().infobox_spinner.get();
         if infobox_spinner.visible_child_name().unwrap() != "spinner" {
             infobox_spinner.set_visible_child_name("spinner");

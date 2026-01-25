@@ -415,7 +415,7 @@ impl Library {
     }
 
     /// Retrieve songs in a playlist
-    pub async fn get_playlist_songs<F>(&self, name: String, respond: F) -> ClientResult<()>
+    pub async fn get_playlist_songs<F>(&self, name: String, respond: &mut F) -> ClientResult<()>
     where F: FnMut(Vec<Song>) {
         self.client().get_playlist_songs(name, respond).await
     }

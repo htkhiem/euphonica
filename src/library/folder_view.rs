@@ -1,7 +1,7 @@
 use super::{Library, generic_row::GenericRow};
 use crate::{
     cache::Cache,
-    common::{INode, INodeType},
+    common::{INode, INodeType, ContentStack},
     utils::{LazyInit, g_cmp_str_options, settings_manager},
 };
 use adw::prelude::*;
@@ -49,6 +49,9 @@ mod imp {
         pub back_btn: TemplateChild<gtk::Button>,
         #[template_child]
         pub forward_btn: TemplateChild<gtk::Button>,
+
+        #[template_child]
+        pub stack: TemplateChild<ContentStack>,
 
         // Search & filter widgets
         #[template_child]
@@ -103,6 +106,7 @@ mod imp {
 
         fn constructed(&self) {
             self.parent_constructed();
+            self.stack.show_placeholder();
 
             self.back_btn.connect_clicked(clone!(
                 #[weak(rename_to = this)]
@@ -449,7 +453,14 @@ impl FolderView {
         glib::spawn_future_local(clone!(#[weak(rename_to = this)] self, #[weak] inode, async move {
             if let Some(name) = inode.get_name() {
                 if inode.get_info().inode_type == INodeType::Folder {
+                    let stack = this.imp().stack.get();
+                    stack.show_spinner();
                     this.library().navigate_to(name).await;
+                    if this.library().folder_inodes().n_items() > 0 {
+                        stack.show_content();
+                    } else {
+                        stack.show_placeholder();
+                    }
                 }
             }
         }));
@@ -518,9 +529,18 @@ impl FolderView {
 impl LazyInit for FolderView {
     fn populate(&self) {
         if let Some(library) = self.imp().library.upgrade() {
-            glib::spawn_future_local(async move {
-                library.get_folder_contents().await;
-            });
+            let stack = self.imp().stack.get();
+            stack.show_spinner();
+            glib::spawn_future_local(
+                async move {
+                    library.get_folder_contents().await;
+                    if library.folder_inodes().n_items() > 0 {
+                        stack.show_content();
+                    } else {
+                        stack.show_placeholder();
+                    }
+                }
+            );
         }
     }
 }

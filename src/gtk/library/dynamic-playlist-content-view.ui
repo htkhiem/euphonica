@@ -247,20 +247,20 @@
               </object>
             </property>
             <property name="content">
-              <object class="GtkStack" id="content_spinner">
-                <child>
-                  <object class="GtkStackPage">
-                    <property name="name">spinner</property>
-                    <property name="child">
-                      <object class="AdwSpinner">
-                        <property name="margin-top">24</property>
-                      </object>
-                    </property>
+              <object class="EuphonicaContentStack" id="content_stack">
+                <property name="placeholder">
+                  <object class="AdwStatusPage">
+                    <property name="title" translatable="true">Empty Playlist</property>
                   </object>
-                </child>
-                <child>
-                  <object class="GtkStackPage">
-                    <property name="name">content</property>
+                </property>
+                <property name="content">
+                  <object class="GtkScrolledWindow">
+                    <property name="height-request">50</property>
+                    <property name="hscrollbar-policy">never</property>
+                    <property name="vscrollbar-policy">automatic</property>
+                    <property name="propagate-natural-height">true</property>
+                    <property name="has-frame">false</property>
+                    <property name="vexpand">true</property>
                     <property name="child">
                       <object class="GtkListView" id="content">
                         <property name="show-separators">true</property>
@@ -270,7 +270,7 @@
                       </object>
                     </property>
                   </object>
-                </child>
+                </property>
               </object>
             </property>
           </object>

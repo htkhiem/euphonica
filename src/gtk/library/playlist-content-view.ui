@@ -410,7 +410,7 @@
                   </object>
                 </child>
                 <child>
-                  <object class="GtkStack" id="content_stack">
+                  <object class="GtkStack" id="subview_stack">
                     <property name="hexpand">true</property>
                     <property name="vexpand">true</property>
                     <property name="transition-type">crossfade</property>
@@ -418,19 +418,28 @@
                       <object class="GtkStackPage">
                         <property name="name">queue-mode</property>
                         <property name="child">
-                          <object class="GtkScrolledWindow" id="content_scroller">
-                            <property name="height-request">50</property>
-                            <property name="hscrollbar-policy">never</property>
-                            <property name="vscrollbar-policy">automatic</property>
-                            <property name="propagate-natural-height">true</property>
-                            <property name="has-frame">false</property>
-                            <property name="vexpand">true</property>
-                            <property name="child">
-                              <object class="GtkListView" id="content">
-                                <property name="show-separators">true</property>
-                                <style>
-                                  <class name="no-bg"/>
-                                </style>
+                          <object class="EuphonicaContentStack" id="content_stack">
+                            <property name="placeholder">
+                              <object class="AdwStatusPage">
+                                <property name="title" translatable="true">Empty Playlist</property>
+                              </object>
+                            </property>
+                            <property name="content">
+                              <object class="GtkScrolledWindow" id="content_scroller">
+                                <property name="height-request">50</property>
+                                <property name="hscrollbar-policy">never</property>
+                                <property name="vscrollbar-policy">automatic</property>
+                                <property name="propagate-natural-height">true</property>
+                                <property name="has-frame">false</property>
+                                <property name="vexpand">true</property>
+                                <property name="child">
+                                  <object class="GtkListView" id="content">
+                                    <property name="show-separators">true</property>
+                                    <style>
+                                      <class name="no-bg"/>
+                                    </style>
+                                  </object>
+                                </property>
                               </object>
                             </property>
                           </object>

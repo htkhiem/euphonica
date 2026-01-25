@@ -8,11 +8,11 @@
 					<object class="AdwHeaderBar">
             <property name="show-title">false</property>
             <child type="start">
-                  <object class="GtkButton" id="show_sidebar">
-                    <property name="icon-name">dock-left-symbolic</property>
-                    <property name="tooltip-text" translatable="true">Show sidebar</property>
-                    <property name="visible">false</property>
-                  </object>
+              <object class="GtkButton" id="show_sidebar">
+                <property name="icon-name">dock-left-symbolic</property>
+                <property name="tooltip-text" translatable="true">Show sidebar</property>
+                <property name="visible">false</property>
+              </object>
             </child>
             <child type="end">
               <object class="GtkToggleButton" id="search_btn">
@@ -68,19 +68,28 @@
               </object>
             </child>
             <child>
-              <object class="GtkScrolledWindow">
-                <property name="hscrollbar-policy">never</property>
-                <property name="vscrollbar-policy">automatic</property>
-                <property name="propagate-natural-height">true</property>
-                <property name="has-frame">false</property>
-                <property name="vexpand">true</property>
-                <property name="child">
-                  <object class="GtkListView" id="list_view">
-                    <property name="show-separators">true</property>
-                    <property name="single-click-activate">true</property>
-                    <style>
-                      <class name="no-bg"/>
-                    </style>
+              <object class="EuphonicaContentStack" id="stack">
+                <property name="placeholder">
+                  <object class="AdwStatusPage">
+                    <property name="title" translatable="true">Empty Folder</property>
+                  </object>
+                </property>
+                <property name="content">
+                  <object class="GtkScrolledWindow">
+                    <property name="hscrollbar-policy">never</property>
+                    <property name="vscrollbar-policy">automatic</property>
+                    <property name="propagate-natural-height">true</property>
+                    <property name="has-frame">false</property>
+                    <property name="vexpand">true</property>
+                    <property name="child">
+                      <object class="GtkListView" id="list_view">
+                        <property name="show-separators">true</property>
+                        <property name="single-click-activate">true</property>
+                        <style>
+                          <class name="no-bg"/>
+                        </style>
+                      </object>
+                    </property>
                   </object>
                 </property>
               </object>

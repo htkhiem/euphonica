@@ -12,7 +12,7 @@ use super::{AlbumCell, AlbumContentView, Library};
 use crate::{
     cache::Cache,
     client::ClientState,
-    common::{Album, Rating},
+    common::{Album, Rating, ContentStack},
     utils::{LazyInit, g_cmp_options, g_cmp_str_options, g_search_substr, settings_manager},
     window::EuphonicaWindow,
 };
@@ -46,6 +46,8 @@ mod imp {
         pub rating_mode: TemplateChild<gtk::DropDown>,
 
         // Content
+        #[template_child]
+        pub stack: TemplateChild<ContentStack>,
         #[template_child]
         pub grid_view: TemplateChild<gtk::GridView>,
         #[template_child]
@@ -95,6 +97,7 @@ mod imp {
 
         fn constructed(&self) {
             self.parent_constructed();
+            self.stack.show_placeholder();
 
             self.obj()
                 .bind_property("collapsed", &self.show_sidebar.get(), "visible")
@@ -562,9 +565,15 @@ impl AlbumView {
 impl LazyInit for AlbumView {
     fn populate(&self) {
         if let Some(library) = self.imp().library.upgrade() {
-            // TODO: add spinner
+            let stack = self.imp().stack.get();
+            stack.show_spinner();
             glib::spawn_future_local(async move {
                 let _ = library.init_albums().await;
+                if library.albums().n_items() > 0 {
+                    stack.show_content();
+                } else {
+                    stack.show_placeholder();
+                }
             });
         }
     }

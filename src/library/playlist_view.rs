@@ -14,7 +14,7 @@ use super::Library;
 use crate::{
     cache::Cache,
     client::{ClientState, ConnectionState},
-    common::INode,
+    common::{INode, ContentStack},
     library::PlaylistContentView,
     library::playlist_row::PlaylistRow,
     utils::{g_cmp_str_options, settings_manager},
@@ -45,6 +45,8 @@ mod imp {
         pub search_entry: TemplateChild<gtk::SearchEntry>,
 
         // Content
+        #[template_child]
+        pub stack: TemplateChild<ContentStack>,
         #[template_child]
         pub list_view: TemplateChild<gtk::ListView>,
         #[template_child]
@@ -294,6 +296,18 @@ impl PlaylistView {
         self.imp().nav_view.pop();
     }
 
+    async fn init_playlists(&self, refresh: bool) {
+        let stack = self.imp().stack.get();
+        let library = self.imp().library.upgrade().unwrap();
+        stack.show_spinner();
+        library.init_playlists(refresh).await;
+        if library.playlists().n_items() > 0 {
+            stack.show_content();
+        } else {
+            stack.show_placeholder();
+        }
+    }
+
     pub fn setup(
         &self,
         library: &Library,
@@ -322,7 +336,7 @@ impl PlaylistView {
                     if state.connection_state() == ConnectionState::Connected {
                         // Newly-connected? Get all playlists.
                         glib::spawn_future_local(clone!(#[weak] this, async move {
-                            this.imp().library.upgrade().unwrap().init_playlists(false).await;
+                            this.init_playlists(false).await;
                         }));
                     }
                 }
@@ -340,7 +354,7 @@ impl PlaylistView {
                         glib::spawn_future_local(clone!(#[weak] this, async move {
                             let library = this.imp().library.upgrade().unwrap();
                             // Reload playlists
-                            library.init_playlists(true).await;
+                            this.init_playlists(true).await;
                             // Also try to reload content view too, if it's still bound to one.
                             // If its currently-bound playlist has just been deleted, don't rebind it.
                             // Instead, force-switch the nav view to this page.

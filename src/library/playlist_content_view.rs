@@ -17,7 +17,7 @@ use super::Library;
 use crate::{
     cache::Cache,
     client::Error as ClientError,
-    common::{INode, RowAddButtons, RowEditButtons, Song, SongRow, ImageStack},
+    common::{INode, RowAddButtons, RowEditButtons, Song, SongRow, ImageStack, ContentStack},
     utils::{format_secs_as_duration, tokio_runtime},
     window::EuphonicaWindow,
 };
@@ -94,7 +94,9 @@ mod imp {
         #[template_child]
         pub cover: TemplateChild<ImageStack>,
         #[template_child]
-        pub content_stack: TemplateChild<gtk::Stack>,
+        pub subview_stack: TemplateChild<gtk::Stack>,
+        #[template_child]
+        pub content_stack: TemplateChild<ContentStack>,
         #[template_child]
         pub content: TemplateChild<gtk::ListView>,
         #[template_child]
@@ -203,8 +205,17 @@ mod imp {
         fn constructed(&self) {
             self.parent_constructed();
 
+            self.song_list
+                .bind_property(
+                    "n-items",
+                    &self.track_count.get(),
+                    "label"
+                )
+                .sync_create()
+                .build();
+
             self.action_row.set_visible_child_name("queue-mode");
-            self.content_stack.set_visible_child_name("queue-mode");
+            self.subview_stack.set_visible_child_name("queue-mode");
             self.edit_playlist.connect_clicked(clone!(
                 #[weak(rename_to = this)]
                 self,
@@ -390,7 +401,7 @@ mod imp {
 
             // Everything is now in place; start fading
             self.action_row.set_visible_child_name("edit-mode");
-            self.content_stack.set_visible_child_name("edit-mode");
+            self.subview_stack.set_visible_child_name("edit-mode");
             self.edit_apply.set_sensitive(false);
         }
 
@@ -426,7 +437,7 @@ mod imp {
                 // Just fade back, no need to clear the list (won't lag us
                 // since we're not rendering it)
                 this.action_row.set_visible_child_name("queue-mode");
-                this.content_stack.set_visible_child_name("queue-mode");
+                this.subview_stack.set_visible_child_name("queue-mode");
             }));
         }
 
@@ -932,17 +943,21 @@ impl PlaylistContentView {
 
                 this.imp().playlist.replace(Some(playlist));
 
+                let content_stack = this.imp().content_stack.get();
+                content_stack.show_spinner();
                 let song_list = this.imp().song_list.clone();
                 song_list.remove_all();
                 let _ = this.imp().library.upgrade().unwrap().get_playlist_songs(
                     name,
-                    move |songs| {
+                    &mut |songs| {
                         song_list.extend_from_slice(&songs);
                     }
                 ).await;
-                this.imp()
-                    .track_count
-                    .set_label(&this.imp().song_list.n_items().to_string());
+                if song_list.n_items() > 0 {
+                    content_stack.show_content();
+                } else {
+                    content_stack.show_placeholder();
+                }
                 this.imp().runtime.set_label(&format_secs_as_duration(
                     this.imp()
                         .song_list

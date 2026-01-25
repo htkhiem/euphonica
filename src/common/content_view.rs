@@ -20,7 +20,7 @@ mod imp {
         #[template_child]
         pub action_row: TemplateChild<gtk::CenterBox>,
         #[template_child]
-        pub content_area: TemplateChild<gtk::ScrolledWindow>,
+        pub content_area: TemplateChild<gtk::Box>,
     }
 
     #[glib::object_subclass]
@@ -128,7 +128,7 @@ mod imp {
                 }
                 "content" => {
                     if let Ok(widget) = value.get::<gtk::Widget>() {
-                        self.content_area.set_child(Some(&widget));
+                        self.content_area.append(&widget);
                     }
                 }
                 _ => unimplemented!(),

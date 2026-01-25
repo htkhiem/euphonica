@@ -1,3 +1,4 @@
+pub mod content_stack;
 pub mod image_stack;
 pub mod picture_stack;
 pub mod album;
@@ -16,6 +17,7 @@ pub mod song_row;
 pub mod sticker;
 pub mod theme_selector;
 
+pub use content_stack::ContentStack;
 pub use image_stack::ImageStack;
 pub use picture_stack::PictureStack;
 pub use album::{Album, AlbumInfo};

@@ -19,8 +19,8 @@ use glib::subclass::Signal;
 use super::{DynamicPlaylistContentView, Library};
 use crate::{
     cache::{Cache, sqlite},
-    client::{ClientState, ConnectionState},
-    common::{DynamicPlaylist, INode},
+    client::{ClientState, ConnectionState, Result as ClientResult},
+    common::{DynamicPlaylist, INode, ContentStack},
     library::{DynamicPlaylistEditorView, playlist_row::PlaylistRow},
     utils::{g_cmp_str_options, settings_manager},
     window::EuphonicaWindow,
@@ -58,6 +58,8 @@ mod imp {
         pub create_btn: TemplateChild<adw::SplitButton>,
 
         // Content
+        #[template_child]
+        pub stack: TemplateChild<ContentStack>,
         #[template_child]
         pub list_view: TemplateChild<gtk::ListView>,
         #[template_child]
@@ -301,7 +303,8 @@ mod imp {
                                 }
                             }
                         });
-                        glib::spawn_future_local(
+                        glib::spawn_future_local(clone!(
+                            #[weak] this,
                             async move {
                                 use futures::prelude::*;
                                 let mut receiver = std::pin::pin!(receiver);
@@ -364,12 +367,11 @@ mod imp {
                                             }
                                         }
                                     }
-                                    if let Some(library) = this.library.upgrade() {
-                                        if let Err(e) = library.init_dyn_playlists(true).await {dbg!(e);}
-                                    }
+
+                                    if let Err(e) = this.obj().init_dyn_playlists(true).await {dbg!(e);}
                                 }
                             }
-                        );
+                        ));
                     }
                 ))
                 .build();
@@ -427,6 +429,19 @@ impl DynamicPlaylistView {
         }
     }
 
+    async fn init_dyn_playlists(&self, refresh: bool) -> ClientResult<()> {
+        let stack = self.imp().stack.get();
+        let library = self.imp().library.upgrade().unwrap();
+        stack.show_spinner();
+        let res = library.init_dyn_playlists(refresh).await;
+        if library.dyn_playlists().n_items() > 0 {
+            stack.show_content();
+        } else {
+            stack.show_placeholder();
+        }
+        res
+    }
+
     pub fn setup(
         &self,
         library: &Library,
@@ -450,12 +465,12 @@ impl DynamicPlaylistView {
         client_state.connect_notify_local(
             Some("connection-state"),
             clone!(
-                #[weak]
-                library,
+                #[weak(rename_to = this)]
+                self,
                 move |state, _| {
                     if state.connection_state() == ConnectionState::Connected {
-                        glib::spawn_future_local(clone!(#[weak] library, async move {
-                            library.init_dyn_playlists(false).await;
+                        glib::spawn_future_local(clone!(#[weak] this, async move {
+                            this.init_dyn_playlists(false).await;
                         }));
                     }
                 }
@@ -484,9 +499,9 @@ impl DynamicPlaylistView {
                         library,
                         move |_: DynamicPlaylistEditorView, should_refresh: bool| {
                             glib::spawn_future_local(clone!(
-                                #[weak] this, #[weak] library, async move {
+                                #[weak] this, async move {
                                 if should_refresh {
-                                    library.init_dyn_playlists(true).await;
+                                    this.init_dyn_playlists(true).await;
                                 }
                                 this.imp().nav_view.pop();
                             }));
@@ -521,13 +536,13 @@ impl DynamicPlaylistView {
                 #[weak(rename_to = this)] self, #[weak] library,
                 move |editor: DynamicPlaylistEditorView, should_refresh: bool| {
                     glib::spawn_future_local(clone!(
-                        #[weak] this, #[weak] library, async move {
+                        #[weak] this, async move {
                             let content_view = this.imp().content_view.get();
                             content_view.unbind();
                             this.imp().nav_view.pop();
                             content_view.bind_by_name(editor.get_current_name()).await;
                             if should_refresh {
-                                library.init_dyn_playlists(true).await;
+                                this.init_dyn_playlists(true).await;
                             }
                         }
                     ));

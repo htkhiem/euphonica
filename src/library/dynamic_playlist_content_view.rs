@@ -1,7 +1,7 @@
 use super::{DynamicPlaylistView, Library, artist_tag::ArtistTag};
 use crate::{
     cache::{Cache, sqlite},
-    common::{ContentView, DynamicPlaylist, Song, SongRow, dynamic_playlist::AutoRefresh, INodeType, inode::INodeInfo, ImageStack},
+    common::{ContentView, DynamicPlaylist, Song, SongRow, dynamic_playlist::AutoRefresh, INodeType, inode::INodeInfo, ImageStack, ContentStack},
     utils::{self, format_secs_as_duration, get_time_ago_desc},
     window::EuphonicaWindow,
 };
@@ -58,7 +58,7 @@ mod imp {
         pub refresh_btn: TemplateChild<gtk::Button>,
 
         #[template_child]
-        pub content_spinner: TemplateChild<gtk::Stack>,
+        pub content_stack: TemplateChild<ContentStack>,
         #[template_child]
         pub content: TemplateChild<gtk::ListView>,
 
@@ -477,18 +477,19 @@ impl DynamicPlaylistContentView {
         if let Some(library) = self.imp().library.upgrade() {
             // Block queue actions while refreshing
             self.set_is_queuing(true);
-            let spinner = self.imp().content_spinner.get();
-            if spinner.visible_child_name().unwrap() != "spinner" {
-                spinner.set_visible_child_name("spinner");
-            }
+            let stack = self.imp().content_stack.get();
+            stack.show_spinner();
             self.imp().song_list.remove_all();
             // Fetch from scratch & update cache
-            let res = library.get_dynamic_playlist_songs_cached(name).await;
-            spinner.set_visible_child_name("content");
-            match res {
+            match library.get_dynamic_playlist_songs_cached(name).await {
                 // TODO: add empty StatusPAge
                 Ok(songs) => {
-                    self.update_song_list(&songs);
+                    if songs.len() > 0 {
+                        self.update_song_list(&songs);
+                        stack.show_content();
+                    } else {
+                        stack.show_placeholder();
+                    }
                 }
                 Err(e) => {
                     dbg!(e);
@@ -503,18 +504,19 @@ impl DynamicPlaylistContentView {
         if let Some(library) = self.imp().library.upgrade() {
             // Block queue actions while refreshing
             self.set_is_queuing(true);
-            let spinner = self.imp().content_spinner.get();
-            if spinner.visible_child_name().unwrap() != "spinner" {
-                spinner.set_visible_child_name("spinner");
-            }
+            let stack = self.imp().content_stack.get();
+            stack.show_spinner();
             self.imp().song_list.remove_all();
             // Fetch from scratch & update cache
-            let res = library.get_dynamic_playlist_songs(dp, true).await;
-            spinner.set_visible_child_name("content");
-            match res {
+            match library.get_dynamic_playlist_songs(dp, true).await {
                 // TODO: add empty StatusPAge
                 Ok(songs) => {
-                    self.update_song_list(&songs);
+                    if songs.len() > 0 {
+                        self.update_song_list(&songs);
+                        stack.show_content();
+                    } else {
+                        stack.show_placeholder();
+                    }
                 }
                 Err(e) => {
                     dbg!(e);

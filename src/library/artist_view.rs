@@ -8,7 +8,7 @@ use glib::{Properties, WeakRef, clone, subclass::Signal};
 use super::{ArtistCell, ArtistContentView, Library};
 use crate::{
     cache::Cache,
-    common::Artist,
+    common::{Artist, ContentStack},
     utils::{LazyInit, g_cmp_str_options, g_search_substr, settings_manager},
 };
 
@@ -37,6 +37,8 @@ mod imp {
         pub search_entry: TemplateChild<gtk::SearchEntry>,
 
         // Content
+        #[template_child]
+        pub stack: TemplateChild<ContentStack>,
         #[template_child]
         pub grid_view: TemplateChild<gtk::GridView>,
         #[template_child]
@@ -86,6 +88,7 @@ mod imp {
 
         fn constructed(&self) {
             self.parent_constructed();
+            self.stack.show_placeholder();
 
             self.obj()
                 .bind_property("collapsed", &self.show_sidebar.get(), "visible")
@@ -424,8 +427,15 @@ impl ArtistView {
 impl LazyInit for ArtistView {
     fn populate(&self) {
         if let Some(library) = self.imp().library.upgrade() {
+            let stack = self.imp().stack.get();
+            stack.show_spinner();
             glib::spawn_future_local(async move {
                 let _ = library.init_artists(false).await;
+                if library.artists().n_items() > 0 {
+                    stack.show_content();
+                } else {
+                    stack.show_placeholder();
+                }
             });
         }
     }
