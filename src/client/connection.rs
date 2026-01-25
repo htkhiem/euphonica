@@ -357,10 +357,6 @@ pub struct Connection {
     retries_left: u32
 }
 
-fn respond<T>(result: Result<T>, resp: Responder<T>) {
-    resp.send(result).expect("Broken oneshot sender");
-}
-
 impl Connection {
     /// If idle_sender is given, will initialise this client as background
     pub fn new(
@@ -496,7 +492,7 @@ impl Connection {
     where
         F: Fn(&mut Client<StreamWrapper>) -> MpdResult<T>,
     {
-        respond(self.client_then(then), resp);
+        let _ = resp.send(self.client_then(then));
     }
 
     fn maybe_download_image<F>(&mut self, uri: String, download_func: F, resp: Responder<Option<(String, String)>>)
@@ -508,7 +504,7 @@ impl Connection {
         let hires = sqlite::find_image_by_key(&uri, None, false).expect("Sqlite DB error");
         let thumb = sqlite::find_image_by_key(&uri, None, true).expect("Sqlite DB error");
         if let (Some(hires), Some(thumb)) = (hires, thumb) {
-            resp.send(Ok(Some((hires, thumb)))).expect("Broken oneshot sender");
+            let _ = resp.send(Ok(Some((hires, thumb))));
         } else {
             // Not available locally => try to download
             self.respond_with_client(|c| {
@@ -777,12 +773,12 @@ impl Connection {
             if let Some(task) = curr_task {
                 match task {
                     Task::Connect(resp) => {
-                        respond(self.connect(), resp);
+                        let _ = resp.send(self.connect());
                     }
                     Task::Disconnect(stop, resp) => {
                         let res = self.disconnect();
                         let is_ok = res.is_ok();
-                        respond(res, resp);
+                        let _ = resp.send(res);
                         if is_ok && stop {
                             break;
                         }
@@ -951,12 +947,13 @@ impl Connection {
                         }
                     }, resp),
                     Task::ResolveDynamicPlaylist(dp, cache, resp) => {
-                        respond(self.resolve_dynamic_playlist_rules(dp, cache), resp);
+                        let _ = resp.send(self.resolve_dynamic_playlist_rules(dp, cache));
                     }
                 }
             } else if let (Some(sender), Some(client)) =
                 (self.idle_sender.as_ref(), self.client.as_mut())
             {
+                println!("Entering idle mode...");
                 let changes = client.wait(&[]).map_err(Error::Mpd)?;
                 for change in changes.iter() {
                     match change {

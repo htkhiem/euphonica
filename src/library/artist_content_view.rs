@@ -246,7 +246,7 @@ mod imp {
                             obj,
                             async move {
                                 if let (Some(artist), Some(cache)) = (
-                                    obj.imp().artist.borrow().as_ref(),
+                                    obj.artist(),
                                     obj.imp().cache.get(),
                                 ) {
                                     cache.clear_artist_avatar(artist.get_name().to_owned()).await;
@@ -333,6 +333,10 @@ impl Default for ArtistContentView {
 }
 
 impl ArtistContentView {
+    fn artist(&self) -> Option<Artist> {
+        self.imp().artist.borrow().as_ref().cloned()
+    }
+
     fn set_is_queuing(&self, queuing: bool) {
         self.imp().replace_queue.set_sensitive(!queuing);
         self.imp().append_queue.set_sensitive(!queuing);
@@ -349,7 +353,7 @@ impl ArtistContentView {
     }
 
     async fn update_meta(&self, overwrite: bool) {
-        if let Some(artist) = self.imp().artist.borrow().as_ref() {
+        if let Some(artist) = self.artist() {
             let stack = self.imp().infobox_spinner.get();
             // If the current artist is the "untitled" one (i.e. for songs without an artist tag),
             // don't attempt to update metadata.
@@ -410,7 +414,7 @@ impl ArtistContentView {
                 #[weak(rename_to = this)]
                 self,
                 move |_: CacheState, name: String, hires: gdk::Texture, _: gdk::Texture| {
-                    if this.imp().artist.borrow().as_ref().is_some_and(|a| a.get_name() == name) {
+                    if this.artist().is_some_and(|a| a.get_name() == name) {
                         this.update_avatar(Some(&hires));
                     }
                 }
@@ -423,7 +427,7 @@ impl ArtistContentView {
                 #[weak(rename_to = this)]
                 self,
                 move |_: CacheState, tag: String| {
-                    if this.imp().artist.borrow().as_ref().is_some_and(|a| a.get_name() == tag) {
+                    if this.artist().is_some_and(|a| a.get_name() == tag) {
                         this.update_avatar(None);
                     }
                 }
@@ -442,11 +446,11 @@ impl ArtistContentView {
                     #[weak]
                     this,
                     async move {
-                        if let Some(artist) = this.imp().artist.borrow().as_ref() {
+                        if let Some(artist) = this.artist() {
                             this.set_is_queuing(true);
                             let library = this.imp().library.upgrade().unwrap();
                             if this.imp().selecting_all.get() {
-                                if let Err(e) = library.queue_artist(artist, false, true, true).await {dbg!(e);}
+                                if let Err(e) = library.queue_artist(&artist, false, true, true).await {dbg!(e);}
                             } else {
                                 let store = &this.imp().song_list;
                                 // Get list of selected songs
@@ -474,11 +478,11 @@ impl ArtistContentView {
                     #[weak]
                     this,
                     async move {
-                        if let Some(artist) = this.imp().artist.borrow().as_ref() {
+                        if let Some(artist) = this.artist() {
                             this.set_is_queuing(true);
                             let library = this.imp().library.upgrade().unwrap();
                             if this.imp().selecting_all.get() {
-                                library.queue_artist(artist, false, false, false).await;
+                                library.queue_artist(&artist, false, false, false).await;
                             } else {
                                 let store = &this.imp().song_list;
                                 // Get list of selected songs
@@ -661,7 +665,7 @@ impl ArtistContentView {
             self,
             async move {
                 if let (Some(artist), Some(cache)) = (
-                    this.imp().artist.borrow().as_ref(),
+                    this.artist(),
                     this.imp().cache.get(),
                 ) {
                     cache.set_artist_avatar(artist.get_name().to_owned(), &path).await;
@@ -678,7 +682,7 @@ impl ArtistContentView {
 
     async fn schedule_avatar(&self) {
         self.update_avatar(None);
-        if let Some(info) = self.imp().artist.borrow().as_ref().map(|a| a.get_info()) {
+        if let Some(info) = self.artist().as_ref().map(|a| a.get_info()) {
             match self.imp().cache.get().unwrap().clone().get_artist_avatar(
                 info, false, true  // Content page is the one to fetch external sources
             ).await {
@@ -735,7 +739,7 @@ impl ArtistContentView {
                 let song_list = this.imp().song_list.clone();
                 song_list.remove_all();
                 // Important, MPD-side content first
-                library.get_artist_content(
+                let _ = library.get_artist_content(
                     &artist,
                     |album| {album_list.append(&album);},
                     |songs| {song_list.extend_from_slice(&songs);}

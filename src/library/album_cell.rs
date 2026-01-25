@@ -198,15 +198,15 @@ mod imp {
                 // its width and adjust the total accordingly.
                 // TODO: this is still hacky. Find a better way later.
                 // Return order reminder: min, natural, min baseline, natural baseline.
-                let raw_cover_size = dbg!(self.cover.measure(gtk::Orientation::Vertical, for_size));
+                let raw_cover_size = self.cover.measure(gtk::Orientation::Vertical, for_size);
                 let diff = (for_size - raw_cover_size.0).max(0);
                 let res = self.inner.get().measure(gtk::Orientation::Vertical, for_size);
-                dbg!((
+                (
                     res.0 + diff,
-                    res.1,
+                    res.1.max(res.0 + diff),
                     res.2,
                     res.3
-                ))
+                )
             }
         }
 
