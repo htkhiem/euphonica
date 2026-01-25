@@ -112,6 +112,7 @@ mod imp {
 
         fn constructed(&self) {
             self.parent_constructed();
+            self.stack.show_placeholder();
 
             self.obj()
                 .bind_property("collapsed", &self.show_sidebar.get(), "visible")

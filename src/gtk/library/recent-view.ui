@@ -31,267 +31,104 @@
                   </object>
                 </child>
                 <property name="content">
-                  <object class="GtkStack" id="stack">
-                    <child>
-                      <object class="GtkStackPage">
-                        <property name="name">empty</property>
-                        <property name="child">
-                          <object class="AdwStatusPage">
-                            <property name="title" translatable="true">No Recent Songs</property>
-                            <property name="description" translatable="true">Songs, albums and artists played while Euphonica is running will appear here.</property>
-                            <property name="icon-name">recent-symbolic</property>
-                          </object>
-                        </property>
+                  <object class="EuphonicaContentStack" id="stack">
+                    <property name="placeholder">
+                      <object class="AdwStatusPage">
+                        <property name="title" translatable="true">No Recent Songs</property>
+                        <property name="description" translatable="true">Songs, albums and artists played while Euphonica is running will appear here.</property>
+                        <property name="icon-name">recent-symbolic</property>
                       </object>
-                    </child>
-                    <child>
-                      <object class="GtkStackPage">
-                        <property name="name">content</property>
+                    </property>
+                    <property name="content">
+                      <object class="GtkScrolledWindow">
+                        <property name="hscrollbar-policy">never</property>
+                        <property name="vscrollbar-policy">automatic</property>
+                        <property name="propagate-natural-height">true</property>
+                        <property name="has-frame">false</property>
+                        <property name="vexpand">true</property>
                         <property name="child">
-                          <object class="GtkScrolledWindow">
-                            <property name="hscrollbar-policy">never</property>
-                            <property name="vscrollbar-policy">automatic</property>
-                            <property name="propagate-natural-height">true</property>
-                            <property name="has-frame">false</property>
-                            <property name="vexpand">true</property>
-                            <property name="child">
+                          <object class="GtkBox">
+                            <property name="hexpand">true</property>
+                            <property name="orientation">1</property>
+                            <child>
                               <object class="GtkBox">
                                 <property name="hexpand">true</property>
                                 <property name="orientation">1</property>
                                 <child>
-                                  <object class="GtkBox">
-                                    <property name="hexpand">true</property>
-                                    <property name="orientation">1</property>
-                                    <child>
-                                      <object class="GtkCenterBox">
-                                        <property name="margin-start">12</property>
-                                        <property name="margin-end">12</property>
-                                        <property name="start-widget">
-                                          <object class="GtkBox">
-                                            <property name="spacing">6</property>
-                                            <child>
-                                              <object class="GtkImage">
-                                                <property name="icon_name">library-music-symbolic</property>
-                                                <style>
-                                                  <class name="title-3"/>
-                                                </style>
-                                              </object>
-                                            </child>
-                                            <child>
-                                              <object class="GtkLabel">
-                                                <property name="label" translatable="true">Albums</property>
-                                                <style>
-                                                  <class name="title-3"/>
-                                                </style>
-                                              </object>
-                                            </child>
-                                          </object>
-                                        </property>
-                                        <property name="end-widget">
-                                          <object class="GtkToggleButton" id="collapse_albums">
-                                            <property name="icon-name">up-symbolic</property>
+                                  <object class="GtkCenterBox">
+                                    <property name="margin-start">12</property>
+                                    <property name="margin-end">12</property>
+                                    <property name="start-widget">
+                                      <object class="GtkBox">
+                                        <property name="spacing">6</property>
+                                        <child>
+                                          <object class="GtkImage">
+                                            <property name="icon_name">library-music-symbolic</property>
                                             <style>
-                                              <class name="flat"/>
+                                              <class name="title-3"/>
                                             </style>
                                           </object>
-                                        </property>
-                                      </object>
-                                    </child>
-                                    <child>
-                                      <object class="GtkRevealer" id="album_revealer">
-                                        <property name="transition-type">5</property>
+                                        </child>
                                         <child>
-                                          <object class="GtkStack" id="album_row_stack">
-                                            <child>
-                                              <object class="GtkStackPage">
-                                                <property name="name">loading</property>
-                                                <property name="child">
-                                                  <object class="AdwSpinner">
-                                                    <property name="width-request">48</property>
-                                                    <property name="height-request">48</property>
-                                                  </object>
-                                                </property>
-                                              </object>
-                                            </child>
-                                            <child>
-                                              <object class="GtkStackPage">
-                                                <property name="name">content</property>
-                                                <property name="child">
-                                                  <object class="GtkScrolledWindow">
-                                                    <property name="hscrollbar-policy">automatic</property>
-                                                    <property name="vscrollbar-policy">never</property>
-                                                    <property name="propagate-natural-width">true</property>
-                                                    <property name="has-frame">false</property>
-                                                    <property name="hexpand">true</property>
-                                                    <child>
-                                                      <object class="GtkGridView" id="album_row">
-                                                        <style>
-                                                          <class name="no-bg"/>
-                                                        </style>
-                                                        <property name="single-click-activate">true</property>
-                                                        <property name="hscroll-policy">0</property>
-                                                        <property name="orientation">0</property>
-                                                        <property name="min-columns">1</property>
-                                                        <property name="max-columns">1</property>
-                                                      </object>
-                                                    </child>
-                                                  </object>
-                                                </property>
-                                              </object>
-                                            </child>
+                                          <object class="GtkLabel">
+                                            <property name="label" translatable="true">Albums</property>
+                                            <style>
+                                              <class name="title-3"/>
+                                            </style>
                                           </object>
                                         </child>
                                       </object>
-                                    </child>
-                                  </object>
-                                </child>
-                                <child>
-                                  <object class="GtkSeparator">
-                                    <property name="margin-top">6px</property>
-                                    <property name="margin-bottom">6px</property>
-                                  </object>
-                                </child>
-                                <child>
-                                  <object class="GtkBox">
-                                    <property name="hexpand">true</property>
-                                    <property name="orientation">1</property>
-                                    <child>
-                                      <object class="GtkCenterBox">
-                                        <property name="margin-start">12</property>
-                                        <property name="margin-end">12</property>
-                                        <property name="start-widget">
-                                          <object class="GtkBox">
-                                            <property name="spacing">6</property>
-                                            <child>
-                                              <object class="GtkImage">
-                                                <property name="icon_name">music-artist-symbolic</property>
-                                                <style>
-                                                  <class name="title-3"/>
-                                                </style>
-                                              </object>
-                                            </child>
-                                            <child>
-                                              <object class="GtkLabel">
-                                                <property name="label" translatable="true">Artists</property>
-                                                <style>
-                                                  <class name="title-3"/>
-                                                </style>
-                                              </object>
-                                            </child>
-                                          </object>
-                                        </property>
-                                        <property name="end-widget">
-                                          <object class="GtkToggleButton" id="collapse_artists">
-                                            <property name="icon-name">up-symbolic</property>
-                                            <style>
-                                              <class name="flat"/>
-                                            </style>
-                                          </object>
-                                        </property>
+                                    </property>
+                                    <property name="end-widget">
+                                      <object class="GtkToggleButton" id="collapse_albums">
+                                        <property name="icon-name">up-symbolic</property>
+                                        <style>
+                                          <class name="flat"/>
+                                        </style>
                                       </object>
-                                    </child>
+                                    </property>
+                                  </object>
+                                </child>
+                                <child>
+                                  <object class="GtkRevealer" id="album_revealer">
+                                    <property name="transition-type">5</property>
                                     <child>
-                                      <object class="GtkRevealer" id="artist_revealer">
-                                        <property name="transition-type">5</property>
+                                      <object class="GtkStack" id="album_row_stack">
                                         <child>
-                                          <object class="GtkStack" id="artist_row_stack">
-                                            <child>
-                                              <object class="GtkStackPage">
-                                                <property name="name">loading</property>
-                                                <property name="child">
-                                                  <object class="AdwSpinner">
-                                                    <property name="width-request">48</property>
-                                                    <property name="height-request">48</property>
-                                                  </object>
-                                                </property>
+                                          <object class="GtkStackPage">
+                                            <property name="name">loading</property>
+                                            <property name="child">
+                                              <object class="AdwSpinner">
+                                                <property name="width-request">48</property>
+                                                <property name="height-request">48</property>
                                               </object>
-                                            </child>
-                                            <child>
-                                              <object class="GtkStackPage">
-                                                <property name="name">content</property>
-                                                <property name="child">
-                                                  <object class="GtkScrolledWindow">
-                                                    <property name="hscrollbar-policy">automatic</property>
-                                                    <property name="vscrollbar-policy">never</property>
-                                                    <property name="propagate-natural-width">true</property>
-                                                    <property name="has-frame">false</property>
-                                                    <property name="hexpand">true</property>
-                                                    <child>
-                                                      <object class="GtkGridView" id="artist_row">
-                                                        <style>
-                                                          <class name="no-bg"/>
-                                                        </style>
-                                                        <property name="single-click-activate">true</property>
-                                                        <property name="hscroll-policy">0</property>
-                                                        <property name="orientation">0</property>
-                                                        <property name="min-columns">1</property>
-                                                        <property name="max-columns">1</property>
-                                                      </object>
-                                                    </child>
-                                                  </object>
-                                                </property>
-                                              </object>
-                                            </child>
+                                            </property>
                                           </object>
                                         </child>
-                                      </object>
-                                    </child>
-                                  </object>
-                                </child>
-                                <child>
-                                  <object class="GtkSeparator">
-                                    <property name="margin-top">6px</property>
-                                    <property name="margin-bottom">6px</property>
-                                  </object>
-                                </child>
-                                <child>
-                                  <object class="GtkBox">
-                                    <property name="hexpand">true</property>
-                                    <property name="orientation">1</property>
-                                    <child>
-                                      <object class="GtkCenterBox">
-                                        <property name="margin-start">12</property>
-                                        <property name="margin-end">12</property>
-                                        <property name="start-widget">
-                                          <object class="GtkBox">
-                                            <property name="spacing">6</property>
-                                            <child>
-                                              <object class="GtkImage">
-                                                <property name="icon_name">music-note-single-symbolic</property>
-                                                <style>
-                                                  <class name="title-3"/>
-                                                </style>
-                                              </object>
-                                            </child>
-                                            <child>
-                                              <object class="GtkLabel">
-                                                <property name="label" translatable="true">Songs</property>
-                                                <style>
-                                                  <class name="title-3"/>
-                                                </style>
-                                              </object>
-                                            </child>
-                                          </object>
-                                        </property>
-                                        <property name="end-widget">
-                                          <object class="GtkToggleButton" id="collapse_songs">
-                                            <property name="icon-name">up-symbolic</property>
-                                            <style>
-                                              <class name="flat"/>
-                                            </style>
-                                          </object>
-                                        </property>
-                                      </object>
-                                    </child>
-                                    <child>
-                                      <object class="GtkRevealer" id="song_revealer">
-                                        <property name="transition-type">5</property>
                                         <child>
-                                          <object class="GtkListBox" id="song_list">
-                                            <style>
-                                              <class name="no-bg"/>
-                                            </style>
-                                            <property name="show-separators">true</property>
+                                          <object class="GtkStackPage">
+                                            <property name="name">content</property>
+                                            <property name="child">
+                                              <object class="GtkScrolledWindow">
+                                                <property name="hscrollbar-policy">automatic</property>
+                                                <property name="vscrollbar-policy">never</property>
+                                                <property name="propagate-natural-width">true</property>
+                                                <property name="has-frame">false</property>
+                                                <property name="hexpand">true</property>
+                                                <child>
+                                                  <object class="GtkGridView" id="album_row">
+                                                    <style>
+                                                      <class name="no-bg"/>
+                                                    </style>
+                                                    <property name="single-click-activate">true</property>
+                                                    <property name="hscroll-policy">0</property>
+                                                    <property name="orientation">0</property>
+                                                    <property name="min-columns">1</property>
+                                                    <property name="max-columns">1</property>
+                                                  </object>
+                                                </child>
+                                              </object>
+                                            </property>
                                           </object>
                                         </child>
                                       </object>
@@ -299,11 +136,164 @@
                                   </object>
                                 </child>
                               </object>
-                            </property>
+                            </child>
+                            <child>
+                              <object class="GtkSeparator">
+                                <property name="margin-top">6px</property>
+                                <property name="margin-bottom">6px</property>
+                              </object>
+                            </child>
+                            <child>
+                              <object class="GtkBox">
+                                <property name="hexpand">true</property>
+                                <property name="orientation">1</property>
+                                <child>
+                                  <object class="GtkCenterBox">
+                                    <property name="margin-start">12</property>
+                                    <property name="margin-end">12</property>
+                                    <property name="start-widget">
+                                      <object class="GtkBox">
+                                        <property name="spacing">6</property>
+                                        <child>
+                                          <object class="GtkImage">
+                                            <property name="icon_name">music-artist-symbolic</property>
+                                            <style>
+                                              <class name="title-3"/>
+                                            </style>
+                                          </object>
+                                        </child>
+                                        <child>
+                                          <object class="GtkLabel">
+                                            <property name="label" translatable="true">Artists</property>
+                                            <style>
+                                              <class name="title-3"/>
+                                            </style>
+                                          </object>
+                                        </child>
+                                      </object>
+                                    </property>
+                                    <property name="end-widget">
+                                      <object class="GtkToggleButton" id="collapse_artists">
+                                        <property name="icon-name">up-symbolic</property>
+                                        <style>
+                                          <class name="flat"/>
+                                        </style>
+                                      </object>
+                                    </property>
+                                  </object>
+                                </child>
+                                <child>
+                                  <object class="GtkRevealer" id="artist_revealer">
+                                    <property name="transition-type">5</property>
+                                    <child>
+                                      <object class="GtkStack" id="artist_row_stack">
+                                        <child>
+                                          <object class="GtkStackPage">
+                                            <property name="name">loading</property>
+                                            <property name="child">
+                                              <object class="AdwSpinner">
+                                                <property name="width-request">48</property>
+                                                <property name="height-request">48</property>
+                                              </object>
+                                            </property>
+                                          </object>
+                                        </child>
+                                        <child>
+                                          <object class="GtkStackPage">
+                                            <property name="name">content</property>
+                                            <property name="child">
+                                              <object class="GtkScrolledWindow">
+                                                <property name="hscrollbar-policy">automatic</property>
+                                                <property name="vscrollbar-policy">never</property>
+                                                <property name="propagate-natural-width">true</property>
+                                                <property name="has-frame">false</property>
+                                                <property name="hexpand">true</property>
+                                                <child>
+                                                  <object class="GtkGridView" id="artist_row">
+                                                    <style>
+                                                      <class name="no-bg"/>
+                                                    </style>
+                                                    <property name="single-click-activate">true</property>
+                                                    <property name="hscroll-policy">0</property>
+                                                    <property name="orientation">0</property>
+                                                    <property name="min-columns">1</property>
+                                                    <property name="max-columns">1</property>
+                                                  </object>
+                                                </child>
+                                              </object>
+                                            </property>
+                                          </object>
+                                        </child>
+                                      </object>
+                                    </child>
+                                  </object>
+                                </child>
+                              </object>
+                            </child>
+                            <child>
+                              <object class="GtkSeparator">
+                                <property name="margin-top">6px</property>
+                                <property name="margin-bottom">6px</property>
+                              </object>
+                            </child>
+                            <child>
+                              <object class="GtkBox">
+                                <property name="hexpand">true</property>
+                                <property name="orientation">1</property>
+                                <child>
+                                  <object class="GtkCenterBox">
+                                    <property name="margin-start">12</property>
+                                    <property name="margin-end">12</property>
+                                    <property name="start-widget">
+                                      <object class="GtkBox">
+                                        <property name="spacing">6</property>
+                                        <child>
+                                          <object class="GtkImage">
+                                            <property name="icon_name">music-note-single-symbolic</property>
+                                            <style>
+                                              <class name="title-3"/>
+                                            </style>
+                                          </object>
+                                        </child>
+                                        <child>
+                                          <object class="GtkLabel">
+                                            <property name="label" translatable="true">Songs</property>
+                                            <style>
+                                              <class name="title-3"/>
+                                            </style>
+                                          </object>
+                                        </child>
+                                      </object>
+                                    </property>
+                                    <property name="end-widget">
+                                      <object class="GtkToggleButton" id="collapse_songs">
+                                        <property name="icon-name">up-symbolic</property>
+                                        <style>
+                                          <class name="flat"/>
+                                        </style>
+                                      </object>
+                                    </property>
+                                  </object>
+                                </child>
+                                <child>
+                                  <object class="GtkRevealer" id="song_revealer">
+                                    <property name="transition-type">5</property>
+                                    <child>
+                                      <object class="GtkListBox" id="song_list">
+                                        <style>
+                                          <class name="no-bg"/>
+                                        </style>
+                                        <property name="show-separators">true</property>
+                                      </object>
+                                    </child>
+                                  </object>
+                                </child>
+                              </object>
+                            </child>
                           </object>
                         </property>
                       </object>
-                    </child>
+                    </property>
                   </object>
                 </property>
               </object>

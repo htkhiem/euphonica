@@ -12,8 +12,9 @@ use glib::{Properties, WeakRef, clone, closure_local, subclass::Signal};
 
 use super::{AlbumCell, ArtistCell, Library};
 use crate::{
+    client::{Result as ClientResult},
     cache::Cache,
-    common::{Album, Artist, RowAddButtons, Song, SongRow, marquee::MarqueeWrapMode},
+    common::{Album, Artist, RowAddButtons, Song, SongRow, marquee::MarqueeWrapMode, ContentStack},
     player::Player,
     utils::LazyInit,
     window::EuphonicaWindow,
@@ -33,7 +34,7 @@ mod imp {
         #[template_child]
         pub clear: TemplateChild<gtk::Button>,
         #[template_child]
-        pub stack: TemplateChild<gtk::Stack>,
+        pub stack: TemplateChild<ContentStack>,
 
         // Albums row
         #[template_child]
@@ -95,6 +96,7 @@ mod imp {
 
         fn constructed(&self) {
             self.parent_constructed();
+            self.stack.show_placeholder();
 
             self.obj()
                 .bind_property("collapsed", &self.show_sidebar.get(), "visible")
@@ -233,7 +235,9 @@ impl RecentView {
 
     pub fn on_history_changed(&self) {
         glib::spawn_future_local(clone!(#[weak(rename_to = this)] self, async move {
-            if let Err(e) = this.imp().library.upgrade().unwrap().init_recent(true).await {dbg!(e);}
+            if let Err(e) = this.init_recent(true).await {
+                dbg!(e);
+            }
         }));
     }
 
@@ -442,18 +446,6 @@ impl RecentView {
         let library = self.imp().library.upgrade().unwrap().clone();
         let song_list = library.recent_songs();
 
-        song_list
-            .bind_property("n-items", &self.imp().stack.get(), "visible-child-name")
-            .transform_to(|_, val: u32| {
-                if val > 0 {
-                    Some("content".to_value())
-                } else {
-                    Some("empty".to_value())
-                }
-            })
-            .sync_create()
-            .build();
-
         self.imp()
             .song_list
             .bind_model(Some(&song_list), move |obj| {
@@ -477,12 +469,27 @@ impl RecentView {
                 row.into()
             });
     }
+
+    async fn init_recent(&self, refresh: bool) -> ClientResult<()> {
+        let stack = self.imp().stack.get();
+        stack.show_spinner();
+        let library = self.imp().library.upgrade().unwrap();
+        let res = library.init_recent(refresh).await;
+        if library.recent_songs().n_items() > 0 {
+            stack.show_content();
+        } else {
+            stack.show_placeholder();
+        }
+        res
+    }
 }
 
 impl LazyInit for RecentView {
     fn populate(&self) {
         glib::spawn_future_local(clone!(#[weak(rename_to = this)] self, async move {
-            if let Err(e) = this.imp().library.upgrade().unwrap().init_recent(false).await {dbg!(e);}
+            if let Err(e) = this.init_recent(false).await {
+                dbg!(e);
+            }
         }));
     }
 }
