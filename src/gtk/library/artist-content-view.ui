@@ -229,45 +229,33 @@
                     <property name="name">albums</property>
                     <property name="title" translatable="true">Discography</property>
                     <property name="child">
-                      <object class="GtkBox">
-                        <property name="orientation">1</property>
-                        <child>
+                      <object class="EuphonicaContentStack" id="album_stack">
+                        <property name="placeholder">
+                          <object class="AdwStatusPage">
+                            <property name="title" translatable="true">No Albums</property>
+                          </object>
+                        </property>
+                        <property name="content">
                           <object class="GtkScrolledWindow">
                             <property name="hscrollbar-policy">never</property>
                             <property name="vscrollbar-policy">automatic</property>
                             <property name="propagate-natural-height">true</property>
+                            <property name="height-request">400</property> <!--FIXME: currently not requesting sufficient height on its own-->
                             <property name="has-frame">false</property>
                             <property name="vexpand">true</property>
                             <property name="child">
-                              <object class="GtkStack" id="album_spinner">
-                                <child>
-                                  <object class="GtkStackPage">
-                                    <property name="name">spinner</property>
-                                    <property name="child">
-                                      <object class="AdwSpinner"/>
-                                    </property>
-                                  </object>
-                                </child>
-                                <child>
-                                  <object class="GtkStackPage">
-                                    <property name="name">content</property>
-                                    <property name="child">
-                                      <object class="GtkGridView" id="album_subview">
-                                        <property name="orientation">1</property>
-                                        <property name="min-columns">1</property>
-                                        <property name="single-click-activate">true</property>
-                                        <style>
-                                          <class name="no-bg"/>
-                                          <class name="padding-12"/>
-                                        </style>
-                                      </object>
-                                    </property>
-                                  </object>
-                                </child>
+                              <object class="GtkGridView" id="album_subview">
+                                <property name="orientation">1</property>
+                                <property name="min-columns">1</property>
+                                <property name="single-click-activate">true</property>
+                                <style>
+                                  <class name="no-bg"/>
+                                  <class name="padding-12"/>
+                                </style>
                               </object>
                             </property>
                           </object>
-                        </child>
+                        </property>
                       </object>
                     </property>
                   </object>
@@ -370,36 +358,28 @@
                           <object class="GtkSeparator"/>
                         </child>
                         <child>
-                          <object class="GtkScrolledWindow">
-                            <property name="height-request">50</property>
-                            <property name="hscrollbar-policy">never</property>
-                            <property name="vscrollbar-policy">automatic</property>
-                            <property name="propagate-natural-height">true</property>
-                            <property name="has-frame">false</property>
-                            <property name="vexpand">true</property>
-                            <property name="child">
-                              <object class="GtkStack" id="song_spinner">
-                                <child>
-                                  <object class="GtkStackPage">
-                                    <property name="name">spinner</property>
-                                    <property name="child">
-                                      <object class="AdwSpinner"/>
-                                    </property>
+                          <object class="EuphonicaContentStack" id="song_stack">
+                            <property name="placeholder">
+                              <object class="AdwStatusPage">
+                                <property name="title" translatable="true">No Songs</property>
+                              </object>
+                            </property>
+                            <property name="content">
+                              <object class="GtkScrolledWindow">
+                                <property name="height-request">50</property>
+                                <property name="hscrollbar-policy">never</property>
+                                <property name="vscrollbar-policy">automatic</property>
+                                <property name="propagate-natural-height">true</property>
+                                <property name="has-frame">false</property>
+                                <property name="vexpand">true</property>
+                                <property name="child">
+                                  <object class="GtkListView" id="song_subview">
+                                    <property name="show-separators">true</property>
+                                    <style>
+                                      <class name="no-bg"/>
+                                    </style>
                                   </object>
-                                </child>
-                                <child>
-                                  <object class="GtkStackPage">
-                                    <property name="name">content</property>
-                                    <property name="child">
-                                      <object class="GtkListView" id="song_subview">
-                                        <property name="show-separators">true</property>
-                                        <style>
-                                          <class name="no-bg"/>
-                                        </style>
-                                      </object>
-                                    </property>
-                                  </object>
-                                </child>
+                                </property>
                               </object>
                             </property>
                           </object>

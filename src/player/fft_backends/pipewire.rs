@@ -1,15 +1,24 @@
-use std::{cell::RefCell, rc::Rc, sync::{atomic::{AtomicBool, Ordering}, Arc, Mutex}, thread, time::Duration};
 use gio::{self, prelude::*};
 use glib::clone;
 use mpd::status::AudioFormat;
 use pipewire as pw;
 use pw::{properties::properties, spa};
+use ringbuffer::{AllocRingBuffer, RingBuffer};
 use spa::param::format::{MediaSubtype, MediaType};
-use spa::param::{format_utils, audio::AudioFormat as SpaAudioFormat};
+use spa::param::{audio::AudioFormat as SpaAudioFormat, format_utils};
 use spa::pod::Pod;
 use std::convert::TryInto;
 use std::mem;
-use ringbuffer::{AllocRingBuffer, RingBuffer};
+use std::{
+    cell::RefCell,
+    rc::Rc,
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
+    thread,
+    time::Duration,
+};
 
 use crate::{player::Player, utils::settings_manager};
 
@@ -44,7 +53,7 @@ use crate::{player::Player, utils::settings_manager};
 // try to fetch the params by itself upon creation. If by this time the backend has not finished connecting the stream,
 // simply return Nones and disable the corresponding UI elements, until notified otherwise by the signal in step 1.
 
-use super::backend::{FftBackendImpl, FftBackendExt, FftStatus};
+use super::backend::{FftBackendExt, FftBackendImpl, FftStatus};
 
 struct Terminate;
 
@@ -57,13 +66,13 @@ struct UserData {
 enum PipeWireMsg {
     Status(FftStatus),
     DevicesChanged,
-    CurrentDeviceChanged
+    CurrentDeviceChanged,
 }
 
 #[derive(Debug, Clone)]
 struct OutputNode {
     pub node_name: String,
-    pub display_name: String
+    pub display_name: String,
 }
 
 pub struct PipeWireFftBackend {
@@ -87,7 +96,7 @@ impl PipeWireFftBackend {
             devices: Arc::new(Mutex::new(Vec::new())),
             curr_device: Arc::new(Mutex::new(-1)),
             player,
-            stop_flag: Arc::new(AtomicBool::new(false))
+            stop_flag: Arc::new(AtomicBool::new(false)),
         }
     }
 }
@@ -110,10 +119,10 @@ impl FftBackendImpl for PipeWireFftBackend {
                     .iter()
                     .map(|dev| dev.display_name.clone())
                     .collect::<Vec<String>>()
-                    .to_variant()
+                    .to_variant(),
             ),
             "current-device" => Some((*self.curr_device.lock().unwrap()).to_variant()),
-            _ => None
+            _ => None,
         }
     }
 
@@ -143,11 +152,11 @@ impl FftBackendImpl for PipeWireFftBackend {
                     } else {
                         let _ = settings.set_string(
                             "pipewire-last-device",
-                            &(*self.devices.lock().unwrap())[final_val as usize].node_name
+                            &(*self.devices.lock().unwrap())[final_val as usize].node_name,
                         );
                     }
                 }
-            },
+            }
             _ => {}
         }
     }
@@ -155,9 +164,8 @@ impl FftBackendImpl for PipeWireFftBackend {
     fn start(self: Rc<Self>, output: Arc<Mutex<(Vec<f32>, Vec<f32>)>>) -> Result<(), ()> {
         let stop_flag = self.stop_flag.clone();
         stop_flag.store(false, Ordering::Relaxed);
-        let should_start = {
-            self.pw_handle.borrow().is_none() && self.fft_handle.borrow().is_none()
-        };
+        let should_start =
+            { self.pw_handle.borrow().is_none() && self.fft_handle.borrow().is_none() };
         if should_start {
             let devices = self.devices.clone();
             let curr_device = self.curr_device.clone();
@@ -169,13 +177,18 @@ impl FftBackendImpl for PipeWireFftBackend {
             let (pw_sender, pw_receiver) = pw::channel::channel::<Terminate>();
             let samples = {
                 let mut samples: (AllocRingBuffer<f32>, AllocRingBuffer<f32>) = (
-                    AllocRingBuffer::new(n_samples), AllocRingBuffer::new(n_samples)
+                    AllocRingBuffer::new(n_samples),
+                    AllocRingBuffer::new(n_samples),
                 );
                 samples.0.fill_with(|| 0.0);
                 samples.1.fill_with(|| 0.0);
                 Arc::new(Mutex::new(samples))
             };
-            let format: Arc<Mutex<AudioFormat>> = Arc::new(Mutex::new(AudioFormat {rate: 0, bits: 0, chans: 0}));
+            let format: Arc<Mutex<AudioFormat>> = Arc::new(Mutex::new(AudioFormat {
+                rate: 0,
+                bits: 0,
+                chans: 0,
+            }));
             // Give the PipeWire thread one copy of each
             let pw_samples = samples.clone();
             let pw_format = format.clone();
@@ -188,8 +201,10 @@ impl FftBackendImpl for PipeWireFftBackend {
                     // Get list of devices
                     println!("PipeWire: getting list of devices");
                     {
-                        let mainloop = pw::main_loop::MainLoop::new(None).expect("get_devices: Unable to create a new PipeWire mainloop");
-                        let context = pw::context::Context::new(&mainloop).expect("get_devices: Unable to get PipeWire context");
+                        let mainloop = pw::main_loop::MainLoop::new(None)
+                            .expect("get_devices: Unable to create a new PipeWire mainloop");
+                        let context = pw::context::Context::new(&mainloop)
+                            .expect("get_devices: Unable to get PipeWire context");
                         let mainloop: Arc<pipewire::main_loop::MainLoop> = Arc::new(mainloop);
                         let core = context.connect(None).unwrap();
                         let registry = core.get_registry().unwrap();
@@ -201,17 +216,24 @@ impl FftBackendImpl for PipeWireFftBackend {
                                 if global.type_ == pw::types::ObjectType::Node {
                                     let props = global.props.as_ref().unwrap();
                                     let node_name = props.get("node.name").unwrap();
-                                    if props.get("application.name").is_some_and(|name| name == "Music Player Daemon") {
-                                        devices_clone.lock().unwrap().push(OutputNode{
+                                    if props
+                                        .get("application.name")
+                                        .is_some_and(|name| name == "Music Player Daemon")
+                                    {
+                                        devices_clone.lock().unwrap().push(OutputNode {
                                             node_name: node_name.to_owned(),
-                                            display_name: format!("MPD PipeWire ({node_name})")
+                                            display_name: format!("MPD PipeWire ({node_name})"),
                                         });
-                                    } else if props.get("media.class").is_some_and(|mclass| mclass == "Audio/Sink" || mclass == "Stream/Output/Audio") {
+                                    } else if props.get("media.class").is_some_and(|mclass| {
+                                        mclass == "Audio/Sink" || mclass == "Stream/Output/Audio"
+                                    }) {
                                         println!("Found new PipeWire output node: {}", &node_name);
-                                        devices_clone.lock().unwrap().push(OutputNode{
+                                        devices_clone.lock().unwrap().push(OutputNode {
                                             node_name: node_name.to_owned(),
-                                            display_name: props.get("node.description").unwrap_or(
-                                                node_name).to_owned()
+                                            display_name: props
+                                                .get("node.description")
+                                                .unwrap_or(node_name)
+                                                .to_owned(),
                                         });
                                     }
                                 }
@@ -222,7 +244,9 @@ impl FftBackendImpl for PipeWireFftBackend {
                         let mainloop_clone = mainloop.clone();
 
                         // Queue a sync signal after processing all of the above so the loop knows when to stop.
-                        let target_seq = core.sync(0).expect("Cannot force PipeWire object enumeration roundtrip");
+                        let target_seq = core
+                            .sync(0)
+                            .expect("Cannot force PipeWire object enumeration roundtrip");
 
                         let roundtrip_listener = core
                             .add_listener_local()
@@ -234,7 +258,6 @@ impl FftBackendImpl for PipeWireFftBackend {
                                 }
                             })
                             .register();
-
 
                         // Will block until all objects have been enumerated
                         mainloop.run();
@@ -251,7 +274,10 @@ impl FftBackendImpl for PipeWireFftBackend {
                         let devices_lock = devices.lock().unwrap();
                         let mut curr_device = curr_device.lock().unwrap();
                         if !devices_lock.is_empty() {
-                            if let Some(device_idx) = devices_lock.iter().position(|elem| elem.node_name == last_device) {
+                            if let Some(device_idx) = devices_lock
+                                .iter()
+                                .position(|elem| elem.node_name == last_device)
+                            {
                                 *curr_device = device_idx as i32;
                             } else {
                                 *curr_device = -1;
@@ -306,7 +332,8 @@ impl FftBackendImpl for PipeWireFftBackend {
                         let curr_device_lock = curr_device.lock().unwrap();
                         let devices = devices.lock().unwrap();
                         if *curr_device_lock >= 0 {
-                            let node_name = devices[*curr_device_lock as usize].node_name.to_owned();
+                            let node_name =
+                                devices[*curr_device_lock as usize].node_name.to_owned();
                             println!("Connecting PipeWire stream to node '{}'", &node_name);
                             props = properties! {
                                 *pw::keys::MEDIA_TYPE => "Audio",
@@ -328,14 +355,15 @@ impl FftBackendImpl for PipeWireFftBackend {
                         };
                     }
 
-                    let Ok(pw_stream) = pw::stream::Stream::new(&core, "audio-capture", props) else {
+                    let Ok(pw_stream) = pw::stream::Stream::new(&core, "audio-capture", props)
+                    else {
                         let _ = fg_sender.send_blocking(PipeWireMsg::Status(FftStatus::Invalid));
                         return;
                     };
 
                     let Ok(_listener) = pw_stream
                         .add_local_listener_with_user_data(data)
-                    // After connecting the stream, the server will want to configure some parameters on the stream
+                        // After connecting the stream, the server will want to configure some parameters on the stream
                         .param_changed(clone!(
                             #[strong]
                             fg_sender,
@@ -348,31 +376,30 @@ impl FftBackendImpl for PipeWireFftBackend {
                                     return;
                                 }
 
-                                let (media_type, media_subtype) = match format_utils::parse_format(param) {
-                                    Ok(v) => v,
-                                    Err(_) => {
-                                        return
-                                    },
-                                };
+                                let (media_type, media_subtype) =
+                                    match format_utils::parse_format(param) {
+                                        Ok(v) => v,
+                                        Err(_) => return,
+                                    };
 
-                                if media_type != MediaType::Audio || media_subtype != MediaSubtype::Raw {
+                                if media_type != MediaType::Audio
+                                    || media_subtype != MediaSubtype::Raw
+                                {
                                     println!("Not MediaType::Audio || MediaSubtype::Raw, skipping");
                                     return;
                                 }
 
                                 println!("Setting up stream format");
-                                let Ok(_) = user_data
-                                    .format
-                                    .parse(param)
-                                else {
+                                let Ok(_) = user_data.format.parse(param) else {
                                     println!("Failed to parse format");
-                                    let _ = fg_sender.send_blocking(PipeWireMsg::Status(FftStatus::Invalid));
+                                    let _ = fg_sender
+                                        .send_blocking(PipeWireMsg::Status(FftStatus::Invalid));
                                     return;
                                 };
                             }
                         ))
                         .process(move |stream, user_data| match stream.dequeue_buffer() {
-                            None => {},
+                            None => {}
                             Some(mut buffer) => {
                                 let buffer_data = buffer.datas_mut();
                                 if buffer_data.is_empty() {
@@ -381,7 +408,8 @@ impl FftBackendImpl for PipeWireFftBackend {
                                 }
 
                                 let data = &mut buffer_data[0];
-                                let n_samples_avail = data.chunk().size() / (mem::size_of::<f32>() as u32);
+                                let n_samples_avail =
+                                    data.chunk().size() / (mem::size_of::<f32>() as u32);
                                 let n_channels = user_data.format.channels();
                                 // println!("Locking pw_format...");
                                 {
@@ -392,13 +420,12 @@ impl FftBackendImpl for PipeWireFftBackend {
                                             chans: n_channels as u8,
                                             bits: match user_data.format.format() {
                                                 SpaAudioFormat::F32BE | SpaAudioFormat::F32LE => 32,
-                                                _ => unimplemented!()
-                                                // Might support these directly in the future but for now we're only
-                                                // taking in float32le.
-                                                // SpaAudioFormat::F64BE | SpaAudioFormat::F64LE => 64,
-                                                // SpaAudioFormat::S16 | SpaAudioFormat::S16BE | SpaAudioFormat::S16LE | SpaAudioFormat::U16 | SpaAudioFormat::U16BE | SpaAudioFormat::U16LE => 16,
-                                                // SpaAudioFormat::S24 | SpaAudioFormat::S24BE | SpaAudioFormat::S24LE | SpaAudioFormat::U24 | SpaAudioFormat::U24BE | SpaAudioFormat::U24LE => 24,
-                                            }
+                                                _ => unimplemented!(), // Might support these directly in the future but for now we're only
+                                                                       // taking in float32le.
+                                                                       // SpaAudioFormat::F64BE | SpaAudioFormat::F64LE => 64,
+                                                                       // SpaAudioFormat::S16 | SpaAudioFormat::S16BE | SpaAudioFormat::S16LE | SpaAudioFormat::U16 | SpaAudioFormat::U16BE | SpaAudioFormat::U16LE => 16,
+                                                                       // SpaAudioFormat::S24 | SpaAudioFormat::S24BE | SpaAudioFormat::S24LE | SpaAudioFormat::U24 | SpaAudioFormat::U24BE | SpaAudioFormat::U24LE => 24,
+                                            },
                                         };
                                     }
                                 }
@@ -416,8 +443,12 @@ impl FftBackendImpl for PipeWireFftBackend {
                                         let l_end = l_start + mem::size_of::<f32>();
                                         let r_end = l_end + mem::size_of::<f32>();
 
-                                        locked_buffer.0.push(f32::from_le_bytes(samples[l_start..l_end].try_into().unwrap()));
-                                        locked_buffer.1.push(f32::from_le_bytes(samples[l_end..r_end].try_into().unwrap()));
+                                        locked_buffer.0.push(f32::from_le_bytes(
+                                            samples[l_start..l_end].try_into().unwrap(),
+                                        ));
+                                        locked_buffer.1.push(f32::from_le_bytes(
+                                            samples[l_end..r_end].try_into().unwrap(),
+                                        ));
                                     }
                                     user_data.cursor_move = true;
                                 }
@@ -427,10 +458,11 @@ impl FftBackendImpl for PipeWireFftBackend {
                         // .state_changed(|stream, user_data, state1, state2| {
                         //     println!("Steam state changed: {state1:?} -> {state2:?}");
                         // })
-                        .register() else {
-                            let _ = fg_sender.send_blocking(PipeWireMsg::Status(FftStatus::Invalid));
-                            return;
-                        };
+                        .register()
+                    else {
+                        let _ = fg_sender.send_blocking(PipeWireMsg::Status(FftStatus::Invalid));
+                        return;
+                    };
 
                     /* Make one parameter with the supported formats. The SPA_PARAM_EnumFormat
                      * id means that this is a format enumeration (of 1 value).
@@ -447,9 +479,9 @@ impl FftBackendImpl for PipeWireFftBackend {
                         std::io::Cursor::new(Vec::new()),
                         &pw::spa::pod::Value::Object(obj),
                     )
-                        .unwrap()
-                        .0
-                        .into_inner();
+                    .unwrap()
+                    .0
+                    .into_inner();
 
                     let mut params = [Pod::from_bytes(&values).unwrap()];
 
@@ -471,8 +503,8 @@ impl FftBackendImpl for PipeWireFftBackend {
                     };
                     println!("Stream connected");
                     pw_loop.run();
-                })
-            );
+                }
+            ));
             self.pw_handle.replace(Some(pw_handle));
 
             // Run FFT thread
@@ -492,16 +524,25 @@ impl FftBackendImpl for PipeWireFftBackend {
                     {
                         let Ok(format_lock) = format.lock() else {
                             println!("PipeWire FFT: unable to lock format");
-                            let _ = fg_sender.send_blocking(PipeWireMsg::Status(FftStatus::Invalid));
+                            let _ =
+                                fg_sender.send_blocking(PipeWireMsg::Status(FftStatus::Invalid));
                             return;
                         };
                         // Skip processing until format is nonzero
-                        if format_lock.rate == 0 || format_lock.chans == 0 { continue; }
+                        if format_lock.rate == 0 || format_lock.chans == 0 {
+                            continue;
+                        }
                         // Copy ringbuffer to our static ones. Take care to read backward from the latest sample.
                         if let Ok(ringbuffers) = samples.lock() {
                             for pos in 0..n_samples {
-                                fft_buf_left[n_samples - pos - 1] = *ringbuffers.0.get_signed(-1 - pos as isize).unwrap_or(&0.0_f32);
-                                fft_buf_right[n_samples - pos - 1] = *ringbuffers.1.get_signed(-1 - pos as isize).unwrap_or(&0.0_f32);
+                                fft_buf_left[n_samples - pos - 1] = *ringbuffers
+                                    .0
+                                    .get_signed(-1 - pos as isize)
+                                    .unwrap_or(&0.0_f32);
+                                fft_buf_right[n_samples - pos - 1] = *ringbuffers
+                                    .1
+                                    .get_signed(-1 - pos as isize)
+                                    .unwrap_or(&0.0_f32);
                             }
                         }
                         // These should be applied on-the-fly
@@ -511,13 +552,10 @@ impl FftBackendImpl for PipeWireFftBackend {
                             } else {
                                 super::fft::BinMode::Linear
                             };
-                        let min_freq =
-                            player_settings.uint("visualizer-spectrum-min-hz") as f32;
-                        let max_freq =
-                            player_settings.uint("visualizer-spectrum-max-hz") as f32;
-                        let curr_step_weight = player_settings
-                            .double("visualizer-spectrum-curr-step-weight")
-                            as f32;
+                        let min_freq = player_settings.uint("visualizer-spectrum-min-hz") as f32;
+                        let max_freq = player_settings.uint("visualizer-spectrum-max-hz") as f32;
+                        let curr_step_weight =
+                            player_settings.double("visualizer-spectrum-curr-step-weight") as f32;
                         // Compute outside of output mutex lock please
 
                         super::fft::get_magnitudes(
@@ -542,9 +580,7 @@ impl FftBackendImpl for PipeWireFftBackend {
                         // println!("FFT: Locking output");
                         if let Ok(mut output_lock) = output.lock() {
                             // println!("Locked output");
-                            if output_lock.0.len() != n_bins
-                                || output_lock.1.len() != n_bins
-                            {
+                            if output_lock.0.len() != n_bins || output_lock.1.len() != n_bins {
                                 output_lock.0.clear();
                                 output_lock.1.clear();
                                 for _ in 0..n_bins {
@@ -557,14 +593,14 @@ impl FftBackendImpl for PipeWireFftBackend {
                                 // up by 5x.
                                 output_lock.0[i] = curr_step_left[i] * curr_step_weight * 5.0
                                     + output_lock.0[i] * (1.0 - curr_step_weight);
-                                output_lock.1[i] = curr_step_right[i]
-                                    * curr_step_weight * 5.0
+                                output_lock.1[i] = curr_step_right[i] * curr_step_weight * 5.0
                                     + output_lock.1[i] * (1.0 - curr_step_weight);
                             }
                             // println!("FFT L: {:?}\tR: {:?}", &output_lock.0, &output_lock.1);
                         } else {
                             println!("FFT: Failed to lock output for writing");
-                            let _ = fg_sender.send_blocking(PipeWireMsg::Status(FftStatus::Invalid));
+                            let _ =
+                                fg_sender.send_blocking(PipeWireMsg::Status(FftStatus::Invalid));
                             return;
                         }
                     }
@@ -576,40 +612,43 @@ impl FftBackendImpl for PipeWireFftBackend {
             self.fft_handle.replace(Some(fft_handle));
             self.set_status(FftStatus::Reading);
 
-            if let Some(old_handle) = self.fg_handle.replace(Some(glib::MainContext::default().spawn_local(clone!(
-                #[weak(rename_to = this)]
-                self,
-                async move {
-                    use futures::prelude::*;
-                    // Allow receiver to be mutated, but keep it at the same memory address.
-                    // See Receiver::next doc for why this is needed.
-                    let mut receiver = std::pin::pin!(fg_receiver);
-                    let player = this.player();
-                    while let Some(msg) = receiver.next().await {
-                        match msg {
-                            PipeWireMsg::Status(new_status) => {
-                                player.set_fft_status(new_status);
-                            }
-                            PipeWireMsg::DevicesChanged => {
-                                this.emit_param_changed(
-                                    "devices", &this.get_param("devices").unwrap()
-                                );
-                            }
-                            PipeWireMsg::CurrentDeviceChanged => {
-                                this.emit_param_changed(
-                                    "current-device", &this.get_param("current-device").unwrap()
-                                );
+            if let Some(old_handle) =
+                self.fg_handle
+                    .replace(Some(glib::MainContext::default().spawn_local(clone!(
+                        #[weak(rename_to = this)]
+                        self,
+                        async move {
+                            use futures::prelude::*;
+                            // Allow receiver to be mutated, but keep it at the same memory address.
+                            // See Receiver::next doc for why this is needed.
+                            let mut receiver = std::pin::pin!(fg_receiver);
+                            let player = this.player();
+                            while let Some(msg) = receiver.next().await {
+                                match msg {
+                                    PipeWireMsg::Status(new_status) => {
+                                        player.set_fft_status(new_status);
+                                    }
+                                    PipeWireMsg::DevicesChanged => {
+                                        this.emit_param_changed(
+                                            "devices",
+                                            &this.get_param("devices").unwrap(),
+                                        );
+                                    }
+                                    PipeWireMsg::CurrentDeviceChanged => {
+                                        this.emit_param_changed(
+                                            "current-device",
+                                            &this.get_param("current-device").unwrap(),
+                                        );
+                                    }
+                                }
                             }
                         }
-
-                    }
-                }
-            )))) {
+                    ))))
+            {
                 old_handle.abort();
             }
             Ok(())
-        }
-        else {
+        } else {
             Err(())
         }
     }

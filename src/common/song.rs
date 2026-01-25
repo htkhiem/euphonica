@@ -1,22 +1,22 @@
+use crate::cache::sqlite;
+use crate::utils::{get_image_cache_path, get_time_ago_desc, strip_filename_linux};
 use core::time::Duration;
-use std::cell::Ref;
+use derivative::Derivative;
 use gtk::glib;
 use gtk::prelude::*;
 use gtk::subclass::prelude::*;
 use mpd::status::AudioFormat;
-use mpris_server::{zbus::zvariant::ObjectPath, Time};
+use mpris_server::{Time, zbus::zvariant::ObjectPath};
+use std::cell::Ref;
 use std::{
     cell::{Cell, OnceCell},
     ffi::OsStr,
-    path::Path
+    path::Path,
 };
 use time::{Date, Month, OffsetDateTime};
-use derivative::Derivative;
-use crate::cache::{get_image_cache_path, sqlite};
-use crate::utils::get_time_ago_desc;
 
 use super::Stickers;
-use super::{artists_to_string, parse_mb_artist_tag, AlbumInfo, ArtistInfo};
+use super::{AlbumInfo, ArtistInfo, artists_to_string, parse_mb_artist_tag};
 
 // Mostly for eyecandy
 #[derive(Clone, Copy, Debug, glib::Enum, PartialEq, Default)]
@@ -91,13 +91,11 @@ pub struct SongInfo {
     pub artist_tag: Option<String>, // Original tag, with all the linkages and formatting
     pub duration: Option<Duration>, // Default to 0 if somehow the option in mpd's Song is None
     pub queue_id: Option<u32>,
-    pub queue_pos: Option<u32>,  // Only set once at creation. Subsequent updates are kept in the Song GObject.
+    pub queue_pos: Option<u32>, // Only set once at creation. Subsequent updates are kept in the Song GObject.
     // range: Option<Range>,
     pub album: Option<AlbumInfo>,
-    #[derivative(Default(value = "Cell::new(-1)"))]
-    pub track: Cell<i64>,
-    #[derivative(Default(value = "Cell::new(-1)"))]
-    pub disc: Cell<i64>,
+    pub track: Option<i64>,
+    pub disc: Option<i64>,
     // TODO: add albumsort
     // Store Date instead of string to save a tiny bit of memory.
     // Also gives us formatting flexibility in the future.
@@ -105,9 +103,9 @@ pub struct SongInfo {
     // TODO: Add more fields for managing classical music, such as composer, ensemble and movement number
     quality_grade: QualityGrade,
     // MusicBrainz stuff
-    mbid: Option<String>,
+    pub mbid: Option<String>,
     pub last_modified: Option<String>,
-    pub last_played: Option<OffsetDateTime>
+    pub last_played: Option<OffsetDateTime>,
 }
 
 impl SongInfo {
@@ -122,6 +120,15 @@ impl SongInfo {
     pub fn into_artist_infos(self) -> Vec<ArtistInfo> {
         self.artists
     }
+
+    /// Get something to serve as this song's internal ID for
+    /// filtering/comparison purposes.
+    /// Order of preference:
+    /// 1. MBID
+    /// 2. URI
+    pub fn get_comp_id(&self) -> &str {
+        self.mbid.as_deref().unwrap_or(self.uri.as_ref())
+    }
 }
 
 mod imp {
@@ -129,8 +136,8 @@ mod imp {
 
     use super::*;
     use glib::{
-        ParamSpec, ParamSpecBoolean, ParamSpecInt64, ParamSpecObject, ParamSpecString, ParamSpecUInt, ParamSpecUInt64,
-        ParamSpecChar
+        ParamSpec, ParamSpecBoolean, ParamSpecChar, ParamSpecInt64, ParamSpecObject,
+        ParamSpecString, ParamSpecUInt, ParamSpecUInt64,
     };
     use once_cell::sync::Lazy;
 
@@ -144,7 +151,8 @@ mod imp {
     pub struct Song {
         pub info: OnceCell<SongInfo>,
         pub stickers: RefCell<Stickers>,
-        pub is_playing: Cell<bool>
+        pub queue_pos: Cell<u32>,
+        pub is_playing: Cell<bool>,
     }
 
     #[glib::object_subclass]
@@ -156,7 +164,8 @@ mod imp {
             Self {
                 info: OnceCell::new(),
                 stickers: RefCell::new(Stickers::default()),
-                is_playing: Cell::new(false)
+                queue_pos: Cell::new(0),
+                is_playing: Cell::new(false),
             }
         }
     }
@@ -275,6 +284,10 @@ impl Song {
         &self.get_info().uri
     }
 
+    pub fn get_folder_uri(&self) -> &str {
+        strip_filename_linux(self.get_uri())
+    }
+
     pub fn get_name(&self) -> &str {
         &self.get_info().title
     }
@@ -285,7 +298,8 @@ impl Song {
 
     pub fn get_last_played_desc(&self) -> Option<String> {
         // TODO: translations
-        self.get_last_played().map(|then| get_time_ago_desc(then.unix_timestamp()))
+        self.get_last_played()
+            .map(|then| get_time_ago_desc(then.unix_timestamp()))
     }
 
     pub fn get_last_played(&self) -> Option<OffsetDateTime> {
@@ -320,7 +334,11 @@ impl Song {
     }
 
     pub fn get_queue_pos(&self) -> u32 {
-        self.get_info().queue_pos.unwrap_or(0)
+        self.imp().queue_pos.get()
+    }
+
+    pub fn set_queue_pos(&self, new_pos: u32) {
+        self.imp().queue_pos.set(new_pos);
     }
 
     pub fn is_queued(&self) -> bool {
@@ -340,11 +358,11 @@ impl Song {
     }
 
     pub fn get_track(&self) -> i64 {
-        self.get_info().track.get()
+        self.get_info().track.unwrap_or(-1)
     }
 
     pub fn get_disc(&self) -> i64 {
-        self.get_info().disc.get()
+        self.get_info().disc.unwrap_or(-1)
     }
 
     pub fn is_playing(&self) -> bool {
@@ -402,7 +420,9 @@ impl Song {
         }
 
         // Album art, if available
-        if let Some(thumbnail_name) = sqlite::find_cover_by_uri(self.get_uri(), true).expect("Sqlite DB error") {
+        if let Some(thumbnail_name) =
+            sqlite::find_cover_by_uri(self.get_uri(), true).expect("Sqlite DB error")
+        {
             let mut thumbnail_path = get_image_cache_path();
             thumbnail_path.push(thumbnail_name);
             if thumbnail_path.exists() {
@@ -454,13 +474,13 @@ impl From<mpd::song::Song> for SongInfo {
             queue_id: None,
             queue_pos: None,
             album: None,
-            track: Cell::new(-1),
-            disc: Cell::new(-1),
+            track: None,
+            disc: None,
             release_date: None,
             quality_grade: QualityGrade::Unknown,
             mbid: None,
             last_modified: song.last_mod,
-            last_played: None
+            last_played: None,
         };
 
         if let Some(place) = song.place {
@@ -502,7 +522,9 @@ impl From<mpd::song::Song> for SongInfo {
                             res.quality_grade,
                         ));
                     } else {
-                        println!("[WARNING] Multiple Album tags found. Only keeping the first one.");
+                        println!(
+                            "[WARNING] Multiple Album tags found. Only keeping the first one."
+                        );
                     }
                 }
                 "albumsort" => {
@@ -557,7 +579,9 @@ impl From<mpd::song::Song> for SongInfo {
                     if album_mbid.is_none() {
                         let _ = album_mbid.replace(val);
                     } else {
-                        println!("[WARNING] Multiple musicbrainz_albumid tags found. Only keeping the first one.");
+                        println!(
+                            "[WARNING] Multiple musicbrainz_albumid tags found. Only keeping the first one."
+                        );
                     }
                 }
                 "musicbrainz_artistid" => {

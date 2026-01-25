@@ -123,9 +123,8 @@
                                   <class name="flat"/>
                                 </style>
                                 <child>
-                                  <object class="GtkImage" id="cover">
-                                    <property name="pixel-size">36</property>  <!-- FIXME: find a better way than hardcoding Entry height with h3 style. -->
-                                    <property name="resource">/io/github/htkhiem/Euphonica/albumart-placeholder.svg</property>
+                                  <object class="EuphonicaImageStack" id="cover">
+                                    <property name="size">36</property>  <!-- FIXME: find a better way than hardcoding Entry height with h3 style. -->
                                   </object>
                                 </child>
                               </object>
@@ -362,52 +361,54 @@
                     </property>
                   </object>
                 </child>
+
                 <child>
                   <object class="GtkSeparator"/>
                 </child>
+
                 <child>
-                  <object class="GtkScrolledWindow">
-                    <property name="height-request">50</property>
-                    <property name="hscrollbar-policy">never</property>
-                    <property name="vscrollbar-policy">automatic</property>
-                    <property name="propagate-natural-height">true</property>
-                    <property name="has-frame">false</property>
-                    <property name="vexpand">true</property>
-                    <property name="child">
-                      <object class="GtkStack" id="content_pages">
-                        <child>
-                          <object class="GtkStackPage">
-                            <property name="name">no-rule</property>
-                            <property name="child">
-                              <object class="AdwStatusPage">
-                                <property name="title" translatable="true">No Rules</property>
-                                <property name="description" translatable="true">Dynamic playlists are defined by a set of query rules instead of a fixed song list. Try adding one, then tap Refresh.</property>
-                              </object>
-                            </property>
+                  <object class="GtkStack" id="content_pages">
+                    <child>
+                      <object class="GtkStackPage">
+                        <property name="name">no-rule</property>
+                        <property name="child">
+                          <object class="AdwStatusPage">
+                            <property name="title" translatable="true">No Rules</property>
+                            <property name="description" translatable="true">Dynamic playlists are defined by a set of query rules instead of a fixed song list. Try adding one, then tap Refresh.</property>
                           </object>
-                        </child>
-                        <child>
-                          <object class="GtkStackPage">
-                            <property name="name">empty</property>
-                            <property name="child">
-                              <object class="AdwStatusPage">
-                                <property name="title" translatable="true">No Matches</property>
-                                <property name="description" translatable="true">Try relaxing your rules.</property>
-                              </object>
-                            </property>
+                        </property>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="GtkStackPage">
+                        <property name="name">empty</property>
+                        <property name="child">
+                          <object class="AdwStatusPage">
+                            <property name="title" translatable="true">No Matches</property>
+                            <property name="description" translatable="true">Try relaxing your rules.</property>
                           </object>
-                        </child>
-                        <child>
-                          <object class="GtkStackPage">
-                            <property name="name">spinner</property>
-                            <property name="child">
-                              <object class="AdwSpinner"/>
-                            </property>
-                          </object>
-                        </child>
-                        <child>
-                          <object class="GtkStackPage">
-                            <property name="name">content</property>
+                        </property>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="GtkStackPage">
+                        <property name="name">spinner</property>
+                        <property name="child">
+                          <object class="AdwSpinner"/>
+                        </property>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="GtkStackPage">
+                        <property name="name">content</property>
+                        <property name="child">
+                          <object class="GtkScrolledWindow">
+                            <property name="height-request">50</property>
+                            <property name="hscrollbar-policy">never</property>
+                            <property name="vscrollbar-policy">automatic</property>
+                            <property name="propagate-natural-height">true</property>
+                            <property name="has-frame">false</property>
+                            <property name="vexpand">true</property>
                             <property name="child">
                               <object class="GtkListView" id="content">
                                 <property name="show-separators">true</property>
@@ -417,9 +418,9 @@
                               </object>
                             </property>
                           </object>
-                        </child>
+                        </property>
                       </object>
-                    </property>
+                    </child>
                   </object>
                 </child>
               </object>

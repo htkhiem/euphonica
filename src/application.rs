@@ -18,21 +18,17 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-use adw::prelude::*;
 use crate::{
-    cache::Cache,
-    client::{BackgroundTask, MpdWrapper},
-    config::{APPLICATION_USER_AGENT, VERSION},
-    library::Library,
-    player::Player,
-    preferences::Preferences,
-    utils::{settings_manager, tokio_runtime},
-    EuphonicaWindow
+    EuphonicaWindow, cache::Cache, client::MpdWrapper, config::{APPLICATION_USER_AGENT, VERSION}, library::Library, player::Player, preferences::Preferences, utils::{settings_manager, tokio_runtime}
 };
+use adw::prelude::*;
 use adw::subclass::prelude::*;
 use gtk::{gio, glib};
 use std::{
-    cell::{Cell, OnceCell, RefCell}, fs::create_dir_all, ops::ControlFlow, path::PathBuf, rc::Rc
+    cell::{Cell, OnceCell, RefCell},
+    fs::create_dir_all,
+    path::PathBuf,
+    rc::Rc,
 };
 
 use ashpd::desktop::background::Background;
@@ -49,8 +45,7 @@ pub fn update_xdg_background_request() {
             .dbus_activatable(false);
 
         if autostart {
-            request = request
-                .auto_start(true);
+            request = request.auto_start(true);
             if start_minimized {
                 request = request.command(&["euphonica", "--minimized"])
             }
@@ -67,7 +62,10 @@ pub fn update_xdg_background_request() {
                     let _ = state_settings.set_boolean("autostart", response.auto_start());
                     // Since we call the above regardless of whether we wish to run in background
                     // or not (to update autostart) we need to do an AND here.
-                    let _ = state_settings.set_boolean("run-in-background", run_in_background && response.run_in_background());
+                    let _ = state_settings.set_boolean(
+                        "run-in-background",
+                        run_in_background && response.run_in_background(),
+                    );
                 }
             }
             Err(_) => {
@@ -142,18 +140,26 @@ mod imp {
                 // the background, and the the easiest way to call it back to foreground is to
                 // click on the desktop icon again, spawning another instance which should
                 // only live briefly to pass args to the primary one).
-                // Create cache controller
-                let cache = Cache::new();
-                let meta_sender = cache.get_sender();
 
                 // Create client instance (not connected yet)
-                let client = MpdWrapper::new(meta_sender.clone());
+                let client = MpdWrapper::new();
+
+                // Create cache controller
+                let cache = Cache::new(client.clone());
 
                 // Create controllers
                 // These two are GObjects (already refcounted by GLib)
                 let player = Player::default();
+                player.setup(
+                    self.obj().clone(),
+                    client.clone(),
+                    cache.clone(),
+                );
                 let library = Library::default();
-                cache.set_mpd_client(client.clone());
+                library.setup(
+                    client.clone(),
+                    player.clone(),
+                );
 
                 let _ = self.cache.set(cache);
                 let _ = self.client.set(client);
@@ -166,17 +172,6 @@ mod imp {
                 obj.set_accels_for_action("app.fullscreen", &["F11"]);
                 obj.set_accels_for_action("app.refresh", &["F5"]);
 
-                self.library.get().unwrap().setup(
-                    self.client.get().unwrap().clone(),
-                    self.cache.get().unwrap().clone(),
-                    self.player.get().unwrap().clone(),
-                );
-                self.player.get().unwrap().setup(
-                    self.obj().clone(),
-                    self.client.get().unwrap().clone(),
-                    self.cache.get().unwrap().clone(),
-                );
-
                 application.refresh();
 
                 self.initialized.set(true);
@@ -186,8 +181,7 @@ mod imp {
                     self.player.get().unwrap().set_is_foreground(true);
                     self.obj().raise_window();
                 }
-            }
-            else {
+            } else {
                 // Not the main instance -> not starting a new one -> always open a window regardless
                 // of whether the main instance was started with the --minimized flag or not.
                 self.obj().raise_window();
@@ -218,7 +212,7 @@ impl EuphonicaApplication {
             if vd.lookup_value("minimized", None).is_some() {
                 this.imp().start_minimized.set(true);
             }
-            ControlFlow::Continue(())  // let execution continue
+            -1 // let execution continue
         });
 
         // Background mode
@@ -269,7 +263,7 @@ impl EuphonicaApplication {
             update_db_action,
             quit_action,
             about_action,
-            preferences_action
+            preferences_action,
         ]);
     }
 
@@ -281,8 +275,7 @@ impl EuphonicaApplication {
     pub fn is_fullscreen(&self) -> bool {
         if let Some(window) = self.active_window() {
             window.is_fullscreen()
-        }
-        else {
+        } else {
             false
         }
     }
@@ -316,23 +309,30 @@ impl EuphonicaApplication {
         let settings = settings_manager().child("state");
         if settings.boolean("run-in-background") {
             self.imp().player.get().unwrap().set_is_foreground(false);
-            if let Some(_) = self.imp().hold_guard.replace(Some(self.hold())) {
-                println!("Created a new hold guard");
-            }
+            let _ = self.imp().hold_guard.replace(Some(self.hold()));
+            println!("Created a new hold guard");
         } else {
             println!("Dropping hold guard");
-            self.imp().hold_guard.take();
+            let _ = self.imp().hold_guard.take();
         }
     }
 
     fn refresh(&self) {
-        self.get_library().clear();
-        self.get_client().queue_connect();
+        let client = self.get_client();
+        glib::spawn_future_local(async move {
+            if let Err(e) = client.connect().await {
+                dbg!(e);
+            }
+        });
     }
 
     fn update_db(&self) {
-        self.get_client()
-            .queue_background(BackgroundTask::Update, true);
+        let client = self.get_client();
+        glib::spawn_future_local(async move {
+            if let Err(e) = client.update_db().await {
+                dbg!(e);
+            }
+        });
     }
 
     pub fn show_about(&self) {
@@ -344,7 +344,7 @@ impl EuphonicaApplication {
             .version(VERSION)
             .developers(vec!["htkhiem2000", "sonicv6"])
             .license_type(gtk::License::Gpl30)
-            .copyright("© 2025 htkhiem2000")
+            .copyright("© 2026 htkhiem2000")
             .build();
 
         about.add_credit_section(

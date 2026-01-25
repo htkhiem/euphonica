@@ -259,7 +259,7 @@
                 </style>
                 <property name="overflow">hidden</property> <!-- Needed to clip image behind corners -->
                 <child>
-                  <object class="GtkPicture" id="albumart">
+                  <object class="EuphonicaPictureStack" id="albumart">
                     <property name="hexpand">true</property>
                   </object>
                 </child>

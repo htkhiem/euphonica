@@ -1,39 +1,23 @@
 extern crate bson;
-use gtk::{prelude::*, gdk};
-use std::{thread, time::Duration};
+use crate::{
+    common::{AlbumInfo, ArtistInfo, SongInfo},
+    utils::settings_manager,
+};
+use gtk::prelude::*;
 use reqwest::blocking::Client;
-use crate::{common::{AlbumInfo, ArtistInfo, SongInfo}, utils::settings_manager};
+use std::{thread, time::{Duration, SystemTime}};
 
 use super::models;
 
-pub fn sleep_after_request() {
+pub fn sleep_between_requests(last_request_time: SystemTime) {
     let settings = settings_manager().child("metaprovider");
-    thread::sleep(Duration::from_millis(
-        (settings.double("delay-between-requests-s") * 1000.0) as u64,
-    ));
-}
-
-/// Enum for communication with provider threads from the cache controller living on the main thread.
-/// Can be used for both request and response.
-pub enum ProviderMessage {
-    // EmbeddedCover(SongInfo),
-    FolderCover(AlbumInfo), // Pass through the fallback parameter
-    CoverAvailable(String, bool, gdk::Texture), // URI (can be track or folder), is_thumbnail, the texture itself
-    /// Negative responses (currently only used by MpdWrapper)
-    CoverNotAvailable(String), // URI can be track or folder
-    FallbackToFolderCover(AlbumInfo),
-    FallbackToEmbeddedCover(AlbumInfo),
-    FetchFolderCoverExternally(AlbumInfo), // Pass through the fallback parameter
-    AlbumMeta(AlbumInfo, bool), // if true, skip check (for overwriting)
-    AlbumMetaAvailable(String), // Only return URI
-    /// Both request and positive response
-    ArtistAvatar(ArtistInfo), // With cache basepath
-    ArtistAvatarAvailable(String, bool, gdk::Texture), // Name, is_thumbnail, the texture itself
-    /// Both request and positive response. Includes downloading artist avatar.
-    ArtistMeta(ArtistInfo, bool), // If bool is true, skip check (for overwriting)
-    ArtistMetaAvailable(String), // Only return name
-    Lyrics(SongInfo),
-    LyricsAvailable(String), // Only return full URI
+    let wake_time = last_request_time + Duration::from_secs_f64(settings.double("delay-between-requests-s"));
+    let now = SystemTime::now();
+    // .duration_since returns an Err if the target_time is in the past
+    if let Ok(remaining) = wake_time.duration_since(now) {
+        println!("Sleeping for {remaining:?}");
+        thread::sleep(remaining);
+    }
 }
 
 /// Common provider-agnostic utilities.
@@ -64,7 +48,7 @@ pub mod utils {
                         println!("get_file: Failed to read response as bytes!");
                         None
                     }
-                },
+                }
                 Err(e) => {
                     println!("get_file: {e:?}");
                     None
@@ -109,7 +93,7 @@ pub trait MetadataProvider: Send + Sync {
     /// etc. A new AlbumMeta object containing data from both the existing AlbumMeta and newly fetched data. New
     /// data will always overwrite existing fields.
     fn get_album_meta(
-        &self,
+        &mut self,
         key: &mut AlbumInfo,
         existing: Option<models::AlbumMeta>,
     ) -> Option<models::AlbumMeta>;
@@ -118,7 +102,7 @@ pub trait MetadataProvider: Send + Sync {
     /// A new ArtistMeta object containing data from both the existing ArtistMeta and newly fetched data. New
     /// data will always overwrite existing fields.
     fn get_artist_meta(
-        &self,
+        &mut self,
         key: &mut ArtistInfo,
         existing: Option<models::ArtistMeta>,
     ) -> Option<models::ArtistMeta>;
@@ -127,8 +111,5 @@ pub trait MetadataProvider: Send + Sync {
     /// duration to the song is returned.
     ///
     /// Unlike with album and artist metadata, we stop when one metadata provider returns lyrics.
-    fn get_lyrics(
-        &self,
-        key: &SongInfo
-    ) -> Option<models::Lyrics>; 
+    fn get_lyrics(&mut self, key: &SongInfo) -> Option<models::Lyrics>;
 }

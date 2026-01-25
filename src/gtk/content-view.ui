@@ -4,15 +4,19 @@
   <template class="EuphonicaContentView" parent="GtkWidget">
     <child>
       <object class="AdwToolbarView">
+        <property name="hexpand">true</property>
+        <property name="vexpand">true</property>
         <child type="top">
           <object class="AdwHeaderBar" id="header_bar">
             <property name="show-title">false</property>
           </object>
         </child>
         <property name="content">
-          <object class="GtkBox">
+          <object class="GtkBox" id="content_area">
             <property name="orientation">1</property>
             <property name="hexpand">true</property>
+            <property name="vexpand">true</property>
+            <property name="valign">start</property>
             <child>
               <!-- Header. Contains two parts: a collapsible infobox and an
                    always-visible action button row beneath it.
@@ -35,6 +39,7 @@
                 </style>
                 <property name="spacing">6</property>
                 <property name="hexpand">true</property>
+                <property name="valign">start</property>
                 <child>
                   <object class="GtkCenterBox" id="action_row">
                     <property name="hexpand">true</property>
@@ -52,16 +57,6 @@
             </child>
             <child>
               <object class="GtkSeparator"/>
-            </child>
-            <child>
-              <object class="GtkScrolledWindow" id="content_area">
-                <property name="height-request">50</property>
-                <property name="hscrollbar-policy">never</property>
-                <property name="vscrollbar-policy">automatic</property>
-                <property name="propagate-natural-height">true</property>
-                <property name="has-frame">false</property>
-                <property name="vexpand">true</property>
-              </object>
             </child>
           </object>
         </property>

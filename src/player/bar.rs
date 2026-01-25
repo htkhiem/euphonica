@@ -1,25 +1,21 @@
 use glib::{clone, closure_local};
 use gtk::{
-    gdk,
-    glib::{self, Variant, subclass::Signal, Properties},
+    CompositeTemplate,
+    glib::{self, Properties, Variant, subclass::Signal},
     prelude::*,
     subclass::prelude::*,
-    CompositeTemplate,
 };
-use std::cell::{Cell, RefCell};
+use std::{cell::{Cell, RefCell}, rc::Rc};
 use std::sync::OnceLock;
 
 use crate::{
-    cache::placeholders::{ALBUMART_PLACEHOLDER, EMPTY_ALBUM_STRING, EMPTY_ARTIST_STRING}, common::Marquee, player::{ratio_center_box::RatioCenterBox, seekbar::Seekbar}, utils::settings_manager
+    cache::{Cache, placeholders::{EMPTY_ALBUM_STRING, EMPTY_ARTIST_STRING}},
+    common::{Marquee, Song, ImageStack},
+    player::{ratio_center_box::RatioCenterBox, seekbar::Seekbar},
+    utils::settings_manager,
 };
 
-use super::{
-    MpdOutput,
-    PlaybackControls,
-    PlaybackState,
-    Player,
-    VolumeKnob
-};
+use super::{MpdOutput, PlaybackControls, PlaybackState, Player, VolumeKnob};
 
 mod imp {
     use super::*;
@@ -34,7 +30,7 @@ mod imp {
         pub full_layout_box: TemplateChild<RatioCenterBox>,
         // Left side: current song info
         #[template_child]
-        pub albumart: TemplateChild<gtk::Image>,
+        pub albumart: TemplateChild<ImageStack>,
         #[template_child]
         pub info_box: TemplateChild<gtk::Box>,
         #[template_child]
@@ -103,26 +99,20 @@ mod imp {
             let obj = self.obj();
 
             obj.bind_property("collapsed", &self.multi_layout_view.get(), "layout-name")
-                .transform_to(
-                    |_, collapsed: bool| {
-                        if collapsed {
-                            Some("mini")
-                        } else {
-                            Some("full")
-                        }
-                    },
-                )
+                .transform_to(|_, collapsed: bool| {
+                    if collapsed {
+                        Some("mini")
+                    } else {
+                        Some("full")
+                    }
+                })
                 .sync_create()
                 .build();
 
-            obj.bind_property("collapsed", &self.albumart.get(), "pixel-size")
+            obj.bind_property("collapsed", &self.albumart.get(), "size")
                 .transform_to(
                     |_, collapsed: bool| {
-                        if collapsed {
-                            Some(48)
-                        } else {
-                            Some(115)
-                        }
+                        if collapsed { Some(48) } else { Some(115) }
                     },
                 )
                 .sync_create()
@@ -192,9 +182,9 @@ impl PlayerBar {
         Self::default()
     }
 
-    pub fn setup(&self, player: &Player) {
+    pub fn setup(&self, player: &Player, cache: Rc<Cache>) {
         self.setup_volume_knob(player);
-        self.bind_state(player);
+        self.bind_state(player, cache);
         self.imp().playback_controls.setup(player);
         self.imp().seekbar.setup(player);
     }
@@ -220,10 +210,12 @@ impl PlayerBar {
         knob.connect_notify_local(
             Some("value"),
             clone!(
-                #[weak]
-                player,
+                #[weak] player,
                 move |knob: &VolumeKnob, _| {
-                    player.send_set_volume(knob.value().round() as i8);
+                    let val = knob.value().round() as i8;
+                    glib::spawn_future_local(clone!(#[weak] player, async move {
+                        if let Err(e) = player.send_set_volume(val).await {dbg!(e);}
+                    }));
                 }
             ),
         );
@@ -231,15 +223,18 @@ impl PlayerBar {
         knob.connect_notify_local(
             Some("is-muted"),
             clone!(
-                #[weak]
-                player,
+                #[weak] player,
                 move |knob: &VolumeKnob, _| {
-                    if knob.is_muted() {
-                        player.send_set_volume(0);
-                    } else {
-                        // Restore previous volume
-                        player.send_set_volume(knob.value().round() as i8);
-                    }
+                    let val = knob.value().round() as i8;
+                    let muted = knob.is_muted();
+                    glib::spawn_future_local(clone!(#[weak] player, async move {
+                        if muted {
+                            if let Err(e) = player.send_set_volume(0).await {dbg!(e);}
+                        } else {
+                            // Restore previous volume
+                            if let Err(e) = player.send_set_volume(val).await {dbg!(e);}
+                        }
+                    }));
                 }
             ),
         );
@@ -256,7 +251,7 @@ impl PlayerBar {
         );
     }
 
-    fn bind_state(&self, player: &Player) {
+    fn bind_state(&self, player: &Player, cache: Rc<Cache>) {
         let imp = self.imp();
 
         let infobox_revealer = imp.infobox_revealer.get();
@@ -318,29 +313,24 @@ impl PlayerBar {
             "outputs-changed",
             false,
             closure_local!(
-                #[weak(rename_to = this)]
-                self,
-                #[upgrade_or]
-                (),
+                #[weak(rename_to = this)] self,
                 move |player: Player| {
                     this.update_outputs(&player);
                 }
             ),
         );
 
-        self.update_album_art(player.current_song_cover());
+        self.update_album_art(player.current_song(), cache.clone());
         player.connect_closure(
             "cover-changed",
             false,
             closure_local!(
-                #[weak(rename_to = this)]
-                self,
-                #[upgrade_or]
-                (),
-                move |_: Player, tex: Option<gdk::Texture>| {
-                    this.update_album_art(tex);
+                #[weak(rename_to = this)] self,
+                #[weak] cache,
+                move |p: Player| {
+                    this.update_album_art(p.current_song(), cache.clone());
                 }
-            )
+            ),
         );
 
         self.imp().prev_output.connect_clicked(clone!(
@@ -360,21 +350,39 @@ impl PlayerBar {
         ));
     }
 
-    fn update_album_art(&self, tex: Option<gdk::Texture>) {
-        // Update cover paintable
-        if tex.is_some() {
-            self.imp().albumart.set_paintable(tex.as_ref());
-        } else {
-            self.imp()
-                .albumart
-                .set_paintable(Some(&*ALBUMART_PLACEHOLDER));
-        }
+    fn update_album_art(&self, song: Option<Song>, cache: Rc<Cache>) {
+        glib::spawn_future_local(clone!(
+            #[weak(rename_to = this)] self,
+            #[weak] cache,
+            async move {
+                if let Some(song) = song {
+                    this.imp().albumart.show_spinner();
+                    match cache.get_song_cover(song.get_info(), true, true).await {
+                        Ok(Some(tex)) => this.imp().albumart.show(&tex),
+                        Ok(None) => this.imp().albumart.clear(),
+                        Err(e) => {
+                            this.imp().albumart.clear();
+                            dbg!(e);
+                        }
+                    }
+                } else {
+                    this.imp().albumart.clear();
+                }
+            }
+        ));
     }
 
     fn update_outputs(&self, player: &Player) {
         let outputs = player.outputs();
         let outputs: Vec<glib::BoxedAnyObject> = (0..outputs.n_items())
-            .map(|i| outputs.item(i).unwrap().downcast::<glib::BoxedAnyObject>().unwrap()).collect();
+            .map(|i| {
+                outputs
+                    .item(i)
+                    .unwrap()
+                    .downcast::<glib::BoxedAnyObject>()
+                    .unwrap()
+            })
+            .collect();
         let section = self.imp().output_section.get();
         let stack = self.imp().output_stack.get();
         let new_len = outputs.len();

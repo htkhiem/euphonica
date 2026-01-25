@@ -1,19 +1,20 @@
 use adw::prelude::*;
 use adw::subclass::prelude::*;
-use gtk::{
-    glib::{self},
-    CompositeTemplate, ListItem, SignalListItemFactory, SingleSelection,
-};
 use gio::{ActionEntry, SimpleActionGroup};
-use std::{cell::Cell, cmp::Ordering, rc::Rc, cell::OnceCell, sync::OnceLock};
-use glib::{clone, Properties, subclass::Signal};
+use glib::{Properties, clone, subclass::Signal, WeakRef};
+use gtk::{
+    CompositeTemplate, ListItem, SignalListItemFactory, SingleSelection,
+    glib::{self},
+};
+use std::{cell::Cell, cmp::Ordering, rc::Rc, sync::OnceLock};
 
 use super::{AlbumCell, AlbumContentView, Library};
 use crate::{
     cache::Cache,
     client::ClientState,
-    common::{Album, Rating},
-    utils::{LazyInit, g_cmp_options, g_cmp_str_options, g_search_substr, settings_manager}, window::EuphonicaWindow,
+    common::{Album, Rating, ContentStack},
+    utils::{LazyInit, g_cmp_options, g_cmp_str_options, g_search_substr, settings_manager},
+    window::EuphonicaWindow,
 };
 
 mod imp {
@@ -46,6 +47,8 @@ mod imp {
 
         // Content
         #[template_child]
+        pub stack: TemplateChild<ContentStack>,
+        #[template_child]
         pub grid_view: TemplateChild<gtk::GridView>,
         #[template_child]
         pub content_page: TemplateChild<adw::NavigationPage>,
@@ -61,10 +64,10 @@ mod imp {
         // If search term is now shorter, only check non-matching items to see
         // if they now match.
         pub last_search_len: Cell<usize>,
-        pub library: OnceCell<Library>,
+        pub library: WeakRef<Library>,
 
         #[property(get, set)]
-        pub collapsed: Cell<bool>
+        pub collapsed: Cell<bool>,
     }
 
     #[glib::object_subclass]
@@ -89,17 +92,15 @@ mod imp {
             while let Some(child) = self.obj().first_child() {
                 child.unparent();
             }
+            println!("Disposing album view");
         }
 
         fn constructed(&self) {
             self.parent_constructed();
+            self.stack.show_placeholder();
 
             self.obj()
-                .bind_property(
-                    "collapsed",
-                    &self.show_sidebar.get(),
-                    "visible"
-                )
+                .bind_property("collapsed", &self.show_sidebar.get(), "visible")
                 .sync_create()
                 .build();
 
@@ -141,12 +142,12 @@ mod imp {
                             .expect("The value needs to be of type `String`.");
                         let idx = param.parse::<i32>().unwrap();
 
-
                         if state.set_enum("sort-by", idx).is_ok() {
                             this.sorter.changed(gtk::SorterChange::Different);
                             action.set_state(&param.to_variant());
                         }
-                    }))
+                    }
+                ))
                 .build();
 
             let action_sort_direction = ActionEntry::builder("sort-direction")
@@ -164,12 +165,12 @@ mod imp {
                             .expect("The value needs to be of type `String`.");
                         let idx = param.parse::<i32>().unwrap();
 
-
                         if state.set_enum("sort-direction", idx).is_ok() {
                             this.sorter.changed(gtk::SorterChange::Inverted);
                             action.set_state(&param.to_variant());
                         }
-                    }))
+                    }
+                ))
                 .build();
 
             self.sorter.set_sort_func(clone!(
@@ -285,7 +286,7 @@ mod imp {
                         1 => this_rating.is_some() && this_rating.unwrap() >= filter_rating,
                         2 => this_rating.is_some() && this_rating.unwrap() < filter_rating,
                         3 => this_rating.is_some() && this_rating.unwrap() == filter_rating,
-                        _ => unimplemented!()
+                        _ => unimplemented!(),
                     };
 
                     if !matches_rating {
@@ -340,19 +341,13 @@ mod imp {
                     let old_len = this.last_search_len.replace(new_len);
                     match new_len.cmp(&old_len) {
                         Ordering::Greater => {
-                            this
-                                .search_filter
-                                .changed(gtk::FilterChange::MoreStrict);
+                            this.search_filter.changed(gtk::FilterChange::MoreStrict);
                         }
                         Ordering::Less => {
-                            this
-                                .search_filter
-                                .changed(gtk::FilterChange::LessStrict);
+                            this.search_filter.changed(gtk::FilterChange::LessStrict);
                         }
                         Ordering::Equal => {
-                            this
-                                .search_filter
-                                .changed(gtk::FilterChange::Different);
+                            this.search_filter.changed(gtk::FilterChange::Different);
                         }
                     }
                 }
@@ -361,19 +356,14 @@ mod imp {
             let rating = self.rating.get();
             let rating_mode = self.rating_mode.get();
             let search_mode = self.search_mode.get();
-            for mode in [
-                &rating_mode,
-                &search_mode
-            ] {
+            for mode in [&rating_mode, &search_mode] {
                 mode.connect_notify_local(
                     Some("selected"),
                     clone!(
                         #[weak(rename_to = this)]
                         self,
                         move |_, _| {
-                            this
-                                .search_filter
-                                .changed(gtk::FilterChange::Different);
+                            this.search_filter.changed(gtk::FilterChange::Different);
                         }
                     ),
                 );
@@ -386,42 +376,27 @@ mod imp {
                     self,
                     move |_, _| {
                         if this.rating_mode.selected() > 0 {
-                            this
-                                .search_filter
-                                .changed(gtk::FilterChange::Different);
+                            this.search_filter.changed(gtk::FilterChange::Different);
                         }
                     }
-                )
+                ),
             );
 
             rating_mode
-                .bind_property(
-                    "selected",
-                    &rating,
-                    "visible"
-                )
-                .transform_to(|_, val: u32| {
-                    Some(val > 0)
-                })
+                .bind_property("selected", &rating, "visible")
+                .transform_to(|_, val: u32| Some(val > 0))
                 .sync_create()
                 .build();
 
             // Create a new action group and add actions to it
             let actions = SimpleActionGroup::new();
-            actions.add_action_entries([
-                action_sort_by,
-                action_sort_direction
-            ]);
+            actions.add_action_entries([action_sort_by, action_sort_direction]);
             self.obj().insert_action_group("album-view", Some(&actions));
         }
 
         fn signals() -> &'static [Signal] {
             static SIGNALS: OnceLock<Vec<Signal>> = OnceLock::new();
-            SIGNALS.get_or_init(|| {
-                vec![
-                    Signal::builder("show-sidebar-clicked").build(),
-                ]
-            })
+            SIGNALS.get_or_init(|| vec![Signal::builder("show-sidebar-clicked").build()])
         }
     }
 
@@ -447,11 +422,16 @@ impl AlbumView {
         res
     }
 
-    pub fn setup(&self, library: &Library, cache: Rc<Cache>, client_state: &ClientState, window: &EuphonicaWindow) {
+    pub fn setup(
+        &self,
+        library: &Library,
+        cache: Rc<Cache>,
+        client_state: &ClientState,
+        window: &EuphonicaWindow,
+    ) {
         self.imp()
             .library
-            .set(library.clone())
-            .expect("Cannot init AlbumView with Library");
+            .set(Some(library));
         self.setup_gridview(cache.clone());
 
         let content_view = self.imp().content_view.get();
@@ -464,26 +444,16 @@ impl AlbumView {
     pub fn on_album_clicked(&self, album: &Album) {
         // - Upon receiving click signal, get the list item at the indicated activate index.
         // - Extract album from that list item.
-        // - Bind AlbumContentView to that album. This will cause the AlbumContentView to start listening
-        //   to the cache & client (MpdWrapper) states for arrival of album arts, contents & metadata.
-        // - Try to ensure existence of local metadata by queuing download if necessary. Since
-        //   AlbumContentView is now listening to the relevant signals, it will immediately update itself
-        //   in an asynchronous manner.
-        // - Schedule client to fetch all songs with this album tag in the same manner.
-        // - Now we can push the AlbumContentView. At this point, it must already have been bound to at
-        //   least the album's basic information (title, artist, etc). If we're lucky, it might also have
-        //   its song list and wiki initialised, but that's not mandatory.
-        // NOTE: We do not ensure local album art again in the above steps, since we have already done so
-        // once when adding this album to the ListStore for the GridView.
+        // - Bind AlbumContentView to that album. The content view should then populate itself.
         let content_view = self.imp().content_view.get();
         content_view.unbind();
-        content_view.bind(album.clone());
-        self.imp()
-            .library
-            .get()
-            .expect("AlbumView is incorrectly set up (no Library reference)")
-            .init_album(album);
-        if self.imp().nav_view.visible_page_tag().is_none_or(|tag| tag.as_str() != "content") {
+        content_view.bind(album);
+        if self
+            .imp()
+            .nav_view
+            .visible_page_tag()
+            .is_none_or(|tag| tag.as_str() != "content")
+        {
             self.imp().nav_view.push_by_tag("content");
         }
     }
@@ -491,7 +461,7 @@ impl AlbumView {
     fn setup_gridview(&self, cache: Rc<Cache>) {
         let settings = settings_manager().child("ui");
         // Setup search bar
-        let album_list = self.imp().library.get().unwrap().albums();
+        let album_list = self.imp().library.upgrade().unwrap().albums();
         let search_bar = self.imp().search_bar.get();
         let search_entry = self.imp().search_entry.get();
         search_bar.connect_entry(&search_entry);
@@ -516,11 +486,7 @@ impl AlbumView {
         let grid_view = self.imp().grid_view.get();
         grid_view.set_model(Some(&sel_model));
         settings
-            .bind(
-                "max-columns",
-                &grid_view,
-                "max-columns"
-            )
+            .bind("max-columns", &grid_view, "max-columns")
             .build();
 
         // Set up factory
@@ -598,8 +564,17 @@ impl AlbumView {
 
 impl LazyInit for AlbumView {
     fn populate(&self) {
-        if let Some(library) = self.imp().library.get() {
-            library.init_albums();
+        if let Some(library) = self.imp().library.upgrade() {
+            let stack = self.imp().stack.get();
+            stack.show_spinner();
+            glib::spawn_future_local(async move {
+                let _ = library.init_albums().await;
+                if library.albums().n_items() > 0 {
+                    stack.show_content();
+                } else {
+                    stack.show_placeholder();
+                }
+            });
         }
     }
 }

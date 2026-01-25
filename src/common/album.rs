@@ -7,7 +7,7 @@ use time::Date;
 
 use crate::utils::strip_filename_linux;
 
-use super::{artists_to_string, parse_mb_artist_tag, ArtistInfo, QualityGrade, SongInfo, Stickers};
+use super::{ArtistInfo, QualityGrade, SongInfo, Stickers, artists_to_string, parse_mb_artist_tag};
 
 // This is a model class for queue view displays.
 // It does not contain any actual song in terms of data.
@@ -39,7 +39,7 @@ impl AlbumInfo {
         artist_tag: Option<&str>,
         albumartistsort: Option<&str>,
         artists: Vec<ArtistInfo>,
-        quality_grade: QualityGrade
+        quality_grade: QualityGrade,
     ) -> Self {
         Self {
             example_uri: example_uri.to_owned(),
@@ -56,13 +56,20 @@ impl AlbumInfo {
         }
     }
 
+    /// Get something to serve as this album's internal ID for
+    /// filtering/comparison purposes.
+    /// If an album has a MusicBrainz ID, use it. If not, fall
+    /// back to their folder URI.
+    pub fn get_comp_id(&self) -> &str {
+        self.mbid.as_deref().unwrap_or(self.folder_uri.as_ref())
+    }
+
     /// Add artists from more artist tags, separated from existing ones by simple commas.
     pub fn add_artists_from_string(&mut self, tag: &str) {
         if let Some(existing_tag) = &mut self.albumartist {
             existing_tag.push_str(", ");
             existing_tag.push_str(tag);
-        }
-        else {
+        } else {
             self.albumartist = Some(tag.to_owned());
         }
 
@@ -109,9 +116,7 @@ impl From<SongInfo> for AlbumInfo {
 
 mod imp {
     use super::*;
-    use glib::{
-        ParamSpec, ParamSpecChar, ParamSpecObject, ParamSpecString
-    };
+    use glib::{ParamSpec, ParamSpecChar, ParamSpecObject, ParamSpecString};
     use once_cell::sync::Lazy;
 
     /// The GObject Song wrapper.
@@ -127,7 +132,7 @@ mod imp {
     #[derive(Default, Debug)]
     pub struct Album {
         pub info: OnceCell<AlbumInfo>,
-        pub stickers: RefCell<Stickers>
+        pub stickers: RefCell<Stickers>,
     }
 
     #[glib::object_subclass]
@@ -138,7 +143,7 @@ mod imp {
         fn new() -> Self {
             Self {
                 info: OnceCell::new(),
-                stickers: RefCell::new(Stickers::default())
+                stickers: RefCell::new(Stickers::default()),
             }
         }
     }
@@ -149,7 +154,9 @@ mod imp {
                 vec![
                     ParamSpecString::builder("uri").read_only().build(),
                     ParamSpecString::builder("title").read_only().build(),
-                    ParamSpecString::builder("sortable-title").read_only().build(),
+                    ParamSpecString::builder("sortable-title")
+                        .read_only()
+                        .build(),
                     ParamSpecString::builder("artist").read_only().build(),
                     ParamSpecChar::builder("rating").build(),
                     ParamSpecObject::builder::<glib::BoxedAnyObject>("release-date")
@@ -182,19 +189,14 @@ mod imp {
             match pspec.name() {
                 "rating" => {
                     if let (Ok(r), mut st) = (value.get::<i8>(), self.stickers.borrow_mut()) {
-                        let new_rating: Option<i8> = if r < 0 {
-                            Some(r)
-                        }
-                        else {
-                            None
-                        };
+                        let new_rating: Option<i8> = if r < 0 { Some(r) } else { None };
                         if st.rating != new_rating {
                             st.rating = new_rating;
                             obj.notify("rating");
                         }
                     }
-                },
-                _ => unimplemented!()
+                }
+                _ => unimplemented!(),
             }
         }
     }

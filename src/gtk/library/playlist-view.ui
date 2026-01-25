@@ -44,19 +44,29 @@
                   </object>
                 </child>
 				        <property name="content">
-					        <object class="GtkScrolledWindow">
-                    <property name="hscrollbar-policy">never</property>
-                    <property name="vscrollbar-policy">automatic</property>
-                    <property name="propagate-natural-height">true</property>
-                    <property name="has-frame">false</property>
-                    <property name="vexpand">true</property>
-                    <property name="child">
-                      <object class="GtkListView" id="list_view">
-                        <property name="show-separators">true</property>
-                        <property name="single-click-activate">true</property>
-                        <style>
-                          <class name="no-bg"/>
-                        </style>
+                  <object class="EuphonicaContentStack" id="stack">
+                    <property name="placeholder">
+                      <object class="AdwStatusPage">
+                        <property name="title" translatable="true">No Playlists</property>
+                        <property name="description" translatable="true">Static playlists you have created will appear here. You can also save your current queue or freeze a Dynamic Playlist into one.</property>
+                      </object>
+                    </property>
+                    <property name="content">
+                      <object class="GtkScrolledWindow">
+                        <property name="hscrollbar-policy">never</property>
+                        <property name="vscrollbar-policy">automatic</property>
+                        <property name="propagate-natural-height">true</property>
+                        <property name="has-frame">false</property>
+                        <property name="vexpand">true</property>
+                        <property name="child">
+                          <object class="GtkListView" id="list_view">
+                            <property name="show-separators">true</property>
+                            <property name="single-click-activate">true</property>
+                            <style>
+                              <class name="no-bg"/>
+                            </style>
+                          </object>
+                        </property>
                       </object>
                     </property>
                   </object>

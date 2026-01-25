@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <requires lib="gtk" version="4.0"/>
+  <template class="EuphonicaImageStack" parent="GtkWidget">
+    <child>
+      <object class="GtkStack" id="stack">
+        <property name="hexpand">false</property>
+        <property name="vexpand">false</property>
+        <property name="halign">center</property>
+        <property name="valign">center</property>
+        <property name="transition-type">1</property>
+        <child>
+          <object class="GtkStackPage">
+            <property name="name">spinner</property>
+            <property name="child">
+              <object class="AdwSpinner"/>
+            </property>
+          </object>
+        </child>
+        <child>
+          <object class="GtkStackPage">
+            <property name="name">image</property>
+            <property name="child">
+              <object class="GtkImage" id="image"/>
+            </property>
+          </object>
+        </child>
+      </object>
+    </child>
+  </template>
+</interface>

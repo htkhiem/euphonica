@@ -21,9 +21,8 @@
               <class name="border-radius-6" />
             </style>
             <child>
-              <object class="GtkImage" id="albumart">
-                <property name="pixel-size">115</property>
-                <property name="resource">io/github/htkhiem/Euphonica/albumart-placeholder.png</property>
+              <object class="EuphonicaImageStack" id="albumart">
+                <property name="size">115</property>
               </object>
             </child>
           </object>

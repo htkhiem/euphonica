@@ -1,20 +1,28 @@
 use gio::{self, prelude::*};
-use glib::{clone};
+use glib::clone;
 use std::{
-    cell::RefCell, rc::Rc, str::FromStr, sync::{atomic::{AtomicBool, Ordering}, Arc, Mutex}, thread, time::Duration
+    cell::RefCell,
+    rc::Rc,
+    str::FromStr,
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
+    thread,
+    time::Duration,
 };
 
 use mpd::status::AudioFormat;
 
+use super::backend::{FftBackendExt, FftBackendImpl, FftStatus};
 use crate::{player::Player, utils::settings_manager};
-use super::backend::{FftBackendImpl, FftStatus, FftBackendExt};
 
 #[derive(Debug)]
 pub struct FifoFftBackend {
     fft_handle: RefCell<Option<gio::JoinHandle<()>>>,
     fg_handle: RefCell<Option<glib::JoinHandle<()>>>,
     player: Player,
-    stop_flag: Arc<AtomicBool>
+    stop_flag: Arc<AtomicBool>,
 }
 
 impl FifoFftBackend {
@@ -23,7 +31,7 @@ impl FifoFftBackend {
             fft_handle: RefCell::default(),
             fg_handle: RefCell::default(),
             player,
-            stop_flag: Arc::new(AtomicBool::new(false))
+            stop_flag: Arc::new(AtomicBool::new(false)),
         }
     }
 }
@@ -144,10 +152,10 @@ impl FftBackendImpl for FifoFftBackend {
                                 }
                                 Err(e) => match e.kind() {
                                     std::io::ErrorKind::UnexpectedEof
-                                        | std::io::ErrorKind::WouldBlock => {
-                                            was_reading = false;
-                                            let _ = sender.send_blocking(FftStatus::ValidNotReading);
-                                        }
+                                    | std::io::ErrorKind::WouldBlock => {
+                                        was_reading = false;
+                                        let _ = sender.send_blocking(FftStatus::ValidNotReading);
+                                    }
                                     _ => {
                                         println!("FFT ERR: {:?}", &e);
                                         break 'outer;
@@ -174,25 +182,27 @@ impl FftBackendImpl for FifoFftBackend {
             self.fft_handle.replace(Some(fft_handle));
 
             let player = self.player();
-            if let Some(old_handle) = self.fg_handle.replace(Some(glib::MainContext::default().spawn_local(clone!(
-                #[weak]
-                player,
-                async move {
-                    use futures::prelude::*;
-                    // Allow receiver to be mutated, but keep it at the same memory address.
-                    // See Receiver::next doc for why this is needed.
-                    let mut receiver = std::pin::pin!(receiver);
-                    while let Some(new_status) = receiver.next().await {
-                        player.set_fft_status(new_status);
-                    }
-                }
-            )))) {
+            if let Some(old_handle) =
+                self.fg_handle
+                    .replace(Some(glib::MainContext::default().spawn_local(clone!(
+                        #[weak]
+                        player,
+                        async move {
+                            use futures::prelude::*;
+                            // Allow receiver to be mutated, but keep it at the same memory address.
+                            // See Receiver::next doc for why this is needed.
+                            let mut receiver = std::pin::pin!(receiver);
+                            while let Some(new_status) = receiver.next().await {
+                                player.set_fft_status(new_status);
+                            }
+                        }
+                    ))))
+            {
                 old_handle.abort();
             }
 
             return Ok(());
-        }
-        else {
+        } else {
             println!("Another FIFO thread is already running");
         }
         Err(())

@@ -1,14 +1,11 @@
 use adw::prelude::*;
 use adw::subclass::prelude::*;
 use gtk::{
-    glib::{self, Value, Variant},
     CompositeTemplate,
+    glib::{self, Value, Variant},
 };
 
-use crate::{
-    utils,
-    common::marquee::MarqueeWrapMode
-};
+use crate::{common::marquee::MarqueeWrapMode, utils};
 
 mod imp {
     use super::*;
@@ -22,6 +19,8 @@ mod imp {
         pub max_columns: TemplateChild<adw::SpinRow>,
         #[template_child]
         pub auto_accent: TemplateChild<adw::SwitchRow>,
+        #[template_child]
+        pub use_hires_for_album_cells: TemplateChild<adw::SwitchRow>,
         #[template_child]
         pub title_wrap_mode: TemplateChild<adw::ComboRow>,
 
@@ -115,21 +114,28 @@ impl UIPreferences {
         ui_settings
             .bind("auto-accent", &auto_accent, "active")
             .build();
+        let use_hires_for_album_cells = imp.use_hires_for_album_cells.get();
+        ui_settings
+            .bind("use-hires-for-album-cells", &use_hires_for_album_cells, "active")
+            .build();
         let title_wrap_mode = imp.title_wrap_mode.get();
         ui_settings
             .bind("title-wrap-mode", &title_wrap_mode, "selected")
-            .mapping(|v: &Variant, _| Some(
-                MarqueeWrapMode
-                    ::try_from(v.get::<String>().unwrap().as_str())
-                    .unwrap_or_default()
-                    .as_idx().to_value()
-            ))
-            .set_mapping(|v: &Value, _| Some(
-                MarqueeWrapMode
-                    ::try_from(v.get::<u32>().unwrap())
-                    .unwrap_or_default()
-                    .into()
-            ))
+            .mapping(|v: &Variant, _| {
+                Some(
+                    MarqueeWrapMode::try_from(v.get::<String>().unwrap().as_str())
+                        .unwrap_or_default()
+                        .as_idx()
+                        .to_value(),
+                )
+            })
+            .set_mapping(|v: &Value, _| {
+                Some(
+                    MarqueeWrapMode::try_from(v.get::<u32>().unwrap())
+                        .unwrap_or_default()
+                        .into(),
+                )
+            })
             .build();
         let use_album_art_as_bg = imp.use_album_art_as_bg.get();
         let bg_blur_radius = imp.bg_blur_radius.get();

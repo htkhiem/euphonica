@@ -1,19 +1,19 @@
-use glib::{closure_local, signal::SignalHandlerId, Object};
-use gtk::{gdk, glib, prelude::*, subclass::prelude::*, CompositeTemplate};
+use once_cell::sync::Lazy;
 use std::{
-    cell::{OnceCell, RefCell},
+    cell::{OnceCell, RefCell, Cell},
     rc::Rc,
 };
 
+use glib::{clone, Object, closure_local, signal::SignalHandlerId, ParamSpec, ParamSpecString, WeakRef};
+use gtk::{CompositeTemplate, gdk, glib, prelude::*, subclass::prelude::*};
+
 use crate::{
-    cache::{placeholders::EMPTY_ARTIST_STRING, Cache, CacheState},
+    cache::{Cache, CacheState, placeholders::EMPTY_ARTIST_STRING},
     common::Artist,
 };
 
 mod imp {
     use super::*;
-    use glib::{ParamSpec, ParamSpecString};
-    use once_cell::sync::Lazy;
 
     #[derive(Default, CompositeTemplate)]
     #[template(resource = "/io/github/htkhiem/Euphonica/gtk/library/artist-cell.ui")]
@@ -24,7 +24,8 @@ mod imp {
         pub name: TemplateChild<gtk::Label>,
         pub avatar_signal_ids: RefCell<Option<(SignalHandlerId, SignalHandlerId)>>,
         pub cache: OnceCell<Rc<Cache>>,
-        pub artist: RefCell<Option<Artist>>,
+        pub artist: WeakRef<Artist>,
+        pub external: Cell<bool>
     }
 
     // The central trait for subclassing a GObject
@@ -74,11 +75,7 @@ mod imp {
 
         fn dispose(&self) {
             if let Some((update_id, clear_id)) = self.avatar_signal_ids.take() {
-                let cache = self
-                    .cache
-                    .get()
-                    .unwrap()
-                    .get_cache_state();
+                let cache = self.cache.get().unwrap().get_cache_state();
                 cache.disconnect(update_id);
                 cache.disconnect(clear_id);
             }
@@ -99,54 +96,42 @@ glib::wrapper! {
 }
 
 impl ArtistCell {
-    pub fn new(item: &gtk::ListItem, cache: Rc<Cache>) -> Self {
+    pub fn new(item: &gtk::ListItem, cache: Rc<Cache>, external: bool) -> Self {
         let res: Self = Object::builder().build();
+        res.imp().external.set(external);
         res.imp()
             .cache
             .set(cache)
             .expect("ArtistCell cannot bind to cache");
         res.setup(item);
-        let cache_state = res.imp()
-                .cache
-                .get()
-                .unwrap()
-                .get_cache_state();
+        let cache_state = res.imp().cache.get().unwrap().get_cache_state();
         let _ = res.imp().avatar_signal_ids.replace(Some((
-            cache_state
-                .connect_closure(
-                    "artist-avatar-downloaded",
-                    false,
-                    closure_local!(
-                        #[weak(rename_to = this)]
-                        res,
-                        move |_: CacheState, name: String, thumb: bool, tex: gdk::Texture| {
-                            if !thumb {
-                                return;
-                            }
-                            if let Some(artist) = this.imp().artist.borrow().as_ref() {
-                                if artist.get_name() == name {
-                                    this.update_avatar(Some(&tex));
-                                }
-                            }
+            cache_state.connect_closure(
+                "artist-avatar-set",
+                false,
+                closure_local!(
+                    #[weak(rename_to = this)]
+                    res,
+                    move |_: CacheState, name: String, _: gdk::Texture, thumb: gdk::Texture| {
+                        if this.imp().artist.upgrade().is_some_and(|a| a.get_name() == name) {
+                            this.update_avatar(Some(&thumb));
                         }
-                    ),
+                    }
                 ),
-            cache_state
-               .connect_closure(
-                   "artist-avatar-cleared",
-                   false,
-                   closure_local!(
-                       #[weak(rename_to = this)]
-                       res,
-                       move |_: CacheState, tag: String| {
-                           if let Some(artist) = this.imp().artist.borrow().as_ref() {
-                               if artist.get_name() == tag {
-                                   this.imp().avatar.set_custom_image(Option::<gdk::Texture>::None.as_ref());
-                               }
-                           }
-                       }
-                   ),
-               ),
+            ),
+            cache_state.connect_closure(
+                "artist-avatar-cleared",
+                false,
+                closure_local!(
+                    #[weak(rename_to = this)]
+                    res,
+                    move |_: CacheState, name: String| {
+                        if this.imp().artist.upgrade().is_some_and(|a| a.get_name() == name) {
+                            this.update_avatar(None);
+                        }
+                    }
+                ),
+            ),
         )));
         res
     }
@@ -155,13 +140,15 @@ impl ArtistCell {
     pub fn setup(&self, item: &gtk::ListItem) {
         item.property_expression("item")
             .chain_property::<Artist>("name")
-            .chain_closure::<String>(closure_local!(|_: Option<glib::Object>, artist: Option<&str>| {
-                String::from(if artist.is_none_or(|a| a.is_empty()) {
-                    *EMPTY_ARTIST_STRING
-                } else {
-                    artist.unwrap()
-                })
-            }))
+            .chain_closure::<String>(closure_local!(
+                |_: Option<glib::Object>, artist: Option<&str>| {
+                    String::from(if artist.is_none_or(|a| a.is_empty()) {
+                        *EMPTY_ARTIST_STRING
+                    } else {
+                        artist.unwrap()
+                    })
+                }
+            ))
             .bind(self, "name", gtk::Widget::NONE);
     }
 
@@ -179,20 +166,36 @@ impl ArtistCell {
     }
 
     pub fn bind(&self, artist: &Artist) {
-        let _ = self.imp().artist.replace(Some(artist.clone()));
+        self.imp().artist.set(Some(artist));
         // Try to get from cache (or from disk asynchronously)
-        if let Some(tex) = self
-            .imp()
-            .cache
-            .get()
-            .unwrap()
-            .clone()
-            .load_cached_artist_avatar(artist.get_info(), true) {
-                self.imp().avatar.set_custom_image(Some(&tex));
+        glib::spawn_future_local(clone!(
+            #[weak(rename_to = this)]
+            self,
+            #[strong]
+            artist,
+            async move {
+                let res = this.imp().cache.get().unwrap().clone().get_artist_avatar(
+                    artist.get_info(), true,
+                    this.imp().external.get()
+                ).await;
+                // Check again as row might have been bound to a different playlist
+                // while awaiting
+                if this.imp().artist.upgrade().is_some_and(
+                    |a| a.get_info().get_comp_id() == artist.get_info().get_comp_id()
+                ) {
+                    match res {
+                        Ok(maybe_tex) => {
+                            this.update_avatar(maybe_tex.as_ref());
+                        }
+                        Err(e) => {dbg!(e);}
+                    }
+                }
             }
+        ));
+
     }
 
     pub fn unbind(&self) {
-        self.imp().artist.replace(None).unwrap();
+        self.imp().artist.set(None);
     }
 }

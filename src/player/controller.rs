@@ -1,36 +1,42 @@
 extern crate mpd;
 use crate::{
     application::EuphonicaApplication,
-    cache::{get_image_cache_path, sqlite, Cache, CacheState},
-    client::{ClientState, ConnectionState, MpdWrapper, StickerSetMode},
-    common::{CoverSource, QualityGrade, Song, SongInfo, Stickers},
+    cache::{Cache, sqlite},
+    client::{ClientState, ConnectionState, Error as ClientError, MpdWrapper, Result as ClientResult, StickerSetMode},
+    common::{QualityGrade, Song, Stickers},
     config::APPLICATION_ID,
     meta_providers::models::Lyrics,
-    utils::{current_unix_timestamp, prettify_audio_format, settings_manager, strip_filename_linux}
+    utils::{
+        current_unix_timestamp, get_image_cache_path, prettify_audio_format, settings_manager
+    },
 };
 use async_lock::OnceCell as AsyncOnceCell;
 use mpris_server::{
-    zbus::{self, fdo},
     LocalPlayerInterface, LocalRootInterface, LocalServer, LoopStatus, Metadata as MprisMetadata,
     PlaybackRate, PlaybackStatus as MprisPlaybackStatus, Property, Signal as MprisSignal, Time,
     TrackId, Volume,
+    zbus::{self, fdo},
 };
 
 use adw::subclass::prelude::*;
-use glib::{clone, closure_local, subclass::Signal, BoxedAnyObject};
-use gtk::gdk::{self, Texture};
+use glib::{BoxedAnyObject, clone, closure_local, subclass::Signal};
 use gtk::{gio, glib, prelude::*};
 use mpd::{
-    error::Error as MpdError, status::{AudioFormat, State, Status}, ReplayGain, SaveMode, Subsystem
+    ReplayGain, SaveMode, Subsystem,
+    status::{AudioFormat, State},
 };
 use std::{
     cell::{Cell, OnceCell, RefCell},
-    ops::Deref, path::PathBuf,
-    rc::Rc, sync::{Arc, Mutex, OnceLock}, vec::Vec,
+    ops::Deref,
+    path::PathBuf,
+    rc::Rc,
+    sync::{Arc, Mutex, OnceLock},
+    vec::Vec,
 };
 
 use super::fft_backends::{
-    backend::{FftBackendExt, FftStatus}, FifoFftBackend, PipeWireFftBackend
+    FifoFftBackend, PipeWireFftBackend,
+    backend::{FftBackendExt, FftStatus},
 };
 
 #[derive(Clone, Copy, Debug, glib::Enum, PartialEq, Default)]
@@ -162,13 +168,14 @@ fn get_replaygain_icon_name(mode: ReplayGain) -> &'static str {
 }
 
 mod imp {
-    
-
     use super::*;
-    use crate::{application::EuphonicaApplication, common::CoverSource, meta_providers::models::Lyrics};
+    use crate::{
+        application::EuphonicaApplication, meta_providers::models::Lyrics
+    };
+    
     use glib::{
-        ParamSpec, ParamSpecBoolean, ParamSpecDouble, ParamSpecEnum, ParamSpecFloat, ParamSpecInt,
-        ParamSpecString, ParamSpecUInt, ParamSpecUInt64, ParamSpecChar
+        ParamSpec, ParamSpecBoolean, ParamSpecChar, ParamSpecDouble, ParamSpecEnum, ParamSpecFloat,
+        ParamSpecInt, ParamSpecString, ParamSpecUInt, ParamSpecUInt64,
     };
 
     use once_cell::sync::Lazy;
@@ -177,7 +184,7 @@ mod imp {
         pub state: Cell<PlaybackState>,
         pub position: Cell<f64>,
         pub queue: gio::ListStore,
-        pub lyric_lines: gtk::StringList,  // Line by line for display. May be empty.
+        pub lyric_lines: gtk::StringList, // Line by line for display. May be empty.
         pub lyrics: RefCell<Option<Lyrics>>,
         pub queue_len: Cell<u32>,
         pub current_song: RefCell<Option<Song>>,
@@ -215,12 +222,21 @@ mod imp {
         pub use_visualizer: Cell<bool>,
         pub fft_backend_idx: Cell<i32>,
         pub outputs: gio::ListStore,
-        // Player controller doesn't actually keep a reference to the texture itself.
-        // This enum is merely to help decide whether we should fire a notify signal
-        // to the bar & pane.
-        pub cover_source: Cell<CoverSource>,
         pub saved_to_history: Cell<bool>,
-        pub is_foreground: Cell<bool>
+        pub is_foreground: Cell<bool>,
+        // To improve efficiency & avoid UI scroll resetting problems we'll
+        // cheat by applying queue edits locally first, then send the commands
+        // afterwards. This requires us to carefully skip the next updates
+        // from the idle client by tracking the expected queue version after
+        // performing the updates.
+        // Local changes increment the expected queue version by the expected number
+        // of version changes (depending on their logic) BEFORE actually sending
+        // the commands to MPD.
+        // On every update_status() call, if the newest version gets ahead of
+        // expected_queue version, we are out of sync and must perform a refresh
+        // using the old logic. Else do nothing.
+        pub queue_version: Cell<u32>,
+        pub expected_queue_version: Cell<u32>,
     }
 
     #[glib::object_subclass]
@@ -232,7 +248,6 @@ mod imp {
             // 0 = fifo
             // 1 = pipewire
 
-            
             Self {
                 state: Cell::new(PlaybackState::Stopped),
                 position: Cell::new(0.0),
@@ -279,9 +294,10 @@ mod imp {
                 use_visualizer: Cell::new(false),
                 fft_backend_idx: Cell::new(0),
                 outputs: gio::ListStore::new::<BoxedAnyObject>(),
-                cover_source: Cell::default(),
                 saved_to_history: Cell::new(false),
-                is_foreground: Cell::new(false)
+                is_foreground: Cell::new(false),
+                queue_version: Cell::new(0),
+                expected_queue_version: Cell::new(0),
             }
         }
     }
@@ -295,21 +311,25 @@ mod imp {
     impl ObjectImpl for Player {
         fn constructed(&self) {
             self.parent_constructed();
-            self.fft_backend.replace(Some(self.obj().init_fft_backend()));
+            self.fft_backend
+                .replace(Some(self.obj().init_fft_backend()));
             let settings = settings_manager();
             settings
                 .child("client")
-                .bind("mpd-visualizer-pcm-source", self.obj().as_ref(), "fft-backend-idx")
+                .bind(
+                    "mpd-visualizer-pcm-source",
+                    self.obj().as_ref(),
+                    "fft-backend-idx",
+                )
                 .get_only()
                 .mapping(|var, _| {
                     if let Some(name) = var.get::<String>() {
                         match name.as_str() {
                             "fifo" => Some(0i32.to_value()),
                             "pipewire" => Some(1i32.to_value()),
-                            _ => unimplemented!()
+                            _ => unimplemented!(),
                         }
-                    }
-                    else {
+                    } else {
                         None
                     }
                 })
@@ -323,7 +343,11 @@ mod imp {
 
             settings
                 .child("client")
-                .bind("pipewire-restart-between-songs", self.obj().as_ref(), "pipewire-restart-between-songs")
+                .bind(
+                    "pipewire-restart-between-songs",
+                    self.obj().as_ref(),
+                    "pipewire-restart-between-songs",
+                )
                 .get_only()
                 .build();
 
@@ -352,26 +376,26 @@ mod imp {
                     ParamSpecBoolean::builder("supports-playlists").build(),
                     ParamSpecBoolean::builder("use-visualizer").build(),
                     ParamSpecDouble::builder("position").build(),
-                    ParamSpecUInt::builder("current-lyric-line").read_only().build(),
+                    ParamSpecUInt::builder("current-lyric-line")
+                        .read_only()
+                        .build(),
                     ParamSpecString::builder("title").read_only().build(),
                     ParamSpecString::builder("artist").read_only().build(),
                     ParamSpecString::builder("album").read_only().build(),
                     ParamSpecChar::builder("rating").read_only().build(),
                     ParamSpecUInt64::builder("duration").read_only().build(),
                     ParamSpecUInt::builder("queue-id").read_only().build(),
-                    ParamSpecUInt::builder("queue-len").read_only().build(),  // Always available, even when queue hasn't been fetched yet
+                    ParamSpecUInt::builder("queue-len").read_only().build(), // Always available, even when queue hasn't been fetched yet
                     ParamSpecEnum::builder::<QualityGrade>("quality-grade")
                         .read_only()
                         .build(),
-                    ParamSpecUInt::builder("bitrate")
-                        .read_only()
-                        .build(),
+                    ParamSpecUInt::builder("bitrate").read_only().build(),
                     ParamSpecEnum::builder::<FftStatus>("fft-status")
                         .read_only()
                         .build(),
                     ParamSpecString::builder("format-desc").read_only().build(),
                     ParamSpecInt::builder("fft-backend-idx").build(),
-                    ParamSpecBoolean::builder("pipewire-restart-between-songs").build()
+                    ParamSpecBoolean::builder("pipewire-restart-between-songs").build(),
                 ]
             });
             PROPERTIES.as_ref()
@@ -405,114 +429,121 @@ mod imp {
                 "fft-status" => obj.fft_status().to_value(),
                 "format-desc" => obj.format_desc().to_value(),
                 "fft-backend-idx" => self.fft_backend_idx.get().to_value(),
-                "pipewire-restart-between-songs" => self.pipewire_restart_between_songs.get().to_value(),
+                "pipewire-restart-between-songs" => {
+                    self.pipewire_restart_between_songs.get().to_value()
+                }
                 _ => unimplemented!(),
             }
         }
 
         fn set_property(&self, _id: usize, value: &glib::Value, pspec: &ParamSpec) {
-            let obj = self.obj();
-            match pspec.name() {
-                "crossfade" => {
-                    if let Ok(v) = value.get::<f64>() {
-                        obj.set_crossfade(v);
-                    }
-                }
-                "mixramp-db" => {
-                    if let Ok(v) = value.get::<f32>() {
-                        obj.set_mixramp_db(v);
-                    }
-                }
-                "mixramp-delay" => {
-                    if let Ok(v) = value.get::<f64>() {
-                        obj.set_mixramp_delay(v);
-                    }
-                }
-                "position" => {
-                    if let Ok(v) = value.get::<f64>() {
-                        obj.set_position(v);
-                    }
-                }
-                "random" => {
-                    if let Ok(state) = value.get::<bool>() {
-                        obj.set_random(state);
-                        // Don't actually set the property here yet.
-                        // Idle status will update it later.
-                    }
-                }
-                "consume" => {
-                    if let Ok(state) = value.get::<bool>() {
-                        obj.set_consume(state);
-                        // Don't actually set the property here yet.
-                        // Idle status will update it later.
-                    }
-                }
-                "supports-playlists" => {
-                    if let Ok(state) = value.get::<bool>() {
-                        self.supports_playlists.replace(state);
-                        obj.notify("supports-playlists");
-                    }
-                }
-                "use-visualizer" => {
-                    if let Ok(state) = value.get::<bool>() {
-                        self.use_visualizer.replace(state);
-                        obj.notify("use-visualizer");
 
-                        if state {
-                            // Visualiser turned on. Start FFT thread.
-                            self.obj().maybe_start_fft_thread();
-                        } else {
-                            // Visualiser turned off. FFT thread should
-                            // have stopped by itself. Join & yeet handle.
-                            self.obj().maybe_stop_fft_thread(false);
+            glib::spawn_future_local(clone!(#[weak(rename_to = this)] self, #[strong] value, #[strong] pspec, async move {
+                let obj = this.obj();
+                match pspec.name() {
+                    "crossfade" => {
+                        if let Ok(v) = value.get::<f64>() {
+                            if let Err(e) = obj.set_crossfade(v).await {dbg!(e);}
                         }
                     }
-                }
-                "fft-backend-idx" => {
-                    if let Ok(new) = value.get::<i32>() {
-                        let old = self.fft_backend_idx.replace(new);
+                    "mixramp-db" => {
+                        if let Ok(v) = value.get::<f32>() {
+                            if let Err(e) = obj.set_mixramp_db(v).await {dbg!(e);}
+                        }
+                    }
+                    "mixramp-delay" => {
+                        if let Ok(v) = value.get::<f64>() {
+                            if let Err(e) = obj.set_mixramp_delay(v).await {dbg!(e);}
+                        }
+                    }
+                    "position" => {
+                        if let Ok(v) = value.get::<f64>() {
+                            obj.set_position(v);
+                        }
+                    }
+                    "random" => {
+                        if let Ok(state) = value.get::<bool>() {
+                            if let Err(e) = obj.set_random(state).await {dbg!(e);}
+                            // Don't actually set the property here yet.
+                            // Idle status will update it later.
+                        }
+                    }
+                    "consume" => {
+                        if let Ok(state) = value.get::<bool>() {
+                            if let Err(e) = obj.set_consume(state).await {dbg!(e);}
+                            // Don't actually set the property here yet.
+                            // Idle status will update it later.
+                        }
+                    }
+                    "supports-playlists" => {
+                        if let Ok(state) = value.get::<bool>() {
+                            this.supports_playlists.replace(state);
+                            obj.notify("supports-playlists");
+                        }
+                    }
+                    "use-visualizer" => {
+                        if let Ok(state) = value.get::<bool>() {
+                            this.use_visualizer.replace(state);
+                            obj.notify("use-visualizer");
 
-                        if old != new {
-                            println!("Switching FFT backend...");
-                            self.obj().maybe_stop_fft_thread(true);
-                            self.fft_backend.replace(Some(self.obj().init_fft_backend()));
-                            self.obj().maybe_start_fft_thread();
-                            self.obj().notify("fft-backend-idx");
+                            if state {
+                                // Visualiser turned on. Start FFT thread.
+                                this.obj().maybe_start_fft_thread();
+                            } else {
+                                // Visualiser turned off. FFT thread should
+                                // have stopped by itthis. Join & yeet handle.
+                                this.obj().maybe_stop_fft_thread(false);
+                            }
                         }
                     }
-                }
-                "pipewire-restart-between-songs" => {
-                    if let Ok(state) = value.get::<bool>() {
-                        let old = self.pipewire_restart_between_songs.replace(state);
-                        if old != state {
-                            self.obj().notify("pipewire-restart-between-songs");
+                    "fft-backend-idx" => {
+                        if let Ok(new) = value.get::<i32>() {
+                            let old = this.fft_backend_idx.replace(new);
+
+                            if old != new {
+                                println!("Switching FFT backend...");
+                                this.obj().maybe_stop_fft_thread(true);
+                                this.fft_backend
+                                    .replace(Some(this.obj().init_fft_backend()));
+                                this.obj().maybe_start_fft_thread();
+                                this.obj().notify("fft-backend-idx");
+                            }
                         }
                     }
+                    "pipewire-restart-between-songs" => {
+                        if let Ok(state) = value.get::<bool>() {
+                            let old = this.pipewire_restart_between_songs.replace(state);
+                            if old != state {
+                                this.obj().notify("pipewire-restart-between-songs");
+                            }
+                        }
+                    }
+                    _ => unimplemented!(),
                 }
-                _ => unimplemented!(),
-            }
+            }));
         }
 
         fn signals() -> &'static [Signal] {
             static SIGNALS: OnceLock<Vec<Signal>> = OnceLock::new();
             SIGNALS.get_or_init(|| {
                 vec![
-                    Signal::builder("outputs-changed")
-                        .build(),
+                    Signal::builder("outputs-changed").build(),
                     // Reserved for EXTERNAL changes (i.e. changes made by this client won't
                     // emit this).
                     Signal::builder("volume-changed")
                         .param_types([i8::static_type()])
                         .build(),
-                    Signal::builder("history-changed")
-                        .build(),
+                    Signal::builder("history-changed").build(),
                     // For simplicity we'll always use the hires version
                     Signal::builder("cover-changed")
-                        .param_types([Option::<gdk::Texture>::static_type()])
                         .build(),
                     Signal::builder("fft-param-changed")
-                        .param_types([String::static_type(), String::static_type(), glib::Variant::static_type()])
-                        .build()
+                        .param_types([
+                            String::static_type(),
+                            String::static_type(),
+                            glib::Variant::static_type(),
+                        ])
+                        .build(),
                 ]
             })
         }
@@ -593,8 +624,7 @@ impl Player {
             // self.unblock_polling();
             // self.maybe_start_polling();
             self.maybe_start_fft_thread();
-        }
-        else {
+        } else {
             println!("Player controller: entering background mode");
             // self.block_polling();
             // self.stop_polling();
@@ -640,20 +670,22 @@ impl Player {
         self.imp().outputs.clone()
     }
 
-    pub fn clear(&self) {
-        self.imp().queue.remove_all();
-        self.imp().outputs.remove_all();
-        self.update_status(&mpd::Status::default());
+    pub fn current_song(&self) -> Option<Song> {
+        self.imp().current_song.borrow().as_ref().cloned()
     }
 
-    pub fn populate(&self) {
-        // Don't fetch queue until Queue View is navigated to.
-        if let Some(status) = self.client().get_status(false) {
-            self.update_status(&status);
-        }
-        if let Some(outputs) = self.client().get_outputs() {
-            self.update_outputs(outputs);
-        }
+    pub async fn clear(&self) -> ClientResult<()> {
+        self.imp().queue.remove_all();
+        self.imp().outputs.remove_all();
+        self.imp().queue_version.set(0);
+        self.imp().expected_queue_version.set(0);
+        self.update_status().await
+    }
+
+    pub async fn populate(&self) -> ClientResult<()> {
+        self.update_status().await?;
+        self.update_outputs().await?;
+        Ok(())
     }
 
     pub fn setup(
@@ -664,95 +696,27 @@ impl Player {
     ) {
         let client_state = client.clone().get_client_state();
         let _ = self.imp().client.set(client);
-
-        cache.get_cache_state().connect_closure(
-            "album-art-downloaded",
-            false,
-            closure_local!(
-                #[weak(rename_to = this)]
-                self,
-                move |_: CacheState, uri: String, thumb: bool, tex: gdk::Texture| {
-                    // Update logic:
-                    // - Match by full URI first, then
-                    // - Match by folder URI only if there is no current cover.
-                    if thumb {return;}
-                    if let Some(song) = this.imp().current_song.borrow().as_ref() {
-                        if song.get_uri() == uri {
-                            // Always do this to force upgrade to embedded cover from folder cover
-                            this.imp().cover_source.set(CoverSource::Embedded);
-                            this.emit_by_name::<()>("cover-changed", &[&Some(tex)]);
-                        } else if this.imp().cover_source.get() != CoverSource::Embedded
-                            && strip_filename_linux(song.get_uri()) == uri {
-                                this.imp().cover_source.set(CoverSource::Folder);
-                                this.emit_by_name::<()>("cover-changed", &[&Some(tex)]);
-                            }
-                    }
-                }
-            ),
-        );
-        // Same logic should also work for clearing
-        cache.get_cache_state().connect_closure(
-            "album-art-cleared",
-            false,
-            closure_local!(
-                #[weak(rename_to = this)]
-                self,
-                move |_: CacheState, uri: String| {
-                    if let Some(song) = this.imp().current_song.borrow().as_ref() {
-                        match this.imp().cover_source.get() {
-                            CoverSource::Embedded => {
-                                if song.get_uri() == uri {
-                                    this.imp().cover_source.set(CoverSource::None);
-                                    this.emit_by_name::<()>("cover-changed", &[&Option::<gdk::Texture>::None]);
-                                }
-                            }
-                            CoverSource::Folder => {
-                                if strip_filename_linux(song.get_uri()) == uri {
-                                    this.imp().cover_source.set(CoverSource::None);
-                                    this.emit_by_name::<()>("cover-changed", &[&Option::<gdk::Texture>::None]);
-                                }
-                            }
-                            _ => {}
-                        }
-                    }
-                }
-            ),
-        );
-        cache.get_cache_state().connect_closure(
-            "song-lyrics-downloaded",
-            false,
-            closure_local!(
-                #[weak(rename_to = this)]
-                self,
-                move |_: CacheState, uri: String| {
-                    if let Some(song) = this.imp().current_song.borrow().as_ref() {
-                        if song.get_uri() == uri.as_str() {
-                            this.update_lyrics(this.imp().cache.get().unwrap().load_cached_lyrics(song.get_info()).unwrap());
-                        }
-                    }
-                }
-            ),
-        );
-
         let _ = self.imp().cache.set(cache);
         let _ = self.imp().app.set(application);
         // Connect to ClientState signals
         client_state.connect_notify_local(
             Some("connection-state"),
             clone!(
-                #[weak(rename_to = this)]
-                self,
+                #[weak(rename_to = this)] self,
                 move |state, _| {
-                    match state.get_connection_state() {
-                        ConnectionState::Connected => {
-                            // Newly-connected? Get initial status.
-                            this.populate();
+                    let conn_state = state.connection_state();
+                    glib::spawn_future_local(clone!(#[weak] this, async move {
+                        match conn_state {
+                            ConnectionState::Connected => {
+                                // Newly-connected? Get initial status.
+                                if let Err(e) = this.populate().await {dbg!(e);}
+                            }
+                            ConnectionState::Connecting => {
+                                if let Err(e) = this.clear().await {dbg!(e);}
+                            }
+                            _ => {}
                         }
-                        ConnectionState::Connecting => {
-                            this.clear();
-                        }
-                        _ => {}
-                    }
+                    }));
                 }
             ),
         );
@@ -769,55 +733,24 @@ impl Player {
                 #[weak(rename_to = this)]
                 self,
                 move |_: ClientState, subsys: glib::BoxedAnyObject| {
-                    match subsys.borrow::<Subsystem>().deref() {
-                        Subsystem::Player | Subsystem::Options => {
-                            if let Some(status) = this.client().get_status(false) {
-                                this.update_status(&status);
+                    glib::spawn_future_local(clone!(#[weak] this, #[upgrade_or] ClientResult::Ok(()), async move {
+                        match subsys.borrow::<Subsystem>().deref() {
+                            Subsystem::Player | Subsystem::Options => {
+                                this.update_status().await?;
                             }
-                        }
-                        Subsystem::Queue => {
-                            if let Some(status) = this.client().get_status(true) {
-                                this.update_status(&status);
+                            Subsystem::Queue => {
+                                this.update_queue().await?;
                             }
-                        }
-                        Subsystem::Output => {
-                            if let Some(outs) = this.client().get_outputs() {
-                                this.update_outputs(outs);
+                            Subsystem::Output => {
+                                this.update_outputs().await?;
                             }
-                        }
-                        Subsystem::Mixer => {
-                            if let Some(vol) = this.client().get_volume() {
-                                this.emit_by_name::<()>("volume-changed", &[&vol]);
+                            Subsystem::Mixer => {
+                                this.emit_by_name::<()>("volume-changed", &[&this.client()?.get_volume().await?]);
                             }
-                        }
-                        _ => {}
-                    }
-                }
-            ),
-        );
-
-        // Only used at init time
-        client_state.connect_closure(
-            "queue-songs-downloaded",
-            false,
-            closure_local!(
-                #[weak(rename_to = this)]
-                self,
-                move |_: ClientState, songs: glib::BoxedAnyObject| {
-                    let songs = songs.borrow::<Vec<Song>>();
-                    this.imp().queue.extend_from_slice(&songs);
-                }
-            )
-        );
-
-        client_state.connect_closure(
-            "queue-changed",
-            false,
-            closure_local!(
-                #[weak(rename_to = this)]
-                self,
-                move |_: ClientState, changes: BoxedAnyObject| {
-                    this.update_queue(changes.borrow::<Vec<SongInfo>>().as_ref());
+                            _ => {}
+                        };
+                        Ok(())
+                    }));
                 }
             ),
         );
@@ -830,61 +763,51 @@ impl Player {
         settings.connect_changed(
             Some("enable-mpris"),
             clone!(
-                #[weak(rename_to = this)]
-                self,
+                #[weak(rename_to = this)] self,
                 move |settings, _| {
                     let new_state = settings.boolean("enable-mpris");
                     let _ = this.imp().mpris_enabled.replace(new_state);
                     if !new_state {
                         // Ping once to clear existing controls
-                        this.update_mpris_properties(vec![Property::Metadata(
-                            MprisMetadata::default(),
-                        )]);
+                        glib::spawn_future_local(clone!(#[weak] this, async move {
+                            this.update_mpris_properties(vec![Property::Metadata(
+                                MprisMetadata::default(),
+                            )]).await;
+                        }));
+
                     }
                 }
             ),
         );
     }
 
-    fn update_mpris_properties(&self, properties: Vec<Property>) {
-        glib::spawn_future_local(clone!(
-            #[weak(rename_to = this)]
-            self,
-            async move {
-                match this.get_mpris().await {
-                    Ok(mpris) => {
-                        if let Err(err) = mpris.properties_changed(properties).await {
-                            println!("{err:?}");
-                        }
-                    }
-                    Err(err) => {
-                        println!("No MPRIS server: {err:?}");
-                    }
+    async fn update_mpris_properties(&self, properties: Vec<Property>) {
+        match self.get_mpris().await {
+            Ok(mpris) => {
+                if let Err(err) = mpris.properties_changed(properties).await {
+                    println!("{err:?}");
                 }
             }
-        ));
+            Err(err) => {
+                println!("No MPRIS server: {err:?}");
+            }
+        }
     }
 
-    fn seek_mpris(&self, position: f64) {
-        glib::spawn_future_local(clone!(
-            #[weak(rename_to = this)]
-            self,
-            async move {
-                match this.get_mpris().await {
-                    Ok(mpris) => {
-                        let pos_time = Time::from_millis((position * 1000.0).round() as i64);
-                        if let Err(err) =
-                            mpris.emit(MprisSignal::Seeked { position: pos_time }).await
-                        {
-                            println!("{err:?}");
-                        }
-                    }
-                    Err(err) => {
-                        println!("No MPRIS server: {err:?}");
-                    }
+    async fn seek_mpris(&self, position: f64) {
+        match self.get_mpris().await {
+            Ok(mpris) => {
+                let pos_time = Time::from_millis((position * 1000.0).round() as i64);
+                if let Err(err) =
+                    mpris.emit(MprisSignal::Seeked { position: pos_time }).await
+                {
+                    println!("{err:?}");
                 }
             }
-        ));
+            Err(err) => {
+                println!("No MPRIS server: {err:?}");
+            }
+        }
     }
 
     // Update functions
@@ -896,7 +819,13 @@ impl Player {
     /// Main update function. MPD's protocol has a single "status" commands
     /// that returns everything at once. This update function will take what's
     /// relevant and update the GObject properties accordingly.
-    pub fn update_status(&self, status: &Status) {
+    pub async fn update_status(&self) -> ClientResult<()> {
+        let status;
+        if let Ok(client) = self.client() {
+            status = client.get_status().await.unwrap_or_default();
+        } else {
+            status = mpd::Status::default();
+        }
         let mut mpris_changes: Vec<Property> = Vec::new();
         match status.state {
             State::Play => {
@@ -941,7 +870,7 @@ impl Player {
             self.notify("replaygain");
         }
 
-        let new_flow = PlaybackFlow::from_status(status);
+        let new_flow = PlaybackFlow::from_status(&status);
         let old_flow = self.imp().flow.replace(new_flow);
         if old_flow != new_flow {
             self.notify("playback-flow");
@@ -1015,67 +944,129 @@ impl Player {
 
         // Update playing status of songs in the queue
         if let Some(new_queue_place) = status.song {
-            let mut needs_refresh: bool = false;
-
+            let needs_refresh: bool;
+            let prev_uri: Option<String>;
             {
-                // There is now a playing song. Fetch if we haven't already.
-                let mut local_curr_song = self
-                    .imp()
-                    .current_song
-                    .borrow_mut();
+                let curr_song = self.imp().current_song.borrow();
+                needs_refresh = curr_song.as_ref().is_none_or(|s| s.get_queue_id() != new_queue_place.id.0);
+                prev_uri = curr_song.as_ref().map(|s| s.get_uri().to_owned());
+            };
 
-                // If there's a new song, check if we need to increment skipCount and set lastSkipped for the prev one.
-                if let Some(song) = local_curr_song.as_ref() {
-                    if song.get_queue_id() != new_queue_place.id.0 {
-                        needs_refresh = true;
-                        // Conform to myMPD's skipCount rule but take care not to mark a song as skipped if we've
-                        // already marked it as played this time (via playCount and lastPlayed).
-                        // We can't use status.elapsed here as it'd be for the new song, not the old one.
-                        if !self.imp().saved_to_history.get() && self.position() > 10.0 {
-                            self.client().set_sticker(
-                                "song",
-                                song.get_uri(),
-                                Stickers::SKIP_COUNT_KEY,
-                                "1",
-                                StickerSetMode::Inc
-                            );
+            if needs_refresh {
+                if let Some(prev_uri) = prev_uri {
+                    // Conform to myMPD's skipCount rule but take care not to mark a song as skipped if we've
+                    // already marked it as played this time (via playCount and lastPlayed).
+                    // We can't use status.elapsed here as it'd be for the new song, not the old one.
+                    if !self.imp().saved_to_history.get() && self.position() > 10.0 {
+                        // These are optional & can fail when stickers aren't enabled.
+                        // Don't use ? on their results.
+                        let _ = self.client()?.set_sticker(
+                            "song",
+                            prev_uri.clone(),
+                            Stickers::SKIP_COUNT_KEY.into(),
+                            "1".into(),
+                            StickerSetMode::Inc,
+                        ).await;
 
-                            self.client().set_sticker(
-                                "song",
-                                song.get_uri(),
-                                Stickers::LAST_SKIPPED_KEY,
-                                &current_unix_timestamp().to_string(),
-                                StickerSetMode::Set
-                            );
-                        }
+                        let _ = self.client()?.set_sticker(
+                            "song",
+                            prev_uri,
+                            Stickers::LAST_SKIPPED_KEY.into(),
+                            current_unix_timestamp().to_string().into(),
+                            StickerSetMode::Set,
+                        ).await;
                     }
-                } else if local_curr_song.as_ref().is_none() {
-                    needs_refresh = true;
                 }
 
-                if needs_refresh {
-                    // Always fetch as the queue might not have been populated yet
-                    if let Some(new_song) = self.client().get_song_at_queue_id(new_queue_place.id.0, true) {
+                // Always fetch as the queue might not have been populated yet
+                match self
+                    .client()?
+                    .get_song_at_queue_id(new_queue_place.id, true).await
+                {
+                    Ok(Some(new_song)) => {
                         // Update stickers
-                        self.client().set_sticker(
+                        let _ = self.client()?.set_sticker(
                             "song",
-                            new_song.get_uri(),
-                            Stickers::LAST_PLAYED_KEY,
-                            &current_unix_timestamp().to_string(),
-                            StickerSetMode::Set
-                        );
-                        local_curr_song.replace(new_song.clone());
+                            new_song.get_uri().to_owned(),
+                            Stickers::LAST_PLAYED_KEY.into(),
+                            current_unix_timestamp().to_string().into(),
+                            StickerSetMode::Set,
+                        ).await;
                         // If using PipeWire visualiser, might need to restart it
                         if self.imp().pipewire_restart_between_songs.get()
-                            && self.imp().fft_backend.borrow().as_ref().is_some_and(
-                                |backend| backend.name() == "pipewire"
-                            )
+                            && self
+                            .imp()
+                            .fft_backend
+                            .borrow()
+                            .as_ref()
+                            .is_some_and(|backend| backend.name() == "pipewire")
                         {
                             println!("Starting PipeWire backend again after song change...");
                             self.maybe_start_fft_thread();
                         }
+
+                        // Get new lyrics
+                        // First remove all current lines
+                        self.imp()
+                            .lyric_lines
+                            .splice(0, self.imp().lyric_lines.n_items(), &[]);
+                        let _ = self.imp().lyrics.take();
+
+                        // Fetch new lyrics in another future (don't await using this function as it will sleep after the request).
+                        // We'll have to check which song is playing again by the time we come back with the lyrics.
+                        glib::spawn_future_local(clone!(
+                            #[weak(rename_to = this)] self, #[strong] new_song, async move {
+                                println!("Fetching new lyrics...");
+                                match this.imp().cache.get().unwrap().get_lyrics(new_song.get_info(), true).await {
+                                    Ok(Some(lyrics)) => {
+                                        if this.current_song().is_some_and(
+                                            |s| s.get_info().get_comp_id() == new_song.get_info().get_comp_id()
+                                        ) {
+                                            this.update_lyrics(lyrics);
+                                            println!("Fetched new lyrics");
+                                        }
+                                    }
+                                    Ok(None) => {
+                                        println!("No lyrics found");
+                                    }
+                                    Err(e) => {dbg!(e);}
+                                }
+                            }
+                        ));
+
+                        // Update MPRIS side
+                        if self.imp().mpris_enabled.get() {
+                            mpris_changes.push(Property::Metadata(new_song.get_mpris_metadata()));
+                        }
+
+                        // We're now ready to update the UI elements
+                        self.imp().current_song.replace(Some(new_song));
+                        self.imp().saved_to_history.set(false);
+                        self.notify("title");
+                        self.notify("artist");
+                        self.notify("duration");
+                        self.notify("rating");
+                        self.notify("quality-grade");
+                        self.notify("format-desc");
+                        self.notify("album");
+                        self.notify("queue-id");
+                        // Update album art
+                        self.emit_by_name::<()>("cover-changed", &[]);
                     }
-                } else if let Some(curr_song) = local_curr_song.as_ref() {
+                    Ok(None) => {
+                        println!("[WARNING] returned status says there is a song playing but none can be fetched. Slow connection?");
+                    }
+                    Err(e) => {
+                        dbg!(e);
+                    }
+                }
+            } else {
+                let curr_song;
+                {
+                    // Don't borrow across awaits.
+                    curr_song = self.current_song();
+                }
+                if let Some(curr_song) = curr_song {
                     // Same old song. Might want to record into playback history.
                     if !settings_manager().child("library").boolean("pause-recent") {
                         let dur = curr_song.get_duration() as f32;
@@ -1083,72 +1074,30 @@ impl Player {
                         // at least 4 minutes or half of its duration, whichever comes first.
                         if dur >= 10.0 {
                             if let Some(new_position_dur) = status.elapsed {
-                                if !self.imp().saved_to_history.get() && (
-                                    new_position_dur.as_secs_f32() / dur >= 0.5 || new_position_dur.as_secs_f32() >= 240.0
-                                ) {
-                                    if let Ok(()) = sqlite::add_to_history(curr_song.get_info()) {
-                                        self.emit_by_name::<()>("history-changed", &[]);
+                                if !self.imp().saved_to_history.get()
+                                    && (new_position_dur.as_secs_f32() / dur >= 0.5
+                                        || new_position_dur.as_secs_f32() >= 240.0)
+                                {
+                                    match sqlite::add_to_history(curr_song.get_info()) {
+                                        Ok(()) => {
+                                            self.emit_by_name::<()>("history-changed", &[]);
+                                        }
+                                        Err(e) => {dbg!(e);}
                                     }
-                                    self.client().set_sticker(
+                                    if let Err(e) = self.client()?.set_sticker(
                                         "song",
-                                        curr_song.get_uri(),
-                                        Stickers::PLAY_COUNT_KEY,
-                                        "1",
-                                        StickerSetMode::Inc
-                                    );
+                                        curr_song.get_uri().to_owned(),
+                                        Stickers::PLAY_COUNT_KEY.into(),
+                                        "1".into(),
+                                        StickerSetMode::Inc,
+                                    ).await {
+                                        dbg!(e);
+                                    }
 
                                     self.imp().saved_to_history.set(true);
                                 }
                             }
                         }
-                    }
-                }
-            }
-            if needs_refresh {
-                if let Some(new_song) = self.imp().current_song.borrow().as_ref() {
-                    self.imp().saved_to_history.set(false);
-                    self.notify("title");
-                    self.notify("artist");
-                    self.notify("duration");
-                    self.notify("rating");
-                    self.notify("quality-grade");
-                    self.notify("format-desc");
-                    self.notify("album");
-                    self.notify("queue-id");
-                    // Get album art. Start with CoverSource::Unknown.
-                    // We might also get an asynchronous reply later via a cache state signal.
-                    if let Some((tex, is_fallback)) = self
-                        .imp()
-                        .cache
-                        .get()
-                        .unwrap()
-                        .clone()
-                        .load_cached_embedded_cover(new_song.get_info(), false, true)
-                    {
-                        self.imp().cover_source.set(if is_fallback {CoverSource::Folder} else {CoverSource::Embedded});
-                        self.emit_by_name::<()>("cover-changed", &[&Some(tex)]);
-                    }
-                    else {
-                        self.imp().cover_source.set(CoverSource::Unknown);
-                        self.emit_by_name::<()>("cover-changed", &[&Option::<gdk::Texture>::None]);
-                    }
-                    // Get new lyrics
-                    // First remove all current lines
-                    self.imp().lyric_lines.splice(0, self.imp().lyric_lines.n_items(), &[]);
-                    let _ = self.imp().lyrics.take();
-                    // Fetch new lyrics
-                    if let Some(lyrics) = self.imp().cache.get().unwrap().load_cached_lyrics(new_song.get_info()) {
-                        self.update_lyrics(lyrics);
-                    }
-                    else {
-                        // Schedule downloading
-                        self.imp().cache.get().unwrap().ensure_cached_lyrics(new_song.get_info());
-                    }
-                    // Update MPRIS side
-                    if self.imp().mpris_enabled.get() {
-                        mpris_changes.push(Property::Metadata(
-                            new_song.get_mpris_metadata(),
-                        ));
                     }
                 }
             }
@@ -1166,8 +1115,7 @@ impl Player {
                 self.notify("rating");
                 self.notify("duration");
                 self.notify("queue-id");
-                self.imp().cover_source.set(CoverSource::Unknown);
-                self.emit_by_name::<()>("cover-changed", &[&Option::<gdk::Texture>::None]);
+                self.emit_by_name::<()>("cover-changed", &[]);
                 // Update MPRIS side
                 if self.imp().mpris_enabled.get() {
                     mpris_changes.push(Property::Metadata(
@@ -1181,16 +1129,22 @@ impl Player {
             let new = new_position_dur.as_secs_f64();
             let old = self.set_position(new);
             if new != old && self.imp().mpris_enabled.get() {
-                self.seek_mpris(new);
+                self.seek_mpris(new).await;
             }
             // If using PipeWire visualiser and auto-restart is enabled, stop the thread
             // just before song ends. As we poll once every second, we can't use a threshold
             // shorter than 1s.
             let secs_to_end = self.duration() as f64 - new;
             if self.imp().pipewire_restart_between_songs.get()
-                && self.imp().fft_backend.borrow().as_ref().is_some_and(
-                    |backend| backend.name() == "pipewire" && backend.status() != FftStatus::ValidNotReading
-                )
+                && self
+                .imp()
+                .fft_backend
+                .borrow()
+                .as_ref()
+                .is_some_and(|backend| {
+                    backend.name() == "pipewire"
+                        && backend.status() != FftStatus::ValidNotReading
+                })
                 && (0.0..1.5).contains(&secs_to_end)
             {
                 println!("Stopping PipeWire backend to allow samplerate change...");
@@ -1224,25 +1178,23 @@ impl Player {
                 .splice(new_len, old_len - new_len, &[] as &[Song; 0]);
         }
         if self.imp().mpris_enabled.get() {
-            self.update_mpris_properties(mpris_changes);
+            self.update_mpris_properties(mpris_changes).await;
         }
+        Ok(())
     }
 
     pub fn update_lyrics(&self, lyrics: Lyrics) {
         self.imp().current_lyric_line.set(0);
-        self.imp().lyric_lines.splice(0, 0, &lyrics.to_plain_lines());
+        self.imp()
+            .lyric_lines
+            .splice(0, 0, &lyrics.to_plain_lines());
         self.imp().lyrics.replace(Some(lyrics));
         self.notify("current-lyric-line");
     }
 
     /// Returns true if we have lyrics for the current song and it is synced; false otherwise.
     pub fn lyrics_are_synced(&self) -> bool {
-        if let Some(lyrics) = self.imp().lyrics.borrow().as_ref() {
-            lyrics.synced
-        }
-        else {
-            false
-        }
+        self.imp().lyrics.borrow().as_ref().is_some_and(|lyrics| lyrics.synced)
     }
 
     pub fn current_lyric_line(&self) -> u32 {
@@ -1251,6 +1203,12 @@ impl Player {
 
     pub fn n_lyric_lines(&self) -> u32 {
         self.imp().lyric_lines.n_items()
+    }
+
+    pub fn register_local_queue_changes(&self, n_changes: u32) {
+        self.imp().expected_queue_version.set(
+            self.imp().expected_queue_version.get() + n_changes
+        );
     }
 
     /// Update the queue, optionally with diffs or an entirely new queue.
@@ -1264,13 +1222,45 @@ impl Player {
     /// new queue length. The update_status() function will instead truncate the queue to the new
     /// length for us once called.
     /// If an MPRIS server is running, it will also emit property change signals.
-    pub fn update_queue(&self, changes: &[SongInfo]) {
+    pub async fn update_queue(&self) -> ClientResult<()> {
+        let status = self.client()?.get_status().await?;
+        let old_version = self.imp().queue_version.replace(status.queue_version);
+        if status.queue_version > old_version
+            && status.queue_version > self.imp().expected_queue_version.get()
+        {
+            self.imp().expected_queue_version.set(status.queue_version);
+            if old_version == 0 {
+                let queue = self.imp().queue.clone();
+                self.client()?.get_current_queue(clone!(
+                    #[weak] queue,
+                    move |songs| {
+                        queue.extend_from_slice(&songs);
+                    }
+                )).await?;
+            } else {
+                self.client()?.get_queue_changes(
+                    old_version,
+                    status.queue_len,
+                    clone!(
+                        #[weak(rename_to = this)] self,
+                        move |changed_songs| {
+                            this.update_queue_internal(&changed_songs);
+                        }
+                    )
+                ).await?;
+            }
+        }
+        Ok(())
+    }
+
+    fn update_queue_internal(&self, changes: &[Song]) {
         let queue = &self.imp().queue;
         if !changes.is_empty() {
             // Find queue range covered by the changes vec
             let mut max_pos: u32 = 0;
             let mut min_pos: u32 = u32::MAX;
-            for song in changes.iter() {
+            for song_obj in changes.iter() {
+                let song = song_obj.get_info();
                 let this_pos = song.queue_pos.unwrap();
                 if song.queue_pos.unwrap() < min_pos {
                     min_pos = this_pos;
@@ -1281,24 +1271,27 @@ impl Player {
             }
 
             // Reconstruct the queue within that range.
-            let mut new_segment: Vec<glib::Object> = Vec::with_capacity((max_pos - min_pos + 1) as usize);
+            let mut new_segment: Vec<glib::Object> =
+                Vec::with_capacity((max_pos - min_pos + 1) as usize);
             let mut change_idx: usize = 0;
             for pos in min_pos..=max_pos {
                 // If this position did not change, then simply use the current GObject.
                 // This only happens within the length of the current queue. Entries past its
                 // length will be included in the changes vec.
-                let this_pos = changes[change_idx].queue_pos.unwrap();
+                let this_pos = changes[change_idx].get_info().queue_pos.unwrap();
                 if this_pos != pos {
                     if let Some(old_song) = queue.item(pos) {
                         new_segment.push(old_song);
                     } else {
                         // Exceeded current queue (new queue is longer)
-                        panic!("New queue is longer than current queue, but no corresponding diff info was received");
+                        panic!(
+                            "New queue is longer than current queue, but no corresponding diff info was received"
+                        );
                     }
                 } else {
                     // This position changed. Push newly received song into it.
                     // TODO: reduce cloning
-                    new_segment.push(Song::from(changes[change_idx].clone()).upcast());
+                    new_segment.push(changes[change_idx].clone().upcast());
                     change_idx += 1;
                 }
             }
@@ -1307,7 +1300,7 @@ impl Player {
                 queue.splice(
                     min_pos,
                     max_pos.min(queue.n_items() - 1) - min_pos + 1,
-                    &new_segment
+                    &new_segment,
                 );
             } else {
                 queue.extend_from_slice(&new_segment);
@@ -1315,117 +1308,94 @@ impl Player {
         }
     }
 
-    pub fn client(&self) -> &Rc<MpdWrapper> {
-        self.imp().client.get().unwrap()
+    pub fn client(&self) -> ClientResult<&Rc<MpdWrapper>> {
+        self.imp().client.get().ok_or(ClientError::NotConnected)
     }
 
-    fn update_outputs(&self, outputs: Vec<mpd::Output>) {
+    async fn update_outputs(&self) -> ClientResult<()> {
+        let outputs = self.client()?.get_outputs().await?;
         self.imp().outputs.remove_all();
         self.imp().outputs.extend_from_slice(
-            &outputs.into_iter().map(glib::BoxedAnyObject::new).collect::<Vec<glib::BoxedAnyObject>>()
+            &outputs
+                .into_iter()
+                .map(glib::BoxedAnyObject::new)
+                .collect::<Vec<glib::BoxedAnyObject>>(),
         );
         self.emit_by_name::<()>("outputs-changed", &[]);
+        Ok(())
     }
 
-    pub fn set_output(&self, id: u32, state: bool) {
-        self.client().set_output(id, state);
+    pub async fn set_output(&self, id: u32, state: bool) -> ClientResult<()> {
+        self.client()?.set_output(id, state).await
     }
 
     // Here we try to define getters and setters in terms of the GObject
     // properties as defined above in mod imp {} instead of the actual
     // internal fields.
-    pub fn cycle_playback_flow(&self) {
+    pub async fn cycle_playback_flow(&self) -> ClientResult<()> {
         let next_flow = self.imp().flow.get().next_in_cycle();
-        self.client().set_playback_flow(next_flow);
+        self.client()?.set_playback_flow(next_flow).await
     }
 
-    pub fn cycle_replaygain(&self) {
+    pub async fn cycle_replaygain(&self) -> ClientResult<()> {
         let next_rg = cycle_replaygain(self.imp().replaygain.get());
-        self.client().set_replaygain(next_rg);
+        self.client()?.set_replaygain(next_rg).await
     }
 
-    pub fn set_random(&self, new: bool) {
-        self.client().set_random(new);
+    pub async fn set_random(&self, new: bool) -> ClientResult<()> {
+        self.client()?.set_random(new).await
     }
 
-    pub fn set_consume(&self, new: bool) {
-        self.client().set_consume(new);
+    pub async fn set_consume(&self, new: bool) -> ClientResult<()> {
+        self.client()?.set_consume(new).await
     }
 
-    pub fn set_crossfade(&self, new: f64) {
-        self.client().set_crossfade(new);
+    pub async fn set_crossfade(&self, new: f64) -> ClientResult<()> {
+        self.client()?.set_crossfade(new).await
     }
 
-    pub fn set_mixramp_db(&self, new: f32) {
-        self.client().set_mixramp_db(new);
+    pub async fn set_mixramp_db(&self, new: f32) -> ClientResult<()> {
+        self.client()?.set_mixramp_db(new).await
     }
 
-    pub fn set_mixramp_delay(&self, new: f64) {
-        self.client().set_mixramp_delay(new);
+    pub async fn set_mixramp_delay(&self, new: f64) -> ClientResult<()> {
+        self.client()?.set_mixramp_delay(new).await
     }
 
     pub fn title(&self) -> Option<String> {
-        if let Some(song) = &*self.imp().current_song.borrow() {
-            return Some(song.get_name().to_owned());
-        }
-        None
+        self.current_song().map(|s| s.get_name().to_owned())
     }
 
     pub fn artist(&self) -> Option<String> {
-        if let Some(song) = &*self.imp().current_song.borrow() {
-            return song.get_artist_str();
-        }
-        None
+        self.current_song().and_then(|s| s.get_artist_str())
     }
 
     pub fn album(&self) -> Option<String> {
-        if let Some(song) = &*self.imp().current_song.borrow() {
-            if let Some(album) = song.get_album() {
-                return Some(album.title.clone());
-            }
-            return None;
-        }
-        None
+        self.current_song().as_ref().and_then(|s| s.get_album()).map(|a| a.title.to_owned())
     }
 
-    pub fn current_song_cover(&self) -> Option<Texture> {
-        if let Some(cache) = self.imp().cache.get() {
-            if let Some(song) = self.imp().current_song.borrow().as_ref() {
-                // Do not schedule again (already done once in update_status)
-                return cache.clone().load_cached_embedded_cover(song.get_info(), false, false).map(|pair| pair.0);
-            }
-            return None;
-        }
-        None
-    }
-
-    pub fn current_song_cover_path(&self, thumbnail: bool) -> Option<PathBuf> {
-        if let Some(song) = self.imp().current_song.borrow().as_ref() {
-            let mut path = get_image_cache_path();
-            if let Some(filename) = sqlite::find_cover_by_uri(song.get_uri(), thumbnail)
-                .expect("Sqlite DB error").and_then(|name| if !name.is_empty() {Some(name)} else {None})
-            {
-                // Will fall back to folder level cover if there is no embedded art
-                path.push(filename);
-                Some(path)
-            }
-            else {
-                None
-            }
+    pub async fn current_song_cover_path(&self, thumbnail: bool) -> ClientResult<Option<PathBuf>> {
+        if let Some(uri) = self.current_song().map(|s| s.get_uri().to_owned()) {
+            gio::spawn_blocking(move || Ok(
+                sqlite::find_cover_by_uri(&uri, thumbnail)
+                    .map_err(|_| ClientError::Internal)?
+                    .and_then(|name| if !name.is_empty() {
+                        let mut path = get_image_cache_path();
+                        path.push(name);
+                        Some(path)
+                    } else {None})
+            )).await.unwrap()
         } else {
-            None
+            Ok(None)
         }
     }
 
     pub fn rating(&self) -> Option<i8> {
-        self.imp().current_song.borrow().as_ref().and_then(|s| s.get_rating())
+        self.current_song().and_then(|s| s.get_rating())
     }
 
     pub fn quality_grade(&self) -> QualityGrade {
-        if let Some(song) = &*self.imp().current_song.borrow() {
-            return song.get_quality_grade();
-        }
-        QualityGrade::Unknown
+        self.current_song().map_or(QualityGrade::Unknown, |s| s.get_quality_grade())
     }
 
     pub fn fft_status(&self) -> FftStatus {
@@ -1440,17 +1410,11 @@ impl Player {
     }
 
     pub fn format_desc(&self) -> Option<String> {
-        if let Some(format) = &*self.imp().format.borrow() {
-            return Some(prettify_audio_format(format));
-        }
-        None
+        self.imp().format.borrow().map(|f| prettify_audio_format(&f))
     }
 
     pub fn duration(&self) -> u64 {
-        if let Some(song) = &*self.imp().current_song.borrow() {
-            return song.get_duration(); // Can still be 0
-        }
-        0
+        self.current_song().map_or(0, |s| s.get_duration())
     }
 
     pub fn mpd_volume(&self) -> i8 {
@@ -1458,11 +1422,11 @@ impl Player {
     }
 
     pub fn queue_id(&self) -> Option<u32> {
-        self.imp().current_song.borrow().as_ref().map(|s| s.get_queue_id())
+        self.current_song().map(|s| s.get_queue_id())
     }
 
     pub fn queue_pos(&self) -> Option<u32> {
-        self.imp().current_song.borrow().as_ref().map(|s| s.get_queue_pos())
+        self.current_song().map(|s| s.get_queue_pos())
     }
 
     pub fn position(&self) -> f64 {
@@ -1481,157 +1445,193 @@ impl Player {
     }
 
     /// Seek to current position. Called when the seekbar is released.
-    pub fn send_seek(&self, new_pos: f64) {
-        self.client().seek_current_song(new_pos);
+    pub async fn send_seek(&self, new_pos: f64) -> ClientResult<()> {
+        self.client()?.seek_current_song(new_pos).await
     }
 
     /// Seek to the timestamp of a lyric line
-    pub fn seek_to_lyric_line(&self, line: i32) {
+    pub async fn seek_to_lyric_line(&self, line: i32) -> ClientResult<()> {
         if let Some(lyrics) = self.imp().lyrics.borrow().as_ref() {
             if lyrics.synced && line >= 0 && line < lyrics.lines.len() as i32 {
-                self.client().seek_current_song(lyrics.lines[line as usize].0 as f64);
+                self.client()?
+                    .seek_current_song(lyrics.lines[line as usize].0 as f64).await?;
             }
         }
+        Ok(())
     }
 
     pub fn queue(&self) -> &gio::ListStore {
         &self.imp().queue
     }
 
-    pub fn lyrics(&self) -> gtk::StringList {
-        self.imp().lyric_lines.clone()
+    pub fn lyrics(&self) -> &gtk::StringList {
+        &self.imp().lyric_lines
     }
 
-    fn send_play(&self) {
-        self.client().pause(false);
+    async fn send_play(&self) -> ClientResult<()> {
+        self.client()?.pause(false).await
     }
 
-    fn send_pause(&self) {
-        self.client().pause(true);
+    async fn send_pause(&self) -> ClientResult<()> {
+        self.client()?.pause(true).await
     }
 
-    pub fn toggle_playback(&self) {
-        // If state is stopped, there won't be a "current song".
-        // To start playing, instead of using the "pause" command to toggle,
-        // we need to explicitly tell MPD to start playing the first song in
-        // the queue.
-
+    /// If state is stopped, there won't be a "current song".
+    /// To start playing, instead of using the "pause" command to toggle,
+    /// we need to explicitly tell MPD to start playing the first song in
+    /// the queue.
+    pub async fn toggle_playback(&self) -> ClientResult<()> {
         match self.imp().state.get() {
             PlaybackState::Stopped => {
                 // Check if queue is not empty
                 if self.queue().n_items() > 0 {
                     // Start playing first song in queue.
-                    self.client().play_at(0, false);
+                    self.client()?.play_at(0, false).await
                 } else {
                     println!("Queue is empty; nothing to play");
+                    Ok(())
                 }
             }
             PlaybackState::Playing => {
-                self.send_pause();
+                self.send_pause().await
             }
             PlaybackState::Paused => {
-                self.send_play();
+                self.send_play().await
             }
         }
     }
 
-    pub fn prev_song(&self, block: bool) {
+    pub async fn prev_song(&self, block: bool) -> ClientResult<()> {
         if self.imp().pipewire_restart_between_songs.get()
-            && self.imp().fft_backend.borrow().as_ref().is_some_and(
-                |backend| backend.name() == "pipewire" && backend.status() != FftStatus::ValidNotReading
-            )
+            && self
+            .imp()
+            .fft_backend
+            .borrow()
+            .as_ref()
+            .is_some_and(|backend| {
+                backend.name() == "pipewire" && backend.status() != FftStatus::ValidNotReading
+            })
         {
             println!("Stopping PipeWire backend to allow samplerate change...");
             self.maybe_stop_fft_thread(block);
         }
-        self.client().prev();
+        self.client()?.prev().await
     }
 
-    pub fn next_song(&self, block: bool) {
+    pub async fn next_song(&self, block: bool) -> ClientResult<()> {
         if self.imp().pipewire_restart_between_songs.get()
-            && self.imp().fft_backend.borrow().as_ref().is_some_and(
-                |backend| backend.name() == "pipewire" && backend.status() != FftStatus::ValidNotReading
-            )
+            && self
+            .imp()
+            .fft_backend
+            .borrow()
+            .as_ref()
+            .is_some_and(|backend| {
+                backend.name() == "pipewire" && backend.status() != FftStatus::ValidNotReading
+            })
         {
             println!("Stopping PipeWire backend to allow samplerate change...");
             self.maybe_stop_fft_thread(block);
         }
-        self.client().next();
+        self.client()?.next().await
     }
 
-    pub fn clear_queue(&self) {
-        self.client().clear_queue();
+    pub async fn clear_queue(&self) -> ClientResult<()> {
+        self.client()?.clear_queue().await
     }
 
-    pub fn send_set_volume(&self, val: i8) {
+    pub async fn send_set_volume(&self, val: i8) -> ClientResult<()> {
         let old_vol = self.imp().volume.replace(val);
         if old_vol != val {
-            self.client().volume(val);
+            self.client()?.set_volume(val).await?;
         }
+        Ok(())
     }
 
-    pub fn on_song_clicked(&self, song: Song) {
+    pub async fn on_song_clicked(&self, song: Song) -> ClientResult<()> {
         if self.imp().pipewire_restart_between_songs.get()
-            && self.imp().fft_backend.borrow().as_ref().is_some_and(
-                |backend| backend.name() == "pipewire" && backend.status() != FftStatus::ValidNotReading
-            )
+            && self
+            .imp()
+            .fft_backend
+            .borrow()
+            .as_ref()
+            .is_some_and(|backend| {
+                backend.name() == "pipewire" && backend.status() != FftStatus::ValidNotReading
+            })
         {
             println!("Stopping PipeWire backend to allow samplerate change...");
             self.maybe_stop_fft_thread(true);
         }
-        self.client().play_at(song.get_queue_id(), true);
+        self.client()?.play_at(song.get_queue_id(), true).await
     }
 
     /// Remove given song from queue.
-    pub fn remove_pos(&self, pos: u32) {
-        self.client().register_local_queue_changes(1);
+    pub async fn remove_pos(&self, pos: u32) -> ClientResult<()> {
+        self.register_local_queue_changes(1);
         self.queue().remove(pos);
-        self.client().delete_at(pos, false);
+        self.client()?.delete_at_pos(pos).await
     }
 
-    pub fn swap_dir(&self, pos: u32, direction: SwapDirection) {
-        self.client().register_local_queue_changes(1);
+    pub async fn swap_dir(&self, pos: u32, direction: SwapDirection) -> ClientResult<()> {
+        self.register_local_queue_changes(1);
         let target = self.imp().queue.item(pos).and_downcast::<Song>().unwrap();
         match direction {
             SwapDirection::Up => {
                 if pos > 0 {
-                    let upper = self.imp().queue.item(pos - 1).and_downcast::<Song>().unwrap();
-                    self.imp().queue.splice(pos - 1, 2, &[
-                        target.clone().upcast::<glib::Object>(),
-                        upper.upcast::<glib::Object>()
-                    ]);
-                    self.client().swap(pos, pos - 1, false);
+                    let upper = self
+                        .imp()
+                        .queue
+                        .item(pos - 1)
+                        .and_downcast::<Song>()
+                        .unwrap();
+                    self.imp().queue.splice(
+                        pos - 1,
+                        2,
+                        &[
+                            target.clone().upcast::<glib::Object>(),
+                            upper.upcast::<glib::Object>(),
+                        ],
+                    );
+                    self.client()?.swap_pos(pos, pos - 1).await?;
                 }
             }
             SwapDirection::Down => {
                 if pos < self.imp().queue.n_items() - 1 {
-                    let lower = self.imp().queue.item(pos + 1).and_downcast::<Song>().unwrap();
-                    self.imp().queue.splice(pos, 2, &[
-                        lower.upcast::<glib::Object>(),
-                        target.clone().upcast::<glib::Object>()
-                    ]);
-                    self.client().swap(pos, pos + 1, false);
+                    let lower = self
+                        .imp()
+                        .queue
+                        .item(pos + 1)
+                        .and_downcast::<Song>()
+                        .unwrap();
+                    self.imp().queue.splice(
+                        pos,
+                        2,
+                        &[
+                            lower.upcast::<glib::Object>(),
+                            target.clone().upcast::<glib::Object>(),
+                        ],
+                    );
+                    self.client()?.swap_pos(pos, pos + 1).await?;
                 }
             }
         }
+        Ok(())
     }
 
-    pub fn save_queue(&self, name: &str, save_mode: SaveMode) -> Result<(), Option<MpdError>> {
-        self.client().save_queue_as_playlist(name, save_mode)
+    pub async fn save_queue(&self, name: String, save_mode: SaveMode) -> ClientResult<()> {
+        self.client()?.save_queue_as_playlist(name, save_mode).await
     }
 
     /// Periodically poll for player progress to update seekbar.
     /// Won't start a new loop if there is already one or when polling is blocked by a seekbar.
     pub fn maybe_start_polling(&self) {
         let this = self.clone();
-        let client = self.client().clone();
         if self.imp().poller_handle.borrow().is_none() {
-            let poller_handle = glib::MainContext::default().spawn_local(async move {
+            let poller_handle = glib::spawn_future_local(async move {
                 loop {
                     // Don't poll if not playing
                     if this.imp().state.get() == PlaybackState::Playing {
-                        if let Some(status) = client.clone().get_status(false) {
-                            this.update_status(&status);
+                        if let Err(e) = this.update_status().await {
+                            dbg!(e);
                         }
                     }
                     glib::timeout_future_seconds(1).await;
@@ -1649,16 +1649,16 @@ impl Player {
     }
 
     pub fn export_lyrics(&self) -> Option<String> {
-        self.imp().lyrics.borrow().as_ref().map(|lyrics| lyrics.to_string())
+        self.imp()
+            .lyrics
+            .borrow()
+            .as_ref()
+            .map(|lyrics| lyrics.to_string())
     }
 
     pub fn import_lyrics(&self, text: &str) {
-        if let Some(curr_song) = self.imp().current_song.borrow().as_ref() {
+        if let Some(curr_song) = self.current_song() {
             if let Ok(lyrics) = Lyrics::try_from_synced_lrclib_str(text)
-                // .map_err(|res| {
-                //     println!("Synced lyrics parse error: {:?}", &res);
-                //     return res;
-                // })
                 .or_else(|_| Lyrics::try_from_plain_lrclib_str(text))
             {
                 sqlite::write_lyrics(curr_song.get_info(), Some(&lyrics))
@@ -1669,25 +1669,44 @@ impl Player {
     }
 
     pub fn clear_lyrics(&self) {
-        if let Some(curr_song) = self.imp().current_song.borrow().as_ref() {
-            sqlite::write_lyrics(curr_song.get_info(), None).expect("Unable to clear lyrics from DB");
-            self.imp().lyric_lines.splice(0, self.imp().lyric_lines.n_items(), &[]);
+        if let Some(curr_song) = self.current_song() {
+            sqlite::write_lyrics(curr_song.get_info(), None)
+                .expect("Unable to clear lyrics from DB");
+            self.imp()
+                .lyric_lines
+                .splice(0, self.imp().lyric_lines.n_items(), &[]);
             let _ = self.imp().lyrics.take();
         }
     }
 
-    pub fn rate_current_song(&self, score: Option<i8>) {
-        if let Some(song) = self.imp().current_song.borrow().as_ref() {
-            // Set locally first
-            song.set_rating(score);
-            if let Some(score) = score {
-                self.client().set_sticker("song", song.get_uri(), Stickers::RATING_KEY, &score.to_string(), StickerSetMode::Set);
+    pub async fn rate_current_song(&self, score: Option<i8>) -> ClientResult<()> {
+        let uri;
+        {
+            if let Some(song) = self.current_song() {
+                // Set locally first
+                song.set_rating(score);
+                uri = song.get_uri().to_owned();
+            } else {
+                return Ok(());
             }
-            else {
-                self.client().delete_sticker("song", song.get_uri(), Stickers::RATING_KEY);
-            }
-            self.notify("rating");
+            // End borrow
         }
+
+        if let Some(score) = score {
+            self.client()?.set_sticker(
+                "song",
+                uri,
+                Stickers::RATING_KEY.into(),
+                score.to_string().into(),
+                StickerSetMode::Set,
+            ).await?;
+        } else {
+            self.client()?
+                .delete_sticker("song", uri, Stickers::RATING_KEY.into()).await?;
+        }
+        self.notify("rating");
+
+        Ok(())
     }
 }
 
@@ -1748,53 +1767,50 @@ impl LocalRootInterface for Player {
 
 impl LocalPlayerInterface for Player {
     async fn next(&self) -> fdo::Result<()> {
-        self.next_song(false);
-        Ok(())
+        self.next_song(false).await.map_err(|_| fdo::Error::Failed("internal".to_string()))
     }
 
     async fn previous(&self) -> fdo::Result<()> {
-        self.prev_song(false);
-        Ok(())
+        self.prev_song(false).await.map_err(|_| fdo::Error::Failed("internal".to_string()))
     }
 
     async fn play(&self) -> fdo::Result<()> {
-        self.toggle_playback();
-        Ok(())
+        self.toggle_playback().await.map_err(|_| fdo::Error::Failed("internal".to_string()))
     }
 
     async fn pause(&self) -> fdo::Result<()> {
-        self.send_pause();
-        Ok(())
+        self.send_pause().await.map_err(|_| fdo::Error::Failed("internal".to_string()))
     }
 
     async fn play_pause(&self) -> fdo::Result<()> {
-        self.toggle_playback();
-        Ok(())
+        self.toggle_playback().await.map_err(|_| fdo::Error::Failed("internal".to_string()))
     }
 
     async fn stop(&self) -> fdo::Result<()> {
-        self.client().stop();
-        Ok(())
+        self.client().map_err(|_| fdo::Error::ZBus(zbus::Error::InterfaceNotFound))?.stop().await.map_err(|_| fdo::Error::Failed("internal".to_string()))
     }
 
     async fn seek(&self, offset: Time) -> fdo::Result<()> {
         let curr_pos = self.imp().position.get();
         let new_pos = curr_pos + (offset.as_millis() as f64 / 1000.0);
-        self.send_seek(new_pos);
-        Ok(())
+        self.send_seek(new_pos).await.map_err(|_| fdo::Error::Failed("internal".to_string()))
     }
 
     /// Use MPD's queue ID to construct track_id in this format:
     /// io/github/htkhiem/Euphonica/<queue_id>
     async fn set_position(&self, track_id: TrackId, position: Time) -> fdo::Result<()> {
-        if let Some(song) = self.imp().current_song.borrow().as_ref() {
-            if track_id.as_str().split("/").last().unwrap() == song.get_queue_id().to_string() {
-                self.send_seek(position.as_millis() as f64 / 1000.0);
-                return Ok(());
-            }
-            return Err(fdo::Error::Failed("Song has already changed".to_owned()));
+        let should_seek;
+        {
+            should_seek = self.current_song().is_some_and(
+                |s| track_id.as_str().split("/").last().unwrap() == s.get_queue_id().to_string()
+            );
+            // End borrow
         }
-        Err(fdo::Error::Failed("No song is being played".to_owned()))
+        if should_seek {
+            self.send_seek(position.as_millis() as f64 / 1000.0).await.map_err(|_| fdo::Error::Failed("internal".to_string()))
+        } else {
+            Err(fdo::Error::Failed("Song has already changed or player is in the Stopped state".to_owned()))
+        }
     }
 
     async fn open_uri(&self, _uri: String) -> fdo::Result<()> {
@@ -1813,8 +1829,7 @@ impl LocalPlayerInterface for Player {
 
     async fn set_loop_status(&self, loop_status: LoopStatus) -> zbus::Result<()> {
         let flow: PlaybackFlow = loop_status.into();
-        self.client().set_playback_flow(flow);
-        Ok(())
+        self.client().map_err(|_| zbus::Error::InterfaceNotFound)?.set_playback_flow(flow).await.map_err(|_| zbus::Error::InvalidReply)
     }
 
     async fn rate(&self) -> fdo::Result<PlaybackRate> {
@@ -1832,12 +1847,11 @@ impl LocalPlayerInterface for Player {
     }
 
     async fn set_shuffle(&self, shuffle: bool) -> zbus::Result<()> {
-        self.set_random(shuffle);
-        Ok(())
+        self.set_random(shuffle).await.map_err(|_| zbus::Error::InvalidReply)
     }
 
     async fn metadata(&self) -> fdo::Result<MprisMetadata> {
-        if let Some(song) = self.imp().current_song.borrow().as_ref() {
+        if let Some(song) = self.current_song() {
             Ok(song.get_mpris_metadata())
         } else {
             Ok(MprisMetadata::builder().trackid(TrackId::NO_TRACK).build())
@@ -1849,8 +1863,7 @@ impl LocalPlayerInterface for Player {
     }
 
     async fn set_volume(&self, volume: Volume) -> zbus::Result<()> {
-        self.send_set_volume((volume * 100.0).round() as i8);
-        Ok(())
+        self.send_set_volume((volume * 100.0).round() as i8).await.map_err(|_| zbus::Error::InvalidReply)
     }
 
     async fn position(&self) -> fdo::Result<Time> {

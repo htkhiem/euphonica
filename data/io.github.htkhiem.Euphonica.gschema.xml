@@ -46,6 +46,9 @@
 	</schema>
 
 	<schema id="io.github.htkhiem.Euphonica.client" path="/io/github/htkhiem/Euphonica/client/">
+		<key name="mpd-auto-reconnect" type="b">
+			<default>true</default>
+		</key>
 		<key name="mpd-use-unix-socket" type="b">
 			<default>false</default>
 		</key>
@@ -233,6 +236,9 @@
 	<schema id="io.github.htkhiem.Euphonica.ui" path="/io/github/htkhiem/Euphonica/ui/">
 		<key name="colorscheme" type="s">
 			<default>'follow'</default>
+		</key>
+		<key name="use-hires-for-album-cells" type="b">
+			<default>true</default>
 		</key>
 		<key name="recent-playlists-count" type="u">
 			<default>5</default>

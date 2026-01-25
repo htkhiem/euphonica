@@ -2,14 +2,13 @@ use adw::prelude::*;
 use gtk::{glib, graphene, subclass::prelude::*};
 use std::cell::Cell;
 
-
 #[derive(Default, Clone, Copy, Debug, glib::Enum, glib::Variant, Eq, PartialEq)]
-#[enum_type(name="EuphonicaMarqueeWrapMode")]
+#[enum_type(name = "EuphonicaMarqueeWrapMode")]
 pub enum MarqueeWrapMode {
     #[default]
     Scroll,
     Ellipsis,
-    Wrap
+    Wrap,
 }
 
 impl TryFrom<&str> for MarqueeWrapMode {
@@ -20,7 +19,7 @@ impl TryFrom<&str> for MarqueeWrapMode {
             "ellipsis" => Ok(Self::Ellipsis),
             "scroll" => Ok(Self::Scroll),
             "wrap" => Ok(Self::Wrap),
-            _ => Err(())
+            _ => Err(()),
         }
     }
 }
@@ -33,7 +32,7 @@ impl TryFrom<u32> for MarqueeWrapMode {
             0 => Ok(Self::Ellipsis),
             1 => Ok(Self::Scroll),
             2 => Ok(Self::Wrap),
-            _ => Err(())
+            _ => Err(()),
         }
     }
 }
@@ -44,7 +43,7 @@ impl MarqueeWrapMode {
         match self {
             Self::Ellipsis => "ellipsis",
             Self::Scroll => "scroll",
-            Self::Wrap => "wrap"
+            Self::Wrap => "wrap",
         }
     }
 
@@ -53,17 +52,16 @@ impl MarqueeWrapMode {
         match self {
             Self::Ellipsis => 0,
             Self::Scroll => 1,
-            Self::Wrap => 2
+            Self::Wrap => 2,
         }
     }
 }
 
-
 mod imp {
     use super::*;
     use adw::TimedAnimation;
-    use glib::{clone, Properties};
-    use gtk::{pango, CompositeTemplate};
+    use glib::{Properties, clone};
+    use gtk::{CompositeTemplate, pango};
     use std::cell::OnceCell;
 
     #[derive(Default, CompositeTemplate, Properties)]
@@ -80,7 +78,7 @@ mod imp {
         #[property(get, set)]
         should_run: Cell<bool>,
         #[property(get, set = Self::set_wrap_mode, builder(MarqueeWrapMode::Ellipsis))]
-        wrap_mode: Cell<MarqueeWrapMode>
+        wrap_mode: Cell<MarqueeWrapMode>,
     }
     impl Marquee {
         pub fn check_animation(&self) {
@@ -156,7 +154,7 @@ mod imp {
 
         fn dispose(&self) {
             self.animation.get().unwrap().reset();
-            self.child.get().unparent();  // GtkWidget doesn't do this for us, leading to all the console warnings
+            self.child.get().unparent(); // GtkWidget doesn't do this for us, leading to all the console warnings
         }
     }
 
@@ -179,8 +177,7 @@ mod imp {
         fn measure(&self, orientation: gtk::Orientation, for_size: i32) -> (i32, i32, i32, i32) {
             if self.wrap_mode.get() == MarqueeWrapMode::Wrap {
                 self.child.get().measure(orientation, for_size)
-            }
-            else {
+            } else {
                 let min_width = self.obj().width_request();
                 let child = self.child.get();
                 // Measure the child's natural size in the given orientation
@@ -209,18 +206,14 @@ mod imp {
         fn snapshot(&self, snapshot: &gtk::Snapshot) {
             if self.wrap_mode.get() == MarqueeWrapMode::Wrap {
                 self.parent_snapshot(snapshot);
-            }
-            else {
+            } else {
                 snapshot.push_clip(&graphene::Rect::new(
                     0.0,
                     0.0,
                     self.obj().width() as f32,
                     self.obj().height() as f32,
                 ));
-                snapshot.translate(&graphene::Point::new(
-                    self.curr_offset.get() as f32,
-                    0.0,
-                )); // Apply horizontal translation for sliding effect
+                snapshot.translate(&graphene::Point::new(self.curr_offset.get() as f32, 0.0)); // Apply horizontal translation for sliding effect
                 self.parent_snapshot(snapshot);
                 snapshot.pop();
             }

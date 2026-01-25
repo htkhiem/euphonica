@@ -1,14 +1,14 @@
-use glib::{clone, Object, ParamSpec, ParamSpecString};
-use gtk::{gdk, glib, prelude::*, subclass::prelude::*, CompositeTemplate};
+use glib::{Object, ParamSpec, ParamSpecString, clone};
+use gtk::{CompositeTemplate, glib, prelude::*, subclass::prelude::*};
+use once_cell::sync::Lazy;
 use std::{
     cell::{Cell, OnceCell, RefCell},
     rc::Rc,
 };
-use once_cell::sync::Lazy;
 
 use crate::{
-    cache::{placeholders::ALBUMART_THUMBNAIL_PLACEHOLDER, Cache},
-    common::{inode::INodeInfo, INode}
+    cache::{Cache, placeholders::ALBUMART_THUMBNAIL_PLACEHOLDER},
+    common::INode,
 };
 
 use super::Library;
@@ -36,7 +36,7 @@ mod imp {
         pub library: OnceCell<Library>,
         pub playlist: RefCell<Option<INode>>,
         pub is_dynamic: Cell<bool>,
-        pub cache: OnceCell<Rc<Cache>>
+        pub cache: OnceCell<Rc<Cache>>,
     }
 
     // The central trait for subclassing a GObject
@@ -62,7 +62,7 @@ mod imp {
             static PROPERTIES: Lazy<Vec<ParamSpec>> = Lazy::new(|| {
                 vec![
                     ParamSpecString::builder("name").build(),
-                    ParamSpecString::builder("last-modified").build()
+                    ParamSpecString::builder("last-modified").build(),
                 ]
             });
             PROPERTIES.as_ref()
@@ -110,9 +110,7 @@ glib::wrapper! {
 }
 
 impl PlaylistRow {
-    pub fn new(
-        is_dynamic: bool, library: Library, item: &gtk::ListItem, cache: Rc<Cache>
-    ) -> Self {
+    pub fn new(is_dynamic: bool, library: Library, item: &gtk::ListItem, cache: Rc<Cache>) -> Self {
         let res: Self = Object::builder().build();
         res.imp().is_dynamic.set(is_dynamic);
         res.setup(library, item, cache);
@@ -122,9 +120,9 @@ impl PlaylistRow {
     #[inline(always)]
     pub fn setup(&self, library: Library, item: &gtk::ListItem, cache: Rc<Cache>) {
         self.imp()
-           .cache
-           .set(cache)
-           .expect("PlaylistRow cannot bind to cache");
+            .cache
+            .set(cache)
+            .expect("PlaylistRow cannot bind to cache");
         let _ = self.imp().library.set(library);
         item.property_expression("item")
             .chain_property::<INode>("uri")
@@ -137,57 +135,84 @@ impl PlaylistRow {
         self.imp().replace_queue.connect_clicked(clone!(
             #[weak(rename_to = this)]
             self,
-            #[upgrade_or]
-            (),
             move |_| {
-                if let (Some(library), Some(playlist)) = (this.imp().library.get(), this.imp().playlist.borrow().as_ref()) {
-                    library.queue_playlist(playlist.get_uri(), true, true);
-                }
+                glib::spawn_future_local(clone!(#[weak] this, async move {
+                    if let (Some(library), Some(playlist)) = (
+                        this.imp().library.get(),
+                        this.imp().playlist.borrow().as_ref(),
+                    ) {
+                        if let Err(e) = library.queue_playlist(playlist.get_uri().to_owned(), true, true).await {
+                            dbg!(e);
+                        }
+                    }
+                }));
             }
         ));
 
         self.imp().append_queue.connect_clicked(clone!(
             #[weak(rename_to = this)]
             self,
-            #[upgrade_or]
-            (),
             move |_| {
-                if let (Some(library), Some(playlist)) = (this.imp().library.get(), this.imp().playlist.borrow().as_ref()) {
-                    library.queue_playlist(playlist.get_uri(), false, false);
+                glib::spawn_future_local(clone!(#[weak] this, async move {
+                    if let (Some(library), Some(playlist)) = (
+                    this.imp().library.get(),
+                    this.imp().playlist.borrow().as_ref(),
+                ) {
+                    if let Err(e) = library.queue_playlist(playlist.get_uri().to_owned(), false, false).await {
+                        dbg!(e);
+                    }
                 }
+                }));
             }
         ));
     }
 
+    #[inline]
     fn clear_thumbnail(&self) {
-        self.imp().thumbnail.set_paintable(Some(&*ALBUMART_THUMBNAIL_PLACEHOLDER));
+        self.imp()
+            .thumbnail
+            .set_paintable(Some(&*ALBUMART_THUMBNAIL_PLACEHOLDER));
     }
 
-    fn schedule_thumbnail(&self, playlist: &INodeInfo) {
-        self.imp().thumbnail.set_paintable(Some(&*ALBUMART_THUMBNAIL_PLACEHOLDER));
-        let handle = self.imp().cache.get().unwrap().load_cached_playlist_cover(
-            &playlist.uri, self.imp().is_dynamic.get(), true
-        );
-
-        glib::spawn_future_local(clone!(
-            #[weak(rename_to = this)]
-            self,
-            async move {
-                if let Some(tex) = handle.await.unwrap() {
-                    this.imp().thumbnail.set_paintable(Some(&tex));
-                }
-            }
-        ));
-    }
-
-    fn update_thumbnail(&self, tex: &gdk::Texture) {
-        self.imp().thumbnail.set_paintable(Some(tex));
+    fn uri(&self) -> Option<String> {
+        self.imp().playlist.borrow().as_ref().map(|p| p.get_uri().to_owned())
     }
 
     pub fn bind(&self, playlist: &INode) {
         // Bind album art listener. Set once first (like sync_create)
         self.imp().playlist.replace(Some(playlist.clone()));
-        self.schedule_thumbnail(playlist.get_info());
+        self.clear_thumbnail();
+        glib::spawn_future_local(clone!(
+            #[weak(rename_to = this)]
+            self,
+            #[strong]
+            playlist,
+            async move {
+                let uri = playlist.get_uri().to_owned();
+                let res = this.imp().cache.get().unwrap().get_playlist_cover(
+                    uri.clone(),
+                    this.imp().is_dynamic.get(),
+                    true,
+                ).await;
+                // Check again as row might have been bound to a different playlist
+                // while awaiting
+                if this.uri().is_some_and(|curr_uri| curr_uri == uri) {
+                    match res {
+                        Ok(Some(tex)) => {
+                            this.imp()
+                                .thumbnail
+                                .set_paintable(Some(&tex));
+                        }
+                        Ok(None) => {
+                            this.clear_thumbnail();
+                        }
+                        Err(e) => {dbg!(e);}
+                    }
+                } else {
+                    println!("PlaylistRow now bound to a different playlist, ignoring texture");
+                }
+            }
+        ));
     }
 
     pub fn unbind(&self) {

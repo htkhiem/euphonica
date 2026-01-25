@@ -1,21 +1,27 @@
 use crate::{
-    cache::{sqlite, Cache}, client::{BackgroundTask, ClientState, MpdWrapper, StickerSetMode}, common::{Album, Artist, DynamicPlaylist, INode, Song, Stickers}, player::Player, utils::settings_manager
+    cache::{Cache, sqlite},
+    client::{Error as ClientError, MpdWrapper, Result as ClientResult, StickerSetMode},
+    common::{Album, Artist, DynamicPlaylist, INode, Song, SongInfo, Stickers},
+    player::Player,
+    utils::settings_manager,
 };
-use glib::{closure_local, subclass::Signal, clone};
-use gtk::{gio, glib, prelude::*};
-use std::{borrow::Cow, cell::OnceCell, rc::Rc, sync::OnceLock, vec::Vec};
-use derivative::Derivative;
 use chrono::Local;
+use derivative::Derivative;
+use glib::subclass::Signal;
+use gtk::{gio, glib, prelude::*};
+use rustc_hash::FxHashSet;
+use std::{borrow::Cow, cell::OnceCell, rc::Rc, sync::OnceLock, vec::Vec};
+use std::cell::{Cell, RefCell};
+
+use glib::{ParamSpec, ParamSpecString, ParamSpecUInt};
+use once_cell::sync::Lazy;
 
 use adw::subclass::prelude::*;
 
-use mpd::{error::Error as MpdError, search::Operation, EditAction, Query, SaveMode, Term};
+use mpd::{EditAction, Query, SaveMode, Term, search::Operation as QueryOperation};
 
 mod imp {
-    use std::cell::{Cell, RefCell};
 
-    use glib::{ParamSpec, ParamSpecString, ParamSpecUInt};
-    use once_cell::sync::Lazy;
 
     use super::*;
 
@@ -23,17 +29,9 @@ mod imp {
     #[derivative(Default)]
     pub struct Library {
         pub client: OnceCell<Rc<MpdWrapper>>,
+        pub recent_initialized: Cell<bool>,
         #[derivative(Default(value = "gio::ListStore::new::<Song>()"))]
         pub recent_songs: gio::ListStore,
-        // Album/Artist retrieval routine:
-        // 1. Library places a background task to fetch albums.
-        // 3. Background client gets list of unique album tags
-        // 4. For each album tag:
-        // 4.1. Get the first song with that tag
-        // 4.2. Infer folder_uri, sound quality, albumartist, etc. & pack into AlbumInfo class.
-        // 4.3. Send AlbumInfo class to main thread via AsyncClientMessage.
-        // 4.4. Wrapper tells Library controller to create an Album GObject with that AlbumInfo &
-        // append to the list store.
         #[derivative(Default(value = "gio::ListStore::new::<INode>()"))]
         pub playlists: gio::ListStore,
         pub playlists_initialized: Cell<bool>,
@@ -80,12 +78,8 @@ mod imp {
                     ParamSpecUInt::builder("folder-curr-idx")
                         .read_only()
                         .build(),
-                    ParamSpecUInt::builder("folder-his-len")
-                        .read_only()
-                        .build(),
-                    ParamSpecString::builder("folder-path")
-                        .read_only()
-                        .build()
+                    ParamSpecUInt::builder("folder-his-len").read_only().build(),
+                    ParamSpecString::builder("folder-path").read_only().build(),
                 ]
             });
             PROPERTIES.as_ref()
@@ -97,16 +91,20 @@ mod imp {
                 "folder-curr-idx" => self.folder_curr_idx.get().to_value(),
                 "folder-his-len" => (self.folder_history.borrow().len() as u32).to_value(),
                 "folder-path" => obj.folder_path().to_value(),
-                _ => {unimplemented!()}
+                _ => {
+                    unimplemented!()
+                }
             }
         }
 
         fn signals() -> &'static [Signal] {
             static SIGNALS: OnceLock<Vec<Signal>> = OnceLock::new();
             SIGNALS.get_or_init(|| {
-                vec![Signal::builder("album-clicked")
-                    .param_types([Album::static_type(), gio::ListStore::static_type()])
-                    .build()]
+                vec![
+                    Signal::builder("album-clicked")
+                        .param_types([Album::static_type(), gio::ListStore::static_type()])
+                        .build(),
+                ]
             })
         }
     }
@@ -123,100 +121,9 @@ impl Default for Library {
 }
 
 impl Library {
-    pub fn setup(&self, client: Rc<MpdWrapper>, cache: Rc<Cache>, player: Player) {
-        let client_state = client.get_client_state();
-        let _ = self.imp().cache.set(cache);
+    pub fn setup(&self, client: Rc<MpdWrapper>, player: Player) {
         let _ = self.imp().client.set(client);
         let _ = self.imp().player.set(player);
-
-        client_state.connect_closure(
-            "album-basic-info-downloaded",
-            false,
-            closure_local!(
-                #[weak(rename_to = this)]
-                self,
-                #[upgrade_or]
-                (),
-                move |_: ClientState, album: Album| {
-                    this.imp().albums.append(&album);
-                }
-            ),
-        );
-
-        client_state.connect_closure(
-            "recent-album-downloaded",
-            false,
-            closure_local!(
-                #[weak(rename_to = this)]
-                self,
-                #[upgrade_or]
-                (),
-                move |_: ClientState, album: Album| {
-                    this.imp().recent_albums.append(&album);
-                }
-            ),
-        );
-
-        client_state.connect_closure(
-            "artist-basic-info-downloaded",
-            false,
-            closure_local!(
-                #[weak(rename_to = this)]
-                self,
-                #[upgrade_or]
-                (),
-                move |_: ClientState, artist: Artist| {
-                    this.imp().artists.append(&artist);
-                }
-            ),
-        );
-
-        client_state.connect_closure(
-            "recent-artist-downloaded",
-            false,
-            closure_local!(
-                #[weak(rename_to = this)]
-                self,
-                #[upgrade_or]
-                (),
-                move |_: ClientState, artist: Artist| {
-                    this.imp().recent_artists.append(&artist);
-                }
-            ),
-        );
-
-        client_state.connect_closure(
-            "folder-contents-downloaded",
-            false,
-            closure_local!(
-                #[weak(rename_to = this)]
-                self,
-                move |_: ClientState, uri: String, entries: glib::BoxedAnyObject| {
-                    // If original URI matches current URI, refresh current view
-                    if uri == this.folder_path() {
-                        this.imp().folder_inodes.remove_all();
-                        this.imp()
-                            .folder_inodes
-                            .extend_from_slice(entries.borrow::<Vec<INode>>().as_ref());
-                    }
-                }
-            ),
-        );
-
-        client_state.connect_closure(
-            "recent-songs-downloaded",
-            false,
-            closure_local!(
-                #[weak(rename_to = this)]
-                self,
-                move |_: ClientState, entries: glib::BoxedAnyObject| {
-                    this.imp().recent_songs.remove_all();
-                    this.imp()
-                        .recent_songs
-                        .extend_from_slice(entries.borrow::<Vec<Song>>().as_ref());
-                }
-            ),
-        );
     }
 
     pub fn clear(&self) {
@@ -244,57 +151,39 @@ impl Library {
         self.imp().client.get().unwrap()
     }
 
-    fn cache(&self) -> &Rc<Cache> {
-        self.imp().cache.get().unwrap()
-    }
-
     fn player(&self) -> &Player {
         self.imp().player.get().unwrap()
     }
 
-    /// Get all the information available about an album & its contents (won't block;
-    /// UI will get notified of result later if one does arrive late).
-    pub fn init_album(&self, album: &Album) {
-        if let Some(cache) = self.imp().cache.get() {
-            cache.fetch_album_meta(album.get_info(), false);
-        }
-        self.client()
-            .queue_background(BackgroundTask::FetchAlbumSongs(
-                album.get_title().to_owned(),
-            ), true);
-    }
-
-    pub fn refetch_album_metadata(&self, album: &Album) {
-        if let Some(cache) = self.imp().cache.get() {
-            cache.fetch_album_meta(album.get_info(), true);
-        }
+    pub async fn get_album_songs<F>(&self, title: String, respond: &mut F) -> ClientResult<()>
+    where F: FnMut(Vec<Song>) {
+        let mut query = Query::new();
+        query.and(Term::Tag(Cow::Borrowed("album")), title);
+        self.client().get_songs_by_query(query, true, respond).await
     }
 
     /// Queue specific songs
-    pub fn queue_songs(&self, songs: &[Song], replace: bool, play: bool) {
+    pub async fn queue_songs(&self, songs: &[Song], replace: bool, play: bool) -> ClientResult<()> {
         // TODO: support executing this atomically as a command list
+        let client = self.client();
         if replace {
-            self.client().clear_queue();
+            client.clear_queue().await?;
         }
-        self.client().queue_background(
-            BackgroundTask::QueueUris(
-                songs
-                    .iter()
-                    .map(|s| s.get_uri().to_owned())
-                    .collect::<Vec<String>>(),
-                false,
-                if replace && play {
-                    Some(0)
-                } else {
-                    None
-                },
-                None
-            ),
-            true
-        );
+        client.add_multi(
+            songs
+                .iter()
+                .map(|s| s.get_uri().to_owned())
+                .collect::<Vec<String>>(),
+            false,
+            None
+        ).await?;
+        if play {
+            client.play_at(0, false).await?;
+        }
+        Ok(())
     }
 
-    pub fn insert_songs_next(&self, songs: &[Song]) {
+    pub async fn insert_songs_next(&self, songs: &[Song]) -> ClientResult<()> {
         let pos = if let Some(current_pos) = self.player().queue_pos() {
             // Insert after the position of the current song
             current_pos + 1
@@ -302,24 +191,23 @@ impl Library {
             // If no current song, insert at the start of the queue
             0
         };
-        self.client().queue_background(
-            BackgroundTask::QueueUris(
-                songs
-                    .iter()
-                    .map(|s| s.get_uri().to_owned())
-                    .collect::<Vec<String>>(),
-                false,
-                None,
-                Some(pos),
-            ),
-            true
-        );
+        self.client().add_multi(
+            songs
+                .iter()
+                .map(|s| s.get_uri().to_owned())
+                .collect::<Vec<String>>(),
+            false,
+            Some(pos as usize)
+        ).await
     }
 
     /// Queue all songs in a given album by track order.
-    pub fn queue_album(&self, album: Album, replace: bool, play: bool, play_from: Option<u32>) {
+    pub async fn queue_album(
+        &self, album: Album, replace: bool, play: bool, play_from: Option<u32>
+    ) -> ClientResult<()> {
+        let client = self.client();
         if replace {
-            self.client().clear_queue();
+            client.clear_queue().await?;
         }
         let mut query = Query::new();
         query.and(
@@ -330,34 +218,38 @@ impl Library {
             query.and(Term::Tag(Cow::Borrowed("albumartist")), artist.to_owned());
         }
         if let Some(mbid) = album.get_mbid() {
-            query.and(Term::Tag(Cow::Borrowed("musicbrainz_albumid")), mbid.to_owned());
+            query.and(
+                Term::Tag(Cow::Borrowed("musicbrainz_albumid")),
+                mbid.to_owned(),
+            );
         }
-        self.client().queue_background(
-            BackgroundTask::QueueQuery(
-                query,
-                if replace && play {
-                    play_from.or(Some(0))
-                } else {
-                    None
-                }
-            ),
-            true
-        );
+        client.find_add(query).await?;
+        if play {
+            client.play_at(play_from.unwrap_or(0), false).await?;
+        }
+        Ok(())
     }
 
-    pub fn rate_album(&self, album: &Album, score: Option<i8>) {
+    pub async fn rate_album(&self, album: &Album, score: Option<i8>) -> ClientResult<()> {
         if let Some(score) = score {
-            self.client().set_sticker("album", album.get_title(), Stickers::RATING_KEY, &score.to_string(), StickerSetMode::Set);
-        }
-        else {
-            self.client().delete_sticker("album", album.get_title(), Stickers::RATING_KEY);
+            self.client().set_sticker(
+                "album",
+                album.get_title().to_owned(),
+                Stickers::RATING_KEY.into(),
+                score.to_string().into(),
+                StickerSetMode::Set,
+            ).await
+        } else {
+            self.client()
+                .delete_sticker("album", album.get_title().to_owned(), Stickers::RATING_KEY.into()).await
         }
     }
 
     /// Queue all songs of an artist. TODO: allow specifying order.
-    pub fn queue_artist(&self, artist: Artist, use_albumartist: bool, replace: bool, play: bool) {
+    pub async fn queue_artist(&self, artist: &Artist, use_albumartist: bool, replace: bool, play: bool) -> ClientResult<()> {
+        let client = self.client();
         if replace {
-            self.client().clear_queue();
+            client.clear_queue().await?;
         }
         let mut query = Query::new();
         query.and_with_op(
@@ -366,36 +258,14 @@ impl Library {
             } else {
                 "artist"
             })),
-            Operation::Contains,
+            QueryOperation::Contains,
             artist.get_name().to_owned(),
         );
-        self.client().queue_background(
-            BackgroundTask::QueueQuery(
-                query,
-                if replace && play {
-                    Some(0)
-                } else {
-                    None
-                }
-            ),
-            true
-        );
-    }
-
-    /// Get all the information available about an artist (won't block;
-    /// UI will get notified of result later via signals).
-    pub fn init_artist(&self, artist: &Artist) {
-        if let Some(cache) = self.imp().cache.get() {
-            cache.fetch_artist_meta(artist.get_info(), false);
+        client.find_add(query).await?;
+        if play {
+            client.play_at(0, false).await?;
         }
-        self.client()
-            .get_artist_content(artist.get_name().to_owned());
-    }
-
-    pub fn refetch_artist_metadata(&self, artist: &Artist) {
-        if let Some(cache) = self.imp().cache.get() {
-            cache.fetch_artist_meta(artist.get_info(), true);
-        }
+        Ok(())
     }
 
     pub fn folder_inodes(&self) -> gio::ListStore {
@@ -420,29 +290,31 @@ impl Library {
         }
     }
 
-    pub fn folder_backward(&self) {
+    pub async fn folder_backward(&self) -> ClientResult<()> {
         let curr_idx = self.imp().folder_curr_idx.get();
         if curr_idx > 0 {
             self.imp().folder_curr_idx.set(curr_idx - 1);
             self.imp().folder_inodes_initialized.set(false);
-            self.get_folder_contents();
+            self.get_folder_contents().await?;
             self.notify("folder-curr-idx");
             self.notify("folder-path");
         }
+        Ok(())
     }
 
-    pub fn folder_forward(&self) {
+    pub async fn folder_forward(&self) -> ClientResult<()> {
         let curr_idx = self.imp().folder_curr_idx.get();
         if curr_idx < self.imp().folder_history.borrow().len() as u32 {
             self.imp().folder_curr_idx.set(curr_idx + 1);
             self.imp().folder_inodes_initialized.set(false);
-            self.get_folder_contents();
+            self.get_folder_contents().await?;
             self.notify("folder-curr-idx");
             self.notify("folder-path");
         }
+        Ok(())
     }
 
-    pub fn navigate_to(&self, name: &str) {
+    pub async fn navigate_to(&self, name: &str) -> ClientResult<()> {
         let curr_idx = self.imp().folder_curr_idx.get();
         {
             // Limit scope of mut borrow
@@ -454,70 +326,52 @@ impl Library {
             history.push(name.to_owned());
         }
         self.imp().folder_inodes_initialized.set(false);
-        self.folder_forward();
+        self.folder_forward().await
     }
-    
+
     /// Queue a song or folder (when recursive == true) for playback.
-    pub fn queue_uri(&self, uri: &str, replace: bool, play: bool, recursive: bool) {
+    pub async fn queue_uri(&self, uri: String, replace: bool, play: bool, recursive: bool) -> ClientResult<()> {
+        let client = self.client();
         if replace {
-            self.client().clear_queue();
+            client.clear_queue().await?;
         }
-        self.client().queue_background(
-            BackgroundTask::QueueUris(
-                vec![uri.to_owned()],
-                recursive,
-                if replace && play {
-                    Some(0)
-                } else {
-                    None
-                },
-                None
-            ),
-            true
-        );
+        client.add_multi(vec![uri], recursive, None).await?;
+        if play {
+            client.play_at(0, false).await?;
+        }
+        Ok(())
     }
 
     /// Get all playlists
-    pub fn init_playlists(&self, refresh: bool) {
+    pub async fn init_playlists(&self, refresh: bool) -> ClientResult<()> {
         if refresh || !self.imp().playlists_initialized.get() {
             self.imp().playlists.remove_all();
             self.imp()
                 .playlists
-                .extend_from_slice(&self.client().get_playlists());
+                .extend_from_slice(&self.client().get_playlists().await?);
             self.imp().playlists_initialized.set(true);
         }
+        Ok(())
     }
 
     /// Get all dynamic playlists
-    pub fn init_dyn_playlists(&self, refresh: bool) {
+    pub async fn init_dyn_playlists(&self, refresh: bool) -> ClientResult<()> {
         if !self.imp().dyn_playlists_initialized.get() || refresh {
             self.imp().dyn_playlists.remove_all();
-            glib::spawn_future_local(clone!(
-                #[weak(rename_to = this)]
-                self,
-                async move {
-                    match gio::spawn_blocking(|| {
-                        sqlite::get_dynamic_playlists()
-                    }).await.unwrap() {
-                        Ok(inode_infos) => {
-                            println!("Received {} dynamic playlists", inode_infos.len());
-                            this.imp()
-                                .dyn_playlists
-                                .extend_from_slice(
-                                    &inode_infos
-                                    .into_iter()
-                                    .map(INode::from)
-                                    .collect::<Vec<INode>>()
-                                );
-                            this.imp().dyn_playlists_initialized.set(true);
-                        }
-                        Err(e) => {
-                            dbg!(e);
-                        }
-                    }
-                }
-            ));
+            let inode_infos = gio::spawn_blocking(sqlite::get_dynamic_playlists)
+                .await
+                .unwrap()
+                .map_err(|_| ClientError::Internal)?;
+            println!("Received {} dynamic playlists", inode_infos.len());
+            self.imp().dyn_playlists.extend_from_slice(
+                &inode_infos
+                    .into_iter()
+                    .map(INode::from)
+                    .collect::<Vec<INode>>(),
+            );
+            self.imp().dyn_playlists_initialized.set(true);
         }
+        Ok(())
     }
 
     /// Get a reference to the local recent songs store
@@ -525,9 +379,9 @@ impl Library {
         self.imp().recent_songs.clone()
     }
 
-    pub fn clear_recent_songs(&self) {
-        self.imp().recent_songs.remove_all();  // Will make Recent View switch to the empty StatusPage
-        sqlite::clear_history().expect("Unable to clear history");
+    pub async fn clear_recent_songs(&self) -> ClientResult<()> {
+        self.imp().recent_songs.remove_all(); // Will make Recent View switch to the empty StatusPage
+        gio::spawn_blocking(sqlite::clear_history).await.unwrap().map_err(|_| ClientError::Internal)
     }
 
     /// Get a reference to the local playlists store
@@ -561,195 +415,207 @@ impl Library {
     }
 
     /// Retrieve songs in a playlist
-    pub fn init_playlist(&self, name: &str) {
-        self.client()
-            .queue_background(BackgroundTask::FetchPlaylistSongs(name.to_owned()), true);
+    pub async fn get_playlist_songs<F>(&self, name: String, respond: &mut F) -> ClientResult<()>
+    where F: FnMut(Vec<Song>) {
+        self.client().get_playlist_songs(name, respond).await
     }
 
     /// Queue a playlist for playback.
-    pub fn queue_playlist(&self, name: &str, replace: bool, play: bool) {
+    pub async fn queue_playlist(&self, name: String, replace: bool, play: bool) -> ClientResult<()> {
+        let client = self.client();
         if replace {
-            self.client().clear_queue();
+            client.clear_queue().await?;
         }
-        self.client().queue_background(
-            BackgroundTask::QueuePlaylist(
-                name.to_owned(),
-                if replace && play {
-                    Some(0)
-                } else {
-                    None
-                }
-            ),
-            true
-        );
-    }
-
-    pub fn rename_playlist(&self, old_name: &str, new_name: &str) -> Result<(), Option<MpdError>> {
-        self.client().rename_playlist(old_name, new_name)
-    }
-
-    pub fn delete_playlist(&self, name: &str) -> Result<(), Option<MpdError>> {
-        self.client().delete_playlist(name)?;
-        self.init_playlists(true);
+        client.load_playlist(name).await?;
+        if play {
+            client.play_at(0, false).await?;
+        }
         Ok(())
     }
 
-    pub fn add_songs_to_playlist(
+    pub async fn rename_playlist(&self, old_name: String, new_name: String) -> ClientResult<()> {
+        self.client().rename_playlist(old_name, new_name).await
+    }
+
+    pub async fn delete_playlist(&self, name: String) -> ClientResult<()> {
+        self.client().delete_playlist(name).await?;
+        self.init_playlists(true).await
+    }
+
+    pub async fn add_songs_to_playlist(
         &self,
-        playlist_name: &str,
+        playlist_name: String,
         songs: &[Song],
         mode: SaveMode,
-    ) -> Result<(), Option<MpdError>> {
-        let mut edits: Vec<EditAction> = Vec::with_capacity(songs.len() + 1);
+    ) -> ClientResult<()> {
+        let mut edits: Vec<EditAction<'static>> = Vec::with_capacity(songs.len() + 1);
         if mode == SaveMode::Replace {
-            edits.push(EditAction::Clear(Cow::Borrowed(playlist_name)));
+            edits.push(EditAction::Clear(playlist_name.to_string().into()));
         }
         songs.iter().for_each(|s| {
             edits.push(EditAction::Add(
-                Cow::Borrowed(playlist_name),
-                Cow::Borrowed(s.get_uri()),
+                playlist_name.to_string().into(),
+                s.get_uri().to_string().into(),
                 None,
             ));
         });
-        self.client().edit_playlist(&edits)
+        self.client().edit_playlist(edits).await
     }
 
     /// Retrieve songs in a dynamic playlist
-    pub fn fetch_dynamic_playlist(&self, dp: DynamicPlaylist, cache: bool) {
-        self.client().queue_background(
-            BackgroundTask::FetchDynamicPlaylistSongs(dp, cache), true
-        );
+    pub async fn get_dynamic_playlist_songs(&self, dp: DynamicPlaylist, cache: bool) -> ClientResult<Vec<Song>> {
+        self.client().get_dynamic_playlist_songs(dp, cache).await
     }
 
     /// Retrieve last cached state of a dynamic playlist
-    pub fn fetch_cached_dynamic_playlist(&self, name: &str) {
-        self.client().queue_background(
-            BackgroundTask::FetchCachedDynamicPlaylistSongs(name.to_string()), true
-        );
+    pub async fn get_dynamic_playlist_songs_cached(&self, name: String) -> ClientResult<Vec<Song>> {
+        self.client().get_dynamic_playlist_songs_cached(name).await
     }
 
     /// Get last cached results of a dynamic playlist
-    pub fn queue_cached_dynamic_playlist(&self, name: &str, replace: bool, play: bool) {
+    pub async fn queue_cached_dynamic_playlist(&self, name: String, replace: bool, play: bool) -> ClientResult<()> {
+        let client = self.client();
         if replace {
-            self.client().clear_queue();
+            client.clear_queue().await?;
         }
-        self.client().queue_background(
-            BackgroundTask::QueueDynamicPlaylist(name.to_string(), play), true
-        );
+        client.queue_cached_dynamic_playlist(name).await?;
+        if play {
+            client.play_at(0, false).await?;
+        }
+        Ok(())
     }
 
     /// Delete a dynamic playlist by name. Will also remove cover entries.
-    pub fn delete_dynamic_playlist(&self, name: &str) {
-        glib::spawn_future_local(clone!(
-            #[weak(rename_to = this)]
-           self,
-            async move {
-                match gio::spawn_blocking(|| {
-                    sqlite::get_dynamic_playlists()
-                }).await.unwrap() {
-                    Ok(inode_infos) => {
-                        println!("Received {} dynamic playlists", inode_infos.len());
-                        this.imp()
-                            .dyn_playlists
-                            .extend_from_slice(
-                                &inode_infos
-                                    .into_iter()
-                                    .map(INode::from)
-                                    .collect::<Vec<INode>>()
-                            );
-                        this.imp().dyn_playlists_initialized.set(true);
-                    }
-                    Err(e) => {
-                        dbg!(e);
+    pub async fn delete_dynamic_playlist(&self, name: String) -> ClientResult<()> {
+        gio::spawn_blocking(move || sqlite::delete_dynamic_playlist(&name))
+            .await
+            .unwrap()
+            .map_err(|_| ClientError::Internal)?;
+        self.init_dyn_playlists(true).await
+    }
+
+    /// Will return None if there were no songs to save.
+    pub async fn save_dynamic_playlist_state(&self, dp_name: String) -> ClientResult<Option<String>> {
+        let name = dp_name.clone();
+        let uris = gio::spawn_blocking(move || sqlite::get_cached_dynamic_playlist_results(&name))
+            .await
+            .unwrap()
+            .map_err(|_| ClientError::Internal)?;
+
+        if !uris.is_empty() {
+            let fixed_name =
+                format!("{} {}", dp_name, Local::now().format("%Y-%m-%d %H:%M:%S"));
+            self.client().edit_playlist(
+                uris.iter()
+                    .map(|uri| {
+                        EditAction::Add(
+                            Cow::Owned(fixed_name.clone()),
+                            Cow::Owned(uri.to_string()),
+                            None,
+                        )
+                    })
+                    .collect::<Vec<EditAction<'static>>>(),
+            ).await?;
+            Ok(Some(fixed_name))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub async fn get_folder_contents(&self) -> ClientResult<()> {
+        if !self.imp().folder_inodes_initialized.get() {
+            self.imp().folder_inodes.remove_all();
+            self.imp().folder_inodes.extend_from_slice(
+                &self.client().lsinfo(self.folder_path()).await?
+            );
+            self.imp().folder_inodes_initialized.set(true);
+        }
+        Ok(())
+    }
+
+    pub async fn init_recent(&self, refresh: bool) -> ClientResult<()> {
+        if !self.imp().recent_initialized.get() || refresh {
+            let model = self.imp().recent_songs.clone();
+            model.remove_all();
+            let settings = settings_manager().child("library");
+            model.extend_from_slice(&self.client().get_recent_songs(settings.uint("n-recent-songs")).await?);
+
+            let model = self.imp().recent_albums.clone();
+            model.remove_all();
+            self.client().get_recent_albums(&mut |album| {
+                println!("Appending new recent album: {:?}", &album);
+                model.append(&album);
+            }).await?;
+
+            let model = self.imp().recent_artists.clone();
+            model.remove_all();
+            self.client().get_recent_artists(&mut |artist| {model.append(&artist);}).await?;
+
+            self.imp().recent_initialized.set(true);
+        }
+        Ok(())
+    }
+
+    pub async fn init_albums(&self) -> ClientResult<()> {
+        if !self.imp().albums_initialized.get() {
+            let model = self.imp().albums.clone();
+            model.remove_all();
+
+            self.client().get_albums_by_query(Query::new(), &mut |album| {
+                model.append(&album);
+            }).await?;
+            self.imp().albums_initialized.set(true);
+        }
+        Ok(())
+    }
+
+    pub async fn init_artists(&self, use_album_artist: bool) -> ClientResult<()> {
+        if !self.imp().artists_initialized.get() {
+            let model = self.imp().artists.clone();
+            model.remove_all();
+
+            self.client().get_artists(use_album_artist, &mut |artist| {
+                model.append(&artist);
+            }).await?;
+            self.imp().artists_initialized.set(true);
+        }
+        Ok(())
+    }
+
+    /// Get songs and albums of an artist. This fetches albums that they
+    /// were involved in (i.e., mentioned in an artist tag in at least one song),
+    /// not just those released by them. An additional check is performed locally
+    /// to filter out spurious substring matches.
+    ///
+    /// From v0.99.0 onward, we fetch both songs and albums at the same time as
+    /// it is more efficient to do those together in light of the above check.
+    pub async fn get_artist_content<FA, FS>(&self, artist: &Artist, mut respond_album: FA, mut respond_song: FS) -> ClientResult<()>
+    where FA: FnMut(Album), FS: FnMut(Vec<Song>) {
+        let mut song_query = Query::new();
+        song_query.and_with_op(
+            Term::Tag("artist".into()),
+            QueryOperation::Contains,
+            artist.get_name().to_owned(),
+        );
+
+        let comp_id = artist.get_info().get_comp_id();
+        let mut visited_albums = FxHashSet::default();
+        self.client().get_song_infos_by_query(song_query, true, &mut |batch| {
+            let filtered: Vec<SongInfo> = batch
+                .into_iter()
+                .filter(|s| s.artists.iter().any(|a| a.get_comp_id() == comp_id))
+                .collect();
+            for song in filtered.iter() {
+                if let Some(album) = song.album.as_ref() {
+                    if visited_albums.insert(album.get_comp_id().to_owned()) {
+                        respond_album(album.clone().into());
                     }
                 }
             }
-        ));
-    }
+            respond_song(filtered.into_iter().map(|si| si.into()).collect());
 
-    pub fn save_dynamic_playlist_state(&self, dp_name: &str) -> Option<String> {
-        if let Ok(uris) = sqlite::get_cached_dynamic_playlist_results(dp_name) {
-            if !uris.is_empty() {
-                let fixed_name = format!("{} {}", dp_name, Local::now().format("%Y-%m-%d %H:%M:%S"));
-                self.client().edit_playlist(
-                    &uris.iter().map(
-                        |uri| EditAction::Add(Cow::Borrowed(&fixed_name), Cow::Borrowed(uri), None)
-                    ).collect::<Vec::<EditAction>>()
-                );
-                Some(fixed_name)
-            } else {
-                None
-            }
-        } else {
-            None
-        }
-    }
+        }).await?;
 
-    pub fn get_folder_contents(&self) {
-        if !self.imp().folder_inodes_initialized.get() {
-            self.client()
-                .queue_background(BackgroundTask::FetchFolderContents(self.folder_path()), true);
-            self.imp().folder_inodes_initialized.set(true);
-        }
-    }
-
-    pub fn init_albums(&self) {
-        if !self.imp().albums_initialized.get() {
-            self.client().queue_background(BackgroundTask::FetchAlbums, false);
-            self.imp().albums_initialized.set(true);
-        }
-    }
-
-    pub fn fetch_recent_albums(&self) {
-        // High-priority as this is lightweight (only a few will be fetched)
-        // and is triggered by the user navigating to the Recent view
-        self.imp().recent_albums.remove_all();
-        self.client().queue_background(BackgroundTask::FetchRecentAlbums, true);
-    }
- 
-    pub fn init_artists(&self, use_albumartists: bool) {
-        if !self.imp().artists_initialized.get() {
-            self.client()
-                .queue_background(BackgroundTask::FetchArtists(use_albumartists), false);
-            self.imp().artists_initialized.set(true);
-        }
-    }
-
-    pub fn fetch_recent_artists(&self) {
-        // High-priority as this is lightweight (only a few will be fetched)
-        // and is triggered by the user navigating to the Recent view
-        self.imp().recent_artists.remove_all();
-        self.client().queue_background(BackgroundTask::FetchRecentArtists, true);
-    }
-
-    pub fn set_cover(&self, folder_uri: &str, path: &str) {
-        self.cache().set_cover(folder_uri, path);
-    }
-
-    pub fn clear_cover(&self, folder_uri: &str) {
-        self.cache().clear_cover(folder_uri);
-    }
-
-    pub fn set_artist_avatar(&self, tag: &str, path: &str) {
-        self.cache().set_artist_avatar(tag, path);
-    }
-
-    pub fn clear_artist_avatar(&self, tag: &str) {
-        self.cache().clear_artist_avatar(tag);
-    }
-
-    pub fn set_playlist_cover(&self, playlist_name: &str, path: &str) {
-        self.cache().set_playlist_cover(playlist_name, path);
-    }
-
-    pub fn clear_playlist_cover(&self, playlist_name: &str) {
-        self.cache().clear_playlist_cover(playlist_name);
-    }
-
-    pub fn fetch_recent_songs(&self) {
-        self.imp().recent_songs.remove_all();
-        let settings = settings_manager().child("library");
-        self.client()
-            .queue_background(BackgroundTask::FetchRecentSongs(settings.uint("n-recent-songs")), true);
+        Ok(())
     }
 }

@@ -1,20 +1,14 @@
 use adw::prelude::*;
 use adw::subclass::prelude::*;
-use gtk::{
-    glib,
-    CompositeTemplate, ListItem, SignalListItemFactory, SingleSelection,
-};
+use gtk::{CompositeTemplate, ListItem, SignalListItemFactory, SingleSelection, glib};
 use std::{cell::Cell, cmp::Ordering, rc::Rc, sync::OnceLock};
 
-use glib::{
-    clone, subclass::Signal, Properties, WeakRef
-};
+use glib::{Properties, WeakRef, clone, subclass::Signal};
 
 use super::{ArtistCell, ArtistContentView, Library};
 use crate::{
     cache::Cache,
-    client::ClientState,
-    common::Artist,
+    common::{Artist, ContentStack},
     utils::{LazyInit, g_cmp_str_options, g_search_substr, settings_manager},
 };
 
@@ -44,6 +38,8 @@ mod imp {
 
         // Content
         #[template_child]
+        pub stack: TemplateChild<ContentStack>,
+        #[template_child]
         pub grid_view: TemplateChild<gtk::GridView>,
         #[template_child]
         pub content_page: TemplateChild<adw::NavigationPage>,
@@ -62,7 +58,7 @@ mod imp {
         #[property(get, set)]
         pub collapsed: Cell<bool>,
 
-        pub library: WeakRef<Library>
+        pub library: WeakRef<Library>,
     }
 
     #[glib::object_subclass]
@@ -87,17 +83,15 @@ mod imp {
             while let Some(child) = self.obj().first_child() {
                 child.unparent();
             }
+            println!("Disposing artist view");
         }
 
         fn constructed(&self) {
             self.parent_constructed();
+            self.stack.show_placeholder();
 
             self.obj()
-                .bind_property(
-                    "collapsed",
-                    &self.show_sidebar.get(),
-                    "visible"
-                )
+                .bind_property("collapsed", &self.show_sidebar.get(), "visible")
                 .sync_create()
                 .build();
 
@@ -112,11 +106,7 @@ mod imp {
 
         fn signals() -> &'static [Signal] {
             static SIGNALS: OnceLock<Vec<Signal>> = OnceLock::new();
-            SIGNALS.get_or_init(|| {
-                vec![
-                    Signal::builder("show-sidebar-clicked").build(),
-                ]
-            })
+            SIGNALS.get_or_init(|| vec![Signal::builder("show-sidebar-clicked").build()])
         }
     }
 
@@ -141,14 +131,14 @@ impl ArtistView {
         res
     }
 
-    pub fn setup(&self, library: &Library, client_state: &ClientState, cache: Rc<Cache>) {
+    pub fn setup(&self, library: &Library, cache: Rc<Cache>) {
         self.imp().library.set(Some(library));
         self.setup_sort();
         self.setup_search();
         self.setup_gridview(cache.clone());
 
         let content_view = self.imp().content_view.get();
-        content_view.setup(library, cache, client_state);
+        content_view.setup(library, cache);
         self.imp().content_page.connect_hidden(move |_| {
             content_view.unbind();
         });
@@ -312,11 +302,15 @@ impl ArtistView {
         //
         let content_view = self.imp().content_view.get();
         content_view.unbind();
-        content_view.bind(artist.clone());
-        if self.imp().nav_view.visible_page_tag().is_none_or(|tag| tag.as_str() != "content") {
+        content_view.bind(artist);
+        if self
+            .imp()
+            .nav_view
+            .visible_page_tag()
+            .is_none_or(|tag| tag.as_str() != "content")
+        {
             self.imp().nav_view.push_by_tag("content");
         }
-        self.imp().library.upgrade().unwrap().init_artist(artist);
     }
 
     fn setup_gridview(&self, cache: Rc<Cache>) {
@@ -325,7 +319,7 @@ impl ArtistView {
         // User-initiated refreshes will also trigger a reconnection, which will
         // in turn trigger this.
         let artists = self.imp().library.upgrade().unwrap().artists();
-        
+
         // Setup search bar
         let search_bar = self.imp().search_bar.get();
         let search_entry = self.imp().search_entry.get();
@@ -351,11 +345,7 @@ impl ArtistView {
         let grid_view = self.imp().grid_view.get();
         grid_view.set_model(Some(&sel_model));
         settings
-            .bind(
-                "max-columns",
-                &grid_view,
-                "max-columns"
-            )
+            .bind("max-columns", &grid_view, "max-columns")
             .build();
 
         // Set up factory
@@ -369,7 +359,10 @@ impl ArtistView {
                 let item = list_item
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
-                let artist_cell = ArtistCell::new(item, cache);
+                let artist_cell = ArtistCell::new(
+                    item, cache,
+                    false // For ArtistView, don't immediately fetch avatars externally.
+                );
                 item.set_child(Some(&artist_cell));
             }
         ));
@@ -434,7 +427,16 @@ impl ArtistView {
 impl LazyInit for ArtistView {
     fn populate(&self) {
         if let Some(library) = self.imp().library.upgrade() {
-            library.init_artists(false);
+            let stack = self.imp().stack.get();
+            stack.show_spinner();
+            glib::spawn_future_local(async move {
+                let _ = library.init_artists(false).await;
+                if library.artists().n_items() > 0 {
+                    stack.show_content();
+                } else {
+                    stack.show_placeholder();
+                }
+            });
         }
     }
 }

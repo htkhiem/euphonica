@@ -1,5 +1,6 @@
-use std::collections::HashMap;
+use gio::Cancellable;
 use libsecret::*;
+use std::collections::HashMap;
 
 use crate::config::APPLICATION_ID;
 
@@ -10,16 +11,22 @@ pub fn get_mpd_password_schema() -> Schema {
     Schema::new(APPLICATION_ID, SchemaFlags::NONE, attributes)
 }
 
-pub async fn get_mpd_password() -> Result<Option<String>, String> {
+pub fn get_mpd_password() -> Result<Option<String>, String> {
     let schema = get_mpd_password_schema();
     let mut attributes = HashMap::new();
     attributes.insert("type", "mpd");
 
-    libsecret::password_lookup_future(
-        Some(&schema),
-        attributes
-    )
-        .await
+    libsecret::password_lookup_sync(Some(&schema), attributes, Cancellable::NONE)
+        .map(|op| op.map(|gs| gs.as_str().to_owned()))
+        .map_err(|ge| format!("{ge:?}"))
+}
+
+pub async fn get_mpd_password_async() -> Result<Option<String>, String> {
+    let schema = get_mpd_password_schema();
+    let mut attributes = HashMap::new();
+    attributes.insert("type", "mpd");
+
+    libsecret::password_lookup_future(Some(&schema), attributes).await
         .map(|op| op.map(|gs| gs.as_str().to_owned()))
         .map_err(|ge| format!("{ge:?}"))
 }
@@ -35,15 +42,12 @@ pub async fn set_mpd_password(maybe_password: Option<&str>) -> Result<(), String
             attributes,
             None,
             "Euphonica MPD password",
-            password
+            password,
         )
-            .await
-            .map_err(|ge| format!("{ge:?}"))
+        .await
+        .map_err(|ge| format!("{ge:?}"))
     } else {
-        libsecret::password_clear_future(
-            Some(&schema),
-            attributes
-        )
+        libsecret::password_clear_future(Some(&schema), attributes)
             .await
             .map_err(|ge| format!("{ge:?}"))
     }

@@ -5,27 +5,24 @@
     <property name="margin-end">6</property>
     <property name="margin-top">6</property>
     <property name="margin-bottom">6</property>
+    <property name="halign">fill</property>
+    <property name="valign">start</property>
     <child>
       <object class="GtkBox" id="inner">
-        <property name="halign">3</property>
-        <property name="valign">1</property>
         <property name="orientation">1</property>
         <property name="spacing">6</property>
         <child>
           <object class="GtkBox">
-            <property name="halign">3</property>
-            <property name="valign">3</property>
+            <property name="halign">fill</property>
+            <property name="valign">start</property>
             <property name="overflow">hidden</property>
             <style>
               <class name="border-radius-6"/>
             </style>
             <child>
-              <object class="GtkPicture" id="cover">
-                <property name="height-request">128</property>
-                <property name="width-request">128</property>
+              <object class="EuphonicaPictureStack" id="cover">
                 <property name="hexpand">true</property>
                 <property name="vexpand">true</property>
-                <property name="content-fit">2</property>
               </object>
             </child>
           </object>

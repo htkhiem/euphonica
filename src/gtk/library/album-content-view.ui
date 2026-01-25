@@ -10,7 +10,7 @@
           <object class="AdwBreakpoint">
             <condition>max-width: 550px</condition>
             <setter object="infobox" property="orientation">1</setter>
-            <setter object="cover" property="pixel-size">128</setter>
+            <setter object="cover" property="size">128</setter>
             <setter object="replace_queue_text" property="visible">false</setter>
             <setter object="add_to_playlist" property="collapsed">true</setter>
 
@@ -42,9 +42,8 @@
                       <class name="border-radius-6" />
                     </style>
                     <child>
-                      <object class="GtkImage" id="cover">
-                        <property name="pixel-size">256</property>
-                        <property name="resource">io/github/htkhiem/Euphonica/albumart-placeholder.png</property>
+                      <object class="EuphonicaImageStack" id="cover">
+                        <property name="size">256</property>
                       </object>
                     </child>
                   </object>
@@ -301,18 +300,20 @@
               </object>
             </property>
             <property name="content">
-              <object class="GtkStack" id="content_spinner">
-                <child>
-                  <object class="GtkStackPage">
-                    <property name="name">spinner</property>
-                    <property name="child">
-                      <object class="AdwSpinner"/>
-                    </property>
+              <object class="EuphonicaContentStack" id="content_stack">
+                <property name="placeholder">
+                  <object class="AdwStatusPage">
+                    <property name="title" translatable="true">Empty Album</property>
                   </object>
-                </child>
-                <child>
-                  <object class="GtkStackPage">
-                    <property name="name">content</property>
+                </property>
+                <property name="content">
+                  <object class="GtkScrolledWindow">
+                    <property name="height-request">50</property>
+                    <property name="hscrollbar-policy">never</property>
+                    <property name="vscrollbar-policy">automatic</property>
+                    <property name="propagate-natural-height">true</property>
+                    <property name="has-frame">false</property>
+                    <property name="vexpand">true</property>
                     <property name="child">
                       <object class="GtkListView" id="content">
                         <property name="show-separators">true</property>
@@ -322,7 +323,7 @@
                       </object>
                     </property>
                   </object>
-                </child>
+                </property>
               </object>
             </property>
           </object>

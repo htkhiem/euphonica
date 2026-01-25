@@ -1,19 +1,24 @@
 use adw::prelude::*;
 use adw::subclass::prelude::*;
-use gtk::{
-    glib::{self, closure_local},
-    CompositeTemplate, ListItem, SignalListItemFactory, SingleSelection,
-};
-use std::{cell::Cell, cmp::Ordering, ops::Deref, rc::Rc};
 use gio::{ActionEntry, SimpleActionGroup};
-use glib::{clone, WeakRef, subclass::Signal, Properties};
+use glib::{Properties, WeakRef, clone, subclass::Signal};
+use gtk::{
+    CompositeTemplate, ListItem, SignalListItemFactory, SingleSelection,
+    glib::{self, closure_local},
+};
 use mpd::Subsystem;
+use std::{cell::Cell, cmp::Ordering, ops::Deref, rc::Rc};
 use std::{cell::OnceCell, sync::OnceLock};
 
 use super::Library;
 use crate::{
+    cache::Cache,
+    client::{ClientState, ConnectionState},
+    common::{INode, ContentStack},
     library::PlaylistContentView,
-    cache::Cache, client::{ClientState, ConnectionState}, common::INode, library::playlist_row::PlaylistRow, utils::{g_cmp_str_options, settings_manager}, window::EuphonicaWindow
+    library::playlist_row::PlaylistRow,
+    utils::{g_cmp_str_options, settings_manager},
+    window::EuphonicaWindow,
 };
 
 // Playlist view implementation
@@ -41,6 +46,8 @@ mod imp {
 
         // Content
         #[template_child]
+        pub stack: TemplateChild<ContentStack>,
+        #[template_child]
         pub list_view: TemplateChild<gtk::ListView>,
         #[template_child]
         pub content_page: TemplateChild<adw::NavigationPage>,
@@ -59,7 +66,7 @@ mod imp {
         pub library: WeakRef<Library>,
         pub cache: OnceCell<Rc<Cache>>,
         #[property(get, set)]
-        pub collapsed: Cell<bool>
+        pub collapsed: Cell<bool>,
     }
 
     #[glib::object_subclass]
@@ -84,17 +91,15 @@ mod imp {
             while let Some(child) = self.obj().first_child() {
                 child.unparent();
             }
+            println!("Disposing playlist view");
         }
 
         fn constructed(&self) {
             self.parent_constructed();
+            self.stack.show_placeholder();
 
             self.obj()
-                .bind_property(
-                    "collapsed",
-                    &self.show_sidebar.get(),
-                    "visible"
-                )
+                .bind_property("collapsed", &self.show_sidebar.get(), "visible")
                 .sync_create()
                 .build();
 
@@ -165,13 +170,12 @@ mod imp {
                 .get_only()
                 .invert_boolean()
                 .build();
-            self.search_filter.set_expression(Some(
-                &gtk::PropertyExpression::new(
+            self.search_filter
+                .set_expression(Some(&gtk::PropertyExpression::new(
                     INode::static_type(),
                     Option::<gtk::PropertyExpression>::None,
-                    "uri"
-                )
-            ));
+                    "uri",
+                )));
             let search_entry = self.search_entry.get();
             search_entry
                 .bind_property("text", &self.search_filter, "search")
@@ -185,19 +189,13 @@ mod imp {
                     let old_len = this.last_search_len.replace(new_len);
                     match new_len.cmp(&old_len) {
                         Ordering::Greater => {
-                            this
-                                .search_filter
-                                .changed(gtk::FilterChange::MoreStrict);
+                            this.search_filter.changed(gtk::FilterChange::MoreStrict);
                         }
                         Ordering::Less => {
-                            this
-                                .search_filter
-                                .changed(gtk::FilterChange::LessStrict);
+                            this.search_filter.changed(gtk::FilterChange::LessStrict);
                         }
                         Ordering::Equal => {
-                            this
-                                .search_filter
-                                .changed(gtk::FilterChange::Different);
+                            this.search_filter.changed(gtk::FilterChange::Different);
                         }
                     }
                 }
@@ -229,12 +227,12 @@ mod imp {
                             .expect("The value needs to be of type `String`.");
                         let idx = param.parse::<i32>().unwrap();
 
-
                         if state.set_enum("sort-by", idx).is_ok() {
                             this.sorter.changed(gtk::SorterChange::Different);
                             action.set_state(&param.to_variant());
                         }
-                    }))
+                    }
+                ))
                 .build();
 
             let action_sort_direction = ActionEntry::builder("sort-direction")
@@ -252,30 +250,24 @@ mod imp {
                             .expect("The value needs to be of type `String`.");
                         let idx = param.parse::<i32>().unwrap();
 
-
                         if state.set_enum("sort-direction", idx).is_ok() {
                             this.sorter.changed(gtk::SorterChange::Inverted);
                             action.set_state(&param.to_variant());
                         }
-                    }))
+                    }
+                ))
                 .build();
 
             // Create a new action group and add actions to it
             let actions = SimpleActionGroup::new();
-            actions.add_action_entries([
-                action_sort_by,
-                action_sort_direction
-            ]);
-            self.obj().insert_action_group("playlist-view", Some(&actions));
+            actions.add_action_entries([action_sort_by, action_sort_direction]);
+            self.obj()
+                .insert_action_group("playlist-view", Some(&actions));
         }
 
         fn signals() -> &'static [Signal] {
             static SIGNALS: OnceLock<Vec<Signal>> = OnceLock::new();
-            SIGNALS.get_or_init(|| {
-                vec![
-                    Signal::builder("show-sidebar-clicked").build(),
-                ]
-            })
+            SIGNALS.get_or_init(|| vec![Signal::builder("show-sidebar-clicked").build()])
         }
     }
 
@@ -305,6 +297,18 @@ impl PlaylistView {
         self.imp().nav_view.pop();
     }
 
+    async fn init_playlists(&self, refresh: bool) {
+        let stack = self.imp().stack.get();
+        let library = self.imp().library.upgrade().unwrap();
+        stack.show_spinner();
+        library.init_playlists(refresh).await;
+        if library.playlists().n_items() > 0 {
+            stack.show_content();
+        } else {
+            stack.show_placeholder();
+        }
+    }
+
     pub fn setup(
         &self,
         library: &Library,
@@ -313,13 +317,11 @@ impl PlaylistView {
         window: &EuphonicaWindow,
     ) {
         let content_view = self.imp().content_view.get();
-        content_view.setup(library.clone(), client_state.clone(), cache.clone(), window);
+        content_view.setup(library, cache.clone(), window);
         self.imp().content_page.connect_hidden(move |_| {
             content_view.unbind(true);
         });
-        self.imp()
-            .library
-            .set(Some(library));
+        self.imp().library.set(Some(library));
         self.imp()
             .cache
             .set(cache.clone())
@@ -332,9 +334,11 @@ impl PlaylistView {
                 #[weak(rename_to = this)]
                 self,
                 move |state, _| {
-                    if state.get_connection_state() == ConnectionState::Connected {
+                    if state.connection_state() == ConnectionState::Connected {
                         // Newly-connected? Get all playlists.
-                        this.imp().library.upgrade().unwrap().init_playlists(false);
+                        glib::spawn_future_local(clone!(#[weak] this, async move {
+                            this.init_playlists(false).await;
+                        }));
                     }
                 }
             ),
@@ -348,37 +352,39 @@ impl PlaylistView {
                 self,
                 move |_: ClientState, subsys: glib::BoxedAnyObject| {
                     if subsys.borrow::<Subsystem>().deref() == &Subsystem::Playlist {
-                        let library = this.imp().library.upgrade().unwrap();
-                        // Reload playlists
-                        library.init_playlists(true);
-                        // Also try to reload content view too, if it's still bound to one.
-                        // If its currently-bound playlist has just been deleted, don't rebind it.
-                        // Instead, force-switch the nav view to this page.
-                        let content_view = this.imp().content_view.get();
-                        if let Some(playlist) = content_view.current_playlist() {
-                            // If this change involves renaming the current playlist, ensure
-                            // we have updated the playlist object to the new name BEFORE sending
-                            // the actual rename command to MPD, such this this will always occur
-                            // with the current name being the NEW one.
-                            // Else, we will lose track of the current playlist.
-                            let curr_name = playlist.get_name();
-                            // Temporarily unbind
-                            content_view.unbind(true);
-                            let playlists = library.playlists();
-                            if let Some(idx) = playlists.find_with_equal_func(move |obj| {
-                                obj.downcast_ref::<INode>().unwrap().get_name() == curr_name
-                            }) {
-                                this.on_playlist_clicked(
-                                    playlists
-                                        .item(idx)
-                                        .unwrap()
-                                        .downcast_ref::<INode>()
-                                        .unwrap(),
-                                );
-                            } else {
-                                this.pop();
+                        glib::spawn_future_local(clone!(#[weak] this, async move {
+                            let library = this.imp().library.upgrade().unwrap();
+                            // Reload playlists
+                            this.init_playlists(true).await;
+                            // Also try to reload content view too, if it's still bound to one.
+                            // If its currently-bound playlist has just been deleted, don't rebind it.
+                            // Instead, force-switch the nav view to this page.
+                            let content_view = this.imp().content_view.get();
+                            if let Some(playlist) = content_view.current_playlist() {
+                                // If this change involves renaming the current playlist, ensure
+                                // we have updated the playlist object to the new name BEFORE sending
+                                // the actual rename command to MPD, such this this will always occur
+                                // with the current name being the NEW one.
+                                // Else, we will lose track of the current playlist.
+                                let curr_name = playlist.get_name();
+                                // Temporarily unbind
+                                content_view.unbind(true);
+                                let playlists = library.playlists();
+                                if let Some(idx) = playlists.find_with_equal_func(move |obj| {
+                                    obj.downcast_ref::<INode>().unwrap().get_name() == curr_name
+                                }) {
+                                    this.on_playlist_clicked(
+                                        playlists
+                                            .item(idx)
+                                            .unwrap()
+                                            .downcast_ref::<INode>()
+                                            .unwrap(),
+                                    );
+                                } else {
+                                    this.pop();
+                                }
                             }
-                        }
+                        }));
                     }
                 }
             ),
@@ -389,14 +395,14 @@ impl PlaylistView {
         let content_view = self.imp().content_view.get();
         content_view.unbind(true);
         content_view.bind(inode.clone());
-        if self.imp().nav_view.visible_page_tag().is_none_or(|tag| tag.as_str() != "content") {
+        if self
+            .imp()
+            .nav_view
+            .visible_page_tag()
+            .is_none_or(|tag| tag.as_str() != "content")
+        {
             self.imp().nav_view.push_by_tag("content");
         }
-        self.imp()
-            .library
-            .upgrade()
-            .unwrap()
-            .init_playlist(inode.get_name().unwrap());
     }
 
     fn setup_listview(&self) {
@@ -455,25 +461,23 @@ impl PlaylistView {
             }
         ));
 
-        factory.connect_bind(
-            move |_, list_item| {
-                let item = list_item
-                    .downcast_ref::<ListItem>()
-                    .expect("Needs to be ListItem");
+        factory.connect_bind(move |_, list_item| {
+            let item = list_item
+                .downcast_ref::<ListItem>()
+                .expect("Needs to be ListItem");
 
-                let playlist = item
-                    .item()
-                    .and_downcast::<INode>()
-                    .expect("The item has to be a common::INode.");
+            let playlist = item
+                .item()
+                .and_downcast::<INode>()
+                .expect("The item has to be a common::INode.");
 
-                let child: PlaylistRow = item
-                    .child()
-                    .and_downcast::<PlaylistRow>()
-                    .expect("The child has to be an `PlaylistRow`.");
+            let child: PlaylistRow = item
+                .child()
+                .and_downcast::<PlaylistRow>()
+                .expect("The child has to be an `PlaylistRow`.");
 
-                child.bind(&playlist);
-            }
-        );
+            child.bind(&playlist);
+        });
 
         // Set the factory of the list view
         self.imp().list_view.set_factory(Some(&factory));

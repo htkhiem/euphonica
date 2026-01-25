@@ -246,7 +246,7 @@ pub struct Lyrics {
 #[derive(Debug, Clone)]
 pub enum LyricsParseError {
     TimestampNotFoundError,
-    TimestampFormatError
+    TimestampFormatError,
 }
 
 pub type LyricsResult = Result<Lyrics, LyricsParseError>;
@@ -292,16 +292,19 @@ impl Lyrics {
                         // Only accept timestamp for now. Other tags are ignored
                         if !ts_parts[0]
                             .chars()
-                            .map(|c|c.is_numeric())
+                            .map(|c| c.is_numeric())
                             .collect::<Vec<bool>>()
                             .contains(&false)
                         {
                             let ts: f32 = (ts_parts[0]
                                 .parse::<f32>()
-                                .map_err(|_| LyricsParseError::TimestampFormatError)? * 60.0
+                                .map_err(|_| LyricsParseError::TimestampFormatError)?
+                                * 60.0
                                 + ts_parts[1]
-                                .parse::<f32>()
-                                .map_err(|_| LyricsParseError::TimestampFormatError)? - offset).max(0.0);
+                                    .parse::<f32>()
+                                    .map_err(|_| LyricsParseError::TimestampFormatError)?
+                                - offset)
+                                .max(0.0);
                             if line.len() <= ts_end_pos + 1 {
                                 lines.push((ts, "".to_owned()));
                             } else {
@@ -321,32 +324,43 @@ impl Lyrics {
 
     pub fn to_string(&self) -> String {
         if self.synced {
-            self.lines.iter().map(|line| {
-            let total_seconds = line.0.max(0.0);
-            let content = &line.1;
+            self.lines
+                .iter()
+                .map(|line| {
+                    let total_seconds = line.0.max(0.0);
+                    let content = &line.1;
 
-            let minutes = (total_seconds / 60.0).floor() as u32;
-            let remaining_seconds = total_seconds % 60.0;
-            // Extract the integer part of the seconds
-            let seconds_integer = remaining_seconds.floor() as u32;
+                    let minutes = (total_seconds / 60.0).floor() as u32;
+                    let remaining_seconds = total_seconds % 60.0;
+                    // Extract the integer part of the seconds
+                    let seconds_integer = remaining_seconds.floor() as u32;
 
-            // Extract the fractional part (hundredths of a second)
-            // Multiply by 100, round to the nearest integer, and then cast to u32.
-            // Using `round()` to handle potential floating-point inaccuracies
-            // and ensure correct rounding for the hundredths.
-            let hundredths = (remaining_seconds.fract() * 100.0).round() as u32;
+                    // Extract the fractional part (hundredths of a second)
+                    // Multiply by 100, round to the nearest integer, and then cast to u32.
+                    // Using `round()` to handle potential floating-point inaccuracies
+                    // and ensure correct rounding for the hundredths.
+                    let hundredths = (remaining_seconds.fract() * 100.0).round() as u32;
 
-            // Format the components into the desired string
-            format!("[{minutes:02}:{seconds_integer:02}.{hundredths:02}] {content}")
-        }).collect::<Vec<String>>().join("\n")
-        }
-        else {
-            self.lines.iter().map(|line| line.1.as_str()).collect::<Vec<&str>>().join("\n")
+                    // Format the components into the desired string
+                    format!("[{minutes:02}:{seconds_integer:02}.{hundredths:02}] {content}")
+                })
+                .collect::<Vec<String>>()
+                .join("\n")
+        } else {
+            self.lines
+                .iter()
+                .map(|line| line.1.as_str())
+                .collect::<Vec<&str>>()
+                .join("\n")
         }
     }
 
     pub fn to_plain_string(&self) -> String {
-        self.lines.iter().map(|line| line.1.as_ref()).collect::<Vec<&str>>().join("\n")
+        self.lines
+            .iter()
+            .map(|line| line.1.as_ref())
+            .collect::<Vec<&str>>()
+            .join("\n")
     }
 
     pub fn to_plain_lines(&self) -> Vec<&str> {
@@ -357,19 +371,15 @@ impl Lyrics {
         if !self.synced {
             return 0;
         }
-        match self.lines.binary_search_by(|line| {
-            line.0.partial_cmp(&ts).unwrap()
-        }) {
+        match self
+            .lines
+            .binary_search_by(|line| line.0.partial_cmp(&ts).unwrap())
+        {
             Ok(index) => index, // Oh lucky
             Err(index) => {
                 // Most of the time we'll hit this case because we're not looking
                 // for an exact timestamp match
-                if index > 0 {
-                    index - 1
-                }
-                else {
-                    0
-                }
+                if index > 0 { index - 1 } else { 0 }
             }
         }
     }

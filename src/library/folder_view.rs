@@ -1,19 +1,16 @@
-use adw::prelude::*;
-use adw::subclass::prelude::*;
-use gtk::{
-    glib,
-    CompositeTemplate, ListItem, SignalListItemFactory, SingleSelection,
-};
-use once_cell::sync::Lazy;
-use std::{cell::Cell, cmp::Ordering, rc::Rc, sync::OnceLock};
-use glib::{clone, WeakRef, subclass::Signal, ParamSpec, ParamSpecBoolean};
-use gio::{ActionEntry, SimpleActionGroup};
-use super::{generic_row::GenericRow, Library};
+use super::{Library, generic_row::GenericRow};
 use crate::{
     cache::Cache,
-    common::{INode, INodeType},
+    common::{INode, INodeType, ContentStack},
     utils::{LazyInit, g_cmp_str_options, settings_manager},
 };
+use adw::prelude::*;
+use adw::subclass::prelude::*;
+use gio::{ActionEntry, SimpleActionGroup};
+use glib::{ParamSpec, ParamSpecBoolean, WeakRef, clone, subclass::Signal};
+use gtk::{CompositeTemplate, ListItem, SignalListItemFactory, SingleSelection, glib};
+use once_cell::sync::Lazy;
+use std::{cell::Cell, cmp::Ordering, rc::Rc, sync::OnceLock};
 
 // Folder view implementation
 // Unlike other views, here we use a single ListView and update its contents as we browse.
@@ -53,6 +50,9 @@ mod imp {
         #[template_child]
         pub forward_btn: TemplateChild<gtk::Button>,
 
+        #[template_child]
+        pub stack: TemplateChild<ContentStack>,
+
         // Search & filter widgets
         #[template_child]
         pub view_options_btn: TemplateChild<gtk::MenuButton>,
@@ -77,7 +77,7 @@ mod imp {
         // if they now match.
         pub last_search_len: Cell<usize>,
         pub library: WeakRef<Library>,
-        pub collapsed: Cell<bool>
+        pub collapsed: Cell<bool>,
     }
 
     #[glib::object_subclass]
@@ -101,18 +101,24 @@ mod imp {
             while let Some(child) = self.obj().first_child() {
                 child.unparent();
             }
+            println!("Disposing folder view");
         }
 
         fn constructed(&self) {
             self.parent_constructed();
+            self.stack.show_placeholder();
 
             self.back_btn.connect_clicked(clone!(
                 #[weak(rename_to = this)]
                 self,
                 move |_| {
-                    if let Some(lib) = this.library.upgrade() {
-                        lib.folder_backward();
-                    }
+                    glib::spawn_future_local(clone!(
+                        #[weak] this, async move {
+                            if let Some(lib) = this.library.upgrade() {
+                                lib.folder_backward().await;
+                            }
+                        }
+                    ));
                 }
             ));
 
@@ -120,18 +126,18 @@ mod imp {
                 #[weak(rename_to = this)]
                 self,
                 move |_| {
-                    if let Some(lib) = this.library.upgrade() {
-                        lib.folder_forward();
-                    }
+                    glib::spawn_future_local(clone!(
+                        #[weak] this, async move {
+                            if let Some(lib) = this.library.upgrade() {
+                                lib.folder_forward().await;
+                            }
+                        }
+                    ));
                 }
             ));
 
             self.obj()
-                .bind_property(
-                    "collapsed",
-                    &self.show_sidebar.get(),
-                    "visible"
-                )
+                .bind_property("collapsed", &self.show_sidebar.get(), "visible")
                 .sync_create()
                 .build();
 
@@ -173,12 +179,12 @@ mod imp {
                             .expect("The value needs to be of type `String`.");
                         let idx = param.parse::<i32>().unwrap();
 
-
                         if state.set_enum("sort-by", idx).is_ok() {
                             this.sorter.changed(gtk::SorterChange::Different);
                             action.set_state(&param.to_variant());
                         }
-                    }))
+                    }
+                ))
                 .build();
 
             let action_sort_direction = ActionEntry::builder("sort-direction")
@@ -196,12 +202,12 @@ mod imp {
                             .expect("The value needs to be of type `String`.");
                         let idx = param.parse::<i32>().unwrap();
 
-
                         if state.set_enum("sort-direction", idx).is_ok() {
                             this.sorter.changed(gtk::SorterChange::Inverted);
                             action.set_state(&param.to_variant());
                         }
-                    }))
+                    }
+                ))
                 .build();
 
             self.sorter.set_sort_func(clone!(
@@ -251,7 +257,7 @@ mod imp {
                         idx => {
                             dbg!(idx);
                             unreachable!()
-                        },
+                        }
                     }
                 }
             ));
@@ -287,13 +293,12 @@ mod imp {
                 .get_only()
                 .invert_boolean()
                 .build();
-            self.search_filter.set_expression(Some(
-                &gtk::PropertyExpression::new(
+            self.search_filter
+                .set_expression(Some(&gtk::PropertyExpression::new(
                     INode::static_type(),
                     Option::<gtk::PropertyExpression>::None,
-                    "uri"
-                )
-            ));
+                    "uri",
+                )));
             let search_entry = self.search_entry.get();
             search_entry
                 .bind_property("text", &self.search_filter, "search")
@@ -307,19 +312,13 @@ mod imp {
                     let old_len = this.last_search_len.replace(new_len);
                     match new_len.cmp(&old_len) {
                         Ordering::Greater => {
-                            this
-                                .search_filter
-                                .changed(gtk::FilterChange::MoreStrict);
+                            this.search_filter.changed(gtk::FilterChange::MoreStrict);
                         }
                         Ordering::Less => {
-                            this
-                                .search_filter
-                                .changed(gtk::FilterChange::LessStrict);
+                            this.search_filter.changed(gtk::FilterChange::LessStrict);
                         }
                         Ordering::Equal => {
-                            this
-                                .search_filter
-                                .changed(gtk::FilterChange::Different);
+                            this.search_filter.changed(gtk::FilterChange::Different);
                         }
                     }
                 }
@@ -327,18 +326,14 @@ mod imp {
 
             // Create a new action group and add actions to it
             let actions = SimpleActionGroup::new();
-            actions.add_action_entries([
-                action_sort_by,
-                action_sort_direction
-            ]);
-            self.obj().insert_action_group("folder-view", Some(&actions));
+            actions.add_action_entries([action_sort_by, action_sort_direction]);
+            self.obj()
+                .insert_action_group("folder-view", Some(&actions));
         }
 
         fn properties() -> &'static [ParamSpec] {
             static PROPERTIES: Lazy<Vec<ParamSpec>> =
-                Lazy::new(|| vec![
-                    ParamSpecBoolean::builder("collapsed").build()
-                ]);
+                Lazy::new(|| vec![ParamSpecBoolean::builder("collapsed").build()]);
             PROPERTIES.as_ref()
         }
 
@@ -359,17 +354,13 @@ mod imp {
                         }
                     }
                 }
-                _ => unimplemented!()
+                _ => unimplemented!(),
             }
         }
 
         fn signals() -> &'static [Signal] {
             static SIGNALS: OnceLock<Vec<Signal>> = OnceLock::new();
-            SIGNALS.get_or_init(|| {
-                vec![
-                    Signal::builder("show-sidebar-clicked").build(),
-                ]
-            })
+            SIGNALS.get_or_init(|| vec![Signal::builder("show-sidebar-clicked").build()])
         }
     }
 
@@ -418,9 +409,7 @@ impl FolderView {
     }
 
     pub fn setup(&self, library: &Library, cache: Rc<Cache>) {
-        self.imp()
-            .library
-            .set(Some(library));
+        self.imp().library.set(Some(library));
         self.setup_listview(cache.clone(), library.clone());
 
         library
@@ -437,7 +426,7 @@ impl FolderView {
                 move |_, _| {
                     this.imp().update_nav_btn_sensitivity();
                 }
-            )
+            ),
         );
         library.connect_notify_local(
             Some("folder-his-len"),
@@ -447,7 +436,7 @@ impl FolderView {
                 move |_, _| {
                     this.imp().update_nav_btn_sensitivity();
                 }
-            )
+            ),
         );
     }
 
@@ -461,11 +450,20 @@ impl FolderView {
         //   - Send an lsinfo query with the newly-updated URI.
         //   - Switch to loading page.
         // - Else: do nothing (adding songs and playlists are done with buttons to the right of each row).
-        if let Some(name) = inode.get_name() {
-            if inode.get_info().inode_type == INodeType::Folder {
-                self.library().navigate_to(name);
+        glib::spawn_future_local(clone!(#[weak(rename_to = this)] self, #[weak] inode, async move {
+            if let Some(name) = inode.get_name() {
+                if inode.get_info().inode_type == INodeType::Folder {
+                    let stack = this.imp().stack.get();
+                    stack.show_spinner();
+                    this.library().navigate_to(name).await;
+                    if this.library().folder_inodes().n_items() > 0 {
+                        stack.show_content();
+                    } else {
+                        stack.show_placeholder();
+                    }
+                }
             }
-        }
+        }));
     }
 
     fn setup_listview(&self, _cache: Rc<Cache>, library: Library) {
@@ -482,7 +480,7 @@ impl FolderView {
 
         // Chain search & sort. Put sort after search to reduce number of sort items.
         let search_model = gtk::FilterListModel::new(
-            Some(self.library().folder_inodes()), 
+            Some(self.library().folder_inodes()),
             Some(self.imp().search_filter.clone()),
         );
         search_model.set_incremental(true);
@@ -531,7 +529,18 @@ impl FolderView {
 impl LazyInit for FolderView {
     fn populate(&self) {
         if let Some(library) = self.imp().library.upgrade() {
-            library.get_folder_contents();
+            let stack = self.imp().stack.get();
+            stack.show_spinner();
+            glib::spawn_future_local(
+                async move {
+                    library.get_folder_contents().await;
+                    if library.folder_inodes().n_items() > 0 {
+                        stack.show_content();
+                    } else {
+                        stack.show_placeholder();
+                    }
+                }
+            );
         }
     }
 }

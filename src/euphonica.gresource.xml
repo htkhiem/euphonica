@@ -10,6 +10,9 @@
     <file preprocess="xml-stripblanks">gtk/sidebar.ui</file>
     <file preprocess="xml-stripblanks">gtk/marquee.ui</file>
     <file preprocess="xml-stripblanks">gtk/rating.ui</file>
+    <file preprocess="xml-stripblanks">gtk/content-stack.ui</file>
+    <file preprocess="xml-stripblanks">gtk/image-stack.ui</file>
+    <file preprocess="xml-stripblanks">gtk/picture-stack.ui</file>
     <file preprocess="xml-stripblanks">gtk/theme-selector.ui</file>
     <file preprocess="xml-stripblanks">gtk/content-view.ui</file>
     <file preprocess="xml-stripblanks">gtk/library/recent-view.ui</file>

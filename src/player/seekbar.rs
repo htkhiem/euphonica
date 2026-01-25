@@ -1,5 +1,5 @@
-use glib::{clone, Object};
-use gtk::{glib, prelude::*, subclass::prelude::*, CompositeTemplate};
+use glib::{Object, clone, WeakRef};
+use gtk::{CompositeTemplate, glib, prelude::*, subclass::prelude::*};
 use std::cell::Cell;
 
 use crate::{common::QualityGrade, utils};
@@ -7,9 +7,6 @@ use crate::{common::QualityGrade, utils};
 use super::Player;
 
 mod imp {
-    use std::{cell::OnceCell};
-
-    use crate::utils::format_secs_as_duration;
     use glib::{ParamSpec, ParamSpecDouble};
     use once_cell::sync::Lazy;
 
@@ -31,7 +28,7 @@ mod imp {
         #[template_child]
         pub bitrate: TemplateChild<gtk::Label>,
         pub seekbar_clicked: Cell<bool>,
-        pub player: OnceCell<Player>
+        pub player: WeakRef<Player>,
     }
 
     // The central trait for subclassing a GObject
@@ -63,16 +60,22 @@ mod imp {
             let seekbar_gesture = gtk::GestureClick::new();
             seekbar_gesture.set_propagation_phase(gtk::PropagationPhase::Capture);
             seekbar_gesture.connect_released(clone!(
-                #[weak(rename_to = this)]
-                self,
+                #[weak(rename_to = this)] self,
                 move |gesture, _, _, _| {
-                    gesture.set_state(gtk::EventSequenceState::None); // allow propagating to seekbar
-                    if this.seekbar_clicked.get() {
-                        if let Some(player) = this.player.get() {
-                            player.send_seek(this.seekbar.value());
+                    glib::spawn_future_local(clone!(
+                        #[weak] this,
+                        #[weak] gesture,
+                        async move {
+                            gesture.set_state(gtk::EventSequenceState::None); // allow propagating to seekbar
+                            if this.seekbar_clicked.get() {
+                                let seekbar = this.seekbar.get();
+                                seekbar.set_sensitive(false);
+                                this.player.upgrade().unwrap().send_seek(seekbar.value()).await;
+                                seekbar.set_sensitive(true);
+                                this.seekbar_clicked.replace(false);
+                            }
                         }
-                        this.seekbar_clicked.replace(false);
-                    }
+                    ));
                 }
             ));
             obj.add_controller(seekbar_gesture);
@@ -94,7 +97,7 @@ mod imp {
             self.seekbar
                 .adjustment()
                 .bind_property("value", &self.elapsed.get(), "label")
-                .transform_to(|_, pos| Some(format_secs_as_duration(pos)))
+                .transform_to(|_, pos| Some(utils::format_secs_as_duration(pos)))
                 .sync_create()
                 .build();
 
@@ -103,7 +106,7 @@ mod imp {
                 .bind_property("upper", &self.duration.get(), "label")
                 .transform_to(|_, dur: f64| {
                     if dur > 0.0 {
-                        return Some(format_secs_as_duration(dur));
+                        return Some(utils::format_secs_as_duration(dur));
                     }
                     Some("--:--".to_owned())
                 })
@@ -201,7 +204,11 @@ impl Seekbar {
             .build();
 
         player
-            .bind_property("quality-grade", &self.imp().quality_grade.get(), "icon-name")
+            .bind_property(
+                "quality-grade",
+                &self.imp().quality_grade.get(),
+                "icon-name",
+            )
             .transform_to(|_, grade: QualityGrade| Some(grade.to_icon_name()))
             .sync_create()
             .build();
@@ -213,10 +220,10 @@ impl Seekbar {
 
         player
             .bind_property("bitrate", &self.imp().bitrate.get(), "label")
-            .transform_to(|_, val: u32| Some(utils::format_bitrate(val))) 
+            .transform_to(|_, val: u32| Some(utils::format_bitrate(val)))
             .sync_create()
             .build();
 
-        let _ = self.imp().player.set(player.clone());
+        self.imp().player.set(Some(player));
     }
 }

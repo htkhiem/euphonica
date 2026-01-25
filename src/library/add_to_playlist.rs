@@ -1,8 +1,11 @@
-use glib::{clone, Properties, WeakRef};
-use gtk::{glib, prelude::*, subclass::prelude::*, CompositeTemplate};
+use glib::{Properties, WeakRef, clone};
+use gtk::{CompositeTemplate, glib, prelude::*, subclass::prelude::*};
 use std::cell::{Cell, OnceCell};
 
-use crate::{common::{Song, INode}, utils};
+use crate::{
+    common::{INode, Song},
+    utils,
+};
 use mpd::SaveMode;
 
 use super::Library;
@@ -43,7 +46,7 @@ mod imp {
         pub library: WeakRef<Library>,
         pub song_sel_model: WeakRef<gtk::MultiSelection>,
         #[property(get, set)]
-        pub collapsed: Cell<bool>
+        pub collapsed: Cell<bool>,
     }
 
     #[glib::object_subclass]
@@ -199,7 +202,7 @@ mod imp {
                             }
                         }
                         let _ = this.library.upgrade().unwrap().add_songs_to_playlist(
-                            &name,
+                            name,
                             &songs,
                             SaveMode::Append,
                         );
@@ -307,17 +310,13 @@ impl AddToPlaylistButton {
 
     pub fn setup(&self, library: &Library, song_sel_model: &gtk::MultiSelection) {
         let playlists = library.playlists();
-        self.imp()
-            .library
-            .set(Some(library));
+        self.imp().library.set(Some(library));
         self.imp()
             .search_model
             .get()
             .unwrap()
             .set_model(Some(&playlists));
-        self.imp()
-            .song_sel_model
-            .set(Some(song_sel_model));
+        self.imp().song_sel_model.set(Some(song_sel_model));
 
         playlists.connect_items_changed(clone!(
             #[weak(rename_to = this)]

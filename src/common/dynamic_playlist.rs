@@ -1,13 +1,25 @@
-use std::borrow::Cow;
+use std::{borrow::Cow, fmt};
 use std::str::FromStr;
 
-use mpd::{search::{Operation as TagOperation}, Query, Term};
+use mpd::{Query, Term, search::Operation as TagOperation};
 use once_cell::sync::Lazy;
-use serde::{Deserialize, Serialize};
+use serde::de;
+use serde::{Deserialize, Deserializer, Serialize, de::Visitor};
 use strum::EnumCount;
 use strum_macros::{EnumCount as EnumCountMacro, EnumIter, VariantArray};
 
-#[derive(Serialize, Deserialize, Debug, Copy, Clone, EnumIter, EnumCountMacro, VariantArray, PartialEq, Eq)]
+#[derive(
+    Serialize,
+    Deserialize,
+    Debug,
+    Copy,
+    Clone,
+    EnumIter,
+    EnumCountMacro,
+    VariantArray,
+    PartialEq,
+    Eq,
+)]
 pub enum Ordering {
     AscAlbumTitle,
     DescAlbumTitle,
@@ -24,7 +36,7 @@ pub enum Ordering {
     DescPlayCount,
     AscSkipCount,
     DescSkipCount,
-    Random
+    Random,
 }
 
 impl Ordering {
@@ -48,7 +60,7 @@ impl Ordering {
                 "Desc. play count",
                 "Asc. skip count",
                 "Desc. skip count",
-                "Random"  // Keep this the last option please
+                "Random", // Keep this the last option please
             ]
         });
 
@@ -78,7 +90,7 @@ impl Ordering {
             Self::DescPlayCount => Some(Self::AscPlayCount),
             Self::AscSkipCount => Some(Self::DescSkipCount),
             Self::DescSkipCount => Some(Self::AscSkipCount),
-            _ => None
+            _ => None,
         }
     }
 }
@@ -97,7 +109,7 @@ pub enum AutoRefresh {
     #[serde(rename = "monthly")]
     Monthly,
     #[serde(rename = "yearly")]
-    Yearly
+    Yearly,
 }
 
 impl FromStr for AutoRefresh {
@@ -110,7 +122,7 @@ impl FromStr for AutoRefresh {
             "weekly" => Ok(Self::Weekly),
             "monthly" => Ok(Self::Monthly),
             "yearly" => Ok(Self::Yearly),
-            _ => Err(())
+            _ => Err(()),
         }
     }
 }
@@ -123,11 +135,10 @@ impl AutoRefresh {
             Self::Daily => "daily",
             Self::Weekly => "weekly",
             Self::Monthly => "monthly",
-            Self::Yearly => "yearly"
+            Self::Yearly => "yearly",
         }
     }
 }
-
 
 #[derive(Default, Serialize, Deserialize, Debug, Clone, Copy)]
 pub enum StickerObjectType {
@@ -142,7 +153,7 @@ pub enum StickerObjectType {
     #[serde(rename = "artist")]
     Artist,
     #[serde(rename = "albumartist")]
-    AlbumArtist
+    AlbumArtist,
 }
 
 impl StickerObjectType {
@@ -152,11 +163,10 @@ impl StickerObjectType {
             Self::Playlist => "playlist",
             Self::Album => "album",
             Self::Artist => "artist",
-            Self::AlbumArtist => "albumartist"
+            Self::AlbumArtist => "albumartist",
         }
     }
 }
-
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum StickerOperation {
@@ -167,18 +177,12 @@ pub enum StickerOperation {
     StartsWith,
     IntEquals,
     IntLessThan,
-    IntGreaterThan
+    IntGreaterThan,
 }
 
 impl StickerOperation {
     pub fn numeric_model() -> &'static [&'static str] {
-        static MODEL: Lazy<Vec<&str>> = Lazy::new(|| {
-            vec![
-                "==",
-                ">",
-                "<"
-            ]
-        });
+        static MODEL: Lazy<Vec<&str>> = Lazy::new(|| vec!["==", ">", "<"]);
 
         MODEL.as_ref()
     }
@@ -188,21 +192,14 @@ impl StickerOperation {
             Self::IntEquals => Some(0),
             Self::IntGreaterThan => Some(1),
             Self::IntLessThan => Some(2),
-            _ => None
+            _ => None,
         }
     }
 
     // TODO: translations
     pub fn text_model() -> &'static [&'static str] {
-        static MODEL: Lazy<Vec<&str>> = Lazy::new(|| {
-            vec![
-                "==",
-                ">",
-                "<",
-                "contains",
-                "starts with"
-            ]
-        });
+        static MODEL: Lazy<Vec<&str>> =
+            Lazy::new(|| vec!["==", ">", "<", "contains", "starts with"]);
 
         MODEL.as_ref()
     }
@@ -214,7 +211,7 @@ impl StickerOperation {
             Self::LessThan => Some(2),
             Self::Contains => Some(3),
             Self::StartsWith => Some(4),
-            _ => None
+            _ => None,
         }
     }
 
@@ -227,7 +224,7 @@ impl StickerOperation {
             Self::StartsWith => "starts_with",
             Self::IntEquals => "eq",
             Self::IntLessThan => "lt",
-            Self::IntGreaterThan => "gt"
+            Self::IntGreaterThan => "gt",
         }
     }
 }
@@ -236,15 +233,64 @@ impl StickerOperation {
 /// only containing supported tag types.
 #[derive(Debug, Serialize, Deserialize, Clone, Copy)]
 pub enum QueryLhs {
-    File,    // matches full song URI, always ==
-    Base,    // from this directory
+    File, // matches full song URI, always ==
+    Base, // from this directory
     // Tags
     LastMod,
-    Any(TagOperation),  // will match any tag
-    Album(TagOperation),
-    AlbumArtist(TagOperation),
-    Artist(TagOperation),
+    Any(
+        #[serde(deserialize_with = "deserialize_tag_op")]
+        TagOperation
+    ), // will match any tag
+    Album(
+        #[serde(deserialize_with = "deserialize_tag_op")]
+        TagOperation
+    ),
+    AlbumArtist(
+        #[serde(deserialize_with = "deserialize_tag_op")]
+        TagOperation
+    ),
+    Artist(
+        #[serde(deserialize_with = "deserialize_tag_op")]
+        TagOperation
+    ),
     // more to come
+}
+
+// This whole mess is due to rust-mpd's original serde implementation using untagged enum strategies
+// on Operation. All variants would be stored as a null as none of them had any fields.
+// This allows us to remain compatible with DPs saved by v0.98.1-, defaulting all tag operations to ==.
+struct TagOperationVisitor;
+impl<'de> Visitor<'de> for TagOperationVisitor {
+    type Value = TagOperation;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str("null or a string")
+    }
+
+    fn visit_unit<E>(self) -> Result<Self::Value, E>
+    where
+        E: serde::de::Error, {
+        Ok(TagOperation::Equals)
+    }
+
+    fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        // rename_all = "lowercase", see rust-mpd
+        match value {
+            "equals" => Ok(TagOperation::Equals),
+            "notequals" => Ok(TagOperation::NotEquals),
+            "contains" => Ok(TagOperation::Contains),
+            "startswith" => Ok(TagOperation::StartsWith),
+            _ => Err(E::custom(format!("{value} is not one of (equals, notequals, contains, startswith)")))
+        }
+    }
+}
+
+
+fn deserialize_tag_op<'de, D>(deser: D) -> Result<TagOperation, D::Error> where D: Deserializer<'de> {
+    deser.deserialize_any(TagOperationVisitor)
 }
 
 impl<'a, 'b: 'a> QueryLhs {
@@ -316,5 +362,5 @@ pub struct DynamicPlaylist {
     pub ordering: Vec<Ordering>,
     pub auto_refresh: AutoRefresh,
     pub last_refresh: Option<i64>,
-    pub limit: Option<u32>
+    pub limit: Option<u32>,
 }

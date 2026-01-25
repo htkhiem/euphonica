@@ -1,8 +1,8 @@
 use adw::subclass::prelude::*;
-use glib::{ParamSpec, ParamSpecObject};
-use gtk::{glib, prelude::*, CompositeTemplate};
-use once_cell::sync::Lazy;
 use derivative::Derivative;
+use glib::{ParamSpec, ParamSpecObject};
+use gtk::{CompositeTemplate, glib, prelude::*};
+use once_cell::sync::Lazy;
 
 mod imp {
     use super::*;
@@ -20,7 +20,7 @@ mod imp {
         #[template_child]
         pub action_row: TemplateChild<gtk::CenterBox>,
         #[template_child]
-        pub content_area: TemplateChild<gtk::ScrolledWindow>
+        pub content_area: TemplateChild<gtk::Box>,
     }
 
     #[glib::object_subclass]
@@ -76,12 +76,24 @@ mod imp {
         fn properties() -> &'static [ParamSpec] {
             static PROPERTIES: Lazy<Vec<ParamSpec>> = Lazy::new(|| {
                 vec![
-                    ParamSpecObject::builder::<gtk::Widget>("header-end-widget").construct_only().build(),
-                    ParamSpecObject::builder::<gtk::Widget>("infobox-widget").construct_only().build(),
-                    ParamSpecObject::builder::<gtk::Widget>("action-row-start-widget").construct_only().build(),
-                    ParamSpecObject::builder::<gtk::Widget>("action-row-center-widget").construct_only().build(),
-                    ParamSpecObject::builder::<gtk::Widget>("action-row-end-widget").construct_only().build(),
-                    ParamSpecObject::builder::<gtk::Widget>("content").construct_only().build(),
+                    ParamSpecObject::builder::<gtk::Widget>("header-end-widget")
+                        .construct_only()
+                        .build(),
+                    ParamSpecObject::builder::<gtk::Widget>("infobox-widget")
+                        .construct_only()
+                        .build(),
+                    ParamSpecObject::builder::<gtk::Widget>("action-row-start-widget")
+                        .construct_only()
+                        .build(),
+                    ParamSpecObject::builder::<gtk::Widget>("action-row-center-widget")
+                        .construct_only()
+                        .build(),
+                    ParamSpecObject::builder::<gtk::Widget>("action-row-end-widget")
+                        .construct_only()
+                        .build(),
+                    ParamSpecObject::builder::<gtk::Widget>("content")
+                        .construct_only()
+                        .build(),
                 ]
             });
             PROPERTIES.as_ref()
@@ -116,7 +128,7 @@ mod imp {
                 }
                 "content" => {
                     if let Ok(widget) = value.get::<gtk::Widget>() {
-                        self.content_area.set_child(Some(&widget));
+                        self.content_area.append(&widget);
                     }
                 }
                 _ => unimplemented!(),

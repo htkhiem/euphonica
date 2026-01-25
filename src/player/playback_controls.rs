@@ -1,9 +1,9 @@
-use glib::{clone, Object};
+use glib::{Object, clone};
 use gtk::{
+    CompositeTemplate,
     glib::{self},
     prelude::*,
     subclass::prelude::*,
-    CompositeTemplate,
 };
 
 use super::{PlaybackFlow, PlaybackState, Player};
@@ -35,7 +35,7 @@ mod imp {
         #[template_child]
         pub random_btn: TemplateChild<gtk::ToggleButton>,
         #[property(get, set)]
-        pub playing: Cell<bool>
+        pub playing: Cell<bool>,
     }
 
     // The central trait for subclassing a GObject
@@ -110,40 +110,47 @@ impl PlaybackControls {
             })
             .sync_create()
             .build();
-        flow_btn.connect_clicked(clone!(
-            #[weak]
-            player,
-            move |_| player.cycle_playback_flow()
-        ));
-        self.imp().prev_btn.connect_clicked(clone!(
-            #[weak]
-            player,
-            move |_| player.prev_song(true)
-        ));
-        self.imp().play_pause_btn.connect_clicked(clone!(
-            #[weak]
-            player,
-            move |_| player.toggle_playback()
-        ));
-        self.imp().next_btn.connect_clicked(clone!(
-            #[weak]
-            player,
-            move |_| player.next_song(true)
-        ));
+        flow_btn.connect_clicked(clone!(#[weak] player, move |btn| {
+            glib::spawn_future_local(clone!(#[weak] player, #[weak] btn, async move {
+                btn.set_sensitive(false);
+                player.cycle_playback_flow().await;
+                btn.set_sensitive(true);
+            }));
+        }));
+        self.imp().prev_btn.connect_clicked(clone!(#[weak] player, move |btn| {
+            glib::spawn_future_local(clone!(#[weak] player, #[weak] btn, async move {
+                btn.set_sensitive(false);
+                player.prev_song(true).await;
+                btn.set_sensitive(true);
+            }));
+        }));
+        self.imp().play_pause_btn.connect_clicked(clone!(#[weak] player, move |btn| {
+            glib::spawn_future_local(clone!(#[weak] player, #[weak] btn, async move {
+                btn.set_sensitive(false);
+                player.toggle_playback().await;
+                btn.set_sensitive(true);
+            }));
+        }));
+        self.imp().next_btn.connect_clicked(clone!(#[weak] player, move |btn| {
+            glib::spawn_future_local(clone!(#[weak] player, #[weak] btn, async move {
+                btn.set_sensitive(false);
+                player.next_song(true).await;
+                btn.set_sensitive(true);
+            }));
+        }));
         let shuffle_btn = imp.random_btn.get();
-
         // Don't use bidirectional to avoid erroneously firing once on UI init
         player
             .bind_property("random", &shuffle_btn, "active")
             .sync_create()
             .build();
 
-        shuffle_btn.connect_clicked(clone!(
-            #[weak]
-            player,
-            move |btn| {
-                player.set_random(btn.is_active());
-            }
-        ));
+        shuffle_btn.connect_clicked(clone!(#[weak] player, move |btn| {
+            glib::spawn_future_local(clone!(#[weak] player, #[weak] btn, async move {
+                btn.set_sensitive(false);
+                player.set_random(btn.is_active()).await;
+                btn.set_sensitive(true);
+            }));
+        }));
     }
 }

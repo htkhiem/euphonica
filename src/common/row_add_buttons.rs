@@ -1,11 +1,9 @@
 use ::glib::clone;
 use glib::Object;
-use gtk::{glib, prelude::*, subclass::prelude::*, CompositeTemplate};
+use gtk::{CompositeTemplate, glib, prelude::*, subclass::prelude::*};
 use std::cell::RefCell;
 
-use crate::{
-    common::Song, library::Library
-};
+use crate::{common::Song, library::Library};
 
 mod imp {
     use super::*;
@@ -17,7 +15,7 @@ mod imp {
         pub replace_queue: TemplateChild<gtk::Button>,
         #[template_child]
         pub append_queue: TemplateChild<gtk::Button>,
-        pub song: RefCell<Option<Song>>
+        pub song: RefCell<Option<Song>>,
     }
 
     // The central trait for subclassing a GObject
@@ -66,7 +64,12 @@ impl RowAddButtons {
             (),
             move |_| {
                 if let Some(song) = res.imp().song.borrow().as_ref() {
-                    library.queue_uri(song.get_uri(), true, true, false);
+                    let uri = song.get_uri().to_owned();
+                    glib::spawn_future_local(async move {
+                        if let Err(e) = library.queue_uri(uri, true, true, false).await {
+                            dbg!(e);
+                        }
+                    });
                 }
             }
         ));
@@ -80,7 +83,12 @@ impl RowAddButtons {
             (),
             move |_| {
                 if let Some(song) = res.imp().song.borrow().as_ref() {
-                    library.queue_uri(song.get_uri(), false, false, false);
+                    let uri = song.get_uri().to_owned();
+                    glib::spawn_future_local(async move {
+                        if let Err(e) = library.queue_uri(uri, false, false, false).await {
+                            dbg!(e);
+                        }
+                    });
                 }
             }
         ));

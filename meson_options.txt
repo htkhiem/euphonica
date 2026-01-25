@@ -5,5 +5,5 @@ option (
     'default',
     'dev'
   ],
-  value: 'default'
+  value: 'dev'
 )

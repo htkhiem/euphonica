@@ -1,19 +1,24 @@
+use ashpd::desktop::file_chooser::SelectedFiles;
 use adw::subclass::prelude::*;
-use glib::{clone, closure_local, signal::SignalHandlerId, Binding};
-use gtk::{gdk, gio, glib, prelude::*, BitsetIter, CompositeTemplate, ListItem, SignalListItemFactory};
+use derivative::Derivative;
+use glib::{Binding, clone, closure_local, signal::SignalHandlerId, WeakRef};
+use gtk::{
+    BitsetIter, CompositeTemplate, ListItem, SignalListItemFactory, gdk, gio, glib, prelude::*,
+};
+use mpd::error::{Error as MpdError, ErrorCode as MpdErrorCode, ServerError};
 use std::{
-    cell::{OnceCell, RefCell},
+    cell::{OnceCell, RefCell, Cell},
     rc::Rc,
 };
-use derivative::Derivative;
-use mpd::error::{Error as MpdError, ErrorCode as MpdErrorCode, ServerError};
+use gio::{ActionEntry, SimpleActionGroup};
+use mpd::SaveMode;
 
 use super::Library;
 use crate::{
-    cache::{placeholders::ALBUMART_PLACEHOLDER, Cache},
-    client::ClientState,
-    common::{RowEditButtons, INode, RowAddButtons, Song, SongRow},
-    utils::format_secs_as_duration,
+    cache::Cache,
+    client::Error as ClientError,
+    common::{INode, RowAddButtons, RowEditButtons, Song, SongRow, ImageStack, ContentStack},
+    utils::{format_secs_as_duration, tokio_runtime},
     window::EuphonicaWindow,
 };
 
@@ -76,15 +81,6 @@ impl HistoryStep {
 // To facilitate this, we have to enter an "edit mode" with a separate song ListStore
 // and UI.
 mod imp {
-    use std::cell::Cell;
-
-    use ashpd::desktop::file_chooser::SelectedFiles;
-    use async_channel::Sender;
-    use gio::{ActionEntry, SimpleActionGroup};
-    use mpd::SaveMode;
-
-    use crate::utils;
-
     use super::*;
 
     #[derive(Debug, CompositeTemplate, Derivative)]
@@ -96,9 +92,11 @@ mod imp {
         #[template_child]
         pub collapse_infobox: TemplateChild<gtk::ToggleButton>,
         #[template_child]
-        pub cover: TemplateChild<gtk::Image>,
+        pub cover: TemplateChild<ImageStack>,
         #[template_child]
-        pub content_stack: TemplateChild<gtk::Stack>,
+        pub subview_stack: TemplateChild<gtk::Stack>,
+        #[template_child]
+        pub content_stack: TemplateChild<ContentStack>,
         #[template_child]
         pub content: TemplateChild<gtk::ListView>,
         #[template_child]
@@ -167,15 +165,14 @@ mod imp {
         pub bindings: RefCell<Vec<Binding>>,
         pub cover_signal_id: RefCell<Option<SignalHandlerId>>,
         pub cache: OnceCell<Rc<Cache>>,
-        pub filepath_sender: OnceCell<Sender<String>>,
         #[derivative(Default(value = "Cell::new(true)"))]
         pub selecting_all: Cell<bool>, // Enables queuing the entire playlist efficiently
-        pub window: OnceCell<EuphonicaWindow>,
-        pub library: OnceCell<Library>,
+        pub window: WeakRef<EuphonicaWindow>,
+        pub library: WeakRef<Library>,
 
         // FIXME: Working around the scroll position bug. See src/player/queue_view.rs (same issue).
         pub last_scroll_pos: Cell<f64>,
-        pub restore_last_pos: Cell<u8>
+        pub restore_last_pos: Cell<u8>,
     }
 
     #[glib::object_subclass]
@@ -202,13 +199,23 @@ mod imp {
             while let Some(child) = self.obj().first_child() {
                 child.unparent();
             }
+            println!("Disposing playlist content view");
         }
 
         fn constructed(&self) {
             self.parent_constructed();
 
+            self.song_list
+                .bind_property(
+                    "n-items",
+                    &self.track_count.get(),
+                    "label"
+                )
+                .sync_create()
+                .build();
+
             self.action_row.set_visible_child_name("queue-mode");
-            self.content_stack.set_visible_child_name("queue-mode");
+            self.subview_stack.set_visible_child_name("queue-mode");
             self.edit_playlist.connect_clicked(clone!(
                 #[weak(rename_to = this)]
                 self,
@@ -299,29 +306,40 @@ mod imp {
                     #[upgrade_or]
                     (),
                     move |_, _, _| {
-                        if let Some(sender) = obj.imp().filepath_sender.get() {
-                            let sender = sender.clone();
-                            utils::tokio_runtime().spawn(async move {
-                                let maybe_files = SelectedFiles::open_file()
-                                    .title("Select a new cover")
-                                    .modal(true)
-                                    .multiple(false)
-                                    .send()
-                                    .await
-                                    .expect("ashpd file open await failure")
-                                    .response();
+                        let (sender, receiver) = oneshot::channel();
+                        tokio_runtime().spawn(async move {
+                            let maybe_files = SelectedFiles::open_file()
+                                .title("Select a new album art")
+                                .modal(true)
+                                .multiple(false)
+                                .send()
+                                .await
+                                .expect("ashpd file open await failure")
+                                .response();
 
+                            sender.send(
                                 if let Ok(files) = maybe_files {
                                     let uris = files.uris();
                                     if !uris.is_empty() {
-                                        let _ = sender.send_blocking(uris[0].to_string());
+                                        Some(uris[0].to_string())
+                                    } else {
+                                        None
                                     }
-                                }
-                                else {
+                                } else {
                                     println!("{maybe_files:?}");
+                                    None
                                 }
-                            });
-                        }
+                            );
+                        });
+                        glib::spawn_future_local(clone!(
+                            #[weak]
+                            obj,
+                            async move {
+                                if let Some(path) = receiver.await.expect("Broken oneshot receiver") {
+                                    obj.set_cover(path);
+                                }
+                            }
+                        ));
                     }
                 ))
                 .build();
@@ -329,27 +347,25 @@ mod imp {
                 .activate(clone!(
                     #[weak]
                     obj,
-                    #[upgrade_or]
-                    (),
                     move |_, _, _| {
-                        let title = obj.imp().title.label();
-                        if !title.is_empty() {
-                            if let Some(library) = obj.imp().library.get() {
-                                obj.clear_cover();
-                                library.clear_playlist_cover(title.as_str());
+                        glib::spawn_future_local(clone!(#[weak] obj, async move {
+                            let title = obj.imp().title.label().to_string();
+                            if !title.is_empty() {
+                                if let Some(cache) = obj.imp().cache.get() {
+                                    obj.clear_cover();
+                                    cache.clear_playlist_cover(title).await;
+                                }
                             }
-                        }
+                        }));
                     }
                 ))
                 .build();
 
             // Create a new action group and add actions to it
             let actions = SimpleActionGroup::new();
-            actions.add_action_entries([
-                action_set_cover,
-                action_clear_cover
-            ]);
-            self.obj().insert_action_group("playlist-content-view", Some(&actions));
+            actions.add_action_entries([action_set_cover, action_clear_cover]);
+            self.obj()
+                .insert_action_group("playlist-content-view", Some(&actions));
         }
     }
 
@@ -385,42 +401,44 @@ mod imp {
 
             // Everything is now in place; start fading
             self.action_row.set_visible_child_name("edit-mode");
-            self.content_stack.set_visible_child_name("edit-mode");
+            self.subview_stack.set_visible_child_name("edit-mode");
             self.edit_apply.set_sensitive(false);
         }
 
         pub fn exit_edit_mode(&self, apply: bool) {
-            if apply {
-                // Currently if the command list fails halfway we'll still
-                // clear the undo history.
-                if self.history_idx.get() > 0 {
-                    let song_count = self.editing_song_list.n_items();
-                    let mut song_list: Vec<Song> = Vec::with_capacity(song_count as usize);
-                    for i in 0..song_count {
-                        song_list.push(
-                            self.editing_song_list
-                                .item(i)
-                                .unwrap()
-                                .downcast_ref::<Song>()
-                                .unwrap()
-                                .clone(),
-                        );
+            glib::spawn_future_local(clone!(#[weak(rename_to = this)] self, async move {
+                if apply {
+                    // Currently if the command list fails halfway we'll still
+                    // clear the undo history.
+                    if this.history_idx.get() > 0 {
+                        let song_count = this.editing_song_list.n_items();
+                        let mut song_list: Vec<Song> = Vec::with_capacity(song_count as usize);
+                        for i in 0..song_count {
+                            song_list.push(
+                                this.editing_song_list
+                                    .item(i)
+                                    .unwrap()
+                                    .downcast_ref::<Song>()
+                                    .unwrap()
+                                    .clone(),
+                            );
+                        }
+                        if let Err(e) = this.library.upgrade().unwrap().add_songs_to_playlist(
+                            this.playlist.borrow().as_ref().unwrap().get_uri().to_owned(),
+                            &song_list,
+                            SaveMode::Replace,
+                        ).await {dbg!(e);};
+                        this.history_idx.replace(0);
                     }
-                    let _ = self.library.get().unwrap().add_songs_to_playlist(
-                        self.playlist.borrow().as_ref().unwrap().get_uri(),
-                        &song_list,
-                        SaveMode::Replace,
-                    );
-                    self.history_idx.replace(0);
+                    this.history.borrow_mut().clear();
+                    this.edit_undo.set_sensitive(false);
+                    this.edit_redo.set_sensitive(false);
                 }
-                self.history.borrow_mut().clear();
-                self.edit_undo.set_sensitive(false);
-                self.edit_redo.set_sensitive(false);
-            }
-            // Just fade back, no need to clear the list (won't lag us
-            // since we're not rendering it)
-            self.action_row.set_visible_child_name("queue-mode");
-            self.content_stack.set_visible_child_name("queue-mode");
+                // Just fade back, no need to clear the list (won't lag us
+                // since we're not rendering it)
+                this.action_row.set_visible_child_name("queue-mode");
+                this.subview_stack.set_visible_child_name("queue-mode");
+            }));
         }
 
         pub fn undo(&self) {
@@ -485,53 +503,16 @@ impl Default for PlaylistContentView {
 impl PlaylistContentView {
     pub fn setup(
         &self,
-        library: Library,
-        client_state: ClientState,
+        library: &Library,
         cache: Rc<Cache>,
         window: &EuphonicaWindow,
     ) {
-        // Set up channel for listening to cover dialog
-        let (sender, receiver) = async_channel::unbounded::<String>();
-        let _ = self.imp().filepath_sender.set(sender);
-        glib::MainContext::default().spawn_local(clone!(
-            #[weak(rename_to = this)]
-            self,
-            async move {
-                use futures::prelude::*;
-                // Allow receiver to be mutated, but keep it at the same memory address.
-                // See Receiver::next doc for why this is needed.
-                let mut receiver = std::pin::pin!(receiver);
-
-                while let Some(tag) = receiver.next().await {
-                    this.set_cover(&tag);
-                }
-            }
-        ));
-
-        let cache_state = cache.get_cache_state();
         self.imp()
             .window
-            .set(window.clone())
-            .expect("PlaylistContentView: Cannot set reference to window");
+            .set(Some(window));
         self.imp()
             .library
-            .set(library.clone())
-            .expect("PlaylistContentView: Cannot set reference to library controller");
-        client_state.connect_closure(
-            "playlist-songs-downloaded",
-            false,
-            closure_local!(
-                #[weak(rename_to = this)]
-                self,
-                move |_: ClientState, name: String, songs: glib::BoxedAnyObject| {
-                    if let Some(playlist) = this.imp().playlist.borrow().as_ref() {
-                        if playlist.get_name() == Some(&name) {
-                            this.add_songs(songs.borrow::<Vec<Song>>().as_ref());
-                        }
-                    }
-                }
-            ),
-        );
+            .set(Some(library));
 
         let _ = self.imp().cache.set(cache.clone());
         let infobox_revealer = self.imp().infobox_revealer.get();
@@ -559,52 +540,52 @@ impl PlaylistContentView {
         replace_queue_btn.connect_clicked(clone!(
             #[weak(rename_to = this)]
             self,
-            #[upgrade_or]
-            (),
             move |_| {
-                let library = this.imp().library.get().unwrap();
-                if let Some(playlist) = this.imp().playlist.borrow().as_ref() {
-                    if this.imp().selecting_all.get() {
-                        library.queue_playlist(playlist.get_name().unwrap(), true, true);
-                    } else {
-                        let store = &this.imp().song_list;
-                        // Get list of selected songs
-                        let sel = &this.imp().sel_model.selection();
-                        let mut songs: Vec<Song> = Vec::with_capacity(sel.size() as usize);
-                        let (iter, first_idx) = BitsetIter::init_first(sel).unwrap();
-                        songs.push(store.item(first_idx).and_downcast::<Song>().unwrap());
-                        iter.for_each(|idx| {
-                            songs.push(store.item(idx).and_downcast::<Song>().unwrap())
-                        });
-                        library.queue_songs(&songs, true, true);
+                glib::spawn_future_local(clone!(#[weak] this, async move {
+                    let library = this.imp().library.upgrade().unwrap();
+                    if let Some(playlist) = this.imp().playlist.borrow().as_ref() {
+                        if this.imp().selecting_all.get() {
+                            library.queue_playlist(playlist.get_name().unwrap().to_owned(), true, true).await;
+                        } else {
+                            let store = &this.imp().song_list;
+                            // Get list of selected songs
+                            let sel = &this.imp().sel_model.selection();
+                            let mut songs: Vec<Song> = Vec::with_capacity(sel.size() as usize);
+                            let (iter, first_idx) = BitsetIter::init_first(sel).unwrap();
+                            songs.push(store.item(first_idx).and_downcast::<Song>().unwrap());
+                            iter.for_each(|idx| {
+                                songs.push(store.item(idx).and_downcast::<Song>().unwrap())
+                            });
+                            library.queue_songs(&songs, true, true).await;
+                        }
                     }
-                }
+                }));
             }
         ));
         let append_queue_btn = self.imp().append_queue.get();
         append_queue_btn.connect_clicked(clone!(
             #[weak(rename_to = this)]
             self,
-            #[upgrade_or]
-            (),
             move |_| {
-                let library = this.imp().library.get().unwrap();
-                if let Some(playlist) = this.imp().playlist.borrow().as_ref() {
-                    if this.imp().selecting_all.get() {
-                        library.queue_playlist(playlist.get_name().unwrap(), false, false);
-                    } else {
-                        let store = &this.imp().song_list;
-                        // Get list of selected songs
-                        let sel = &this.imp().sel_model.selection();
-                        let mut songs: Vec<Song> = Vec::with_capacity(sel.size() as usize);
-                        let (iter, first_idx) = BitsetIter::init_first(sel).unwrap();
-                        songs.push(store.item(first_idx).and_downcast::<Song>().unwrap());
-                        iter.for_each(|idx| {
-                            songs.push(store.item(idx).and_downcast::<Song>().unwrap())
-                        });
-                        library.queue_songs(&songs, false, false);
+                glib::spawn_future_local(clone!(#[weak] this, async move {
+                    let library = this.imp().library.upgrade().unwrap();
+                    if let Some(playlist) = this.imp().playlist.borrow().as_ref() {
+                        if this.imp().selecting_all.get() {
+                            library.queue_playlist(playlist.get_name().unwrap().to_owned(), false, false).await;
+                        } else {
+                            let store = &this.imp().song_list;
+                            // Get list of selected songs
+                            let sel = &this.imp().sel_model.selection();
+                            let mut songs: Vec<Song> = Vec::with_capacity(sel.size() as usize);
+                            let (iter, first_idx) = BitsetIter::init_first(sel).unwrap();
+                            songs.push(store.item(first_idx).and_downcast::<Song>().unwrap());
+                            iter.for_each(|idx| {
+                                songs.push(store.item(idx).and_downcast::<Song>().unwrap())
+                            });
+                            library.queue_songs(&songs, false, false).await;
+                        }
                     }
-                }
+                }));
             }
         ));
 
@@ -639,56 +620,62 @@ impl PlaylistContentView {
             #[weak]
             new_name,
             move |_| {
-                this.imp().rename_menu_btn.set_active(false);
-                let library = this.imp().library.get().unwrap();
-                let rename_from: Option<String>;
-                {
-                    if let Some(playlist) = this.imp().playlist.borrow().as_ref() {
-                        rename_from = playlist.get_name().map(str::to_owned);
-                    }
-                    else {
-                        rename_from = None;
-                    }
-                }
-                if let Some(rename_from) = rename_from {
-                    let rename_to = new_name.buffer().text().as_str().to_owned();
-
-                    // Temporarily rebind to a modified INode object. The actual updated INode,
-                    // with correct last-modified time, will be given after the idle trigger.
-                    let tmp_inode = this.imp().playlist.borrow().as_ref().unwrap().with_new_name(&rename_to);
-                    this.unbind(false);
-                    this.bind(tmp_inode);
-
-                    match library.rename_playlist(&rename_from, &rename_to) {
-                        Ok(()) => {} // Wait for idle to trigger a playlist refresh
-                        Err(e) => if let Some(MpdError::Server(ServerError {code, pos: _, command: _, detail: _})) = e {
-                            this.imp().window.get().unwrap().show_dialog(
-                                "Rename Failed",
-                                &(match code {
-                                    MpdErrorCode::Exist => format!("There is already another playlist named \"{}\". Please pick another name.", &rename_to),
-                                    MpdErrorCode::NoExist => "Internal error: tried to rename a nonexistent playlist".to_owned(),
-                                    _ => format!("Internal error ({code:?})")
-                                })
-                            );
+                glib::spawn_future_local(clone!(#[weak] this, #[weak] new_name, async move {
+                    this.imp().rename_menu_btn.set_active(false);
+                    let library = this.imp().library.upgrade().unwrap();
+                    let rename_from: Option<String>;
+                    {
+                        if let Some(playlist) = this.imp().playlist.borrow().as_ref() {
+                            rename_from = playlist.get_name().map(str::to_owned);
+                        }
+                        else {
+                            rename_from = None;
                         }
                     }
-                }
+                    if let Some(rename_from) = rename_from {
+                        let rename_to = new_name.buffer().text().as_str().to_owned();
+
+                        // Temporarily rebind to a modified INode object. The actual updated INode,
+                        // with correct last-modified time, will be given after the idle trigger.
+                        let tmp_inode = this.imp().playlist.borrow().as_ref().unwrap().with_new_name(&rename_to);
+                        this.unbind(false);
+                        this.bind(tmp_inode);
+
+
+                        match library.rename_playlist(rename_from, rename_to.clone()).await {
+                            Ok(()) => {} // Wait for idle to trigger a playlist refresh
+                            Err(ClientError::Mpd(e)) => if let MpdError::Server(ServerError {code, pos: _, command: _, detail: _}) = e {
+                                this.imp().window.upgrade().unwrap().show_dialog(
+                                    "Rename Failed",
+                                    &(match code {
+                                        MpdErrorCode::Exist => format!("There is already another playlist named \"{}\". Please pick another name.", &rename_to),
+                                        MpdErrorCode::NoExist => "Internal error: tried to rename a nonexistent playlist".to_owned(),
+                                        _ => format!("Internal error ({code:?})")
+                                    })
+                                );
+                            }
+                            Err(e) => {
+                                this.imp().window.upgrade().unwrap().show_dialog("Rename Failed", &format!("{e:?}"));
+                            }
+                        }
+                    }
+                }));
             }
         ));
 
         delete_btn.connect_clicked(clone!(
             #[weak(rename_to = this)]
             self,
-            #[upgrade_or]
-            (),
             move |_| {
-                let library = this.imp().library.get().unwrap();
-                if let Some(playlist) = this.imp().playlist.borrow().as_ref() {
-                    // Close popover and exit view
-                    this.imp().delete_menu_btn.set_active(false);
-                    this.imp().window.get().unwrap().get_playlist_view().pop();
-                    let _ = library.delete_playlist(playlist.get_name().unwrap());
-                }
+                glib::spawn_future_local(clone!(#[weak] this, async move {
+                    let library = this.imp().library.upgrade().unwrap();
+                    if let Some(playlist) = this.imp().playlist.borrow().as_ref() {
+                        // Close popover and exit view
+                        this.imp().delete_menu_btn.set_active(false);
+                        this.imp().window.upgrade().unwrap().get_playlist_view().pop();
+                        let _ = library.delete_playlist(playlist.get_name().unwrap().to_owned()).await;
+                    }
+                }));
             }
         ));
 
@@ -775,32 +762,23 @@ impl PlaylistContentView {
                     item,
                     // Raise action
                     clone!(
-                        #[weak]
-                        this,
-                        #[upgrade_or]
-                        (),
-                        move |idx| {
+                        #[weak] this,
+                        move |_, idx| {
                             this.shift_backward(idx);
                         }
                     ),
                     clone!(
-                        #[weak]
-                        this,
-                        #[upgrade_or]
-                        (),
-                        move |idx| {
+                        #[weak] this,
+                        move |_, idx| {
                             this.shift_forward(idx);
                         }
                     ),
                     clone!(
-                        #[weak]
-                        this,
-                        #[upgrade_or]
-                        (),
-                        move |idx| {
+                        #[weak] this,
+                        move |_, idx| {
                             this.remove(idx);
                         }
-                    )
+                    ),
                 );
                 row.set_end_widget(Some(&end_widget.into()));
                 item.set_child(Some(&row));
@@ -824,7 +802,11 @@ impl PlaylistContentView {
                 .and_downcast::<SongRow>()
                 .expect("The child has to be an `SongRow`.");
 
-            child.end_widget().and_downcast::<RowAddButtons>().unwrap().set_song(Some(&item));
+            child
+                .end_widget()
+                .and_downcast::<RowAddButtons>()
+                .unwrap()
+                .set_song(Some(&item));
             child.on_bind(&item);
         });
 
@@ -853,7 +835,11 @@ impl PlaylistContentView {
                 .child()
                 .and_downcast::<SongRow>()
                 .expect("The child has to be an `SongRow`.");
-            child.end_widget().and_downcast::<RowAddButtons>().unwrap().set_song(None);
+            child
+                .end_widget()
+                .and_downcast::<RowAddButtons>()
+                .unwrap()
+                .set_song(None);
             child.on_unbind();
         });
 
@@ -873,7 +859,9 @@ impl PlaylistContentView {
             move |_, _| {
                 // The above scroll bug only manifests after this, so now is the best time to set
                 // the corresponding values.
-                this.imp().last_scroll_pos.set(this.imp().editing_content_scroller.vadjustment().value());
+                this.imp()
+                    .last_scroll_pos
+                    .set(this.imp().editing_content_scroller.vadjustment().value());
                 this.imp().restore_last_pos.set(2);
             }
         ));
@@ -885,26 +873,28 @@ impl PlaylistContentView {
             .set_factory(Some(&editing_factory));
 
         // Disgusting workaround until I can pinpoint whenever this is a GTK problem.
-        self.imp().editing_content_scroller.vadjustment().connect_notify_local(
-            Some("value"),
-            clone!(
-                #[weak(rename_to = this)]
-                self,
-                move |adj, _| {
-                    let checks_left = this.imp().restore_last_pos.get();
-                    if checks_left > 0 {
-                        let old_pos = this.imp().last_scroll_pos.get();
-                        if adj.value() == 0.0 {
-                            adj.set_value(old_pos);
-                        }
-                        else {
-                            this.imp().restore_last_pos.set(checks_left - 1);
-                            // this.imp().restore_last_pos.set(false);
+        self.imp()
+            .editing_content_scroller
+            .vadjustment()
+            .connect_notify_local(
+                Some("value"),
+                clone!(
+                    #[weak(rename_to = this)]
+                    self,
+                    move |adj, _| {
+                        let checks_left = this.imp().restore_last_pos.get();
+                        if checks_left > 0 {
+                            let old_pos = this.imp().last_scroll_pos.get();
+                            if adj.value() == 0.0 {
+                                adj.set_value(old_pos);
+                            } else {
+                                this.imp().restore_last_pos.set(checks_left - 1);
+                                // this.imp().restore_last_pos.set(false);
+                            }
                         }
                     }
-                }
-            )
-        );
+                ),
+            );
     }
 
     pub fn bind(&self, playlist: INode) {
@@ -926,23 +916,64 @@ impl PlaylistContentView {
         // Save binding
         bindings.push(last_mod_binding);
 
-        // Fetch high resolution playlist cover
-        let handle = self.imp().cache.get().unwrap().load_cached_playlist_cover(
-            playlist.get_uri(), false, false
-        );
         glib::spawn_future_local(clone!(
             #[weak(rename_to = this)]
             self,
+            #[strong]
+            playlist,
             async move {
-                if let Some(tex) = handle.await.unwrap() {
-                    this.update_cover(&tex);
+                let name = playlist.get_uri().to_owned();
+                // Fetch high resolution playlist cover
+                this.imp().cover.show_spinner();
+                match this.imp().cache.get().unwrap().get_playlist_cover(
+                    name.clone(),
+                    false,
+                    false,
+                ).await {
+                    Ok(Some(tex)) => {
+                        this.update_cover(&tex);
+                    }
+                    Ok(None) => {
+                        this.clear_cover();
+                    }
+                    Err(e) => {
+                        dbg!(e);
+                    }
+                };
+
+                this.imp().playlist.replace(Some(playlist));
+
+                let content_stack = this.imp().content_stack.get();
+                content_stack.show_spinner();
+                let song_list = this.imp().song_list.clone();
+                song_list.remove_all();
+                let _ = this.imp().library.upgrade().unwrap().get_playlist_songs(
+                    name,
+                    &mut |songs| {
+                        song_list.extend_from_slice(&songs);
+                    }
+                ).await;
+                if song_list.n_items() > 0 {
+                    content_stack.show_content();
                 } else {
-                    this.clear_cover();
+                    content_stack.show_placeholder();
                 }
+                this.imp().runtime.set_label(&format_secs_as_duration(
+                    this.imp()
+                        .song_list
+                        .iter()
+                        .map(|item: Result<Song, _>| {
+                            if let Ok(song) = item {
+                                return song.get_duration();
+                            }
+                            0
+                        })
+                        .sum::<u64>() as f64,
+                ));
             }
         ));
 
-        self.imp().playlist.borrow_mut().replace(playlist);
+
     }
 
     pub fn unbind(&self, clear_contents: bool) {
@@ -964,46 +995,30 @@ impl PlaylistContentView {
         }
     }
 
-    fn add_songs(&self, songs: &[Song]) {
-        // To facilitate editing, each song needs to keep its own position within the playlist.
-        // TODO: find a less fragile algo for this
-        self.imp().song_list.extend_from_slice(songs);
-        self.imp()
-            .track_count
-            .set_label(&self.imp().song_list.n_items().to_string());
-        self.imp().runtime.set_label(&format_secs_as_duration(
-            self.imp()
-                .song_list
-                .iter()
-                .map(|item: Result<Song, _>| {
-                    if let Ok(song) = item {
-                        return song.get_duration();
-                    }
-                    0
-                })
-                .sum::<u64>() as f64,
-        ));
-    }
-
     /// Set a user-selected path as the new local avatar.
-    pub fn set_cover(&self, path: &str) {
-        let title = self.imp().title.label();
-        if !title.is_empty() {
-            if let Some(library) = self.imp().library.get() {
-                library.set_playlist_cover(title.as_str(), path);
+    pub fn set_cover(&self, path: String) {
+        glib::spawn_future_local(clone!(#[weak(rename_to = this)] self, async move {
+            let title = this.imp().title.label();
+            if !title.is_empty() {
+                if let Some(cache) = this.imp().cache.get() {
+                    cache.set_playlist_cover(title.to_string(), &path).await;
+                }
             }
-        }
+        }));
     }
 
+    #[inline]
     fn update_cover(&self, tex: &gdk::Texture) {
         // Set text in case there is no image
-        self.imp().cover.set_paintable(Some(tex));
+        self.imp().cover.show(tex);
     }
 
+    #[inline]
     fn clear_cover(&self) {
-        self.imp().cover.set_paintable(Some(&*ALBUMART_PLACEHOLDER));
+        self.imp().cover.clear();
     }
 
+    #[inline]
     pub fn current_playlist(&self) -> Option<INode> {
         self.imp().playlist.borrow().clone()
     }
