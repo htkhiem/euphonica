@@ -172,15 +172,22 @@ impl ArtistCell {
             #[strong]
             artist,
             async move {
-                match this.imp().cache.get().unwrap().clone().get_artist_avatar(
+                let res = this.imp().cache.get().unwrap().clone().get_artist_avatar(
                     artist.get_info(), true,
                     // For artist view, don't mass-query from external sources!
                     false
-                ).await {
-                    Ok(maybe_tex) => {
-                        this.update_avatar(maybe_tex.as_ref());
+                ).await;
+                // Check again as row might have been bound to a different playlist
+                // while awaiting
+                if this.imp().artist.upgrade().is_some_and(
+                    |a| a.get_info().get_comp_id() == artist.get_info().get_comp_id()
+                ) {
+                    match res {
+                        Ok(maybe_tex) => {
+                            this.update_avatar(maybe_tex.as_ref());
+                        }
+                        Err(e) => {dbg!(e);}
                     }
-                    Err(e) => {dbg!(e);}
                 }
             }
         ));

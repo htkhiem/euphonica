@@ -174,36 +174,45 @@ impl PlaylistRow {
             .set_paintable(Some(&*ALBUMART_THUMBNAIL_PLACEHOLDER));
     }
 
-    fn schedule_thumbnail(&self, uri: String) {
-        self.clear_thumbnail();
-        glib::spawn_future_local(clone!(
-            #[weak(rename_to = this)]
-            self,
-            async move {
-                match this.imp().cache.get().unwrap().get_playlist_cover(
-                    uri,
-                    this.imp().is_dynamic.get(),
-                    true,
-                ).await {
-                    Ok(Some(tex)) => {
-                        this.update_thumbnail(&tex);
-                    }
-                    Ok(None) => {}
-                    Err(e) => {dbg!(e);}
-                }
-            }
-        ));
-    }
-
-    #[inline]
-    fn update_thumbnail(&self, tex: &gdk::Texture) {
-        self.imp().thumbnail.set_paintable(Some(tex));
+    fn uri(&self) -> Option<String> {
+        self.imp().playlist.borrow().as_ref().map(|p| p.get_uri().to_owned())
     }
 
     pub fn bind(&self, playlist: &INode) {
         // Bind album art listener. Set once first (like sync_create)
         self.imp().playlist.replace(Some(playlist.clone()));
-        self.schedule_thumbnail(playlist.get_uri().to_owned());
+        self.clear_thumbnail();
+        glib::spawn_future_local(clone!(
+            #[weak(rename_to = this)]
+            self,
+            #[strong]
+            playlist,
+            async move {
+                let uri = playlist.get_uri().to_owned();
+                let res = this.imp().cache.get().unwrap().get_playlist_cover(
+                    uri.clone(),
+                    this.imp().is_dynamic.get(),
+                    true,
+                ).await;
+                // Check again as row might have been bound to a different playlist
+                // while awaiting
+                if this.uri().is_some_and(|curr_uri| curr_uri == uri) {
+                    match res {
+                        Ok(Some(tex)) => {
+                            this.imp()
+                                .thumbnail
+                                .set_paintable(Some(&tex));
+                        }
+                        Ok(None) => {
+                            this.clear_thumbnail();
+                        }
+                        Err(e) => {dbg!(e);}
+                    }
+                } else {
+                    println!("PlaylistRow now bound to a different playlist, ignoring texture");
+                }
+            }
+        ));
     }
 
     pub fn unbind(&self) {

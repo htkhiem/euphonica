@@ -49,7 +49,8 @@ mod imp {
         pub album: WeakRef<Album>,
         // Vector holding the bindings to properties of the Album GObject
         pub cover_signal_ids: RefCell<Option<(SignalHandlerId, SignalHandlerId)>>,
-        pub cache: OnceCell<Rc<Cache>>
+        pub cache: OnceCell<Rc<Cache>>,
+        pub hires: Cell<bool>
     }
 
     // The central trait for subclassing a GObject
@@ -125,6 +126,7 @@ mod imp {
                 "quality-grade" => self.quality_grade.icon_name().to_value(),
                 "rating" => self.rating_val.get().to_value(),
                 "image-size" => self.image_size.get().to_value(),
+                "hires" => self.hires.get().to_value(),
                 _ => unimplemented!(),
             }
         }
@@ -164,6 +166,11 @@ mod imp {
                 "image-size" => {
                     if let Ok(new) = value.get::<i32>() {
                         obj.set_image_size(new);
+                    }
+                }
+                "hires" => {
+                    if let Ok(new) = value.get::<bool>() {
+                        obj.set_hires(new);
                     }
                 }
                 _ => unimplemented!(),
@@ -249,13 +256,13 @@ impl AlbumCell {
                 }
             ))
             .bind(&res, "title", gtk::Widget::NONE);
+        let ui_settings = settings_manager().child("ui");
         if let Some(wrap_mode) = wrap_mode {
             // Some views, like the Recent View, requires a specific mode due to UI constraints.
             res.imp().title.set_wrap_mode(wrap_mode);
         } else {
             // If unspecified, bind to GSettings
-            settings_manager()
-                .child("ui")
+            ui_settings
                 .bind("title-wrap-mode", &res.imp().title.get(), "wrap-mode")
                 .mapping(|var, _| {
                     Some(
@@ -267,6 +274,17 @@ impl AlbumCell {
                 .get_only()
                 .build();
         }
+        ui_settings
+            .bind("use-hires-for-album-cells", &res.imp().title.get(), "hires")
+            .mapping(|var, _| {
+                Some(
+                    MarqueeWrapMode::try_from(var.get::<String>().unwrap().as_ref())
+                        .expect("Invalid title-wrap-mode setting value")
+                        .into(),
+                )
+            })
+            .get_only()
+            .build();
 
         item.property_expression("item")
             .chain_property::<Album>("artist")
@@ -340,34 +358,49 @@ impl AlbumCell {
         res
     }
 
+    fn album(&self) -> Option<Album> {
+        self.imp().album.upgrade()
+    }
+
+    fn update_cover(&self) {
+        self.imp().cover.show_spinner();
+        glib::spawn_future_local(clone!(
+            #[weak(rename_to = this)]
+            self,
+            async move {
+                if let Some(album) = this.album() {
+                    let res = this.imp().cache.get().unwrap().clone().get_album_cover(
+                        album.get_info(), !this.imp().hires.get(), true
+                    ).await;
+                    // Check again as cell might have been bound to a different album
+                    // while awaiting
+                    if this.album().is_some_and(|a| a.get_info().get_comp_id() == album.get_info().get_comp_id()) {
+                        match res {
+                            Ok(Some(tex)) => {
+                                this.imp().cover.show(&tex);
+                            }
+                            Ok(None) => {
+                                this.imp().cover.clear();
+                            }
+                            Err(e) => {
+                                this.imp().cover.clear();
+                                dbg!(e);
+                            }
+                        }
+                    } else {
+                        println!("AlbumCell now bound to a different album, ignoring texture");
+                    }
+                }
+            }
+        ));
+    }
+
     pub fn bind(&self, album: &Album) {
         // The string properties are bound using property expressions in setup().
         // Fetch album cover once here.
         // Set once first (like sync_create)
         self.imp().album.set(Some(album));
-        self.imp().cover.show_spinner();
-        glib::spawn_future_local(clone!(
-            #[weak(rename_to = this)]
-            self,
-            #[strong]
-            album,
-            async move {
-                match this.imp().cache.get().unwrap().clone().get_album_cover(
-                    album.get_info(), true, true
-                ).await {
-                    Ok(Some(tex)) => {
-                        this.imp().cover.show(&tex);
-                    }
-                    Ok(None) => {
-                        this.imp().cover.clear();
-                    }
-                    Err(e) => {
-                        this.imp().cover.clear();
-                        dbg!(e);
-                    }
-                }
-            }
-        ));
+        self.update_cover();
     }
 
     pub fn unbind(&self) {
@@ -383,6 +416,18 @@ impl AlbumCell {
         let old = self.imp().image_size.replace(new);
         if old != new {
             self.notify("image-size");
+        }
+    }
+
+    pub fn hires(&self) -> bool {
+        self.imp().hires.get()
+    }
+
+    pub fn set_hires(&self, new: bool) {
+        let old = self.imp().hires.replace(new);
+        if old != new {
+            self.notify("hires");
+            self.update_cover();
         }
     }
 }

@@ -310,31 +310,43 @@ impl SongRow {
         }
     }
 
-    async fn schedule_thumbnail(&self) {
-        if let (Some(cache), Some(song)) = (
-            self.imp().cache.get(),
-            self.imp().song.upgrade()
-        ) {
-            self.imp().thumbnail.show_spinner();
-            match cache.clone().get_song_cover(song.get_info(), true, true).await {
-                Ok(Some(tex)) => self.imp().thumbnail.show(&tex),
-                Ok(None) => self.imp().thumbnail.clear(),
-                Err(e) => {
-                    dbg!(e);
-                    self.imp().thumbnail.clear();
+    fn song(&self) -> Option<Song> {
+        self.imp().song.upgrade()
+    }
+
+    fn schedule_thumbnail(&self) {
+        self.imp().thumbnail.show_spinner();
+        glib::spawn_future_local(clone!(
+            #[weak(rename_to = this)]
+            self,
+            async move {
+                if let (Some(cache), Some(song)) = (
+                    this.imp().cache.get(),
+                    this.song()
+                ) {
+                    let res = cache.clone().get_song_cover(song.get_info(), true, true).await;
+                    // Check again as row might have been bound to a different song
+                    // while awaiting
+                    if this.song().is_some_and(|a| a.get_info().get_comp_id() == song.get_info().get_comp_id()) {
+                        match res {
+                            Ok(Some(tex)) => this.imp().thumbnail.show(&tex),
+                            Ok(None) => this.imp().thumbnail.clear(),
+                            Err(e) => {
+                                dbg!(e);
+                                this.imp().thumbnail.clear();
+                            }
+                        }
+                    } else {
+                        println!("SongRow now bound to a different song, ignoring texture");
+                    }
                 }
             }
-        }
+        ));
     }
 
     pub fn on_bind(&self, song: &Song) {
         self.imp().song.set(Some(song));
-        glib::spawn_future_local(clone!(
-            #[weak(rename_to = this)] self,
-            async move {
-                this.schedule_thumbnail().await;
-            }
-        ));
+        self.schedule_thumbnail();
     }
 
     pub fn on_unbind(&self) {
