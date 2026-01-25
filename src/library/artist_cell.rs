@@ -1,6 +1,6 @@
 use once_cell::sync::Lazy;
 use std::{
-    cell::{OnceCell, RefCell},
+    cell::{OnceCell, RefCell, Cell},
     rc::Rc,
 };
 
@@ -25,6 +25,7 @@ mod imp {
         pub avatar_signal_ids: RefCell<Option<(SignalHandlerId, SignalHandlerId)>>,
         pub cache: OnceCell<Rc<Cache>>,
         pub artist: WeakRef<Artist>,
+        pub external: Cell<bool>
     }
 
     // The central trait for subclassing a GObject
@@ -95,8 +96,9 @@ glib::wrapper! {
 }
 
 impl ArtistCell {
-    pub fn new(item: &gtk::ListItem, cache: Rc<Cache>) -> Self {
+    pub fn new(item: &gtk::ListItem, cache: Rc<Cache>, external: bool) -> Self {
         let res: Self = Object::builder().build();
+        res.imp().external.set(external);
         res.imp()
             .cache
             .set(cache)
@@ -174,8 +176,7 @@ impl ArtistCell {
             async move {
                 let res = this.imp().cache.get().unwrap().clone().get_artist_avatar(
                     artist.get_info(), true,
-                    // For artist view, don't mass-query from external sources!
-                    false
+                    this.imp().external.get()
                 ).await;
                 // Check again as row might have been bound to a different playlist
                 // while awaiting

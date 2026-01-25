@@ -420,6 +420,7 @@ impl AlbumCell {
     pub fn set_hires(&self, new: bool) {
         let old = self.imp().hires.replace(new);
         if old != new {
+            self.imp().cover.set_is_thumbnail(!new);
             self.notify("hires");
             self.update_cover();
         }

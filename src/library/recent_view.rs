@@ -376,7 +376,11 @@ impl RecentView {
                 let item = list_item
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
-                let artist_cell = ArtistCell::new(item, cache);
+                let artist_cell = ArtistCell::new(
+                    item, cache,
+                    // Only displaying at most 30 artists, so we can be the one to fetch externally
+                    true
+                );
                 item.set_child(Some(&artist_cell));
                 adj.set_value(0.0);
                 adj.set_value(0.0);
