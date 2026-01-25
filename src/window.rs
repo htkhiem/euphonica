@@ -31,7 +31,7 @@ use crate::{
     utils::{self, LazyInit, settings_manager},
 };
 use adw::{ColorScheme, StyleManager, prelude::*, subclass::prelude::*};
-use auto_palette::{ImageData, Palette, Theme, color::RGB};
+use auto_palette::{ImageData, Palette, color::{HSL, RGB}};
 use glib::WeakRef;
 use gtk::{
     CssProvider, gdk, gio,
@@ -50,6 +50,9 @@ use std::{
 use async_channel::Sender;
 use glib::Properties;
 use image::ImageReader as Reader;
+
+// How many dominant colours to extract out of the palette for accent colour selection.
+static PALETTE_SIZE: usize = 5;
 
 // Blurred background logic. Runs in a background thread. Both interpretations are valid :)
 // Our asynchronous background switching algorithm is pretty simple: Player controller
@@ -103,16 +106,18 @@ fn get_dominant_color(img: &DynamicImage, is_dark: bool) -> RGB {
         .flat_map(|pixel| [pixel[0], pixel[1], pixel[2], 255])
         .collect::<Vec<u8>>();
 
-    let palette =
-        Palette::<f32>::extract(&ImageData::new(img.width(), img.height(), &colors).unwrap())
-            .unwrap();
-
-    let mut dominant = palette
-        .find_swatches_with_theme(1, Theme::Colorful)
-        .first()
+    let palette = Palette::<f32>::extract(&ImageData::new(img.width(), img.height(), &colors).unwrap())
         .unwrap()
-        .color()
-        .to_hsl();
+        .find_swatches(PALETTE_SIZE)
+        .iter().map(|c| c.color().to_hsl()).collect::<Vec<HSL<f32>>>();
+
+    // Find first colour with saturation > 0.3, in case the first dominant
+    // colours are too greyish.
+    let mut dominant = 0;
+    while palette[dominant].s < 0.3 && dominant < palette.len() - 1 {
+        dominant += 1;
+    }
+    let mut dominant = palette[dominant].clone();
 
     if is_dark {
         // If is_dark, ensure the dominant colour is at least this level

@@ -1,4 +1,4 @@
-use glib::{Object, ParamSpec, ParamSpecString, clone, closure_local, signal::SignalHandlerId, WeakRef};
+use glib::{Object, ParamSpec, ParamSpecString, clone, closure_local, signal::SignalHandlerId};
 use gtk::{CompositeTemplate, gdk, glib, prelude::*, subclass::prelude::*};
 use std::{
     cell::{OnceCell, RefCell},
@@ -142,7 +142,7 @@ impl ArtistTag {
             #[weak]
             window,
             move |_| {
-                window.goto_artist(&this.imp().artist.get().unwrap());
+                window.goto_artist(this.imp().artist.get().unwrap());
             }
         ));
 
