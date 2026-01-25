@@ -372,8 +372,8 @@ impl MpdWrapper {
         self.bg_sender.send(task).await.expect("Broken BG sender");
         // Wake background thread
         let (s, r) = oneshot::channel();
-        self.foreground(Task::SendMessage(String::from("wake"), s), r)
-            .await?;
+        // Ignore errors here, client might be reconnecting itself
+        let _ = self.foreground(Task::SendMessage(String::from("wake"), s), r).await;
         let res = self.handle_error(receiver.await.expect("Broken oneshot receiver"))
             .await;
         self.state.dec_bg();
@@ -577,7 +577,7 @@ impl MpdWrapper {
         let mut more: bool = true;
         while more && (curr_len) < FETCH_LIMIT {
             let (s, r) = oneshot::channel();
-            let song_infos = self.background(
+            let song_infos = self.foreground(
                 Task::GetQueue(
                     Window::from((
                         curr_len as u32,
@@ -770,7 +770,7 @@ impl MpdWrapper {
         // Get list of unique album tags, grouped by albumartist
         // Will block child thread until info for all albums have been retrieved.
         let (s, r) = oneshot::channel();
-        let grouped_vals = self.background(Task::List(
+        let grouped_vals = self.foreground(Task::List(
             Term::Tag(Cow::Borrowed("album")),
             query,
             Some("albumartist"),
@@ -783,7 +783,7 @@ impl MpdWrapper {
                 query.and(Term::Tag(Cow::Borrowed("album")), tag.to_string());
                 query.and(Term::Tag(Cow::Borrowed("albumartist")), key.to_string());
                 let (s, r) = oneshot::channel();
-                let mut songs = self.background(Task::Find(query, Window::from((0, 1)), s), r).await?;
+                let mut songs = self.foreground(Task::Find(query, Window::from((0, 1)), s), r).await?;
                 if !songs.is_empty() {
                     if let Some(album_info) = std::mem::take(&mut songs[0])
                         .into_album_info()
@@ -820,17 +820,21 @@ impl MpdWrapper {
 
     /// Alternative to get_songs_by_query that does not wrap SongInfos in GObjects for efficiency
     /// in downstream processing.
-    pub async fn get_song_infos_by_query<F>(&self, query: Query<'static>, respond: &mut F) -> ClientResult<()>
+    ///
+    /// By default this is run on the background client. Pass use_fg = true to make use of the
+    /// foreground client, e.g. when responding to user interactions.
+    pub async fn get_song_infos_by_query<F>(&self, query: Query<'static>, use_fg: bool, respond: &mut F) -> ClientResult<()>
     where F: FnMut(Vec<SongInfo>) {
         let mut curr_len: usize = 0;
         let mut more: bool = true;
         while more && (curr_len) < FETCH_LIMIT {
             let (s, r) = oneshot::channel();
-            let songs = self.background(Task::Find(
-                query.clone(),
-                Window::from((curr_len as u32, (curr_len + BATCH_SIZE) as u32)),
-                s
-            ), r).await?;
+            let win = Window::from((curr_len as u32, (curr_len + BATCH_SIZE) as u32));
+            let songs = if use_fg {
+                self.foreground(Task::Find(query.clone(), win, s), r).await?
+            } else {
+                self.background(Task::Find(query.clone(), win, s), r).await?
+            };
             if !songs.is_empty() {
                 respond(songs);
                 curr_len += BATCH_SIZE;
@@ -841,9 +845,11 @@ impl MpdWrapper {
         Ok(())
     }
 
-    pub async fn get_songs_by_query<F>(&self, query: Query<'static>, respond: &mut F) -> ClientResult<()>
+    /// By default this is run on the background client. Pass use_fg = true to make use of the
+    /// foreground client, e.g. when responding to user interactions.
+    pub async fn get_songs_by_query<F>(&self, query: Query<'static>, use_fg: bool, respond: &mut F) -> ClientResult<()>
     where F: FnMut(Vec<Song>) {
-        self.get_song_infos_by_query(query, &mut |song_infos| {
+        self.get_song_infos_by_query(query, use_fg, &mut |song_infos| {
             respond(
                 song_infos
                     .into_iter()
@@ -866,7 +872,7 @@ impl MpdWrapper {
         };
         let mut already_parsed: FxHashSet<String> = FxHashSet::default();
         let (s, r) = oneshot::channel();
-        let mut grouped_vals = self.background(
+        let mut grouped_vals = self.foreground(
             Task::List(Term::Tag(Cow::Borrowed(tag_type)), Query::new(), None, s), r
         ).await?;
         // TODO: Limit tags to only what we need locally
@@ -874,7 +880,7 @@ impl MpdWrapper {
             let mut query = Query::new();
             query.and(Term::Tag(Cow::Borrowed(tag_type)), std::mem::take(&mut tag));
             let (s, r) = oneshot::channel();
-            let mut songs = self.background(
+            let mut songs = self.foreground(
                 Task::Find(query, Window::from((0, 1)), s), r
             ).await?;
             if !songs.is_empty() {
@@ -903,7 +909,7 @@ impl MpdWrapper {
             let mut query = Query::new();
             query.and_with_op(Term::Tag(Cow::Borrowed("artist")), QueryOperation::Contains, name);
             let (s, r) = oneshot::channel();
-            let mut songs = self.background(Task::Find(query, Window::from((0, 1)), s), r).await?;
+            let mut songs = self.foreground(Task::Find(query, Window::from((0, 1)), s), r).await?;
             if !songs.is_empty() {
                 let artists = std::mem::take(&mut songs[0]).into_artist_infos();
                 for artist in artists.into_iter() {
@@ -921,7 +927,7 @@ impl MpdWrapper {
 
     pub async fn lsinfo(&self, path: String) -> ClientResult<Vec<INode>> {
         let (s, r) = oneshot::channel();
-        self.background(Task::LsInfo(path, s), r)
+        self.foreground(Task::LsInfo(path, s), r)
             .await.map(|infos| infos.into_iter().map(INode::from).collect::<Vec<INode>>())
     }
 
@@ -970,12 +976,12 @@ impl MpdWrapper {
         let mut query = Query::new();
         query.and(Term::File, uri.clone());
         let (s, r) = oneshot::channel();
-        let mut found_songs = self.background(Task::Find(query, Window::from((0, 1)), s), r).await?;
+        let mut found_songs = self.foreground(Task::Find(query, Window::from((0, 1)), s), r).await?;
         if !found_songs.is_empty() {
             let song = std::mem::take(&mut found_songs[0]);
             if fetch_stickers {
                 let (s, r) = oneshot::channel();
-                Ok(Some((song, Some(self.background(Task::GetKnownStickers("song", uri, s), r).await?))))
+                Ok(Some((song, Some(self.foreground(Task::GetKnownStickers("song", uri, s), r).await?))))
             } else {
                 Ok(Some((song, None)))
             }

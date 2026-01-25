@@ -159,7 +159,7 @@ impl Library {
     where F: FnMut(Vec<Song>) {
         let mut query = Query::new();
         query.and(Term::Tag(Cow::Borrowed("album")), title);
-        self.client().get_songs_by_query(query, respond).await
+        self.client().get_songs_by_query(query, true, respond).await
     }
 
     /// Queue specific songs
@@ -535,6 +535,11 @@ impl Library {
 
     pub async fn init_recent(&self, refresh: bool) -> ClientResult<()> {
         if !self.imp().recent_initialized.get() || refresh {
+            let model = self.imp().recent_songs.clone();
+            model.remove_all();
+            let settings = settings_manager().child("library");
+            model.extend_from_slice(&self.client().get_recent_songs(settings.uint("n-recent-songs")).await?);
+
             let model = self.imp().recent_albums.clone();
             model.remove_all();
             self.client().get_recent_albums(&mut |album| {
@@ -545,11 +550,6 @@ impl Library {
             let model = self.imp().recent_artists.clone();
             model.remove_all();
             self.client().get_recent_artists(&mut |artist| {model.append(&artist);}).await?;
-
-            let model = self.imp().recent_songs.clone();
-            model.remove_all();
-            let settings = settings_manager().child("library");
-            model.extend_from_slice(&self.client().get_recent_songs(settings.uint("n-recent-songs")).await?);
 
             self.imp().recent_initialized.set(true);
         }
@@ -600,7 +600,7 @@ impl Library {
 
         let comp_id = artist.get_info().get_comp_id();
         let mut visited_albums = FxHashSet::default();
-        self.client().get_song_infos_by_query(song_query, &mut |batch| {
+        self.client().get_song_infos_by_query(song_query, true, &mut |batch| {
             let filtered: Vec<SongInfo> = batch
                 .into_iter()
                 .filter(|s| s.artists.iter().any(|a| a.get_comp_id() == comp_id))

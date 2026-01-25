@@ -1,5 +1,5 @@
 use glib::{
-    Object, ParamSpec, ParamSpecChar, ParamSpecInt, ParamSpecString, clone, closure_local,
+    Object, ParamSpec, ParamSpecChar, ParamSpecInt, ParamSpecString, ParamSpecBoolean, clone, closure_local,
     signal::SignalHandlerId, WeakRef
 };
 use gtk::{CompositeTemplate, Image, Label, gdk, prelude::*, subclass::prelude::*};
@@ -114,6 +114,7 @@ mod imp {
                     ParamSpecString::builder("quality-grade").build(),
                     ParamSpecChar::builder("rating").build(),
                     ParamSpecInt::builder("image-size").build(),
+                    ParamSpecBoolean::builder("hires").build(),
                 ]
             });
             PROPERTIES.as_ref()
@@ -275,14 +276,7 @@ impl AlbumCell {
                 .build();
         }
         ui_settings
-            .bind("use-hires-for-album-cells", &res.imp().title.get(), "hires")
-            .mapping(|var, _| {
-                Some(
-                    MarqueeWrapMode::try_from(var.get::<String>().unwrap().as_ref())
-                        .expect("Invalid title-wrap-mode setting value")
-                        .into(),
-                )
-            })
+            .bind("use-hires-for-album-cells", &res, "hires")
             .get_only()
             .build();
 

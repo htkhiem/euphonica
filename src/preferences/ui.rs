@@ -20,6 +20,8 @@ mod imp {
         #[template_child]
         pub auto_accent: TemplateChild<adw::SwitchRow>,
         #[template_child]
+        pub use_hires_for_album_cells: TemplateChild<adw::SwitchRow>,
+        #[template_child]
         pub title_wrap_mode: TemplateChild<adw::ComboRow>,
 
         #[template_child]
@@ -111,6 +113,10 @@ impl UIPreferences {
         let auto_accent = imp.auto_accent.get();
         ui_settings
             .bind("auto-accent", &auto_accent, "active")
+            .build();
+        let use_hires_for_album_cells = imp.use_hires_for_album_cells.get();
+        ui_settings
+            .bind("use-hires-for-album-cells", &use_hires_for_album_cells, "active")
             .build();
         let title_wrap_mode = imp.title_wrap_mode.get();
         ui_settings

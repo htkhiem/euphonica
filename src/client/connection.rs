@@ -382,7 +382,7 @@ impl Connection {
             println!("Warning: did not cleanly disconnect");
         }
         let settings = utils::settings_manager().child("client");
-        dbg!("Disconnected successfully");
+        // dbg!("Disconnected successfully");
 
         // self.state.set_connection_state(ConnectionState::Connecting);
         let use_unix_socket = settings.boolean("mpd-use-unix-socket");
@@ -414,21 +414,21 @@ impl Connection {
             .map_err(Error::Mpd)?
         };
 
-        dbg!("Connected, now authenticating");
+        // dbg!("Connected, now authenticating");
 
         // If there is a password configured, use it to authenticate.
         if let Some(password) = password::get_mpd_password().map_err(|_| Error::CredentialStore)? {
             client.login(&password).map_err(Error::Mpd)?;
         }
 
-        dbg!("Successfully authenticated");
+        // dbg!("Successfully authenticated");
 
         // Doubles as a litmus test to see if we are authenticated.
         client
             .subscribe(&self.wake_channel)
             .map_err(Error::Mpd)?;
 
-        dbg!("Subscribed to wake channel");
+        // dbg!("Subscribed to wake channel");
 
         let version = client.version;
         self.client.replace(client);
@@ -953,7 +953,7 @@ impl Connection {
             } else if let (Some(sender), Some(client)) =
                 (self.idle_sender.as_ref(), self.client.as_mut())
             {
-                println!("Entering idle mode...");
+                // println!("Entering idle mode...");
                 let changes = client.wait(&[]).map_err(Error::Mpd)?;
                 for change in changes.iter() {
                     match change {
@@ -962,7 +962,7 @@ impl Connection {
                                 for msg in msgs {
                                     let content = msg.message.as_str();
                                     // Send any message to get out of wait().
-                                    println!("Client received message: {content}");
+                                    // println!("Client received message: {content}");
                                 }
                             }
                         }

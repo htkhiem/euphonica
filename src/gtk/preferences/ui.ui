@@ -46,6 +46,12 @@
           </object>
         </child>
         <child>
+          <object class="AdwSwitchRow" id="use_hires_for_album_cells">
+            <property name="title" translatable="true">Use high-resolution textures for album cells</property>
+            <property name="subtitle" translatable="true">Increases VRAM usage.</property>
+          </object>
+        </child>
+        <child>
           <object class="AdwComboRow" id="title_wrap_mode">
             <property name="title" translatable="true">Title wrap mode</property>
             <property name="subtitle" translatable="true">How to display long titles.</property>
