@@ -60,6 +60,7 @@ impl MetadataProvider for MusicBrainzWrapper {
                 let res = Release::search(
                     ReleaseSearchQuery::query_builder()
                         .release(title)
+                        .and()
                         .artist(artist)
                         .build(),
                 )
