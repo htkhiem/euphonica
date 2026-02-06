@@ -10,11 +10,29 @@ use musicbrainz_rs::entity::{
     release::Release,
     tag::Tag,
 };
+use serde::Deserialize;
 
 use super::{
     super::{models},
     PROVIDER_KEY,
 };
+
+// There are more details in the response, but we don't really care about them
+#[derive(Deserialize)]
+pub struct CoverArtResponse {
+    pub images: Vec<CoverArtImage>
+}
+
+#[derive(Deserialize)]
+pub struct CoverArtImage {
+    pub thumbnails: CoverArtThumbnails
+}
+
+#[derive(Deserialize)]
+pub struct CoverArtThumbnails {
+    #[serde(rename = "500")]
+    pub res_500: Option<String>,
+}
 
 fn transform_wikimedia_url(url: &str) -> Option<String> {
     // MusicBrainz relations cannot contain direct links, so we'll have to extract one ourselves.
@@ -143,6 +161,18 @@ impl From<Artist> for models::ArtistMeta {
             begin_date,
             end_date,
             country: artist.country,
+        }
+    }
+}
+
+impl From<CoverArtImage> for models::ImageMeta {
+    fn from(cover: CoverArtImage) -> Self {
+        return models::ImageMeta {
+            // This is kind of a decision, but we use the 5xx size & not the original
+            // We only really need the 5xx size, so this isn't really that big of a problem
+            size: models::ImageSize::ExtraLarge,
+            // docs say that they are always present
+            url: cover.thumbnails.res_500.unwrap(),
         }
     }
 }
