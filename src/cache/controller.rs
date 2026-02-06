@@ -252,7 +252,10 @@ impl Cache {
                                         if overwrite || sqlite::find_album_meta(&key).ok().flatten().is_none() {
                                             let res = providers.read().unwrap().get_album_meta(&mut key, None);
                                             if let Some(album) = res {
-                                                let _ = sqlite::write_album_meta(&key, &album);
+                                                let res = sqlite::write_album_meta(&key, &album);
+                                                if let Err(err) = res {
+                                                    println!("Failed to write album meta: {err:#?}");
+                                                }
                                             }
                                             else {
                                                 // Push an empty AlbumMeta to block further calls for this album.
