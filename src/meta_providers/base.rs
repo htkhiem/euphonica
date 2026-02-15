@@ -5,13 +5,17 @@ use crate::{
 };
 use gtk::prelude::*;
 use reqwest::blocking::Client;
-use std::{thread, time::{Duration, SystemTime}};
+use std::{
+    thread,
+    time::{Duration, SystemTime},
+};
 
 use super::models;
 
 pub fn sleep_between_requests(last_request_time: SystemTime) {
     let settings = settings_manager().child("metaprovider");
-    let wake_time = last_request_time + Duration::from_secs_f64(settings.double("delay-between-requests-s"));
+    let wake_time =
+        last_request_time + Duration::from_secs_f64(settings.double("delay-between-requests-s"));
     let now = SystemTime::now();
     // .duration_since returns an Err if the target_time is in the past
     if let Ok(remaining) = wake_time.duration_since(now) {
@@ -25,7 +29,7 @@ pub mod utils {
     use super::*;
     use crate::{config::APPLICATION_USER_AGENT, utils};
     use image::DynamicImage;
-    use reqwest::header::USER_AGENT;
+    use reqwest::{StatusCode, header::USER_AGENT};
 
     /// Get a file from the given URL as bytes. Useful for downloading images.
     fn get_file(url: &str) -> Option<Vec<u8>> {
@@ -38,17 +42,27 @@ pub mod utils {
                 .header(USER_AGENT, APPLICATION_USER_AGENT)
                 .send()
             {
-                Ok(res) => {
-                    if let Ok(bytes) = res.bytes() {
-                        if let Ok(s) = str::from_utf8(&bytes) {
-                            println!("Received UTF8 instead: {s}");
+                Ok(res) => match res.status() {
+                    StatusCode::OK => {
+                        if let Ok(bytes) = res.bytes() {
+                            if let Ok(s) = str::from_utf8(&bytes) {
+                                println!("Received UTF8 instead: {s}");
+                            }
+                            Some(bytes.to_vec())
+                        } else {
+                            println!("get_file: Failed to read response as bytes!");
+                            None
                         }
-                        Some(bytes.to_vec())
-                    } else {
-                        println!("get_file: Failed to read response as bytes!");
-                        None
                     }
-                }
+                    StatusCode::NOT_FOUND => {
+                        println!("get_file: Image at {} does not exist!", url);
+                        return None;
+                    }
+                    _ => {
+                        println!("get_file: Image at {} has an unknown status: {}!", url, res.status());
+                        return None;
+                    }
+                },
                 Err(e) => {
                     println!("get_file: {e:?}");
                     None

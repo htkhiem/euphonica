@@ -2,7 +2,6 @@ use std::time::SystemTime;
 
 use gtk::prelude::*;
 extern crate bson;
-use reqwest::{blocking::Client, header, StatusCode};
 
 use musicbrainz_rs::{
     entity::{artist::*, release::*},
@@ -11,79 +10,24 @@ use musicbrainz_rs::{
 
 use crate::{
     common::{AlbumInfo, ArtistInfo},
-    config::APPLICATION_USER_AGENT,
-    meta_providers::musicbrainz::models::{CoverArtImage, CoverArtResponse},
+    meta_providers::{
+        models::ImageMeta,
+    },
     utils::meta_provider_settings,
 };
 
 use super::{
-    super::{models, prelude::*, MetadataProvider},
+    super::{MetadataProvider, models, prelude::*},
     PROVIDER_KEY,
 };
 
 pub struct MusicBrainzWrapper {
-    client: Client,
     last_request_time: SystemTime,
-}
-
-impl MusicBrainzWrapper {
-    // custom impl since the musicbrainz_rs one has weird https errors...
-    fn fetch_album_cover(&self, id: String) -> Option<CoverArtResponse> {
-        let mut base_api: String = "https://coverartarchive.org/release/".to_owned();
-        base_api.push_str(&id);
-
-        let resp = self
-            .client
-            .get(base_api)
-            .header(header::USER_AGENT, APPLICATION_USER_AGENT)
-            .header(header::ACCEPT, "application/json")
-            .send();
-
-        match resp {
-            Ok(resp) => {
-                match resp.status() {
-                    StatusCode::BAD_REQUEST => {
-                        println!("[MusicBrainz] Couldn't parse input as mbid");
-                    }
-                    StatusCode::NOT_FOUND => {
-                        println!("[MusicBrainz] Couldn't find a release with this mbid");
-                    }
-                    StatusCode::SERVICE_UNAVAILABLE => {
-                        // Why did this API use 503 instead of 429? Who knows/cares
-                        // Anyways this SHOULD be dead code as of writing this, since no rate limits actually exist
-                        println!("[MusicBrainz] Exceeded rate limit for cover art");
-                    }
-                    StatusCode::OK => {
-                        // 307 -> 200
-                        match resp.json::<CoverArtResponse>() {
-                            Ok(parsed) => {
-                                return Some(parsed);
-                            }
-                            Err(err) => {
-                                println!(
-                                    "[MusicBrainz] couldn't deserialize cover art meta: {err}"
-                                );
-                            }
-                        }
-                    }
-                    s => {
-                        println!("[MusicBrainz] Cover art api returned an unknown status: {s}")
-                    }
-                }
-            }
-            Err(e) => {
-                println!("[MusicBrainz] Couldn't fetch from cover art api: {e:?}");
-            }
-        }
-
-        return None;
-    }
 }
 
 impl MetadataProvider for MusicBrainzWrapper {
     fn new() -> Self {
         Self {
-            client: Client::new(),
             last_request_time: SystemTime::now(),
         }
     }
@@ -157,22 +101,14 @@ impl MetadataProvider for MusicBrainzWrapper {
             return Some(new_result);
         }
 
-        println!("[MusicBrainz] Fetching cover art");
-
-        let cover_resp = self.fetch_album_cover(new_result.mbid.clone().unwrap());
-        if let Some(data) = cover_resp {
-            if data.images.is_empty() {
-                println!("[MusicBrainz] Empty cover art response");
-                return Some(new_result);
-            }
-
-            let mut new_images: Vec<models::ImageMeta> =
-                data.images.into_iter().map(CoverArtImage::into).collect();
-            new_result.image.append(&mut new_images);
-            println!("[MusicBrainz] Got images: {:?}", new_result.image);
-        } else {
-            println!("[MusicBrainz] Could not fetch album cover");
-        }
+        new_result.image.push(ImageMeta {
+            // in reality, we don't really know the quality. However, its likely a highres version.
+            size: models::ImageSize::Mega,
+            url: format!(
+                "https://coverartarchive.org/release/{}/front",
+                new_result.mbid.clone().unwrap()
+            ),
+        });
 
         return Some(new_result);
     }
