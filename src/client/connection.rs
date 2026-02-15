@@ -1,13 +1,13 @@
 use async_channel::{Receiver, Sender};
 use gio::prelude::SettingsExt;
 use mpd::{
+    Channel, Client, EditAction, GroupedValues, Id, Idle, Output, Query, ReplayGain, SaveMode,
+    Status, Subsystem, Term, Version,
     error::{
         Error as MpdError, ErrorCode as MpdErrorCode, ProtoError, Result as MpdResult, ServerError,
     },
     search::Window,
     song::PosIdChange,
-    Channel, Client, EditAction, GroupedValues, Id, Idle, Output, Query, ReplayGain, SaveMode,
-    Status, Subsystem, Term, Version,
 };
 use oneshot::Sender as OneShotSender;
 use rand::seq::SliceRandom;
@@ -22,16 +22,16 @@ use crate::{
     cache::sqlite,
     client::stream::StreamWrapper,
     common::{
+        AlbumInfo, DynamicPlaylist, SongInfo, Stickers,
         dynamic_playlist::{Ordering, QueryLhs, Rule, StickerObjectType, StickerOperation},
         inode::INodeInfo,
-        AlbumInfo, DynamicPlaylist, SongInfo, Stickers,
     },
     player::PlaybackFlow,
-    utils::{self, save_and_register_image},
+    utils,
 };
 
 use super::StickerSetMode;
-use super::{get_past_unix_timestamp, password, BATCH_SIZE, FETCH_LIMIT};
+use super::{BATCH_SIZE, FETCH_LIMIT, get_past_unix_timestamp, password};
 
 fn cmp_options_nulls_last<T: Ord>(a: Option<&T>, b: Option<&T>) -> StdOrdering {
     match (a, b) {
@@ -518,6 +518,8 @@ impl Connection {
         let _ = resp.send(self.client_then(then));
     }
 
+    /// Downloads an image or returns an already existing image for a given uri
+    /// Will resp with 2 image names (not full paths): (high res, thumb)
     fn maybe_download_image<F>(
         &mut self,
         uri: String,
@@ -542,10 +544,10 @@ impl Connection {
                         Ok(bytes) => {
                             let dyn_img = image::load_from_memory(&bytes)
                                 .expect("Unable to read image from bytes");
-                            Ok(save_and_register_image(Some(dyn_img), &uri, None))
+                            Ok(Some(utils::save_and_register_image(dyn_img, &uri, None)))
                         }
                         Err(MpdError::Proto(ProtoError::NotPair)) => {
-                            println!("GetEmbeddedCover: empty output");
+                            println!("maybe_download_image: empty output");
                             // Empty output. Treat as not available.
                             Ok(None)
                         }

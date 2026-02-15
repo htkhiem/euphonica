@@ -46,14 +46,6 @@ pub fn get_doc_cache_path() -> PathBuf {
     res
 }
 
-pub fn get_new_image_paths() -> (PathBuf, PathBuf) {
-    let mut path = get_image_cache_path();
-    let mut thumbnail_path = path.clone();
-    path.push(Uuid::new_v4().simple().to_string() + ".png");
-    thumbnail_path.push(Uuid::new_v4().simple().to_string() + ".png");
-    (path, thumbnail_path)
-}
-
 /// Spawn a Tokio runtime on a new thread. This is needed by the zbus dependency.
 pub fn tokio_runtime() -> &'static Runtime {
     static RUNTIME: OnceLock<Runtime> = OnceLock::new();
@@ -250,29 +242,34 @@ pub fn resize_convert_image(dyn_img: DynamicImage) -> (RgbImage, RgbImage) {
     )
 }
 
+/// returns the image name that this is saved as
+pub fn save_and_register_single_image(img: &RgbImage, key: &str, prefix: Option<&'static str>, is_thumb: bool) -> String {
+    let mut path = get_image_cache_path();
+    let name = Uuid::new_v4().simple().to_string() + ".png";
+    path.push(&name);
+
+    img.save(&path).unwrap_or_else(|_| panic!("Couldn't save downloaded cover to {:?}", &path));
+
+    sqlite::register_image_key(key, prefix, Some(&name), is_thumb).expect("Sqlite error");
+
+    return name
+}
+
+/// responds with 2 image names (not fully qualified paths): (hires, thumbnail)
+/// this is really a util wrap around resizing the dyn_img & registering. For fine grain control, you can call those individually
 pub fn save_and_register_image(
-    dyn_img: Option<DynamicImage>, key: &str, prefix: Option<&'static str>
-) -> Option<(String, String)> {
-    if let Some(dyn_img) = dyn_img {
-        let (hires_img, thumb_img) = resize_convert_image(dyn_img);
-        let (hires_path, thumb_path) = get_new_image_paths();
-        hires_img
-            .save(&hires_path)
-            .unwrap_or_else(|_| panic!("Couldn't save downloaded cover to {:?}", &hires_path));
-        thumb_img
-            .save(&thumb_path)
-            .unwrap_or_else(|_| panic!("Couldn't save downloaded thumbnail cover to {:?}", &thumb_path));
-        let hires = hires_path.file_name().unwrap().to_str().unwrap().to_string();
-        let thumb = thumb_path.file_name().unwrap().to_str().unwrap().to_string();
-        sqlite::register_image_key(key, prefix, Some(&hires), false).expect("Sqlite error");
-        sqlite::register_image_key(key, prefix, Some(&thumb), true).expect("Sqlite error");
-        Some((hires_path.to_str().unwrap().to_owned(), thumb_path.to_str().unwrap().to_owned()))
-    } else {
-        // Register with empty paths to indicate "failed once, don't try again"
-        sqlite::register_image_key(key, prefix, None, false).expect("Sqlite error");
-        sqlite::register_image_key(key, prefix, None, true).expect("Sqlite error");
-        None
-    }
+    dyn_img: DynamicImage, key: &str, prefix: Option<&'static str>
+) -> (String, String) {
+    let (hires_img, thumb_img) = resize_convert_image(dyn_img);
+    let hires_k = save_and_register_single_image(&hires_img, key, prefix, false);
+    let thumb_k = save_and_register_single_image(&thumb_img, key, prefix, true);
+
+    return (hires_k, thumb_k);
+}
+
+pub fn register_image_as_failure(key: &str, prefix: Option<&'static str>) {
+    sqlite::register_image_key(key, prefix, None, false).expect("Sqlite error");
+    sqlite::register_image_key(key, prefix, None, true).expect("Sqlite error");
 }
 
 pub fn current_unix_timestamp() -> u64 {
@@ -481,3 +478,4 @@ pub fn get_time_ago_desc(past_ts: i64) -> String {
         "just now".to_string()
     }
 }
+
