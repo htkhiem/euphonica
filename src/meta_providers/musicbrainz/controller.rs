@@ -10,14 +10,12 @@ use musicbrainz_rs::{
 
 use crate::{
     common::{AlbumInfo, ArtistInfo},
-    meta_providers::{
-        models::ImageMeta,
-    },
+    meta_providers::models::ImageMeta,
     utils::meta_provider_settings,
 };
 
 use super::{
-    super::{MetadataProvider, models, prelude::*},
+    super::{models, prelude::*, MetadataProvider},
     PROVIDER_KEY,
 };
 

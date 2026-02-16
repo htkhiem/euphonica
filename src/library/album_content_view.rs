@@ -249,7 +249,7 @@ mod imp {
                                     obj.imp().album.borrow().as_ref(),
                                     obj.imp().cache.get(),
                                 ) {
-                                    if let Err(e) = cache.clear_cover(album.get_folder_uri().to_owned()).await {dbg!(e);}
+                                    if let Err(e) = cache.clear_cover(album.get_folder_uri().to_owned(), true).await {dbg!(e);}
                                 }
                             }
                         ));
@@ -451,7 +451,7 @@ impl AlbumContentView {
     /// Set a user-selected path as the new local cover.
     pub async fn set_cover(&self, path: &str) {
         if let (Some(album), Some(cache)) = (self.album(), self.imp().cache.get()) {
-            if let Err(e) = cache.set_cover(album.get_folder_uri().to_owned(), path).await {dbg!(e);}
+            if let Err(e) = cache.set_cover(album.get_folder_uri().to_owned(), path, true).await {dbg!(e);}
         }
     }
 
@@ -727,7 +727,8 @@ impl AlbumContentView {
             let cache = self.imp().cache.get().unwrap().clone();
             // Remove existing entry in SQLite, which might be an empty "do not retry" placeholder.
             if overwrite {
-                let _ = cache.clear_cover(info.folder_uri.to_owned()).await;
+                // Don't notify, else we'd interrupt the spinner
+                let _ = cache.clear_cover(info.folder_uri.to_owned(), false).await;
             }
             match cache.get_album_cover(
                 info, false, true

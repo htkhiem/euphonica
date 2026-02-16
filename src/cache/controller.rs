@@ -526,20 +526,20 @@ impl Cache {
         Ok(())
     }
 
-    pub async fn set_cover(&self, folder_uri: String, path: &str) -> Result<(gdk::Texture, gdk::Texture)> {
-        self.set_image(folder_uri, None, path, Some("folder-cover-set")).await
+    pub async fn set_cover(&self, folder_uri: String, path: &str, notify: bool) -> Result<(gdk::Texture, gdk::Texture)> {
+        self.set_image(folder_uri, None, path, if notify {Some("folder-cover-set")} else {None}).await
     }
 
-    pub async fn clear_cover(&self, folder_uri: String) -> Result<()> {
-        self.clear_image(folder_uri, None, Some("folder-cover-cleared")).await
+    pub async fn clear_cover(&self, folder_uri: String, notify: bool) -> Result<()> {
+        self.clear_image(folder_uri, None, if notify {Some("folder-cover-cleared")} else {None}).await
     }
 
-    pub async fn set_artist_avatar(&self, tag: String, path: &str) -> Result<(gdk::Texture, gdk::Texture)> {
-        self.set_image(tag, Some("avatar"), path, Some("artist-avatar-set")).await
+    pub async fn set_artist_avatar(&self, tag: String, path: &str, notify: bool) -> Result<(gdk::Texture, gdk::Texture)> {
+        self.set_image(tag, Some("avatar"), path, if notify {Some("artist-avatar-set")} else {None}).await
     }
 
-    pub async fn clear_artist_avatar(&self, tag: String) -> Result<()> {
-        self.clear_image(tag, Some("avatar"), Some("artist-avatar-cleared")).await
+    pub async fn clear_artist_avatar(&self, tag: String, notify: bool) -> Result<()> {
+        self.clear_image(tag, Some("avatar"), if notify {Some("artist-avatar-cleared")} else {None}).await
     }
 
     pub async fn set_playlist_cover(&self, playlist_name: String, path: &str) -> Result<(gdk::Texture, gdk::Texture)> {

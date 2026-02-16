@@ -1,7 +1,6 @@
 use adw::subclass::prelude::*;
 use ashpd::desktop::file_chooser::SelectedFiles;
 use derivative::Derivative;
-use duplicate::duplicate;
 use gio::{ActionEntry, SimpleActionGroup};
 use glib::{Binding, WeakRef, clone, closure_local, signal::SignalHandlerId, subclass::Signal};
 use gtk::{CompositeTemplate, ListItem, SignalListItemFactory, gdk, gio, glib, prelude::*};
@@ -249,7 +248,7 @@ mod imp {
                                     obj.artist(),
                                     obj.imp().cache.get(),
                                 ) {
-                                    cache.clear_artist_avatar(artist.get_name().to_owned()).await;
+                                    cache.clear_artist_avatar(artist.get_name().to_owned(), true).await;
                                 }
                             }
                         ));
@@ -668,7 +667,7 @@ impl ArtistContentView {
                     this.artist(),
                     this.imp().cache.get(),
                 ) {
-                    cache.set_artist_avatar(artist.get_name().to_owned(), &path).await;
+                    cache.set_artist_avatar(artist.get_name().to_owned(), &path, true).await;
                 }
             }
         ));
@@ -685,7 +684,8 @@ impl ArtistContentView {
         if let Some(info) = self.artist().as_ref().map(|a| a.get_info()) {
             let cache = self.imp().cache.get().unwrap().clone();
             if overwrite {
-                let _ = cache.clear_artist_avatar(info.name.to_owned());
+                // Don't notify, else we'd interrupt the spinner
+                let _ = cache.clear_artist_avatar(info.name.to_owned(), false);
             }
             match cache.get_artist_avatar(
                 info, false, true  // Content page is the one to fetch external sources
