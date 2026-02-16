@@ -29,7 +29,7 @@ pub mod utils {
     use super::*;
     use crate::{config::APPLICATION_USER_AGENT, utils};
     use image::DynamicImage;
-    use reqwest::{StatusCode, header::USER_AGENT};
+    use reqwest::{header::USER_AGENT, StatusCode};
 
     /// Get a file from the given URL as bytes. Useful for downloading images.
     fn get_file(url: &str) -> Option<Vec<u8>> {
@@ -45,9 +45,10 @@ pub mod utils {
                 Ok(res) => match res.status() {
                     StatusCode::OK => {
                         if let Ok(bytes) = res.bytes() {
-                            if let Ok(s) = str::from_utf8(&bytes) {
-                                println!("Received UTF8 instead: {s}");
-                            }
+                            // Only for testing
+                            // if let Ok(s) = str::from_utf8(&bytes) {
+                            //     println!("Received UTF8 instead: {s}");
+                            // }
                             Some(bytes.to_vec())
                         } else {
                             println!("get_file: Failed to read response as bytes!");
@@ -59,7 +60,11 @@ pub mod utils {
                         return None;
                     }
                     _ => {
-                        println!("get_file: Image at {} has an unknown status: {}!", url, res.status());
+                        println!(
+                            "get_file: Image at {} has an unknown status: {}!",
+                            url,
+                            res.status()
+                        );
                         return None;
                     }
                 },
