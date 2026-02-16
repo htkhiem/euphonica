@@ -1,7 +1,6 @@
 use adw::subclass::prelude::*;
 use ashpd::desktop::file_chooser::SelectedFiles;
 use derivative::Derivative;
-use duplicate::duplicate;
 use gio::{ActionEntry, SimpleActionGroup};
 use glib::{Binding, WeakRef, clone, closure_local, signal::SignalHandlerId, subclass::Signal};
 use gtk::{CompositeTemplate, ListItem, SignalListItemFactory, gdk, gio, glib, prelude::*};
@@ -249,7 +248,7 @@ mod imp {
                                     obj.artist(),
                                     obj.imp().cache.get(),
                                 ) {
-                                    cache.clear_artist_avatar(artist.get_name().to_owned()).await;
+                                    cache.clear_artist_avatar(artist.get_name().to_owned(), true).await;
                                 }
                             }
                         ));
@@ -266,8 +265,8 @@ mod imp {
                             #[weak]
                             obj,
                             async move {
-                                obj.schedule_avatar().await;
                                 obj.update_meta(true).await;
+                                obj.schedule_avatar(true).await;
                             }
                         ));
                     }
@@ -668,7 +667,7 @@ impl ArtistContentView {
                     this.artist(),
                     this.imp().cache.get(),
                 ) {
-                    cache.set_artist_avatar(artist.get_name().to_owned(), &path).await;
+                    cache.set_artist_avatar(artist.get_name().to_owned(), &path, true).await;
                 }
             }
         ));
@@ -680,10 +679,15 @@ impl ArtistContentView {
         self.imp().avatar.set_custom_image(tex);
     }
 
-    async fn schedule_avatar(&self) {
+    async fn schedule_avatar(&self, overwrite: bool) {
         self.update_avatar(None);
         if let Some(info) = self.artist().as_ref().map(|a| a.get_info()) {
-            match self.imp().cache.get().unwrap().clone().get_artist_avatar(
+            let cache = self.imp().cache.get().unwrap().clone();
+            if overwrite {
+                // Don't notify, else we'd interrupt the spinner
+                let _ = cache.clear_artist_avatar(info.name.to_owned(), false);
+            }
+            match cache.get_artist_avatar(
                 info, false, true  // Content page is the one to fetch external sources
             ).await {
                 Ok(maybe_tex) => {
@@ -754,7 +758,7 @@ impl ArtistContentView {
                 }
 
                 // The extra fluff later
-                this.schedule_avatar().await;
+                this.schedule_avatar(false).await;
                 this.update_meta(false).await;
             }
         ));
