@@ -232,33 +232,22 @@ fn load_image(
 ) -> Result<Option<Texture>> {
     // Always check with our DB first as a prior call might have downloaded the
     // necessary image for us.
-    let mut file = sqlite::find_image_by_key(key, prefix, thumbnail).expect("Sqlite DB error");
-
-    if file.is_none() {
+    if let Some(file) = sqlite::find_image_by_key(key, prefix, thumbnail).expect("Sqlite DB error")
+    {
+        read_texture_from_name(&file).map(Some)
+    } else {
         match get_best_image(fallback_images) {
             Ok(dyn_img) => {
                 let (hires_k, thumb_k) = save_and_register_image(dyn_img, key, prefix);
-                file = if thumbnail {
-                    Some(thumb_k)
-                } else {
-                    Some(hires_k)
-                };
+                read_texture_from_name(if thumbnail { &thumb_k } else { &hires_k }).map(Some)
             }
             Err(e) => {
                 dbg!(e);
                 register_image_as_failure(key, prefix);
+                Ok(None)
             }
         }
     }
-
-    if let Some(f) = file {
-        match read_texture_from_name(&f) {
-            Ok(msg) => return Ok(Some(msg)),
-            Err(e) => return Err(e),
-        }
-    }
-
-    Ok(None)
 }
 
 impl Cache {
