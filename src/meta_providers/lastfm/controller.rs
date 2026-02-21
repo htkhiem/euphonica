@@ -16,26 +16,27 @@ use crate::{
 
 use super::models::{LastfmAlbumResponse, LastfmArtistResponse};
 use super::{
-    super::{MetadataProvider, models, prelude::*},
-    PROVIDER_KEY
+    super::{models, prelude::*, MetadataProvider},
+    PROVIDER_KEY,
 };
 
 pub const API_ROOT: &str = "http://ws.audioscrobbler.com/2.0";
 
 pub struct LastfmWrapper {
     client: Client,
-    last_request_time: SystemTime
+    last_request_time: SystemTime,
 }
 
 impl LastfmWrapper {
-    fn get_lastfm(&mut self, method: &str, params: &[(&str, &str)]) -> Option<Response> {
+    fn get_lastfm(&mut self, method: &str, params: &[(&str, &str)]) -> (Option<Response>, bool) {
         sleep_between_requests(self.last_request_time);
         let settings = meta_provider_settings(PROVIDER_KEY);
         let key = settings.string("api-key").to_string();
         // Return None if there is no API key specified.
         if !key.is_empty() {
             println!("[Last.fm] Calling `{method}` with query {params:?}");
-            let resp = self
+            self.last_request_time = SystemTime::now();
+            let mut res = self
                 .client
                 .get(API_ROOT)
                 .query(&[
@@ -46,18 +47,19 @@ impl LastfmWrapper {
                 .query(params)
                 .header(USER_AGENT, APPLICATION_USER_AGENT)
                 .send();
-            self.last_request_time = SystemTime::now();
-            match resp {
-                Ok(res) => {
-                    return Some(res);
-                }
+            if res.is_ok() {
+                res = res.unwrap().error_for_status();
+            }
+            match res {
+                Ok(res) => (Some(res), false),
                 Err(e) => {
-                    println!("{e:?}");
-                    return None;
+                    println!("{:?}", &e);
+                    (None, reqwest_error_is_retryable(&e))
                 }
             }
+        } else {
+            (None, false)
         }
-        None
     }
 }
 
@@ -65,7 +67,7 @@ impl MetadataProvider for LastfmWrapper {
     fn new() -> Self {
         Self {
             client: Client::new(),
-            last_request_time: SystemTime::now()
+            last_request_time: SystemTime::now(),
         }
     }
 
@@ -75,7 +77,7 @@ impl MetadataProvider for LastfmWrapper {
         &mut self,
         key: &mut AlbumInfo,
         existing: Option<models::AlbumMeta>,
-    ) -> Option<models::AlbumMeta> {
+    ) -> (Option<models::AlbumMeta>, bool) {
         if meta_provider_settings(PROVIDER_KEY).boolean("enabled") {
             let mut params: Vec<(&str, &str)> = Vec::new();
             if let Some(id) = key.mbid.as_ref() {
@@ -84,54 +86,51 @@ impl MetadataProvider for LastfmWrapper {
                 params.push(("album", name));
                 params.push(("artist", artist));
             } else {
-                return existing;
+                return (existing, false);
             }
 
-            if let Some(resp) = self.get_lastfm("album.getinfo", &params) {
+            // get_lastfm will only return Some(resp) if status code is 200
+            let (maybe_resp, retry) = self.get_lastfm("album.getinfo", &params);
+            if let Some(resp) = maybe_resp {
                 // TODO: Get summary
-                match resp.status() {
-                    reqwest::StatusCode::OK => {
-                        match resp.json::<LastfmAlbumResponse>() {
-                            Ok(parsed) => {
-                                // Some preprocessing is needed.
-                                // Might have to put the mbid back in, as Last.fm won't return
-                                // it if we queried using it in the first place.
-                                let mut new: models::AlbumMeta = parsed.album.into();
-                                if let Some(id) = key.mbid.as_ref() {
-                                    new.mbid = Some(id.to_owned());
-                                }
-                                // Override album & artist names in case the returned values
-                                // are slightly different (casing, apostrophes, etc.), else
-                                // we won't be able to query it back using our own tags.
-                                if let Some(artist) = key.get_artist_tag() {
-                                    new.artist = Some(artist.to_owned());
-                                }
-                                if new.name != key.title {
-                                    new.name = key.title.to_owned();
-                                }
-                                // If there is existing data, merge new data to it
-                                if let Some(old) = existing {
-                                    Some(old.merge(new))
-                                } else {
-                                    Some(new)
-                                }
-                            }
-                            Err(err) => {
-                                println!("[Last.fm] get_album_meta: {err}");
-                                existing
-                            }
+                match resp.json::<LastfmAlbumResponse>() {
+                    Ok(parsed) => {
+                        // Some preprocessing is needed.
+                        // Might have to put the mbid back in, as Last.fm won't return
+                        // it if we queried using it in the first place.
+                        let mut new: models::AlbumMeta = parsed.album.into();
+                        if let Some(id) = key.mbid.as_ref() {
+                            new.mbid = Some(id.to_owned());
                         }
+                        // Override album & artist names in case the returned values
+                        // are slightly different (casing, apostrophes, etc.), else
+                        // we won't be able to query it back using our own tags.
+                        if let Some(artist) = key.get_artist_tag() {
+                            new.artist = Some(artist.to_owned());
+                        }
+                        if new.name != key.title {
+                            new.name = key.title.to_owned();
+                        }
+                        // If there is existing data, merge new data to it
+                        (
+                            Some(if let Some(old) = existing {
+                                old.merge(new)
+                            } else {
+                                new
+                            }),
+                            false,
+                        )
                     }
-                    other => {
-                        println!("[Last.fm] get_album_meta: failed with status {other:?}");
-                        existing
+                    Err(err) => {
+                        println!("[Last.fm] get_album_meta: {err}");
+                        (existing, false)
                     }
                 }
             } else {
-                existing
+                (existing, retry)
             }
         } else {
-            existing
+            (existing, false)
         }
     }
 
@@ -144,7 +143,7 @@ impl MetadataProvider for LastfmWrapper {
         &mut self,
         key: &mut ArtistInfo,
         existing: std::option::Option<models::ArtistMeta>,
-    ) -> Option<models::ArtistMeta> {
+    ) -> (Option<models::ArtistMeta>, bool) {
         if meta_provider_settings(PROVIDER_KEY).boolean("enabled") {
             let mut params: Vec<(&str, &str)> = Vec::new();
             if let Some(id) = key.mbid.as_ref() {
@@ -152,52 +151,48 @@ impl MetadataProvider for LastfmWrapper {
             } else {
                 params.push(("artist", &key.name))
             }
-            if let Some(resp) = self.get_lastfm("artist.getinfo", &params) {
+            let (maybe_resp, retry) = self.get_lastfm("artist.getinfo", &params);
+            if let Some(resp) = maybe_resp {
                 // TODO: Get summary
-                match resp.status() {
-                    reqwest::StatusCode::OK => {
-                        match resp.json::<LastfmArtistResponse>() {
-                            Ok(parsed) => {
-                                // Some preprocessing is needed.
-                                // Might have to put the mbid back in, as Last.fm won't return
-                                // it if we queried using it in the first place.
-                                let mut new: models::ArtistMeta = parsed.artist.into();
-                                if let Some(id) = key.mbid.as_ref() {
-                                    new.mbid = Some(id.to_owned());
-                                }
-                                // Override artist name in case the returned values
-                                // are slightly different (casing, apostrophes, etc.), else
-                                // we won't be able to query it back using our own tags.
-                                if new.name != key.name {
-                                    new.name = key.name.to_owned();
-                                }
-                                if let Some(old) = existing {
-                                    Some(old.merge(new))
-                                } else {
-                                    Some(new)
-                                }
-                            }
-                            Err(err) => {
-                                println!("[Last.fm] get_artist_meta: {err}");
-                                existing
-                            }
+                match resp.json::<LastfmArtistResponse>() {
+                    Ok(parsed) => {
+                        // Some preprocessing is needed.
+                        // Might have to put the mbid back in, as Last.fm won't return
+                        // it if we queried using it in the first place.
+                        let mut new: models::ArtistMeta = parsed.artist.into();
+                        if let Some(id) = key.mbid.as_ref() {
+                            new.mbid = Some(id.to_owned());
                         }
+                        // Override artist name in case the returned values
+                        // are slightly different (casing, apostrophes, etc.), else
+                        // we won't be able to query it back using our own tags.
+                        if new.name != key.name {
+                            new.name = key.name.to_owned();
+                        }
+                        (
+                            Some(if let Some(old) = existing {
+                                old.merge(new)
+                            } else {
+                                new
+                            }),
+                            false,
+                        )
                     }
-                    other => {
-                        println!("[Last.fm] get_artist_meta: failed with status {other:?}");
-                        existing
+                    Err(err) => {
+                        println!("[Last.fm] get_artist_meta: {err}");
+                        (existing, false)
                     }
                 }
             } else {
-                existing
+                (existing, retry)
             }
         } else {
-            existing
+            (existing, false)
         }
     }
 
     /// Last.fm does not provide lyrics.
-    fn get_lyrics(&mut self, _key: &crate::common::SongInfo) -> Option<models::Lyrics> {
-        None
+    fn get_lyrics(&mut self, _key: &crate::common::SongInfo) -> (Option<models::Lyrics>, bool) {
+        (None, false)
     }
 }

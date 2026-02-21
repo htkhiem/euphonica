@@ -201,8 +201,6 @@ glib::wrapper! {
 
 impl EuphonicaApplication {
     pub fn new(application_id: &str, flags: &gio::ApplicationFlags) -> Self {
-        // TODO: Find a better place to put these
-        musicbrainz_rs::config::set_user_agent(APPLICATION_USER_AGENT);
         let app: EuphonicaApplication = glib::Object::builder()
             .property("application-id", application_id)
             .property("flags", flags)

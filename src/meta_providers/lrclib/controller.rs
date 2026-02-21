@@ -13,7 +13,7 @@ use reqwest::{
 };
 
 use super::{
-    super::{MetadataProvider, models, prelude::*},
+    super::{models, prelude::*, MetadataProvider},
     LrcLibResponse, PROVIDER_KEY,
 };
 
@@ -21,23 +21,29 @@ pub const API_ROOT: &str = "https://lrclib.net/api/";
 
 pub struct LrcLibWrapper {
     client: Client,
-    last_request_time: SystemTime
+    last_request_time: SystemTime,
 }
 
 impl LrcLibWrapper {
-    fn get_lrclib(&mut self, params: &[(&str, &str)]) -> Option<Response> {
+    fn get_lrclib(&mut self, params: &[(&str, &str)]) -> (Option<Response>, bool) {
         sleep_between_requests(self.last_request_time);
-        let resp = self
+        self.last_request_time = SystemTime::now();
+        let mut resp = self
             .client
             .get(format!("{API_ROOT}search"))
             .query(params)
             .header(USER_AGENT, APPLICATION_USER_AGENT)
             .send();
-        self.last_request_time = SystemTime::now();
-        if let Ok(res) = resp {
-            return Some(res);
+        if resp.is_ok() {
+            resp = resp.unwrap().error_for_status();
         }
-        None
+        match resp {
+            Ok(res) => (Some(res), false),
+            Err(e) => {
+                println!("{:?}", &e);
+                (None, reqwest_error_is_retryable(&e))
+            }
+        }
     }
 }
 
@@ -45,7 +51,7 @@ impl MetadataProvider for LrcLibWrapper {
     fn new() -> Self {
         Self {
             client: Client::new(),
-            last_request_time: SystemTime::now()
+            last_request_time: SystemTime::now(),
         }
     }
 
@@ -54,8 +60,8 @@ impl MetadataProvider for LrcLibWrapper {
         &mut self,
         _key: &mut AlbumInfo,
         existing: Option<models::AlbumMeta>,
-    ) -> Option<models::AlbumMeta> {
-        existing
+    ) -> (Option<models::AlbumMeta>, bool) {
+        (existing, false)
     }
 
     /// LRCLIB only provides song lyrics.
@@ -63,11 +69,11 @@ impl MetadataProvider for LrcLibWrapper {
         &mut self,
         _key: &mut ArtistInfo,
         existing: Option<models::ArtistMeta>,
-    ) -> Option<models::ArtistMeta> {
-        existing
+    ) -> (Option<models::ArtistMeta>, bool) {
+        (existing, false)
     }
 
-    fn get_lyrics(&mut self, key: &SongInfo) -> Option<models::Lyrics> {
+    fn get_lyrics(&mut self, key: &SongInfo) -> (Option<models::Lyrics>, bool) {
         if meta_provider_settings(PROVIDER_KEY).boolean("enabled") {
             let mut params: Vec<(&str, &str)> = Vec::new();
             params.push(("track_name", &key.title));
@@ -77,66 +83,55 @@ impl MetadataProvider for LrcLibWrapper {
             if let Some(album) = &key.album {
                 params.push(("album_name", &album.title));
             }
-
-            if let Some(resp) = self.get_lrclib(&params) {
-                match resp.status() {
-                    reqwest::StatusCode::OK => {
-                        match resp.json::<Vec<LrcLibResponse>>() {
-                            Ok(parsed) => {
-                                if !parsed.is_empty() {
-                                    let mut best_idx: usize = 0;
-                                    let mut best_diff: f32 = (parsed[0].duration
-                                        - key.duration.map(|d| d.as_secs_f32()).unwrap_or(0.0))
-                                    .abs();
-                                    for i in 1..parsed.len() {
-                                        // Find the one with the closest duration
-                                        let diff = (parsed[i].duration
-                                            - key.duration.map(|d| d.as_secs_f32()).unwrap_or(0.0))
-                                        .abs();
-                                        if diff < best_diff {
-                                            best_diff = diff;
-                                            best_idx = i;
-                                        }
-                                    }
-                                    let mut res: Option<models::Lyrics> = None;
-                                    if let Some(synced) = parsed[best_idx].synced.as_ref() {
-                                        if let Ok(lyrics) =
-                                            models::Lyrics::try_from_synced_lrclib_str(synced)
-                                        {
-                                            res = Some(lyrics);
-                                        }
-                                    }
-                                    if res.is_none() {
-                                        if let Ok(lyrics) =
-                                            models::Lyrics::try_from_plain_lrclib_str(
-                                                &parsed[best_idx].plain,
-                                            )
-                                        {
-                                            res = Some(lyrics);
-                                        }
-                                    }
-                                    res
-                                } else {
-                                    None
+            let (resp, retry) = self.get_lrclib(&params);
+            if let Some(resp) = resp {
+                match resp.json::<Vec<LrcLibResponse>>() {
+                    Ok(parsed) => {
+                        if !parsed.is_empty() {
+                            let mut best_idx: usize = 0;
+                            let mut best_diff: f32 = (parsed[0].duration
+                                - key.duration.map(|d| d.as_secs_f32()).unwrap_or(0.0))
+                            .abs();
+                            for i in 1..parsed.len() {
+                                // Find the one with the closest duration
+                                let diff = (parsed[i].duration
+                                    - key.duration.map(|d| d.as_secs_f32()).unwrap_or(0.0))
+                                .abs();
+                                if diff < best_diff {
+                                    best_diff = diff;
+                                    best_idx = i;
                                 }
                             }
-                            Err(e) => {
-                                dbg!(e);
-                                None
+                            let mut res: Option<models::Lyrics> = None;
+                            if let Some(synced) = parsed[best_idx].synced.as_ref() {
+                                if let Ok(lyrics) =
+                                    models::Lyrics::try_from_synced_lrclib_str(synced)
+                                {
+                                    res = Some(lyrics);
+                                }
                             }
+                            if res.is_none() {
+                                if let Ok(lyrics) = models::Lyrics::try_from_plain_lrclib_str(
+                                    &parsed[best_idx].plain,
+                                ) {
+                                    res = Some(lyrics);
+                                }
+                            }
+                            (res, false)
+                        } else {
+                            (None, false)
                         }
                     }
-                    code => {
-                        dbg!(code);
-                        None
+                    Err(e) => {
+                        dbg!(e);
+                        (None, retry)
                     }
                 }
-                // Pick the one with the closest duration to our song
             } else {
-                None
+                (None, retry)
             }
         } else {
-            None
+            (None, false)
         }
     }
 }

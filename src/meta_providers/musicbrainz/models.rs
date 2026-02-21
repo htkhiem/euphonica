@@ -29,7 +29,7 @@ impl From<Tag> for models::Tag {
     fn from(mbtag: Tag) -> Self {
         Self {
             name: mbtag.name,
-            count: Some(mbtag.count),
+            count: Some(mbtag.count.unwrap_or(0)),
             url: None,
         }
     }
@@ -94,9 +94,11 @@ impl From<Artist> for models::ArtistMeta {
         let begin_date: Option<NaiveDate>;
         let end_date: Option<NaiveDate>;
         if let Some(lifespan) = artist.life_span {
-            begin_date = lifespan.begin;
+            begin_date = lifespan
+                .begin
+                .map(|ds| ds.into_naive_date(0, 1, 1).unwrap());
             if lifespan.ended.unwrap_or(false) {
-                end_date = lifespan.end; // Might still be None
+                end_date = lifespan.end.map(|ds| ds.into_naive_date(0, 1, 1).unwrap());
             } else {
                 end_date = None;
             }

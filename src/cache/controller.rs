@@ -578,7 +578,7 @@ impl Cache {
                     }
                 }
                 let res = providers.lock().unwrap().get_album_meta(&mut album, None);
-                if let Some(meta) = res {
+                if let (Some(meta), _) = res {
                     sqlite::write_album_meta(&album, &meta).map_err(Error::Sqlite)?;
                     Ok(Some(meta))
                 }
@@ -618,7 +618,7 @@ impl Cache {
                     }
                 }
                 let res = providers.lock().unwrap().get_artist_meta(&mut artist, None);
-                if let Some(meta) = res {
+                if let (Some(meta), _) = res {
                     sqlite::write_artist_meta(&artist, &meta).map_err(Error::Sqlite)?;
                     Ok(Some(meta))
                 }
@@ -750,7 +750,7 @@ impl Cache {
             let song = song.to_owned();
             return self.external.call(move |_| {
                 let res = providers.lock().unwrap().get_lyrics(&song);
-                if let Some(lyrics) = res {
+                if let (Some(lyrics), _) = res {
                     sqlite::write_lyrics(&song, Some(&lyrics)).map_err(Error::Sqlite)?;
                     return Ok(Some(lyrics));
                 }
