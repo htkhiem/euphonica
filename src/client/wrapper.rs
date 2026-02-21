@@ -653,10 +653,10 @@ impl MpdWrapper {
         if let Some(song_info) = self.foreground(Task::GetSongAtQueueId(id, s), r).await? {
             let res = Song::from(song_info);
             if fetch_stickers {
-                let (s, r) = oneshot::channel();
-                res.set_stickers(self.foreground(
-                    Task::GetKnownStickers("song", res.get_uri().to_owned(), s), r
-                ).await?);
+                // Error handling is already performed for us
+                if let Ok(stickers) = self.get_known_stickers("song", res.get_uri().to_owned()).await {
+                    res.set_stickers(stickers);
+                }
             }
             Ok(Some(res))
         } else {
@@ -980,8 +980,9 @@ impl MpdWrapper {
         if !found_songs.is_empty() {
             let song = std::mem::take(&mut found_songs[0]);
             if fetch_stickers {
-                let (s, r) = oneshot::channel();
-                Ok(Some((song, Some(self.foreground(Task::GetKnownStickers("song", uri, s), r).await?))))
+                // Error handling is already performed for us
+                let maybe_stickers = self.get_known_stickers("song", song.uri.to_owned()).await.ok();
+                Ok(Some((song, maybe_stickers)))
             } else {
                 Ok(Some((song, None)))
             }
