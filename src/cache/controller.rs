@@ -17,10 +17,10 @@ use gtk::{
     gdk::{self, Texture},
     gio, glib,
 };
-use image::{EncodableLayout, ImageReader};
+use image::{ImageReader};
 use lru::LruCache;
 use once_cell::sync::Lazy;
-use std::num::NonZeroUsize;
+use std::{io::Cursor, num::NonZeroUsize};
 use std::{
     fmt,
     fs::create_dir_all,
@@ -34,8 +34,7 @@ use crate::{
     common::{AlbumInfo, ArtistInfo},
     meta_providers::{MetadataChain, models, prelude::*, utils::get_best_image},
     utils::{
-        get_app_cache_path, get_image_cache_path, register_image_as_failure, resize_convert_image,
-        save_and_register_image, save_and_register_single_image, settings_manager,
+        RegisteredImage, get_app_cache_path, get_image_cache_path, register_image_as_failure, resize_convert_image, save_and_register_image, save_and_register_single_image, settings_manager
     },
 };
 use crate::{
@@ -86,24 +85,17 @@ fn set_image_internal(
         .decode()
         .map_err(|_| Error::UnknownFileFormat)?;
 
-    // not ideal, but for efficiency's sake, we use a more fine grained approach than save_and_register_image
-
-    let (hires_img, thumb_img) = resize_convert_image(dyn_img);
-    let hires_k = save_and_register_single_image(&hires_img, key, key_prefix, false);
-    let thumb_k = save_and_register_single_image(&thumb_img, key, key_prefix, true);
-
-    // interesting the slice here IS static - we didn't mod it earlier & we aren't gonna mod it later
-    let hires_tex = gdk::Texture::from_bytes(&glib::Bytes::from(hires_img.as_bytes()))
-        .map_err(|_| Error::UnknownFileFormat)?;
-    let thumbnail_tex = gdk::Texture::from_bytes(&glib::Bytes::from(thumb_img.as_bytes()))
-        .map_err(|_| Error::UnknownFileFormat)?;
+    let bundle = save_and_register_image(dyn_img, key, key_prefix);
+    let hires_tex = read_texture_from_register(&bundle.hires)?;
+    let thumb_tex = read_texture_from_register(&bundle.thumb)?;
 
     {
         let mut cache = IMAGE_CACHE.lock().unwrap();
-        cache.put(hires_k, hires_tex.clone());
-        cache.put(thumb_k, thumbnail_tex.clone());
+
+        cache.put(bundle.hires.name, hires_tex.clone());
+        cache.put(bundle.thumb.name, thumb_tex.clone());
     }
-    Ok((hires_tex, thumbnail_tex))
+    Ok((hires_tex, thumb_tex))
 }
 
 #[inline]
@@ -174,7 +166,27 @@ fn read_texture_from_name(name: &str) -> Result<gdk::Texture> {
     let mut res = get_image_cache_path();
     res.push(name);
 
-    gdk::Texture::from_filename(res).map_err(|_| Error::FileNotFound)
+    gdk::Texture::from_filename(res).map_err(|e| {
+        dbg!(e);
+        Error::FileNotFound
+    })
+}
+
+fn read_texture_from_register(img: &RegisteredImage) -> Result<gdk::Texture> {
+    if let Some(rgb_image) = &img.img {
+        let mut bytes: Vec<u8> = Vec::new();
+        rgb_image.write_to(&mut Cursor::new(&mut bytes), image::ImageFormat::Png).map_err(|e| {
+            dbg!(e);
+            Error::UnknownFileFormat
+        })?;
+
+        gdk::Texture::from_bytes(&glib::Bytes::from(&bytes)).map_err(|e| {
+            dbg!(e);
+            Error::UnknownFileFormat
+        })
+    } else {
+        read_texture_from_name(&img.name)
+    }
 }
 
 // In-memory image cache.
@@ -238,8 +250,8 @@ fn load_image(
     } else {
         match get_best_image(fallback_images) {
             Ok(dyn_img) => {
-                let (hires_k, thumb_k) = save_and_register_image(dyn_img, key, prefix);
-                read_texture_from_name(if thumbnail { &thumb_k } else { &hires_k }).map(Some)
+                let bundle = save_and_register_image(dyn_img, key, prefix);
+                read_texture_from_register(if thumbnail { &bundle.hires } else { &bundle.thumb }).map(Some)
             }
             Err(e) => {
                 dbg!(e);
@@ -347,16 +359,13 @@ impl Cache {
                     .child("client")
                     .boolean("mpd-download-album-art")
             {
-                if let Some((hires, thumb)) = self
+                if let Some(bundle) = self
                     .mpd_client
                     .get_embedded_cover(song.uri.clone())
                     .map_err(Error::Client)
                     .await?
                 {
-                    return Ok(Some(
-                        self.read_texture_async(if thumbnail { thumb } else { hires })
-                            .await?,
-                    ));
+                    return read_texture_from_register(if thumbnail { &bundle.thumb } else { &bundle.hires }).map(Some);
                 }
             }
             if let (false, Some(album)) = (folder_failed_before, song.album.as_ref().cloned()) {
@@ -425,19 +434,13 @@ impl Cache {
 
         if external {
             if !folder_failed_before && settings_manager().child("client").boolean("mpd-download-album-art") {
-                if let Some((hires_k, thumb_k)) = self
+                if let Some(bundle) = self
                     .mpd_client
                     .get_folder_cover(album.folder_uri.to_owned())
                     .map_err(Error::Client)
                     .await?
                 {
-                    let image_name = if thumbnail { thumb_k } else { hires_k };
-                    let tex = self
-                        .local
-                        .call(move |_| read_texture_from_name(&image_name))
-                        .await
-                        .map_err(|_| Error::FileNotFound)?;
-                    return Ok(Some(tex));
+                    return read_texture_from_register(if thumbnail { &bundle.thumb } else { &bundle.hires }).map(Some);
                 }
             }
 
@@ -446,20 +449,13 @@ impl Cache {
                     .child("client")
                     .boolean("mpd-download-album-art")
             {
-                if let Some((hires_k, thumb_k)) = self
+                if let Some(bundle) = self
                     .mpd_client
                     .get_embedded_cover(album.example_uri.to_owned())
                     .map_err(Error::Client)
                     .await?
                 {
-                    let path = if thumbnail { thumb_k } else { hires_k };
-                    let tex = self
-                        .local
-                        .call(move |_| read_texture_from_name(&path))
-                        .await
-                        .map_err(|_| Error::FileNotFound)?;
-
-                    return Ok(Some(tex));
+                    return read_texture_from_register(if thumbnail { &bundle.thumb } else { &bundle.hires }).map(Some);
                 }
             }
 

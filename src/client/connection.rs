@@ -298,7 +298,7 @@ pub enum Task {
         /// URI to song file
         String,
         /// Full paths to high-resolution and low-resolution file, respectively
-        Responder<Option<(String, String)>>,
+        Responder<Option<utils::RegisteredImageBundle>>,
     ),
     /// Get a song's folder cover (cover.jpg/png/webp in the same folder).
     /// Will try to download from MPD if one isn't already available locally.
@@ -306,7 +306,7 @@ pub enum Task {
         /// URI to folder with trailing slash
         String,
         /// Full paths to high-resolution and low-resolution file, respectively
-        Responder<Option<(String, String)>>,
+        Responder<Option<utils::RegisteredImageBundle>>,
     ),
     /// Query distinct values of a tag, optionally grouped by another
     List(
@@ -524,7 +524,7 @@ impl Connection {
         &mut self,
         uri: String,
         download_func: F,
-        resp: Responder<Option<(String, String)>>,
+        resp: Responder<Option<utils::RegisteredImageBundle>>,
     ) where
         F: Fn(&mut Client<StreamWrapper>, &String) -> MpdResult<Vec<u8>>,
     {
@@ -535,7 +535,10 @@ impl Connection {
         let hires = sqlite::find_image_by_key(&uri, None, false).expect("Sqlite DB error");
         let thumb = sqlite::find_image_by_key(&uri, None, true).expect("Sqlite DB error");
         if let (Some(hires), Some(thumb)) = (hires, thumb) {
-            let _ = resp.send(Ok(Some((hires, thumb))));
+            let _ = resp.send(Ok(Some(utils::RegisteredImageBundle{
+                hires: utils::RegisteredImage{ name: hires, img: None },
+                thumb: utils::RegisteredImage{ name: thumb, img: None }
+            })));
         } else {
             // Not available locally => try to download
             self.respond_with_client(
@@ -547,7 +550,7 @@ impl Connection {
                             Ok(Some(utils::save_and_register_image(dyn_img, &uri, None)))
                         }
                         Err(MpdError::Proto(ProtoError::NotPair)) => {
-                            println!("maybe_download_image: empty output");
+                            println!("maybe_download_image: empty output for '{}'", uri);
                             // Empty output. Treat as not available.
                             Ok(None)
                         }

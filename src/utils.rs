@@ -255,16 +255,30 @@ pub fn save_and_register_single_image(img: &RgbImage, key: &str, prefix: Option<
     return name
 }
 
-/// responds with 2 image names (not fully qualified paths): (hires, thumbnail)
+pub struct RegisteredImage {
+    /// image name (eg. uayhsjdkjasuijad.png)
+    pub name: String,
+    /// this field is only present if it is returned by a method that created the image
+    pub img: Option<RgbImage>
+}
+
+pub struct RegisteredImageBundle {
+    pub hires: RegisteredImage,
+    pub thumb: RegisteredImage
+}
+
 /// this is really a util wrap around resizing the dyn_img & registering. For fine grain control, you can call those individually
 pub fn save_and_register_image(
     dyn_img: DynamicImage, key: &str, prefix: Option<&'static str>
-) -> (String, String) {
+) -> RegisteredImageBundle {
     let (hires_img, thumb_img) = resize_convert_image(dyn_img);
     let hires_k = save_and_register_single_image(&hires_img, key, prefix, false);
     let thumb_k = save_and_register_single_image(&thumb_img, key, prefix, true);
 
-    return (hires_k, thumb_k);
+    return RegisteredImageBundle {
+        hires: RegisteredImage{ name: hires_k, img: Some(hires_img) },
+        thumb: RegisteredImage{ name: thumb_k, img: Some(thumb_img) }
+    };
 }
 
 pub fn register_image_as_failure(key: &str, prefix: Option<&'static str>) {
