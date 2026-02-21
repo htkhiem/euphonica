@@ -739,7 +739,10 @@ impl AlbumContentView {
                 Ok(None) => {
                     self.clear_cover();
                 }
-                Err(e) => {dbg!(e);}
+                Err(e) => {
+                    dbg!(e);
+                    self.clear_cover();
+                }
             }
         }
     }
