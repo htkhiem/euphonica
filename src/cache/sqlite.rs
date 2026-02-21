@@ -453,9 +453,8 @@ pub fn find_artist_meta(name: &str, mbid: Option<&str>) -> Result<Option<ArtistM
 }
 
 pub fn write_album_meta(album: &AlbumInfo, meta: &AlbumMeta) -> Result<(), Error> {
-    let mut conn = SQLITE_POOL.get().unwrap();
-    let tx = conn.transaction().map_err(Error::Db)?;
-    tx.execute(
+    let conn = SQLITE_POOL.get().unwrap();
+    conn.execute(
         "insert into albums (folder_uri, mbid, title, artist, last_modified, data)
         values (?1,?2,?3,?4,CURRENT_TIMESTAMP,?5)
         ON CONFLICT(mbid) DO UPDATE SET title=?3, artist=?4, data=?5, last_modified=CURRENT_TIMESTAMP
@@ -473,14 +472,12 @@ pub fn write_album_meta(album: &AlbumInfo, meta: &AlbumMeta) -> Result<(), Error
             ).map_err(Error::DocToBytes)?
         ]
     ).map_err(Error::Db)?;
-    tx.commit().map_err(Error::Db)?;
     Ok(())
 }
 
 pub fn write_artist_meta(artist: &ArtistInfo, meta: &ArtistMeta) -> Result<(), Error> {
-    let mut conn = SQLITE_POOL.get().unwrap();
-    let tx = conn.transaction().map_err(Error::Db)?;
-    tx.execute(
+    let conn = SQLITE_POOL.get().unwrap();
+    conn.execute(
         "insert into artists (name, mbid, last_modified, data)
         values (?1,?2,CURRENT_TIMESTAMP,?3)
         ON CONFLICT(mbid) DO UPDATE SET name=?1, data=?3, last_modified=CURRENT_TIMESTAMP
@@ -496,7 +493,6 @@ pub fn write_artist_meta(artist: &ArtistInfo, meta: &ArtistMeta) -> Result<(), E
         ],
     )
     .map_err(Error::Db)?;
-    tx.commit().map_err(Error::Db)?;
     Ok(())
 }
 
