@@ -248,7 +248,7 @@ pub fn save_and_register_single_image(img: &RgbImage, key: &str, prefix: Option<
     let name = Uuid::new_v4().simple().to_string() + ".png";
     path.push(&name);
 
-    img.save(&path).unwrap_or_else(|_| panic!("Couldn't save downloaded cover to {:?}", &path));
+    img.save(&path).unwrap_or_else(|_| panic!("Couldn't save downloaded image to {:?}", &path));
 
     sqlite::register_image_key(key, prefix, Some(&name), is_thumb).expect("Sqlite error");
 
