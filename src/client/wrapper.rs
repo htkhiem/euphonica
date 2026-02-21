@@ -329,16 +329,27 @@ impl MpdWrapper {
         let (s, r) = oneshot::channel();
         self.fg_sender.send(Task::Connect(s)).await.expect("Broken FG sender");
         let version = self.handle_connect_error(r.await.expect("Broken oneshot receiver")).await?;
-        // Set to maximum supported level first. Any subsequent sticker command will then
-        // update it to a lower state upon encountering related errors.
-        // Euphonica relies on 0.24+ stickers capabilities. Disable if connected to
-        // an older daemon.
+
+        // Figure out stickers support early as we need to decide whether we should show the Dynamic Playlists page.
+        // Set to maximum supported level first by MPD version.
         if version.1 < 24 {
             self.state
                 .set_stickers_support_level(StickersSupportLevel::SongsOnly);
         } else {
             self.state
                 .set_stickers_support_level(StickersSupportLevel::All);
+        }
+        // Now test if stickers DB is enabled by querying for a made-up path. This will most likely
+        // return an error but as long as that error isn't an "unknown command" one, the sticker DB
+        // is enabled.
+        match self.get_known_stickers("song", String::from("euphonica_sticker_test")).await {
+            Err(ClientError::Mpd(MpdError::Server(e))) => {
+                if e.code == MpdErrorCode::UnknownCmd {
+                    println!("Sticker DB not enabled. Disabling stickers-related functionality...");
+                    self.state.set_stickers_support_level(StickersSupportLevel::Disabled);
+                }
+            }
+            _ => {}
         }
         self.client_version.replace(Some(version));
 
