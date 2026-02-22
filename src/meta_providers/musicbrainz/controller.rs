@@ -45,7 +45,7 @@ impl MetadataProvider for MusicBrainzWrapper {
         let settings = settings_manager().child("metaprovider");
         let mut client = MusicBrainzClient::default();
         client.max_retries = settings.uint("n-tries").max(1);
-        client.set_user_agent(APPLICATION_USER_AGENT);
+        let _ = client.set_user_agent(APPLICATION_USER_AGENT);
         Self {
             last_request_time: SystemTime::now(),
             client,
