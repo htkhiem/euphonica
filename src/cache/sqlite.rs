@@ -398,7 +398,11 @@ impl TryFrom<&Row<'_>> for LyricsRow {
     }
 }
 
-pub fn find_album_meta(title: &str, mbid: Option<&str>, artist: Option<&str>) -> Result<Option<AlbumMeta>, Error> {
+pub fn find_album_meta(
+    title: &str,
+    mbid: Option<&str>,
+    artist: Option<&str>,
+) -> Result<Option<AlbumMeta>, Error> {
     let query: Result<AlbumMetaRow, SqliteError>;
     let conn = SQLITE_POOL.get().unwrap();
     if let Some(mbid) = mbid {
@@ -419,12 +423,8 @@ pub fn find_album_meta(title: &str, mbid: Option<&str>, artist: Option<&str>) ->
             let res = row.try_into()?;
             Ok(Some(res))
         }
-        Err(SqliteError::QueryReturnedNoRows) => {
-            Ok(None)
-        }
-        Err(e) => {
-            Err(Error::Db(e))
-        }
+        Err(SqliteError::QueryReturnedNoRows) => Ok(None),
+        Err(e) => Err(Error::Db(e)),
     }
 }
 
@@ -486,10 +486,8 @@ pub fn write_artist_meta(artist: &ArtistInfo, meta: &ArtistMeta) -> Result<(), E
         params![
             &artist.name,
             &artist.mbid,
-            bson::serialize_to_vec(
-                &bson::serialize_to_document(meta).map_err(Error::ObjectToDoc)?
-            )
-            .map_err(Error::DocToBytes)?
+            bson::serialize_to_vec(&bson::serialize_to_document(meta).map_err(Error::ObjectToDoc)?)
+                .map_err(Error::DocToBytes)?
         ],
     )
     .map_err(Error::Db)?;
@@ -601,7 +599,8 @@ pub fn register_image_key(
     tx.execute(
         "delete from images where key = ?1 and is_thumbnail = ?2",
         params![final_key, is_thumbnail as i32],
-    ).map_err(Error::Db)?;
+    )
+    .map_err(Error::Db)?;
 
     tx.execute(
         "insert into images (key, is_thumbnail, filename, last_modified) values (?1,?2,?3,?4)",
@@ -611,8 +610,9 @@ pub fn register_image_key(
             // Callers should interpret empty names as "tried but didn't find anything, don't try again"
             filename.unwrap_or(""),
             OffsetDateTime::now_utc()
-        ])
-      .map_err(Error::Db)?;
+        ],
+    )
+    .map_err(Error::Db)?;
     tx.commit().map_err(Error::Db)?;
     Ok(())
 }
@@ -632,7 +632,8 @@ pub fn unregister_image_key(
     tx.execute(
         "delete from images where key = ?1 and is_thumbnail = ?2",
         params![final_key, is_thumbnail as i32],
-    ).map_err(Error::Db)?;
+    )
+    .map_err(Error::Db)?;
     tx.commit().map_err(Error::Db)?;
     Ok(())
 }

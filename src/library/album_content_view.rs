@@ -1,6 +1,6 @@
 use super::{Library, artist_tag::ArtistTag};
 use crate::{
-    cache::{Cache, CacheState, placeholders::EMPTY_ALBUM_STRING},
+    cache::{Cache, CacheState, Error as CacheError, placeholders::EMPTY_ALBUM_STRING},
     client::{ClientState, state::StickersSupportLevel},
     common::{
         Album, Artist, ContentStack, ContentView, ImageStack, Rating, RowAddButtons, Song, SongRow,
@@ -254,7 +254,7 @@ mod imp {
                                         .clear_cover(album.get_folder_uri().to_owned(), true)
                                         .await
                                     {
-                                        dbg!(e);
+                                        obj.show_cache_error("Couldn't clear cover", e);
                                     }
                                 }
                             }
@@ -396,6 +396,12 @@ impl Default for AlbumContentView {
 }
 
 impl AlbumContentView {
+    fn show_cache_error(&self, prefix: &str, err: CacheError) {
+        if let Some(win) = self.imp().window.upgrade() {
+            win.send_simple_toast(&format!("{}: {}", prefix, dbg!(err).message()), 3);
+        }
+    }
+
     fn get_library(&self) -> Option<Library> {
         self.imp().library.upgrade()
     }
@@ -483,7 +489,7 @@ impl AlbumContentView {
                 .set_cover(album.get_folder_uri().to_owned(), path, true)
                 .await
             {
-                dbg!(e);
+                self.show_cache_error("Couldn't set cover", e);
             }
         }
     }
@@ -784,7 +790,9 @@ impl AlbumContentView {
             // Remove existing entry in SQLite, which might be an empty "do not retry" placeholder.
             if overwrite {
                 // Don't notify, else we'd interrupt the spinner
-                let _ = cache.clear_cover(info.folder_uri.to_owned(), false).await;
+                if let Err(e) = cache.clear_cover(info.folder_uri.to_owned(), false).await {
+                    self.show_cache_error("Couldn't clear cover", e);
+                }
             }
             match cache.get_album_cover(info, false, true).await {
                 Ok(Some(tex)) => {
@@ -794,7 +802,7 @@ impl AlbumContentView {
                     self.clear_cover();
                 }
                 Err(e) => {
-                    dbg!(e);
+                    self.show_cache_error("Couldn't fetch cover", e);
                     self.clear_cover();
                 }
             }

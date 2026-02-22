@@ -4,7 +4,7 @@ use crate::{
     utils::settings_manager,
 };
 use gtk::prelude::*;
-use reqwest::{blocking::Client, Error as ReqwestError, StatusCode};
+use reqwest::{Error as ReqwestError, StatusCode, blocking::Client};
 use std::{
     thread,
     time::{Duration, SystemTime},
@@ -189,7 +189,7 @@ pub mod utils {
             }
         }
         Err(String::from(
-            "This album's metadata provided image URLs but none of them could be downloaded.",
+            "Metadata provided image URLs but none of them could be downloaded.",
         ))
     }
 }

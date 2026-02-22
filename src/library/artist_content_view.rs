@@ -12,7 +12,7 @@ use std::{
 
 use super::{AlbumCell, Library};
 use crate::{
-    cache::{Cache, CacheState, placeholders::EMPTY_ARTIST_STRING},
+    cache::{Cache, CacheState, Error as CacheError, placeholders::EMPTY_ARTIST_STRING},
     common::{Album, Artist, ContentStack, ContentView, RowAddButtons, Song, SongRow},
     library::add_to_playlist::AddToPlaylistButton,
     utils::{format_secs_as_duration, settings_manager, tokio_runtime},
@@ -212,7 +212,7 @@ mod imp {
                                 .expect("ashpd file open await failure")
                                 .response();
 
-                            sender.send(if let Ok(files) = maybe_files {
+                            let _ = sender.send(if let Ok(files) = maybe_files {
                                 let uris = files.uris();
                                 if !uris.is_empty() {
                                     Some(uris[0].to_string())
@@ -249,9 +249,12 @@ mod imp {
                                 if let (Some(artist), Some(cache)) =
                                     (obj.artist(), obj.imp().cache.get())
                                 {
-                                    cache
+                                    if let Err(e) = cache
                                         .clear_artist_avatar(artist.get_name().to_owned(), true)
-                                        .await;
+                                        .await
+                                    {
+                                        obj.show_cache_error("Couldn't clear avatar", e);
+                                    }
                                 }
                             }
                         ));
@@ -335,6 +338,12 @@ impl Default for ArtistContentView {
 }
 
 impl ArtistContentView {
+    fn show_cache_error(&self, prefix: &str, err: CacheError) {
+        if let Some(win) = self.imp().window.upgrade() {
+            win.send_simple_toast(&format!("{}: {}", prefix, dbg!(err).message()), 3);
+        }
+    }
+
     fn artist(&self) -> Option<Artist> {
         self.imp().artist.borrow().as_ref().cloned()
     }
@@ -688,7 +697,7 @@ impl ArtistContentView {
                         .set_artist_avatar(artist.get_name().to_owned(), &path, true)
                         .await
                     {
-                        dbg!(e);
+                        this.show_cache_error("Couldn't set cover", e);
                     }
                 }
             }
@@ -708,7 +717,7 @@ impl ArtistContentView {
             if overwrite {
                 // Don't notify, else we'd interrupt the spinner
                 if let Err(e) = cache.clear_artist_avatar(info.name.to_owned(), false).await {
-                    dbg!(e);
+                    self.show_cache_error("Couldn't clear avatar", e);
                 }
             }
             match cache
@@ -721,7 +730,7 @@ impl ArtistContentView {
                     self.update_avatar(maybe_tex.as_ref());
                 }
                 Err(e) => {
-                    dbg!(e);
+                    self.show_cache_error("Couldn't fetch avatar", e);
                 }
             }
         }
