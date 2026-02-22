@@ -1,4 +1,5 @@
 use crate::cache::sqlite;
+use crate::common::tags;
 use crate::utils::{get_image_cache_path, get_time_ago_desc, strip_filename_linux};
 use core::time::Duration;
 use derivative::Derivative;
@@ -510,7 +511,7 @@ impl From<mpd::song::Song> for SongInfo {
         let mut album_mbid: Option<String> = None;
         for (tag, val) in song.tags.into_iter() {
             match tag.to_lowercase().as_str() {
-                "album" => {
+                tags::ALBUM => {
                     if res.album.is_none() {
                         let _ = res.album.replace(AlbumInfo::new(
                             &res.uri,
@@ -527,20 +528,20 @@ impl From<mpd::song::Song> for SongInfo {
                         );
                     }
                 }
-                "albumsort" => {
+                tags::ALBUMSORT => {
                     albumsort.replace(val);
                 }
-                "albumartist" => {
+                tags::ALBUMARTIST => {
                     albumartist.replace(val);
                 }
-                "artistsort" => {
+                tags::ARTISTSORT => {
                     artistsorts.push(val);
                 }
-                "albumartistsort" => {
+                tags::ALBUMARTISTSORT => {
                     albumartistsort.replace(val);
                 }
                 // "date" => res.imp().release_date.replace(Some(val.clone())),
-                "format" => {
+                tags::FORMAT => {
                     if let Some(extension) = maybe_extension {
                         if let Ok(format) = val.parse::<AudioFormat>() {
                             if ["flac", "alac", "wv", "ape"].contains(&extension) {
@@ -556,25 +557,25 @@ impl From<mpd::song::Song> for SongInfo {
                         }
                     }
                 }
-                "originaldate" => {
+                tags::RELEASE_DATE => {
                     res.release_date = parse_date(val.as_ref());
                 }
-                "track" => {
+                tags::TRACK => {
                     if let Ok(idx) = val.parse::<i64>() {
                         let _ = res.track.replace(idx);
                     }
                 }
-                "disc" => {
+                tags::DISC => {
                     if let Ok(idx) = val.parse::<i64>() {
                         let _ = res.disc.replace(idx);
                     }
                 }
                 // Beets might use uppercase versions of these keys but we're
                 // converting all to lowercase
-                "musicbrainz_trackid" => {
+                tags::SONG_MBID => {
                     let _ = res.mbid.replace(val);
                 }
-                "musicbrainz_albumid" => {
+                tags::ALBUM_MBID => {
                     // Can encounter this before initialising the album object
                     if album_mbid.is_none() {
                         let _ = album_mbid.replace(val);
@@ -584,12 +585,12 @@ impl From<mpd::song::Song> for SongInfo {
                         );
                     }
                 }
-                "musicbrainz_artistid" => {
+                tags::ARTIST_MBID => {
                     // Can encounter this multiple times and/or before
                     // initialising the artist objects
                     artist_mbids.push(val);
                 }
-                "musicbrainz_albumartistid" => {
+                tags::ALBUMARTIST_MBID => {
                     // Can encounter this multiple times and/or before
                     // initialising the albumartist objects
                     album_artist_mbids.push(val);
