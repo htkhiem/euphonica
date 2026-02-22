@@ -909,7 +909,6 @@ impl Connection {
                         |c| {
                             c.songs(id).map(|mut songs| {
                                 if !songs.is_empty() {
-                                    // Found a song. Now fetch its stickers.
                                     let res = SongInfo::from(std::mem::take(&mut songs[0]));
                                     Some(res)
                                 } else {

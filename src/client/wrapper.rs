@@ -329,16 +329,27 @@ impl MpdWrapper {
         let (s, r) = oneshot::channel();
         self.fg_sender.send(Task::Connect(s)).await.expect("Broken FG sender");
         let version = self.handle_connect_error(r.await.expect("Broken oneshot receiver")).await?;
-        // Set to maximum supported level first. Any subsequent sticker command will then
-        // update it to a lower state upon encountering related errors.
-        // Euphonica relies on 0.24+ stickers capabilities. Disable if connected to
-        // an older daemon.
+
+        // Figure out stickers support early as we need to decide whether we should show the Dynamic Playlists page.
+        // Set to maximum supported level first by MPD version.
         if version.1 < 24 {
             self.state
                 .set_stickers_support_level(StickersSupportLevel::SongsOnly);
         } else {
             self.state
                 .set_stickers_support_level(StickersSupportLevel::All);
+        }
+        // Now test if stickers DB is enabled by querying for a made-up path. This will most likely
+        // return an error but as long as that error isn't an "unknown command" one, the sticker DB
+        // is enabled.
+        match self.get_known_stickers("song", String::from("euphonica_sticker_test")).await {
+            Err(ClientError::Mpd(MpdError::Server(e))) => {
+                if e.code == MpdErrorCode::UnknownCmd {
+                    println!("Sticker DB not enabled. Disabling stickers-related functionality...");
+                    self.state.set_stickers_support_level(StickersSupportLevel::Disabled);
+                }
+            }
+            _ => {}
         }
         self.client_version.replace(Some(version));
 
@@ -653,10 +664,10 @@ impl MpdWrapper {
         if let Some(song_info) = self.foreground(Task::GetSongAtQueueId(id, s), r).await? {
             let res = Song::from(song_info);
             if fetch_stickers {
-                let (s, r) = oneshot::channel();
-                res.set_stickers(self.foreground(
-                    Task::GetKnownStickers("song", res.get_uri().to_owned(), s), r
-                ).await?);
+                // Error handling is already performed for us
+                if let Ok(stickers) = self.get_known_stickers("song", res.get_uri().to_owned()).await {
+                    res.set_stickers(stickers);
+                }
             }
             Ok(Some(res))
         } else {
@@ -980,8 +991,9 @@ impl MpdWrapper {
         if !found_songs.is_empty() {
             let song = std::mem::take(&mut found_songs[0]);
             if fetch_stickers {
-                let (s, r) = oneshot::channel();
-                Ok(Some((song, Some(self.foreground(Task::GetKnownStickers("song", uri, s), r).await?))))
+                // Error handling is already performed for us
+                let maybe_stickers = self.get_known_stickers("song", song.uri.to_owned()).await.ok();
+                Ok(Some((song, maybe_stickers)))
             } else {
                 Ok(Some((song, None)))
             }
