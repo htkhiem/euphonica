@@ -5,13 +5,12 @@ pub mod lrclib;
 pub mod models;
 pub mod musicbrainz;
 
-pub use base::{utils, MetadataProvider};
-pub use chain::{get_provider, MetadataChain};
+pub use base::{MetadataProvider, utils};
+pub use chain::MetadataChain;
 
 pub mod prelude {
     pub use super::base::{
-        reqwest_error_is_retryable, sleep_between_requests, MetadataError, MetadataProvider,
-        MetadataResult,
+        MetadataError, MetadataProvider, MetadataResult, sleep_between_requests,
     };
     pub use super::models::Merge;
 }

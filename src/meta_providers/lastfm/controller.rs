@@ -14,7 +14,7 @@ use crate::{
 
 use super::models::{LastfmAlbumResponse, LastfmArtistResponse};
 use super::{
-    super::{models, prelude::*, MetadataProvider},
+    super::{MetadataProvider, models, prelude::*},
     PROVIDER_KEY,
 };
 

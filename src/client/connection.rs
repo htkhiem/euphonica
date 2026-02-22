@@ -1,13 +1,13 @@
 use async_channel::{Receiver, Sender};
 use gio::prelude::SettingsExt;
 use mpd::{
+    Channel, Client, EditAction, GroupedValues, Id, Idle, Output, Query, ReplayGain, SaveMode,
+    Status, Subsystem, Term, Version,
     error::{
         Error as MpdError, ErrorCode as MpdErrorCode, ProtoError, Result as MpdResult, ServerError,
     },
     search::Window,
     song::PosIdChange,
-    Channel, Client, EditAction, GroupedValues, Id, Idle, Output, Query, ReplayGain, SaveMode,
-    Status, Subsystem, Term, Version,
 };
 use oneshot::Sender as OneShotSender;
 use rand::seq::SliceRandom;
@@ -22,16 +22,16 @@ use crate::{
     cache::sqlite,
     client::stream::StreamWrapper,
     common::{
+        AlbumInfo, DynamicPlaylist, SongInfo, Stickers,
         dynamic_playlist::{Ordering, QueryLhs, Rule, StickerObjectType, StickerOperation},
         inode::INodeInfo,
-        AlbumInfo, DynamicPlaylist, SongInfo, Stickers,
     },
     player::PlaybackFlow,
     utils::{self, save_and_register_image},
 };
 
 use super::StickerSetMode;
-use super::{get_past_unix_timestamp, password, BATCH_SIZE, FETCH_LIMIT};
+use super::{BATCH_SIZE, FETCH_LIMIT, get_past_unix_timestamp, password};
 
 fn cmp_options_nulls_last<T: Ord>(a: Option<&T>, b: Option<&T>) -> StdOrdering {
     match (a, b) {
@@ -229,20 +229,20 @@ pub enum Task {
         Cow<'static, str>,
         Responder<()>,
     ),
-    FindStickerOp(
-        /// Type
-        &'static str,
-        /// Base URI
-        String,
-        /// Name (LHS)
-        Cow<'static, str>,
-        /// Operator
-        &'static str,
-        /// Value (RHS)
-        Cow<'static, str>,
-        Window,
-        Responder<Vec<String>>,
-    ),
+    // FindStickerOp(
+    //     /// Type
+    //     &'static str,
+    //     /// Base URI
+    //     String,
+    //     /// Name (LHS)
+    //     Cow<'static, str>,
+    //     /// Operator
+    //     &'static str,
+    //     /// Value (RHS)
+    //     Cow<'static, str>,
+    //     Window,
+    //     Responder<Vec<String>>,
+    // ),
     GetPlaylists(Responder<Vec<INodeInfo>>),
     LoadPlaylist(String, Responder<()>),
     SaveQueueAsPlaylist(
@@ -335,12 +335,12 @@ pub enum Task {
     /// This utilises commandlists for better efficiency.
     InsertMultiple(Vec<String>, usize, Responder<Vec<usize>>),
     FindAdd(Query<'static>, Responder<()>),
-    ClearTagTypes(Responder<()>),
-    EnableTagTypes(
-        /// If none, will enable all tag types
-        Option<Vec<&'static str>>,
-        Responder<()>,
-    ),
+    // ClearTagTypes(Responder<()>),
+    // EnableTagTypes(
+    //     /// If none, will enable all tag types
+    //     Option<Vec<&'static str>>,
+    //     Responder<()>,
+    // ),
     ResolveDynamicPlaylist(
         /// The DP itself
         DynamicPlaylist,
@@ -398,7 +398,7 @@ impl Connection {
     }
 
     pub fn connect(&mut self) -> Result<Version> {
-        if let Err(e) = self.disconnect() {
+        if let Err(_) = self.disconnect() {
             println!("Warning: did not cleanly disconnect");
         }
         let settings = utils::settings_manager().child("client");
@@ -876,11 +876,11 @@ impl Connection {
                     Task::DeleteSticker(typ, uri, name, resp) => {
                         self.respond_with_client(|c| c.delete_sticker(typ, &uri, &name), resp)
                     }
-                    Task::FindStickerOp(typ, base_uri, name, op, value, window, resp) => self
-                        .respond_with_client(
-                            |c| c.find_sticker_op(typ, &base_uri, &name, op, &value, window),
-                            resp,
-                        ),
+                    // Task::FindStickerOp(typ, base_uri, name, op, value, window, resp) => self
+                    //     .respond_with_client(
+                    //         |c| c.find_sticker_op(typ, &base_uri, &name, op, &value, window),
+                    //         resp,
+                    //     ),
                     Task::GetPlaylists(resp) => self.respond_with_client(
                         |c| {
                             c.playlists().map(|playlists| {
@@ -1033,19 +1033,19 @@ impl Connection {
                     Task::FindAdd(query, resp) => {
                         self.respond_with_client(|c| c.findadd(&query), resp)
                     }
-                    Task::ClearTagTypes(resp) => {
-                        self.respond_with_client(|c| c.tagtypes_clear(), resp)
-                    }
-                    Task::EnableTagTypes(types, resp) => self.respond_with_client(
-                        move |c| {
-                            if let Some(types) = types.as_deref() {
-                                c.tagtypes_enable(types)
-                            } else {
-                                c.tagtypes_all()
-                            }
-                        },
-                        resp,
-                    ),
+                    // Task::ClearTagTypes(resp) => {
+                    //     self.respond_with_client(|c| c.tagtypes_clear(), resp)
+                    // }
+                    // Task::EnableTagTypes(types, resp) => self.respond_with_client(
+                    //     move |c| {
+                    //         if let Some(types) = types.as_deref() {
+                    //             c.tagtypes_enable(types)
+                    //         } else {
+                    //             c.tagtypes_all()
+                    //         }
+                    //     },
+                    //     resp,
+                    // ),
                     Task::ResolveDynamicPlaylist(dp, cache, resp) => {
                         let _ = resp.send(self.resolve_dynamic_playlist_rules(dp, cache));
                     }
@@ -1058,13 +1058,8 @@ impl Connection {
                 for change in changes.iter() {
                     match change {
                         Subsystem::Message => {
-                            if let Ok(msgs) = client.readmessages() {
-                                for msg in msgs {
-                                    let content = msg.message.as_str();
-                                    // Send any message to get out of wait().
-                                    // println!("Client received message: {content}");
-                                }
-                            }
+                            // Right now we only use messages as a way to wake an idle client connection up.
+                            // Otherwise there's nothing to act on.
                         }
                         other => {
                             sender.send_blocking(*other).map_err(|_| Error::Internal)?;

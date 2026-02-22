@@ -7,13 +7,10 @@ use crate::{
 };
 
 use gio::prelude::SettingsExt;
-use reqwest::{
-    blocking::{Client, Response},
-    header::USER_AGENT,
-};
+use reqwest::{blocking::Client, header::USER_AGENT};
 
 use super::{
-    super::{models, prelude::*, MetadataProvider},
+    super::{MetadataProvider, models, prelude::*},
     LrcLibErrorResponse, LrcLibResponse, PROVIDER_KEY,
 };
 

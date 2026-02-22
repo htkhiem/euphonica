@@ -13,10 +13,10 @@ use std::{
 use super::{AlbumCell, Library};
 use crate::{
     cache::{Cache, CacheState, placeholders::EMPTY_ARTIST_STRING},
-    common::{Album, Artist, ContentView, RowAddButtons, Song, SongRow, ContentStack},
+    common::{Album, Artist, ContentStack, ContentView, RowAddButtons, Song, SongRow},
     library::add_to_playlist::AddToPlaylistButton,
     utils::{format_secs_as_duration, settings_manager, tokio_runtime},
-    window::EuphonicaWindow
+    window::EuphonicaWindow,
 };
 
 mod imp {
@@ -212,25 +212,24 @@ mod imp {
                                 .expect("ashpd file open await failure")
                                 .response();
 
-                            sender.send(
-                                if let Ok(files) = maybe_files {
-                                    let uris = files.uris();
-                                    if !uris.is_empty() {
-                                        Some(uris[0].to_string())
-                                    } else {
-                                        None
-                                    }
+                            sender.send(if let Ok(files) = maybe_files {
+                                let uris = files.uris();
+                                if !uris.is_empty() {
+                                    Some(uris[0].to_string())
                                 } else {
-                                    println!("{maybe_files:?}");
                                     None
                                 }
-                            );
+                            } else {
+                                println!("{maybe_files:?}");
+                                None
+                            });
                         });
                         glib::spawn_future_local(clone!(
                             #[weak]
                             obj,
                             async move {
-                                if let Some(tag) = receiver.await.expect("Broken oneshot receiver") {
+                                if let Some(tag) = receiver.await.expect("Broken oneshot receiver")
+                                {
                                     obj.set_avatar(tag);
                                 }
                             }
@@ -247,11 +246,12 @@ mod imp {
                             #[weak]
                             obj,
                             async move {
-                                if let (Some(artist), Some(cache)) = (
-                                    obj.artist(),
-                                    obj.imp().cache.get(),
-                                ) {
-                                    cache.clear_artist_avatar(artist.get_name().to_owned(), true).await;
+                                if let (Some(artist), Some(cache)) =
+                                    (obj.artist(), obj.imp().cache.get())
+                                {
+                                    cache
+                                        .clear_artist_avatar(artist.get_name().to_owned(), true)
+                                        .await;
                                 }
                             }
                         ));
@@ -363,14 +363,24 @@ impl ArtistContentView {
                 stack.set_visible(false);
             } else {
                 stack.set_visible(true);
-                if stack.visible_child_name().is_none_or(|name| name != "spinner")  {
+                if stack
+                    .visible_child_name()
+                    .is_none_or(|name| name != "spinner")
+                {
                     stack.set_visible_child_name("spinner");
                 }
                 let cache = self.imp().cache.get().unwrap().clone();
                 let bio_text = self.imp().bio_text.get();
                 let bio_link = self.imp().bio_link.get();
                 let bio_attrib = self.imp().bio_attrib.get();
-                let res = cache.get_artist_meta(artist.get_info(), true, overwrite, self.imp().window.upgrade().as_ref()).await;
+                let res = cache
+                    .get_artist_meta(
+                        artist.get_info(),
+                        true,
+                        overwrite,
+                        self.imp().window.upgrade().as_ref(),
+                    )
+                    .await;
                 stack.set_visible_child_name("content");
                 match res {
                     Ok(Some(meta)) => {
@@ -452,7 +462,11 @@ impl ArtistContentView {
                             this.set_is_queuing(true);
                             let library = this.imp().library.upgrade().unwrap();
                             if this.imp().selecting_all.get() {
-                                if let Err(e) = library.queue_artist(&artist, false, true, true).await {dbg!(e);}
+                                if let Err(e) =
+                                    library.queue_artist(&artist, false, true, true).await
+                                {
+                                    dbg!(e);
+                                }
                             } else {
                                 let store = &this.imp().song_list;
                                 // Get list of selected songs
@@ -463,7 +477,9 @@ impl ArtistContentView {
                                 iter.for_each(|idx| {
                                     songs.push(store.item(idx).and_downcast::<Song>().unwrap())
                                 });
-                                if let Err(e) = library.queue_songs(&songs, true, true).await {dbg!(e);}
+                                if let Err(e) = library.queue_songs(&songs, true, true).await {
+                                    dbg!(e);
+                                }
                             }
                             this.set_is_queuing(false);
                         }
@@ -667,11 +683,13 @@ impl ArtistContentView {
             #[weak(rename_to = this)]
             self,
             async move {
-                if let (Some(artist), Some(cache)) = (
-                    this.artist(),
-                    this.imp().cache.get(),
-                ) {
-                    cache.set_artist_avatar(artist.get_name().to_owned(), &path, true).await;
+                if let (Some(artist), Some(cache)) = (this.artist(), this.imp().cache.get()) {
+                    if let Err(e) = cache
+                        .set_artist_avatar(artist.get_name().to_owned(), &path, true)
+                        .await
+                    {
+                        dbg!(e);
+                    }
                 }
             }
         ));
@@ -689,15 +707,22 @@ impl ArtistContentView {
             let cache = self.imp().cache.get().unwrap().clone();
             if overwrite {
                 // Don't notify, else we'd interrupt the spinner
-                let _ = cache.clear_artist_avatar(info.name.to_owned(), false);
+                if let Err(e) = cache.clear_artist_avatar(info.name.to_owned(), false).await {
+                    dbg!(e);
+                }
             }
-            match cache.get_artist_avatar(
-                info, false, true  // Content page is the one to fetch external sources
-            ).await {
+            match cache
+                .get_artist_avatar(
+                    info, false, true, // Content page is the one to fetch external sources
+                )
+                .await
+            {
                 Ok(maybe_tex) => {
                     self.update_avatar(maybe_tex.as_ref());
                 }
-                Err(e) => {dbg!(e);}
+                Err(e) => {
+                    dbg!(e);
+                }
             }
         }
     }
@@ -743,13 +768,17 @@ impl ArtistContentView {
                 let song_list = this.imp().song_list.clone();
                 song_list.remove_all();
                 // Important, MPD-side content first
-                let _ = library.get_artist_content(
-                    &artist,
-                    |album| {album_list.append(&album);},
-                    |songs| {
-                        song_list.extend_from_slice(&songs);
-                    }
-                ).await;
+                let _ = library
+                    .get_artist_content(
+                        &artist,
+                        |album| {
+                            album_list.append(&album);
+                        },
+                        |songs| {
+                            song_list.extend_from_slice(&songs);
+                        },
+                    )
+                    .await;
                 if album_list.n_items() > 0 {
                     album_stack.show_content();
                 } else {
