@@ -434,6 +434,7 @@ impl AlbumContentView {
                 let wiki_text = self.imp().wiki_text.get();
                 let wiki_link = self.imp().wiki_link.get();
                 let wiki_attrib = self.imp().wiki_attrib.get();
+<<<<<<< HEAD
                 let res = cache
                     .get_album_meta(
                         album.get_info(),
@@ -442,6 +443,9 @@ impl AlbumContentView {
                         self.imp().window.upgrade().as_ref(),
                     )
                     .await;
+=======
+                let res = cache.get_album_meta(album.get_info(), true, overwrite, self.imp().window.upgrade().as_ref()).await;
+>>>>>>> 38b8876 (Implement proper error reporting + reformat)
                 stack.set_visible_child_name("content");
                 match res {
                     Ok(Some(meta)) => {
