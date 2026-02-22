@@ -9,6 +9,9 @@ pub use base::{utils, MetadataProvider};
 pub use chain::{get_provider, MetadataChain};
 
 pub mod prelude {
-    pub use super::base::{reqwest_error_is_retryable, sleep_between_requests, MetadataProvider};
+    pub use super::base::{
+        reqwest_error_is_retryable, sleep_between_requests, MetadataError, MetadataProvider,
+        MetadataResult,
+    };
     pub use super::models::Merge;
 }

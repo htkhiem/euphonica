@@ -36,6 +36,69 @@ pub fn reqwest_error_is_retryable(e: &ReqwestError) -> bool {
     e.status().is_some_and(status_is_retryable) || e.is_connect() || e.is_timeout()
 }
 
+/// Special error type for metadata providers.
+/// They still contain the metadata document as is, for daisy-chaining to
+/// downstream providers.
+#[derive(Debug)]
+pub enum MetadataError<T> {
+    /// Mostly connection errors.
+    Reqwest(T, ReqwestError),
+    Temporary(T),
+    /// Current provider doesn't have any metadata for this object.
+    NotFound(T),
+    InsufficientKey(T),
+    /// For providers requiring API keys and the like.
+    Credential(T),
+    RateLimit(T),
+    Parse(T),
+    Other(T),
+}
+
+impl<T> MetadataError<T> {
+    pub fn can_retry(&self) -> bool {
+        match self {
+            Self::Reqwest(_, rwe) => reqwest_error_is_retryable(rwe),
+            Self::Temporary(_) => true,
+            _ => false,
+        }
+    }
+
+    pub fn metadata(self) -> T {
+        match self {
+            Self::Reqwest(data, _) => data,
+            Self::Temporary(data) => data,
+            Self::NotFound(data) => data,
+            Self::InsufficientKey(data) => data,
+            Self::Credential(data) => data,
+            Self::RateLimit(data) => data,
+            Self::Parse(data) => data,
+            Self::Other(data) => data,
+        }
+    }
+
+    // TODO: translations
+    pub fn message(&self) -> String {
+        match self {
+            Self::Reqwest(_, e) => {
+                if let Some(code) = e.status() {
+                    format!("HTTP code {}", code)
+                } else {
+                    "connection/parsing error".into()
+                }
+            }
+            Self::Temporary(_) => "temporary server-side error (exceeded retries)".into(),
+            Self::NotFound(_) => "not available from this provider".into(),
+            Self::InsufficientKey(_) => "not enough existing metadata to search".into(),
+            Self::Credential(_) => "authentication error".into(),
+            Self::RateLimit(_) => "rate-limited".into(),
+            Self::Parse(_) => "error while parsing".into(),
+            Self::Other(_) => "unknown error".into(),
+        }
+    }
+}
+
+pub type MetadataResult<T> = std::result::Result<T, MetadataError<T>>;
+
 /// Common provider-agnostic utilities.
 pub mod utils {
     use super::*;
@@ -140,42 +203,27 @@ pub trait MetadataProvider: Send + Sync {
     /// Get textual metadata that wouldn't be available as song tags, such as wiki, producer name,
     /// etc. A new AlbumMeta object containing data from both the existing AlbumMeta and newly fetched data. New
     /// data will always overwrite existing fields.
-    ///
-    /// Returns the metadata object possibly enhanced by this provider and a flag indicating whether
-    /// the caller should retry (i.e. server/connection error).
-    /// Each provider may implement the above retry flag differently but generally retries should only be
-    /// attempted on 5xx error codes and connection errors, not content-not-available or permisison ones.
-    /// It MUST be false after a successful call.
+    /// In case this provider does not provide album metadata, return Ok(existing).
     fn get_album_meta(
         &mut self,
         key: &mut AlbumInfo,
         existing: Option<models::AlbumMeta>,
-    ) -> (Option<models::AlbumMeta>, bool);
+    ) -> MetadataResult<Option<models::AlbumMeta>>;
 
     /// Get textual metadata about an artist, such as biography, DoB, etc.
     /// A new ArtistMeta object containing data from both the existing ArtistMeta and newly fetched data. New
     /// data will always overwrite existing fields.
-    ///
-    /// Returns the metadata object possibly enhanced by this provider and a flag indicating whether
-    /// the caller should retry (i.e. server/connection error).
-    /// Each provider may implement the above retry flag differently but generally retries should only be
-    /// attempted on 5xx error codes and connection errors, not content-not-available or permisison ones.
-    /// It MUST be false after a successful call.
+    /// In case this provider does not provide artist metadata, return Ok(existing).
     fn get_artist_meta(
         &mut self,
         key: &mut ArtistInfo,
         existing: Option<models::ArtistMeta>,
-    ) -> (Option<models::ArtistMeta>, bool);
+    ) -> MetadataResult<Option<models::ArtistMeta>>;
 
     /// Get lyrics for a song. Synced lyrics take precedence over plain ones. The lyrics with the most similar
     /// duration to the song is returned.
     ///
     /// Unlike with album and artist metadata, we stop when one metadata provider returns lyrics.
-    ///
-    /// Returns lyrics from this provide (if available) and a flag indicating whether
-    /// the caller should retry (i.e. server/connection error).
-    /// Each provider may implement the above retry flag differently but generally retries should only be
-    /// attempted on 5xx error codes and connection errors, not content-not-available or permisison ones.
-    /// It MUST be false after a successful call.
-    fn get_lyrics(&mut self, key: &SongInfo) -> (Option<models::Lyrics>, bool);
+    /// In case this provider does not provide lyrics, return Ok(existing).
+    fn get_lyrics(&mut self, key: &SongInfo) -> MetadataResult<Option<models::Lyrics>>;
 }

@@ -2,12 +2,15 @@ extern crate mpd;
 use crate::{
     application::EuphonicaApplication,
     cache::{Cache, sqlite},
-    client::{ClientState, ConnectionState, Error as ClientError, MpdWrapper, Result as ClientResult, StickerSetMode},
+    client::{
+        ClientState, ConnectionState, Error as ClientError, MpdWrapper, Result as ClientResult,
+        StickerSetMode,
+    },
     common::{QualityGrade, Song, Stickers},
     config::APPLICATION_ID,
     meta_providers::models::Lyrics,
     utils::{
-        current_unix_timestamp, get_image_cache_path, prettify_audio_format, settings_manager
+        current_unix_timestamp, get_image_cache_path, prettify_audio_format, settings_manager,
     },
 };
 use async_lock::OnceCell as AsyncOnceCell;
@@ -169,10 +172,8 @@ fn get_replaygain_icon_name(mode: ReplayGain) -> &'static str {
 
 mod imp {
     use super::*;
-    use crate::{
-        application::EuphonicaApplication, meta_providers::models::Lyrics
-    };
-    
+    use crate::{application::EuphonicaApplication, meta_providers::models::Lyrics};
+
     use glib::{
         ParamSpec, ParamSpecBoolean, ParamSpecChar, ParamSpecDouble, ParamSpecEnum, ParamSpecFloat,
         ParamSpecInt, ParamSpecString, ParamSpecUInt, ParamSpecUInt64,
@@ -300,7 +301,7 @@ mod imp {
                 is_foreground: Cell::new(false),
                 queue_version: Cell::new(0),
                 expected_queue_version: Cell::new(0),
-                expected_volume_changes: Cell::new(0)
+                expected_volume_changes: Cell::new(0),
             }
         }
     }
@@ -440,90 +441,107 @@ mod imp {
         }
 
         fn set_property(&self, _id: usize, value: &glib::Value, pspec: &ParamSpec) {
-
-            glib::spawn_future_local(clone!(#[weak(rename_to = this)] self, #[strong] value, #[strong] pspec, async move {
-                let obj = this.obj();
-                match pspec.name() {
-                    "crossfade" => {
-                        if let Ok(v) = value.get::<f64>() {
-                            if let Err(e) = obj.set_crossfade(v).await {dbg!(e);}
-                        }
-                    }
-                    "mixramp-db" => {
-                        if let Ok(v) = value.get::<f32>() {
-                            if let Err(e) = obj.set_mixramp_db(v).await {dbg!(e);}
-                        }
-                    }
-                    "mixramp-delay" => {
-                        if let Ok(v) = value.get::<f64>() {
-                            if let Err(e) = obj.set_mixramp_delay(v).await {dbg!(e);}
-                        }
-                    }
-                    "position" => {
-                        if let Ok(v) = value.get::<f64>() {
-                            obj.set_position(v);
-                        }
-                    }
-                    "random" => {
-                        if let Ok(state) = value.get::<bool>() {
-                            if let Err(e) = obj.set_random(state).await {dbg!(e);}
-                            // Don't actually set the property here yet.
-                            // Idle status will update it later.
-                        }
-                    }
-                    "consume" => {
-                        if let Ok(state) = value.get::<bool>() {
-                            if let Err(e) = obj.set_consume(state).await {dbg!(e);}
-                            // Don't actually set the property here yet.
-                            // Idle status will update it later.
-                        }
-                    }
-                    "supports-playlists" => {
-                        if let Ok(state) = value.get::<bool>() {
-                            this.supports_playlists.replace(state);
-                            obj.notify("supports-playlists");
-                        }
-                    }
-                    "use-visualizer" => {
-                        if let Ok(state) = value.get::<bool>() {
-                            this.use_visualizer.replace(state);
-                            obj.notify("use-visualizer");
-
-                            if state {
-                                // Visualiser turned on. Start FFT thread.
-                                this.obj().maybe_start_fft_thread();
-                            } else {
-                                // Visualiser turned off. FFT thread should
-                                // have stopped by itthis. Join & yeet handle.
-                                this.obj().maybe_stop_fft_thread(false);
+            glib::spawn_future_local(clone!(
+                #[weak(rename_to = this)]
+                self,
+                #[strong]
+                value,
+                #[strong]
+                pspec,
+                async move {
+                    let obj = this.obj();
+                    match pspec.name() {
+                        "crossfade" => {
+                            if let Ok(v) = value.get::<f64>() {
+                                if let Err(e) = obj.set_crossfade(v).await {
+                                    dbg!(e);
+                                }
                             }
                         }
-                    }
-                    "fft-backend-idx" => {
-                        if let Ok(new) = value.get::<i32>() {
-                            let old = this.fft_backend_idx.replace(new);
+                        "mixramp-db" => {
+                            if let Ok(v) = value.get::<f32>() {
+                                if let Err(e) = obj.set_mixramp_db(v).await {
+                                    dbg!(e);
+                                }
+                            }
+                        }
+                        "mixramp-delay" => {
+                            if let Ok(v) = value.get::<f64>() {
+                                if let Err(e) = obj.set_mixramp_delay(v).await {
+                                    dbg!(e);
+                                }
+                            }
+                        }
+                        "position" => {
+                            if let Ok(v) = value.get::<f64>() {
+                                obj.set_position(v);
+                            }
+                        }
+                        "random" => {
+                            if let Ok(state) = value.get::<bool>() {
+                                if let Err(e) = obj.set_random(state).await {
+                                    dbg!(e);
+                                }
+                                // Don't actually set the property here yet.
+                                // Idle status will update it later.
+                            }
+                        }
+                        "consume" => {
+                            if let Ok(state) = value.get::<bool>() {
+                                if let Err(e) = obj.set_consume(state).await {
+                                    dbg!(e);
+                                }
+                                // Don't actually set the property here yet.
+                                // Idle status will update it later.
+                            }
+                        }
+                        "supports-playlists" => {
+                            if let Ok(state) = value.get::<bool>() {
+                                this.supports_playlists.replace(state);
+                                obj.notify("supports-playlists");
+                            }
+                        }
+                        "use-visualizer" => {
+                            if let Ok(state) = value.get::<bool>() {
+                                this.use_visualizer.replace(state);
+                                obj.notify("use-visualizer");
 
-                            if old != new {
-                                println!("Switching FFT backend...");
-                                this.obj().maybe_stop_fft_thread(true);
-                                this.fft_backend
-                                    .replace(Some(this.obj().init_fft_backend()));
-                                this.obj().maybe_start_fft_thread();
-                                this.obj().notify("fft-backend-idx");
+                                if state {
+                                    // Visualiser turned on. Start FFT thread.
+                                    this.obj().maybe_start_fft_thread();
+                                } else {
+                                    // Visualiser turned off. FFT thread should
+                                    // have stopped by itthis. Join & yeet handle.
+                                    this.obj().maybe_stop_fft_thread(false);
+                                }
                             }
                         }
-                    }
-                    "pipewire-restart-between-songs" => {
-                        if let Ok(state) = value.get::<bool>() {
-                            let old = this.pipewire_restart_between_songs.replace(state);
-                            if old != state {
-                                this.obj().notify("pipewire-restart-between-songs");
+                        "fft-backend-idx" => {
+                            if let Ok(new) = value.get::<i32>() {
+                                let old = this.fft_backend_idx.replace(new);
+
+                                if old != new {
+                                    println!("Switching FFT backend...");
+                                    this.obj().maybe_stop_fft_thread(true);
+                                    this.fft_backend
+                                        .replace(Some(this.obj().init_fft_backend()));
+                                    this.obj().maybe_start_fft_thread();
+                                    this.obj().notify("fft-backend-idx");
+                                }
                             }
                         }
+                        "pipewire-restart-between-songs" => {
+                            if let Ok(state) = value.get::<bool>() {
+                                let old = this.pipewire_restart_between_songs.replace(state);
+                                if old != state {
+                                    this.obj().notify("pipewire-restart-between-songs");
+                                }
+                            }
+                        }
+                        _ => unimplemented!(),
                     }
-                    _ => unimplemented!(),
                 }
-            }));
+            ));
         }
 
         fn signals() -> &'static [Signal] {
@@ -538,8 +556,7 @@ mod imp {
                         .build(),
                     Signal::builder("history-changed").build(),
                     // For simplicity we'll always use the hires version
-                    Signal::builder("cover-changed")
-                        .build(),
+                    Signal::builder("cover-changed").build(),
                     Signal::builder("fft-param-changed")
                         .param_types([
                             String::static_type(),
@@ -714,21 +731,30 @@ impl Player {
         client_state.connect_notify_local(
             Some("connection-state"),
             clone!(
-                #[weak(rename_to = this)] self,
+                #[weak(rename_to = this)]
+                self,
                 move |state, _| {
                     let conn_state = state.connection_state();
-                    glib::spawn_future_local(clone!(#[weak] this, async move {
-                        match conn_state {
-                            ConnectionState::Connected => {
-                                // Newly-connected? Get initial status.
-                                if let Err(e) = this.populate().await {dbg!(e);}
+                    glib::spawn_future_local(clone!(
+                        #[weak]
+                        this,
+                        async move {
+                            match conn_state {
+                                ConnectionState::Connected => {
+                                    // Newly-connected? Get initial status.
+                                    if let Err(e) = this.populate().await {
+                                        dbg!(e);
+                                    }
+                                }
+                                ConnectionState::Connecting => {
+                                    if let Err(e) = this.clear().await {
+                                        dbg!(e);
+                                    }
+                                }
+                                _ => {}
                             }
-                            ConnectionState::Connecting => {
-                                if let Err(e) = this.clear().await {dbg!(e);}
-                            }
-                            _ => {}
                         }
-                    }));
+                    ));
                 }
             ),
         );
@@ -745,24 +771,32 @@ impl Player {
                 #[weak(rename_to = this)]
                 self,
                 move |_: ClientState, subsys: glib::BoxedAnyObject| {
-                    glib::spawn_future_local(clone!(#[weak] this, #[upgrade_or] ClientResult::Ok(()), async move {
-                        match subsys.borrow::<Subsystem>().deref() {
-                            Subsystem::Player | Subsystem::Options => {
-                                this.update_status().await?;
-                            }
-                            Subsystem::Queue => {
-                                this.update_queue().await?;
-                            }
-                            Subsystem::Output => {
-                                this.update_outputs().await?;
-                            }
-                            Subsystem::Mixer => {
-                                this.maybe_emit_volume_changed(this.client()?.get_volume().await?);
-                            }
-                            _ => {}
-                        };
-                        Ok(())
-                    }));
+                    glib::spawn_future_local(clone!(
+                        #[weak]
+                        this,
+                        #[upgrade_or]
+                        ClientResult::Ok(()),
+                        async move {
+                            match subsys.borrow::<Subsystem>().deref() {
+                                Subsystem::Player | Subsystem::Options => {
+                                    this.update_status().await?;
+                                }
+                                Subsystem::Queue => {
+                                    this.update_queue().await?;
+                                }
+                                Subsystem::Output => {
+                                    this.update_outputs().await?;
+                                }
+                                Subsystem::Mixer => {
+                                    this.maybe_emit_volume_changed(
+                                        this.client()?.get_volume().await?,
+                                    );
+                                }
+                                _ => {}
+                            };
+                            Ok(())
+                        }
+                    ));
                 }
             ),
         );
@@ -775,18 +809,23 @@ impl Player {
         settings.connect_changed(
             Some("enable-mpris"),
             clone!(
-                #[weak(rename_to = this)] self,
+                #[weak(rename_to = this)]
+                self,
                 move |settings, _| {
                     let new_state = settings.boolean("enable-mpris");
                     let _ = this.imp().mpris_enabled.replace(new_state);
                     if !new_state {
                         // Ping once to clear existing controls
-                        glib::spawn_future_local(clone!(#[weak] this, async move {
-                            this.update_mpris_properties(vec![Property::Metadata(
-                                MprisMetadata::default(),
-                            )]).await;
-                        }));
-
+                        glib::spawn_future_local(clone!(
+                            #[weak]
+                            this,
+                            async move {
+                                this.update_mpris_properties(vec![Property::Metadata(
+                                    MprisMetadata::default(),
+                                )])
+                                .await;
+                            }
+                        ));
                     }
                 }
             ),
@@ -810,9 +849,7 @@ impl Player {
         match self.get_mpris().await {
             Ok(mpris) => {
                 let pos_time = Time::from_millis((position * 1000.0).round() as i64);
-                if let Err(err) =
-                    mpris.emit(MprisSignal::Seeked { position: pos_time }).await
-                {
+                if let Err(err) = mpris.emit(MprisSignal::Seeked { position: pos_time }).await {
                     println!("{err:?}");
                 }
             }
@@ -960,7 +997,9 @@ impl Player {
             let prev_uri: Option<String>;
             {
                 let curr_song = self.imp().current_song.borrow();
-                needs_refresh = curr_song.as_ref().is_none_or(|s| s.get_queue_id() != new_queue_place.id.0);
+                needs_refresh = curr_song
+                    .as_ref()
+                    .is_none_or(|s| s.get_queue_id() != new_queue_place.id.0);
                 prev_uri = curr_song.as_ref().map(|s| s.get_uri().to_owned());
             };
 
@@ -972,46 +1011,56 @@ impl Player {
                     if !self.imp().saved_to_history.get() && self.position() > 10.0 {
                         // These are optional & can fail when stickers aren't enabled.
                         // Don't use ? on their results.
-                        let _ = self.client()?.set_sticker(
-                            "song",
-                            prev_uri.clone(),
-                            Stickers::SKIP_COUNT_KEY.into(),
-                            "1".into(),
-                            StickerSetMode::Inc,
-                        ).await;
+                        let _ = self
+                            .client()?
+                            .set_sticker(
+                                "song",
+                                prev_uri.clone(),
+                                Stickers::SKIP_COUNT_KEY.into(),
+                                "1".into(),
+                                StickerSetMode::Inc,
+                            )
+                            .await;
 
-                        let _ = self.client()?.set_sticker(
-                            "song",
-                            prev_uri,
-                            Stickers::LAST_SKIPPED_KEY.into(),
-                            current_unix_timestamp().to_string().into(),
-                            StickerSetMode::Set,
-                        ).await;
+                        let _ = self
+                            .client()?
+                            .set_sticker(
+                                "song",
+                                prev_uri,
+                                Stickers::LAST_SKIPPED_KEY.into(),
+                                current_unix_timestamp().to_string().into(),
+                                StickerSetMode::Set,
+                            )
+                            .await;
                     }
                 }
 
                 // Always fetch as the queue might not have been populated yet
                 match self
                     .client()?
-                    .get_song_at_queue_id(new_queue_place.id, true).await
+                    .get_song_at_queue_id(new_queue_place.id, true)
+                    .await
                 {
                     Ok(Some(new_song)) => {
                         // Update stickers
-                        let _ = self.client()?.set_sticker(
-                            "song",
-                            new_song.get_uri().to_owned(),
-                            Stickers::LAST_PLAYED_KEY.into(),
-                            current_unix_timestamp().to_string().into(),
-                            StickerSetMode::Set,
-                        ).await;
+                        let _ = self
+                            .client()?
+                            .set_sticker(
+                                "song",
+                                new_song.get_uri().to_owned(),
+                                Stickers::LAST_PLAYED_KEY.into(),
+                                current_unix_timestamp().to_string().into(),
+                                StickerSetMode::Set,
+                            )
+                            .await;
                         // If using PipeWire visualiser, might need to restart it
                         if self.imp().pipewire_restart_between_songs.get()
                             && self
-                            .imp()
-                            .fft_backend
-                            .borrow()
-                            .as_ref()
-                            .is_some_and(|backend| backend.name() == "pipewire")
+                                .imp()
+                                .fft_backend
+                                .borrow()
+                                .as_ref()
+                                .is_some_and(|backend| backend.name() == "pipewire")
                         {
                             println!("Starting PipeWire backend again after song change...");
                             self.maybe_start_fft_thread();
@@ -1027,13 +1076,25 @@ impl Player {
                         // Fetch new lyrics in another future (don't await using this function as it will sleep after the request).
                         // We'll have to check which song is playing again by the time we come back with the lyrics.
                         glib::spawn_future_local(clone!(
-                            #[weak(rename_to = this)] self, #[strong] new_song, async move {
+                            #[weak(rename_to = this)]
+                            self,
+                            #[strong]
+                            new_song,
+                            async move {
                                 println!("Fetching new lyrics...");
-                                match this.imp().cache.get().unwrap().get_lyrics(new_song.get_info(), true).await {
+                                match this
+                                    .imp()
+                                    .cache
+                                    .get()
+                                    .unwrap()
+                                    .get_lyrics(new_song.get_info(), true, None)
+                                    .await
+                                {
                                     Ok(Some(lyrics)) => {
-                                        if this.current_song().is_some_and(
-                                            |s| s.get_info().get_comp_id() == new_song.get_info().get_comp_id()
-                                        ) {
+                                        if this.current_song().is_some_and(|s| {
+                                            s.get_info().get_comp_id()
+                                                == new_song.get_info().get_comp_id()
+                                        }) {
                                             this.update_lyrics(lyrics);
                                             println!("Fetched new lyrics");
                                         }
@@ -1041,7 +1102,9 @@ impl Player {
                                     Ok(None) => {
                                         println!("No lyrics found");
                                     }
-                                    Err(e) => {dbg!(e);}
+                                    Err(e) => {
+                                        dbg!(e);
+                                    }
                                 }
                             }
                         ));
@@ -1066,7 +1129,9 @@ impl Player {
                         self.emit_by_name::<()>("cover-changed", &[]);
                     }
                     Ok(None) => {
-                        println!("[WARNING] returned status says there is a song playing but none can be fetched. Slow connection?");
+                        println!(
+                            "[WARNING] returned status says there is a song playing but none can be fetched. Slow connection?"
+                        );
                     }
                     Err(e) => {
                         dbg!(e);
@@ -1094,15 +1159,21 @@ impl Player {
                                         Ok(()) => {
                                             self.emit_by_name::<()>("history-changed", &[]);
                                         }
-                                        Err(e) => {dbg!(e);}
+                                        Err(e) => {
+                                            dbg!(e);
+                                        }
                                     }
-                                    if let Err(e) = self.client()?.set_sticker(
-                                        "song",
-                                        curr_song.get_uri().to_owned(),
-                                        Stickers::PLAY_COUNT_KEY.into(),
-                                        "1".into(),
-                                        StickerSetMode::Inc,
-                                    ).await {
+                                    if let Err(e) = self
+                                        .client()?
+                                        .set_sticker(
+                                            "song",
+                                            curr_song.get_uri().to_owned(),
+                                            Stickers::PLAY_COUNT_KEY.into(),
+                                            "1".into(),
+                                            StickerSetMode::Inc,
+                                        )
+                                        .await
+                                    {
                                         dbg!(e);
                                     }
 
@@ -1149,14 +1220,14 @@ impl Player {
             let secs_to_end = self.duration() as f64 - new;
             if self.imp().pipewire_restart_between_songs.get()
                 && self
-                .imp()
-                .fft_backend
-                .borrow()
-                .as_ref()
-                .is_some_and(|backend| {
-                    backend.name() == "pipewire"
-                        && backend.status() != FftStatus::ValidNotReading
-                })
+                    .imp()
+                    .fft_backend
+                    .borrow()
+                    .as_ref()
+                    .is_some_and(|backend| {
+                        backend.name() == "pipewire"
+                            && backend.status() != FftStatus::ValidNotReading
+                    })
                 && (0.0..1.5).contains(&secs_to_end)
             {
                 println!("Stopping PipeWire backend to allow samplerate change...");
@@ -1206,7 +1277,11 @@ impl Player {
 
     /// Returns true if we have lyrics for the current song and it is synced; false otherwise.
     pub fn lyrics_are_synced(&self) -> bool {
-        self.imp().lyrics.borrow().as_ref().is_some_and(|lyrics| lyrics.synced)
+        self.imp()
+            .lyrics
+            .borrow()
+            .as_ref()
+            .is_some_and(|lyrics| lyrics.synced)
     }
 
     pub fn current_lyric_line(&self) -> u32 {
@@ -1218,9 +1293,9 @@ impl Player {
     }
 
     pub fn register_local_queue_changes(&self, n_changes: u32) {
-        self.imp().expected_queue_version.set(
-            self.imp().expected_queue_version.get() + n_changes
-        );
+        self.imp()
+            .expected_queue_version
+            .set(self.imp().expected_queue_version.get() + n_changes);
     }
 
     /// Update the queue, optionally with diffs or an entirely new queue.
@@ -1243,23 +1318,29 @@ impl Player {
             self.imp().expected_queue_version.set(status.queue_version);
             if old_version == 0 {
                 let queue = self.imp().queue.clone();
-                self.client()?.get_current_queue(clone!(
-                    #[weak] queue,
-                    move |songs| {
-                        queue.extend_from_slice(&songs);
-                    }
-                )).await?;
-            } else {
-                self.client()?.get_queue_changes(
-                    old_version,
-                    status.queue_len,
-                    clone!(
-                        #[weak(rename_to = this)] self,
-                        move |changed_songs| {
-                            this.update_queue_internal(&changed_songs);
+                self.client()?
+                    .get_current_queue(clone!(
+                        #[weak]
+                        queue,
+                        move |songs| {
+                            queue.extend_from_slice(&songs);
                         }
+                    ))
+                    .await?;
+            } else {
+                self.client()?
+                    .get_queue_changes(
+                        old_version,
+                        status.queue_len,
+                        clone!(
+                            #[weak(rename_to = this)]
+                            self,
+                            move |changed_songs| {
+                                this.update_queue_internal(&changed_songs);
+                            }
+                        ),
                     )
-                ).await?;
+                    .await?;
             }
         }
         Ok(())
@@ -1383,20 +1464,29 @@ impl Player {
     }
 
     pub fn album(&self) -> Option<String> {
-        self.current_song().as_ref().and_then(|s| s.get_album()).map(|a| a.title.to_owned())
+        self.current_song()
+            .as_ref()
+            .and_then(|s| s.get_album())
+            .map(|a| a.title.to_owned())
     }
 
     pub async fn current_song_cover_path(&self, thumbnail: bool) -> ClientResult<Option<PathBuf>> {
         if let Some(uri) = self.current_song().map(|s| s.get_uri().to_owned()) {
-            gio::spawn_blocking(move || Ok(
-                sqlite::find_cover_by_uri(&uri, thumbnail)
+            gio::spawn_blocking(move || {
+                Ok(sqlite::find_cover_by_uri(&uri, thumbnail)
                     .map_err(|_| ClientError::Internal)?
-                    .and_then(|name| if !name.is_empty() {
-                        let mut path = get_image_cache_path();
-                        path.push(name);
-                        Some(path)
-                    } else {None})
-            )).await.unwrap()
+                    .and_then(|name| {
+                        if !name.is_empty() {
+                            let mut path = get_image_cache_path();
+                            path.push(name);
+                            Some(path)
+                        } else {
+                            None
+                        }
+                    }))
+            })
+            .await
+            .unwrap()
         } else {
             Ok(None)
         }
@@ -1407,7 +1497,8 @@ impl Player {
     }
 
     pub fn quality_grade(&self) -> QualityGrade {
-        self.current_song().map_or(QualityGrade::Unknown, |s| s.get_quality_grade())
+        self.current_song()
+            .map_or(QualityGrade::Unknown, |s| s.get_quality_grade())
     }
 
     pub fn fft_status(&self) -> FftStatus {
@@ -1422,7 +1513,10 @@ impl Player {
     }
 
     pub fn format_desc(&self) -> Option<String> {
-        self.imp().format.borrow().map(|f| prettify_audio_format(&f))
+        self.imp()
+            .format
+            .borrow()
+            .map(|f| prettify_audio_format(&f))
     }
 
     pub fn duration(&self) -> u64 {
@@ -1466,7 +1560,8 @@ impl Player {
         if let Some(lyrics) = self.imp().lyrics.borrow().as_ref() {
             if lyrics.synced && line >= 0 && line < lyrics.lines.len() as i32 {
                 self.client()?
-                    .seek_current_song(lyrics.lines[line as usize].0 as f64).await?;
+                    .seek_current_song(lyrics.lines[line as usize].0 as f64)
+                    .await?;
             }
         }
         Ok(())
@@ -1504,25 +1599,21 @@ impl Player {
                     Ok(())
                 }
             }
-            PlaybackState::Playing => {
-                self.send_pause().await
-            }
-            PlaybackState::Paused => {
-                self.send_play().await
-            }
+            PlaybackState::Playing => self.send_pause().await,
+            PlaybackState::Paused => self.send_play().await,
         }
     }
 
     pub async fn prev_song(&self, block: bool) -> ClientResult<()> {
         if self.imp().pipewire_restart_between_songs.get()
             && self
-            .imp()
-            .fft_backend
-            .borrow()
-            .as_ref()
-            .is_some_and(|backend| {
-                backend.name() == "pipewire" && backend.status() != FftStatus::ValidNotReading
-            })
+                .imp()
+                .fft_backend
+                .borrow()
+                .as_ref()
+                .is_some_and(|backend| {
+                    backend.name() == "pipewire" && backend.status() != FftStatus::ValidNotReading
+                })
         {
             println!("Stopping PipeWire backend to allow samplerate change...");
             self.maybe_stop_fft_thread(block);
@@ -1533,13 +1624,13 @@ impl Player {
     pub async fn next_song(&self, block: bool) -> ClientResult<()> {
         if self.imp().pipewire_restart_between_songs.get()
             && self
-            .imp()
-            .fft_backend
-            .borrow()
-            .as_ref()
-            .is_some_and(|backend| {
-                backend.name() == "pipewire" && backend.status() != FftStatus::ValidNotReading
-            })
+                .imp()
+                .fft_backend
+                .borrow()
+                .as_ref()
+                .is_some_and(|backend| {
+                    backend.name() == "pipewire" && backend.status() != FftStatus::ValidNotReading
+                })
         {
             println!("Stopping PipeWire backend to allow samplerate change...");
             self.maybe_stop_fft_thread(block);
@@ -1555,7 +1646,9 @@ impl Player {
         let old_vol = self.imp().volume.replace(val);
         if old_vol != val {
             self.client()?.set_volume(val).await?;
-            self.imp().expected_volume_changes.set(self.imp().expected_volume_changes.get() + 1);
+            self.imp()
+                .expected_volume_changes
+                .set(self.imp().expected_volume_changes.get() + 1);
         }
         Ok(())
     }
@@ -1563,13 +1656,13 @@ impl Player {
     pub async fn on_song_clicked(&self, song: Song) -> ClientResult<()> {
         if self.imp().pipewire_restart_between_songs.get()
             && self
-            .imp()
-            .fft_backend
-            .borrow()
-            .as_ref()
-            .is_some_and(|backend| {
-                backend.name() == "pipewire" && backend.status() != FftStatus::ValidNotReading
-            })
+                .imp()
+                .fft_backend
+                .borrow()
+                .as_ref()
+                .is_some_and(|backend| {
+                    backend.name() == "pipewire" && backend.status() != FftStatus::ValidNotReading
+                })
         {
             println!("Stopping PipeWire backend to allow samplerate change...");
             self.maybe_stop_fft_thread(true);
@@ -1706,16 +1799,19 @@ impl Player {
         }
 
         if let Some(score) = score {
-            self.client()?.set_sticker(
-                "song",
-                uri,
-                Stickers::RATING_KEY.into(),
-                score.to_string().into(),
-                StickerSetMode::Set,
-            ).await?;
+            self.client()?
+                .set_sticker(
+                    "song",
+                    uri,
+                    Stickers::RATING_KEY.into(),
+                    score.to_string().into(),
+                    StickerSetMode::Set,
+                )
+                .await?;
         } else {
             self.client()?
-                .delete_sticker("song", uri, Stickers::RATING_KEY.into()).await?;
+                .delete_sticker("song", uri, Stickers::RATING_KEY.into())
+                .await?;
         }
         self.notify("rating");
 
@@ -1780,33 +1876,49 @@ impl LocalRootInterface for Player {
 
 impl LocalPlayerInterface for Player {
     async fn next(&self) -> fdo::Result<()> {
-        self.next_song(false).await.map_err(|_| fdo::Error::Failed("internal".to_string()))
+        self.next_song(false)
+            .await
+            .map_err(|_| fdo::Error::Failed("internal".to_string()))
     }
 
     async fn previous(&self) -> fdo::Result<()> {
-        self.prev_song(false).await.map_err(|_| fdo::Error::Failed("internal".to_string()))
+        self.prev_song(false)
+            .await
+            .map_err(|_| fdo::Error::Failed("internal".to_string()))
     }
 
     async fn play(&self) -> fdo::Result<()> {
-        self.toggle_playback().await.map_err(|_| fdo::Error::Failed("internal".to_string()))
+        self.toggle_playback()
+            .await
+            .map_err(|_| fdo::Error::Failed("internal".to_string()))
     }
 
     async fn pause(&self) -> fdo::Result<()> {
-        self.send_pause().await.map_err(|_| fdo::Error::Failed("internal".to_string()))
+        self.send_pause()
+            .await
+            .map_err(|_| fdo::Error::Failed("internal".to_string()))
     }
 
     async fn play_pause(&self) -> fdo::Result<()> {
-        self.toggle_playback().await.map_err(|_| fdo::Error::Failed("internal".to_string()))
+        self.toggle_playback()
+            .await
+            .map_err(|_| fdo::Error::Failed("internal".to_string()))
     }
 
     async fn stop(&self) -> fdo::Result<()> {
-        self.client().map_err(|_| fdo::Error::ZBus(zbus::Error::InterfaceNotFound))?.stop().await.map_err(|_| fdo::Error::Failed("internal".to_string()))
+        self.client()
+            .map_err(|_| fdo::Error::ZBus(zbus::Error::InterfaceNotFound))?
+            .stop()
+            .await
+            .map_err(|_| fdo::Error::Failed("internal".to_string()))
     }
 
     async fn seek(&self, offset: Time) -> fdo::Result<()> {
         let curr_pos = self.imp().position.get();
         let new_pos = curr_pos + (offset.as_millis() as f64 / 1000.0);
-        self.send_seek(new_pos).await.map_err(|_| fdo::Error::Failed("internal".to_string()))
+        self.send_seek(new_pos)
+            .await
+            .map_err(|_| fdo::Error::Failed("internal".to_string()))
     }
 
     /// Use MPD's queue ID to construct track_id in this format:
@@ -1814,15 +1926,19 @@ impl LocalPlayerInterface for Player {
     async fn set_position(&self, track_id: TrackId, position: Time) -> fdo::Result<()> {
         let should_seek;
         {
-            should_seek = self.current_song().is_some_and(
-                |s| track_id.as_str().split("/").last().unwrap() == s.get_queue_id().to_string()
-            );
+            should_seek = self.current_song().is_some_and(|s| {
+                track_id.as_str().split("/").last().unwrap() == s.get_queue_id().to_string()
+            });
             // End borrow
         }
         if should_seek {
-            self.send_seek(position.as_millis() as f64 / 1000.0).await.map_err(|_| fdo::Error::Failed("internal".to_string()))
+            self.send_seek(position.as_millis() as f64 / 1000.0)
+                .await
+                .map_err(|_| fdo::Error::Failed("internal".to_string()))
         } else {
-            Err(fdo::Error::Failed("Song has already changed or player is in the Stopped state".to_owned()))
+            Err(fdo::Error::Failed(
+                "Song has already changed or player is in the Stopped state".to_owned(),
+            ))
         }
     }
 
@@ -1842,7 +1958,11 @@ impl LocalPlayerInterface for Player {
 
     async fn set_loop_status(&self, loop_status: LoopStatus) -> zbus::Result<()> {
         let flow: PlaybackFlow = loop_status.into();
-        self.client().map_err(|_| zbus::Error::InterfaceNotFound)?.set_playback_flow(flow).await.map_err(|_| zbus::Error::InvalidReply)
+        self.client()
+            .map_err(|_| zbus::Error::InterfaceNotFound)?
+            .set_playback_flow(flow)
+            .await
+            .map_err(|_| zbus::Error::InvalidReply)
     }
 
     async fn rate(&self) -> fdo::Result<PlaybackRate> {
@@ -1860,7 +1980,9 @@ impl LocalPlayerInterface for Player {
     }
 
     async fn set_shuffle(&self, shuffle: bool) -> zbus::Result<()> {
-        self.set_random(shuffle).await.map_err(|_| zbus::Error::InvalidReply)
+        self.set_random(shuffle)
+            .await
+            .map_err(|_| zbus::Error::InvalidReply)
     }
 
     async fn metadata(&self) -> fdo::Result<MprisMetadata> {
@@ -1876,7 +1998,9 @@ impl LocalPlayerInterface for Player {
     }
 
     async fn set_volume(&self, volume: Volume) -> zbus::Result<()> {
-        self.send_set_volume((volume * 100.0).round() as i8).await.map_err(|_| zbus::Error::InvalidReply)
+        self.send_set_volume((volume * 100.0).round() as i8)
+            .await
+            .map_err(|_| zbus::Error::InvalidReply)
     }
 
     async fn position(&self) -> fdo::Result<Time> {

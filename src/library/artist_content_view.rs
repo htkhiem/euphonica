@@ -16,9 +16,11 @@ use crate::{
     common::{Album, Artist, ContentView, RowAddButtons, Song, SongRow, ContentStack},
     library::add_to_playlist::AddToPlaylistButton,
     utils::{format_secs_as_duration, settings_manager, tokio_runtime},
+    window::EuphonicaWindow
 };
 
 mod imp {
+
     use super::*;
 
     #[derive(Debug, CompositeTemplate, Derivative)]
@@ -87,6 +89,7 @@ mod imp {
 
         pub library: WeakRef<Library>,
         pub artist: RefCell<Option<Artist>>,
+        pub window: WeakRef<EuphonicaWindow>,
         pub bindings: RefCell<Vec<Binding>>,
         pub avatar_signal_id: RefCell<Option<SignalHandlerId>>,
         pub cache: OnceCell<Rc<Cache>>,
@@ -367,7 +370,7 @@ impl ArtistContentView {
                 let bio_text = self.imp().bio_text.get();
                 let bio_link = self.imp().bio_link.get();
                 let bio_attrib = self.imp().bio_attrib.get();
-                let res = cache.get_artist_meta(artist.get_info(), true, overwrite).await;
+                let res = cache.get_artist_meta(artist.get_info(), true, overwrite, self.imp().window.upgrade().as_ref()).await;
                 stack.set_visible_child_name("content");
                 match res {
                     Ok(Some(meta)) => {
@@ -641,12 +644,13 @@ impl ArtistContentView {
             .build();
     }
 
-    pub fn setup(&self, library: &Library, cache: Rc<Cache>) {
+    pub fn setup(&self, library: &Library, cache: Rc<Cache>, window: &EuphonicaWindow) {
         self.imp()
             .cache
             .set(cache)
             .expect("Could not register artist content view with cache controller");
         self.imp().library.set(Some(library));
+        self.imp().window.set(Some(window));
 
         self.setup_info_box();
         self.setup_song_subview();

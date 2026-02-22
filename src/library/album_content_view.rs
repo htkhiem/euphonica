@@ -412,7 +412,7 @@ impl AlbumContentView {
                 let wiki_text = self.imp().wiki_text.get();
                 let wiki_link = self.imp().wiki_link.get();
                 let wiki_attrib = self.imp().wiki_attrib.get();
-                let res = cache.get_album_meta(album.get_info(), true, overwrite).await;
+                let res = cache.get_album_meta(album.get_info(), true, overwrite, self.imp().window.upgrade().as_ref()).await;
                 stack.set_visible_child_name("content");
                 match res {
                     Ok(Some(meta)) => {

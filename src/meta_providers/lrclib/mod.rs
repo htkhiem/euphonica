@@ -4,4 +4,4 @@ mod controller;
 mod models;
 
 pub use controller::LrcLibWrapper;
-pub use models::LrcLibResponse;
+pub use models::{LrcLibErrorResponse, LrcLibResponse};

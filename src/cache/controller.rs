@@ -21,7 +21,7 @@ use image::ImageReader;
 use lru::LruCache;
 use once_cell::sync::Lazy;
 use std::{
-    fmt, fs::create_dir_all, rc::Rc, result, sync::{Arc, Mutex}
+    fmt, fs::create_dir_all, rc::Rc, result, sync::Mutex
 };
 use std::{num::NonZeroUsize};
 
@@ -29,12 +29,11 @@ use crate::{
     client::{Error as ClientError, MpdWrapper},
     common::{AlbumInfo, ArtistInfo},
     meta_providers::{MetadataChain, models, prelude::*, utils::get_best_image},
-    utils::{get_app_cache_path, get_image_cache_path, get_new_image_paths, resize_convert_image, save_and_register_image, settings_manager},
+    utils::{get_app_cache_path, get_image_cache_path, get_new_image_paths, resize_convert_image, save_and_register_image, settings_manager}, window::EuphonicaWindow,
 };
 use crate::{
     common::{DynamicPlaylist, SongInfo},
     meta_providers::{
-        get_provider,
         models::{ArtistMeta, Lyrics},
     },
     utils::strip_filename_linux,
@@ -50,7 +49,8 @@ pub enum Error {
     Path,
     PriorFailure,  // Failed to fetch this resource externally once (denoted by empty path in DB table).
     Sqlite(sqlite::Error),
-    Client(ClientError)
+    Client(ClientError),
+    Metadata(MetadataError<()>)  // Strip info to prevent
 }
 
 pub type Result<T> = result::Result<T, Error>;
@@ -209,7 +209,7 @@ static IMAGE_CACHE: Lazy<Mutex<LruCache<String, Texture>>> =
 // texture in-memory for all subsequent requests.
 pub struct Cache {
     mpd_client: Rc<MpdWrapper>,
-    meta_providers: Arc<Mutex<MetadataChain>>,
+    meta_providers: MetadataChain,
     // Asyncified container for local operations (no delay between calls).
     local: Asyncified<()>,
     // Asyncified container for operations involving API calls (should sleep after each call).
@@ -223,18 +223,6 @@ impl fmt::Debug for Cache {
     }
 }
 
-fn init_meta_provider_chain() -> MetadataChain {
-    let mut providers = MetadataChain::new();
-    providers.providers = settings_manager()
-        .child("metaprovider")
-        .value("order")
-        .array_iter_str()
-        .unwrap()
-        .map(|key| get_provider(key))
-        .collect();
-    providers
-}
-
 impl Cache {
     pub fn new(mpd_client: Rc<MpdWrapper>) -> Rc<Self> {
         // Init folders
@@ -244,7 +232,11 @@ impl Cache {
         let cache = Self {
             // TODO: Turn mpd_client here into a metadata provider too.
             mpd_client,
-            meta_providers: Arc::new(Mutex::new(init_meta_provider_chain())),
+            meta_providers: glib::MainContext::default().block_on(
+                glib::spawn_future_local(async move {
+                    MetadataChain::new().await
+                })
+            ).unwrap(),
             local: glib::MainContext::default().block_on(
                 glib::spawn_future_local(async move {
                     Asyncified::builder().channel_size(usize::MAX).build_ok(|| ()).await
@@ -260,11 +252,6 @@ impl Cache {
         
 
         Rc::new(cache)
-    }
-    /// Re-initialise list of providers when priority order is changed
-    pub fn reinit_meta_providers(&self) {
-        let mut curr_providers = self.meta_providers.lock().unwrap();
-        *curr_providers = init_meta_provider_chain();
     }
 
     pub fn get_cache_state(&self) -> CacheState {
@@ -339,7 +326,7 @@ impl Cache {
                 folder_failed_before,
                 song.album.as_ref().cloned()
             ) {
-                if let Some(meta) = self.get_album_meta(&album, true, false).await? {
+                if let Some(meta) = self.get_album_meta(&album, true, false, None).await? {
                     return self.external.call(move |_| {
                         // Always check with our DB first as a prior call might have downloaded the
                         // necessary image for us.
@@ -444,7 +431,7 @@ impl Cache {
             }
             if let (false, Some(meta)) = (
                 folder_failed_before,
-                self.get_album_meta(album, true, false).await?
+                self.get_album_meta(album, true, false, None).await?
             ) {
                 let album = album.to_owned();
                 return self.external.call(move |_| {
@@ -550,7 +537,7 @@ impl Cache {
         self.clear_image(playlist_name, Some("playlist"), None).await
     }
 
-    pub async fn get_album_meta(&self, album: &AlbumInfo, external: bool, overwrite: bool) -> Result<Option<models::AlbumMeta>> {
+    pub async fn get_album_meta(&self, album: &AlbumInfo, external: bool, overwrite: bool, window: Option<&EuphonicaWindow>) -> Result<Option<models::AlbumMeta>> {
         if !(overwrite && external) {
             // Check whether we have this album cached
             let title = album.title.to_owned();
@@ -567,71 +554,71 @@ impl Cache {
         }
 
         if external && (album.mbid.is_some() || album.albumartist.is_some()) {
-            let mut album = album.to_owned();
-            let providers = self.meta_providers.clone();
-            return self.external.call(move |_| {
-                if !overwrite {
-                    if let  Some(existing) = sqlite::find_album_meta(
-                        &album.title, album.mbid.as_deref(), album.albumartist.as_deref()
-                    ).map_err(Error::Sqlite)? {
-                        return Ok(Some(existing));
-                    }
+            let mbid = album.mbid.clone();
+            let artist = album.get_artist_tag().map(String::from);
+            let title = album.title.to_owned();
+            if !overwrite {
+                if let Some(existing) = self.local.call(move |_| {
+                    sqlite::find_album_meta(&title, mbid.as_deref(), artist.as_deref())
+                }).await.map_err(Error::Sqlite)? {
+                    return Ok(Some(existing));
                 }
-                let res = providers.lock().unwrap().get_album_meta(&mut album, None);
-                if let (Some(meta), _) = res {
-                    sqlite::write_album_meta(&album, &meta).map_err(Error::Sqlite)?;
-                    Ok(Some(meta))
-                }
-                else {
-                    // Push an empty AlbumMeta to block further calls for this album.
-                    println!("No album meta could be found for {}. Pushing empty document...", &album.folder_uri);
-                    sqlite::write_album_meta(&album, &models::AlbumMeta::from_key(&album)).map_err(Error::Sqlite)?;
-                    Ok(None)
-                }
-            }).await;
+            }
+            let res = self.meta_providers.get_album_meta(album.clone(), None, window).await;
+            if let Some(meta) = res {
+                sqlite::write_album_meta(&album, &meta).map_err(Error::Sqlite)?;
+                Ok(Some(meta))
+            }
+            else {
+                // Push an empty AlbumMeta to block further calls for this album.
+                println!("No album meta could be found for {}. Pushing empty document...", &album.folder_uri);
+                sqlite::write_album_meta(&album, &models::AlbumMeta::from_key(&album)).map_err(Error::Sqlite)?;
+                Ok(None)
+            }
+        } else {
+            Ok(None)
         }
-
-        Ok(None)
     }
 
-    pub async fn get_artist_meta(&self, artist: &ArtistInfo, external: bool, overwrite: bool) -> Result<Option<ArtistMeta>> {
-        let name = artist.name.to_owned();
-        let mbid = artist.mbid.clone();
+    pub async fn get_artist_meta(&self, artist: &ArtistInfo, external: bool, overwrite: bool, window: Option<&EuphonicaWindow>) -> Result<Option<ArtistMeta>> {
+        if !(overwrite && external) {
+            // Check whether we have this album cached
+            let name = artist.name.to_owned();
+            let mbid = artist.mbid.clone();
 
-        let local = self.local.call(move |_| {
-            sqlite::find_artist_meta(&name, mbid.as_deref())
-        }).await.map_err(Error::Sqlite)?;
+            let local = self.local.call(move |_| {
+                sqlite::find_artist_meta(&name, mbid.as_deref())
+            }).await.map_err(Error::Sqlite)?;
 
-        if local.is_some() {
-            return Ok(local)
+            if local.is_some() {
+                return Ok(local)
+            }
         }
 
-        if external && (overwrite || local.is_none()) {
-            let mut artist = artist.to_owned();
-            let providers = self.meta_providers.clone();
-            return self.external.call(move |_| {
-                if !overwrite {
-                    if let  Some(existing) = sqlite::find_artist_meta(
-                        &artist.name, artist.mbid.as_deref()
-                    ).map_err(Error::Sqlite)? {
-                        return Ok(Some(existing));
-                    }
+        if external && artist.mbid.is_some() {
+            let mbid = artist.mbid.clone();
+            let name = artist.name.to_owned();
+            if !overwrite {
+                if let Some(existing) = self.local.call(move |_| {
+                    sqlite::find_artist_meta(&name, mbid.as_deref())
+                }).await.map_err(Error::Sqlite)? {
+                    return Ok(Some(existing));
                 }
-                let res = providers.lock().unwrap().get_artist_meta(&mut artist, None);
-                if let (Some(meta), _) = res {
-                    sqlite::write_artist_meta(&artist, &meta).map_err(Error::Sqlite)?;
-                    Ok(Some(meta))
-                }
-                else {
-                    // Push an empty ArtistMeta to block further calls for this artist.
-                    println!("No artist meta could be found for {}. Pushing empty document...", &artist.name);
-                    sqlite::write_artist_meta(&artist, &models::ArtistMeta::from_key(&artist)).map_err(Error::Sqlite)?;
-                    Ok(None)
-                }
-            }).await;
+            }
+            let res = self.meta_providers.get_artist_meta(artist.clone(), None, window).await;
+            if let Some(meta) = res {
+                sqlite::write_artist_meta(&artist, &meta).map_err(Error::Sqlite)?;
+                Ok(Some(meta))
+            }
+            else {
+                // Push an empty ArtistMeta to block further calls for this artist.
+                println!("No artist meta could be found for {}. Pushing empty document...", &artist.name);
+                sqlite::write_artist_meta(&artist, &models::ArtistMeta::from_key(&artist)).map_err(Error::Sqlite)?;
+                Ok(None)
+            }
+        } else {
+            Ok(None)
         }
-
-        Ok(None)
     }
 
     /// Try to get an avatar for the given artist.
@@ -662,7 +649,7 @@ impl Cache {
 
         // Failing the above, ask external providers
         if external && !failed_before {
-            if let Some(meta) = self.get_artist_meta(artist, true, false).await? {
+            if let Some(meta) = self.get_artist_meta(artist, true, false, None).await? {
                 let artist = artist.to_owned();
                 return self.external.call(move |_| {
                     // Always check with our DB first as a prior call might have downloaded the
@@ -736,7 +723,7 @@ impl Cache {
         }).await
     }
 
-    pub async fn get_lyrics(&self, song: &SongInfo, external: bool) -> Result<Option<Lyrics>> {
+    pub async fn get_lyrics(&self, song: &SongInfo, external: bool, window: Option<&EuphonicaWindow>) -> Result<Option<Lyrics>> {
         let uri = song.uri.to_owned();
         let local = self.local.call(move |_| {
             sqlite::find_lyrics(&uri)
@@ -746,17 +733,12 @@ impl Cache {
         }
 
         if external {
-            let providers = self.meta_providers.clone();
             let song = song.to_owned();
-            return self.external.call(move |_| {
-                let res = providers.lock().unwrap().get_lyrics(&song);
-                if let (Some(lyrics), _) = res {
-                    sqlite::write_lyrics(&song, Some(&lyrics)).map_err(Error::Sqlite)?;
-                    return Ok(Some(lyrics));
-                }
-                Ok(None)
-            }).await;
+            let res = self.meta_providers.get_lyrics(song.clone(), window).await;
+            sqlite::write_lyrics(&song, res.as_ref()).map_err(Error::Sqlite)?;
+            Ok(res)
+        } else {
+            Ok(None)
         }
-        Ok(None)
     }
 }

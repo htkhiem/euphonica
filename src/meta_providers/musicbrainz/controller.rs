@@ -6,6 +6,7 @@ extern crate bson;
 use musicbrainz_rs::{
     client::MusicBrainzClient,
     entity::{artist::*, release::*},
+    error::Error as MBError,
     prelude::*,
 };
 
@@ -17,15 +18,26 @@ use crate::{
 };
 
 use super::{
-    super::{models, prelude::*, MetadataProvider},
+    super::{MetadataProvider, models, prelude::*},
     PROVIDER_KEY,
 };
 
 /// v0.99: updated to musicbrainz_rs v0.12 which has cover art URL handling & retrying built-in.
-/// Since we're already handling retries here, the retry flag in return values will always be false.
+/// Since we're already handling retries here, we never return MetadataError::Reqwest, which
+/// means MetadataChain will never retry this provider.
 pub struct MusicBrainzWrapper {
     last_request_time: SystemTime,
     client: MusicBrainzClient,
+}
+
+fn pack_error<T>(existing: T, mbe: MBError) -> MetadataError<T> {
+    match mbe {
+        // Included here, but shouldn't be reachable
+        MBError::ReqwestError(e) => MetadataError::Reqwest(existing, e),
+        MBError::NotFound(_) => MetadataError::NotFound(existing),
+        MBError::MaxRetriesExceeded => MetadataError::RateLimit(existing),
+        _ => MetadataError::Parse(existing),
+    }
 }
 
 impl MetadataProvider for MusicBrainzWrapper {
@@ -46,10 +58,10 @@ impl MetadataProvider for MusicBrainzWrapper {
         &mut self,
         key: &mut AlbumInfo,
         existing: Option<models::AlbumMeta>,
-    ) -> (Option<models::AlbumMeta>, bool) {
+    ) -> MetadataResult<Option<models::AlbumMeta>> {
         sleep_between_requests(self.last_request_time);
         if !meta_provider_settings(PROVIDER_KEY).boolean("enabled") {
-            return (existing, false);
+            return Ok(existing);
         }
 
         let mut new_result: models::AlbumMeta;
@@ -67,7 +79,7 @@ impl MetadataProvider for MusicBrainzWrapper {
                 }
                 Err(e) => {
                     println!("[MusicBrainz] Could not fetch album metadata: {:?}", &e);
-                    return (existing, false);
+                    return Err(pack_error(existing, e));
                 }
             }
         }
@@ -92,40 +104,37 @@ impl MetadataProvider for MusicBrainzWrapper {
                         new_result = first.into();
                     } else {
                         println!("[MusicBrainz] No release found for artist & album title");
-                        return (existing, false);
+                        return Err(MetadataError::NotFound(existing));
                     }
                 }
                 Err(e) => {
                     println!("[MusicBrainz] Could not fetch album metadata: {:?}", &e);
-                    return (existing, false);
+                    return Err(pack_error(existing, e));
                 }
             }
         } else {
             println!("[MusicBrainz] Either MBID or BOTH album name & artist must be provided");
-            return (existing, false);
+            return Err(MetadataError::InsufficientKey(existing));
         }
 
         if let Some(old) = existing {
             new_result = old.merge(new_result);
         }
 
-        if !meta_provider_settings(PROVIDER_KEY).boolean("download-album-art") {
-            return (Some(new_result), false);
+        if meta_provider_settings(PROVIDER_KEY).boolean("download-album-art") {
+            // Newer musicbrainz_rs versions are also aware of the cover art link situation,
+            // but we'd just like to get a direct link for our existing fetch machinery.
+            new_result.image.push(ImageMeta {
+                // in reality, we don't really know the quality. However, its likely a highres version.
+                size: models::ImageSize::Mega,
+                url: format!(
+                    "{}/release/{}/front",
+                    &self.client.coverart_archive_url,
+                    new_result.mbid.clone().unwrap()
+                ),
+            });
         }
-
-        // Newer musicbrainz_rs versions are also aware of the cover art link situation,
-        // but we'd just like to get a direct link for our existing fetch machinery.
-        new_result.image.push(ImageMeta {
-            // in reality, we don't really know the quality. However, its likely a highres version.
-            size: models::ImageSize::Mega,
-            url: format!(
-                "{}/release/{}/front",
-                &self.client.coverart_archive_url,
-                new_result.mbid.clone().unwrap()
-            ),
-        });
-
-        return (Some(new_result), false);
+        return Ok(Some(new_result));
     }
 
     /// Schedule getting artist metadata from MusicBrainz.
@@ -136,7 +145,7 @@ impl MetadataProvider for MusicBrainzWrapper {
         &mut self,
         key: &mut ArtistInfo,
         existing: std::option::Option<models::ArtistMeta>,
-    ) -> (Option<models::ArtistMeta>, bool) {
+    ) -> MetadataResult<Option<models::ArtistMeta>> {
         sleep_between_requests(self.last_request_time);
         if meta_provider_settings(PROVIDER_KEY).boolean("enabled") {
             if let Some(mbid) = key.mbid.as_ref() {
@@ -151,18 +160,15 @@ impl MetadataProvider for MusicBrainzWrapper {
                         let new: models::ArtistMeta = artist.into();
                         println!("{:?}", &new);
                         // If there is existing data, merge new data to it
-                        return (
-                            Some(if let Some(old) = existing {
-                                old.merge(new)
-                            } else {
-                                new
-                            }),
-                            false,
-                        );
+                        return Ok(Some(if let Some(old) = existing {
+                            old.merge(new)
+                        } else {
+                            new
+                        }));
                     }
                     Err(e) => {
                         println!("[MusicBrainz] Could not fetch artist metadata: {:?}", &e);
-                        return (existing, false);
+                        return Err(pack_error(existing, e));
                     }
                 }
             }
@@ -181,32 +187,32 @@ impl MetadataProvider for MusicBrainzWrapper {
                             let new: models::ArtistMeta = first.into();
                             println!("{:?}", &new);
                             // If there is existing data, merge new data to it
-                            return (
-                                Some(if let Some(old) = existing {
-                                    old.merge(new)
-                                } else {
-                                    new
-                                }),
-                                false,
-                            );
+                            return Ok(Some(if let Some(old) = existing {
+                                old.merge(new)
+                            } else {
+                                new
+                            }));
                         } else {
                             println!("[MusicBrainz] No artist metadata found for {name}");
-                            return (existing, false);
+                            return Err(MetadataError::NotFound(existing));
                         }
                     }
                     Err(e) => {
                         println!("[MusicBrainz] Could not fetch artist metadata: {:?}", &e);
-                        return (existing, false);
+                        return Err(pack_error(existing, e));
                     }
                 }
             }
         } else {
-            (existing, false)
+            Ok(existing)
         }
     }
 
     /// MusicBrainz does not provide lyrics.
-    fn get_lyrics(&mut self, _key: &crate::common::SongInfo) -> (Option<models::Lyrics>, bool) {
-        (None, false)
+    fn get_lyrics(
+        &mut self,
+        _key: &crate::common::SongInfo,
+    ) -> MetadataResult<Option<models::Lyrics>> {
+        Ok(None)
     }
 }
