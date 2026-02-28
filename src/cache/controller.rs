@@ -20,7 +20,7 @@ use gtk::{
 use image::{ImageReader};
 use lru::LruCache;
 use once_cell::sync::Lazy;
-use std::{io::Cursor, num::NonZeroUsize};
+use std::{num::NonZeroUsize};
 use std::{
     fmt,
     fs::create_dir_all,
@@ -34,7 +34,7 @@ use crate::{
     common::{AlbumInfo, ArtistInfo},
     meta_providers::{MetadataChain, models, prelude::*, utils::get_best_image},
     utils::{
-        RegisteredImage, get_app_cache_path, get_image_cache_path, register_image_as_failure, resize_convert_image, save_and_register_image, save_and_register_single_image, settings_manager
+        get_app_cache_path, get_image_cache_path, register_image_as_failure, save_and_register_image, settings_manager
     },
 };
 use crate::{
@@ -56,7 +56,14 @@ pub enum Error {
     Path,
     PriorFailure,  // Failed to fetch this resource externally once (denoted by empty path in DB table).
     Sqlite(sqlite::Error),
-    Client(ClientError)
+    Client(ClientError),
+    GlibError(glib::Error)
+}
+
+impl From<glib::Error> for Error {
+    fn from(value: glib::Error) -> Self {
+        Error::GlibError(value)
+    }
 }
 
 pub type Result<T> = result::Result<T, Error>;
@@ -86,8 +93,8 @@ fn set_image_internal(
         .map_err(|_| Error::UnknownFileFormat)?;
 
     let bundle = save_and_register_image(dyn_img, key, key_prefix);
-    let hires_tex = read_texture_from_register(&bundle.hires)?;
-    let thumb_tex = read_texture_from_register(&bundle.thumb)?;
+    let hires_tex = bundle.hires.texture()?;
+    let thumb_tex = bundle.thumb.texture()?;
 
     {
         let mut cache = IMAGE_CACHE.lock().unwrap();
@@ -172,23 +179,6 @@ fn read_texture_from_name(name: &str) -> Result<gdk::Texture> {
     })
 }
 
-fn read_texture_from_register(img: &RegisteredImage) -> Result<gdk::Texture> {
-    if let Some(rgb_image) = &img.img {
-        let mut bytes: Vec<u8> = Vec::new();
-        rgb_image.write_to(&mut Cursor::new(&mut bytes), image::ImageFormat::Png).map_err(|e| {
-            dbg!(e);
-            Error::UnknownFileFormat
-        })?;
-
-        gdk::Texture::from_bytes(&glib::Bytes::from(&bytes)).map_err(|e| {
-            dbg!(e);
-            Error::UnknownFileFormat
-        })
-    } else {
-        read_texture_from_name(&img.name)
-    }
-}
-
 // In-memory image cache.
 // gdk::Textures are GObjects, which by themselves are boxed reference-counted.
 // This means that even if a texture is evicted from this cache, as long as there
@@ -251,7 +241,7 @@ fn load_image(
         match get_best_image(fallback_images) {
             Ok(dyn_img) => {
                 let bundle = save_and_register_image(dyn_img, key, prefix);
-                read_texture_from_register(if thumbnail { &bundle.hires } else { &bundle.thumb }).map(Some)
+                Ok(bundle.texture(thumbnail).map(Some)?)
             }
             Err(e) => {
                 dbg!(e);
@@ -365,7 +355,7 @@ impl Cache {
                     .map_err(Error::Client)
                     .await?
                 {
-                    return read_texture_from_register(if thumbnail { &bundle.thumb } else { &bundle.hires }).map(Some);
+                    return Ok(bundle.texture(thumbnail).map(Some)?);
                 }
             }
             if let (false, Some(album)) = (folder_failed_before, song.album.as_ref().cloned()) {
@@ -440,7 +430,7 @@ impl Cache {
                     .map_err(Error::Client)
                     .await?
                 {
-                    return read_texture_from_register(if thumbnail { &bundle.thumb } else { &bundle.hires }).map(Some);
+                    return Ok(bundle.texture(thumbnail).map(Some)?);
                 }
             }
 
@@ -455,7 +445,7 @@ impl Cache {
                     .map_err(Error::Client)
                     .await?
                 {
-                    return read_texture_from_register(if thumbnail { &bundle.thumb } else { &bundle.hires }).map(Some);
+                    return Ok(bundle.texture(thumbnail).map(Some)?);
                 }
             }
 
@@ -516,7 +506,7 @@ impl Cache {
         let cloned_key = key.clone();
         self.local.call(move |_| {
             clear_image_internal(&cloned_key, key_prefix)?;
-            Ok(())
+            Ok::<(), Error>(())
         }).await?;
         // For updates, still notify via signals to update all widgets wherever they are.
         if let Some(signal) = notify_signal {

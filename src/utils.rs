@@ -12,6 +12,7 @@ use serde::de::DeserializeOwned;
 use uuid::Uuid;
 use std::fmt::Write;
 use std::fs::File;
+use std::io::Cursor;
 use std::io::{BufReader, BufWriter};
 use std::path::PathBuf;
 use std::sync::OnceLock;
@@ -23,6 +24,7 @@ use time::UtcOffset;
 use time::error::IndeterminateOffset;
 use time::format_description::{OwnedFormatItem, parse_owned};
 use tokio::runtime::Runtime;
+use gtk::gdk;
 
 static APP_CACHE_PATH: Lazy<PathBuf> = Lazy::new(|| {
     let mut res = glib::user_cache_dir();
@@ -262,9 +264,44 @@ pub struct RegisteredImage {
     pub img: Option<RgbImage>
 }
 
+impl RegisteredImage {
+    pub fn texture(&self) -> Result<gdk::Texture, glib::Error> {
+        if let Some(rgb_image) = &self.img {
+            let mut bytes: Vec<u8> = Vec::new();
+            if let Err(e) = rgb_image.write_to(&mut Cursor::new(&mut bytes), image::ImageFormat::Png) {
+                panic!("Somehow failed to write image to an internal buffer: {:#?}", e)
+            }
+
+            gdk::Texture::from_bytes(&glib::Bytes::from_owned(bytes)).map_err(|e| { dbg!(&e); e })
+        } else {
+            let mut res = get_image_cache_path();
+            res.push(&self.name);
+
+            gdk::Texture::from_filename(res).map_err(|e| { dbg!(&e); e })
+        }
+    }
+}
+
+impl TryInto<gdk::Texture> for RegisteredImage {
+    type Error = glib::Error;
+    fn try_into(self) -> Result<gdk::Texture, Self::Error> {
+        self.texture()
+    }
+}
+
 pub struct RegisteredImageBundle {
     pub hires: RegisteredImage,
     pub thumb: RegisteredImage
+}
+
+impl RegisteredImageBundle {
+    pub fn texture(&self, thumb: bool) -> Result<gdk::Texture, glib::Error> {
+        if thumb {
+            self.thumb.texture()
+        } else {
+            self.hires.texture()
+        }
+    }
 }
 
 /// this is really a util wrap around resizing the dyn_img & registering. For fine grain control, you can call those individually
