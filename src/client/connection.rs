@@ -1,20 +1,20 @@
 use async_channel::{Receiver, Sender};
 use gio::prelude::SettingsExt;
 use mpd::{
-    Channel, Client, EditAction, GroupedValues, Id, Idle, Output, Query, ReplayGain, SaveMode,
-    Status, Subsystem, Term, Version,
     error::{
         Error as MpdError, ErrorCode as MpdErrorCode, ProtoError, Result as MpdResult, ServerError,
     },
     search::Window,
     song::PosIdChange,
+    Channel, Client, EditAction, GroupedValues, Id, Idle, Output, Query, ReplayGain, SaveMode,
+    Status, Subsystem, Term, Version,
 };
 use oneshot::Sender as OneShotSender;
 use rand::seq::SliceRandom;
 use resolve_path::PathResolveExt;
 use rustc_hash::FxHashSet;
 use std::{
-    borrow::Cow, cmp::Ordering as StdOrdering, net::TcpStream, ops::Range,
+    borrow::Cow, cell::RefCell, cmp::Ordering as StdOrdering, net::TcpStream, ops::Range,
     os::unix::net::UnixStream, result,
 };
 
@@ -22,16 +22,16 @@ use crate::{
     cache::sqlite,
     client::stream::StreamWrapper,
     common::{
-        AlbumInfo, DynamicPlaylist, SongInfo, Stickers,
         dynamic_playlist::{Ordering, QueryLhs, Rule, StickerObjectType, StickerOperation},
         inode::INodeInfo,
+        AlbumInfo, DynamicPlaylist, SongInfo, Stickers,
     },
     player::PlaybackFlow,
     utils,
 };
 
 use super::StickerSetMode;
-use super::{BATCH_SIZE, FETCH_LIMIT, get_past_unix_timestamp, password};
+use super::{get_past_unix_timestamp, password, BATCH_SIZE, FETCH_LIMIT};
 
 fn cmp_options_nulls_last<T: Ord>(a: Option<&T>, b: Option<&T>) -> StdOrdering {
     match (a, b) {
@@ -535,9 +535,15 @@ impl Connection {
         let hires = sqlite::find_image_by_key(&uri, None, false).expect("Sqlite DB error");
         let thumb = sqlite::find_image_by_key(&uri, None, true).expect("Sqlite DB error");
         if let (Some(hires), Some(thumb)) = (hires, thumb) {
-            let _ = resp.send(Ok(Some(utils::RegisteredImageBundle{
-                hires: utils::RegisteredImage{ name: hires, img: None },
-                thumb: utils::RegisteredImage{ name: thumb, img: None }
+            let _ = resp.send(Ok(Some(utils::RegisteredImageBundle {
+                hires: utils::RegisteredImage {
+                    name: hires,
+                    img: RefCell::new(None),
+                },
+                thumb: utils::RegisteredImage {
+                    name: thumb,
+                    img: RefCell::new(None),
+                },
             })));
         } else {
             // Not available locally => try to download

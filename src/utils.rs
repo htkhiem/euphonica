@@ -2,29 +2,29 @@ use crate::cache::sqlite;
 use crate::config::APPLICATION_ID;
 use aho_corasick::AhoCorasick;
 use gio::prelude::*;
-use gtk::Ordering;
+use gtk::gdk;
 use gtk::gio;
-use image::{DynamicImage, RgbImage, imageops::FilterType};
+use gtk::Ordering;
+use image::{imageops::FilterType, DynamicImage, RgbImage};
 use mpd::status::AudioFormat;
 use once_cell::sync::Lazy;
-use serde::Serialize;
 use serde::de::DeserializeOwned;
-use uuid::Uuid;
+use serde::Serialize;
+use std::cell::RefCell;
 use std::fmt::Write;
 use std::fs::File;
-use std::io::Cursor;
 use std::io::{BufReader, BufWriter};
 use std::path::PathBuf;
 use std::sync::OnceLock;
 use std::sync::RwLock;
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
+use time::error::IndeterminateOffset;
+use time::format_description::{parse_owned, OwnedFormatItem};
 use time::OffsetDateTime;
 use time::UtcOffset;
-use time::error::IndeterminateOffset;
-use time::format_description::{OwnedFormatItem, parse_owned};
 use tokio::runtime::Runtime;
-use gtk::gdk;
+use uuid::Uuid;
 
 static APP_CACHE_PATH: Lazy<PathBuf> = Lazy::new(|| {
     let mut res = glib::user_cache_dir();
@@ -245,39 +245,49 @@ pub fn resize_convert_image(dyn_img: DynamicImage) -> (RgbImage, RgbImage) {
 }
 
 /// returns the image name that this is saved as
-pub fn save_and_register_single_image(img: &RgbImage, key: &str, prefix: Option<&'static str>, is_thumb: bool) -> String {
+pub fn save_and_register_single_image(
+    img: &RgbImage,
+    key: &str,
+    prefix: Option<&'static str>,
+    is_thumb: bool,
+) -> String {
     let mut path = get_image_cache_path();
     let name = Uuid::new_v4().simple().to_string() + ".png";
     path.push(&name);
 
-    img.save(&path).unwrap_or_else(|_| panic!("Couldn't save downloaded image to {:?}", &path));
+    img.save(&path)
+        .unwrap_or_else(|_| panic!("Couldn't save downloaded image to {:?}", &path));
 
     sqlite::register_image_key(key, prefix, Some(&name), is_thumb).expect("Sqlite error");
 
-    return name
+    return name;
 }
 
 pub struct RegisteredImage {
     /// image name (eg. uayhsjdkjasuijad.png)
     pub name: String,
     /// this field is only present if it is returned by a method that created the image
-    pub img: Option<RgbImage>
+    pub img: RefCell<Option<RgbImage>>,
 }
 
 impl RegisteredImage {
-    pub fn texture(&self) -> Result<gdk::Texture, glib::Error> {
-        if let Some(rgb_image) = &self.img {
-            let mut bytes: Vec<u8> = Vec::new();
-            if let Err(e) = rgb_image.write_to(&mut Cursor::new(&mut bytes), image::ImageFormat::Png) {
-                panic!("Somehow failed to write image to an internal buffer: {:#?}", e)
-            }
-
-            gdk::Texture::from_bytes(&glib::Bytes::from_owned(bytes)).map_err(|e| { dbg!(&e); e })
+    pub fn take_texture(&self) -> Result<gdk::Texture, glib::Error> {
+        if let Some(rgb_image) = self.img.take() {
+            let builder = gdk::MemoryTextureBuilder::new();
+            builder.set_width(rgb_image.width() as i32);
+            builder.set_height(rgb_image.height() as i32);
+            builder.set_format(gdk::MemoryFormat::R8g8b8);
+            builder.set_stride((rgb_image.width() * 3) as usize);
+            builder.set_bytes(Some(&glib::Bytes::from_owned(rgb_image.into_raw())));
+            Ok(builder.build())
         } else {
             let mut res = get_image_cache_path();
             res.push(&self.name);
 
-            gdk::Texture::from_filename(res).map_err(|e| { dbg!(&e); e })
+            gdk::Texture::from_filename(res).map_err(|e| {
+                dbg!(&e);
+                e
+            })
         }
     }
 }
@@ -285,36 +295,44 @@ impl RegisteredImage {
 impl TryInto<gdk::Texture> for RegisteredImage {
     type Error = glib::Error;
     fn try_into(self) -> Result<gdk::Texture, Self::Error> {
-        self.texture()
+        self.take_texture()
     }
 }
 
 pub struct RegisteredImageBundle {
     pub hires: RegisteredImage,
-    pub thumb: RegisteredImage
+    pub thumb: RegisteredImage,
 }
 
 impl RegisteredImageBundle {
-    pub fn texture(&self, thumb: bool) -> Result<gdk::Texture, glib::Error> {
+    pub fn take_texture(&self, thumb: bool) -> Result<gdk::Texture, glib::Error> {
         if thumb {
-            self.thumb.texture()
+            self.thumb.take_texture()
         } else {
-            self.hires.texture()
+            self.hires.take_texture()
         }
     }
 }
 
 /// this is really a util wrap around resizing the dyn_img & registering. For fine grain control, you can call those individually
 pub fn save_and_register_image(
-    dyn_img: DynamicImage, key: &str, prefix: Option<&'static str>
+    dyn_img: DynamicImage,
+    key: &str,
+    prefix: Option<&'static str>,
 ) -> RegisteredImageBundle {
     let (hires_img, thumb_img) = resize_convert_image(dyn_img);
     let hires_k = save_and_register_single_image(&hires_img, key, prefix, false);
     let thumb_k = save_and_register_single_image(&thumb_img, key, prefix, true);
 
     return RegisteredImageBundle {
-        hires: RegisteredImage{ name: hires_k, img: Some(hires_img) },
-        thumb: RegisteredImage{ name: thumb_k, img: Some(thumb_img) }
+        hires: RegisteredImage {
+            name: hires_k,
+            img: RefCell::new(Some(hires_img)),
+        },
+        thumb: RegisteredImage {
+            name: thumb_k,
+            img: RefCell::new(Some(thumb_img)),
+        },
     };
 }
 
@@ -529,4 +547,3 @@ pub fn get_time_ago_desc(past_ts: i64) -> String {
         "just now".to_string()
     }
 }
-

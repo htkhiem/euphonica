@@ -93,8 +93,8 @@ fn set_image_internal(
         .map_err(|_| Error::UnknownFileFormat)?;
 
     let bundle = save_and_register_image(dyn_img, key, key_prefix);
-    let hires_tex = bundle.hires.texture()?;
-    let thumb_tex = bundle.thumb.texture()?;
+    let hires_tex = bundle.hires.take_texture()?;
+    let thumb_tex = bundle.thumb.take_texture()?;
 
     {
         let mut cache = IMAGE_CACHE.lock().unwrap();
@@ -241,7 +241,7 @@ fn load_image(
         match get_best_image(fallback_images) {
             Ok(dyn_img) => {
                 let bundle = save_and_register_image(dyn_img, key, prefix);
-                Ok(bundle.texture(thumbnail).map(Some)?)
+                Ok(bundle.take_texture(thumbnail).map(Some)?)
             }
             Err(e) => {
                 dbg!(e);
@@ -355,7 +355,7 @@ impl Cache {
                     .map_err(Error::Client)
                     .await?
                 {
-                    return Ok(bundle.texture(thumbnail).map(Some)?);
+                    return Ok(bundle.take_texture(thumbnail).map(Some)?);
                 }
             }
             if let (false, Some(album)) = (folder_failed_before, song.album.as_ref().cloned()) {
@@ -430,7 +430,7 @@ impl Cache {
                     .map_err(Error::Client)
                     .await?
                 {
-                    return Ok(bundle.texture(thumbnail).map(Some)?);
+                    return Ok(bundle.take_texture(thumbnail).map(Some)?);
                 }
             }
 
@@ -445,7 +445,7 @@ impl Cache {
                     .map_err(Error::Client)
                     .await?
                 {
-                    return Ok(bundle.texture(thumbnail).map(Some)?);
+                    return Ok(bundle.take_texture(thumbnail).map(Some)?);
                 }
             }
 
