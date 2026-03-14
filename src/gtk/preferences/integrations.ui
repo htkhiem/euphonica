@@ -6,11 +6,6 @@
     <property name="title" translatable="true">Integrations</property>
     <property name="icon-name">globe-symbolic</property>
     <child>
-      <object class="AdwBanner" id="restart_banner">
-        <property name="title" translatable="true">Restart Euphonica to apply changes to provider priority</property>
-      </object>
-    </child>
-    <child>
       <object class="AdwPreferencesGroup">
         <property name="title" translatable="true">MPRIS Daemon</property>
         <property name="description" translatable="true">Control your MPD instance via keyboard shortcuts and shell applets without having to keep the Euphonica window open.</property>
@@ -94,7 +89,7 @@
     <child>
       <object class="AdwPreferencesGroup">
         <property name="title" translatable="true">Metadata provider priority</property>
-        <property name="description" translatable="true">Metadata providers can be daisy-chained. Providers earlier in the chain take precedence, filling in fields first. Later providers can fill in the blanks or add to list-type fields (e.g., tags). Results from earlier providers can also help improve the accuracy &amp;amp; hit rate of later ones.</property>
+        <property name="description" translatable="true">Metadata providers can be daisy-chained. Providers earlier in the chain take precedence, filling in fields first. Later providers can fill in the blanks or add to list-type fields (e.g., tags). Results from earlier providers can also help improve the accuracy &amp;amp; hit rate of later ones. Changes take effect after restarting Euphonica.</property>
         <child>
           <object class="GtkListBox" id="order_box">
             <property name="hexpand">true</property>

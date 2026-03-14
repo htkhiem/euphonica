@@ -4,7 +4,8 @@
 	<requires lib="Adw" version="1.0" />
 	<template class="EuphonicaPreferences" parent="AdwPreferencesDialog">
 		<property name="content-width">800</property>
-		<property name="content-height">600</property>
+		<property name="content-height">1000</property>
+		<property name="search-enabled">true</property>
 		<property name="title" translatable="true">Preferences</property>
 		<child>
 			<object class="EuphonicaClientPreferences" id="client_tab"/>

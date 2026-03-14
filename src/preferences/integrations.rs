@@ -9,14 +9,11 @@ use crate::{application::update_xdg_background_request, cache::Cache, utils};
 use super::ProviderRow;
 
 mod imp {
-
     use super::*;
 
     #[derive(Debug, Default, CompositeTemplate)]
     #[template(resource = "/io/github/htkhiem/Euphonica/gtk/preferences/integrations.ui")]
     pub struct IntegrationsPreferences {
-        #[template_child]
-        pub restart_banner: TemplateChild<adw::Banner>,
         #[template_child]
         pub enable_mpris: TemplateChild<adw::SwitchRow>,
         #[template_child]
@@ -220,12 +217,6 @@ impl IntegrationsPreferences {
         let _ = utils::settings_manager()
             .child("metaprovider")
             .set_value("order", &key_array.to_variant());
-
-        // No longer allowing on-the-fly changes due to async code
-        let banner = self.imp().restart_banner.get();
-        if !banner.is_revealed() {
-            banner.set_revealed(true);
-        }
     }
 
     pub fn on_raise_provider(&self, curr_prio: i32) {
