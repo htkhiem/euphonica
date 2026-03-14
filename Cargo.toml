@@ -4,7 +4,6 @@ version = "0.99.0"
 edition = "2024"
 
 [dev-dependencies]
-rustls = "0.23.18" # GHSA ID GHSA-qg5g-gv98-5ffh
 idna = "1.0.0"     # CVE-2024-12242
 
 [dependencies]
@@ -29,7 +28,6 @@ musicbrainz_rs = { version = "0.12", features = ["blocking"], default-features =
 mpris-server = "0.8.1"
 async-lock = "3.4.0"
 libblur = "0.14.4"
-rustls = "0.23.18" # GHSA ID GHSA-qg5g-gv98-5ffh
 gio = { version = "0.20", features = ["v2_84"] }
 glib = { version = "0.20", features = ["v2_84"] }  # GHSA ID GHSA-wrw7-89jp-8q8g
 idna = "1.0.0"     # CVE-2024-12242
