@@ -468,6 +468,7 @@ impl Connection {
         Ok(())
     }
 
+    /// Auto-retry wrapper around the bare client object.
     #[inline]
     fn client_then<F, T>(&mut self, then: F) -> Result<T>
     where
@@ -508,8 +509,6 @@ impl Connection {
         final_res
     }
 
-    // Will also handle reconnection & retrying if the first attempt returns MpdError::Io.
-    // Subsequent attempts
     #[inline]
     fn respond_with_client<F, T>(&mut self, then: F, resp: Responder<T>)
     where
@@ -1070,6 +1069,9 @@ impl Connection {
                         Subsystem::Message => {
                             // Right now we only use messages as a way to wake an idle client connection up.
                             // Otherwise there's nothing to act on.
+                            // However, we still need to explicitly "read" the messages from the server
+                            // otherwise no more idle notifications will be sent.
+                            let _ = client.readmessages();
                         }
                         other => {
                             sender.send_blocking(*other).map_err(|_| Error::Internal)?;

@@ -117,9 +117,6 @@ impl ClientState {
     fn update_has_pending(&self) {
         let total = self.imp().n_bg_tasks.get() + self.imp().n_fg_tasks.get();
         let old = self.imp().has_pending.get();
-        eprintln!("update_has_pending: n_bg_tasks={}, n_fg_tasks={}, n_done_bg_tasks={}, n_done_fg_tasks={}",
-            self.imp().n_bg_tasks.get(), self.imp().n_fg_tasks.get(),
-            self.imp().n_done_bg_tasks.get(), self.imp().n_done_fg_tasks.get());
         if total == 0 {
             self.imp().has_pending.set(false);
             self.notify("has-pending");
@@ -159,14 +156,12 @@ impl ClientState {
         let curr_done = self.imp().n_done_bg_tasks.get();
         let all = self.imp().n_bg_tasks.get();
         if curr_done + 1 == all {
-            eprintln!("All background tasks done!");
             // Completed everything, reset to zero
             self.imp().n_done_bg_tasks.set(0);
             self.imp().n_bg_tasks.set(0);
             self.notify("n-done-bg-tasks");
             self.notify("n-bg-tasks");
         } else {
-            eprintln!("Done a background task!");
             self.imp().n_done_bg_tasks.set(curr_done + 1);
             self.notify("n-done-bg-tasks");
         }
