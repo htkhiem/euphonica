@@ -134,7 +134,7 @@ impl MetadataProvider for MusicBrainzWrapper {
                 ),
             });
         }
-        return Ok(Some(new_result));
+        Ok(Some(new_result))
     }
 
     /// Schedule getting artist metadata from MusicBrainz.
@@ -160,15 +160,15 @@ impl MetadataProvider for MusicBrainzWrapper {
                         let new: models::ArtistMeta = artist.into();
                         println!("{:?}", &new);
                         // If there is existing data, merge new data to it
-                        return Ok(Some(if let Some(old) = existing {
+                        Ok(Some(if let Some(old) = existing {
                             old.merge(new)
                         } else {
                             new
-                        }));
+                        }))
                     }
                     Err(e) => {
                         println!("[MusicBrainz] Could not fetch artist metadata: {:?}", &e);
-                        return Err(pack_error(existing, e));
+                        Err(pack_error(existing, e))
                     }
                 }
             }
@@ -187,19 +187,19 @@ impl MetadataProvider for MusicBrainzWrapper {
                             let new: models::ArtistMeta = first.into();
                             println!("{:?}", &new);
                             // If there is existing data, merge new data to it
-                            return Ok(Some(if let Some(old) = existing {
+                            Ok(Some(if let Some(old) = existing {
                                 old.merge(new)
                             } else {
                                 new
-                            }));
+                            }))
                         } else {
                             println!("[MusicBrainz] No artist metadata found for {name}");
-                            return Err(MetadataError::NotFound(existing));
+                            Err(MetadataError::NotFound(existing))
                         }
                     }
                     Err(e) => {
                         println!("[MusicBrainz] Could not fetch artist metadata: {:?}", &e);
-                        return Err(pack_error(existing, e));
+                        Err(pack_error(existing, e))
                     }
                 }
             }

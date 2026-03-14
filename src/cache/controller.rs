@@ -17,21 +17,25 @@ use gtk::{
     gdk::{self, Texture},
     gio, glib,
 };
-use image::ImageReader;
+use image::{ImageReader};
 use lru::LruCache;
 use once_cell::sync::Lazy;
-use std::num::NonZeroUsize;
-use std::{fmt, fs::create_dir_all, rc::Rc, result, sync::Mutex};
+use std::{num::NonZeroUsize};
+use std::{
+    fmt,
+    fs::create_dir_all,
+    rc::Rc,
+    result,
+    sync::Mutex,
+};
 
 use crate::{
     client::{Error as ClientError, MpdWrapper},
     common::{AlbumInfo, ArtistInfo},
     meta_providers::{MetadataChain, models, prelude::*, utils::get_best_image},
     utils::{
-        get_app_cache_path, get_image_cache_path, get_new_image_paths, resize_convert_image,
-        save_and_register_image, settings_manager,
-    },
-    window::EuphonicaWindow,
+        get_app_cache_path, get_image_cache_path, register_image_as_failure, save_and_register_image, settings_manager
+    }, window::EuphonicaWindow,
 };
 use crate::{
     common::{DynamicPlaylist, SongInfo},
@@ -51,7 +55,8 @@ pub enum Error {
     PriorFailure, // Failed to fetch this resource externally once (denoted by empty path in DB table).
     Sqlite(sqlite::Error),
     Client(ClientError),
-    Metadata(MetadataError<()>), // Strip info to prevent
+    Metadata(MetadataError<()>),
+    GlibError(glib::Error)
 }
 
 impl Error {
@@ -66,7 +71,14 @@ impl Error {
             Self::Sqlite(_) => "SQLite error".into(),     // TODO: better error message
             Self::Client(_) => "MPD error".into(),        // TODO: better error message
             Self::Metadata(e) => e.message(),
+            Self::GlibError(e) => e.to_string()
         }
+    }
+}
+
+impl From<glib::Error> for Error {
+    fn from(value: glib::Error) -> Self {
+        Error::GlibError(value)
     }
 }
 
@@ -96,32 +108,17 @@ fn set_image_internal(
         .decode()
         .map_err(|_| Error::UnknownFileFormat)?;
 
-    let (hires_path, thumbnail_path) = get_new_image_paths();
-    let (hires_name, thumbnail_name) = (
-        hires_path.file_name().unwrap().to_str().unwrap().to_owned(),
-        thumbnail_path
-            .file_name()
-            .unwrap()
-            .to_str()
-            .unwrap()
-            .to_owned(),
-    );
-    let (hires, thumbnail) = resize_convert_image(dyn_img);
-    hires.save(&hires_path).map_err(|_| Error::Io)?;
-    thumbnail.save(&thumbnail_path).map_err(|_| Error::Io)?;
-    sqlite::register_image_key(key, key_prefix, Some(&hires_name), false).map_err(Error::Sqlite)?;
-    sqlite::register_image_key(key, key_prefix, Some(&thumbnail_name), true)
-        .map_err(Error::Sqlite)?;
-    // TODO: Optimise to avoid reading back from disk
-    let hires_tex = gdk::Texture::from_filename(&hires_path).map_err(|_| Error::FileNotFound)?;
-    let thumbnail_tex =
-        gdk::Texture::from_filename(&thumbnail_path).map_err(|_| Error::FileNotFound)?;
+    let bundle = save_and_register_image(dyn_img, key, key_prefix);
+    let hires_tex = bundle.hires.take_texture()?;
+    let thumb_tex = bundle.thumb.take_texture()?;
+
     {
         let mut cache = IMAGE_CACHE.lock().unwrap();
-        cache.put(hires_name, hires_tex.clone());
-        cache.put(thumbnail_name, thumbnail_tex.clone());
+
+        cache.put(bundle.hires.name, hires_tex.clone());
+        cache.put(bundle.thumb.name, thumb_tex.clone());
     }
-    Ok((hires_tex, thumbnail_tex))
+    Ok((hires_tex, thumb_tex))
 }
 
 #[inline]
@@ -194,8 +191,41 @@ fn get_image_internal(
 }
 
 #[inline]
-fn read_texture(path: &str) -> Result<gdk::Texture> {
-    gdk::Texture::from_filename(path).map_err(|_| Error::FileNotFound)
+fn read_texture_from_name(name: &str) -> Result<gdk::Texture> {
+    let mut res = get_image_cache_path();
+    res.push(name);
+
+    gdk::Texture::from_filename(res).map_err(|e| {
+        dbg!(e);
+        Error::FileNotFound
+    })
+}
+
+#[inline]
+fn load_image(
+    key: &str,
+    prefix: Option<&'static str>,
+    fallback_images: &[models::ImageMeta],
+    thumbnail: bool,
+) -> Result<Option<Texture>> {
+    // Always check with our DB first as a prior call might have downloaded the
+    // necessary image for us.
+    if let Some(file) = sqlite::find_image_by_key(key, prefix, thumbnail).expect("Sqlite DB error")
+    {
+        read_texture_from_name(&file).map(Some)
+    } else {
+        match get_best_image(fallback_images) {
+            Ok(dyn_img) => {
+                let bundle = save_and_register_image(dyn_img, key, prefix);
+                Ok(bundle.take_texture(thumbnail).map(Some)?)
+            }
+            Err(e) => {
+                dbg!(e);
+                register_image_as_failure(key, prefix);
+                Ok(None)
+            }
+        }
+    }
 }
 
 // In-memory image cache.
@@ -273,10 +303,6 @@ impl Cache {
         self.state.clone()
     }
 
-    async fn read_texture_async(&self, path: String) -> Result<Texture> {
-        self.local.call(move |_| read_texture(&path)).await
-    }
-
     /// Try to get a cover image for the given song. This prioritises the embedded cover
     /// over the cover image file in the same folder.
     /// Returns a gdk::Texture from cache if available.
@@ -341,62 +367,21 @@ impl Cache {
                 && settings_manager()
                     .child("client")
                     .boolean("mpd-download-album-art")
-            {
-                if let Some((hires_path, thumb_path)) = self
+                && let Some(bundle) = self
                     .mpd_client
                     .get_embedded_cover(song.uri.clone())
                     .map_err(Error::Client)
                     .await?
                 {
-                    return Ok(Some(
-                        self.read_texture_async(if thumbnail { thumb_path } else { hires_path })
-                            .await?,
-                    ));
+                    return Ok(bundle.take_texture(thumbnail).map(Some)?);
                 }
-            }
-            if let (false, Some(album)) = (folder_failed_before, song.album.as_ref().cloned()) {
-                if let Some(meta) = self.get_album_meta(&album, true, false, None).await? {
+            if let (false, Some(album)) = (folder_failed_before, song.album.as_ref().cloned())
+                && let Some(meta) = self.get_album_meta(&album, true, false, None).await? {
                     return self
                         .external
-                        .call(move |_| {
-                            // Always check with our DB first as a prior call might have downloaded the
-                            // necessary image for us.
-                            let hires = sqlite::find_image_by_key(&album.folder_uri, None, false)
-                                .expect("Sqlite DB error");
-                            let thumb = sqlite::find_image_by_key(&album.folder_uri, None, true)
-                                .expect("Sqlite DB error");
-                            if let (Some(hires_path), Some(thumb_path)) = (hires, thumb) {
-                                Ok(Some(read_texture(if thumbnail {
-                                    &thumb_path
-                                } else {
-                                    &hires_path
-                                })?))
-                            } else {
-                                match get_best_image(&meta.image) {
-                                    Ok(dyn_img) => {
-                                        let (hires_path, thumb_path) = save_and_register_image(
-                                            Some(dyn_img),
-                                            &album.folder_uri,
-                                            None,
-                                        )
-                                        .unwrap();
-                                        Ok(Some(read_texture(if thumbnail {
-                                            &thumb_path
-                                        } else {
-                                            &hires_path
-                                        })?))
-                                    }
-                                    Err(e) => {
-                                        let _ =
-                                            save_and_register_image(None, &album.folder_uri, None);
-                                        Err(Error::Download(e))
-                                    }
-                                }
-                            }
-                        })
+                        .call(move |_| load_image(&album.folder_uri, None, &meta.image, thumbnail))
                         .await;
                 }
-            }
         }
         Ok(None)
     }
@@ -462,47 +447,29 @@ impl Cache {
         }
 
         if external {
-            if !folder_failed_before
-                && settings_manager()
-                    .child("client")
-                    .boolean("mpd-download-album-art")
-            {
-                if let Some((hires_path, thumb_path)) = self
+            if !folder_failed_before && settings_manager().child("client").boolean("mpd-download-album-art")
+                && let Some(bundle) = self
                     .mpd_client
                     .get_folder_cover(album.folder_uri.to_owned())
                     .map_err(Error::Client)
                     .await?
                 {
-                    let path = if thumbnail { thumb_path } else { hires_path };
-                    let tex = self
-                        .local
-                        .call(move |_| gdk::Texture::from_filename(path))
-                        .await
-                        .map_err(|_| Error::FileNotFound)?;
-                    return Ok(Some(tex));
+                    return Ok(bundle.take_texture(thumbnail).map(Some)?);
                 }
-            }
 
             if !embedded_failed_before
                 && settings_manager()
                     .child("client")
                     .boolean("mpd-download-album-art")
-            {
-                if let Some((hires_path, thumb_path)) = self
+                && let Some(bundle) = self
                     .mpd_client
                     .get_embedded_cover(album.example_uri.to_owned())
                     .map_err(Error::Client)
                     .await?
                 {
-                    let path = if thumbnail { thumb_path } else { hires_path };
-                    let tex = self
-                        .local
-                        .call(move |_| gdk::Texture::from_filename(path))
-                        .await
-                        .map_err(|_| Error::FileNotFound)?;
-                    return Ok(Some(tex));
+                    return Ok(bundle.take_texture(thumbnail).map(Some)?);
                 }
-            }
+
             if let (false, Some(meta)) = (
                 folder_failed_before,
                 self.get_album_meta(album, true, false, None).await?,
@@ -510,41 +477,7 @@ impl Cache {
                 let album = album.to_owned();
                 return self
                     .external
-                    .call(move |_| {
-                        // Always check with our DB first as a prior call might have downloaded the
-                        // necessary image for us.
-                        let hires = sqlite::find_image_by_key(&album.folder_uri, None, false)
-                            .expect("Sqlite DB error");
-                        let thumb = sqlite::find_image_by_key(&album.folder_uri, None, true)
-                            .expect("Sqlite DB error");
-                        if let (Some(hires_path), Some(thumb_path)) = (hires, thumb) {
-                            Ok(Some(read_texture(if thumbnail {
-                                &thumb_path
-                            } else {
-                                &hires_path
-                            })?))
-                        } else {
-                            match get_best_image(&meta.image) {
-                                Ok(dyn_img) => {
-                                    let (hires_path, thumb_path) = save_and_register_image(
-                                        Some(dyn_img),
-                                        &album.folder_uri,
-                                        None,
-                                    )
-                                    .unwrap();
-                                    Ok(Some(read_texture(if thumbnail {
-                                        &thumb_path
-                                    } else {
-                                        &hires_path
-                                    })?))
-                                }
-                                Err(e) => {
-                                    let _ = save_and_register_image(None, &album.folder_uri, None);
-                                    Err(Error::Download(e))
-                                }
-                            }
-                        }
-                    })
+                    .call(move |_| load_image(&album.folder_uri, None, &meta.image, thumbnail))
                     .await;
             }
         }
@@ -598,12 +531,10 @@ impl Cache {
         // Assume ashpd always return filesystem spec
         let state = self.get_cache_state();
         let cloned_key = key.clone();
-        self.local
-            .call(move |_| {
-                clear_image_internal(&cloned_key, key_prefix)?;
-                Ok(())
-            })
-            .await?;
+        self.local.call(move |_| {
+            clear_image_internal(&cloned_key, key_prefix)?;
+            Ok::<(), Error>(())
+        }).await?;
         // For updates, still notify via signals to update all widgets wherever they are.
         if let Some(signal) = notify_signal {
             state.emit_with_param(signal, &key);
@@ -717,8 +648,8 @@ impl Cache {
             let mbid = album.mbid.clone();
             let artist = album.get_artist_tag().map(String::from);
             let title = album.title.to_owned();
-            if !overwrite {
-                if let Some(existing) = self
+            if !overwrite
+                && let Some(existing) = self
                     .local
                     .call(move |_| {
                         sqlite::find_album_meta(&title, mbid.as_deref(), artist.as_deref())
@@ -728,13 +659,12 @@ impl Cache {
                 {
                     return Ok(Some(existing));
                 }
-            }
             let res = self
                 .meta_providers
                 .get_album_meta(album.clone(), None, window)
                 .await;
             if let Some(meta) = res {
-                sqlite::write_album_meta(&album, &meta).map_err(Error::Sqlite)?;
+                sqlite::write_album_meta(album, &meta).map_err(Error::Sqlite)?;
                 Ok(Some(meta))
             } else {
                 // Push an empty AlbumMeta to block further calls for this album.
@@ -742,7 +672,7 @@ impl Cache {
                     "No album meta could be found for {}. Pushing empty document...",
                     &album.folder_uri
                 );
-                sqlite::write_album_meta(&album, &models::AlbumMeta::from_key(&album))
+                sqlite::write_album_meta(album, &models::AlbumMeta::from_key(album))
                     .map_err(Error::Sqlite)?;
                 Ok(None)
             }
@@ -777,8 +707,8 @@ impl Cache {
         if external && artist.mbid.is_some() {
             let mbid = artist.mbid.clone();
             let name = artist.name.to_owned();
-            if !overwrite {
-                if let Some(existing) = self
+            if !overwrite
+                && let Some(existing) = self
                     .local
                     .call(move |_| sqlite::find_artist_meta(&name, mbid.as_deref()))
                     .await
@@ -786,13 +716,12 @@ impl Cache {
                 {
                     return Ok(Some(existing));
                 }
-            }
             let res = self
                 .meta_providers
                 .get_artist_meta(artist.clone(), None, window)
                 .await;
             if let Some(meta) = res {
-                sqlite::write_artist_meta(&artist, &meta).map_err(Error::Sqlite)?;
+                sqlite::write_artist_meta(artist, &meta).map_err(Error::Sqlite)?;
                 Ok(Some(meta))
             } else {
                 // Push an empty ArtistMeta to block further calls for this artist.
@@ -800,7 +729,7 @@ impl Cache {
                     "No artist meta could be found for {}. Pushing empty document...",
                     &artist.name
                 );
-                sqlite::write_artist_meta(&artist, &models::ArtistMeta::from_key(&artist))
+                sqlite::write_artist_meta(artist, &models::ArtistMeta::from_key(artist))
                     .map_err(Error::Sqlite)?;
                 Ok(None)
             }
@@ -840,50 +769,14 @@ impl Cache {
         }
 
         // Failing the above, ask external providers
-        if external && !failed_before {
-            if let Some(meta) = self.get_artist_meta(artist, true, false, None).await? {
+        if external && !failed_before
+            && let Some(meta) = self.get_artist_meta(artist, true, false, None).await? {
                 let artist = artist.to_owned();
                 return self
                     .external
-                    .call(move |_| {
-                        // Always check with our DB first as a prior call might have downloaded the
-                        // necessary image for us.
-                        let hires = sqlite::find_image_by_key(&artist.name, Some("avatar"), false)
-                            .expect("Sqlite DB error");
-                        let thumb = sqlite::find_image_by_key(&artist.name, Some("avatar"), true)
-                            .expect("Sqlite DB error");
-                        if let (Some(hires_path), Some(thumb_path)) = (hires, thumb) {
-                            Ok(Some(read_texture(if thumbnail {
-                                &thumb_path
-                            } else {
-                                &hires_path
-                            })?))
-                        } else {
-                            match get_best_image(&meta.image) {
-                                Ok(dyn_img) => {
-                                    let (hires_path, thumb_path) = save_and_register_image(
-                                        Some(dyn_img),
-                                        &artist.name,
-                                        Some("avatar"),
-                                    )
-                                    .unwrap();
-                                    Ok(Some(read_texture(if thumbnail {
-                                        &thumb_path
-                                    } else {
-                                        &hires_path
-                                    })?))
-                                }
-                                Err(e) => {
-                                    let _ =
-                                        save_and_register_image(None, &artist.name, Some("avatar"));
-                                    Err(Error::Download(e))
-                                }
-                            }
-                        }
-                    })
+                    .call(move |_| load_image(&artist.name, Some("avatar"), &meta.image, thumbnail))
                     .await;
             }
-        }
 
         Ok(None)
     }

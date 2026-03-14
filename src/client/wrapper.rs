@@ -367,18 +367,14 @@ impl MpdWrapper {
         // Now test if stickers DB is enabled by querying for a made-up path. This will most likely
         // return an error but as long as that error isn't an "unknown command" one, the sticker DB
         // is enabled.
-        match self
+        if let Err(ClientError::Mpd(MpdError::Server(e))) = self
             .get_known_stickers("song", String::from("euphonica_sticker_test"))
-            .await
-        {
-            Err(ClientError::Mpd(MpdError::Server(e))) => {
-                if e.code == MpdErrorCode::UnknownCmd {
-                    println!("Sticker DB not enabled. Disabling stickers-related functionality...");
-                    self.state
-                        .set_stickers_support_level(StickersSupportLevel::Disabled);
-                }
+            .await {
+            if e.code == MpdErrorCode::UnknownCmd {
+                println!("Sticker DB not enabled. Disabling stickers-related functionality...");
+                self.state
+                    .set_stickers_support_level(StickersSupportLevel::Disabled);
             }
-            _ => {}
         }
         self.client_version.replace(Some(version));
 
@@ -827,15 +823,12 @@ impl MpdWrapper {
         self.foreground(Task::UpdateDb(s), r).await
     }
 
-    pub async fn get_embedded_cover(&self, uri: String) -> ClientResult<Option<(String, String)>> {
+    pub async fn get_embedded_cover(&self, uri: String) -> ClientResult<Option<utils::RegisteredImageBundle>> {
         let (s, r) = oneshot::channel();
         self.background(Task::GetEmbeddedCover(uri, s), r).await
     }
 
-    pub async fn get_folder_cover(
-        &self,
-        folder_uri: String,
-    ) -> ClientResult<Option<(String, String)>> {
+    pub async fn get_folder_cover(&self, folder_uri: String) -> ClientResult<Option<utils::RegisteredImageBundle>> {
         let (s, r) = oneshot::channel();
         self.background(Task::GetFolderCover(folder_uri, s), r)
             .await

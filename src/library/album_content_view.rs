@@ -249,14 +249,12 @@ mod imp {
                             async move {
                                 if let (Some(album), Some(cache)) =
                                     (obj.imp().album.borrow().as_ref(), obj.imp().cache.get())
-                                {
-                                    if let Err(e) = cache
+                                    && let Err(e) = cache
                                         .clear_cover(album.get_folder_uri().to_owned(), true)
                                         .await
                                     {
                                         obj.show_cache_error("Couldn't clear cover", e);
                                     }
-                                }
                             }
                         ));
                     }
@@ -484,14 +482,13 @@ impl AlbumContentView {
 
     /// Set a user-selected path as the new local cover.
     pub async fn set_cover(&self, path: &str) {
-        if let (Some(album), Some(cache)) = (self.album(), self.imp().cache.get()) {
-            if let Err(e) = cache
+        if let (Some(album), Some(cache)) = (self.album(), self.imp().cache.get())
+            && let Err(e) = cache
                 .set_cover(album.get_folder_uri().to_owned(), path, true)
                 .await
             {
                 self.show_cache_error("Couldn't set cover", e);
             }
-        }
     }
 
     fn set_is_queuing(&self, queuing: bool) {
@@ -759,14 +756,13 @@ impl AlbumContentView {
                     #[weak]
                     this,
                     async move {
-                        if let (Some(album), Some(library)) = (this.album(), this.get_library()) {
-                            if let Err(e) = library
+                        if let (Some(album), Some(library)) = (this.album(), this.get_library())
+                            && let Err(e) = library
                                 .queue_album(album.clone(), true, true, Some(position))
                                 .await
                             {
                                 dbg!(e);
                             }
-                        }
                     }
                 ));
             }
@@ -943,11 +939,10 @@ impl AlbumContentView {
         }
         self.imp().artist_tags.remove_all();
 
-        if let Some(id) = self.imp().cover_signal_id.take() {
-            if let Some(cache) = self.imp().cache.get() {
+        if let Some(id) = self.imp().cover_signal_id.take()
+            && let Some(cache) = self.imp().cache.get() {
                 cache.get_cache_state().disconnect(id);
             }
-        }
         if let Some(_) = self.imp().album.take() {
             self.clear_cover();
         }

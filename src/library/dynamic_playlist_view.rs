@@ -476,15 +476,14 @@ impl DynamicPlaylistView {
                             #[weak]
                             this,
                             async move {
-                                if let Err(e) = this.init_dyn_playlists(false).await {
-                                    if let Some(win) = this.imp().window.upgrade() {
+                                if let Err(e) = this.init_dyn_playlists(false).await
+                                    && let Some(win) = this.imp().window.upgrade() {
                                         dbg!(e);
                                         win.send_simple_toast(
                                             "Couldn't load dynamic playlists (see console)",
                                             3,
                                         );
                                     }
-                                }
                             }
                         ));
                     }
@@ -517,14 +516,13 @@ impl DynamicPlaylistView {
                                 #[weak]
                                 this,
                                 async move {
-                                    if should_refresh {
-                                        if let Err(e) = this.init_dyn_playlists(true).await {
+                                    if should_refresh
+                                        && let Err(e) = this.init_dyn_playlists(true).await {
                                             dbg!(e);
                                             if let Some(win) = this.imp().window.upgrade() {
                                                 win.send_simple_toast("Couldn't refresh dynamic playlists (see console)", 3);
                                             }
                                         }
-                                    }
                                     this.imp().nav_view.pop();
                                 }
                             ));
@@ -569,17 +567,15 @@ impl DynamicPlaylistView {
                             content_view.unbind();
                             this.imp().nav_view.pop();
                             content_view.bind_by_name(editor.get_current_name()).await;
-                            if should_refresh {
-                                if let Err(e) = this.init_dyn_playlists(true).await {
-                                    if let Some(win) = this.imp().window.upgrade() {
+                            if should_refresh
+                                && let Err(e) = this.init_dyn_playlists(true).await
+                                    && let Some(win) = this.imp().window.upgrade() {
                                         dbg!(e);
                                         win.send_simple_toast(
                                             "Couldn't load dynamic playlists (see console)",
                                             3,
                                         );
                                     }
-                                }
-                            }
                         }
                     ));
                 }

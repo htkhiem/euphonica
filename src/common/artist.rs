@@ -93,22 +93,18 @@ pub fn parse_mb_artist_tag(input: &str) -> Vec<&str> {
             if buffer
                 .get(first_range.clone())
                 .is_some_and(|substr| !substr.trim().is_empty())
-            {
-                if let Some(artist) = input.get(first_range).map(|name| name.trim()) {
+                && let Some(artist) = input.get(first_range).map(|name| name.trim()) {
                     found_artists.push(artist);
                 }
-            }
             for i in 1..(matched_delims.len()) {
                 let between_range = matched_delims[i - 1].end()..matched_delims[i].start();
                 // println!("Between: `{between_range:?}`");
                 if buffer
                     .get(between_range.clone())
                     .is_some_and(|substr| !substr.trim().is_empty())
-                {
-                    if let Some(artist) = input.get(between_range).map(|name| name.trim()) {
+                    && let Some(artist) = input.get(between_range).map(|name| name.trim()) {
                         found_artists.push(artist);
                     }
-                }
             }
             let last_range = matched_delims.last().unwrap().end().min(buffer.len())..;
             if !buffer[last_range.clone()].trim().is_empty() {

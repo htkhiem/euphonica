@@ -248,14 +248,12 @@ mod imp {
                             async move {
                                 if let (Some(artist), Some(cache)) =
                                     (obj.artist(), obj.imp().cache.get())
-                                {
-                                    if let Err(e) = cache
+                                    && let Err(e) = cache
                                         .clear_artist_avatar(artist.get_name().to_owned(), true)
                                         .await
                                     {
                                         obj.show_cache_error("Couldn't clear avatar", e);
                                     }
-                                }
                             }
                         ));
                     }
@@ -692,14 +690,13 @@ impl ArtistContentView {
             #[weak(rename_to = this)]
             self,
             async move {
-                if let (Some(artist), Some(cache)) = (this.artist(), this.imp().cache.get()) {
-                    if let Err(e) = cache
+                if let (Some(artist), Some(cache)) = (this.artist(), this.imp().cache.get())
+                    && let Err(e) = cache
                         .set_artist_avatar(artist.get_name().to_owned(), &path, true)
                         .await
                     {
                         this.show_cache_error("Couldn't set cover", e);
                     }
-                }
             }
         ));
     }
@@ -810,11 +807,10 @@ impl ArtistContentView {
         for binding in self.imp().bindings.take().into_iter() {
             binding.unbind();
         }
-        if let Some(id) = self.imp().avatar_signal_id.take() {
-            if let Some(cache) = self.imp().cache.get() {
+        if let Some(id) = self.imp().avatar_signal_id.take()
+            && let Some(cache) = self.imp().cache.get() {
                 cache.get_cache_state().disconnect(id);
             }
-        }
         // Unset metadata widgets
         self.imp().avatar.set_text(None);
         self.clear_content();

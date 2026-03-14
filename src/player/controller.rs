@@ -452,25 +452,22 @@ mod imp {
                     let obj = this.obj();
                     match pspec.name() {
                         "crossfade" => {
-                            if let Ok(v) = value.get::<f64>() {
-                                if let Err(e) = obj.set_crossfade(v).await {
+                            if let Ok(v) = value.get::<f64>()
+                                && let Err(e) = obj.set_crossfade(v).await {
                                     dbg!(e);
                                 }
-                            }
                         }
                         "mixramp-db" => {
-                            if let Ok(v) = value.get::<f32>() {
-                                if let Err(e) = obj.set_mixramp_db(v).await {
+                            if let Ok(v) = value.get::<f32>()
+                                && let Err(e) = obj.set_mixramp_db(v).await {
                                     dbg!(e);
                                 }
-                            }
                         }
                         "mixramp-delay" => {
-                            if let Ok(v) = value.get::<f64>() {
-                                if let Err(e) = obj.set_mixramp_delay(v).await {
+                            if let Ok(v) = value.get::<f64>()
+                                && let Err(e) = obj.set_mixramp_delay(v).await {
                                     dbg!(e);
                                 }
-                            }
                         }
                         "position" => {
                             if let Ok(v) = value.get::<f64>() {
@@ -478,22 +475,20 @@ mod imp {
                             }
                         }
                         "random" => {
-                            if let Ok(state) = value.get::<bool>() {
-                                if let Err(e) = obj.set_random(state).await {
+                            if let Ok(state) = value.get::<bool>()
+                                && let Err(e) = obj.set_random(state).await {
                                     dbg!(e);
                                 }
                                 // Don't actually set the property here yet.
                                 // Idle status will update it later.
-                            }
                         }
                         "consume" => {
-                            if let Ok(state) = value.get::<bool>() {
-                                if let Err(e) = obj.set_consume(state).await {
+                            if let Ok(state) = value.get::<bool>()
+                                && let Err(e) = obj.set_consume(state).await {
                                     dbg!(e);
                                 }
                                 // Don't actually set the property here yet.
                                 // Idle status will update it later.
-                            }
                         }
                         "supports-playlists" => {
                             if let Ok(state) = value.get::<bool>() {
@@ -611,11 +606,10 @@ impl Player {
     /// If no backend name is specified, will try to set the parameter for the currently-active backend.
     /// This is useful for universal parameters shared by all backends, though there aren't any (yet).
     pub fn set_fft_param(&self, backend_name: Option<&str>, key: &str, val: glib::Variant) {
-        if let Some(backend) = self.imp().fft_backend.borrow().as_ref() {
-            if backend_name.is_some_and(|name| backend.name() == name) || backend_name.is_none() {
+        if let Some(backend) = self.imp().fft_backend.borrow().as_ref()
+            && (backend_name.is_some_and(|name| backend.name() == name) || backend_name.is_none()) {
                 backend.set_param(key, val);
             }
-        }
     }
 
     /// Lazily get an MPRIS server. This will always be invoked near the start anyway
@@ -1149,9 +1143,9 @@ impl Player {
                         let dur = curr_song.get_duration() as f32;
                         // Conform to myMPD's standards: song must be longer than 10 seconds and played for
                         // at least 4 minutes or half of its duration, whichever comes first.
-                        if dur >= 10.0 {
-                            if let Some(new_position_dur) = status.elapsed {
-                                if !self.imp().saved_to_history.get()
+                        if dur >= 10.0
+                            && let Some(new_position_dur) = status.elapsed
+                                && !self.imp().saved_to_history.get()
                                     && (new_position_dur.as_secs_f32() / dur >= 0.5
                                         || new_position_dur.as_secs_f32() >= 240.0)
                                 {
@@ -1179,8 +1173,6 @@ impl Player {
 
                                     self.imp().saved_to_history.set(true);
                                 }
-                            }
-                        }
                     }
                 }
             }
@@ -1557,13 +1549,12 @@ impl Player {
 
     /// Seek to the timestamp of a lyric line
     pub async fn seek_to_lyric_line(&self, line: i32) -> ClientResult<()> {
-        if let Some(lyrics) = self.imp().lyrics.borrow().as_ref() {
-            if lyrics.synced && line >= 0 && line < lyrics.lines.len() as i32 {
+        if let Some(lyrics) = self.imp().lyrics.borrow().as_ref()
+            && lyrics.synced && line >= 0 && line < lyrics.lines.len() as i32 {
                 self.client()?
                     .seek_current_song(lyrics.lines[line as usize].0 as f64)
                     .await?;
             }
-        }
         Ok(())
     }
 
@@ -1735,11 +1726,10 @@ impl Player {
             let poller_handle = glib::spawn_future_local(async move {
                 loop {
                     // Don't poll if not playing
-                    if this.imp().state.get() == PlaybackState::Playing {
-                        if let Err(e) = this.update_status().await {
+                    if this.imp().state.get() == PlaybackState::Playing
+                        && let Err(e) = this.update_status().await {
                             dbg!(e);
                         }
-                    }
                     glib::timeout_future_seconds(1).await;
                 }
             });
@@ -1763,15 +1753,14 @@ impl Player {
     }
 
     pub fn import_lyrics(&self, text: &str) {
-        if let Some(curr_song) = self.current_song() {
-            if let Ok(lyrics) = Lyrics::try_from_synced_lrclib_str(text)
+        if let Some(curr_song) = self.current_song()
+            && let Ok(lyrics) = Lyrics::try_from_synced_lrclib_str(text)
                 .or_else(|_| Lyrics::try_from_plain_lrclib_str(text))
             {
                 sqlite::write_lyrics(curr_song.get_info(), Some(&lyrics))
                     .expect("Unable to import lyrics into SQLite DB");
                 self.update_lyrics(lyrics);
             }
-        }
     }
 
     pub fn clear_lyrics(&self) {

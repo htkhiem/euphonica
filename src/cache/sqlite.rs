@@ -799,8 +799,8 @@ pub fn insert_dynamic_playlist(
         .map_err(Error::Db)?;
 
         // Migrate image cache entry (if one exists) to new name
-        if to_overwrite != dp.name {
-            if let Err(db_err) = tx.execute(
+        if to_overwrite != dp.name
+            && let Err(db_err) = tx.execute(
                 "update images set key = ?1 where key = ?2",
                 params![
                     &format!("dynamic_playlist:{to_overwrite}"),
@@ -810,7 +810,6 @@ pub fn insert_dynamic_playlist(
                 tx.rollback().map_err(Error::Db)?;
                 return Err(Error::Db(db_err));
             }
-        }
     }
 
     // Bail out if current name already exists. The overwriting case should have already

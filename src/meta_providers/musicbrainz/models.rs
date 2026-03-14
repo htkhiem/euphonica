@@ -112,16 +112,14 @@ impl From<Artist> for models::ArtistMeta {
             image = Vec::new();
             if let Some(relations) = artist.relations {
                 for relation in relations.into_iter() {
-                    if relation.relation_type == "image" || relation.relation_type == "picture" {
-                        if let RelationContent::Url(url) = relation.content {
-                            if let Some(direct) = transform_wikimedia_url(&url.resource) {
+                    if (relation.relation_type == "image" || relation.relation_type == "picture")
+                        && let RelationContent::Url(url) = relation.content
+                            && let Some(direct) = transform_wikimedia_url(&url.resource) {
                                 image.push(ImageMeta {
                                     size: ImageSize::Large,
                                     url: direct,
                                 });
                             }
-                        }
-                    }
                 }
             }
         } else {

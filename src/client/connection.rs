@@ -14,7 +14,7 @@ use rand::seq::SliceRandom;
 use resolve_path::PathResolveExt;
 use rustc_hash::FxHashSet;
 use std::{
-    borrow::Cow, cmp::Ordering as StdOrdering, net::TcpStream, ops::Range,
+    borrow::Cow, cell::RefCell, cmp::Ordering as StdOrdering, net::TcpStream, ops::Range,
     os::unix::net::UnixStream, result,
 };
 
@@ -27,7 +27,7 @@ use crate::{
         inode::INodeInfo,
     },
     player::PlaybackFlow,
-    utils::{self, save_and_register_image},
+    utils,
 };
 
 use super::StickerSetMode;
@@ -298,7 +298,7 @@ pub enum Task {
         /// URI to song file
         String,
         /// Full paths to high-resolution and low-resolution file, respectively
-        Responder<Option<(String, String)>>,
+        Responder<Option<utils::RegisteredImageBundle>>,
     ),
     /// Get a song's folder cover (cover.jpg/png/webp in the same folder).
     /// Will try to download from MPD if one isn't already available locally.
@@ -306,7 +306,7 @@ pub enum Task {
         /// URI to folder with trailing slash
         String,
         /// Full paths to high-resolution and low-resolution file, respectively
-        Responder<Option<(String, String)>>,
+        Responder<Option<utils::RegisteredImageBundle>>,
     ),
     /// Query distinct values of a tag, optionally grouped by another
     List(
@@ -398,7 +398,7 @@ impl Connection {
     }
 
     pub fn connect(&mut self) -> Result<Version> {
-        if let Err(_) = self.disconnect() {
+        if self.disconnect().is_err() {
             println!("Warning: did not cleanly disconnect");
         }
         let settings = utils::settings_manager().child("client");
@@ -518,11 +518,13 @@ impl Connection {
         let _ = resp.send(self.client_then(then));
     }
 
+    /// Downloads an image or returns an already existing image for a given uri
+    /// Will resp with 2 image names (not full paths): (high res, thumb)
     fn maybe_download_image<F>(
         &mut self,
         uri: String,
         download_func: F,
-        resp: Responder<Option<(String, String)>>,
+        resp: Responder<Option<utils::RegisteredImageBundle>>,
     ) where
         F: Fn(&mut Client<StreamWrapper>, &String) -> MpdResult<Vec<u8>>,
     {
@@ -533,7 +535,16 @@ impl Connection {
         let hires = sqlite::find_image_by_key(&uri, None, false).expect("Sqlite DB error");
         let thumb = sqlite::find_image_by_key(&uri, None, true).expect("Sqlite DB error");
         if let (Some(hires), Some(thumb)) = (hires, thumb) {
-            let _ = resp.send(Ok(Some((hires, thumb))));
+            let _ = resp.send(Ok(Some(utils::RegisteredImageBundle {
+                hires: utils::RegisteredImage {
+                    name: hires,
+                    img: RefCell::new(None),
+                },
+                thumb: utils::RegisteredImage {
+                    name: thumb,
+                    img: RefCell::new(None),
+                },
+            })));
         } else {
             // Not available locally => try to download
             self.respond_with_client(
@@ -542,10 +553,10 @@ impl Connection {
                         Ok(bytes) => {
                             let dyn_img = image::load_from_memory(&bytes)
                                 .expect("Unable to read image from bytes");
-                            Ok(save_and_register_image(Some(dyn_img), &uri, None))
+                            Ok(Some(utils::save_and_register_image(dyn_img, &uri, None)))
                         }
                         Err(MpdError::Proto(ProtoError::NotPair)) => {
-                            println!("GetEmbeddedCover: empty output");
+                            println!("maybe_download_image: empty output for '{}'", uri);
                             // Empty output. Treat as not available.
                             Ok(None)
                         }
@@ -805,12 +816,11 @@ impl Connection {
                 songs_stickers.truncate(limit as usize);
             }
             songs = songs_stickers.into_iter().map(|tup| tup.0).collect();
-            if cache {
-                if let Err(db_err) = sqlite::cache_dynamic_playlist_results(&dp.name, &songs) {
+            if cache
+                && let Err(db_err) = sqlite::cache_dynamic_playlist_results(&dp.name, &songs) {
                     println!("Failed to cache DP query result. Queuing will be incorrect!");
                     dbg!(db_err);
                 }
-            }
         } else {
             songs = Vec::with_capacity(0);
         }

@@ -659,16 +659,14 @@ impl FftBackendImpl for PipeWireFftBackend {
         if let Some(sender) = self.pw_sender.take() {
             println!("Stopping PipeWire thread...");
             if sender.send(Terminate).is_ok() {
-                if let Some(handle) = self.pw_handle.take() {
-                    if block {
+                if let Some(handle) = self.pw_handle.take()
+                    && block {
                         let _ = glib::MainContext::default().block_on(handle);
                     }
-                }
-                if let Some(handle) = self.fft_handle.take() {
-                    if block {
+                if let Some(handle) = self.fft_handle.take()
+                    && block {
                         let _ = glib::MainContext::default().block_on(handle);
                     }
-                }
             }
         }
         self.set_status(FftStatus::ValidNotReading);

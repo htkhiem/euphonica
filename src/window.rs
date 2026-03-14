@@ -862,11 +862,10 @@ mod imp {
             if self.visualizer_stroke_width.get() > 0.0 {
                 return true;
             }
-            if let Some(mutex) = self.fft_data.get() {
-                if let Ok(data) = mutex.lock() {
+            if let Some(mutex) = self.fft_data.get()
+                && let Ok(data) = mutex.lock() {
                     return (data.0.iter().sum::<f32>() + data.1.iter().sum::<f32>()) > 0.0;
                 }
-            }
             false
         }
 
@@ -1190,8 +1189,8 @@ impl EuphonicaWindow {
 
     pub fn maybe_populate_visible(&self) {
         let imp = self.imp();
-        if imp.should_populate_visible.get() {
-            if let Some(visible_child_name) = imp.stack.visible_child_name() {
+        if imp.should_populate_visible.get()
+            && let Some(visible_child_name) = imp.stack.visible_child_name() {
                 match visible_child_name.as_str() {
                     "recent" => {
                         imp.recent_view.populate();
@@ -1211,7 +1210,6 @@ impl EuphonicaWindow {
                     _ => {}
                 }
             }
-        }
     }
 
     pub fn show_dialog(&self, heading: &str, body: &str) {
@@ -1348,6 +1346,26 @@ impl EuphonicaWindow {
             .unwrap()
     }
 
+    fn update_fg_task_count(&self, state: &ClientState) {
+        let pct = state.pct_done_fg_tasks();
+        self.imp().fg_progress.set_fraction(pct);
+        self.imp().fg_task_count.set_label(&format!(
+            "{}/{}",
+            &state.n_done_fg_tasks(),
+            &state.n_fg_tasks()
+        ));
+    }
+
+    fn update_bg_task_count(&self, state: &ClientState) {
+        let pct = state.pct_done_bg_tasks();
+        self.imp().bg_progress.set_fraction(pct);
+        self.imp().bg_task_count.set_label(&format!(
+            "{}/{}",
+            &state.n_done_bg_tasks(),
+            &state.n_bg_tasks()
+        ));
+    }
+
     fn bind_state(&self) {
         // Bind client state to app name widget
         let client = self.downcast_application().get_client();
@@ -1387,15 +1405,7 @@ impl EuphonicaWindow {
             clone!(
                 #[weak(rename_to = this)]
                 self,
-                move |state: &ClientState, _| {
-                    let pct = state.pct_done_fg_tasks();
-                    this.imp().fg_progress.set_fraction(pct);
-                    this.imp().fg_task_count.set_label(&format!(
-                        "{}/{}",
-                        &state.n_done_fg_tasks(),
-                        &state.n_fg_tasks()
-                    ));
-                }
+                move |state: &ClientState, _| this.update_fg_task_count(state)
             ),
         );
         state.connect_notify_local(
@@ -1403,15 +1413,23 @@ impl EuphonicaWindow {
             clone!(
                 #[weak(rename_to = this)]
                 self,
-                move |state: &ClientState, _| {
-                    let pct = state.pct_done_bg_tasks();
-                    this.imp().bg_progress.set_fraction(pct);
-                    this.imp().bg_task_count.set_label(&format!(
-                        "{}/{}",
-                        &state.n_done_bg_tasks(),
-                        &state.n_bg_tasks()
-                    ));
-                }
+                move |state: &ClientState, _| this.update_bg_task_count(state)
+            ),
+        );
+        state.connect_notify_local(
+            Some("n-fg-tasks"),
+            clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |state: &ClientState, _| this.update_fg_task_count(state)
+            ),
+        );
+        state.connect_notify_local(
+            Some("n-bg-tasks"),
+            clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |state: &ClientState, _| this.update_bg_task_count(state)
             ),
         );
 
