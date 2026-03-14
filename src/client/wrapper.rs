@@ -765,12 +765,12 @@ impl MpdWrapper {
         self.foreground(Task::UpdateDb(s), r).await
     }
 
-    pub async fn get_embedded_cover(&self, uri: String) -> ClientResult<Option<(String, String)>> {
+    pub async fn get_embedded_cover(&self, uri: String) -> ClientResult<Option<utils::RegisteredImageBundle>> {
         let (s, r) = oneshot::channel();
         self.background(Task::GetEmbeddedCover(uri, s), r).await
     }
 
-    pub async fn get_folder_cover(&self, folder_uri: String) -> ClientResult<Option<(String, String)>> {
+    pub async fn get_folder_cover(&self, folder_uri: String) -> ClientResult<Option<utils::RegisteredImageBundle>> {
         let (s, r) = oneshot::channel();
         self.background(Task::GetFolderCover(folder_uri, s), r).await
     }

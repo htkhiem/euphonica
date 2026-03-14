@@ -2,14 +2,15 @@ use crate::cache::sqlite;
 use crate::config::APPLICATION_ID;
 use aho_corasick::AhoCorasick;
 use gio::prelude::*;
-use gtk::Ordering;
+use gtk::gdk;
 use gtk::gio;
-use image::{DynamicImage, RgbImage, imageops::FilterType};
+use gtk::Ordering;
+use image::{imageops::FilterType, DynamicImage, RgbImage};
 use mpd::status::AudioFormat;
 use once_cell::sync::Lazy;
-use serde::Serialize;
 use serde::de::DeserializeOwned;
-use uuid::Uuid;
+use serde::Serialize;
+use std::cell::RefCell;
 use std::fmt::Write;
 use std::fs::File;
 use std::io::{BufReader, BufWriter};
@@ -18,11 +19,12 @@ use std::sync::OnceLock;
 use std::sync::RwLock;
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
+use time::error::IndeterminateOffset;
+use time::format_description::{parse_owned, OwnedFormatItem};
 use time::OffsetDateTime;
 use time::UtcOffset;
-use time::error::IndeterminateOffset;
-use time::format_description::{OwnedFormatItem, parse_owned};
 use tokio::runtime::Runtime;
+use uuid::Uuid;
 
 static APP_CACHE_PATH: Lazy<PathBuf> = Lazy::new(|| {
     let mut res = glib::user_cache_dir();
@@ -44,14 +46,6 @@ pub fn get_doc_cache_path() -> PathBuf {
     let mut res = get_app_cache_path();
     res.push("metadata.sqlite");
     res
-}
-
-pub fn get_new_image_paths() -> (PathBuf, PathBuf) {
-    let mut path = get_image_cache_path();
-    let mut thumbnail_path = path.clone();
-    path.push(Uuid::new_v4().simple().to_string() + ".png");
-    thumbnail_path.push(Uuid::new_v4().simple().to_string() + ".png");
-    (path, thumbnail_path)
 }
 
 /// Spawn a Tokio runtime on a new thread. This is needed by the zbus dependency.
@@ -250,29 +244,101 @@ pub fn resize_convert_image(dyn_img: DynamicImage) -> (RgbImage, RgbImage) {
     )
 }
 
-pub fn save_and_register_image(
-    dyn_img: Option<DynamicImage>, key: &str, prefix: Option<&'static str>
-) -> Option<(String, String)> {
-    if let Some(dyn_img) = dyn_img {
-        let (hires_img, thumb_img) = resize_convert_image(dyn_img);
-        let (hires_path, thumb_path) = get_new_image_paths();
-        hires_img
-            .save(&hires_path)
-            .unwrap_or_else(|_| panic!("Couldn't save downloaded cover to {:?}", &hires_path));
-        thumb_img
-            .save(&thumb_path)
-            .unwrap_or_else(|_| panic!("Couldn't save downloaded thumbnail cover to {:?}", &thumb_path));
-        let hires = hires_path.file_name().unwrap().to_str().unwrap().to_string();
-        let thumb = thumb_path.file_name().unwrap().to_str().unwrap().to_string();
-        sqlite::register_image_key(key, prefix, Some(&hires), false).expect("Sqlite error");
-        sqlite::register_image_key(key, prefix, Some(&thumb), true).expect("Sqlite error");
-        Some((hires_path.to_str().unwrap().to_owned(), thumb_path.to_str().unwrap().to_owned()))
-    } else {
-        // Register with empty paths to indicate "failed once, don't try again"
-        sqlite::register_image_key(key, prefix, None, false).expect("Sqlite error");
-        sqlite::register_image_key(key, prefix, None, true).expect("Sqlite error");
-        None
+/// returns the image name that this is saved as
+pub fn save_and_register_single_image(
+    img: &RgbImage,
+    key: &str,
+    prefix: Option<&'static str>,
+    is_thumb: bool,
+) -> String {
+    let mut path = get_image_cache_path();
+    let name = Uuid::new_v4().simple().to_string() + ".png";
+    path.push(&name);
+
+    img.save(&path)
+        .unwrap_or_else(|_| panic!("Couldn't save downloaded image to {:?}", &path));
+
+    sqlite::register_image_key(key, prefix, Some(&name), is_thumb).expect("Sqlite error");
+
+    return name;
+}
+
+pub struct RegisteredImage {
+    /// image name (eg. uayhsjdkjasuijad.png)
+    pub name: String,
+    /// this field is only present if it is returned by a method that created the image
+    pub img: RefCell<Option<RgbImage>>,
+}
+
+impl RegisteredImage {
+    pub fn take_texture(&self) -> Result<gdk::Texture, glib::Error> {
+        if let Some(rgb_image) = self.img.take() {
+            let builder = gdk::MemoryTextureBuilder::new();
+            builder.set_width(rgb_image.width() as i32);
+            builder.set_height(rgb_image.height() as i32);
+            builder.set_format(gdk::MemoryFormat::R8g8b8);
+            builder.set_stride((rgb_image.width() * 3) as usize);
+            builder.set_bytes(Some(&glib::Bytes::from_owned(rgb_image.into_raw())));
+            Ok(builder.build())
+        } else {
+            let mut res = get_image_cache_path();
+            res.push(&self.name);
+
+            gdk::Texture::from_filename(res).map_err(|e| {
+                dbg!(&e);
+                e
+            })
+        }
     }
+}
+
+impl TryInto<gdk::Texture> for RegisteredImage {
+    type Error = glib::Error;
+    fn try_into(self) -> Result<gdk::Texture, Self::Error> {
+        self.take_texture()
+    }
+}
+
+pub struct RegisteredImageBundle {
+    pub hires: RegisteredImage,
+    pub thumb: RegisteredImage,
+}
+
+impl RegisteredImageBundle {
+    pub fn take_texture(&self, thumb: bool) -> Result<gdk::Texture, glib::Error> {
+        if thumb {
+            self.thumb.take_texture()
+        } else {
+            self.hires.take_texture()
+        }
+    }
+}
+
+/// this is really a util wrap around resizing the dyn_img & registering. For fine grain control, you can call those individually
+pub fn save_and_register_image(
+    dyn_img: DynamicImage,
+    key: &str,
+    prefix: Option<&'static str>,
+) -> RegisteredImageBundle {
+    let (hires_img, thumb_img) = resize_convert_image(dyn_img);
+    let hires_k = save_and_register_single_image(&hires_img, key, prefix, false);
+    let thumb_k = save_and_register_single_image(&thumb_img, key, prefix, true);
+
+    return RegisteredImageBundle {
+        hires: RegisteredImage {
+            name: hires_k,
+            img: RefCell::new(Some(hires_img)),
+        },
+        thumb: RegisteredImage {
+            name: thumb_k,
+            img: RefCell::new(Some(thumb_img)),
+        },
+    };
+}
+
+pub fn register_image_as_failure(key: &str, prefix: Option<&'static str>) {
+    sqlite::register_image_key(key, prefix, None, false).expect("Sqlite error");
+    sqlite::register_image_key(key, prefix, None, true).expect("Sqlite error");
 }
 
 pub fn current_unix_timestamp() -> u64 {
