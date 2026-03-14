@@ -1,6 +1,6 @@
 use super::{Library, artist_tag::ArtistTag};
 use crate::{
-    cache::{Cache, CacheState, placeholders::EMPTY_ALBUM_STRING},
+    cache::{Cache, CacheState, Error as CacheError, placeholders::EMPTY_ALBUM_STRING},
     client::{ClientState, state::StickersSupportLevel},
     common::{
         Album, Artist, ContentStack, ContentView, ImageStack, Rating, RowAddButtons, Song, SongRow,
@@ -249,14 +249,12 @@ mod imp {
                             async move {
                                 if let (Some(album), Some(cache)) =
                                     (obj.imp().album.borrow().as_ref(), obj.imp().cache.get())
-                                {
-                                    if let Err(e) = cache
+                                    && let Err(e) = cache
                                         .clear_cover(album.get_folder_uri().to_owned(), true)
                                         .await
                                     {
-                                        dbg!(e);
+                                        obj.show_cache_error("Couldn't clear cover", e);
                                     }
-                                }
                             }
                         ));
                     }
@@ -396,6 +394,12 @@ impl Default for AlbumContentView {
 }
 
 impl AlbumContentView {
+    fn show_cache_error(&self, prefix: &str, err: CacheError) {
+        if let Some(win) = self.imp().window.upgrade() {
+            win.send_simple_toast(&format!("{}: {}", prefix, dbg!(err).message()), 3);
+        }
+    }
+
     fn get_library(&self) -> Option<Library> {
         self.imp().library.upgrade()
     }
@@ -435,7 +439,12 @@ impl AlbumContentView {
                 let wiki_link = self.imp().wiki_link.get();
                 let wiki_attrib = self.imp().wiki_attrib.get();
                 let res = cache
-                    .get_album_meta(album.get_info(), true, overwrite)
+                    .get_album_meta(
+                        album.get_info(),
+                        true,
+                        overwrite,
+                        self.imp().window.upgrade().as_ref(),
+                    )
                     .await;
                 stack.set_visible_child_name("content");
                 match res {
@@ -473,14 +482,13 @@ impl AlbumContentView {
 
     /// Set a user-selected path as the new local cover.
     pub async fn set_cover(&self, path: &str) {
-        if let (Some(album), Some(cache)) = (self.album(), self.imp().cache.get()) {
-            if let Err(e) = cache
+        if let (Some(album), Some(cache)) = (self.album(), self.imp().cache.get())
+            && let Err(e) = cache
                 .set_cover(album.get_folder_uri().to_owned(), path, true)
                 .await
             {
-                dbg!(e);
+                self.show_cache_error("Couldn't set cover", e);
             }
-        }
     }
 
     fn set_is_queuing(&self, queuing: bool) {
@@ -748,14 +756,13 @@ impl AlbumContentView {
                     #[weak]
                     this,
                     async move {
-                        if let (Some(album), Some(library)) = (this.album(), this.get_library()) {
-                            if let Err(e) = library
+                        if let (Some(album), Some(library)) = (this.album(), this.get_library())
+                            && let Err(e) = library
                                 .queue_album(album.clone(), true, true, Some(position))
                                 .await
                             {
                                 dbg!(e);
                             }
-                        }
                     }
                 ));
             }
@@ -779,7 +786,9 @@ impl AlbumContentView {
             // Remove existing entry in SQLite, which might be an empty "do not retry" placeholder.
             if overwrite {
                 // Don't notify, else we'd interrupt the spinner
-                let _ = cache.clear_cover(info.folder_uri.to_owned(), false).await;
+                if let Err(e) = cache.clear_cover(info.folder_uri.to_owned(), false).await {
+                    self.show_cache_error("Couldn't clear cover", e);
+                }
             }
             match cache.get_album_cover(info, false, true).await {
                 Ok(Some(tex)) => {
@@ -789,7 +798,8 @@ impl AlbumContentView {
                     self.clear_cover();
                 }
                 Err(e) => {
-                    dbg!(e);
+                    self.show_cache_error("Couldn't fetch cover", e);
+                    self.clear_cover();
                 }
             }
         }
@@ -929,11 +939,10 @@ impl AlbumContentView {
         }
         self.imp().artist_tags.remove_all();
 
-        if let Some(id) = self.imp().cover_signal_id.take() {
-            if let Some(cache) = self.imp().cache.get() {
+        if let Some(id) = self.imp().cover_signal_id.take()
+            && let Some(cache) = self.imp().cache.get() {
                 cache.get_cache_state().disconnect(id);
             }
-        }
         if let Some(_) = self.imp().album.take() {
             self.clear_cover();
         }

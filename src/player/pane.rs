@@ -216,11 +216,10 @@ impl PlayerPane {
         if player.lyrics_are_synced() && self.imp().use_synced_lyrics.is_active() {
             let curr_line_idx = player.current_lyric_line();
             for i in 0..n_lyric_lines {
-                if let Some(row) = lyrics_box.row_at_index(i as i32) {
-                    if let Some(label) = row.child() {
+                if let Some(row) = lyrics_box.row_at_index(i as i32)
+                    && let Some(label) = row.child() {
                         label.set_opacity(if i == curr_line_idx { 1.0 } else { 0.2 });
                     }
-                }
             }
             // Actually focus on several (currently 1) lines after the
             // current one, such that the next lines are visible too.
@@ -237,11 +236,10 @@ impl PlayerPane {
             }
         } else {
             for i in 0..n_lyric_lines {
-                if let Some(row) = lyrics_box.row_at_index(i as i32) {
-                    if let Some(label) = row.child() {
+                if let Some(row) = lyrics_box.row_at_index(i as i32)
+                    && let Some(label) = row.child() {
                         label.set_opacity(1.0);
                     }
-                }
             }
         }
     }

@@ -210,14 +210,13 @@ impl FftBackendImpl for FifoFftBackend {
 
     fn stop(&self, block: bool) {
         self.stop_flag.store(true, Ordering::Relaxed);
-        if let Some(handle) = self.fft_handle.take() {
-            if block {
+        if let Some(handle) = self.fft_handle.take()
+            && block {
                 let stop_future = glib::MainContext::default().spawn_local(async move {
                     let _ = handle.await;
                 });
                 let _ = glib::MainContext::default().block_on(stop_future);
             }
-        }
         // In case the thread is dead to begin with
         self.player().set_fft_status(FftStatus::ValidNotReading);
         if let Some(old_handle) = self.fg_handle.take() {

@@ -260,7 +260,7 @@ pub fn save_and_register_single_image(
 
     sqlite::register_image_key(key, prefix, Some(&name), is_thumb).expect("Sqlite error");
 
-    return name;
+    name
 }
 
 pub struct RegisteredImage {
@@ -284,9 +284,8 @@ impl RegisteredImage {
             let mut res = get_image_cache_path();
             res.push(&self.name);
 
-            gdk::Texture::from_filename(res).map_err(|e| {
-                dbg!(&e);
-                e
+            gdk::Texture::from_filename(res).inspect_err(|e| {
+                dbg!(e);
             })
         }
     }
@@ -324,7 +323,7 @@ pub fn save_and_register_image(
     let hires_k = save_and_register_single_image(&hires_img, key, prefix, false);
     let thumb_k = save_and_register_single_image(&thumb_img, key, prefix, true);
 
-    return RegisteredImageBundle {
+    RegisteredImageBundle {
         hires: RegisteredImage {
             name: hires_k,
             img: RefCell::new(Some(hires_img)),
@@ -333,7 +332,7 @@ pub fn save_and_register_image(
             name: thumb_k,
             img: RefCell::new(Some(thumb_img)),
         },
-    };
+    }
 }
 
 pub fn register_image_as_failure(key: &str, prefix: Option<&'static str>) {

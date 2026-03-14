@@ -140,11 +140,10 @@ impl PlaylistRow {
                     if let (Some(library), Some(playlist)) = (
                         this.imp().library.get(),
                         this.imp().playlist.borrow().as_ref(),
-                    ) {
-                        if let Err(e) = library.queue_playlist(playlist.get_uri().to_owned(), true, true).await {
+                    )
+                        && let Err(e) = library.queue_playlist(playlist.get_uri().to_owned(), true, true).await {
                             dbg!(e);
                         }
-                    }
                 }));
             }
         ));
@@ -157,11 +156,10 @@ impl PlaylistRow {
                     if let (Some(library), Some(playlist)) = (
                     this.imp().library.get(),
                     this.imp().playlist.borrow().as_ref(),
-                ) {
-                    if let Err(e) = library.queue_playlist(playlist.get_uri().to_owned(), false, false).await {
+                )
+                    && let Err(e) = library.queue_playlist(playlist.get_uri().to_owned(), false, false).await {
                         dbg!(e);
                     }
-                }
                 }));
             }
         ));

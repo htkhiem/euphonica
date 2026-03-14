@@ -19,7 +19,14 @@
  */
 
 use crate::{
-    EuphonicaWindow, cache::Cache, client::MpdWrapper, config::{APPLICATION_USER_AGENT, VERSION}, library::Library, player::Player, preferences::Preferences, utils::{settings_manager, tokio_runtime}
+    EuphonicaWindow,
+    cache::Cache,
+    client::MpdWrapper,
+    config::VERSION,
+    library::Library,
+    player::Player,
+    preferences::Preferences,
+    utils::{settings_manager, tokio_runtime},
 };
 use adw::prelude::*;
 use adw::subclass::prelude::*;
@@ -150,16 +157,9 @@ mod imp {
                 // Create controllers
                 // These two are GObjects (already refcounted by GLib)
                 let player = Player::default();
-                player.setup(
-                    self.obj().clone(),
-                    client.clone(),
-                    cache.clone(),
-                );
+                player.setup(self.obj().clone(), client.clone(), cache.clone());
                 let library = Library::default();
-                library.setup(
-                    client.clone(),
-                    player.clone(),
-                );
+                library.setup(client.clone(), player.clone());
 
                 let _ = self.cache.set(cache);
                 let _ = self.client.set(client);
@@ -201,8 +201,6 @@ glib::wrapper! {
 
 impl EuphonicaApplication {
     pub fn new(application_id: &str, flags: &gio::ApplicationFlags) -> Self {
-        // TODO: Find a better place to put these
-        musicbrainz_rs::config::set_user_agent(APPLICATION_USER_AGENT);
         let app: EuphonicaApplication = glib::Object::builder()
             .property("application-id", application_id)
             .property("flags", flags)

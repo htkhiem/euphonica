@@ -234,8 +234,8 @@ mod imp {
 
                             });
                             glib::spawn_future_local(async move {
-                                if let Some(path) = receiver.await.expect("Broken oneshot receiver") {
-                                    if !path.is_empty() {
+                                if let Some(path) = receiver.await.expect("Broken oneshot receiver")
+                                    && !path.is_empty() {
                                         // Assume ashpd always return filesystem spec
                                         let filepath =
                                             urlencoding::decode(if path.starts_with("file://") {
@@ -248,7 +248,6 @@ mod imp {
                                         utils::export_to_json(&dp, &filepath)
                                             .expect("Unable to write file");
                                     }
-                                }
                             });
                         }
                     }
@@ -484,7 +483,7 @@ impl DynamicPlaylistContentView {
             match library.get_dynamic_playlist_songs_cached(name).await {
                 // TODO: add empty StatusPAge
                 Ok(songs) => {
-                    if songs.len() > 0 {
+                    if !songs.is_empty() {
                         self.update_song_list(&songs);
                         stack.show_content();
                     } else {
@@ -511,7 +510,7 @@ impl DynamicPlaylistContentView {
             match library.get_dynamic_playlist_songs(dp, true).await {
                 // TODO: add empty StatusPAge
                 Ok(songs) => {
-                    if songs.len() > 0 {
+                    if !songs.is_empty() {
                         self.update_song_list(&songs);
                         stack.show_content();
                     } else {

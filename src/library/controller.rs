@@ -611,7 +611,7 @@ impl Library {
             let model = self.imp().recent_artists.clone();
             model.remove_all();
             self.client()
-                .get_recent_artists(&mut |artist| {
+                .get_recent_artists(&|artist| {
                     model.append(&artist);
                 })
                 .await?;
@@ -682,11 +682,10 @@ impl Library {
                     .filter(|s| s.artists.iter().any(|a| a.get_comp_id() == comp_id))
                     .collect();
                 for song in filtered.iter() {
-                    if let Some(album) = song.album.as_ref() {
-                        if visited_albums.insert(album.get_comp_id().to_owned()) {
+                    if let Some(album) = song.album.as_ref()
+                        && visited_albums.insert(album.get_comp_id().to_owned()) {
                             respond_album(album.clone().into());
                         }
-                    }
                 }
                 respond_song(filtered.into_iter().map(|si| si.into()).collect());
             })

@@ -350,12 +350,11 @@ mod imp {
                     move |_, _, _| {
                         glib::spawn_future_local(clone!(#[weak] obj, async move {
                             let title = obj.imp().title.label().to_string();
-                            if !title.is_empty() {
-                                if let Some(cache) = obj.imp().cache.get() {
+                            if !title.is_empty()
+                                && let Some(cache) = obj.imp().cache.get() {
                                     obj.clear_cover();
                                     cache.clear_playlist_cover(title).await;
                                 }
-                            }
                         }));
                     }
                 ))
@@ -980,11 +979,10 @@ impl PlaylistContentView {
         for binding in self.imp().bindings.borrow_mut().drain(..) {
             binding.unbind();
         }
-        if let Some(id) = self.imp().cover_signal_id.take() {
-            if let Some(cache) = self.imp().cache.get() {
+        if let Some(id) = self.imp().cover_signal_id.take()
+            && let Some(cache) = self.imp().cache.get() {
                 cache.get_cache_state().disconnect(id);
             }
-        }
         if clear_contents {
             self.imp().song_list.remove_all();
         }
@@ -999,11 +997,10 @@ impl PlaylistContentView {
     pub fn set_cover(&self, path: String) {
         glib::spawn_future_local(clone!(#[weak(rename_to = this)] self, async move {
             let title = this.imp().title.label();
-            if !title.is_empty() {
-                if let Some(cache) = this.imp().cache.get() {
+            if !title.is_empty()
+                && let Some(cache) = this.imp().cache.get() {
                     cache.set_playlist_cover(title.to_string(), &path).await;
                 }
-            }
         }));
     }
 

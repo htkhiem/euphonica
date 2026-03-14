@@ -1,11 +1,6 @@
-use glib::{
-    WeakRef, ParamSpecObject, ParamSpec
-};
+use glib::{ParamSpec, ParamSpecObject, WeakRef};
+use gtk::{CompositeTemplate, prelude::*, subclass::prelude::*};
 use once_cell::sync::Lazy;
-use gtk::{CompositeTemplate, gdk::{self}, prelude::*, subclass::prelude::*};
-use std::cell::Cell;
-
-use super::ImageState;
 
 mod imp {
     use super::*;
@@ -58,7 +53,7 @@ mod imp {
                         .build(),
                     ParamSpecObject::builder::<gtk::Widget>("content")
                         .construct_only()
-                        .build()
+                        .build(),
                 ]
             });
             PROPERTIES.as_ref()
@@ -104,15 +99,20 @@ impl ContentStack {
 
     pub fn show_spinner(&self) {
         let stack = self.imp().stack.get();
-        if stack.visible_child_name().is_some_and(|name| name != "spinner") {
+        if stack
+            .visible_child_name()
+            .is_some_and(|name| name != "spinner")
+        {
             stack.set_visible_child_name("spinner");
         }
     }
 
     pub fn show_placeholder(&self) {
         let stack = self.imp().stack.get();
-        if stack.child_by_name("placeholder").is_some() &&
-            stack.visible_child_name().is_some_and(|name| name != "placeholder")
+        if stack.child_by_name("placeholder").is_some()
+            && stack
+                .visible_child_name()
+                .is_some_and(|name| name != "placeholder")
         {
             stack.set_visible_child_name("placeholder");
         }
@@ -120,8 +120,10 @@ impl ContentStack {
 
     pub fn show_content(&self) {
         let stack = self.imp().stack.get();
-        if stack.child_by_name("content").is_some() &&
-            stack.visible_child_name().is_some_and(|name| name != "content")
+        if stack.child_by_name("content").is_some()
+            && stack
+                .visible_child_name()
+                .is_some_and(|name| name != "content")
         {
             stack.set_visible_child_name("content");
         }

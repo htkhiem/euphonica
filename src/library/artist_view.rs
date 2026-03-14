@@ -9,7 +9,7 @@ use super::{ArtistCell, ArtistContentView, Library};
 use crate::{
     cache::Cache,
     common::{Artist, ContentStack},
-    utils::{LazyInit, g_cmp_str_options, g_search_substr, settings_manager},
+    utils::{LazyInit, g_cmp_str_options, g_search_substr, settings_manager}, window::EuphonicaWindow,
 };
 
 mod imp {
@@ -131,14 +131,14 @@ impl ArtistView {
         res
     }
 
-    pub fn setup(&self, library: &Library, cache: Rc<Cache>) {
+    pub fn setup(&self, library: &Library, cache: Rc<Cache>, window: &EuphonicaWindow) {
         self.imp().library.set(Some(library));
         self.setup_sort();
         self.setup_search();
         self.setup_gridview(cache.clone());
 
         let content_view = self.imp().content_view.get();
-        content_view.setup(library, cache);
+        content_view.setup(library, cache, window);
         self.imp().content_page.connect_hidden(move |_| {
             content_view.unbind();
         });

@@ -451,8 +451,8 @@ impl FolderView {
         //   - Switch to loading page.
         // - Else: do nothing (adding songs and playlists are done with buttons to the right of each row).
         glib::spawn_future_local(clone!(#[weak(rename_to = this)] self, #[weak] inode, async move {
-            if let Some(name) = inode.get_name() {
-                if inode.get_info().inode_type == INodeType::Folder {
+            if let Some(name) = inode.get_name()
+                && inode.get_info().inode_type == INodeType::Folder {
                     let stack = this.imp().stack.get();
                     stack.show_spinner();
                     this.library().navigate_to(name).await;
@@ -462,7 +462,6 @@ impl FolderView {
                         stack.show_placeholder();
                     }
                 }
-            }
         }));
     }
 

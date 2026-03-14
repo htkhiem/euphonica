@@ -156,6 +156,15 @@
 			</description>
 		</key>
 
+        <key name="n-tries" type="u">
+			<default>3</default>
+			<summary></summary>
+			<description>
+			  Number of fetch retries upon connection errors before giving up, plus one initial try.
+              For example, to retry at most 3 times, set this to 4.
+			</description>
+		</key>
+
 		<child schema="io.github.htkhiem.Euphonica.metaprovider.lastfm" name="lastfm"/>
 		<child schema="io.github.htkhiem.Euphonica.metaprovider.musicbrainz" name="musicbrainz"/>
 		<child schema="io.github.htkhiem.Euphonica.metaprovider.lrclib" name="lrclib"/>

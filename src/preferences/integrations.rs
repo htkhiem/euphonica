@@ -1,6 +1,6 @@
 use adw::prelude::*;
 use adw::subclass::prelude::*;
-use gtk::{CompositeTemplate, glib};
+use gtk::{glib, CompositeTemplate};
 use std::cell::OnceCell;
 use std::rc::Rc;
 
@@ -9,7 +9,6 @@ use crate::{application::update_xdg_background_request, cache::Cache, utils};
 use super::ProviderRow;
 
 mod imp {
-
     use super::*;
 
     #[derive(Debug, Default, CompositeTemplate)]
@@ -218,9 +217,6 @@ impl IntegrationsPreferences {
         let _ = utils::settings_manager()
             .child("metaprovider")
             .set_value("order", &key_array.to_variant());
-        if let Some(cache) = self.imp().cache.get() {
-            cache.reinit_meta_providers();
-        }
     }
 
     pub fn on_raise_provider(&self, curr_prio: i32) {

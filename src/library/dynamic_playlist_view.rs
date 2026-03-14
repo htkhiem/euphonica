@@ -20,7 +20,7 @@ use super::{DynamicPlaylistContentView, Library};
 use crate::{
     cache::{Cache, sqlite},
     client::{ClientState, ConnectionState, Result as ClientResult},
-    common::{DynamicPlaylist, INode, ContentStack},
+    common::{ContentStack, DynamicPlaylist, INode},
     library::{DynamicPlaylistEditorView, playlist_row::PlaylistRow},
     utils::{g_cmp_str_options, settings_manager},
     window::EuphonicaWindow,
@@ -421,7 +421,9 @@ impl DynamicPlaylistView {
             self.imp().content_view.unbind();
             match sqlite::delete_dynamic_playlist(name) {
                 Ok(_) => {
-                    if let Err(e) = library.init_dyn_playlists(true).await {dbg!(e);}
+                    if let Err(e) = library.init_dyn_playlists(true).await {
+                        dbg!(e);
+                    }
                 }
                 Err(err) => {
                     dbg!(err);
@@ -470,9 +472,20 @@ impl DynamicPlaylistView {
                 self,
                 move |state, _| {
                     if state.connection_state() == ConnectionState::Connected {
-                        glib::spawn_future_local(clone!(#[weak] this, async move {
-                            this.init_dyn_playlists(false).await;
-                        }));
+                        glib::spawn_future_local(clone!(
+                            #[weak]
+                            this,
+                            async move {
+                                if let Err(e) = this.init_dyn_playlists(false).await
+                                    && let Some(win) = this.imp().window.upgrade() {
+                                        dbg!(e);
+                                        win.send_simple_toast(
+                                            "Couldn't load dynamic playlists (see console)",
+                                            3,
+                                        );
+                                    }
+                            }
+                        ));
                     }
                 }
             ),
@@ -496,16 +509,23 @@ impl DynamicPlaylistView {
                     closure_local!(
                         #[weak]
                         this,
-                        #[weak]
-                        library,
+                        // #[weak]
+                        // library,
                         move |_: DynamicPlaylistEditorView, should_refresh: bool| {
                             glib::spawn_future_local(clone!(
-                                #[weak] this, async move {
-                                if should_refresh {
-                                    this.init_dyn_playlists(true).await;
+                                #[weak]
+                                this,
+                                async move {
+                                    if should_refresh
+                                        && let Err(e) = this.init_dyn_playlists(true).await {
+                                            dbg!(e);
+                                            if let Some(win) = this.imp().window.upgrade() {
+                                                win.send_simple_toast("Couldn't refresh dynamic playlists (see console)", 3);
+                                            }
+                                        }
+                                    this.imp().nav_view.pop();
                                 }
-                                this.imp().nav_view.pop();
-                            }));
+                            ));
                         }
                     ),
                 );
@@ -534,17 +554,28 @@ impl DynamicPlaylistView {
             "exit-clicked",
             false,
             closure_local!(
-                #[weak(rename_to = this)] self, #[weak] library,
+                #[weak(rename_to = this)]
+                self,
+                // #[weak]
+                // library,
                 move |editor: DynamicPlaylistEditorView, should_refresh: bool| {
                     glib::spawn_future_local(clone!(
-                        #[weak] this, async move {
+                        #[weak]
+                        this,
+                        async move {
                             let content_view = this.imp().content_view.get();
                             content_view.unbind();
                             this.imp().nav_view.pop();
                             content_view.bind_by_name(editor.get_current_name()).await;
-                            if should_refresh {
-                                this.init_dyn_playlists(true).await;
-                            }
+                            if should_refresh
+                                && let Err(e) = this.init_dyn_playlists(true).await
+                                    && let Some(win) = this.imp().window.upgrade() {
+                                        dbg!(e);
+                                        win.send_simple_toast(
+                                            "Couldn't load dynamic playlists (see console)",
+                                            3,
+                                        );
+                                    }
                         }
                     ));
                 }
@@ -562,22 +593,26 @@ impl DynamicPlaylistView {
 
     pub fn on_playlist_clicked(&self, inode: &INode) {
         let uri = inode.get_uri().to_owned();
-        glib::spawn_future_local(clone!(#[weak(rename_to = this)] self, async move {
-            let content_view = this.imp().content_view.get();
-            content_view.unbind();
-            // Switch view first before binding again, as binding involves awaiting
-            // rule resolution & we'd like to use the content view to show a loading
-            // spinner while that happens.
-            if this
-                .imp()
-                .nav_view
-                .visible_page_tag()
-                .is_none_or(|tag| tag.as_str() != "content")
-            {
-                this.imp().nav_view.push_by_tag("content");
+        glib::spawn_future_local(clone!(
+            #[weak(rename_to = this)]
+            self,
+            async move {
+                let content_view = this.imp().content_view.get();
+                content_view.unbind();
+                // Switch view first before binding again, as binding involves awaiting
+                // rule resolution & we'd like to use the content view to show a loading
+                // spinner while that happens.
+                if this
+                    .imp()
+                    .nav_view
+                    .visible_page_tag()
+                    .is_none_or(|tag| tag.as_str() != "content")
+                {
+                    this.imp().nav_view.push_by_tag("content");
+                }
+                content_view.bind_by_name(uri).await;
             }
-            content_view.bind_by_name(uri).await;
-        }));
+        ));
     }
 
     fn setup_listview(&self) {
