@@ -71,6 +71,23 @@
   </screenshots>
 
   <releases>
+    <release version="0.99.0-beta" date="2026-03-15">
+      <url type="details">https://github.com/htkhiem/euphonica/releases/tag/v0.99.0-beta</url>
+      <description>
+        <p>Near-complete rearchitecturing and rewrite to async Rust! The execution flow is now far simpler than the prior explicit message-passing design.</p>
+        <p>New: Automatic retry upon failure for all metadata providers to increase reliability over spotty internet connections.</p>
+        <p>New: Error toasts for metadata fetch errors instead of silent failures.</p>
+        <p>New: Loading spinners for every album art with fading effect.</p>
+        <p>Change: much improved auto accent colour picker, now prefers higher-saturation swatches and adjusts brightness to remain legibility in both dark and light UI.</p>
+        <p>Change: top-level views now show an overall loading spinner while they are populated.</p>
+        <p>Fix: MusicBrainz album art fetching now works correctly, improving hit rate. You can re-attempt metadata fetching per album from the app, or remove the cache folder (will cause a full redownload and erase all user-set images!).</p>
+        <p>Fix: Artist avatar fetching now works correctly (again). You can re-attempt metadata fetching per artist from the app, or remove the cache folder (will cause a full redownload and erase all user-set images!).</p>
+        <p>Fix: Dynamic Playlists are now correctly hidden when the MPD server does not advertise stickers support.</p>
+        <p>Fix: Songs from other albums with the same name string appearing in content view.</p>
+        <p>Fix: SQLite metadata conflicts.</p>
+        <p>Fix: Embedded album art not correctly rendered on first boot</p>
+      </description>
+    </release>
     <release version="0.98.1-beta" date="2026-01-17">
       <url type="details">https://github.com/htkhiem/euphonica/releases/tag/v0.98.1-beta</url>
       <description>
