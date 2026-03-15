@@ -1,6 +1,7 @@
+use async_trait::async_trait;
 use gtk::{
     gio::{self, prelude::*},
-    glib::{self, clone}
+    glib::{self, clone},
 };
 use mpd::status::AudioFormat;
 use pipewire as pw;
@@ -103,6 +104,7 @@ impl PipeWireFftBackend {
     }
 }
 
+#[async_trait(?Send)]
 impl FftBackendImpl for PipeWireFftBackend {
     fn name(&self) -> &'static str {
         "pipewire"
@@ -203,9 +205,11 @@ impl FftBackendImpl for PipeWireFftBackend {
                     // Get list of devices
                     println!("PipeWire: getting list of devices");
                     {
-                        let mainloop = Arc::new(pw::main_loop::MainLoopBox::new(None)
-                            .expect("get_devices: Unable to create a new PipeWire mainloop"));
-                        let context = pw::context::ContextBox::new(&mainloop.loop_(), None)
+                        let mainloop = Arc::new(
+                            pw::main_loop::MainLoopBox::new(None)
+                                .expect("get_devices: Unable to create a new PipeWire mainloop"),
+                        );
+                        let context = pw::context::ContextBox::new(mainloop.loop_(), None)
                             .expect("get_devices: Unable to get PipeWire context");
                         let core = context.connect(None).unwrap();
                         let registry = core.get_registry().unwrap();
@@ -298,7 +302,7 @@ impl FftBackendImpl for PipeWireFftBackend {
                         return;
                     };
                     let pw_loop = Arc::new(pw_loop);
-                    let Ok(context) = pw::context::ContextBox::new(&pw_loop.loop_(), None) else {
+                    let Ok(context) = pw::context::ContextBox::new(pw_loop.loop_(), None) else {
                         let _ = fg_sender.send_blocking(PipeWireMsg::Status(FftStatus::Invalid));
                         return;
                     };
@@ -618,7 +622,7 @@ impl FftBackendImpl for PipeWireFftBackend {
             if let Some(old_handle) =
                 self.fg_handle
                     .replace(Some(glib::MainContext::default().spawn_local(clone!(
-                        #[weak(rename_to = this)]
+                        #[strong(rename_to = this)]
                         self,
                         async move {
                             use futures::prelude::*;
@@ -656,24 +660,23 @@ impl FftBackendImpl for PipeWireFftBackend {
         }
     }
 
-    fn stop(&self, block: bool) {
+    async fn stop(&self) {
         let fft_stop = self.stop_flag.clone();
         fft_stop.store(true, Ordering::Relaxed);
+        self.set_status(FftStatus::ValidNotReading);
         if let Some(sender) = self.pw_sender.take() {
-            println!("Stopping PipeWire thread...");
             if sender.send(Terminate).is_ok() {
-                if let Some(handle) = self.pw_handle.take()
-                    && block {
-                        let _ = glib::MainContext::default().block_on(handle);
-                    }
-                if let Some(handle) = self.fft_handle.take()
-                    && block {
-                        let _ = glib::MainContext::default().block_on(handle);
-                    }
+                let pw_handle = self.pw_handle.take();
+                let fft_handle = self.fft_handle.take();
+                if pw_handle.is_some() && fft_handle.is_some() {
+                    let _ = futures::join!(pw_handle.unwrap(), fft_handle.unwrap());
+                }
+                else if let Some(handle) = pw_handle {
+                    let _ = handle.await;
+                } else if let Some(handle) = fft_handle {
+                    let _ = handle.await;
+                }
             }
         }
-        self.set_status(FftStatus::ValidNotReading);
-        self.devices.lock().unwrap().clear();
-        *self.curr_device.lock().unwrap() = -1;
     }
 }

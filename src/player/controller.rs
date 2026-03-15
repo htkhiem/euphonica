@@ -359,7 +359,13 @@ mod imp {
         }
 
         fn dispose(&self) {
-            self.obj().maybe_stop_fft_thread(true);
+            glib::spawn_future_local(clone!(
+                #[weak(rename_to = this)]
+                self,
+                async move {
+                    this.obj().maybe_stop_fft_thread().await;
+                }
+            ));
         }
 
         fn properties() -> &'static [ParamSpec] {
@@ -453,21 +459,24 @@ mod imp {
                     match pspec.name() {
                         "crossfade" => {
                             if let Ok(v) = value.get::<f64>()
-                                && let Err(e) = obj.set_crossfade(v).await {
-                                    dbg!(e);
-                                }
+                                && let Err(e) = obj.set_crossfade(v).await
+                            {
+                                dbg!(e);
+                            }
                         }
                         "mixramp-db" => {
                             if let Ok(v) = value.get::<f32>()
-                                && let Err(e) = obj.set_mixramp_db(v).await {
-                                    dbg!(e);
-                                }
+                                && let Err(e) = obj.set_mixramp_db(v).await
+                            {
+                                dbg!(e);
+                            }
                         }
                         "mixramp-delay" => {
                             if let Ok(v) = value.get::<f64>()
-                                && let Err(e) = obj.set_mixramp_delay(v).await {
-                                    dbg!(e);
-                                }
+                                && let Err(e) = obj.set_mixramp_delay(v).await
+                            {
+                                dbg!(e);
+                            }
                         }
                         "position" => {
                             if let Ok(v) = value.get::<f64>() {
@@ -476,19 +485,21 @@ mod imp {
                         }
                         "random" => {
                             if let Ok(state) = value.get::<bool>()
-                                && let Err(e) = obj.set_random(state).await {
-                                    dbg!(e);
-                                }
-                                // Don't actually set the property here yet.
-                                // Idle status will update it later.
+                                && let Err(e) = obj.set_random(state).await
+                            {
+                                dbg!(e);
+                            }
+                            // Don't actually set the property here yet.
+                            // Idle status will update it later.
                         }
                         "consume" => {
                             if let Ok(state) = value.get::<bool>()
-                                && let Err(e) = obj.set_consume(state).await {
-                                    dbg!(e);
-                                }
-                                // Don't actually set the property here yet.
-                                // Idle status will update it later.
+                                && let Err(e) = obj.set_consume(state).await
+                            {
+                                dbg!(e);
+                            }
+                            // Don't actually set the property here yet.
+                            // Idle status will update it later.
                         }
                         "supports-playlists" => {
                             if let Ok(state) = value.get::<bool>() {
@@ -507,7 +518,7 @@ mod imp {
                                 } else {
                                     // Visualiser turned off. FFT thread should
                                     // have stopped by itthis. Join & yeet handle.
-                                    this.obj().maybe_stop_fft_thread(false);
+                                    this.obj().maybe_stop_fft_thread().await;
                                 }
                             }
                         }
@@ -517,7 +528,7 @@ mod imp {
 
                                 if old != new {
                                     println!("Switching FFT backend...");
-                                    this.obj().maybe_stop_fft_thread(true);
+                                    this.obj().maybe_stop_fft_thread().await;
                                     this.fft_backend
                                         .replace(Some(this.obj().init_fft_backend()));
                                     this.obj().maybe_start_fft_thread();
@@ -607,9 +618,10 @@ impl Player {
     /// This is useful for universal parameters shared by all backends, though there aren't any (yet).
     pub fn set_fft_param(&self, backend_name: Option<&str>, key: &str, val: glib::Variant) {
         if let Some(backend) = self.imp().fft_backend.borrow().as_ref()
-            && (backend_name.is_some_and(|name| backend.name() == name) || backend_name.is_none()) {
-                backend.set_param(key, val);
-            }
+            && (backend_name.is_some_and(|name| backend.name() == name) || backend_name.is_none())
+        {
+            backend.set_param(key, val);
+        }
     }
 
     /// Lazily get an MPRIS server. This will always be invoked near the start anyway
@@ -638,7 +650,7 @@ impl Player {
         self.imp().is_foreground.get()
     }
 
-    pub fn set_is_foreground(&self, mode: bool) {
+    pub async fn set_is_foreground(&self, mode: bool) {
         self.imp().is_foreground.set(mode);
         // If running in foreground mode, maybe start FFT thread and seekbar polling.
         if mode {
@@ -651,7 +663,7 @@ impl Player {
             println!("Player controller: entering background mode");
             // self.block_polling();
             // self.stop_polling();
-            self.maybe_stop_fft_thread(true);
+            self.maybe_stop_fft_thread().await;
         }
     }
 
@@ -669,19 +681,21 @@ impl Player {
         if self.imp().use_visualizer.get() && self.imp().is_foreground.get() {
             let output = self.imp().fft_data.clone();
             if let Some(backend) = self.imp().fft_backend.borrow().as_ref() {
-                let _ = backend.clone().start(output);
+                if backend.clone().start(output).is_err() {
+                    eprintln!("Failed to start FFT backend");
+                };
             }
         }
     }
 
-    fn maybe_stop_fft_thread(&self, block: bool) {
+    async fn maybe_stop_fft_thread(&self) {
         if let Some(backend) = self.imp().fft_backend.borrow().as_ref() {
-            backend.stop(block);
+            backend.stop().await;
         }
     }
 
-    pub fn restart_fft_thread(&self) {
-        self.maybe_stop_fft_thread(true);
+    pub async fn restart_fft_thread(&self) {
+        self.maybe_stop_fft_thread().await;
         self.maybe_start_fft_thread();
     }
 
@@ -1145,34 +1159,34 @@ impl Player {
                         // at least 4 minutes or half of its duration, whichever comes first.
                         if dur >= 10.0
                             && let Some(new_position_dur) = status.elapsed
-                                && !self.imp().saved_to_history.get()
-                                    && (new_position_dur.as_secs_f32() / dur >= 0.5
-                                        || new_position_dur.as_secs_f32() >= 240.0)
-                                {
-                                    match sqlite::add_to_history(curr_song.get_info()) {
-                                        Ok(()) => {
-                                            self.emit_by_name::<()>("history-changed", &[]);
-                                        }
-                                        Err(e) => {
-                                            dbg!(e);
-                                        }
-                                    }
-                                    if let Err(e) = self
-                                        .client()?
-                                        .set_sticker(
-                                            "song",
-                                            curr_song.get_uri().to_owned(),
-                                            Stickers::PLAY_COUNT_KEY.into(),
-                                            "1".into(),
-                                            StickerSetMode::Inc,
-                                        )
-                                        .await
-                                    {
-                                        dbg!(e);
-                                    }
-
-                                    self.imp().saved_to_history.set(true);
+                            && !self.imp().saved_to_history.get()
+                            && (new_position_dur.as_secs_f32() / dur >= 0.5
+                                || new_position_dur.as_secs_f32() >= 240.0)
+                        {
+                            match sqlite::add_to_history(curr_song.get_info()) {
+                                Ok(()) => {
+                                    self.emit_by_name::<()>("history-changed", &[]);
                                 }
+                                Err(e) => {
+                                    dbg!(e);
+                                }
+                            }
+                            if let Err(e) = self
+                                .client()?
+                                .set_sticker(
+                                    "song",
+                                    curr_song.get_uri().to_owned(),
+                                    Stickers::PLAY_COUNT_KEY.into(),
+                                    "1".into(),
+                                    StickerSetMode::Inc,
+                                )
+                                .await
+                            {
+                                dbg!(e);
+                            }
+
+                            self.imp().saved_to_history.set(true);
+                        }
                     }
                 }
             }
@@ -1220,10 +1234,10 @@ impl Player {
                         backend.name() == "pipewire"
                             && backend.status() != FftStatus::ValidNotReading
                     })
-                && (0.0..1.5).contains(&secs_to_end)
+                && (0.0..2.0).contains(&secs_to_end)
             {
                 println!("Stopping PipeWire backend to allow samplerate change...");
-                self.maybe_stop_fft_thread(false); // FIXME: we can't block while running in an async loop
+                self.maybe_stop_fft_thread().await; // FIXME: we can't block while running in an async loop
             }
         } else {
             self.set_position(0.0);
@@ -1550,11 +1564,14 @@ impl Player {
     /// Seek to the timestamp of a lyric line
     pub async fn seek_to_lyric_line(&self, line: i32) -> ClientResult<()> {
         if let Some(lyrics) = self.imp().lyrics.borrow().as_ref()
-            && lyrics.synced && line >= 0 && line < lyrics.lines.len() as i32 {
-                self.client()?
-                    .seek_current_song(lyrics.lines[line as usize].0 as f64)
-                    .await?;
-            }
+            && lyrics.synced
+            && line >= 0
+            && line < lyrics.lines.len() as i32
+        {
+            self.client()?
+                .seek_current_song(lyrics.lines[line as usize].0 as f64)
+                .await?;
+        }
         Ok(())
     }
 
@@ -1595,7 +1612,7 @@ impl Player {
         }
     }
 
-    pub async fn prev_song(&self, block: bool) -> ClientResult<()> {
+    pub async fn prev_song(&self) -> ClientResult<()> {
         if self.imp().pipewire_restart_between_songs.get()
             && self
                 .imp()
@@ -1607,12 +1624,12 @@ impl Player {
                 })
         {
             println!("Stopping PipeWire backend to allow samplerate change...");
-            self.maybe_stop_fft_thread(block);
+            self.maybe_stop_fft_thread().await;
         }
         self.client()?.prev().await
     }
 
-    pub async fn next_song(&self, block: bool) -> ClientResult<()> {
+    pub async fn next_song(&self) -> ClientResult<()> {
         if self.imp().pipewire_restart_between_songs.get()
             && self
                 .imp()
@@ -1624,7 +1641,7 @@ impl Player {
                 })
         {
             println!("Stopping PipeWire backend to allow samplerate change...");
-            self.maybe_stop_fft_thread(block);
+            self.maybe_stop_fft_thread().await;
         }
         self.client()?.next().await
     }
@@ -1656,7 +1673,7 @@ impl Player {
                 })
         {
             println!("Stopping PipeWire backend to allow samplerate change...");
-            self.maybe_stop_fft_thread(true);
+            self.maybe_stop_fft_thread().await;
         }
         self.client()?.play_at(song.get_queue_id(), true).await
     }
@@ -1727,9 +1744,10 @@ impl Player {
                 loop {
                     // Don't poll if not playing
                     if this.imp().state.get() == PlaybackState::Playing
-                        && let Err(e) = this.update_status().await {
-                            dbg!(e);
-                        }
+                        && let Err(e) = this.update_status().await
+                    {
+                        dbg!(e);
+                    }
                     glib::timeout_future_seconds(1).await;
                 }
             });
@@ -1756,11 +1774,11 @@ impl Player {
         if let Some(curr_song) = self.current_song()
             && let Ok(lyrics) = Lyrics::try_from_synced_lrclib_str(text)
                 .or_else(|_| Lyrics::try_from_plain_lrclib_str(text))
-            {
-                sqlite::write_lyrics(curr_song.get_info(), Some(&lyrics))
-                    .expect("Unable to import lyrics into SQLite DB");
-                self.update_lyrics(lyrics);
-            }
+        {
+            sqlite::write_lyrics(curr_song.get_info(), Some(&lyrics))
+                .expect("Unable to import lyrics into SQLite DB");
+            self.update_lyrics(lyrics);
+        }
     }
 
     pub fn clear_lyrics(&self) {
@@ -1865,13 +1883,13 @@ impl LocalRootInterface for Player {
 
 impl LocalPlayerInterface for Player {
     async fn next(&self) -> fdo::Result<()> {
-        self.next_song(false)
+        self.next_song()
             .await
             .map_err(|_| fdo::Error::Failed("internal".to_string()))
     }
 
     async fn previous(&self) -> fdo::Result<()> {
-        self.prev_song(false)
+        self.prev_song()
             .await
             .map_err(|_| fdo::Error::Failed("internal".to_string()))
     }

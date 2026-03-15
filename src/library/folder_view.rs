@@ -10,7 +10,7 @@ use glib::{ParamSpec, ParamSpecBoolean, WeakRef, clone, subclass::Signal};
 use gtk::{
     CompositeTemplate, ListItem, SignalListItemFactory, SingleSelection, 
     glib,
-    gio::{self, ActionEntry, SimpleActionGroup}
+    gio::{ActionEntry, SimpleActionGroup}
 };
 use once_cell::sync::Lazy;
 use std::{cell::Cell, cmp::Ordering, rc::Rc, sync::OnceLock};

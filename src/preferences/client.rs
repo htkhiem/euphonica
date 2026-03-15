@@ -632,7 +632,11 @@ impl ClientPreferences {
                         imp.fft_n_bins.value().round() as u32,
                     )
                     .expect("Cannot save visualizer settings");
-                player.restart_fft_thread();
+                glib::spawn_future_local(clone!(
+                    #[weak] player, async move {
+                        player.restart_fft_thread().await;
+                    }
+                ));
             }
         ));
     }

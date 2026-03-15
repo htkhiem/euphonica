@@ -311,13 +311,12 @@ impl MpdWrapper {
         // is enabled.
         if let Err(ClientError::Mpd(MpdError::Server(e))) = self
             .get_known_stickers("song", String::from("euphonica_sticker_test"))
-            .await {
-            if e.code == MpdErrorCode::UnknownCmd {
+            .await
+            && e.code == MpdErrorCode::UnknownCmd {
                 println!("Sticker DB not enabled. Disabling stickers-related functionality...");
                 self.state
                     .set_stickers_support_level(StickersSupportLevel::Disabled);
             }
-        }
         self.client_version.replace(Some(version));
 
         let (s, r) = oneshot::channel();

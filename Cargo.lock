@@ -973,6 +973,7 @@ dependencies = [
  "ashpd",
  "async-channel",
  "async-lock",
+ "async-trait",
  "asyncified",
  "auto-palette",
  "base64",

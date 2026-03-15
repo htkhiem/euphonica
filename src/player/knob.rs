@@ -1,5 +1,5 @@
 use gtk::{
-    cairo::{self, LineCap},
+    cairo::LineCap,
     glib::{
         self, Object, ParamSpec, ParamSpecBoolean, ParamSpecDouble, clone, prelude::*, subclass::prelude::*,
     },

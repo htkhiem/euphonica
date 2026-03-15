@@ -113,28 +113,28 @@ impl PlaybackControls {
         flow_btn.connect_clicked(clone!(#[weak] player, move |btn| {
             glib::spawn_future_local(clone!(#[weak] player, #[weak] btn, async move {
                 btn.set_sensitive(false);
-                player.cycle_playback_flow().await;
+                let _ = player.cycle_playback_flow().await;
                 btn.set_sensitive(true);
             }));
         }));
         self.imp().prev_btn.connect_clicked(clone!(#[weak] player, move |btn| {
             glib::spawn_future_local(clone!(#[weak] player, #[weak] btn, async move {
                 btn.set_sensitive(false);
-                player.prev_song(true).await;
+                let _ = player.prev_song().await;
                 btn.set_sensitive(true);
             }));
         }));
         self.imp().play_pause_btn.connect_clicked(clone!(#[weak] player, move |btn| {
             glib::spawn_future_local(clone!(#[weak] player, #[weak] btn, async move {
                 btn.set_sensitive(false);
-                player.toggle_playback().await;
+                let _ = player.toggle_playback().await;
                 btn.set_sensitive(true);
             }));
         }));
         self.imp().next_btn.connect_clicked(clone!(#[weak] player, move |btn| {
             glib::spawn_future_local(clone!(#[weak] player, #[weak] btn, async move {
                 btn.set_sensitive(false);
-                player.next_song(true).await;
+                let _ = player.next_song().await;
                 btn.set_sensitive(true);
             }));
         }));
@@ -148,7 +148,7 @@ impl PlaybackControls {
         shuffle_btn.connect_clicked(clone!(#[weak] player, move |btn| {
             glib::spawn_future_local(clone!(#[weak] player, #[weak] btn, async move {
                 btn.set_sensitive(false);
-                player.set_random(btn.is_active()).await;
+                let _ = player.set_random(btn.is_active()).await;
                 btn.set_sensitive(true);
             }));
         }));
