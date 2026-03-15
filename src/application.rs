@@ -342,7 +342,7 @@ impl EuphonicaApplication {
             .application_icon("io.github.htkhiem.Euphonica")
             .developer_name("htkhiem2000")
             .version(VERSION)
-            .developers(vec!["htkhiem2000", "sonicv6"])
+            .developers(vec!["htkhiem2000", "ShadiestGoat", "sonicv6"])
             .license_type(gtk::License::Gpl30)
             .copyright("© 2026 htkhiem2000")
             .build();
