@@ -1,8 +1,8 @@
 use adw::prelude::*;
 use adw::subclass::prelude::*;
-use gio::{ActionEntry, SimpleActionGroup};
-use glib::{Properties, clone, subclass::Signal, WeakRef};
 use gtk::{
+    gio::{ActionEntry, SimpleActionGroup},
+    glib::{Properties, clone, subclass::Signal, WeakRef},
     CompositeTemplate, ListItem, SignalListItemFactory, SingleSelection,
     glib::{self},
 };

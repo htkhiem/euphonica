@@ -1,5 +1,5 @@
 use async_channel::{Receiver, Sender};
-use gio::prelude::SettingsExt;
+use gtk::gio::prelude::SettingsExt;
 use mpd::{
     Channel, Client, EditAction, GroupedValues, Id, Idle, Output, Query, ReplayGain, SaveMode,
     Status, Subsystem, Term, Version,

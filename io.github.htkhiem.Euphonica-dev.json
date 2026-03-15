@@ -1,11 +1,11 @@
 {
     "id" : "io.github.htkhiem.Euphonica",
     "runtime" : "org.gnome.Platform",
-    "runtime-version" : "48",
+    "runtime-version" : "49",
     "sdk" : "org.gnome.Sdk",
     "sdk-extensions" : [
         "org.freedesktop.Sdk.Extension.rust-stable",
-        "org.freedesktop.Sdk.Extension.llvm19"
+        "org.freedesktop.Sdk.Extension.llvm21"
     ],
     "command" : "euphonica",
     "finish-args" : [
@@ -42,6 +42,9 @@
             "name" : "euphonica",
             "builddir" : true,
             "buildsystem" : "meson",
+            "config-opts": [
+                "--buildtype=debug"
+            ],
             "sources" : [
                 {
                     "type" : "dir",
@@ -50,8 +53,8 @@
                 }
             ],
             "build-options": {
-                "append-path": "/usr/lib/sdk/llvm19/bin",
-                "prepend-ld-library-path": "/usr/lib/sdk/llvm19/lib"
+                "append-path": "/usr/lib/sdk/llvm21/bin",
+                "prepend-ld-library-path": "/usr/lib/sdk/llvm21/lib"
             }
         }
     ]

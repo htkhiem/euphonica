@@ -1,7 +1,12 @@
-use gio::glib::WeakRef;
-use glib::{Object, clone};
-use gtk::{CompositeTemplate, glib, prelude::*, subclass::prelude::*};
+use std::{cell::Cell, ops::RangeBounds, str::FromStr};
+use once_cell::sync::Lazy;
+use gtk::{
+    CompositeTemplate,
+    glib::{self, WeakRef, Object, clone}, 
+    prelude::*, subclass::prelude::*
+};
 use mpd::search::Operation as TagOperation;
+use glib::Properties;
 
 use crate::common::{
     Stickers,
@@ -9,12 +14,6 @@ use crate::common::{
 };
 
 mod imp {
-    use std::{cell::Cell, ops::RangeBounds, str::FromStr};
-
-    use ::glib::Properties;
-
-    use once_cell::sync::Lazy;
-
     use super::*;
 
     #[derive(Default, CompositeTemplate, Properties)]

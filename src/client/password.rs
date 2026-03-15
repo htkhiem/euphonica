@@ -1,4 +1,4 @@
-use gio::Cancellable;
+use gtk::gio::Cancellable;
 use libsecret::*;
 use std::collections::HashMap;
 

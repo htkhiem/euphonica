@@ -6,9 +6,12 @@ use crate::{
 };
 use adw::prelude::*;
 use adw::subclass::prelude::*;
-use gio::{ActionEntry, SimpleActionGroup};
 use glib::{ParamSpec, ParamSpecBoolean, WeakRef, clone, subclass::Signal};
-use gtk::{CompositeTemplate, ListItem, SignalListItemFactory, SingleSelection, glib};
+use gtk::{
+    CompositeTemplate, ListItem, SignalListItemFactory, SingleSelection, 
+    glib,
+    gio::{ActionEntry, SimpleActionGroup}
+};
 use once_cell::sync::Lazy;
 use std::{cell::Cell, cmp::Ordering, rc::Rc, sync::OnceLock};
 

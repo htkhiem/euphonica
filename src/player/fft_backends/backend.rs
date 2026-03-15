@@ -1,9 +1,9 @@
-use glib::prelude::*;
 use std::{
     rc::Rc,
     sync::{Arc, Mutex},
 };
-
+use gtk::{glib::{self, prelude::*}};
+use async_trait::async_trait;
 use crate::player::Player;
 
 #[derive(Clone, Copy, Debug, glib::Enum, PartialEq, Default)]
@@ -16,6 +16,7 @@ pub enum FftStatus {
     Reading,
 }
 
+#[async_trait(?Send)]
 pub trait FftBackendImpl {
     /// Name as used in GSettings
     fn name(&self) -> &'static str;
@@ -24,7 +25,10 @@ pub trait FftBackendImpl {
     fn set_param(&self, key: &str, val: glib::Variant);
 
     fn start(self: Rc<Self>, output: Arc<Mutex<(Vec<f32>, Vec<f32>)>>) -> Result<(), ()>;
-    fn stop(&self, block: bool);
+
+    // This must only await at the very end, after having run everything. This is because
+    // the Drop trait calls it with .now_or_never().
+    async fn stop(&self);
 }
 
 pub trait FftBackendExt: FftBackendImpl {

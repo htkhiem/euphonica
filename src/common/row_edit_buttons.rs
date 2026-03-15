@@ -1,6 +1,4 @@
-use ::glib::clone;
-use glib::{self, Object, SignalHandlerId};
-use gtk::{CompositeTemplate, prelude::*, subclass::prelude::*};
+use gtk::{CompositeTemplate, prelude::*, subclass::prelude::*, glib::{self, clone, Object, SignalHandlerId}};
 use std::cell::RefCell;
 
 mod imp {

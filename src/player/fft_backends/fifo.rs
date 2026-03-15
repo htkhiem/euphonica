@@ -1,5 +1,8 @@
-use gio::{self, prelude::*};
-use glib::clone;
+use async_trait::async_trait;
+use gtk::{
+    gio::{self, prelude::*},
+    glib::{self, clone}
+};
 use std::{
     cell::RefCell,
     rc::Rc,
@@ -36,6 +39,7 @@ impl FifoFftBackend {
     }
 }
 
+#[async_trait(?Send)]
 impl FftBackendImpl for FifoFftBackend {
     fn name(&self) -> &'static str {
         "fifo"
@@ -163,7 +167,7 @@ impl FftBackendImpl for FifoFftBackend {
                                 },
                             }
                             // Placed here such that we can use the first iteration to verify
-                            // that the settings are correct.
+                            // that the seis_errttings are correct.
                             if stop_flag.load(Ordering::Relaxed) {
                                 println!("Stopping thread...");
                                 return;
@@ -208,19 +212,15 @@ impl FftBackendImpl for FifoFftBackend {
         Err(())
     }
 
-    fn stop(&self, block: bool) {
+    async fn stop(&self) {
         self.stop_flag.store(true, Ordering::Relaxed);
-        if let Some(handle) = self.fft_handle.take()
-            && block {
-                let stop_future = glib::MainContext::default().spawn_local(async move {
-                    let _ = handle.await;
-                });
-                let _ = glib::MainContext::default().block_on(stop_future);
-            }
         // In case the thread is dead to begin with
         self.player().set_fft_status(FftStatus::ValidNotReading);
         if let Some(old_handle) = self.fg_handle.take() {
             old_handle.abort();
+        }
+        if let Some(handle) = self.fft_handle.take() {
+            let _ = handle.await;
         }
     }
 }

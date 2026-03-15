@@ -1,7 +1,7 @@
-use glib::{
+use gtk::{CompositeTemplate, gdk::{self}, prelude::*, subclass::prelude::*, glib::{
+    self,
     Properties, derived_properties
-};
-use gtk::{CompositeTemplate, gdk::{self}, prelude::*, subclass::prelude::*};
+}};
 use std::cell::Cell;
 
 use crate::cache::placeholders::{ALBUMART_PLACEHOLDER, ALBUMART_THUMBNAIL_PLACEHOLDER};

@@ -1102,7 +1102,7 @@ impl EuphonicaWindow {
                 diag.add_response("prefs", "Open _Preferences");
                 diag.set_response_appearance("prefs", adw::ResponseAppearance::Suggested);
                 diag.choose(
-                    self,
+                    Some(self),
                     Option::<gio::Cancellable>::None.as_ref(),
                     clone!(
                         #[weak(rename_to = this)]

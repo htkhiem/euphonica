@@ -1,8 +1,7 @@
-use glib::{
+use gtk::{CompositeTemplate, Image, Label, gdk, prelude::*, subclass::prelude::*, glib::{
     Object, ParamSpec, ParamSpecChar, ParamSpecInt, ParamSpecString, ParamSpecBoolean, clone, closure_local,
-    signal::SignalHandlerId, WeakRef
-};
-use gtk::{CompositeTemplate, Image, Label, gdk, prelude::*, subclass::prelude::*};
+    signal::SignalHandlerId, WeakRef, self
+}};
 use once_cell::sync::Lazy;
 use std::{
     cell::{Cell, OnceCell, RefCell},

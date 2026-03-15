@@ -1,10 +1,9 @@
-use ::glib::closure_local;
 use duplicate::duplicate;
 use std::{rc::Rc, str::FromStr};
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
-use gtk::{CompositeTemplate, glib};
+use gtk::{CompositeTemplate, glib::{self, closure_local}};
 
 use glib::clone;
 
@@ -633,7 +632,11 @@ impl ClientPreferences {
                         imp.fft_n_bins.value().round() as u32,
                     )
                     .expect("Cannot save visualizer settings");
-                player.restart_fft_thread();
+                glib::spawn_future_local(clone!(
+                    #[weak] player, async move {
+                        player.restart_fft_thread().await;
+                    }
+                ));
             }
         ));
     }

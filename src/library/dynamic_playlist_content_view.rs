@@ -180,7 +180,7 @@ mod imp {
                             let dialog = this.delete_dialog.get();
                             let obj = this.obj().clone();
                             glib::spawn_future_local(async move {
-                                let res = dialog.choose_future(&obj).await;
+                                let res = dialog.choose_future(Some(&obj)).await;
                                 if res == "delete" {
                                     outer.delete(&name).await;
                                 }

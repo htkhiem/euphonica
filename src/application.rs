@@ -30,12 +30,9 @@ use crate::{
 };
 use adw::prelude::*;
 use adw::subclass::prelude::*;
-use gtk::{gio, glib};
+use gtk::{gio, glib::{self, clone}};
 use std::{
-    cell::{Cell, OnceCell, RefCell},
-    fs::create_dir_all,
-    path::PathBuf,
-    rc::Rc,
+    cell::{Cell, OnceCell, RefCell}, fs::create_dir_all, ops::ControlFlow, path::PathBuf, rc::Rc
 };
 
 use ashpd::desktop::background::Background;
@@ -178,7 +175,12 @@ mod imp {
 
                 // If this is the main instance, respect the minimized flag
                 if !self.start_minimized.get() {
-                    self.player.get().unwrap().set_is_foreground(true);
+                    let player = self.player.get().unwrap();
+                    glib::spawn_future_local(clone!(
+                        #[weak] player, async move {
+                            player.set_is_foreground(true).await;
+                        }
+                    ));
                     self.obj().raise_window();
                 }
             } else {
@@ -210,7 +212,7 @@ impl EuphonicaApplication {
             if vd.lookup_value("minimized", None).is_some() {
                 this.imp().start_minimized.set(true);
             }
-            -1 // let execution continue
+            ControlFlow::Continue(())
         });
 
         // Background mode

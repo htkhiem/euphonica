@@ -1,4 +1,5 @@
-use glib::{
+use gtk::glib::{
+    self,
     BoxedAnyObject,
     prelude::*,
     subclass::{Signal, prelude::*}, Properties, derived_properties

@@ -14,7 +14,6 @@ use mpd::{Query, Status, Term};
 use nohash_hasher::NoHashHasher;
 use rustc_hash::FxHashSet;
 use time::OffsetDateTime;
-use zbus::{Connection as ZConnection, Proxy as ZProxy};
 
 use std::borrow::Cow;
 use std::hash::BuildHasherDefault;
@@ -165,63 +164,6 @@ impl MpdWrapper {
                 }
             }
         ));
-
-        // A new loop to watch for system suspend/wake actions. We proactively disconnect before suspend
-        // and connect again upon wake to avoid freezing upon a timed-out connection.
-        let fg_sender = self.fg_sender.clone();
-        let bg_sender = self.bg_sender.clone();
-        utils::tokio_runtime().spawn(async move {
-            let connection = ZConnection::system().await.unwrap();
-
-            // Create a proxy for systemd-logind
-            let proxy = ZProxy::new(
-                &connection,
-                "org.freedesktop.login1",         // The service name
-                "/org/freedesktop/login1",        // The object path
-                "org.freedesktop.login1.Manager", // The interface
-            )
-            .await
-            .unwrap();
-
-            // Get a stream of the "PrepareForSleep" signal
-            use futures::prelude::*;
-            let mut signal_stream =
-                std::pin::pin!(proxy.receive_signal("PrepareForSleep").await.unwrap());
-            // Loop forever, processing signals
-            while let Some(signal) = signal_stream.next().await {
-                if let Ok(going_to_sleep) = signal.body().deserialize::<bool>() {
-                    if going_to_sleep {
-                        println!("System is preparing to suspend. Disconnecting...");
-                        let (s, r) = oneshot::channel();
-                        fg_sender
-                            .send(Task::Disconnect(false, s))
-                            .await
-                            .expect("Broken FG sender");
-                        let _ = r.await.expect("Broken oneshot receiver");
-                        let (s, r) = oneshot::channel();
-                        bg_sender
-                            .send(Task::Disconnect(false, s))
-                            .await
-                            .expect("Broken BG sender");
-                        let _ = r.await.expect("Broken oneshot receiver");
-                    } else {
-                        println!("System has woken up. Reconnecting...");
-                        let (s, r) = oneshot::channel();
-                        fg_sender
-                            .send(Task::Connect(s))
-                            .await
-                            .expect("Broken FG sender");
-                        let _ = r.await.expect("Broken oneshot receiver");
-                        let (s, r) = oneshot::channel();
-                        bg_sender
-                            .send(Task::Connect(s))
-                            .await
-                            .expect("Broken BG sender");
-                        let _ = r.await.expect("Broken oneshot receiver");
-                    }
-                }
-            }
-        });
     }
 
     async fn handle_idle_changes(&self, subsystem: Subsystem) {
@@ -369,13 +311,12 @@ impl MpdWrapper {
         // is enabled.
         if let Err(ClientError::Mpd(MpdError::Server(e))) = self
             .get_known_stickers("song", String::from("euphonica_sticker_test"))
-            .await {
-            if e.code == MpdErrorCode::UnknownCmd {
+            .await
+            && e.code == MpdErrorCode::UnknownCmd {
                 println!("Sticker DB not enabled. Disabling stickers-related functionality...");
                 self.state
                     .set_stickers_support_level(StickersSupportLevel::Disabled);
             }
-        }
         self.client_version.replace(Some(version));
 
         let (s, r) = oneshot::channel();
