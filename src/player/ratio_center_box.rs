@@ -1,4 +1,4 @@
-use gtk::{glib::Properties, prelude::*, subclass::prelude::*};
+use gtk::{glib::{self, Properties}, prelude::*, subclass::prelude::*};
 use std::cell::{Cell, RefCell};
 
 mod imp {

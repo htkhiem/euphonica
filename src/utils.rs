@@ -1,10 +1,7 @@
 use crate::cache::sqlite;
 use crate::config::APPLICATION_ID;
 use aho_corasick::AhoCorasick;
-use gio::prelude::*;
-use gtk::gdk;
-use gtk::gio;
-use gtk::Ordering;
+use gtk::{gdk, glib, gio::{self, prelude::*}, Ordering};
 use image::{imageops::FilterType, DynamicImage, RgbImage};
 use mpd::status::AudioFormat;
 use once_cell::sync::Lazy;
@@ -273,13 +270,14 @@ pub struct RegisteredImage {
 impl RegisteredImage {
     pub fn take_texture(&self) -> Result<gdk::Texture, glib::Error> {
         if let Some(rgb_image) = self.img.take() {
-            let builder = gdk::MemoryTextureBuilder::new();
-            builder.set_width(rgb_image.width() as i32);
-            builder.set_height(rgb_image.height() as i32);
-            builder.set_format(gdk::MemoryFormat::R8g8b8);
-            builder.set_stride((rgb_image.width() * 3) as usize);
-            builder.set_bytes(Some(&glib::Bytes::from_owned(rgb_image.into_raw())));
-            Ok(builder.build())
+            Ok(gdk::MemoryTextureBuilder::new()
+                .set_width(rgb_image.width() as i32)
+                .set_height(rgb_image.height() as i32)
+                .set_format(gdk::MemoryFormat::R8g8b8)
+                .set_stride((rgb_image.width() * 3) as usize)
+                .set_bytes(Some(&glib::Bytes::from_owned(rgb_image.into_raw())))
+                .build()
+            )
         } else {
             let mut res = get_image_cache_path();
             res.push(&self.name);

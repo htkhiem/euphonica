@@ -1,9 +1,8 @@
-use glib::prelude::*;
 use std::{
     rc::Rc,
     sync::{Arc, Mutex},
 };
-
+use gtk::{glib::{self, prelude::*}};
 use crate::player::Player;
 
 #[derive(Clone, Copy, Debug, glib::Enum, PartialEq, Default)]

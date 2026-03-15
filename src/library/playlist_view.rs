@@ -1,10 +1,9 @@
 use adw::prelude::*;
 use adw::subclass::prelude::*;
-use gio::{ActionEntry, SimpleActionGroup};
-use glib::{Properties, WeakRef, clone, subclass::Signal};
 use gtk::{
     CompositeTemplate, ListItem, SignalListItemFactory, SingleSelection,
-    glib::{self, closure_local},
+    glib::{self, closure_local, Properties, WeakRef, clone, subclass::Signal},
+    gio::{ActionEntry, SimpleActionGroup}
 };
 use mpd::Subsystem;
 use std::{cell::Cell, cmp::Ordering, ops::Deref, rc::Rc};

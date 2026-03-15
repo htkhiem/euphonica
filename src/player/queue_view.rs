@@ -1,9 +1,11 @@
-use std::rc::Rc;
-
+use std::{
+    rc::Rc,
+    cell::Cell,
+    sync::OnceLock,
+};
 use adw::prelude::*;
 use adw::subclass::prelude::*;
-use glib::{clone, closure_local};
-use gtk::{CompositeTemplate, ListItem, SignalListItemFactory, SingleSelection, gio};
+use gtk::{CompositeTemplate, ListItem, SignalListItemFactory, SingleSelection, gio, glib::{self, clone, closure_local, WeakRef, Properties, subclass::Signal}};
 use mpd::{
     SaveMode,
     error::{Error as MpdError, ErrorCode as MpdErrorCode, ServerError},
@@ -23,14 +25,6 @@ use crate::{
 use super::Player;
 
 mod imp {
-    use std::{
-        cell::Cell,
-        sync::OnceLock,
-    };
-
-    use ::glib::WeakRef;
-    use glib::{Properties, subclass::Signal};
-
     use super::*;
 
     #[derive(Debug, Properties, Default, CompositeTemplate)]
@@ -360,7 +354,7 @@ impl QueueView {
         diag.add_response("overwrite", "_Overwrite");
         diag.set_response_appearance("append", adw::ResponseAppearance::Suggested);
         diag.set_response_appearance("overwrite", adw::ResponseAppearance::Destructive);
-        match diag.choose_future(&self.imp().window.upgrade().unwrap()).await.as_str() {
+        match diag.choose_future(self.imp().window.upgrade().as_ref()).await.as_str() {
             "append" => {
                 player.save_queue(name, SaveMode::Append).await;
             }

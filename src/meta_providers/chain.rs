@@ -1,5 +1,5 @@
 use asyncified::Asyncified;
-use gio::prelude::SettingsExt;
+use gtk::gio::prelude::SettingsExt;
 
 use crate::{
     common::{AlbumInfo, ArtistInfo, SongInfo},

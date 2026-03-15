@@ -1,5 +1,4 @@
-use glib::{ParamSpec, ParamSpecObject, WeakRef};
-use gtk::{CompositeTemplate, prelude::*, subclass::prelude::*};
+use gtk::{CompositeTemplate, prelude::*, subclass::prelude::*, glib::{self, ParamSpec, ParamSpecObject, WeakRef}};
 use once_cell::sync::Lazy;
 
 mod imp {

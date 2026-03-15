@@ -1,20 +1,17 @@
+use ashpd::desktop::file_chooser::SelectedFiles;
 use adw::prelude::*;
 use adw::subclass::prelude::*;
 use gtk::{
     CompositeTemplate, ListItem, SignalListItemFactory, SingleSelection,
-    glib::{self, closure_local},
+    glib::{self, Properties, WeakRef, clone, closure_local, subclass::Signal},
+    gio::{self, ActionEntry, SimpleActionGroup}
 };
 use std::{
     cell::{Cell, OnceCell},
     cmp::Ordering,
     rc::Rc,
-    sync::OnceLock,
+    sync::OnceLock
 };
-
-use glib::Properties;
-use glib::WeakRef;
-use glib::clone;
-use glib::subclass::Signal;
 
 use super::{DynamicPlaylistContentView, Library};
 use crate::{
@@ -22,17 +19,12 @@ use crate::{
     client::{ClientState, ConnectionState, Result as ClientResult},
     common::{ContentStack, DynamicPlaylist, INode},
     library::{DynamicPlaylistEditorView, playlist_row::PlaylistRow},
-    utils::{g_cmp_str_options, settings_manager},
+    utils::{self, g_cmp_str_options, settings_manager},
     window::EuphonicaWindow,
 };
 
 // DynamicPlaylist view implementation
 mod imp {
-    use ashpd::desktop::file_chooser::SelectedFiles;
-    use gio::{ActionEntry, SimpleActionGroup};
-
-    use crate::utils;
-
     use super::*;
 
     #[derive(Debug, CompositeTemplate, Properties, Default)]
@@ -335,7 +327,7 @@ mod imp {
                                                             diag.add_response("skip", "_Skip");
                                                             diag.add_response("overwrite", "_Overwrite");
                                                             diag.set_response_appearance("overwrite", adw::ResponseAppearance::Destructive);
-                                                            match diag.choose_future(obj.as_ref()).await.to_string().as_str() {
+                                                            match diag.choose_future(Some(obj.as_ref())).await.to_string().as_str() {
                                                                 "overwrite" => {
                                                                     sqlite::insert_dynamic_playlist(&dp, Some(&dp.name))
                                                                 }

@@ -6,7 +6,7 @@ use crate::{
     utils::meta_provider_settings,
 };
 
-use gio::prelude::SettingsExt;
+use gtk::gio::prelude::SettingsExt;
 use reqwest::{blocking::Client, header::USER_AGENT};
 
 use super::{

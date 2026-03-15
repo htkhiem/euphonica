@@ -1,5 +1,7 @@
-use gio::{self, prelude::*};
-use glib::clone;
+use gtk::{
+    gio::{self, prelude::*},
+    glib::{self, clone}
+};
 use std::{
     cell::RefCell,
     rc::Rc,

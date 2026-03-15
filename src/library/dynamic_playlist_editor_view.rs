@@ -416,7 +416,7 @@ impl DynamicPlaylistEditorView {
                     _ => {
                         let dialog = this.imp().edit_cover_dialog.get();
                         dialog.choose(
-                            &this,
+                            Some(&this),
                             Option::<gio::Cancellable>::None.as_ref(),
                             clone!(
                                 #[weak]
@@ -843,7 +843,7 @@ impl DynamicPlaylistEditorView {
             // If creating a new playlist, ask for confirmation before overwriting
             let dialog = self.imp().overwrite_dialog.get();
             dialog.choose(
-                self,
+                Some(self),
                 Option::<gio::Cancellable>::None.as_ref(),
                 clone!(
                     #[weak(rename_to = this)]
@@ -865,7 +865,7 @@ impl DynamicPlaylistEditorView {
         if self.imp().unsaved.get() {
             let dialog = self.imp().unsaved_dialog.get();
             dialog.choose(
-                self,
+                Some(self),
                 Option::<gio::Cancellable>::None.as_ref(),
                 clone!(
                     #[weak(rename_to = this)]

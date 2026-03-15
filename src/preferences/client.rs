@@ -1,10 +1,9 @@
-use ::glib::closure_local;
 use duplicate::duplicate;
 use std::{rc::Rc, str::FromStr};
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
-use gtk::{CompositeTemplate, glib};
+use gtk::{CompositeTemplate, glib::{self, closure_local}};
 
 use glib::clone;
 
