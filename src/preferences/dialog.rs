@@ -3,7 +3,7 @@ use std::rc::Rc;
 use adw::subclass::prelude::*;
 use gtk::{CompositeTemplate, glib};
 
-use crate::{cache::Cache, client::MpdWrapper, player::Player};
+use crate::{application::EuphonicaApplication, cache::Cache, client::MpdWrapper, player::Player};
 
 use super::{ClientPreferences, IntegrationsPreferences, LibraryPreferences, UIPreferences};
 
@@ -61,10 +61,10 @@ impl Default for Preferences {
 }
 
 impl Preferences {
-    pub fn new(client: Rc<MpdWrapper>, cache: Rc<Cache>, player: &Player) -> Self {
+    pub fn new(app: &EuphonicaApplication, cache: Rc<Cache>, player: &Player) -> Self {
         let res = Self::default();
 
-        res.imp().client_tab.get().setup(client, player);
+        res.imp().client_tab.get().setup(app, player);
         res.imp().library_tab.get().setup();
         res.imp().ui_tab.get().setup();
         res.imp().integrations_tab.get().setup(cache);

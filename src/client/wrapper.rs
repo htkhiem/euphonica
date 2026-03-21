@@ -181,20 +181,15 @@ impl MpdWrapper {
     }
 
     pub async fn disconnect(&self, stop: bool) -> ClientResult<()> {
+        self.state
+            .set_connection_state(ConnectionState::NotConnected);
+        // Clients might be currently disconnected so don't exit on error.
+        // In case both are running, disconnect the background first as we need to use 
+        // the foreground client to wake it up.
         let (s, r) = oneshot::channel();
-        self.fg_sender
-            .send(Task::Disconnect(stop, s))
-            .await
-            .expect("Broken FG sender");
-        r.await.expect("Broken oneshot receiver")?;
-        println!("Stopped foreground client");
+        self.background(Task::Disconnect(stop, s), r).await?;
         let (s, r) = oneshot::channel();
-        self.bg_sender
-            .send(Task::Disconnect(stop, s))
-            .await
-            .expect("Broken BG sender");
-        r.await.expect("Broken oneshot receiver")?;
-        println!("Stopped background client");
+        self.foreground(Task::Disconnect(stop, s), r).await?;
         self.state
             .set_connection_state(ConnectionState::NotConnected);
         self.client_version.take();
@@ -286,6 +281,11 @@ impl MpdWrapper {
     }
 
     pub async fn connect(&self) -> ClientResult<()> {
+        // Disconnect both clients.
+        if let Err(e) = self.disconnect(false).await {
+            eprintln!("Warning: did not cleanly disconnect");
+            dbg!(e);
+        }
         self.state.set_connection_state(ConnectionState::Connecting);
 
         let (s, r) = oneshot::channel();

@@ -10,13 +10,11 @@ use glib::clone;
 use mpd::status::AudioFormat;
 
 use crate::{
-    client::{
+    application::EuphonicaApplication, client::{
         ClientState, ConnectionState, MpdWrapper,
         password::{get_mpd_password_async, set_mpd_password},
         state::StickersSupportLevel,
-    },
-    player::{FftStatus, Player},
-    utils,
+    }, player::{FftStatus, Player}, utils
 };
 
 // Allows us to implicitly grant read access to files outside of the sandbox.
@@ -370,9 +368,9 @@ impl ClientPreferences {
         row.set_subtitle(&subtitle);
     }
 
-    pub fn setup(&self, client: Rc<MpdWrapper>, player: &Player) {
+    pub fn setup(&self, app: &EuphonicaApplication, player: &Player) {
         let imp = self.imp();
-        let client_state = client.clone().get_client_state();
+        let client_state = app.get_client().get_client_state();
         // Populate with current gsettings values
         let settings = utils::settings_manager();
 
@@ -477,7 +475,7 @@ impl ClientPreferences {
             #[strong]
             conn_settings,
             #[weak]
-            client,
+            app,
             move |_| {
                 if this.imp().mpd_use_unix_socket.is_active() {
                     let _ = conn_settings
@@ -493,7 +491,7 @@ impl ClientPreferences {
                 let password_val = this.imp().mpd_password.text();
                 glib::spawn_future_local(clone!(
                     #[weak]
-                    client,
+                    app,
                     async move {
                         let password: Option<&str> = if password_val.is_empty() {
                             None
@@ -502,10 +500,10 @@ impl ClientPreferences {
                         };
                         match set_mpd_password(password).await {
                             Ok(()) => {
-                                client.connect().await;
+                                let _ = dbg!(app.refresh().await);
                             }
                             Err(msg) => {
-                                println!("{msg}");
+                                dbg!(msg);
                             }
                         }
                     }
