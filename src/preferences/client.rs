@@ -500,7 +500,9 @@ impl ClientPreferences {
                         };
                         match set_mpd_password(password).await {
                             Ok(()) => {
-                                let _ = dbg!(app.refresh().await);
+                                if let Err(e) = app.refresh().await {
+                                    dbg!(e);
+                                }
                             }
                             Err(msg) => {
                                 dbg!(msg);

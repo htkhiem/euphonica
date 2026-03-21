@@ -184,6 +184,7 @@ mod imp {
     pub struct Player {
         pub state: Cell<PlaybackState>,
         pub position: Cell<f64>,
+        pub queue_initialized: Cell<bool>,
         pub queue: gio::ListStore,
         pub lyric_lines: gtk::StringList, // Line by line for display. May be empty.
         pub lyrics: RefCell<Option<Lyrics>>,
@@ -263,6 +264,7 @@ mod imp {
                 crossfade: Cell::new(0.0),
                 mixramp_db: Cell::new(0.0),
                 mixramp_delay: Cell::new(0.0),
+                queue_initialized: Cell::new(false),
                 queue: gio::ListStore::new::<Song>(),
                 queue_len: Cell::new(0),
                 current_song: RefCell::new(None),
@@ -715,6 +717,7 @@ impl Player {
         self.stop_polling();
         self.imp().queue.remove_all();
         self.imp().outputs.remove_all();
+        self.imp().queue_initialized.set(false);
         self.imp().queue_version.set(0);
         self.imp().expected_queue_version.set(0);
         Ok(())
@@ -1350,7 +1353,14 @@ impl Player {
                     .await?;
             }
         }
+        // This is only to decide whether we should show a loading spinner at the UI level or not.
+        // It will never prevent refreshing the queue.
+        self.imp().queue_initialized.set(true);
         Ok(())
+    }
+
+    pub fn queue_is_initialized(&self) -> bool {
+        self.imp().queue_initialized.get()
     }
 
     fn update_queue_internal(&self, changes: &[Song]) {
