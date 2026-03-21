@@ -71,6 +71,15 @@
   </screenshots>
 
   <releases>
+    <release version="0.99.1-beta" date="2026-03-21">
+      <url type="details">https://github.com/htkhiem/euphonica/releases/tag/v0.99.1-beta</url>
+      <description>
+        <p>Fix: Refresh (F5) not working.</p>
+        <p>Fix: Reconnecting to a different server while already connected to one doesn't proceed.</p>
+        <p>Fix: Recent View blanking out after refresh.</p>
+        <p>Fix: Queue View now no longer fully refreshes on every visit.</p>
+      </description>
+    </release>
     <release version="0.99.0-beta" date="2026-03-15">
       <url type="details">https://github.com/htkhiem/euphonica/releases/tag/v0.99.0-beta</url>
       <description>

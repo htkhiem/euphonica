@@ -144,6 +144,7 @@ impl Library {
         self.notify("folder-his-len");
         self.notify("folder-curr-idx");
         self.imp().folder_inodes_initialized.set(false);
+        self.imp().recent_initialized.set(false);
     }
 
     fn client(&self) -> &Rc<MpdWrapper> {
@@ -603,7 +604,6 @@ impl Library {
             model.remove_all();
             self.client()
                 .get_recent_albums(&mut |album| {
-                    println!("Appending new recent album: {:?}", &album);
                     model.append(&album);
                 })
                 .await?;

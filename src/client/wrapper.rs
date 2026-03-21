@@ -180,23 +180,16 @@ impl MpdWrapper {
         }
     }
 
-    pub async fn disconnect(&self, stop: bool) -> ClientResult<()> {
+    pub async fn disconnect(&self, stop: bool, end_state: ConnectionState) -> ClientResult<()> {
+        // Clients might be currently disconnected so don't exit on error.
+        // In case both are running, disconnect the background first as we need to use 
+        // the foreground client to wake it up.
         let (s, r) = oneshot::channel();
-        self.fg_sender
-            .send(Task::Disconnect(stop, s))
-            .await
-            .expect("Broken FG sender");
-        r.await.expect("Broken oneshot receiver")?;
-        println!("Stopped foreground client");
+        self.background(Task::Disconnect(stop, s), r).await?;
         let (s, r) = oneshot::channel();
-        self.bg_sender
-            .send(Task::Disconnect(stop, s))
-            .await
-            .expect("Broken BG sender");
-        r.await.expect("Broken oneshot receiver")?;
-        println!("Stopped background client");
+        self.foreground(Task::Disconnect(stop, s), r).await?;
         self.state
-            .set_connection_state(ConnectionState::NotConnected);
+            .set_connection_state(end_state);
         self.client_version.take();
         Ok(())
     }
@@ -286,7 +279,11 @@ impl MpdWrapper {
     }
 
     pub async fn connect(&self) -> ClientResult<()> {
-        self.state.set_connection_state(ConnectionState::Connecting);
+        // Disconnect both clients.
+        if let Err(e) = self.disconnect(false, ConnectionState::Connecting).await {
+            eprintln!("Warning: did not cleanly disconnect");
+            dbg!(e);
+        }
 
         let (s, r) = oneshot::channel();
         self.fg_sender
@@ -1185,7 +1182,7 @@ impl Drop for MpdWrapper {
         println!("App closed. Closing clients...");
 
         executor::block_on(async move {
-            let _ = self.disconnect(true).await;
+            let _ = self.disconnect(true, ConnectionState::NotConnected).await;
         });
     }
 }

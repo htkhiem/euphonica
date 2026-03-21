@@ -21,7 +21,7 @@
 use crate::{
     EuphonicaWindow,
     cache::Cache,
-    client::MpdWrapper,
+    client::{MpdWrapper, Result as ClientResult},
     config::VERSION,
     library::Library,
     player::Player,
@@ -30,9 +30,16 @@ use crate::{
 };
 use adw::prelude::*;
 use adw::subclass::prelude::*;
-use gtk::{gio, glib::{self, clone}};
+use gtk::{
+    gio,
+    glib::{self, clone},
+};
 use std::{
-    cell::{Cell, OnceCell, RefCell}, fs::create_dir_all, ops::ControlFlow, path::PathBuf, rc::Rc
+    cell::{Cell, OnceCell, RefCell},
+    fs::create_dir_all,
+    ops::ControlFlow,
+    path::PathBuf,
+    rc::Rc,
 };
 
 use ashpd::desktop::background::Background;
@@ -169,7 +176,15 @@ mod imp {
                 obj.set_accels_for_action("app.fullscreen", &["F11"]);
                 obj.set_accels_for_action("app.refresh", &["F5"]);
 
-                application.refresh();
+                glib::spawn_future_local(clone!(
+                    #[weak]
+                    application,
+                    async move {
+                        if let Err(e) = application.refresh().await {
+                            dbg!(e);
+                        }
+                    }
+                ));
 
                 self.initialized.set(true);
 
@@ -177,7 +192,9 @@ mod imp {
                 if !self.start_minimized.get() {
                     let player = self.player.get().unwrap();
                     glib::spawn_future_local(clone!(
-                        #[weak] player, async move {
+                        #[weak]
+                        player,
+                        async move {
                             player.set_is_foreground(true).await;
                         }
                     ));
@@ -242,7 +259,17 @@ impl EuphonicaApplication {
             .activate(move |app: &Self, _, _| app.toggle_fullscreen())
             .build();
         let refresh_action = gio::ActionEntry::builder("refresh")
-            .activate(move |app: &Self, _, _| app.refresh())
+            .activate(move |app: &Self, _, _| {
+                glib::spawn_future_local(clone!(
+                    #[weak]
+                    app,
+                    async move {
+                        if let Err(e) = app.refresh().await {
+                            dbg!(e);
+                        }
+                    }
+                ));
+            })
             .build();
         let update_db_action = gio::ActionEntry::builder("update-db")
             .activate(move |app: &Self, _, _| app.update_db())
@@ -317,13 +344,11 @@ impl EuphonicaApplication {
         }
     }
 
-    fn refresh(&self) {
-        let client = self.get_client();
-        glib::spawn_future_local(async move {
-            if let Err(e) = client.connect().await {
-                dbg!(e);
-            }
-        });
+    pub async fn refresh(&self) -> ClientResult<()> {
+        self.get_client().connect().await?;
+        self.get_library().clear();
+        self.get_player().clear();
+        Ok(())
     }
 
     fn update_db(&self) {
@@ -356,7 +381,7 @@ impl EuphonicaApplication {
 
     pub fn show_preferences(&self) {
         let window = self.active_window().unwrap();
-        let prefs = Preferences::new(self.get_client(), self.get_cache(), self.get_player());
+        let prefs = Preferences::new(self, self.get_cache(), self.get_player());
         prefs.present(Some(&window));
         prefs.update();
     }

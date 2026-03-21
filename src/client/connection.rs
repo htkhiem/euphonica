@@ -398,18 +398,15 @@ impl Connection {
     }
 
     pub fn connect(&mut self) -> Result<Version> {
-        if self.disconnect().is_err() {
-            println!("Warning: did not cleanly disconnect");
-        }
         let settings = utils::settings_manager().child("client");
-        // dbg!("Disconnected successfully");
+        // eprintln!("Attempting connection...");
 
         // self.state.set_connection_state(ConnectionState::Connecting);
         let use_unix_socket = settings.boolean("mpd-use-unix-socket");
         let mut client = if use_unix_socket {
             let path = settings.string("mpd-unix-socket");
             let path = path.as_str();
-            println!("Connecting to local socket {}", &path);
+            eprintln!("Connecting to local socket {}", &path);
             if let Ok(resolved) = path.try_resolve() {
                 mpd::Client::new(StreamWrapper::new_unix(
                     UnixStream::connect(resolved).map_err(|_| Error::Socket)?,
@@ -427,26 +424,36 @@ impl Connection {
                 settings.string("mpd-host"),
                 settings.uint("mpd-port")
             );
-            println!("Connecting to TCP socket {}", &addr);
+            eprintln!("Connecting to TCP socket {}", &addr);
             mpd::Client::new(StreamWrapper::new_tcp(
                 TcpStream::connect(addr).map_err(|_| Error::Tcp)?,
             ))
             .map_err(Error::Mpd)?
         };
 
-        // dbg!("Connected, now authenticating");
+        // eprintln!("Connected, now authenticating");
 
         // If there is a password configured, use it to authenticate.
-        if let Some(password) = password::get_mpd_password().map_err(|_| Error::CredentialStore)? {
-            client.login(&password).map_err(Error::Mpd)?;
+        match password::get_mpd_password().map_err(|_| Error::CredentialStore) {
+            Ok(Some(password)) => {
+                if let Err(e) = client.login(&password).map_err(Error::Mpd) {
+                    return Err(dbg!(e));
+                }
+                // eprintln!("Successfully authenticated");
+            }
+            Ok(None) => {
+                // eprintln!("No password was specified.");
+            }
+            Err(e) => {
+                return Err(dbg!(e));
+            }
         }
 
-        // dbg!("Successfully authenticated");
-
         // Doubles as a litmus test to see if we are authenticated.
-        client.subscribe(&self.wake_channel).map_err(Error::Mpd)?;
-
-        // dbg!("Subscribed to wake channel");
+        if let Err(e) = client.subscribe(&self.wake_channel).map_err(Error::Mpd) {
+            return Err(dbg!(e));
+        }
+        // eprintln!("Subscribed to wake channel");
 
         let version = client.version;
         self.client.replace(client);
@@ -459,12 +466,8 @@ impl Connection {
 
     pub fn disconnect(&mut self) -> Result<()> {
         if let Some(mut client) = self.client.take() {
-            println!("Closing connection");
-
-            // Now close the main client
             client.close().map_err(Error::Mpd)?;
         }
-
         Ok(())
     }
 
