@@ -11,7 +11,7 @@ use std::sync::OnceLock;
 use crate::{
     cache::{Cache, placeholders::{EMPTY_ALBUM_STRING, EMPTY_ARTIST_STRING}},
     common::{Marquee, Song, ImageStack},
-    player::{ratio_center_box::RatioCenterBox, seekbar::Seekbar},
+    player::{ratio_center_box::RatioCenterBox, seekbar2::Seekbar},
     utils::settings_manager,
 };
 
