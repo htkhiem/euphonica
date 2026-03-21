@@ -346,8 +346,8 @@ impl EuphonicaApplication {
 
     pub async fn refresh(&self) -> ClientResult<()> {
         self.get_client().connect().await?;
-        // Reset loaded state of all views
-        // Refresh what's being shown on the window
+        self.get_library().clear();
+        self.get_player().clear();
         Ok(())
     }
 

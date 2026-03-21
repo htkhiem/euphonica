@@ -712,11 +712,12 @@ impl Player {
     }
 
     pub async fn clear(&self) -> ClientResult<()> {
+        self.stop_polling();
         self.imp().queue.remove_all();
         self.imp().outputs.remove_all();
         self.imp().queue_version.set(0);
         self.imp().expected_queue_version.set(0);
-        self.update_status().await
+        Ok(())
     }
 
     pub async fn populate(&self) -> ClientResult<()> {
