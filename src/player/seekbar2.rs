@@ -181,7 +181,7 @@ mod imp {
                 ]
             } else {
                 [
-                    gsk::ColorStop::new(0.0, bottom),
+                    gsk::ColorStop::new(0.0, accent),
                     gsk::ColorStop::new(0.15, accent.with_alpha(0.5)),
                     gsk::ColorStop::new(0.3, accent.with_alpha(0.3)),
                     gsk::ColorStop::new(0.75, accent.with_alpha(0.0)),
