@@ -64,7 +64,6 @@ listview > row {
 
 .player-bar {
     border-top: 1px solid var(--borders);
-    padding: 12pt;
 }
 
 /* Fixes the weirdly dark vertical edges between panes */

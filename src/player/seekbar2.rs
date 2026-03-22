@@ -155,9 +155,6 @@ mod imp {
 
     impl WidgetImpl for Seekbar {
         fn snapshot(&self, snapshot: &gtk::Snapshot) {
-            // In light mode, make the seekbar's highlight glow white and the cursor the accent colour.
-            
-
             // Get the current accent colour via this object's foreground. This is possible as
             // we've set it to the fg-auto-accent CSS class, whose foreground colour is set to
             // the current accent (either system or picked from album art) by EuphonicaWindow.
@@ -219,6 +216,8 @@ mod imp {
                 &graphene::Point::new(0.0, 0.0), 
                 &cursor_stops
             );
+
+            self.parent_snapshot(snapshot);
         }
     }
 
@@ -271,6 +270,7 @@ impl Seekbar {
     pub fn set_position(&self, new: f64) {
         if !self.imp().seekbar_clicked.get() {
             self.imp().adjustment.set_value(new);
+            self.queue_draw();
         }
     }
 

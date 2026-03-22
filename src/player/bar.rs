@@ -26,8 +26,6 @@ mod imp {
     pub struct PlayerBar {
         #[template_child]
         pub multi_layout_view: TemplateChild<adw::MultiLayoutView>,
-        #[template_child]
-        pub full_layout_box: TemplateChild<RatioCenterBox>,
         // Left side: current song info
         #[template_child]
         pub albumart: TemplateChild<ImageStack>,
@@ -35,8 +33,6 @@ mod imp {
         pub info_box: TemplateChild<gtk::Box>,
         #[template_child]
         pub infobox_revealer: TemplateChild<gtk::Revealer>,
-        #[template_child]
-        pub mini_infobox_revealer: TemplateChild<gtk::Revealer>,
         #[template_child]
         pub song_name: TemplateChild<Marquee>,
         #[template_child]
@@ -106,15 +102,6 @@ mod imp {
                         Some("full")
                     }
                 })
-                .sync_create()
-                .build();
-
-            obj.bind_property("collapsed", &self.albumart.get(), "size")
-                .transform_to(
-                    |_, collapsed: bool| {
-                        if collapsed { Some(48) } else { Some(115) }
-                    },
-                )
                 .sync_create()
                 .build();
 
@@ -255,17 +242,10 @@ impl PlayerBar {
         let imp = self.imp();
 
         let infobox_revealer = imp.infobox_revealer.get();
-        let mini_infobox_revealer = imp.mini_infobox_revealer.get();
         let seekbar_revealer = imp.seekbar_revealer.get();
         // Also controls seekbar revealer, see binding in bar.ui
         player
             .bind_property("playback-state", &infobox_revealer, "reveal_child")
-            .transform_to(|_, state: PlaybackState| Some(state != PlaybackState::Stopped))
-            .sync_create()
-            .build();
-
-        player
-            .bind_property("playback-state", &mini_infobox_revealer, "reveal_child")
             .transform_to(|_, state: PlaybackState| Some(state != PlaybackState::Stopped))
             .sync_create()
             .build();

@@ -37,8 +37,7 @@
                     <property name="icon-name">pause-large-symbolic</property>
                     <property name="icon_size">1</property>
                     <style>
-                      <class name="circular"/>
-                      <class name="flat"/>
+                      <class name="pill"/>
                     </style>
                   </object>
                 </property>

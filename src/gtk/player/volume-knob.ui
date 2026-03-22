@@ -1,73 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <interface>
-  <template class="EuphonicaVolumeKnob" parent="GtkBox">
-    <child>
-      <object class="GtkOverlay">
-        <property name="child">
-          <object class="GtkDrawingArea" id="draw_area">
-            <property name="width-request">115</property>
-            <property name="height-request">115</property>
-            <style>
-              <class name="fg-auto-accent"/>
-            </style>
-          </object>
-        </property>
-        <child type="overlay">
-          <object class="GtkToggleButton" id="knob_btn">
-            <property name="hexpand">true</property>
-            <property name="vexpand">true</property>
-            <property name="margin-top">16</property>
-            <property name="margin-start">16</property>
-            <property name="margin-end">16</property>
-            <property name="margin-bottom">16</property>
-            <style>
-              <class name="circular"/>
-            </style>
-            <child>
-              <object class="GtkStack" id="readout_stack">
-                <property name="transition-type">slide-up-down</property>
-                <child>
-                  <object class="GtkStackPage">
-                    <property name="name">readout</property>
-                    <property name="child">
-                      <object class="GtkBox">
-                        <property name="orientation">1</property>
-                        <property name="halign">center</property>
-                        <property name="valign">center</property>
-                        <child>
-                          <object class="GtkLabel" id="readout">
-                            <style>
-                              <class name="title-3"/>
-                            </style>
-                          </object>
-                        </child>
-                        <child>
-                          <object class="GtkLabel" id="unit">
-                            <style>
-                              <class name="caption"/>
-                            </style>
-                          </object>
-                        </child>
-                      </object>
-                    </property>
-                  </object>
-                </child>
-                <child>
-                  <object class="GtkStackPage">
-                    <property name="name">mute</property>
-                    <property name="child">
-                      <object class="GtkImage">
-                        <property name="icon-name">audio-volume-muted-symbolic</property>
-                        <property name="icon-size">large</property>
-                      </object>
-                    </property>
-                  </object>
-                </child>
-              </object>
-            </child>
-          </object>
-        </child>
-      </object>
-    </child>
+  <template class="EuphonicaVolumeKnob" parent="GtkToggleButton">
+    <property name="valign">center</property>
+    <style>
+      <class name="circular"></class>
+    </style>
   </template>
 </interface>

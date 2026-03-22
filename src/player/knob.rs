@@ -21,16 +21,6 @@ mod imp {
     #[derive(Default, CompositeTemplate)]
     #[template(resource = "/io/github/htkhiem/Euphonica/gtk/player/volume-knob.ui")]
     pub struct VolumeKnob {
-        #[template_child]
-        pub draw_area: TemplateChild<gtk::DrawingArea>,
-        #[template_child]
-        pub readout: TemplateChild<gtk::Label>,
-        #[template_child]
-        pub unit: TemplateChild<gtk::Label>,
-        #[template_child]
-        pub readout_stack: TemplateChild<gtk::Stack>,
-        #[template_child]
-        pub knob_btn: TemplateChild<gtk::ToggleButton>,
         // Stored here & bound to the settings manager so we can avoid having
         // to query the setting on every frame while scrolling.
         pub sensitivity: Cell<f64>,
@@ -46,15 +36,10 @@ mod imp {
         // `NAME` needs to match `class` attribute of template
         const NAME: &'static str = "EuphonicaVolumeKnob";
         type Type = super::VolumeKnob;
-        type ParentType = gtk::Box;
+        type ParentType = gtk::ToggleButton;
 
         fn new() -> Self {
             Self {
-                draw_area: TemplateChild::default(),
-                readout: TemplateChild::default(),
-                unit: TemplateChild::default(),
-                readout_stack: TemplateChild::default(),
-                knob_btn: TemplateChild::default(),
                 use_dbfs: Cell::new(false),
                 sensitivity: Cell::new(1.0),
                 value: Cell::new(0.0),
@@ -75,45 +60,21 @@ mod imp {
     impl ObjectImpl for VolumeKnob {
         fn constructed(&self) {
             self.parent_constructed();
-            // Bind readouts
             let obj_ = self.obj();
             let obj = obj_.as_ref();
-            let knob_btn = self.knob_btn.get();
-            let readout_stack = self.readout_stack.get();
-            knob_btn
-                .bind_property("active", &readout_stack, "visible-child-name")
-                .transform_to(|_, active: bool| {
-                    if active {
-                        return Some("mute");
-                    }
-                    Some("readout")
-                })
-                .sync_create()
-                .build();
-
-            knob_btn
+            obj
                 .bind_property("active", obj, "is-muted")
                 .sync_create()
                 .build();
 
-            obj.update_readout();
+            self.update_readout();
             obj.connect_notify_local(Some("value"), |this, _| {
-                this.update_readout();
+                this.imp().update_readout();
             });
-            let unit = self.unit.get();
-            obj.bind_property("use-dbfs", &unit, "label")
-                .transform_to(|_, use_dbfs: bool| {
-                    if use_dbfs {
-                        return Some("dBFS");
-                    }
-                    Some("%")
-                })
-                .sync_create()
-                .build();
             // Draw curve from 0 to current volume level
             // (goes from 7:30 to 4:30 CW, which is -270deg to 45deg for cairo_arc).
             // Currently hardcoding diameter to 96px.
-            let draw_area = self.draw_area.get();
+            /* let draw_area = self.draw_area.get();
             draw_area.set_draw_func(clone!(
                 #[weak(rename_to = this)]
                 obj,
@@ -130,7 +91,7 @@ mod imp {
                     cr.arc(w as f64 / 2.0, h as f64 / 2.0, 50.0, -1.25 * PI, angle);
                     let _ = cr.stroke();
                 }
-            ));
+            )); */
 
             // Enable scrolling to change volume
             // TODO: Implement vertical dragging & keyboard controls
@@ -148,16 +109,11 @@ mod imp {
                     if (0.0..=100.0).contains(&new_vol) {
                         this.set_value(new_vol);
                     }
-                    this.imp().draw_area.queue_draw();
+                    this.queue_draw();
                     glib::signal::Propagation::Proceed
                 }
             ));
             obj.add_controller(scroll_ctl);
-
-            // Update level arc upon changing foreground colour, for example when switching dark/light mode
-            obj.connect_notify_local(Some("color"), |this, _| {
-                this.imp().draw_area.queue_draw();
-            });
         }
         fn properties() -> &'static [ParamSpec] {
             static PROPERTIES: Lazy<Vec<ParamSpec>> = Lazy::new(|| {
@@ -219,14 +175,37 @@ mod imp {
     // Trait shared by all widgets
     impl WidgetImpl for VolumeKnob {}
 
-    // Trait shared by all boxes
-    impl BoxImpl for VolumeKnob {}
+    impl ButtonImpl for VolumeKnob {}
+
+    impl ToggleButtonImpl for VolumeKnob {}
+
+    impl VolumeKnob {
+        pub fn update_readout(&self) {
+            let obj = self.obj();
+            let val = self.value.get();
+            if self.is_muted.get() {
+                obj.set_label("—");  // can you believe a human copypasted an em dash here
+            } else {
+                if self.use_dbfs.get() {
+                    if let Ok(dbfs) = convert_to_dbfs(val) {
+                        obj.set_label(&format!("{dbfs:.0}"));
+                    } else if val > 0.0 {
+                        obj.set_label("0");
+                    } else {
+                        obj.set_label("-∞");
+                    }
+                } else {
+                    obj.set_label(&format!("{val:.0}"));
+                }
+            }
+        }
+    }
 }
 
 glib::wrapper! {
     pub struct VolumeKnob(ObjectSubclass<imp::VolumeKnob>)
-    @extends gtk::Box, gtk::Widget,
-    @implements gtk::Accessible, gtk::Buildable, gtk::ConstraintTarget, gtk::Orientable;
+    @extends gtk::ToggleButton, gtk::Button, gtk::Widget,
+    @implements gtk::Accessible, gtk::Actionable, gtk::Buildable, gtk::ConstraintTarget;
 }
 
 impl Default for VolumeKnob {
@@ -259,6 +238,7 @@ impl VolumeKnob {
     pub fn set_value(&self, val: f64) {
         let old_val = self.imp().value.replace(val);
         if old_val != val {
+            self.imp().update_readout();
             self.notify("value");
         }
     }
@@ -270,26 +250,9 @@ impl VolumeKnob {
         let old_rounded = self.imp().value.get().round() as i8;
         if old_rounded != new_rounded {
             let _ = self.imp().value.replace(new_rounded as f64);
-            self.notify("value");
-            self.imp().draw_area.queue_draw();
-            // Will not emit a signal (doing so would result in an infinite loop
-            // between parent widget and this one).
-        }
-    }
-
-    fn update_readout(&self) {
-        let readout = self.imp().readout.get();
-        let val = self.imp().value.get();
-        if self.imp().use_dbfs.get() {
-            if let Ok(dbfs) = convert_to_dbfs(val) {
-                readout.set_label(&format!("{dbfs:.2}"));
-            } else if val > 0.0 {
-                readout.set_label("0");
-            } else {
-                readout.set_label("-∞");
-            }
-        } else {
-            readout.set_label(&format!("{val:.0}"));
+            self.imp().update_readout();
+            self.queue_draw();
+            // Will not notify to prevent signal loop
         }
     }
 }
