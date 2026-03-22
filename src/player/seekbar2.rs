@@ -1,9 +1,8 @@
+use gtk::{CompositeTemplate, glib, graphene, gdk, gsk, prelude::*, subclass::prelude::*};
 use glib::{Object, ParamSpec, ParamSpecDouble, ParamSpecObject, WeakRef, clone};
-use gtk::{CompositeTemplate, glib, graphene::Rect, prelude::*, subclass::prelude::*};
 use once_cell::sync::Lazy;
 use std::cell::Cell;
-use std::sync::OnceLock;
-
+use hsl;
 use crate::{common::QualityGrade, utils};
 
 use super::Player;
@@ -156,18 +155,69 @@ mod imp {
 
     impl WidgetImpl for Seekbar {
         fn snapshot(&self, snapshot: &gtk::Snapshot) {
-            self.parent_snapshot(snapshot);
-            // Get the current Adwaita accent colour
-            let style = adw::StyleManager::default();
-            snapshot.append_color(
-                &style.accent_color_rgba(),
-                &Rect::new(
+            // In light mode, make the seekbar's highlight glow white and the cursor the accent colour.
+            
+
+            // Get the current accent colour via this object's foreground. This is possible as
+            // we've set it to the fg-auto-accent CSS class, whose foreground colour is set to
+            // the current accent (either system or picked from album art) by EuphonicaWindow.
+            let style= adw::StyleManager::default();
+            let accent = self.obj().color();
+            let cursor_x = (self.adjustment.value() / self.adjustment.upper()) as f32 * self.obj().width() as f32;
+
+            // Draw highlight
+            let mut bottom_hsl = hsl::HSL::from_rgb(
+                &[(accent.red() * 255.0).round() as u8, 
+                (accent.green() * 255.0).round() as u8, 
+                (accent.blue() * 255.0).round() as u8]
+            );
+            bottom_hsl.l = bottom_hsl.l.max(0.75);
+            let bottom = bottom_hsl.to_rgb();
+            let bottom = gdk::RGBA::new(bottom.0 as f32 / 255.0, bottom.1 as f32 / 255.0, bottom.2 as f32 / 255.0, 1.0);
+            let stops = if style.is_dark() {
+                // In dark mode, the seekbar highlight glows the accent colour and the cursor glows white.
+                [
+                    gsk::ColorStop::new(0.0, bottom),
+                    gsk::ColorStop::new(0.15, accent.with_alpha(0.7)),
+                    gsk::ColorStop::new(0.3, accent.with_alpha(0.4)),
+                    gsk::ColorStop::new(0.75, accent.with_alpha(0.0))
+                ]
+            } else {
+                [
+                    gsk::ColorStop::new(0.0, bottom),
+                    gsk::ColorStop::new(0.15, accent.with_alpha(0.5)),
+                    gsk::ColorStop::new(0.3, accent.with_alpha(0.3)),
+                    gsk::ColorStop::new(0.75, accent.with_alpha(0.0)),
+                ]
+            };
+            snapshot.append_linear_gradient(
+                &graphene::Rect::new(
                     0.0,
                     0.0,
-                    (self.adjustment.value() / self.adjustment.upper()) as f32
-                        * self.obj().width() as f32,
+                    cursor_x,
                     self.obj().height() as f32,
-                ),
+                ), 
+                &graphene::Point::new(0.0, self.obj().height() as f32), 
+                &graphene::Point::new(0.0, 0.0), 
+                &stops
+            );
+
+            // Draw cursor
+            let cursor_stops = [
+                gsk::ColorStop::new(0.25, gdk::RGBA::WHITE),
+                gsk::ColorStop::new(1.0, gdk::RGBA::WHITE.with_alpha(0.0))
+            ];
+            snapshot.append_linear_gradient(
+                &graphene::Rect::new(
+                    // 2px wide cursor
+                    cursor_x - 1.0,
+                    0.0,
+                    2.0,
+                    self.obj().height() as f32,
+                ), 
+                &graphene::Point::new(0.0, self.obj().height() as f32), 
+                &graphene::Point::new(0.0, 0.0), 
+                &cursor_stops
             );
         }
     }

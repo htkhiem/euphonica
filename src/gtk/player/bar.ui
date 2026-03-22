@@ -159,16 +159,6 @@
               <object class="GtkBox">
                 <property name="orientation">1</property>
                 <child>
-                  <object class="GtkRevealer" id="seekbar_revealer">
-                    <property name="transition-type">slide-down</property>
-                    <child>
-                      <object class="EuphonicaSeekbar2" id="seekbar">
-                        <property name="hexpand">true</property>
-                      </object>
-                    </child>
-                  </object>
-                </child>
-                <child>
                   <object class="GtkCenterBox">
                     <style>
                       <class name="player-bar"/>
@@ -248,6 +238,16 @@
                     <property name="end-widget">
                       <object class="EuphonicaVolumeKnob" id="vol_knob"/>
                     </property>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkRevealer" id="seekbar_revealer">
+                    <property name="transition-type">slide-down</property>
+                    <child>
+                      <object class="EuphonicaSeekbar2" id="seekbar">
+                        <property name="hexpand">true</property>
+                      </object>
+                    </child>
                   </object>
                 </child>
               </object>

@@ -126,11 +126,9 @@ fn get_dominant_color(img: &DynamicImage, is_dark: bool) -> RGB {
     let mut dominant = palette[dominant].clone();
 
     if is_dark {
-        // If is_dark, ensure the dominant colour is at least this level
-        dominant.l = dominant.l.max(0.6);
+        dominant.l = dominant.l.max(0.6).min(0.85);
     } else {
-        // Conversely if in light mode, ensure it is at most this level
-        dominant.l = dominant.l.min(0.3);
+        dominant.l = dominant.l.min(0.5).max(0.35);
     }
 
     RGB::from(&dominant)
@@ -727,7 +725,18 @@ mod imp {
                 }
             } else {
                 // If no accent colour is given, revert to system accent colour
-                self.provider.load_from_string("");
+                let color = adw::StyleManager::default().accent_color_rgba();
+                self.provider.load_from_string(&format!(
+                        "
+:root {{
+    --accent-bg-color: rgb({}, {}, {});
+}}
+.fg-auto-accent {{
+    color: rgb({}, {}, {});
+}}
+",
+                        color.red(), color.green(), color.blue(), color.red(), color.green(), color.blue()
+                    ));
             }
         }
 
