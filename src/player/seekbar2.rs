@@ -198,6 +198,18 @@ mod imp {
                 &graphene::Point::new(0.0, 0.0), 
                 &stops
             );
+            // FIXME: without a "solid colour" node the repainting will be erratic.
+            // This call does nothing visually & wastes GPU cycles but without it the seekbar 
+            // won't redraw itself.
+            snapshot.append_color(
+                &gdk::RGBA::TRANSPARENT,
+                &graphene::Rect::new(
+                    0.0,
+                    0.0,
+                    cursor_x,
+                    self.obj().height() as f32,
+                )
+            );
 
             // Draw cursor
             let cursor_stops = [
@@ -240,7 +252,7 @@ mod imp {
             } else {
                 upper * (x / full_width).max(0.0).min(1.0)
             });
-            self.obj().queue_draw();
+            self.obj().idle_queue_draw();
         }
     }
 }
@@ -258,6 +270,12 @@ impl Default for Seekbar {
 }
 
 impl Seekbar {
+    fn idle_queue_draw(&self) {
+        glib::idle_add_local_once(clone!(#[weak(rename_to = this)] self, move || {
+            this.queue_draw();
+        }));
+    }
+
     pub fn new() -> Self {
         Object::builder().build()
     }
@@ -270,7 +288,7 @@ impl Seekbar {
     pub fn set_position(&self, new: f64) {
         if !self.imp().seekbar_clicked.get() {
             self.imp().adjustment.set_value(new);
-            self.queue_draw();
+            self.idle_queue_draw();
         }
     }
 
