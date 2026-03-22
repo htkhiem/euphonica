@@ -598,6 +598,8 @@ mod imp {
                     }
                 }
             ));
+
+            self.update_accent_color();
         }
     }
     impl WidgetImpl for EuphonicaWindow {
@@ -652,7 +654,7 @@ mod imp {
                         1.0,
                     );
                 } else {
-                    fg = widget.color();
+                    fg = adw::StyleManager::default().accent_color_rgba();
                 }
                 // Halve configured opacity since we're drawing two channels
                 let width32 = widget.width() as f32;
@@ -726,6 +728,11 @@ mod imp {
             } else {
                 // If no accent colour is given, revert to system accent colour
                 let color = adw::StyleManager::default().accent_color_rgba();
+                let (r, g, b) = (
+                    (color.red() * 255.0).round() as u32,
+                    (color.green() * 255.0).round() as u32,
+                    (color.blue() * 255.0).round() as u32,
+                );
                 self.provider.load_from_string(&format!(
                         "
 :root {{
@@ -735,7 +742,7 @@ mod imp {
     color: rgb({}, {}, {});
 }}
 ",
-                        color.red(), color.green(), color.blue(), color.red(), color.green(), color.blue()
+                        r, g, b, r, g, b
                     ));
             }
         }
