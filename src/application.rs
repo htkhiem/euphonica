@@ -328,14 +328,20 @@ impl EuphonicaApplication {
             let window = EuphonicaWindow::new(self);
             window.upcast()
         };
-        self.imp().player.get().unwrap().set_is_foreground(true);
+        let player = self.imp().player.get().unwrap().clone();
+        glib::spawn_future_local(async move {
+            player.set_is_foreground(true).await;
+        });
         window.present();
     }
 
     pub fn on_window_closed(&self) {
         let settings = settings_manager().child("state");
         if settings.boolean("run-in-background") {
-            self.imp().player.get().unwrap().set_is_foreground(false);
+            let player = self.imp().player.get().unwrap().clone();
+            glib::spawn_future_local(async move {
+                player.set_is_foreground(true).await;
+            });
             let _ = self.imp().hold_guard.replace(Some(self.hold()));
             println!("Created a new hold guard");
         } else {

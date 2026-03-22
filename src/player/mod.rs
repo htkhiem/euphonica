@@ -8,6 +8,7 @@ mod playback_controls;
 mod queue_view;
 mod ratio_center_box;
 mod seekbar;
+mod seekbar2;
 
 use knob::VolumeKnob;
 use output::MpdOutput;
