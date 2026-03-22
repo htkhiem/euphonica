@@ -256,7 +256,7 @@
 			<default>true</default>
 		</key>
 		<key name="bg-blur-radius" type="u">
-			<default>48</default>
+			<default>256</default>
 		</key>
 		<key name="bg-opacity" type="d">
 			<default>0.36</default>

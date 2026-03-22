@@ -28,6 +28,7 @@
         <style>
           <class name="pill"/>
           <class name="play-button"/>
+          <class name="suggested-action"/>
         </style>
         <property name="valign">center</property>
         <property name="width-request">80</property>

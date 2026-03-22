@@ -9,14 +9,14 @@
     <property name="width-request">360</property>
     <child>
       <object class="AdwBreakpoint">
-        <condition>max-width: 700</condition>
+        <condition>max-width: 750</condition>
         <setter object="player_bar" property="layout">1</setter>
         <setter object="queue_view" property="pane-collapsed">true</setter>
       </object>
     </child>
     <child>
       <object class="AdwBreakpoint">
-        <condition>max-width: 500</condition>
+        <condition>max-width: 480</condition>
         <setter object="split_view" property="collapsed">true</setter>
         <setter object="recent_view" property="collapsed">true</setter>
         <setter object="album_view" property="collapsed">true</setter>

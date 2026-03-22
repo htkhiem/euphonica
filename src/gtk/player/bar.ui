@@ -17,7 +17,6 @@
             <style>
               <class name="flat"/>
             </style>
-            <property name="visible">false</property>
             <property name="icon-name">dock-right-symbolic</property>
           </object>
         </child>
@@ -97,18 +96,31 @@
           <object class="EuphonicaPlaybackControls" id="playback_controls"/>
         </child>
 
+        <child type="seekbar">
+          <object class="GtkRevealer" id="seekbar_revealer">
+            <property name="height-request">12</property>            <!-- Serves as bottom padding when seekbar is hidden -->
+            <property name="transition-type">slide-down</property>
+            <child>
+              <object class="EuphonicaSeekbar2" id="seekbar">
+                <property name="hexpand">true</property>
+              </object>
+            </child>
+          </object>
+        </child>
+
         <child>
           <object class="AdwLayout">
             <property name="name">micro</property>
             <property name="content">
               <object class="GtkBox">
+                <style>
+                  <class name="padding-12"/>
+                </style>
+                <property name="spacing">6</property>
                 <property name="halign">center</property>
                 <property name="orientation">1</property>
                 <child>
                   <object class="GtkCenterBox">
-                    <style>
-                      <class name="padding-12"/>
-                    </style>
                     <property name="start-widget">
                       <object class="AdwLayoutSlot">
                         <property name="id">infobox</property>
@@ -135,30 +147,40 @@
           <object class="AdwLayout">
             <property name="name">mini</property>
             <property name="content">
-              <object class="GtkCenterBox">
-                <style>
-                  <class name="padding-12"/>
-                </style>
-                <property name="start-widget">
+              <object class="GtkBox">
+                <property name="orientation">1</property>
+                <child>
+                  <object class="GtkCenterBox">
+                    <property name="margin-end">12</property>
+                    <property name="margin-start">12</property>
+                    <property name="margin-top">12</property>
+                    <property name="start-widget">
+                      <object class="AdwLayoutSlot">
+                        <property name="id">infobox</property>
+                      </object>
+                    </property>
+                    <property name="end-widget">
+                      <object class="GtkBox">
+                        <property name="spacing">6</property>
+                        <child>
+                          <object class="AdwLayoutSlot">
+                            <property name="id">goto-pane</property>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="AdwLayoutSlot">
+                            <property name="id">playback-controls</property>
+                          </object>
+                        </child>
+                      </object>
+                    </property>
+                  </object>
+                </child>
+                <child>
                   <object class="AdwLayoutSlot">
-                    <property name="id">infobox</property>
+                    <property name="id">seekbar</property>
                   </object>
-                </property>
-                <property name="end-widget">
-                  <object class="GtkBox">
-                    <property name="spacing">6</property>
-                    <child>
-                      <object class="AdwLayoutSlot">
-                        <property name="id">goto-pane</property>
-                      </object>
-                    </child>
-                    <child>
-                      <object class="AdwLayoutSlot">
-                        <property name="id">playback-controls</property>
-                      </object>
-                    </child>
-                  </object>
-                </property>
+                </child>
               </object>
             </property>
           </object>
@@ -235,14 +257,8 @@
                   </object>
                 </child>
                 <child>
-                  <object class="GtkRevealer" id="seekbar_revealer">
-                    <property name="height-request">12</property>                    <!-- Serves as bottom padding when seekbar is hidden -->
-                    <property name="transition-type">slide-down</property>
-                    <child>
-                      <object class="EuphonicaSeekbar2" id="seekbar">
-                        <property name="hexpand">true</property>
-                      </object>
-                    </child>
+                  <object class="AdwLayoutSlot">
+                    <property name="id">seekbar</property>
                   </object>
                 </child>
               </object>

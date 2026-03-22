@@ -98,7 +98,6 @@ mod imp {
 
             obj.bind_property("layout", &self.multi_layout_view.get(), "layout-name")
                 .transform_to(|_, layout: u32| {
-                    println!("RECEIVED LAYOUT: {}", layout);
                     match layout {
                         0 => Some("micro".to_value()),
                         1 => Some("mini".to_value()),
