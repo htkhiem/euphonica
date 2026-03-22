@@ -1,5 +1,7 @@
 use gtk::{
-    cairo::LineCap,
+    gsk,
+    graphene,
+    cairo as cr,
     glib::{
         self, Object, ParamSpec, ParamSpecBoolean, ParamSpecDouble, clone, prelude::*, subclass::prelude::*,
     },
@@ -26,8 +28,8 @@ mod imp {
         pub sensitivity: Cell<f64>,
         pub use_dbfs: Cell<bool>,
         // 0 to 100. Full precision for smooth scrolling effect.
-        pub value: Cell<f64>,
-        pub is_muted: Cell<bool>,
+        pub value: Cell<f64>
+        // Active state means muted
     }
 
     // The central trait for subclassing a GObject
@@ -42,8 +44,7 @@ mod imp {
             Self {
                 use_dbfs: Cell::new(false),
                 sensitivity: Cell::new(1.0),
-                value: Cell::new(0.0),
-                is_muted: Cell::new(false),
+                value: Cell::new(0.0)
             }
         }
 
@@ -62,39 +63,16 @@ mod imp {
             self.parent_constructed();
             let obj_ = self.obj();
             let obj = obj_.as_ref();
-            obj
-                .bind_property("active", obj, "is-muted")
-                .sync_create()
-                .build();
-
             self.update_readout();
             obj.connect_notify_local(Some("value"), |this, _| {
                 this.imp().update_readout();
             });
-            // Draw curve from 0 to current volume level
-            // (goes from 7:30 to 4:30 CW, which is -270deg to 45deg for cairo_arc).
-            // Currently hardcoding diameter to 96px.
-            /* let draw_area = self.draw_area.get();
-            draw_area.set_draw_func(clone!(
-                #[weak(rename_to = this)]
-                obj,
-                move |da, cr, w, h| {
-                    let fg = da.color();
-                    cr.set_source_rgb(fg.red() as f64, fg.green() as f64, fg.blue() as f64);
-                    // Match seekbar thickness
-                    cr.set_line_width(4.0);
-                    cr.set_line_cap(LineCap::Round);
-                    // Starting
-                    // At 0 => 5pi/4
-                    let angle = -1.25 * PI + 1.5 * PI * this.imp().value.get() / 100.0;
-                    // u w0t m8
-                    cr.arc(w as f64 / 2.0, h as f64 / 2.0, 50.0, -1.25 * PI, angle);
-                    let _ = cr.stroke();
-                }
-            )); */
+            obj.connect_notify_local(Some("active"), |this, _| {
+                this.imp().update_readout();
+            });
 
             // Enable scrolling to change volume
-            // TODO: Implement vertical dragging & keyboard controls
+            // TODO: Implement angular dragging
             // TODO: Let user control scroll sensitivity
             let scroll_ctl = gtk::EventControllerScroll::default();
             scroll_ctl.set_flags(gtk::EventControllerScrollFlags::VERTICAL);
@@ -121,7 +99,6 @@ mod imp {
                     // Only modifiable via internal setter
                     ParamSpecDouble::builder("value").read_only().build(),
                     ParamSpecDouble::builder("sensitivity").build(),
-                    ParamSpecBoolean::builder("is-muted").build(),
                     ParamSpecBoolean::builder("use-dbfs").build(),
                 ]
             });
@@ -131,7 +108,6 @@ mod imp {
         fn property(&self, _id: usize, pspec: &ParamSpec) -> glib::Value {
             match pspec.name() {
                 "value" => self.value.get().to_value(),
-                "is-muted" => self.is_muted.get().to_value(),
                 "sensitivity" => self.sensitivity.get().to_value(),
                 "use-dbfs" => self.use_dbfs.get().to_value(),
                 _ => unimplemented!(),
@@ -150,14 +126,6 @@ mod imp {
                         }
                     }
                 }
-                "is-muted" => {
-                    if let Ok(is_muted) = value.get::<bool>() {
-                        let was_muted = self.is_muted.replace(is_muted);
-                        if was_muted != is_muted {
-                            obj.notify("is-muted");
-                        }
-                    }
-                }
                 "use-dbfs" => {
                     if let Ok(b) = value.get::<bool>() {
                         let old_use_dbfs = self.use_dbfs.replace(b);
@@ -173,7 +141,23 @@ mod imp {
     }
 
     // Trait shared by all widgets
-    impl WidgetImpl for VolumeKnob {}
+    impl WidgetImpl for VolumeKnob {
+        fn snapshot(&self, snapshot: &gtk::Snapshot) {
+            self.parent_snapshot(snapshot);
+            let (w, h) = (self.obj().width(), self.obj().height());
+            let cr = snapshot.append_cairo(&graphene::Rect::new(
+                0.0, 0.0, w as f32, h as f32
+            ));
+            let fg = self.obj().color();
+            cr.set_source_rgb(fg.red() as f64, fg.green() as f64, fg.blue() as f64);
+            cr.set_line_width(2.0);
+            cr.set_line_cap(cr::LineCap::Square);
+            let min_dim = w.min(h) as f64;
+            let centre = (w as f64 / 2.0, h as f64 / 2.0);
+            cr.arc(centre.0, centre.1, min_dim / 2.0 - 1.0, PI / 2.0, PI / 2.0 + 2.0 * PI * self.value.get() / 100.0);
+            let _ = cr.stroke();
+        }
+    }
 
     impl ButtonImpl for VolumeKnob {}
 
@@ -183,7 +167,7 @@ mod imp {
         pub fn update_readout(&self) {
             let obj = self.obj();
             let val = self.value.get();
-            if self.is_muted.get() {
+            if obj.is_active() {
                 obj.set_label("—");  // can you believe a human copypasted an em dash here
             } else {
                 if self.use_dbfs.get() {
@@ -231,14 +215,9 @@ impl VolumeKnob {
         self.imp().value.get()
     }
 
-    pub fn is_muted(&self) -> bool {
-        self.imp().is_muted.get()
-    }
-
     pub fn set_value(&self, val: f64) {
         let old_val = self.imp().value.replace(val);
         if old_val != val {
-            self.imp().update_readout();
             self.notify("value");
         }
     }

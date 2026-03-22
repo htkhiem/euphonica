@@ -212,16 +212,19 @@ mod imp {
             );
 
             // Draw cursor
-            let cursor_stops = [
+            let cursor_stops = if style.is_dark() {[
                 gsk::ColorStop::new(0.25, gdk::RGBA::WHITE),
                 gsk::ColorStop::new(1.0, gdk::RGBA::WHITE.with_alpha(0.0))
-            ];
+            ]} else {[
+                gsk::ColorStop::new(0.25, accent),
+                gsk::ColorStop::new(1.0, accent.with_alpha(0.0))
+            ]};
             snapshot.append_linear_gradient(
                 &graphene::Rect::new(
-                    // 2px wide cursor
+                    // 1px wide cursor
                     cursor_x - 1.0,
                     0.0,
-                    2.0,
+                    1.0,
                     self.obj().height() as f32,
                 ), 
                 &graphene::Point::new(0.0, self.obj().height() as f32), 

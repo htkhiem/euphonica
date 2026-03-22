@@ -4,6 +4,10 @@
     <property name="valign">center</property>
     <style>
       <class name="circular"></class>
+      <class name="fg-auto-accent"></class>
     </style>
+    <property name="width-request">36</property>
+    <property name="height-request">36</property>
+    <property name="tooltip-text" translatable="true">Volume (scroll while hovering to adjust; click to toggle mute)</property>
   </template>
 </interface>

@@ -25,7 +25,12 @@
     </child>
     <child>
       <object class="GtkButton" id="play_pause_btn">
+        <style>
+          <class name="pill"/>
+          <class name="play-button"/>
+        </style>
         <property name="valign">center</property>
+        <property name="width-request">80</property>
         <child>
           <object class="GtkStack" id="play_pause_symbol">
             <property name="transition-type">rotate-left-right</property>
@@ -60,10 +65,6 @@
             </child>
           </object>
         </child>
-        <style>
-          <class name="circular"/>
-          <class name="padding-6"/>
-        </style>
       </object>
     </child>
     <child>

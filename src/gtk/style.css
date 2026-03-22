@@ -34,6 +34,11 @@ listview > row {
     padding: 0px;
 }
 
+.play-button {
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+
 .seekbar2 {
   padding-left: 12px;
   padding-right: 12px;
@@ -63,12 +68,12 @@ listview > row {
 }
 
 .player-bar {
-    border-top: 1px solid var(--borders);
+    border-top: 1px solid @borders;
 }
 
 /* Fixes the weirdly dark vertical edges between panes */
 .light-right-edge {
-	border-right: 1px solid var(--borders);
+	border-right: 1px solid @borders;
 }
 
 .player-pane {

@@ -9,6 +9,8 @@
       <object class="GtkCenterBox">
         <style>
           <class name="seekbar2"/>
+          <class name="caption"/>
+          <class name="dimmed"/>
         </style>
         <property name="hexpand">true</property>
         <property name="start-widget">

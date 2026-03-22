@@ -26,6 +26,8 @@ mod imp {
     pub struct PlayerBar {
         #[template_child]
         pub multi_layout_view: TemplateChild<adw::MultiLayoutView>,
+        #[template_child]
+        pub full_center_box: TemplateChild<RatioCenterBox>,
         // Left side: current song info
         #[template_child]
         pub albumart: TemplateChild<ImageStack>,
@@ -67,7 +69,7 @@ mod imp {
         pub current_output: Cell<usize>,
         pub output_count: Cell<usize>,
         #[property(get, set)]
-        pub collapsed: Cell<bool>, // If true, will turn into a minimal bar that can fit narrow displays (e.g., phones)
+        pub layout: Cell<u32>, // 0: micro, 1: mini, 2: full. TODO: turn into enum.
     }
 
     // The central trait for subclassing a GObject
@@ -94,39 +96,45 @@ mod imp {
             self.parent_constructed();
             let obj = self.obj();
 
-            obj.bind_property("collapsed", &self.multi_layout_view.get(), "layout-name")
-                .transform_to(|_, collapsed: bool| {
-                    if collapsed {
-                        Some("mini")
-                    } else {
-                        Some("full")
+            obj.bind_property("layout", &self.multi_layout_view.get(), "layout-name")
+                .transform_to(|_, layout: u32| {
+                    println!("RECEIVED LAYOUT: {}", layout);
+                    match layout {
+                        0 => Some("micro".to_value()),
+                        1 => Some("mini".to_value()),
+                        2 => Some("full".to_value()),
+                        _ => unimplemented!()
                     }
                 })
                 .sync_create()
                 .build();
 
-            obj.bind_property("collapsed", &self.seekbar.get(), "visible")
-                .invert_boolean()
+            obj.bind_property("layout", &self.seekbar.get(), "visible")
+                .transform_to(|_, layout: u32| {
+                    Some((layout > 0).to_value())
+                })
                 .sync_create()
                 .build();
 
             // Hide certain widgets when in compact mode
-            obj.bind_property("collapsed", &self.album.get(), "visible")
-                .invert_boolean()
+            obj.bind_property("layout", &self.album.get(), "visible")
+                .transform_to(|_, layout: u32| {
+                    Some((layout > 1).to_value())
+                })
                 .sync_create()
                 .build();
 
-            obj.bind_property("collapsed", &self.output_section.get(), "visible")
-                .invert_boolean()
+            obj.bind_property("layout", &self.output_section.get(), "visible")
+                .transform_to(|_, layout: u32| {
+                    Some((layout > 1).to_value())
+                })
                 .sync_create()
                 .build();
 
-            obj.bind_property("collapsed", &self.vol_knob.get(), "visible")
-                .invert_boolean()
-                .sync_create()
-                .build();
-
-            obj.bind_property("collapsed", &self.goto_pane.get(), "visible")
+            obj.bind_property("layout", &self.vol_knob.get(), "visible")
+                .transform_to(|_, layout: u32| {
+                    Some((layout > 1).to_value())
+                })
                 .sync_create()
                 .build();
 
@@ -208,12 +216,12 @@ impl PlayerBar {
         );
 
         knob.connect_notify_local(
-            Some("is-muted"),
+            Some("active"),
             clone!(
                 #[weak] player,
                 move |knob: &VolumeKnob, _| {
                     let val = knob.value().round() as i8;
-                    let muted = knob.is_muted();
+                    let muted = knob.is_active();
                     glib::spawn_future_local(clone!(#[weak] player, async move {
                         if muted {
                             if let Err(e) = player.send_set_volume(0).await {dbg!(e);}
@@ -231,7 +239,7 @@ impl PlayerBar {
             "volume-changed",
             false,
             closure_local!(|_: Player, val: i8| {
-                if !knob.is_muted() {
+                if !knob.is_active() {
                     knob.sync_value(val);
                 }
             }),
@@ -320,7 +328,6 @@ impl PlayerBar {
                 this.prev_output();
             }
         ));
-
         self.imp().next_output.connect_clicked(clone!(
             #[weak(rename_to = this)]
             self,

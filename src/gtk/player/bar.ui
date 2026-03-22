@@ -11,6 +11,16 @@
     <child>
       <object class="AdwMultiLayoutView" id="multi_layout_view">
         <property name="hexpand">true</property>
+        <child type="goto-pane">
+          <object class="GtkButton" id="goto_pane">
+            <property name="tooltip-text">Jump to Now Playing</property>
+            <style>
+              <class name="flat"/>
+            </style>
+            <property name="visible">false</property>
+            <property name="icon-name">dock-right-symbolic</property>
+          </object>
+        </child>
         <child type="infobox">
           <object class="GtkRevealer" id="infobox_revealer">
             <property name="transition-type">slide-right</property>
@@ -89,9 +99,46 @@
 
         <child>
           <object class="AdwLayout">
+            <property name="name">micro</property>
+            <property name="content">
+              <object class="GtkBox">
+                <property name="halign">center</property>
+                <property name="orientation">1</property>
+                <child>
+                  <object class="GtkCenterBox">
+                    <style>
+                      <class name="padding-12"/>
+                    </style>
+                    <property name="start-widget">
+                      <object class="AdwLayoutSlot">
+                        <property name="id">infobox</property>
+                      </object>
+                    </property>
+                    <property name="end-widget">
+                      <object class="AdwLayoutSlot">
+                        <property name="id">goto-pane</property>
+                      </object>
+                    </property>
+                  </object>
+                </child>
+                <child>
+                  <object class="AdwLayoutSlot">
+                    <property name="id">playback-controls</property>
+                  </object>
+                </child>
+              </object>
+            </property>
+          </object>
+        </child>
+
+        <child>
+          <object class="AdwLayout">
             <property name="name">mini</property>
             <property name="content">
               <object class="GtkCenterBox">
+                <style>
+                  <class name="padding-12"/>
+                </style>
                 <property name="start-widget">
                   <object class="AdwLayoutSlot">
                     <property name="id">infobox</property>
@@ -101,13 +148,8 @@
                   <object class="GtkBox">
                     <property name="spacing">6</property>
                     <child>
-                      <object class="GtkButton" id="goto_pane">
-                        <property name="tooltip-text">Jump to Now Playing</property>
-                        <style>
-                          <class name="flat"/>
-                        </style>
-                        <property name="visible">false</property>
-                        <property name="icon-name">dock-right-symbolic</property>
+                      <object class="AdwLayoutSlot">
+                        <property name="id">goto-pane</property>
                       </object>
                     </child>
                     <child>
@@ -129,12 +171,13 @@
               <object class="GtkBox">
                 <property name="orientation">1</property>
                 <child>
-                  <object class="GtkCenterBox">
+                  <object class="EuphonicaRatioCenterBox" id="full_center_box">
+                    <property name="max-center-ratio">0.95</property>
                     <property name="margin-end">12</property>
                     <property name="margin-start">12</property>
                     <property name="margin-top">12</property>
                     <property name="hexpand">true</property>
-                    <property name="start-widget">
+                    <property name="left-widget">
                       <object class="AdwLayoutSlot">
                         <property name="id">infobox</property>
                       </object>
@@ -144,7 +187,7 @@
                         <property name="id">playback-controls</property>
                       </object>
                     </property>
-                    <property name="end-widget">
+                    <property name="right-widget">
                       <object class="GtkBox" id="output_section">
                         <property name="halign">end</property>
                         <property name="visible">false</property>
@@ -178,6 +221,13 @@
                           </object>
                         </child>
                         <child>
+                          <object class="GtkSeparator">
+                            <style>
+                              <class name="spacer"/>
+                            </style>
+                          </object>
+                        </child>
+                        <child>
                           <object class="EuphonicaVolumeKnob" id="vol_knob"/>
                         </child>
                       </object>
@@ -186,7 +236,7 @@
                 </child>
                 <child>
                   <object class="GtkRevealer" id="seekbar_revealer">
-                    <property name="height-request">12</property> <!-- Serves as bottom padding when seekbar is hidden -->
+                    <property name="height-request">12</property>                    <!-- Serves as bottom padding when seekbar is hidden -->
                     <property name="transition-type">slide-down</property>
                     <child>
                       <object class="EuphonicaSeekbar2" id="seekbar">
