@@ -648,6 +648,8 @@ impl Connection {
                         for tag_value in names.into_iter() {
                             let mut query = Query::new();
                             query.and(Term::Tag(Cow::Borrowed(tag_type_str)), tag_value);
+                            let mut curr_len: usize = 0;
+                            let mut more: bool = true;
                             while more && (curr_len) < FETCH_LIMIT {
                                 let songs = self.client_then(|c| {
                                     c.find(
