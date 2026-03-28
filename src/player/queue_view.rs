@@ -78,7 +78,7 @@ mod imp {
         pub restore_last_pos: Cell<u8>,
 
         pub player: WeakRef<Player>,
-        pub initialized: Cell<bool>,
+        pub initializing: Cell<bool>
     }
 
     #[glib::object_subclass]
@@ -598,7 +598,9 @@ impl QueueView {
 impl LazyInit for QueueView {
     fn populate(&self) {
         if let Some(player) = self.imp().player.upgrade()
-            && !player.queue_is_initialized() {
+            && !player.queue_is_initialized() 
+            && !self.imp().initializing.get() {
+                self.imp().initializing.set(true);
                 glib::spawn_future_local(clone!(
                     #[weak]
                     player,
@@ -608,6 +610,7 @@ impl LazyInit for QueueView {
                         let stack = this.imp().content_stack.get();
                         stack.show_spinner();
                         player.update_queue().await;
+                        this.imp().initializing.set(false);
                     }
                 ));
             }

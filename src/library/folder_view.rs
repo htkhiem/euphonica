@@ -81,6 +81,7 @@ mod imp {
         pub last_search_len: Cell<usize>,
         pub library: WeakRef<Library>,
         pub collapsed: Cell<bool>,
+        pub initializing: Cell<bool>
     }
 
     #[glib::object_subclass]
@@ -531,18 +532,23 @@ impl FolderView {
 impl LazyInit for FolderView {
     fn populate(&self) {
         if let Some(library) = self.imp().library.upgrade() {
-            let stack = self.imp().stack.get();
-            stack.show_spinner();
-            glib::spawn_future_local(
-                async move {
-                    library.get_folder_contents().await;
-                    if library.folder_inodes().n_items() > 0 {
-                        stack.show_content();
-                    } else {
-                        stack.show_placeholder();
+            if !self.imp().initializing.get() {
+                self.imp().initializing.set(true);
+                let stack = self.imp().stack.get();
+                let this = self.clone();
+                stack.show_spinner();
+                glib::spawn_future_local(
+                    async move {
+                        library.get_folder_contents().await;
+                        if library.folder_inodes().n_items() > 0 {
+                            stack.show_content();
+                        } else {
+                            stack.show_placeholder();
+                        }
+                        this.imp().initializing.set(false);
                     }
-                }
-            );
+                );
+            }
         }
     }
 }
