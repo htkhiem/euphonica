@@ -562,7 +562,7 @@ impl MpdWrapper {
         let mut more: bool = true;
         while more && (curr_len) < FETCH_LIMIT {
             let (s, r) = oneshot::channel();
-            let song_infos = self
+            match self
                 .foreground(
                     Task::GetQueue(
                         Window::from((curr_len as u32, (curr_len + BATCH_SIZE) as u32)),
@@ -570,21 +570,37 @@ impl MpdWrapper {
                     ),
                     r,
                 )
-                .await?;
-            if !song_infos.is_empty() {
-                let mut res: Vec<Song> = Vec::with_capacity(song_infos.len());
-                // Cache
-                for mut song_info in song_infos.into_iter() {
-                    if let Some(id) = song_info.queue_id {
-                        let song = Song::from(std::mem::take(&mut song_info));
-                        res.push(song.clone()); // lightweight Rc
-                        self.song_cache.borrow_mut().put(id, song);
+                .await 
+            {
+                Ok(song_infos) => {
+                    if !song_infos.is_empty() {
+                        let mut res: Vec<Song> = Vec::with_capacity(song_infos.len());
+                        // Cache
+                        for mut song_info in song_infos.into_iter() {
+                            if let Some(id) = song_info.queue_id {
+                                let song = Song::from(std::mem::take(&mut song_info));
+                                res.push(song.clone()); // lightweight Rc
+                                self.song_cache.borrow_mut().put(id, song);
+                            }
+                        }
+                        curr_len += BATCH_SIZE;
+                        respond(res);
+                    } else {
+                        more = false;
                     }
                 }
-                curr_len += BATCH_SIZE;
-                respond(res);
-            } else {
-                more = false;
+                Err(e) => {
+                    if let ClientError::Mpd(MpdError::Server(se)) = &e {
+                        if se.detail == "Bad song index" {
+                            // Gracefully handle end-of-queue instead of returning an error
+                            more = false;
+                        } else {
+                            return Err(e);
+                        }
+                    } else {
+                        return Err(e);
+                    }
+                }
             }
         }
         Ok(())
@@ -806,7 +822,17 @@ impl MpdWrapper {
                     .await?;
                 if !songs.is_empty() {
                     if let Some(album_info) = std::mem::take(&mut songs[0]).into_album_info() {
-                        respond(album_info.into());
+                        let res: Album = album_info.into();
+                        let (s, r) = oneshot::channel();
+                        // Optionally fetch album stickers
+                        if let Ok(stickers) = self.foreground(
+                            Task::GetKnownStickers("album", res.get_title().to_owned(), s),
+                            r,
+                        )
+                        .await {
+                            res.set_stickers(stickers);
+                        }
+                        respond(res);
                     } else {
                         println!("No album info found for {tag}");
                     }

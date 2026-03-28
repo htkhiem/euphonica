@@ -3,7 +3,7 @@ use std::rc::Rc;
 use adw::subclass::prelude::*;
 use gtk::{CompositeTemplate, glib};
 
-use crate::{application::EuphonicaApplication, cache::Cache, client::MpdWrapper, player::Player};
+use crate::{application::EuphonicaApplication, cache::Cache, player::Player};
 
 use super::{ClientPreferences, IntegrationsPreferences, LibraryPreferences, UIPreferences};
 

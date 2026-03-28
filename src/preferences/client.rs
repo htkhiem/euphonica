@@ -1,5 +1,5 @@
 use duplicate::duplicate;
-use std::{rc::Rc, str::FromStr};
+use std::str::FromStr;
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
@@ -11,7 +11,7 @@ use mpd::status::AudioFormat;
 
 use crate::{
     application::EuphonicaApplication, client::{
-        ClientState, ConnectionState, MpdWrapper,
+        ClientState, ConnectionState,
         password::{get_mpd_password_async, set_mpd_password},
         state::StickersSupportLevel,
     }, player::{FftStatus, Player}, utils

@@ -68,6 +68,8 @@ mod imp {
 
         #[property(get, set)]
         pub collapsed: Cell<bool>,
+
+        pub initializing: Cell<bool>
     }
 
     #[glib::object_subclass]
@@ -565,16 +567,21 @@ impl AlbumView {
 impl LazyInit for AlbumView {
     fn populate(&self) {
         if let Some(library) = self.imp().library.upgrade() {
-            let stack = self.imp().stack.get();
-            stack.show_spinner();
-            glib::spawn_future_local(async move {
-                let _ = library.init_albums().await;
-                if library.albums().n_items() > 0 {
-                    stack.show_content();
-                } else {
-                    stack.show_placeholder();
-                }
-            });
+            if !self.imp().initializing.get() {
+                self.imp().initializing.set(true);
+                let stack = self.imp().stack.get();
+                let this = self.clone();
+                stack.show_spinner();
+                glib::spawn_future_local(async move {
+                    let _ = library.init_albums().await;
+                    if library.albums().n_items() > 0 {
+                        stack.show_content();
+                    } else {
+                        stack.show_placeholder();
+                    }
+                    this.imp().initializing.set(false);
+                });
+            }
         }
     }
 }
