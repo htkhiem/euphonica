@@ -77,6 +77,7 @@
         <p>Fix: Queue View sometimes not refreshing.</p>
         <p>Fix: Album ratings not being retrieved.</p>
         <p>Fix: DP album rating filter rule not working correctly.</p>
+        <p>Fix: Force-light UI mode not remembered between starts.</p>
       </description>
     </release>
     <release version="0.99.1-beta" date="2026-03-21">

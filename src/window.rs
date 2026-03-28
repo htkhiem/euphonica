@@ -280,7 +280,7 @@ mod imp {
                 "dark" => ColorScheme::ForceDark,
                 "prefer-dark" => ColorScheme::PreferDark,
                 "prefer-light" => ColorScheme::PreferLight,
-                "force-light" => ColorScheme::ForceLight,
+                "light" => ColorScheme::ForceLight,
                 _ => ColorScheme::Default,
             });
 
