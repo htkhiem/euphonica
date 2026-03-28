@@ -486,7 +486,6 @@ impl RecentView {
 
 impl LazyInit for RecentView {
     fn populate(&self) {
-        eprintln!("RecentView::populate() called");
         glib::spawn_future_local(clone!(#[weak(rename_to = this)] self, async move {
             if let Err(e) = this.init_recent(false).await {
                 dbg!(e);

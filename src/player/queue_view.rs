@@ -421,6 +421,20 @@ impl QueueView {
             .sync_create()
             .build();
 
+        player_queue.connect_notify_local(
+            Some("n-items"),
+            clone!(
+                #[weak(rename_to = this)] self,
+                move |queue, _| {
+                    if queue.n_items() > 0 {
+                        this.imp().content_stack.show_content();
+                    } else {
+                        this.imp().content_stack.show_placeholder();
+                    }
+                }
+            )
+        );
+
         player
             .bind_property("supports-playlists", &save, "visible")
             .sync_create()
@@ -594,11 +608,6 @@ impl LazyInit for QueueView {
                         let stack = this.imp().content_stack.get();
                         stack.show_spinner();
                         player.update_queue().await;
-                        if player.queue().n_items() > 0 {
-                            stack.show_content();
-                        } else {
-                            stack.show_placeholder();
-                        }
                     }
                 ));
             }
