@@ -583,8 +583,8 @@ impl QueueView {
 
 impl LazyInit for QueueView {
     fn populate(&self) {
-        if let Some(player) = self.imp().player.upgrade() {
-            if !player.queue_is_initialized() {
+        if let Some(player) = self.imp().player.upgrade()
+            && !player.queue_is_initialized() {
                 glib::spawn_future_local(clone!(
                     #[weak]
                     player,
@@ -602,6 +602,5 @@ impl LazyInit for QueueView {
                     }
                 ));
             }
-        }
     }
 }

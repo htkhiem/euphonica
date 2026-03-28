@@ -806,7 +806,17 @@ impl MpdWrapper {
                     .await?;
                 if !songs.is_empty() {
                     if let Some(album_info) = std::mem::take(&mut songs[0]).into_album_info() {
-                        respond(album_info.into());
+                        let res: Album = album_info.into();
+                        let (s, r) = oneshot::channel();
+                        // Optionally fetch album stickers
+                        if let Ok(stickers) = self.foreground(
+                            Task::GetKnownStickers("album", res.get_title().to_owned(), s),
+                            r,
+                        )
+                        .await {
+                            res.set_stickers(stickers);
+                        }
+                        respond(res);
                     } else {
                         println!("No album info found for {tag}");
                     }
