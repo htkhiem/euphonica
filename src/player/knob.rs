@@ -1,9 +1,13 @@
 use gtk::{
+    CompositeTemplate,
     cairo::LineCap,
     glib::{
-        self, Object, ParamSpec, ParamSpecBoolean, ParamSpecDouble, clone, prelude::*, subclass::prelude::*,
+        self, Object, ParamSpec, ParamSpecBoolean, ParamSpecDouble, clone, prelude::*,
+        subclass::prelude::*,
     },
-    CompositeTemplate, prelude::*, subclass::prelude::*};
+    prelude::*,
+    subclass::prelude::*,
+};
 use std::{cell::Cell, f64::consts::PI};
 
 fn convert_to_dbfs(pct: f64) -> Result<f64, ()> {
@@ -133,7 +137,7 @@ mod imp {
             ));
 
             // Enable scrolling to change volume
-            // TODO: Implement vertical dragging & keyboard controls
+            // TODO: Implement keyboard controls
             // TODO: Let user control scroll sensitivity
             let scroll_ctl = gtk::EventControllerScroll::default();
             scroll_ctl.set_flags(gtk::EventControllerScrollFlags::VERTICAL);
@@ -153,6 +157,27 @@ mod imp {
                 }
             ));
             obj.add_controller(scroll_ctl);
+
+            // vertical dragging
+            let drag_ctl = gtk::GestureDrag::new();
+            drag_ctl.connect_drag_update(clone!(
+                #[weak(rename_to = this)]
+                obj,
+                move |_, _, y| {
+                    if this.imp().is_muted.get() {
+                        return;
+                    }
+                    let mut vol = this.imp().value.get();
+                    // use the button height as a scaling factor
+                    vol -= y / (this.height() as f64);
+                    vol = vol.min(100.0);
+                    vol = vol.max(0.0);
+                    this.set_value(vol);
+                    // update 
+                    this.imp().draw_area.queue_draw();
+                }
+            ));
+            obj.add_controller(drag_ctl);
 
             // Update level arc upon changing foreground colour, for example when switching dark/light mode
             obj.connect_notify_local(Some("color"), |this, _| {
