@@ -114,26 +114,47 @@ fn get_dominant_color(img: &DynamicImage, is_dark: bool) -> RGB {
             .unwrap()
             .find_swatches(PALETTE_SIZE)
             .iter()
-            .map(|c| c.color().to_hsl())
-            .collect::<Vec<HSL<f32>>>();
+            .map(|c| c.color().clone())
+            .collect::<Vec<auto_palette::color::Color<f32>>>();
 
-    // Find first colour with saturation > 0.3, in case the first dominant
-    // colours are too greyish.
-    let mut dominant = 0;
-    while palette[dominant].s < 0.3 && dominant < palette.len() - 1 {
-        dominant += 1;
+    // First, try to find a color that contrasts with the current UI mode (light color in dark mode, dark color in light mode)
+    let mut suboptimal_luminance = false;
+    let mut dominant = palette
+        .iter()
+        .find(|c| c.is_dark() != is_dark)
+        .cloned();
+
+    // If no matching color was found, fallback to the first color with saturation > 0.3
+    if dominant.is_none() {
+        suboptimal_luminance = true;
+        if let Some(saturated) = palette
+            .iter()
+            .find(|c| c.to_hsl().s > 0.3)
+        {
+            dominant = Some(saturated.clone());
+        } else {
+            // If still no suitable color, fall back to the first color in the palette
+            dominant = palette.first().cloned();
+        }
     }
-    let mut dominant = palette[dominant].clone();
 
-    if is_dark {
-        // If is_dark, ensure the dominant colour is at least this level
-        dominant.l = dominant.l.max(0.6);
+    let mut dominant = dominant.unwrap();
+
+    // Convert to HSL for luminance adjustment
+    if suboptimal_luminance {
+        let mut hsl = dominant.to_hsl();
+
+        // Adjust luminance based on theme mode
+        if is_dark {
+            hsl.l = hsl.l.max(0.6).min(0.85);
+        } else {
+            hsl.l = hsl.l.min(0.35).max(0.19);
+        }
+
+        RGB::from(&hsl)
     } else {
-        // Conversely if in light mode, ensure it is at most this level
-        dominant.l = dominant.l.min(0.3);
+        dominant.to_rgb()
     }
-
-    RGB::from(&dominant)
 }
 
 pub enum WindowMessage {
@@ -600,6 +621,8 @@ mod imp {
                     }
                 }
             ));
+
+            self.update_accent_color();
         }
     }
     impl WidgetImpl for EuphonicaWindow {
@@ -654,7 +677,7 @@ mod imp {
                         1.0,
                     );
                 } else {
-                    fg = widget.color();
+                    fg = adw::StyleManager::default().accent_color_rgba();
                 }
                 // Halve configured opacity since we're drawing two channels
                 let width32 = widget.width() as f32;
@@ -727,7 +750,23 @@ mod imp {
                 }
             } else {
                 // If no accent colour is given, revert to system accent colour
-                self.provider.load_from_string("");
+                let color = adw::StyleManager::default().accent_color_rgba();
+                let (r, g, b) = (
+                    (color.red() * 255.0).round() as u32,
+                    (color.green() * 255.0).round() as u32,
+                    (color.blue() * 255.0).round() as u32,
+                );
+                self.provider.load_from_string(&format!(
+                        "
+:root {{
+    --accent-bg-color: rgb({}, {}, {});
+}}
+.fg-auto-accent {{
+    color: rgb({}, {}, {});
+}}
+",
+                        r, g, b, r, g, b
+                    ));
             }
         }
 

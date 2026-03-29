@@ -332,6 +332,10 @@ impl EuphonicaApplication {
         glib::spawn_future_local(async move {
             player.set_is_foreground(true).await;
         });
+        let player = self.imp().player.get().unwrap().clone();
+        glib::spawn_future_local(async move {
+            player.set_is_foreground(true).await;
+        });
         window.present();
     }
 
@@ -353,7 +357,7 @@ impl EuphonicaApplication {
     pub async fn refresh(&self) -> ClientResult<()> {
         self.get_client().connect().await?;
         self.get_library().clear();
-        self.get_player().clear().await;
+        self.get_player().clear();
         Ok(())
     }
 

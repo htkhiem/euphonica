@@ -38,27 +38,9 @@
         <style>
           <class name="flat"/>
         </style>
+        <property name="icon-name">soundcard-symbolic</property>
 				<property name="popover">options_popover</property>
-        <child>
-          <object class="GtkBox">
-            <property name="spacing">6</property>
-            <property name="orientation">1</property>
-            <child>
-              <object class="GtkImage" id="icon">
-                <property name="icon-size">large</property>
-                <property name="icon-name">soundcard-symbolic</property>
-              </object>
-            </child>
-            <child>
-              <object class="GtkLabel" id="name">
-                <property name="ellipsize">end</property>
-                <style>
-                  <class name="caption"/>
-                </style>
-              </object>
-            </child>
-          </object>
-        </child>
+        <property name="tooltip-text">Unknown Output</property>
       </object>
     </child>
   </template>

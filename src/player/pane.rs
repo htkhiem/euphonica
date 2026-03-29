@@ -269,12 +269,12 @@ impl PlayerPane {
         );
 
         knob.connect_notify_local(
-            Some("is-muted"),
+            Some("active"),
             clone!(
                 #[weak] player,
                 move |knob: &VolumeKnob, _| {
                     let val = knob.value().round() as i8;
-                    let muted = knob.is_muted();
+                    let muted = knob.is_active();
                     glib::spawn_future_local(clone!(#[weak] player, async move {
                         if muted {
                             if let Err(e) = player.send_set_volume(0).await {dbg!(e);}
@@ -292,7 +292,7 @@ impl PlayerPane {
             "volume-changed",
             false,
             closure_local!(|_: Player, val: i8| {
-                if !knob.is_muted() {
+                if !knob.is_active() {
                     knob.sync_value(val);
                 }
             }),
