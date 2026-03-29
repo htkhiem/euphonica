@@ -243,7 +243,7 @@ impl Library {
     }
 
     pub async fn rate_album(&self, album: &Album, score: Option<i8>) -> ClientResult<()> {
-        if let Some(score) = score {
+        if let Some(score) = score {             
             self.client()
                 .set_sticker(
                     tags::ALBUM,

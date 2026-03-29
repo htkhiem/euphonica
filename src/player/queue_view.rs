@@ -78,7 +78,7 @@ mod imp {
         pub restore_last_pos: Cell<u8>,
 
         pub player: WeakRef<Player>,
-        pub initialized: Cell<bool>,
+        pub initializing: Cell<bool>
     }
 
     #[glib::object_subclass]
@@ -421,6 +421,20 @@ impl QueueView {
             .sync_create()
             .build();
 
+        player_queue.connect_notify_local(
+            Some("n-items"),
+            clone!(
+                #[weak(rename_to = this)] self,
+                move |queue, _| {
+                    if queue.n_items() > 0 {
+                        this.imp().content_stack.show_content();
+                    } else {
+                        this.imp().content_stack.show_placeholder();
+                    }
+                }
+            )
+        );
+
         player
             .bind_property("supports-playlists", &save, "visible")
             .sync_create()
@@ -583,8 +597,10 @@ impl QueueView {
 
 impl LazyInit for QueueView {
     fn populate(&self) {
-        if let Some(player) = self.imp().player.upgrade() {
-            if !player.queue_is_initialized() {
+        if let Some(player) = self.imp().player.upgrade()
+            && !player.queue_is_initialized() 
+            && !self.imp().initializing.get() {
+                self.imp().initializing.set(true);
                 glib::spawn_future_local(clone!(
                     #[weak]
                     player,
@@ -594,14 +610,9 @@ impl LazyInit for QueueView {
                         let stack = this.imp().content_stack.get();
                         stack.show_spinner();
                         player.update_queue().await;
-                        if player.queue().n_items() > 0 {
-                            stack.show_content();
-                        } else {
-                            stack.show_placeholder();
-                        }
+                        this.imp().initializing.set(false);
                     }
                 ));
             }
-        }
     }
 }

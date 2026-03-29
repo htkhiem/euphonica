@@ -664,8 +664,8 @@ impl FftBackendImpl for PipeWireFftBackend {
         let fft_stop = self.stop_flag.clone();
         fft_stop.store(true, Ordering::Relaxed);
         self.set_status(FftStatus::ValidNotReading);
-        if let Some(sender) = self.pw_sender.take() {
-            if sender.send(Terminate).is_ok() {
+        if let Some(sender) = self.pw_sender.take()
+            && sender.send(Terminate).is_ok() {
                 let pw_handle = self.pw_handle.take();
                 let fft_handle = self.fft_handle.take();
                 if pw_handle.is_some() && fft_handle.is_some() {
@@ -677,6 +677,5 @@ impl FftBackendImpl for PipeWireFftBackend {
                     let _ = handle.await;
                 }
             }
-        }
     }
 }

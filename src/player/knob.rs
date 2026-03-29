@@ -143,19 +143,43 @@ mod imp {
     // Trait shared by all widgets
     impl WidgetImpl for VolumeKnob {
         fn snapshot(&self, snapshot: &gtk::Snapshot) {
-            self.parent_snapshot(snapshot);
             let (w, h) = (self.obj().width(), self.obj().height());
+            let centre = (w as f64 / 2.0, h as f64 / 2.0);
+            let min_dim = w.min(h) as f64;
             let cr = snapshot.append_cairo(&graphene::Rect::new(
                 0.0, 0.0, w as f32, h as f32
             ));
             let fg = self.obj().color();
-            cr.set_source_rgb(fg.red() as f64, fg.green() as f64, fg.blue() as f64);
-            cr.set_line_width(2.0);
-            cr.set_line_cap(cr::LineCap::Square);
-            let min_dim = w.min(h) as f64;
-            let centre = (w as f64 / 2.0, h as f64 / 2.0);
-            cr.arc(centre.0, centre.1, min_dim / 2.0 - 1.0, PI / 2.0, PI / 2.0 + 2.0 * PI * self.value.get() / 100.0);
-            let _ = cr.stroke();
+            // New design: piechart-like mask + glowy radial gradient
+            cr.move_to(centre.0, centre.1 + min_dim);
+            cr.line_to(centre.0, centre.1);
+            cr.arc_negative(
+                centre.0, 
+                centre.1, 
+                min_dim / 2.0 - 1.0, 
+                PI / 2.0 + 2.0 * PI * self.value.get() / 100.0, PI / 2.0
+            );
+            cr.close_path();
+            let radial = cr::RadialGradient::new(
+                // Outer circle
+                centre.0, 
+                centre.1, 
+                min_dim / 2.0 - 1.0,
+
+                // Inner circle
+                centre.0, 
+                centre.1, 
+                min_dim / 2.0 - 10.0  // How far inward the gradient will extend
+            );
+            radial.add_color_stop_rgba(
+                0.0, fg.red() as f64, fg.green() as f64, fg.blue() as f64, 1.0
+            );
+            radial.add_color_stop_rgba(
+                1.0, fg.red() as f64, fg.green() as f64, fg.blue() as f64, 0.0
+            );
+            cr.set_source(radial);
+            cr.fill();
+            self.parent_snapshot(snapshot);
         }
     }
 

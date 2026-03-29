@@ -151,3 +151,8 @@ listview > row {
   background-color: var(--accent-bg-color);
   color: var(--accent-fg-color);
 }
+
+/* Avoid colouring text within elements with auto-accent applied */
+.fg-auto-accent label {
+  color: var(--view-fg-color);
+}
