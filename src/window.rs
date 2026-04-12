@@ -39,7 +39,7 @@ use glib::WeakRef;
 use gtk::{
     CssProvider, gdk, gio,
     glib::{self, BoxedAnyObject, clone, closure_local},
-    graphene, gsk,
+    graphene, gsk, cairo
 };
 use image::{DynamicImage, imageops::FilterType};
 use libblur::{FastBlurChannels, ThreadingPolicy, stack_blur};
@@ -119,18 +119,12 @@ fn get_dominant_color(img: &DynamicImage, is_dark: bool) -> RGB {
 
     // First, try to find a color that contrasts with the current UI mode (light color in dark mode, dark color in light mode)
     let mut suboptimal_luminance = false;
-    let mut dominant = palette
-        .iter()
-        .find(|c| c.is_dark() != is_dark)
-        .cloned();
+    let mut dominant = palette.iter().find(|c| c.is_dark() != is_dark).cloned();
 
     // If no matching color was found, fallback to the first color with saturation > 0.3
     if dominant.is_none() {
         suboptimal_luminance = true;
-        if let Some(saturated) = palette
-            .iter()
-            .find(|c| c.to_hsl().s > 0.3)
-        {
+        if let Some(saturated) = palette.iter().find(|c| c.to_hsl().s > 0.3) {
             dominant = Some(saturated.clone());
         } else {
             // If still no suitable color, fall back to the first color in the palette
@@ -256,6 +250,8 @@ mod imp {
         pub visualizer_use_splines: Cell<bool>,
         #[property(get, set)]
         pub visualizer_stroke_width: Cell<f64>,
+        #[property(get, set)]
+        pub use_cairo: Cell<bool>,
         #[property(get, set = Self::set_auto_accent)]
         pub auto_accent: Cell<bool>,
         pub tick_callback: RefCell<Option<gtk::TickCallbackId>>,
@@ -290,6 +286,8 @@ mod imp {
 
         fn constructed(&self) {
             self.parent_constructed();
+            // DEBUG
+            self.use_cairo.set(true);
             let settings = settings_manager().child("ui");
             let obj_borrow = self.obj();
             let obj = obj_borrow.as_ref();
@@ -683,8 +681,37 @@ mod imp {
                 let width32 = widget.width() as f32;
                 let height32 = widget.height() as f32;
                 let data = mutex.lock().unwrap();
-                self.draw_spectrum(snapshot, width32, height32, &data.0, scale, &fg);
-                self.draw_spectrum(snapshot, width32, height32, &data.1, scale, &fg);
+
+                match self.use_cairo.get() {
+                    true => {
+                        // New CPU‑only Cairo implementation
+                        self.draw_spectrum_cairo(
+                            snapshot,
+                            width32,
+                            height32,
+                            &data.0,
+                            scale,
+                            &fg,
+                            /* self.visualizer_top_opacity.get() as f32,
+                            self.visualizer_bottom_opacity.get() as f32, */
+                        );
+                        self.draw_spectrum_cairo(
+                            snapshot,
+                            width32,
+                            height32,
+                            &data.1,
+                            scale,
+                            &fg,
+                            /* self.visualizer_top_opacity.get() as f32,
+                            self.visualizer_bottom_opacity.get() as f32, */
+                        );
+                    }
+                    false => {
+                        // Existing GSK‑node implementation
+                        self.draw_spectrum(snapshot, width32, height32, &data.0, scale, &fg);
+                        self.draw_spectrum(snapshot, width32, height32, &data.1, scale, &fg);
+                    }
+                }
             }
             if should_blend {
                 // Add top layer of blend node
@@ -757,7 +784,7 @@ mod imp {
                     (color.blue() * 255.0).round() as u32,
                 );
                 self.provider.load_from_string(&format!(
-                        "
+                    "
 :root {{
     --accent-bg-color: rgb({}, {}, {});
 }}
@@ -765,8 +792,8 @@ mod imp {
     color: rgb({}, {}, {});
 }}
 ",
-                        r, g, b, r, g, b
-                    ));
+                    r, g, b, r, g, b
+                ));
             }
         }
 
@@ -860,21 +887,11 @@ mod imp {
             snapshot.push_fill(&path, gsk::FillRule::Winding);
             let bottom_stop = gsk::ColorStop::new(
                 0.0,
-                gdk::RGBA::new(
-                    color.red(),
-                    color.green(),
-                    color.blue(),
-                    self.visualizer_bottom_opacity.get() as f32 / 2.0,
-                ),
+                color.with_alpha(self.visualizer_bottom_opacity.get() as f32 / 2.0)
             );
             let top_stop = gsk::ColorStop::new(
                 1.0,
-                gdk::RGBA::new(
-                    color.red(),
-                    color.green(),
-                    color.blue(),
-                    self.visualizer_top_opacity.get() as f32 / 2.0,
-                ),
+                color.with_alpha(self.visualizer_top_opacity.get() as f32 / 2.0)
             );
             snapshot.append_linear_gradient(
                 &graphene::Rect::new(0.0, y_min, width, height),
@@ -890,6 +907,66 @@ mod imp {
             }
         }
 
+        fn draw_spectrum_cairo(
+            &self,
+            snapshot: &gtk::Snapshot,
+            width: f32,
+            height: f32,
+            data: &[f32],
+            scale: f32,
+            color: &gdk::RGBA
+        ) {
+            // Get a Cairo context that we can draw into.
+            // The snapshot will create a temporary GSK node that contains the surface.
+            if width > 0.0 && height > 0.0 {
+                let cr = snapshot.append_cairo(&graphene::Rect::new(0.0, 0.0, width, height));
+
+                // ----------  Build the polygon ----------
+                let band_width = width as f64 / (data.len() as f64 - 1.0);
+                let mut y_min = height as f64;
+                cr.move_to(0.0, y_min);
+                let y0 = (height - data[0] * scale * 1_000_000.0).max(0.0) as f64;
+                cr.line_to(0.0, y0);
+                y_min = y_min.min(y0);
+                for (i, level) in data.iter().enumerate().skip(1) {
+                    let x = (i as f64 + 1.0) * band_width;
+                    let y = (height - level * scale * 1_000_000.0).max(0.0) as f64;
+                    y_min = y_min.min(y);
+                    cr.line_to(x, y);
+                }
+                // Park the cursor at the bottom-right corner before closing path
+                cr.line_to(width as f64, height as f64);
+                cr.close_path();
+
+                // --------- Fill -----------
+                let gradient = cairo::LinearGradient::new(
+                    // Bottom left
+                    0.0, height as f64,
+                    // to highest point projected to bottom left
+                    0.0, y_min
+                );
+                gradient.add_color_stop_rgba(
+                    0.0, color.red() as f64, color.green() as f64, color.blue() as f64, 
+                    self.visualizer_bottom_opacity.get() / 2.0
+                );
+                gradient.add_color_stop_rgba(
+                    1.0, color.red() as f64, color.green() as f64, color.blue() as f64, 
+                    self.visualizer_top_opacity.get() / 2.0
+                );
+                cr.set_source(&gradient);
+                cr.fill();
+
+                // Optional stroke
+                let stroke_width = self.visualizer_stroke_width.get();
+                if stroke_width > 0.0 {
+                    cr.set_line_width(stroke_width as f64);
+                    cr.set_source_rgba(color.red() as f64, color.green() as f64, color.blue() as f64, 
+                    self.visualizer_top_opacity.get());
+                    cr.stroke();
+                }
+            }
+        }
+
         /// Whether any render node will be added to render the visualiser.
         ///
         /// This check is necessary to babysit the blend node's assertion that
@@ -902,9 +979,10 @@ mod imp {
                 return true;
             }
             if let Some(mutex) = self.fft_data.get()
-                && let Ok(data) = mutex.lock() {
-                    return (data.0.iter().sum::<f32>() + data.1.iter().sum::<f32>()) > 0.0;
-                }
+                && let Ok(data) = mutex.lock()
+            {
+                return (data.0.iter().sum::<f32>() + data.1.iter().sum::<f32>()) > 0.0;
+            }
             false
         }
 
@@ -1229,26 +1307,27 @@ impl EuphonicaWindow {
     pub fn maybe_populate_visible(&self) {
         let imp = self.imp();
         if imp.should_populate_visible.get()
-            && let Some(visible_child_name) = imp.stack.visible_child_name() {
-                match visible_child_name.as_str() {
-                    "recent" => {
-                        imp.recent_view.populate();
-                    }
-                    "albums" => {
-                        imp.album_view.populate();
-                    }
-                    "artists" => {
-                        imp.artist_view.populate();
-                    }
-                    "folders" => {
-                        imp.folder_view.populate();
-                    }
-                    "queue" => {
-                        imp.queue_view.populate();
-                    }
-                    _ => {}
+            && let Some(visible_child_name) = imp.stack.visible_child_name()
+        {
+            match visible_child_name.as_str() {
+                "recent" => {
+                    imp.recent_view.populate();
                 }
+                "albums" => {
+                    imp.album_view.populate();
+                }
+                "artists" => {
+                    imp.artist_view.populate();
+                }
+                "folders" => {
+                    imp.folder_view.populate();
+                }
+                "queue" => {
+                    imp.queue_view.populate();
+                }
+                _ => {}
             }
+        }
     }
 
     pub fn show_dialog(&self, heading: &str, body: &str) {

@@ -18,6 +18,7 @@ fn convert_to_dbfs(pct: f64) -> Result<f64, ()> {
 
 mod imp {
     use super::*;
+    use gtk::gdk;
     use once_cell::sync::Lazy;
 
     #[derive(Default, CompositeTemplate)]
@@ -146,11 +147,33 @@ mod imp {
             let (w, h) = (self.obj().width(), self.obj().height());
             let centre = (w as f64 / 2.0, h as f64 / 2.0);
             let min_dim = w.min(h) as f64;
-            let cr = snapshot.append_cairo(&graphene::Rect::new(
+            let bounds = graphene::Rect::new(
                 0.0, 0.0, w as f32, h as f32
-            ));
+            );
+            // Fade out the previous gradient conically 
+            snapshot.push_mask(gsk::MaskMode::Alpha);
+            // Conic gradient goes clockwise. Rotation=0 means starting at 12 o'clock.
+            // Our knob starts at 6 o'clock so we'll use a 180-deg rotation.
+            snapshot.append_conic_gradient(
+                &bounds, 
+                &graphene::Point::new(centre.0 as f32, centre.1 as f32), 
+                180.0, 
+                &[
+                    gsk::ColorStop::new(0.0, gdk::RGBA::BLACK.with_alpha(0.0)),
+                    // Full opacity at the current vol level's angle
+                    gsk::ColorStop::new(self.value.get() as f32 / 100.0, gdk::RGBA::BLACK),
+                ]
+            );
+            snapshot.pop();
+            
+            let cr = snapshot.append_cairo(&bounds);
             let fg = self.obj().color();
-            // New design: piechart-like mask + glowy radial gradient
+            // New design: piechart-like mask + glowy radial gradient.
+            // Also use a conical fading effect to more clearly indicate that this is a twistable
+            // and not just a button with fancy gradients when it's turned to 100%.
+            // Rendering model is a hybrid of Cairo (CPU) and GSK (maybe GPU) due to:
+            // - Cairo drawing partial circular arcs in a very straightforward way (GSK doesn't), but
+            // - GSK knowing what a conical gradient is.
             cr.move_to(centre.0, centre.1 + min_dim);
             cr.line_to(centre.0, centre.1);
             cr.arc_negative(
@@ -179,6 +202,8 @@ mod imp {
             );
             cr.set_source(radial);
             cr.fill();
+            snapshot.pop();
+            
             self.parent_snapshot(snapshot);
         }
     }

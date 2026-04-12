@@ -400,6 +400,15 @@ impl QueueView {
         };
     }
 
+    /// Determine whether to present an empty placeholder or queue contents
+    pub fn update_stack(&self, queue: &gio::ListStore) {
+        if queue.n_items() > 0 {
+            self.imp().content_stack.show_content();
+        } else {
+            self.imp().content_stack.show_placeholder();
+        }   
+    }
+
     pub fn bind_state(&self, player: &Player) {
         let player_queue = player.queue();
         let queue_title = self.imp().queue_title.get();
@@ -426,11 +435,7 @@ impl QueueView {
             clone!(
                 #[weak(rename_to = this)] self,
                 move |queue, _| {
-                    if queue.n_items() > 0 {
-                        this.imp().content_stack.show_content();
-                    } else {
-                        this.imp().content_stack.show_placeholder();
-                    }
+                    this.update_stack(queue);
                 }
             )
         );
@@ -611,6 +616,7 @@ impl LazyInit for QueueView {
                         stack.show_spinner();
                         player.update_queue().await;
                         this.imp().initializing.set(false);
+                        this.update_stack(player.queue());
                     }
                 ));
             }
