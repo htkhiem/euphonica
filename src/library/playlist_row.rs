@@ -136,15 +136,21 @@ impl PlaylistRow {
             #[weak(rename_to = this)]
             self,
             move |_| {
-                glib::spawn_future_local(clone!(#[weak] this, async move {
-                    if let (Some(library), Some(playlist)) = (
-                        this.imp().library.get(),
-                        this.imp().playlist.borrow().as_ref(),
-                    )
-                        && let Err(e) = library.queue_playlist(playlist.get_uri().to_owned(), true, true).await {
+                glib::spawn_future_local(clone!(
+                    #[weak]
+                    this,
+                    async move {
+                        if let (Some(library), Some(playlist)) = (
+                            this.imp().library.get(),
+                            this.imp().playlist.borrow().as_ref(),
+                        ) && let Err(e) = library
+                            .queue_playlist(playlist.get_uri().to_owned(), true, true)
+                            .await
+                        {
                             dbg!(e);
                         }
-                }));
+                    }
+                ));
             }
         ));
 
@@ -152,15 +158,21 @@ impl PlaylistRow {
             #[weak(rename_to = this)]
             self,
             move |_| {
-                glib::spawn_future_local(clone!(#[weak] this, async move {
-                    if let (Some(library), Some(playlist)) = (
-                    this.imp().library.get(),
-                    this.imp().playlist.borrow().as_ref(),
-                )
-                    && let Err(e) = library.queue_playlist(playlist.get_uri().to_owned(), false, false).await {
-                        dbg!(e);
+                glib::spawn_future_local(clone!(
+                    #[weak]
+                    this,
+                    async move {
+                        if let (Some(library), Some(playlist)) = (
+                            this.imp().library.get(),
+                            this.imp().playlist.borrow().as_ref(),
+                        ) && let Err(e) = library
+                            .queue_playlist(playlist.get_uri().to_owned(), false, false)
+                            .await
+                        {
+                            dbg!(e);
+                        }
                     }
-                }));
+                ));
             }
         ));
     }
@@ -173,7 +185,11 @@ impl PlaylistRow {
     }
 
     fn uri(&self) -> Option<String> {
-        self.imp().playlist.borrow().as_ref().map(|p| p.get_uri().to_owned())
+        self.imp()
+            .playlist
+            .borrow()
+            .as_ref()
+            .map(|p| p.get_uri().to_owned())
     }
 
     pub fn bind(&self, playlist: &INode) {
@@ -187,24 +203,26 @@ impl PlaylistRow {
             playlist,
             async move {
                 let uri = playlist.get_uri().to_owned();
-                let res = this.imp().cache.get().unwrap().get_playlist_cover(
-                    uri.clone(),
-                    this.imp().is_dynamic.get(),
-                    true,
-                ).await;
+                let res = this
+                    .imp()
+                    .cache
+                    .get()
+                    .unwrap()
+                    .get_playlist_cover(uri.clone(), this.imp().is_dynamic.get(), true)
+                    .await;
                 // Check again as row might have been bound to a different playlist
                 // while awaiting
                 if this.uri().is_some_and(|curr_uri| curr_uri == uri) {
                     match res {
                         Ok(Some(tex)) => {
-                            this.imp()
-                                .thumbnail
-                                .set_paintable(Some(&tex));
+                            this.imp().thumbnail.set_paintable(Some(&tex));
                         }
                         Ok(None) => {
                             this.clear_thumbnail();
                         }
-                        Err(e) => {dbg!(e);}
+                        Err(e) => {
+                            dbg!(e);
+                        }
                     }
                 } else {
                     println!("PlaylistRow now bound to a different playlist, ignoring texture");

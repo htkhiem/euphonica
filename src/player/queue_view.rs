@@ -78,7 +78,7 @@ mod imp {
         pub restore_last_pos: Cell<u8>,
 
         pub player: WeakRef<Player>,
-        pub initializing: Cell<bool>
+        pub initializing: Cell<bool>,
     }
 
     #[glib::object_subclass]
@@ -400,6 +400,15 @@ impl QueueView {
         };
     }
 
+    /// Determine whether to present an empty placeholder or queue contents
+    pub fn update_stack(&self, queue: &gio::ListStore) {
+        if queue.n_items() > 0 {
+            self.imp().content_stack.show_content();
+        } else {
+            self.imp().content_stack.show_placeholder();
+        }
+    }
+
     pub fn bind_state(&self, player: &Player) {
         let player_queue = player.queue();
         let queue_title = self.imp().queue_title.get();
@@ -424,15 +433,12 @@ impl QueueView {
         player_queue.connect_notify_local(
             Some("n-items"),
             clone!(
-                #[weak(rename_to = this)] self,
+                #[weak(rename_to = this)]
+                self,
                 move |queue, _| {
-                    if queue.n_items() > 0 {
-                        this.imp().content_stack.show_content();
-                    } else {
-                        this.imp().content_stack.show_placeholder();
-                    }
+                    this.update_stack(queue);
                 }
-            )
+            ),
         );
 
         player
@@ -598,21 +604,23 @@ impl QueueView {
 impl LazyInit for QueueView {
     fn populate(&self) {
         if let Some(player) = self.imp().player.upgrade()
-            && !player.queue_is_initialized() 
-            && !self.imp().initializing.get() {
-                self.imp().initializing.set(true);
-                glib::spawn_future_local(clone!(
-                    #[weak]
-                    player,
-                    #[weak(rename_to = this)]
-                    self,
-                    async move {
-                        let stack = this.imp().content_stack.get();
-                        stack.show_spinner();
-                        player.update_queue().await;
-                        this.imp().initializing.set(false);
-                    }
-                ));
-            }
+            && !player.queue_is_initialized()
+            && !self.imp().initializing.get()
+        {
+            self.imp().initializing.set(true);
+            glib::spawn_future_local(clone!(
+                #[weak]
+                player,
+                #[weak(rename_to = this)]
+                self,
+                async move {
+                    let stack = this.imp().content_stack.get();
+                    stack.show_spinner();
+                    player.update_queue().await;
+                    this.imp().initializing.set(false);
+                    this.update_stack(player.queue());
+                }
+            ));
+        }
     }
 }

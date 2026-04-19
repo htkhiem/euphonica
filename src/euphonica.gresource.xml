@@ -38,6 +38,7 @@
     <file preprocess="xml-stripblanks">gtk/player/bar.ui</file>
     <file preprocess="xml-stripblanks">gtk/player/pane.ui</file>
     <file preprocess="xml-stripblanks">gtk/player/seekbar.ui</file>
+    <file preprocess="xml-stripblanks">gtk/player/seekbar2.ui</file>
     <file preprocess="xml-stripblanks">gtk/player/playback-controls.ui</file>
     <file preprocess="xml-stripblanks">gtk/player/output.ui</file>
     <file preprocess="xml-stripblanks">gtk/player/volume-knob.ui</file>

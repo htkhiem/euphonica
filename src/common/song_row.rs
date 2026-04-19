@@ -11,7 +11,7 @@ use std::{
 
 use crate::{
     cache::{Cache, CacheState},
-    common::{QualityGrade, ImageStack, ImageState, Marquee, Song},
+    common::{ImageStack, ImageState, Marquee, QualityGrade, Song},
     player::Player,
 };
 
@@ -50,7 +50,7 @@ mod imp {
         pub thumbnail_signal_ids: RefCell<Option<(SignalHandlerId, SignalHandlerId)>>,
         pub playing_signal_id: RefCell<Option<SignalHandlerId>>,
         pub cache: OnceCell<Rc<Cache>>,
-        pub player: WeakRef<Player>
+        pub player: WeakRef<Player>,
     }
 
     // The central trait for subclassing a GObject
@@ -251,10 +251,14 @@ impl SongRow {
                             // This only affects folder-level arts, so only use them when we currently
                             // don't have any art.
                             if res.imp().thumbnail.get_state() == ImageState::Empty
-                                && res.imp().song.upgrade().is_some_and(|s| s.get_folder_uri() == uri) {
-                                    res.imp().thumbnail.show(&thumb);
-                                }
-
+                                && res
+                                    .imp()
+                                    .song
+                                    .upgrade()
+                                    .is_some_and(|s| s.get_folder_uri() == uri)
+                            {
+                                res.imp().thumbnail.show(&thumb);
+                            }
                         }
                     ),
                 ),
@@ -265,7 +269,12 @@ impl SongRow {
                         #[weak]
                         res,
                         move |_: CacheState, uri: &str| {
-                            if res.imp().song.upgrade().is_some_and(|s| s.get_folder_uri() == uri) {
+                            if res
+                                .imp()
+                                .song
+                                .upgrade()
+                                .is_some_and(|s| s.get_folder_uri() == uri)
+                            {
                                 res.imp().thumbnail.clear();
                             }
                         }
@@ -320,14 +329,16 @@ impl SongRow {
             #[weak(rename_to = this)]
             self,
             async move {
-                if let (Some(cache), Some(song)) = (
-                    this.imp().cache.get(),
-                    this.song()
-                ) {
-                    let res = cache.clone().get_song_cover(song.get_info(), true, true).await;
+                if let (Some(cache), Some(song)) = (this.imp().cache.get(), this.song()) {
+                    let res = cache
+                        .clone()
+                        .get_song_cover(song.get_info(), true, true)
+                        .await;
                     // Check again as row might have been bound to a different song
                     // while awaiting
-                    if this.song().is_some_and(|a| a.get_info().get_comp_id() == song.get_info().get_comp_id()) {
+                    if this.song().is_some_and(|a| {
+                        a.get_info().get_comp_id() == song.get_info().get_comp_id()
+                    }) {
                         match res {
                             Ok(Some(tex)) => this.imp().thumbnail.show(&tex),
                             Ok(None) => this.imp().thumbnail.clear(),

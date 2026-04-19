@@ -2,11 +2,11 @@ use adw::prelude::*;
 use adw::subclass::prelude::*;
 use ashpd::desktop::file_chooser::SelectedFiles;
 use glib::{WeakRef, clone, closure_local, subclass::Signal};
-use gtk::{CompositeTemplate, ListItem, SignalListItemFactory, gio, glib, gdk::Texture};
+use gtk::{CompositeTemplate, ListItem, SignalListItemFactory, gdk::Texture, gio, glib};
 use std::{
-    cell::{OnceCell, RefCell, Cell},
-    sync::OnceLock,
+    cell::{Cell, OnceCell, RefCell},
     rc::Rc,
+    sync::OnceLock,
 };
 use uuid::Uuid;
 
@@ -16,9 +16,8 @@ use strum::{EnumCount, IntoEnumIterator, VariantArray};
 use crate::{
     cache::{Cache, ImageAction, sqlite},
     common::{
-        DynamicPlaylist, Song, SongRow,
+        DynamicPlaylist, ImageStack, Song, SongRow,
         dynamic_playlist::{AutoRefresh, Ordering, Rule},
-        ImageStack,
     },
     utils::{format_secs_as_duration, tokio_runtime},
     window::EuphonicaWindow,
@@ -270,23 +269,30 @@ mod imp {
                 .build();
 
             self.refresh_btn.connect_clicked(clone!(
-                #[weak(rename_to = this)] self,
+                #[weak(rename_to = this)]
+                self,
                 move |_| {
-                    glib::spawn_future_local(clone!(#[weak] this, async move {
-                        this.obj().preview_result().await;
-                    }));
+                    glib::spawn_future_local(clone!(
+                        #[weak]
+                        this,
+                        async move {
+                            this.obj().preview_result().await;
+                        }
+                    ));
                 }
             ));
 
             self.exit_btn.connect_clicked(clone!(
-                #[weak(rename_to = this)] self,
+                #[weak(rename_to = this)]
+                self,
                 move |_| {
                     this.obj().exit(false);
                 }
             ));
 
             self.save_btn.connect_clicked(clone!(
-                #[weak(rename_to = this)] self,
+                #[weak(rename_to = this)]
+                self,
                 move |_| {
                     this.obj().on_save_btn_clicked();
                 }
@@ -354,28 +360,32 @@ impl DynamicPlaylistEditorView {
     fn open_cover_file_dialog(&self) {
         let (sender, receiver) = oneshot::channel();
         tokio_runtime().spawn(async move {
-            sender.send(match SelectedFiles::open_file()
-                .title("Select a new cover image")
-                .modal(true)
-                .multiple(false)
-                .send()
-                .await
-                .expect("ashpd file open await failure")
-                .response()
-            {
-                Ok(files) => {
-                    let uris = files.uris();
-                    if !uris.is_empty() {
-                        Some(uris[0].to_string())
-                    } else {
-                        None
-                    }
-                }
-                Err(e) => {
-                    dbg!(e);
-                    None
-                }
-            }).expect("Broken oneshot sender");
+            sender
+                .send(
+                    match SelectedFiles::open_file()
+                        .title("Select a new cover image")
+                        .modal(true)
+                        .multiple(false)
+                        .send()
+                        .await
+                        .expect("ashpd file open await failure")
+                        .response()
+                    {
+                        Ok(files) => {
+                            let uris = files.uris();
+                            if !uris.is_empty() {
+                                Some(uris[0].to_string())
+                            } else {
+                                None
+                            }
+                        }
+                        Err(e) => {
+                            dbg!(e);
+                            None
+                        }
+                    },
+                )
+                .expect("Broken oneshot sender");
         });
         glib::spawn_future_local(clone!(
             #[weak(rename_to = this)]
@@ -390,12 +400,7 @@ impl DynamicPlaylistEditorView {
         ));
     }
 
-    pub fn setup(
-        &self,
-        library: &Library,
-        cache: Rc<Cache>,
-        window: &EuphonicaWindow,
-    ) {
+    pub fn setup(&self, library: &Library, cache: Rc<Cache>, window: &EuphonicaWindow) {
         self.imp()
             .cache
             .set(cache.clone())
@@ -644,7 +649,9 @@ impl DynamicPlaylistEditorView {
         self.imp()
             .cover_action
             .replace(ImageAction::New(filepath.clone()));
-        self.imp().cover.show(&Texture::from_filename(filepath).unwrap());
+        self.imp()
+            .cover
+            .show(&Texture::from_filename(filepath).unwrap());
         self.on_change();
     }
 
@@ -661,7 +668,14 @@ impl DynamicPlaylistEditorView {
         self.imp().cover.show_spinner();
 
         // Fetch high resolution playlist cover
-        match self.imp().cache.get().unwrap().get_playlist_cover(dp.name.to_owned(), true, false).await {
+        match self
+            .imp()
+            .cache
+            .get()
+            .unwrap()
+            .get_playlist_cover(dp.name.to_owned(), true, false)
+            .await
+        {
             Ok(Some(tex)) => {
                 self.imp().cover_action.replace(ImageAction::Existing(true));
                 self.imp().cover.show(&tex);
@@ -669,7 +683,9 @@ impl DynamicPlaylistEditorView {
             Ok(None) => {
                 self.imp().cover.clear();
             }
-            Err(e) => {dbg!(e);}
+            Err(e) => {
+                dbg!(e);
+            }
         }
     }
 
@@ -723,22 +739,28 @@ impl DynamicPlaylistEditorView {
         println!("{:?}", &dp);
 
         // Don't cache as self DP is still being edited
-        match self.get_library()
-                  .unwrap()
-                  .get_dynamic_playlist_songs(dp, false).await
+        match self
+            .get_library()
+            .unwrap()
+            .get_dynamic_playlist_songs(dp, false)
+            .await
         {
             Ok(songs) => {
                 self.imp().song_list.extend_from_slice(&songs);
-                self.imp().runtime.set_label(
-                    &format_secs_as_duration(
-                        songs.iter().map(|s| s.get_duration()).sum::<u64>() as f64
-                    )
-                );
-                self.imp().content_pages.set_visible_child_name(
-                    if !songs.is_empty() {"content"} else {"empty"}
-                );
+                self.imp().runtime.set_label(&format_secs_as_duration(
+                    songs.iter().map(|s| s.get_duration()).sum::<u64>() as f64,
+                ));
+                self.imp()
+                    .content_pages
+                    .set_visible_child_name(if !songs.is_empty() {
+                        "content"
+                    } else {
+                        "empty"
+                    });
             }
-            Err(e) => {dbg!(e);}
+            Err(e) => {
+                dbg!(e);
+            }
         };
         self.imp().refresh_btn.set_sensitive(true);
     }
@@ -794,18 +816,24 @@ impl DynamicPlaylistEditorView {
             self,
             async move {
                 let dp = this.build_dynamic_playlist();
-                let res = this.imp().cache.get().unwrap().insert_dynamic_playlist(
-                    dp,
-                    cover_action,
-                    Some(
-                        this.imp()
-                            .editing_name
-                            .borrow()
-                            .as_deref()
-                            .unwrap_or(this.imp().title.text().as_str())
-                            .to_string(),
-                    ),
-                ).await;
+                let res = this
+                    .imp()
+                    .cache
+                    .get()
+                    .unwrap()
+                    .insert_dynamic_playlist(
+                        dp,
+                        cover_action,
+                        Some(
+                            this.imp()
+                                .editing_name
+                                .borrow()
+                                .as_deref()
+                                .unwrap_or(this.imp().title.text().as_str())
+                                .to_string(),
+                        ),
+                    )
+                    .await;
                 let stack = this.imp().save_btn_content.get();
                 if stack.visible_child_name().unwrap() != "label" {
                     stack.set_visible_child_name("label");
@@ -890,7 +918,9 @@ impl DynamicPlaylistEditorView {
 
     pub fn init(&self, dp: DynamicPlaylist) {
         glib::spawn_future_local(clone!(
-            #[weak(rename_to = this)] self, async move {
+            #[weak(rename_to = this)]
+            self,
+            async move {
                 let imp = this.imp();
                 // Set editor into edit mode and not "create new"
                 imp.editing_name.replace(Some(dp.name.clone()));

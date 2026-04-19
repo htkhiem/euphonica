@@ -252,9 +252,9 @@ mod imp {
                                     && let Err(e) = cache
                                         .clear_cover(album.get_folder_uri().to_owned(), true)
                                         .await
-                                    {
-                                        obj.show_cache_error("Couldn't clear cover", e);
-                                    }
+                                {
+                                    obj.show_cache_error("Couldn't clear cover", e);
+                                }
                             }
                         ));
                     }
@@ -486,9 +486,9 @@ impl AlbumContentView {
             && let Err(e) = cache
                 .set_cover(album.get_folder_uri().to_owned(), path, true)
                 .await
-            {
-                self.show_cache_error("Couldn't set cover", e);
-            }
+        {
+            self.show_cache_error("Couldn't set cover", e);
+        }
     }
 
     fn set_is_queuing(&self, queuing: bool) {
@@ -760,9 +760,9 @@ impl AlbumContentView {
                             && let Err(e) = library
                                 .queue_album(album.clone(), true, true, Some(position))
                                 .await
-                            {
-                                dbg!(e);
-                            }
+                        {
+                            dbg!(e);
+                        }
                     }
                 ));
             }
@@ -940,9 +940,10 @@ impl AlbumContentView {
         self.imp().artist_tags.remove_all();
 
         if let Some(id) = self.imp().cover_signal_id.take()
-            && let Some(cache) = self.imp().cache.get() {
-                cache.get_cache_state().disconnect(id);
-            }
+            && let Some(cache) = self.imp().cache.get()
+        {
+            cache.get_cache_state().disconnect(id);
+        }
         if let Some(_) = self.imp().album.take() {
             self.clear_cover();
         }

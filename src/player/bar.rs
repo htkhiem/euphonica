@@ -5,13 +5,19 @@ use gtk::{
     prelude::*,
     subclass::prelude::*,
 };
-use std::{cell::{Cell, RefCell}, rc::Rc};
 use std::sync::OnceLock;
+use std::{
+    cell::{Cell, RefCell},
+    rc::Rc,
+};
 
 use crate::{
-    cache::{Cache, placeholders::{EMPTY_ALBUM_STRING, EMPTY_ARTIST_STRING}},
-    common::{Marquee, Song, ImageStack},
-    player::{ratio_center_box::RatioCenterBox, seekbar::Seekbar},
+    cache::{
+        Cache,
+        placeholders::{EMPTY_ALBUM_STRING, EMPTY_ARTIST_STRING},
+    },
+    common::{ImageStack, Marquee, Song},
+    player::{ratio_center_box::RatioCenterBox, seekbar2::Seekbar},
     utils::settings_manager,
 };
 
@@ -27,7 +33,7 @@ mod imp {
         #[template_child]
         pub multi_layout_view: TemplateChild<adw::MultiLayoutView>,
         #[template_child]
-        pub full_layout_box: TemplateChild<RatioCenterBox>,
+        pub full_center_box: TemplateChild<RatioCenterBox>,
         // Left side: current song info
         #[template_child]
         pub albumart: TemplateChild<ImageStack>,
@@ -35,8 +41,6 @@ mod imp {
         pub info_box: TemplateChild<gtk::Box>,
         #[template_child]
         pub infobox_revealer: TemplateChild<gtk::Revealer>,
-        #[template_child]
-        pub mini_infobox_revealer: TemplateChild<gtk::Revealer>,
         #[template_child]
         pub song_name: TemplateChild<Marquee>,
         #[template_child]
@@ -71,7 +75,7 @@ mod imp {
         pub current_output: Cell<usize>,
         pub output_count: Cell<usize>,
         #[property(get, set)]
-        pub collapsed: Cell<bool>, // If true, will turn into a minimal bar that can fit narrow displays (e.g., phones)
+        pub layout: Cell<u32>, // 0: micro, 1: mini, 2: full. TODO: turn into enum.
     }
 
     // The central trait for subclassing a GObject
@@ -98,48 +102,34 @@ mod imp {
             self.parent_constructed();
             let obj = self.obj();
 
-            obj.bind_property("collapsed", &self.multi_layout_view.get(), "layout-name")
-                .transform_to(|_, collapsed: bool| {
-                    if collapsed {
-                        Some("mini")
-                    } else {
-                        Some("full")
-                    }
+            obj.bind_property("layout", &self.multi_layout_view.get(), "layout-name")
+                .transform_to(|_, layout: u32| match layout {
+                    0 => Some("micro".to_value()),
+                    1 => Some("mini".to_value()),
+                    2 => Some("full".to_value()),
+                    _ => unimplemented!(),
                 })
                 .sync_create()
                 .build();
 
-            obj.bind_property("collapsed", &self.albumart.get(), "size")
-                .transform_to(
-                    |_, collapsed: bool| {
-                        if collapsed { Some(48) } else { Some(115) }
-                    },
-                )
-                .sync_create()
-                .build();
-
-            obj.bind_property("collapsed", &self.seekbar.get(), "visible")
-                .invert_boolean()
+            obj.bind_property("layout", &self.seekbar.get(), "visible")
+                .transform_to(|_, layout: u32| Some((layout > 0).to_value()))
                 .sync_create()
                 .build();
 
             // Hide certain widgets when in compact mode
-            obj.bind_property("collapsed", &self.album.get(), "visible")
-                .invert_boolean()
+            obj.bind_property("layout", &self.album.get(), "visible")
+                .transform_to(|_, layout: u32| Some((layout > 1).to_value()))
                 .sync_create()
                 .build();
 
-            obj.bind_property("collapsed", &self.output_section.get(), "visible")
-                .invert_boolean()
+            obj.bind_property("layout", &self.output_section.get(), "visible")
+                .transform_to(|_, layout: u32| Some((layout > 1).to_value()))
                 .sync_create()
                 .build();
 
-            obj.bind_property("collapsed", &self.vol_knob.get(), "visible")
-                .invert_boolean()
-                .sync_create()
-                .build();
-
-            obj.bind_property("collapsed", &self.goto_pane.get(), "visible")
+            obj.bind_property("layout", &self.vol_knob.get(), "visible")
+                .transform_to(|_, layout: u32| Some((layout > 1).to_value()))
                 .sync_create()
                 .build();
 
@@ -210,31 +200,47 @@ impl PlayerBar {
         knob.connect_notify_local(
             Some("value"),
             clone!(
-                #[weak] player,
+                #[weak]
+                player,
                 move |knob: &VolumeKnob, _| {
                     let val = knob.value().round() as i8;
-                    glib::spawn_future_local(clone!(#[weak] player, async move {
-                        if let Err(e) = player.send_set_volume(val).await {dbg!(e);}
-                    }));
+                    glib::spawn_future_local(clone!(
+                        #[weak]
+                        player,
+                        async move {
+                            if let Err(e) = player.send_set_volume(val).await {
+                                dbg!(e);
+                            }
+                        }
+                    ));
                 }
             ),
         );
 
         knob.connect_notify_local(
-            Some("is-muted"),
+            Some("active"),
             clone!(
-                #[weak] player,
+                #[weak]
+                player,
                 move |knob: &VolumeKnob, _| {
                     let val = knob.value().round() as i8;
-                    let muted = knob.is_muted();
-                    glib::spawn_future_local(clone!(#[weak] player, async move {
-                        if muted {
-                            if let Err(e) = player.send_set_volume(0).await {dbg!(e);}
-                        } else {
-                            // Restore previous volume
-                            if let Err(e) = player.send_set_volume(val).await {dbg!(e);}
+                    let muted = knob.is_active();
+                    glib::spawn_future_local(clone!(
+                        #[weak]
+                        player,
+                        async move {
+                            if muted {
+                                if let Err(e) = player.send_set_volume(0).await {
+                                    dbg!(e);
+                                }
+                            } else {
+                                // Restore previous volume
+                                if let Err(e) = player.send_set_volume(val).await {
+                                    dbg!(e);
+                                }
+                            }
                         }
-                    }));
+                    ));
                 }
             ),
         );
@@ -244,7 +250,7 @@ impl PlayerBar {
             "volume-changed",
             false,
             closure_local!(|_: Player, val: i8| {
-                if !knob.is_muted() {
+                if !knob.is_active() {
                     knob.sync_value(val);
                 }
             }),
@@ -255,17 +261,10 @@ impl PlayerBar {
         let imp = self.imp();
 
         let infobox_revealer = imp.infobox_revealer.get();
-        let mini_infobox_revealer = imp.mini_infobox_revealer.get();
         let seekbar_revealer = imp.seekbar_revealer.get();
         // Also controls seekbar revealer, see binding in bar.ui
         player
             .bind_property("playback-state", &infobox_revealer, "reveal_child")
-            .transform_to(|_, state: PlaybackState| Some(state != PlaybackState::Stopped))
-            .sync_create()
-            .build();
-
-        player
-            .bind_property("playback-state", &mini_infobox_revealer, "reveal_child")
             .transform_to(|_, state: PlaybackState| Some(state != PlaybackState::Stopped))
             .sync_create()
             .build();
@@ -313,7 +312,8 @@ impl PlayerBar {
             "outputs-changed",
             false,
             closure_local!(
-                #[weak(rename_to = this)] self,
+                #[weak(rename_to = this)]
+                self,
                 move |player: Player| {
                     this.update_outputs(&player);
                 }
@@ -325,8 +325,10 @@ impl PlayerBar {
             "cover-changed",
             false,
             closure_local!(
-                #[weak(rename_to = this)] self,
-                #[weak] cache,
+                #[weak(rename_to = this)]
+                self,
+                #[weak]
+                cache,
                 move |p: Player| {
                     this.update_album_art(p.current_song(), cache.clone());
                 }
@@ -340,7 +342,6 @@ impl PlayerBar {
                 this.prev_output();
             }
         ));
-
         self.imp().next_output.connect_clicked(clone!(
             #[weak(rename_to = this)]
             self,
@@ -352,8 +353,10 @@ impl PlayerBar {
 
     fn update_album_art(&self, song: Option<Song>, cache: Rc<Cache>) {
         glib::spawn_future_local(clone!(
-            #[weak(rename_to = this)] self,
-            #[weak] cache,
+            #[weak(rename_to = this)]
+            self,
+            #[weak]
+            cache,
             async move {
                 if let Some(song) = song {
                     this.imp().albumart.show_spinner();

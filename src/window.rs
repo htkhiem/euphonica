@@ -21,7 +21,7 @@
 use crate::{
     application::EuphonicaApplication,
     client::{ClientState, ConnectionState, Result as ClientResult},
-    common::{Album, Artist, INode, ThemeSelector, blend_mode::*, paintables::FadePaintable},
+    common::{Album, Artist, INode, ThemeSelector, paintables::FadePaintable},
     library::{
         AlbumView, ArtistContentView, ArtistView, DynamicPlaylistView, FolderView, PlaylistView,
         RecentView,
@@ -31,13 +31,10 @@ use crate::{
     utils::{self, LazyInit, settings_manager},
 };
 use adw::{ColorScheme, StyleManager, prelude::*, subclass::prelude::*};
-use auto_palette::{
-    ImageData, Palette,
-    color::{HSL, RGB},
-};
+use auto_palette::{ImageData, Palette, color::RGB};
 use glib::WeakRef;
 use gtk::{
-    CssProvider, gdk, gio,
+    CssProvider, cairo, gdk, gio,
     glib::{self, BoxedAnyObject, clone, closure_local},
     graphene, gsk,
 };
@@ -74,6 +71,11 @@ pub struct BlurConfig {
     radius: u32,
     is_dark: bool,
     fade: bool, // Whether this update requires fading to it. Those for updating radius shouldn't be faded.
+}
+
+#[inline]
+fn compute_visualizer_y(val: f32, surface_height: f32, scale_factor: f32) -> f32 {
+    (surface_height - val * scale_factor * 1_000_000.0).max(0.0)
 }
 
 fn run_blur(di: &DynamicImage, config: &BlurConfig) -> gdk::MemoryTexture {
@@ -114,26 +116,41 @@ fn get_dominant_color(img: &DynamicImage, is_dark: bool) -> RGB {
             .unwrap()
             .find_swatches(PALETTE_SIZE)
             .iter()
-            .map(|c| c.color().to_hsl())
-            .collect::<Vec<HSL<f32>>>();
+            .map(|c| c.color().clone())
+            .collect::<Vec<auto_palette::color::Color<f32>>>();
 
-    // Find first colour with saturation > 0.3, in case the first dominant
-    // colours are too greyish.
-    let mut dominant = 0;
-    while palette[dominant].s < 0.3 && dominant < palette.len() - 1 {
-        dominant += 1;
+    // First, try to find a color that contrasts with the current UI mode (light color in dark mode, dark color in light mode)
+    let mut suboptimal_luminance = false;
+    let mut dominant = palette.iter().find(|c| c.is_dark() != is_dark).cloned();
+
+    // If no matching color was found, fallback to the first color with saturation > 0.3
+    if dominant.is_none() {
+        suboptimal_luminance = true;
+        if let Some(saturated) = palette.iter().find(|c| c.to_hsl().s > 0.3) {
+            dominant = Some(saturated.clone());
+        } else {
+            // If still no suitable color, fall back to the first color in the palette
+            dominant = palette.first().cloned();
+        }
     }
-    let mut dominant = palette[dominant].clone();
 
-    if is_dark {
-        // If is_dark, ensure the dominant colour is at least this level
-        dominant.l = dominant.l.max(0.6);
+    let mut dominant = dominant.unwrap();
+
+    // Convert to HSL for luminance adjustment
+    if suboptimal_luminance {
+        let mut hsl = dominant.to_hsl();
+
+        // Adjust luminance based on theme mode
+        if is_dark {
+            hsl.l = hsl.l.max(0.6).min(0.85);
+        } else {
+            hsl.l = hsl.l.min(0.35).max(0.19);
+        }
+
+        RGB::from(&hsl)
     } else {
-        // Conversely if in light mode, ensure it is at most this level
-        dominant.l = dominant.l.min(0.3);
+        dominant.to_rgb()
     }
-
-    RGB::from(&dominant)
 }
 
 pub enum WindowMessage {
@@ -230,11 +247,11 @@ mod imp {
         #[property(get, set)]
         pub visualizer_scale: Cell<f64>,
         #[property(get, set)]
-        pub visualizer_blend_mode: Cell<u32>,
-        #[property(get, set)]
         pub visualizer_use_splines: Cell<bool>,
         #[property(get, set)]
         pub visualizer_stroke_width: Cell<f64>,
+        #[property(get, set)]
+        pub visualizer_use_cairo: Cell<bool>,
         #[property(get, set = Self::set_auto_accent)]
         pub auto_accent: Cell<bool>,
         pub tick_callback: RefCell<Option<gtk::TickCallbackId>>,
@@ -243,6 +260,11 @@ mod imp {
         pub should_populate_visible: Cell<bool>,
 
         pub provider: CssProvider,
+
+        // FPS tracking (debug)
+        pub fps_frame_count: Cell<u64>,
+        pub fps_last_time: Cell<Option<std::time::Instant>>,
+        pub fps_tick_id: RefCell<Option<gtk::TickCallbackId>>,
     }
 
     #[glib::object_subclass]
@@ -393,7 +415,8 @@ mod imp {
                 .build();
 
             settings
-                .bind("visualizer-blend-mode", obj, "visualizer-blend-mode")
+                .bind("visualizer-use-cairo", obj, "visualizer-use-cairo")
+                .get_only()
                 .build();
 
             settings
@@ -600,13 +623,40 @@ mod imp {
                     }
                 }
             ));
+
+            // FPS counter (debug) – prints to stdout every 2 seconds
+            // self.fps_frame_count.set(0);
+            // self.fps_last_time.set(Some(std::time::Instant::now()));
+            // let obj = self.obj();
+            // let fps_tick = obj.add_tick_callback(clone!(
+            //     #[weak(rename_to = this)]
+            //     self,
+            //     move |_widget, _delta| {
+            //         let count = this.fps_frame_count.get();
+            //         this.fps_frame_count.set(count + 1);
+            //         let now = std::time::Instant::now();
+            //         if let Some(last) = this.fps_last_time.get() {
+            //             let elapsed = now.duration_since(last);
+            //             if elapsed.as_secs_f64() >= 2.0 {
+            //                 let fps = count as f64 / elapsed.as_secs_f64();
+            //                 println!("FPS: {:.1}", fps);
+            //                 this.fps_frame_count.set(0);
+            //                 this.fps_last_time.set(Some(now));
+            //             }
+            //         } else {
+            //             this.fps_last_time.set(Some(now));
+            //         }
+            //         glib::ControlFlow::Continue
+            //     }
+            // ));
+            // self.fps_tick_id.replace(Some(fps_tick));
+
+            self.update_accent_color();
         }
     }
     impl WidgetImpl for EuphonicaWindow {
         fn snapshot(&self, snapshot: &gtk::Snapshot) {
             let widget = self.obj();
-            let mut should_blend = false;
-            let blend_mode: BlendMode = self.visualizer_blend_mode.get().try_into().unwrap();
             // Statically-cached blur
             if self.use_album_art_bg.get() {
                 // Check if window has been resized (will need reblur)
@@ -619,10 +669,6 @@ mod imp {
                     // comes back with a better one.
                 }
                 if self.bg_paintable.will_paint() {
-                    if self.will_draw_spectrum() {
-                        should_blend = true;
-                        snapshot.push_blend(blend_mode.into());
-                    }
                     let bg_opacity = self.bg_opacity.get();
                     if bg_opacity < 1.0 {
                         snapshot.push_opacity(bg_opacity);
@@ -633,9 +679,6 @@ mod imp {
                         widget.height() as f64,
                     );
                     if bg_opacity < 1.0 {
-                        snapshot.pop();
-                    }
-                    if should_blend {
                         snapshot.pop();
                     }
                 }
@@ -654,20 +697,27 @@ mod imp {
                         1.0,
                     );
                 } else {
-                    fg = widget.color();
+                    fg = adw::StyleManager::default().accent_color_rgba();
                 }
                 // Halve configured opacity since we're drawing two channels
                 let width32 = widget.width() as f32;
                 let height32 = widget.height() as f32;
                 let data = mutex.lock().unwrap();
-                self.draw_spectrum(snapshot, width32, height32, &data.0, scale, &fg);
-                self.draw_spectrum(snapshot, width32, height32, &data.1, scale, &fg);
-            }
-            if should_blend {
-                // Add top layer of blend node
-                snapshot.pop();
-            }
 
+                match self.visualizer_use_cairo.get() {
+                    true => {
+                        // New CPU‑only Cairo implementation
+                        self.draw_spectrum_cairo_pair(
+                            snapshot, width32, height32, &data.0, &data.1, scale, &fg,
+                        );
+                    }
+                    false => {
+                        // Existing GSK‑node implementation
+                        self.draw_spectrum(snapshot, width32, height32, &data.0, scale, &fg);
+                        self.draw_spectrum(snapshot, width32, height32, &data.1, scale, &fg);
+                    }
+                }
+            }
             // Call the parent class's snapshot() method to render child widgets
             self.parent_snapshot(snapshot);
         }
@@ -727,7 +777,23 @@ mod imp {
                 }
             } else {
                 // If no accent colour is given, revert to system accent colour
-                self.provider.load_from_string("");
+                let color = adw::StyleManager::default().accent_color_rgba();
+                let (r, g, b) = (
+                    (color.red() * 255.0).round() as u32,
+                    (color.green() * 255.0).round() as u32,
+                    (color.blue() * 255.0).round() as u32,
+                );
+                self.provider.load_from_string(&format!(
+                    "
+:root {{
+    --accent-bg-color: rgb({}, {}, {});
+}}
+.fg-auto-accent {{
+    color: rgb({}, {}, {});
+}}
+",
+                    r, g, b, r, g, b
+                ));
             }
         }
 
@@ -750,6 +816,49 @@ mod imp {
             }
         }
 
+        #[inline]
+        fn trace_spectrum_top(
+            path_builder: &gsk::PathBuilder,
+            band_width: f32,
+            height: f32, // STILL WINDOW HEIGHT
+            ys: &[f32],
+            use_splines: bool,
+        ) {
+            let n = ys.len();
+            if use_splines {
+                // Catmull-Rom spline via cubic Bezier (goes smoothly through all points).
+                // For segment i (from P[i] to P[i+1]):
+                //   cp1 = P[i] + (P[i+1] - P[i-1]) / 6
+                //   cp2 = P[i+1] - (P[i+2] - P[i]) / 6
+                // Boundary clamping: P[-1] = P[0], P[n+1] = P[n-1].
+
+                for i in 1..(n-1) {
+                    let p0 = if i == 0 { 0 } else { i - 1 };
+                    let p1 = i;
+                    let p2 = i + 1;
+                    let p3 = if i + 2 < n { i + 2 } else { n - 1 };
+
+                    let x1 = p1 as f32 * band_width;
+                    let x2 = p2 as f32 * band_width;
+
+                    let ctrl1_x = x1 + (x2 - p0 as f32 * band_width) / 6.0;
+                    let ctrl1_y = ys[p1] + (ys[p2] - ys[p0]) / 6.0;
+                    let ctrl2_x = x2 - (p3 as f32 * band_width - x1) / 6.0;
+                    let ctrl2_y = ys[p2] - (ys[p3] - ys[p1]) / 6.0;
+
+                    path_builder.cubic_to(ctrl1_x, ctrl1_y, ctrl2_x, ctrl2_y, x2, ys[p2]);
+                }
+            } else {
+                // Straight segments mode
+                for (band_idx, y) in ys[0..n].iter().enumerate().skip(1) {
+                    path_builder.line_to(
+                        (band_idx as f32) * band_width,
+                        *y,
+                    );
+                }
+            }
+        }
+
         fn draw_spectrum(
             &self,
             snapshot: &gtk::Snapshot,
@@ -759,83 +868,37 @@ mod imp {
             scale: f32,
             color: &gdk::RGBA,
         ) {
+            let n = data.len();
+            let mut ys = Vec::with_capacity(n);
+            for &level in data {
+                ys.push(compute_visualizer_y(level, height, scale));
+            }
+            // y-axis is top-down so min-y is the highest point :)
             let band_width = width / (data.len() as f32 - 1.0);
-
             let path_builder = gsk::PathBuilder::new();
             path_builder.move_to(0.0, height);
-            path_builder.line_to(0.0, (height - data[0] * scale).max(0.0));
-
-            // y-axis is top-down so min-y is the highest point :)
-            let mut y_min = height;
-
-            if self.visualizer_use_splines.get() {
-                // Spline mode. Since we can make 2 assumptions:
-                // - No two points share the same x-coordinate (duh), and
-                // - X-coordinates are monotonically increasing
-                // we can cheat a bit and avoid having to solve for Beizer control points.
-                let half_width = band_width / 2.0;
-                let quarter_width = band_width / 4.0;
-                for i in 0..(data.len() - 1) {
-                    let x = (i as f32 + 1.0) * band_width;
-                    let y = (height - data[i] * scale * 1000000.0).max(0.0);
-                    y_min = y_min.min(y);
-                    let x_next = x + band_width;
-                    let y_next = (height - data[i + 1] * scale * 1000000.0).max(0.0);
-                    // Midpoint
-                    let x_mid = x + half_width;
-                    let y_mid =
-                        (height - (data[i] + data[i + 1]) / 2.0 * scale * 1000000.0).max(0.0);
-                    // The next two will serve as control points.
-                    // Between current point and midpoint
-                    let x_left_mid = x + quarter_width;
-                    // Between midpoint and next point
-                    let x_right_mid = x_mid + quarter_width;
-                    // First curve, from current point to midpoint
-                    path_builder.quad_to(
-                        // Control point
-                        x_left_mid, y, x_mid, y_mid,
-                    );
-                    // Second curve, from midpoint to next point
-                    path_builder.quad_to(
-                        // Control point
-                        x_right_mid,
-                        y_next,
-                        x_next,
-                        y_next,
-                    );
-                }
-            } else {
-                // Straight segments mode
-                for (band_idx, level) in data[1..data.len()].iter().enumerate() {
-                    let y = (height - level * scale * 1000000.0).max(0.0);
-                    y_min = y_min.min(y);
-                    path_builder.line_to(
-                        (band_idx as f32 + 1.0) * band_width,
-                        (height - level * scale * 1000000.0).max(0.0),
-                    );
-                }
-            }
+            path_builder.line_to(0.0, ys[0]);
+            let use_splines = self.visualizer_use_splines.get();
+            Self::trace_spectrum_top(&path_builder, band_width, height, &ys, use_splines);
+            // Park at bottom-right
             path_builder.line_to(width, height);
             let path = path_builder.to_path();
 
-            snapshot.push_fill(&path, gsk::FillRule::Winding);
+            let mut y_min = ys[0];
+            for y in ys[1..].iter() {
+                if *y < y_min {
+                    y_min = *y;
+                }
+            }
+
+            snapshot.push_fill(&path, gsk::FillRule::EvenOdd);
             let bottom_stop = gsk::ColorStop::new(
                 0.0,
-                gdk::RGBA::new(
-                    color.red(),
-                    color.green(),
-                    color.blue(),
-                    self.visualizer_bottom_opacity.get() as f32 / 2.0,
-                ),
+                color.with_alpha(self.visualizer_bottom_opacity.get() as f32 / 2.0),
             );
             let top_stop = gsk::ColorStop::new(
                 1.0,
-                gdk::RGBA::new(
-                    color.red(),
-                    color.green(),
-                    color.blue(),
-                    self.visualizer_top_opacity.get() as f32 / 2.0,
-                ),
+                color.with_alpha(self.visualizer_top_opacity.get() as f32 / 2.0),
             );
             snapshot.append_linear_gradient(
                 &graphene::Rect::new(0.0, y_min, width, height),
@@ -847,8 +910,215 @@ mod imp {
             snapshot.pop();
             let stroke_width = self.visualizer_stroke_width.get() as f32;
             if stroke_width > 0.0 {
+                // Re-trace the top as a different path. This allows us to only stroke the top edge (the wavy bit)
+                let path_builder = gsk::PathBuilder::new();
+                path_builder.move_to(0.0, ys[0]);
+                let use_splines = self.visualizer_use_splines.get();
+                Self::trace_spectrum_top(&path_builder, band_width, height, &ys, use_splines);
+                let path = path_builder.to_path();
                 snapshot.append_stroke(&path, &gsk::Stroke::new(stroke_width), top_stop.color());
             }
+        }
+
+        /// Compute the y position of the highest point in spectrum data (snapshot coordinates).
+        fn compute_y_min(data: &[f32], height: f32, scale_factor: f32) -> f32 {
+            data.iter()
+                .map(|&v| compute_visualizer_y(v, height, scale_factor))
+                .fold(height, f32::min)
+        }
+
+        // Context should currently be at the leftmost point of the top edge.
+        // This will then plot a line to the rightmost point.
+        // The resulting context can then be used to draw a stroke, or with a few more edges added,
+        // fill the shape.
+        #[inline]
+        fn cairo_trace_spectrum_top(
+            cr: &cairo::Context,
+            band_width: f64,
+            height: f64, // STILL WINDOW HEIGHT
+            ys: &[f64],
+            use_splines: bool,
+        ) {
+            let n = ys.len();
+            if use_splines && n >= 2 {
+                // Catmull-Rom (goes smoothly through N points)
+                // For segment i (from P[i] to P[i+1]):
+                //   cp1 = P[i] + (P[i+1] - P[i-1]) / 6
+                //   cp2 = P[i+1] - (P[i+2] - P[i]) / 6
+                // Boundary clamping: P[-1] = P[0], P[n] = P[n-1].
+
+                for i in 1..(n - 1) {
+                    let p0 = if i == 0 { 0 } else { i - 1 };
+                    let p1 = i;
+                    let p2 = i + 1;
+                    let p3 = if i + 2 < n { i + 2 } else { n - 1 };
+
+                    let x0 = p0 as f64 * band_width;
+                    let x1 = p1 as f64 * band_width;
+                    let x2 = p2 as f64 * band_width;
+                    let x3 = p3 as f64 * band_width;
+
+                    // clamped at boundaries
+                    let ctrl1_x = x1 + (x2 - x0) / 6.0;
+                    let ctrl1_y = ys[p1] + (ys[p2] - ys[p0]) / 6.0;
+                    let ctrl2_x = x2 - (x3 - x1) / 6.0;
+                    let ctrl2_y = ys[p2] - (ys[p3] - ys[p1]) / 6.0;
+
+                    cr.curve_to(ctrl1_x, ctrl1_y, ctrl2_x, ctrl2_y, x2, ys[p2]);
+                }
+            } else if n >= 2 {
+                // Straight segments (original behavior).
+                for (i, &y) in ys.iter().enumerate().skip(1) {
+                    let x = i as f64 * band_width;
+                    cr.line_to(x, y);
+                }
+            }
+        }
+
+        /// Draw one channel's spectrum data on an already-created Cairo context.
+        /// Returns the y_min of the highest point in Cairo coordinates.
+        #[allow(clippy::too_many_arguments)]
+        fn draw_spectrum_cairo_channel(
+            &self,
+            cr: &cairo::Context,
+            width: f64,
+            height: f64, // STILL WINDOW HEIGHT. Undocumented, but regardless of the passed bounds, the Cairo draw area still uses the full window's coordinates
+            y_min: f64,
+            data: &[f32],
+            scale: f32,
+            color: &gdk::RGBA,
+            has_fill: bool,
+            top_opacity: f64,
+            bottom_opacity: f64,
+            use_splines: bool,
+        ) {
+            let n = data.len();
+            let band_width = width / (n as f64 - 1.0);
+
+            // Pre-compute all y values to avoid redundant calculations.
+            let mut ys = Vec::with_capacity(n);
+            for &level in data {
+                ys.push(compute_visualizer_y(level, height as f32, scale) as f64);
+            }
+
+            // ----------  Build the polygon ----------
+            if has_fill {
+                // Move to bottom left corner then first point (i.e. draw left edge as straight line)
+                cr.move_to(0.0, height);
+                cr.line_to(0.0, ys[0]);
+                Self::cairo_trace_spectrum_top(cr, band_width, height, &ys, use_splines);
+                // Park the cursor at the bottom-right corner before closing path
+                cr.line_to(width, height);
+                cr.close_path();
+                let gradient = cairo::LinearGradient::new(0.0, height, 0.0, y_min);
+                gradient.add_color_stop_rgba(
+                    0.0,
+                    color.red() as f64,
+                    color.green() as f64,
+                    color.blue() as f64,
+                    bottom_opacity / 2.0,
+                );
+                gradient.add_color_stop_rgba(
+                    1.0,
+                    color.red() as f64,
+                    color.green() as f64,
+                    color.blue() as f64,
+                    top_opacity / 2.0,
+                );
+                cr.set_source(&gradient);
+                cr.fill();
+            }
+
+            // Optional stroke
+            let stroke_width = self.visualizer_stroke_width.get();
+            if stroke_width > 0.0 {
+                // The above has flushed the edge data. Regenerate here.
+                // No need to draw the three straight edges.
+                cr.move_to(0.0, ys[0]);
+                Self::cairo_trace_spectrum_top(cr, band_width, height, &ys, use_splines);
+                cr.set_line_width(stroke_width);
+                cr.set_source_rgba(
+                    color.red() as f64,
+                    color.green() as f64,
+                    color.blue() as f64,
+                    self.visualizer_top_opacity.get(),
+                );
+                cr.stroke();
+            }
+        }
+
+        /// Draw both left and right spectrum channels on a single Cairo surface.
+        /// The surface is sized to the actual bounding box of the spectrum data,
+        /// significantly reducing allocation size compared to full-window surfaces.
+        #[allow(clippy::too_many_arguments)]
+        fn draw_spectrum_cairo_pair(
+            &self,
+            snapshot: &gtk::Snapshot,
+            width: f32,
+            height: f32,
+            data_left: &[f32],
+            data_right: &[f32],
+            scale: f32,
+            color: &gdk::RGBA,
+        ) {
+            if width <= 0.0 || height <= 0.0 {
+                return;
+            }
+
+            let top_opacity = self.visualizer_top_opacity.get();
+            let bottom_opacity = self.visualizer_bottom_opacity.get();
+            let has_fill = top_opacity > 0.0 || bottom_opacity > 0.0;
+
+            // Find the bounding box (y_min) for both channels combined.
+            let y_min_left = Self::compute_y_min(data_left, height, scale);
+            let y_min_right = Self::compute_y_min(data_right, height, scale);
+            let y_min = y_min_left.min(y_min_right);
+
+            // Skip drawing entirely when spectrum is flat (near-silence).
+            let surface_height = (height - y_min) as f64;
+            if surface_height < 1.0 {
+                return;
+            }
+
+            // Allocate Cairo surface at the bounding box size instead of full window.
+            // Cairo coordinates are relative to this rect: (0, 0) = snapshot (0, y_min).
+            let stroke_width = self.visualizer_stroke_width.get();
+            let cr = snapshot.append_cairo(&graphene::Rect::new(
+                0.0,
+                y_min - stroke_width as f32,
+                width,
+                surface_height as f32 + stroke_width as f32,
+            ));
+
+            // Draw left channel.
+            self.draw_spectrum_cairo_channel(
+                &cr,
+                width as f64,
+                height as f64,
+                y_min as f64,
+                data_left,
+                scale,
+                color,
+                has_fill,
+                top_opacity,
+                bottom_opacity,
+                self.visualizer_use_splines.get(),
+            );
+
+            // Draw right channel on the same surface.
+            self.draw_spectrum_cairo_channel(
+                &cr,
+                width as f64,
+                height as f64,
+                y_min as f64,
+                data_right,
+                scale,
+                color,
+                has_fill,
+                top_opacity,
+                bottom_opacity,
+                self.visualizer_use_splines.get(),
+            );
         }
 
         /// Whether any render node will be added to render the visualiser.
@@ -863,9 +1133,10 @@ mod imp {
                 return true;
             }
             if let Some(mutex) = self.fft_data.get()
-                && let Ok(data) = mutex.lock() {
-                    return (data.0.iter().sum::<f32>() + data.1.iter().sum::<f32>()) > 0.0;
-                }
+                && let Ok(data) = mutex.lock()
+            {
+                return (data.0.iter().sum::<f32>() + data.1.iter().sum::<f32>()) > 0.0;
+            }
             false
         }
 
@@ -1190,26 +1461,27 @@ impl EuphonicaWindow {
     pub fn maybe_populate_visible(&self) {
         let imp = self.imp();
         if imp.should_populate_visible.get()
-            && let Some(visible_child_name) = imp.stack.visible_child_name() {
-                match visible_child_name.as_str() {
-                    "recent" => {
-                        imp.recent_view.populate();
-                    }
-                    "albums" => {
-                        imp.album_view.populate();
-                    }
-                    "artists" => {
-                        imp.artist_view.populate();
-                    }
-                    "folders" => {
-                        imp.folder_view.populate();
-                    }
-                    "queue" => {
-                        imp.queue_view.populate();
-                    }
-                    _ => {}
+            && let Some(visible_child_name) = imp.stack.visible_child_name()
+        {
+            match visible_child_name.as_str() {
+                "recent" => {
+                    imp.recent_view.populate();
                 }
+                "albums" => {
+                    imp.album_view.populate();
+                }
+                "artists" => {
+                    imp.artist_view.populate();
+                }
+                "folders" => {
+                    imp.folder_view.populate();
+                }
+                "queue" => {
+                    imp.queue_view.populate();
+                }
+                _ => {}
             }
+        }
     }
 
     pub fn show_dialog(&self, heading: &str, body: &str) {

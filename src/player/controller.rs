@@ -683,9 +683,10 @@ impl Player {
         if self.imp().use_visualizer.get() && self.imp().is_foreground.get() {
             let output = self.imp().fft_data.clone();
             if let Some(backend) = self.imp().fft_backend.borrow().as_ref()
-                && backend.clone().start(output).is_err() {
-                    eprintln!("Failed to start FFT backend");
-                };
+                && backend.clone().start(output).is_err()
+            {
+                eprintln!("Failed to start FFT backend");
+            };
         }
     }
 
@@ -712,7 +713,7 @@ impl Player {
         self.imp().current_song.borrow().as_ref().cloned()
     }
 
-    pub async fn clear(&self) -> ClientResult<()> {
+    pub fn clear(&self) -> ClientResult<()> {
         self.stop_polling();
         self.imp().queue.remove_all();
         self.imp().outputs.remove_all();
@@ -758,7 +759,7 @@ impl Player {
                                     }
                                 }
                                 ConnectionState::Connecting => {
-                                    if let Err(e) = this.clear().await {
+                                    if let Err(e) = this.clear() {
                                         dbg!(e);
                                     }
                                 }

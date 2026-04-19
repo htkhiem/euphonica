@@ -17,25 +17,21 @@ use gtk::{
     gdk::{self, Texture},
     gio, glib,
 };
-use image::{ImageReader};
+use image::ImageReader;
 use lru::LruCache;
 use once_cell::sync::Lazy;
-use std::{num::NonZeroUsize};
-use std::{
-    fmt,
-    fs::create_dir_all,
-    rc::Rc,
-    result,
-    sync::Mutex,
-};
+use std::num::NonZeroUsize;
+use std::{fmt, fs::create_dir_all, rc::Rc, result, sync::Mutex};
 
 use crate::{
     client::{Error as ClientError, MpdWrapper},
     common::{AlbumInfo, ArtistInfo},
     meta_providers::{MetadataChain, models, prelude::*, utils::get_best_image},
     utils::{
-        get_app_cache_path, get_image_cache_path, register_image_as_failure, save_and_register_image, settings_manager
-    }, window::EuphonicaWindow,
+        get_app_cache_path, get_image_cache_path, register_image_as_failure,
+        save_and_register_image, settings_manager,
+    },
+    window::EuphonicaWindow,
 };
 use crate::{
     common::{DynamicPlaylist, SongInfo},
@@ -56,7 +52,7 @@ pub enum Error {
     Sqlite(sqlite::Error),
     Client(ClientError),
     Metadata(MetadataError<()>),
-    GlibError(glib::Error)
+    GlibError(glib::Error),
 }
 
 impl Error {
@@ -71,7 +67,7 @@ impl Error {
             Self::Sqlite(_) => "SQLite error".into(),     // TODO: better error message
             Self::Client(_) => "MPD error".into(),        // TODO: better error message
             Self::Metadata(e) => e.message(),
-            Self::GlibError(e) => e.to_string()
+            Self::GlibError(e) => e.to_string(),
         }
     }
 }
@@ -372,16 +368,17 @@ impl Cache {
                     .get_embedded_cover(song.uri.clone())
                     .map_err(Error::Client)
                     .await?
-                {
-                    return Ok(bundle.take_texture(thumbnail).map(Some)?);
-                }
+            {
+                return Ok(bundle.take_texture(thumbnail).map(Some)?);
+            }
             if let (false, Some(album)) = (folder_failed_before, song.album.as_ref().cloned())
-                && let Some(meta) = self.get_album_meta(&album, true, false, None).await? {
-                    return self
-                        .external
-                        .call(move |_| load_image(&album.folder_uri, None, &meta.image, thumbnail))
-                        .await;
-                }
+                && let Some(meta) = self.get_album_meta(&album, true, false, None).await?
+            {
+                return self
+                    .external
+                    .call(move |_| load_image(&album.folder_uri, None, &meta.image, thumbnail))
+                    .await;
+            }
         }
         Ok(None)
     }
@@ -447,15 +444,18 @@ impl Cache {
         }
 
         if external {
-            if !folder_failed_before && settings_manager().child("client").boolean("mpd-download-album-art")
+            if !folder_failed_before
+                && settings_manager()
+                    .child("client")
+                    .boolean("mpd-download-album-art")
                 && let Some(bundle) = self
                     .mpd_client
                     .get_folder_cover(album.folder_uri.to_owned())
                     .map_err(Error::Client)
                     .await?
-                {
-                    return Ok(bundle.take_texture(thumbnail).map(Some)?);
-                }
+            {
+                return Ok(bundle.take_texture(thumbnail).map(Some)?);
+            }
 
             if !embedded_failed_before
                 && settings_manager()
@@ -466,9 +466,9 @@ impl Cache {
                     .get_embedded_cover(album.example_uri.to_owned())
                     .map_err(Error::Client)
                     .await?
-                {
-                    return Ok(bundle.take_texture(thumbnail).map(Some)?);
-                }
+            {
+                return Ok(bundle.take_texture(thumbnail).map(Some)?);
+            }
 
             if let (false, Some(meta)) = (
                 folder_failed_before,
@@ -531,10 +531,12 @@ impl Cache {
         // Assume ashpd always return filesystem spec
         let state = self.get_cache_state();
         let cloned_key = key.clone();
-        self.local.call(move |_| {
-            clear_image_internal(&cloned_key, key_prefix)?;
-            Ok::<(), Error>(())
-        }).await?;
+        self.local
+            .call(move |_| {
+                clear_image_internal(&cloned_key, key_prefix)?;
+                Ok::<(), Error>(())
+            })
+            .await?;
         // For updates, still notify via signals to update all widgets wherever they are.
         if let Some(signal) = notify_signal {
             state.emit_with_param(signal, &key);
@@ -656,9 +658,9 @@ impl Cache {
                     })
                     .await
                     .map_err(Error::Sqlite)?
-                {
-                    return Ok(Some(existing));
-                }
+            {
+                return Ok(Some(existing));
+            }
             let res = self
                 .meta_providers
                 .get_album_meta(album.clone(), None, window)
@@ -713,9 +715,9 @@ impl Cache {
                     .call(move |_| sqlite::find_artist_meta(&name, mbid.as_deref()))
                     .await
                     .map_err(Error::Sqlite)?
-                {
-                    return Ok(Some(existing));
-                }
+            {
+                return Ok(Some(existing));
+            }
             let res = self
                 .meta_providers
                 .get_artist_meta(artist.clone(), None, window)
@@ -769,14 +771,16 @@ impl Cache {
         }
 
         // Failing the above, ask external providers
-        if external && !failed_before
-            && let Some(meta) = self.get_artist_meta(artist, true, false, None).await? {
-                let artist = artist.to_owned();
-                return self
-                    .external
-                    .call(move |_| load_image(&artist.name, Some("avatar"), &meta.image, thumbnail))
-                    .await;
-            }
+        if external
+            && !failed_before
+            && let Some(meta) = self.get_artist_meta(artist, true, false, None).await?
+        {
+            let artist = artist.to_owned();
+            return self
+                .external
+                .call(move |_| load_image(&artist.name, Some("avatar"), &meta.image, thumbnail))
+                .await;
+        }
 
         Ok(None)
     }

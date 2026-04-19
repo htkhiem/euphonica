@@ -1,10 +1,10 @@
 use adw::prelude::*;
 use adw::subclass::prelude::*;
 use gtk::{
-    gio::{ActionEntry, SimpleActionGroup},
-    glib::{Properties, clone, subclass::Signal, WeakRef},
     CompositeTemplate, ListItem, SignalListItemFactory, SingleSelection,
+    gio::{ActionEntry, SimpleActionGroup},
     glib::{self},
+    glib::{Properties, WeakRef, clone, subclass::Signal},
 };
 use std::{cell::Cell, cmp::Ordering, rc::Rc, sync::OnceLock};
 
@@ -12,7 +12,7 @@ use super::{AlbumCell, AlbumContentView, Library};
 use crate::{
     cache::Cache,
     client::ClientState,
-    common::{Album, Rating, ContentStack},
+    common::{Album, ContentStack, Rating},
     utils::{LazyInit, g_cmp_options, g_cmp_str_options, g_search_substr, settings_manager},
     window::EuphonicaWindow,
 };
@@ -69,7 +69,7 @@ mod imp {
         #[property(get, set)]
         pub collapsed: Cell<bool>,
 
-        pub initializing: Cell<bool>
+        pub initializing: Cell<bool>,
     }
 
     #[glib::object_subclass]
@@ -431,9 +431,7 @@ impl AlbumView {
         client_state: &ClientState,
         window: &EuphonicaWindow,
     ) {
-        self.imp()
-            .library
-            .set(Some(library));
+        self.imp().library.set(Some(library));
         self.setup_gridview(cache.clone());
 
         let content_view = self.imp().content_view.get();
