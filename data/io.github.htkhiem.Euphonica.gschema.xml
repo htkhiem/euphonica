@@ -223,7 +223,7 @@
 		</key>
 
 		<key name="visualizer-spectrum-bins" type="u">
-			<default>5</default>
+			<default>10</default>
 		</key>
 
 		<key name="visualizer-spectrum-use-log-bins" type='b'>
@@ -272,6 +272,11 @@
 		</key>
 		<key name="use-visualizer" type="b">
 			<default>true</default>
+		</key>
+		<key name="visualizer-use-cairo" type="b">
+			<default>true</default>
+			<summary>Render using Cairo</summary>
+			<description>On certain hardware (e.g., NVIDIA GPUs), Cairo (CPU) rendering may be more performant than GSK.</description>
 		</key>
 		<key name="visualizer-top-opacity" type="d">
 			<default>0.9</default>

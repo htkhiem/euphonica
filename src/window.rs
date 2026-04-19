@@ -31,10 +31,7 @@ use crate::{
     utils::{self, LazyInit, settings_manager},
 };
 use adw::{ColorScheme, StyleManager, prelude::*, subclass::prelude::*};
-use auto_palette::{
-    ImageData, Palette,
-    color::{HSL, RGB},
-};
+use auto_palette::{ImageData, Palette, color::RGB};
 use glib::WeakRef;
 use gtk::{
     CssProvider, cairo, gdk, gio,
@@ -254,7 +251,7 @@ mod imp {
         #[property(get, set)]
         pub visualizer_stroke_width: Cell<f64>,
         #[property(get, set)]
-        pub use_cairo: Cell<bool>,
+        pub visualizer_use_cairo: Cell<bool>,
         #[property(get, set = Self::set_auto_accent)]
         pub auto_accent: Cell<bool>,
         pub tick_callback: RefCell<Option<gtk::TickCallbackId>>,
@@ -294,8 +291,6 @@ mod imp {
 
         fn constructed(&self) {
             self.parent_constructed();
-            // DEBUG
-            self.use_cairo.set(true);
             let settings = settings_manager().child("ui");
             let obj_borrow = self.obj();
             let obj = obj_borrow.as_ref();
@@ -417,6 +412,11 @@ mod imp {
 
             settings
                 .bind("visualizer-scale", obj, "visualizer-scale")
+                .build();
+
+            settings
+                .bind("visualizer-use-cairo", obj, "visualizer-use-cairo")
+                .get_only()
                 .build();
 
             settings
@@ -704,7 +704,7 @@ mod imp {
                 let height32 = widget.height() as f32;
                 let data = mutex.lock().unwrap();
 
-                match self.use_cairo.get() {
+                match self.visualizer_use_cairo.get() {
                     true => {
                         // New CPU‑only Cairo implementation
                         self.draw_spectrum_cairo_pair(
@@ -816,6 +816,49 @@ mod imp {
             }
         }
 
+        #[inline]
+        fn trace_spectrum_top(
+            path_builder: &gsk::PathBuilder,
+            band_width: f32,
+            height: f32, // STILL WINDOW HEIGHT
+            ys: &[f32],
+            use_splines: bool,
+        ) {
+            let n = ys.len();
+            if use_splines {
+                // Catmull-Rom spline via cubic Bezier (goes smoothly through all points).
+                // For segment i (from P[i] to P[i+1]):
+                //   cp1 = P[i] + (P[i+1] - P[i-1]) / 6
+                //   cp2 = P[i+1] - (P[i+2] - P[i]) / 6
+                // Boundary clamping: P[-1] = P[0], P[n+1] = P[n-1].
+
+                for i in 1..(n-1) {
+                    let p0 = if i == 0 { 0 } else { i - 1 };
+                    let p1 = i;
+                    let p2 = i + 1;
+                    let p3 = if i + 2 < n { i + 2 } else { n - 1 };
+
+                    let x1 = p1 as f32 * band_width;
+                    let x2 = p2 as f32 * band_width;
+
+                    let ctrl1_x = x1 + (x2 - p0 as f32 * band_width) / 6.0;
+                    let ctrl1_y = ys[p1] + (ys[p2] - ys[p0]) / 6.0;
+                    let ctrl2_x = x2 - (p3 as f32 * band_width - x1) / 6.0;
+                    let ctrl2_y = ys[p2] - (ys[p3] - ys[p1]) / 6.0;
+
+                    path_builder.cubic_to(ctrl1_x, ctrl1_y, ctrl2_x, ctrl2_y, x2, ys[p2]);
+                }
+            } else {
+                // Straight segments mode
+                for (band_idx, y) in ys[0..n].iter().enumerate().skip(1) {
+                    path_builder.line_to(
+                        (band_idx as f32) * band_width,
+                        *y,
+                    );
+                }
+            }
+        }
+
         fn draw_spectrum(
             &self,
             snapshot: &gtk::Snapshot,
@@ -825,66 +868,30 @@ mod imp {
             scale: f32,
             color: &gdk::RGBA,
         ) {
+            let n = data.len();
+            let mut ys = Vec::with_capacity(n);
+            for &level in data {
+                ys.push(compute_visualizer_y(level, height, scale));
+            }
+            // y-axis is top-down so min-y is the highest point :)
             let band_width = width / (data.len() as f32 - 1.0);
-
             let path_builder = gsk::PathBuilder::new();
             path_builder.move_to(0.0, height);
-            path_builder.line_to(0.0, (height - data[0] * scale).max(0.0));
-
-            // y-axis is top-down so min-y is the highest point :)
-            let mut y_min = height;
-
-            if self.visualizer_use_splines.get() {
-                // Spline mode. Since we can make 2 assumptions:
-                // - No two points share the same x-coordinate (duh), and
-                // - X-coordinates are monotonically increasing
-                // we can cheat a bit and avoid having to solve for Beizer control points.
-                let half_width = band_width / 2.0;
-                let quarter_width = band_width / 4.0;
-                for i in 0..(data.len() - 1) {
-                    let x = (i as f32 + 1.0) * band_width;
-                    let y = (height - data[i] * scale * 1000000.0).max(0.0);
-                    y_min = y_min.min(y);
-                    let x_next = x + band_width;
-                    let y_next = (height - data[i + 1] * scale * 1000000.0).max(0.0);
-                    // Midpoint
-                    let x_mid = x + half_width;
-                    let y_mid =
-                        (height - (data[i] + data[i + 1]) / 2.0 * scale * 1000000.0).max(0.0);
-                    // The next two will serve as control points.
-                    // Between current point and midpoint
-                    let x_left_mid = x + quarter_width;
-                    // Between midpoint and next point
-                    let x_right_mid = x_mid + quarter_width;
-                    // First curve, from current point to midpoint
-                    path_builder.quad_to(
-                        // Control point
-                        x_left_mid, y, x_mid, y_mid,
-                    );
-                    // Second curve, from midpoint to next point
-                    path_builder.quad_to(
-                        // Control point
-                        x_right_mid,
-                        y_next,
-                        x_next,
-                        y_next,
-                    );
-                }
-            } else {
-                // Straight segments mode
-                for (band_idx, level) in data[1..data.len()].iter().enumerate() {
-                    let y = (height - level * scale * 1000000.0).max(0.0);
-                    y_min = y_min.min(y);
-                    path_builder.line_to(
-                        (band_idx as f32 + 1.0) * band_width,
-                        (height - level * scale * 1000000.0).max(0.0),
-                    );
-                }
-            }
+            path_builder.line_to(0.0, ys[0]);
+            let use_splines = self.visualizer_use_splines.get();
+            Self::trace_spectrum_top(&path_builder, band_width, height, &ys, use_splines);
+            // Park at bottom-right
             path_builder.line_to(width, height);
             let path = path_builder.to_path();
 
-            snapshot.push_fill(&path, gsk::FillRule::Winding);
+            let mut y_min = ys[0];
+            for y in ys[1..].iter() {
+                if *y < y_min {
+                    y_min = *y;
+                }
+            }
+
+            snapshot.push_fill(&path, gsk::FillRule::EvenOdd);
             let bottom_stop = gsk::ColorStop::new(
                 0.0,
                 color.with_alpha(self.visualizer_bottom_opacity.get() as f32 / 2.0),
@@ -903,6 +910,12 @@ mod imp {
             snapshot.pop();
             let stroke_width = self.visualizer_stroke_width.get() as f32;
             if stroke_width > 0.0 {
+                // Re-trace the top as a different path. This allows us to only stroke the top edge (the wavy bit)
+                let path_builder = gsk::PathBuilder::new();
+                path_builder.move_to(0.0, ys[0]);
+                let use_splines = self.visualizer_use_splines.get();
+                Self::trace_spectrum_top(&path_builder, band_width, height, &ys, use_splines);
+                let path = path_builder.to_path();
                 snapshot.append_stroke(&path, &gsk::Stroke::new(stroke_width), top_stop.color());
             }
         }
@@ -910,17 +923,66 @@ mod imp {
         /// Compute the y position of the highest point in spectrum data (snapshot coordinates).
         fn compute_y_min(data: &[f32], height: f32, scale_factor: f32) -> f32 {
             data.iter()
-                .map(|&v| {compute_visualizer_y(v, height, scale_factor)})
+                .map(|&v| compute_visualizer_y(v, height, scale_factor))
                 .fold(height, f32::min)
+        }
+
+        // Context should currently be at the leftmost point of the top edge.
+        // This will then plot a line to the rightmost point.
+        // The resulting context can then be used to draw a stroke, or with a few more edges added,
+        // fill the shape.
+        #[inline]
+        fn cairo_trace_spectrum_top(
+            cr: &cairo::Context,
+            band_width: f64,
+            height: f64, // STILL WINDOW HEIGHT
+            ys: &[f64],
+            use_splines: bool,
+        ) {
+            let n = ys.len();
+            if use_splines && n >= 2 {
+                // Catmull-Rom (goes smoothly through N points)
+                // For segment i (from P[i] to P[i+1]):
+                //   cp1 = P[i] + (P[i+1] - P[i-1]) / 6
+                //   cp2 = P[i+1] - (P[i+2] - P[i]) / 6
+                // Boundary clamping: P[-1] = P[0], P[n] = P[n-1].
+
+                for i in 1..(n - 1) {
+                    let p0 = if i == 0 { 0 } else { i - 1 };
+                    let p1 = i;
+                    let p2 = i + 1;
+                    let p3 = if i + 2 < n { i + 2 } else { n - 1 };
+
+                    let x0 = p0 as f64 * band_width;
+                    let x1 = p1 as f64 * band_width;
+                    let x2 = p2 as f64 * band_width;
+                    let x3 = p3 as f64 * band_width;
+
+                    // clamped at boundaries
+                    let ctrl1_x = x1 + (x2 - x0) / 6.0;
+                    let ctrl1_y = ys[p1] + (ys[p2] - ys[p0]) / 6.0;
+                    let ctrl2_x = x2 - (x3 - x1) / 6.0;
+                    let ctrl2_y = ys[p2] - (ys[p3] - ys[p1]) / 6.0;
+
+                    cr.curve_to(ctrl1_x, ctrl1_y, ctrl2_x, ctrl2_y, x2, ys[p2]);
+                }
+            } else if n >= 2 {
+                // Straight segments (original behavior).
+                for (i, &y) in ys.iter().enumerate().skip(1) {
+                    let x = i as f64 * band_width;
+                    cr.line_to(x, y);
+                }
+            }
         }
 
         /// Draw one channel's spectrum data on an already-created Cairo context.
         /// Returns the y_min of the highest point in Cairo coordinates.
+        #[allow(clippy::too_many_arguments)]
         fn draw_spectrum_cairo_channel(
             &self,
             cr: &cairo::Context,
             width: f64,
-            height: f64,  // STILL WINDOW HEIGHT. Undocumented, but regardless of the passed bounds, the Cairo draw area still uses the full window's coordinates
+            height: f64, // STILL WINDOW HEIGHT. Undocumented, but regardless of the passed bounds, the Cairo draw area still uses the full window's coordinates
             y_min: f64,
             data: &[f32],
             scale: f32,
@@ -928,20 +990,23 @@ mod imp {
             has_fill: bool,
             top_opacity: f64,
             bottom_opacity: f64,
+            use_splines: bool,
         ) {
+            let n = data.len();
+            let band_width = width / (n as f64 - 1.0);
+
+            // Pre-compute all y values to avoid redundant calculations.
+            let mut ys = Vec::with_capacity(n);
+            for &level in data {
+                ys.push(compute_visualizer_y(level, height as f32, scale) as f64);
+            }
+
             // ----------  Build the polygon ----------
-            let band_width = width / (data.len() as f64 - 1.0);
-            // --------- Fill (skip if both opacities are zero) -----------
             if has_fill {
-                cr.move_to(0.0, height as f64);
-                // let scale_f64 = scale as f64;
-                let y0 = compute_visualizer_y(data[0], height as f32, scale) as f64;
-                cr.line_to(0.0, y0);
-                for (i, level) in data.iter().enumerate().skip(1) {
-                    let x = (i as f64 + 1.0) * band_width;
-                    let y = compute_visualizer_y(*level, height as f32, scale) as f64;
-                    cr.line_to(x, y);
-                }
+                // Move to bottom left corner then first point (i.e. draw left edge as straight line)
+                cr.move_to(0.0, height);
+                cr.line_to(0.0, ys[0]);
+                Self::cairo_trace_spectrum_top(cr, band_width, height, &ys, use_splines);
                 // Park the cursor at the bottom-right corner before closing path
                 cr.line_to(width, height);
                 cr.close_path();
@@ -968,16 +1033,10 @@ mod imp {
             let stroke_width = self.visualizer_stroke_width.get();
             if stroke_width > 0.0 {
                 // The above has flushed the edge data. Regenerate here.
-                let y0 = compute_visualizer_y(data[0], height as f32, scale) as f64;
-                cr.line_to(0.0, y0);
-                for (i, level) in data.iter().enumerate().skip(1) {
-                    let x = (i as f64 + 1.0) * band_width;
-                    let y = compute_visualizer_y(*level, height as f32, scale) as f64;
-                    cr.line_to(x, y);
-                }
-                // Park the cursor at the bottom-right corner before closing path
-                cr.line_to(width, height);
-                cr.set_line_width(stroke_width as f64);
+                // No need to draw the three straight edges.
+                cr.move_to(0.0, ys[0]);
+                Self::cairo_trace_spectrum_top(cr, band_width, height, &ys, use_splines);
+                cr.set_line_width(stroke_width);
                 cr.set_source_rgba(
                     color.red() as f64,
                     color.green() as f64,
@@ -991,6 +1050,7 @@ mod imp {
         /// Draw both left and right spectrum channels on a single Cairo surface.
         /// The surface is sized to the actual bounding box of the spectrum data,
         /// significantly reducing allocation size compared to full-window surfaces.
+        #[allow(clippy::too_many_arguments)]
         fn draw_spectrum_cairo_pair(
             &self,
             snapshot: &gtk::Snapshot,
@@ -1022,7 +1082,13 @@ mod imp {
 
             // Allocate Cairo surface at the bounding box size instead of full window.
             // Cairo coordinates are relative to this rect: (0, 0) = snapshot (0, y_min).
-            let cr = snapshot.append_cairo(&graphene::Rect::new(0.0, y_min, width, surface_height as f32));
+            let stroke_width = self.visualizer_stroke_width.get();
+            let cr = snapshot.append_cairo(&graphene::Rect::new(
+                0.0,
+                y_min - stroke_width as f32,
+                width,
+                surface_height as f32 + stroke_width as f32,
+            ));
 
             // Draw left channel.
             self.draw_spectrum_cairo_channel(
@@ -1036,6 +1102,7 @@ mod imp {
                 has_fill,
                 top_opacity,
                 bottom_opacity,
+                self.visualizer_use_splines.get(),
             );
 
             // Draw right channel on the same surface.
@@ -1050,6 +1117,7 @@ mod imp {
                 has_fill,
                 top_opacity,
                 bottom_opacity,
+                self.visualizer_use_splines.get(),
             );
         }
 

@@ -244,6 +244,12 @@
               </object>
             </child>
             <child>
+              <object class="AdwSwitchRow" id="visualizer_use_cairo">
+                <property name="title" translatable="true">Use Cairo renderer</property>
+                <property name="subtitle" translatable="true">On certain hardware (e.g., NVIDIA GPUs), the CPU-based Cairo renderer may be faster at drawing the visualiser.</property>
+              </object>
+            </child>
+            <child>
               <object class="AdwSwitchRow" id="visualizer_use_splines">
                 <property name="title" translatable="true">Use splines</property>
                 <property name="subtitle" translatable="true">Draws the spectrum with smooth curves instead of straight lines.</property>
