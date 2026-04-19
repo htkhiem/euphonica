@@ -820,11 +820,10 @@ impl Connection {
                 songs_stickers.truncate(limit as usize);
             }
             songs = songs_stickers.into_iter().map(|tup| tup.0).collect();
-            if cache
-                && let Err(db_err) = sqlite::cache_dynamic_playlist_results(&dp.name, &songs) {
-                    println!("Failed to cache DP query result. Queuing will be incorrect!");
-                    dbg!(db_err);
-                }
+            if cache && let Err(db_err) = sqlite::cache_dynamic_playlist_results(&dp.name, &songs) {
+                println!("Failed to cache DP query result. Queuing will be incorrect!");
+                dbg!(db_err);
+            }
         } else {
             songs = Vec::with_capacity(0);
         }

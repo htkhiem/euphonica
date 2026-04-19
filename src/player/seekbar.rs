@@ -1,4 +1,4 @@
-use glib::{Object, clone, WeakRef};
+use glib::{Object, WeakRef, clone};
 use gtk::{CompositeTemplate, glib, prelude::*, subclass::prelude::*};
 use std::cell::Cell;
 
@@ -60,17 +60,24 @@ mod imp {
             let seekbar_gesture = gtk::GestureClick::new();
             seekbar_gesture.set_propagation_phase(gtk::PropagationPhase::Capture);
             seekbar_gesture.connect_released(clone!(
-                #[weak(rename_to = this)] self,
+                #[weak(rename_to = this)]
+                self,
                 move |gesture, _, _, _| {
                     glib::spawn_future_local(clone!(
-                        #[weak] this,
-                        #[weak] gesture,
+                        #[weak]
+                        this,
+                        #[weak]
+                        gesture,
                         async move {
                             gesture.set_state(gtk::EventSequenceState::None); // allow propagating to seekbar
                             if this.seekbar_clicked.get() {
                                 let seekbar = this.seekbar.get();
                                 seekbar.set_sensitive(false);
-                                this.player.upgrade().unwrap().send_seek(seekbar.value()).await;
+                                this.player
+                                    .upgrade()
+                                    .unwrap()
+                                    .send_seek(seekbar.value())
+                                    .await;
                                 seekbar.set_sensitive(true);
                                 this.seekbar_clicked.replace(false);
                             }

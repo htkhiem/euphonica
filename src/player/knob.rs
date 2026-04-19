@@ -1,11 +1,13 @@
 use gtk::{
-    gsk,
-    graphene,
-    cairo as cr,
+    CompositeTemplate, cairo as cr,
     glib::{
-        self, Object, ParamSpec, ParamSpecBoolean, ParamSpecDouble, clone, prelude::*, subclass::prelude::*,
+        self, Object, ParamSpec, ParamSpecBoolean, ParamSpecDouble, clone, prelude::*,
+        subclass::prelude::*,
     },
-    CompositeTemplate, prelude::*, subclass::prelude::*};
+    graphene, gsk,
+    prelude::*,
+    subclass::prelude::*,
+};
 use std::{cell::Cell, f64::consts::PI};
 
 fn convert_to_dbfs(pct: f64) -> Result<f64, ()> {
@@ -29,8 +31,7 @@ mod imp {
         pub sensitivity: Cell<f64>,
         pub use_dbfs: Cell<bool>,
         // 0 to 100. Full precision for smooth scrolling effect.
-        pub value: Cell<f64>
-        // Active state means muted
+        pub value: Cell<f64>, // Active state means muted
     }
 
     // The central trait for subclassing a GObject
@@ -45,7 +46,7 @@ mod imp {
             Self {
                 use_dbfs: Cell::new(false),
                 sensitivity: Cell::new(1.0),
-                value: Cell::new(0.0)
+                value: Cell::new(0.0),
             }
         }
 
@@ -147,25 +148,23 @@ mod imp {
             let (w, h) = (self.obj().width(), self.obj().height());
             let centre = (w as f64 / 2.0, h as f64 / 2.0);
             let min_dim = w.min(h) as f64;
-            let bounds = graphene::Rect::new(
-                0.0, 0.0, w as f32, h as f32
-            );
-            // Fade out the previous gradient conically 
+            let bounds = graphene::Rect::new(0.0, 0.0, w as f32, h as f32);
+            // Fade out the previous gradient conically
             snapshot.push_mask(gsk::MaskMode::Alpha);
             // Conic gradient goes clockwise. Rotation=0 means starting at 12 o'clock.
             // Our knob starts at 6 o'clock so we'll use a 180-deg rotation.
             snapshot.append_conic_gradient(
-                &bounds, 
-                &graphene::Point::new(centre.0 as f32, centre.1 as f32), 
-                180.0, 
+                &bounds,
+                &graphene::Point::new(centre.0 as f32, centre.1 as f32),
+                180.0,
                 &[
                     gsk::ColorStop::new(0.0, gdk::RGBA::BLACK.with_alpha(0.0)),
                     // Full opacity at the current vol level's angle
                     gsk::ColorStop::new(self.value.get() as f32 / 100.0, gdk::RGBA::BLACK),
-                ]
+                ],
             );
             snapshot.pop();
-            
+
             let cr = snapshot.append_cairo(&bounds);
             let fg = self.obj().color();
             // New design: piechart-like mask + glowy radial gradient.
@@ -177,33 +176,41 @@ mod imp {
             cr.move_to(centre.0, centre.1 + min_dim);
             cr.line_to(centre.0, centre.1);
             cr.arc_negative(
-                centre.0, 
-                centre.1, 
-                min_dim / 2.0 - 1.0, 
-                PI / 2.0 + 2.0 * PI * self.value.get() / 100.0, PI / 2.0
+                centre.0,
+                centre.1,
+                min_dim / 2.0 - 1.0,
+                PI / 2.0 + 2.0 * PI * self.value.get() / 100.0,
+                PI / 2.0,
             );
             cr.close_path();
             let radial = cr::RadialGradient::new(
                 // Outer circle
-                centre.0, 
-                centre.1, 
+                centre.0,
+                centre.1,
                 min_dim / 2.0 - 1.0,
-
                 // Inner circle
-                centre.0, 
-                centre.1, 
-                min_dim / 2.0 - 10.0  // How far inward the gradient will extend
+                centre.0,
+                centre.1,
+                min_dim / 2.0 - 10.0, // How far inward the gradient will extend
             );
             radial.add_color_stop_rgba(
-                0.0, fg.red() as f64, fg.green() as f64, fg.blue() as f64, 1.0
+                0.0,
+                fg.red() as f64,
+                fg.green() as f64,
+                fg.blue() as f64,
+                1.0,
             );
             radial.add_color_stop_rgba(
-                1.0, fg.red() as f64, fg.green() as f64, fg.blue() as f64, 0.0
+                1.0,
+                fg.red() as f64,
+                fg.green() as f64,
+                fg.blue() as f64,
+                0.0,
             );
             cr.set_source(radial);
             cr.fill();
             snapshot.pop();
-            
+
             self.parent_snapshot(snapshot);
         }
     }
@@ -217,7 +224,7 @@ mod imp {
             let obj = self.obj();
             let val = self.value.get();
             if obj.is_active() {
-                obj.set_label("—");  // can you believe a human copypasted an em dash here
+                obj.set_label("—"); // can you believe a human copypasted an em dash here
             } else {
                 if self.use_dbfs.get() {
                     if let Ok(dbfs) = convert_to_dbfs(val) {

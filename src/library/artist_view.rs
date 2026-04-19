@@ -9,7 +9,8 @@ use super::{ArtistCell, ArtistContentView, Library};
 use crate::{
     cache::Cache,
     common::{Artist, ContentStack},
-    utils::{LazyInit, g_cmp_str_options, g_search_substr, settings_manager}, window::EuphonicaWindow,
+    utils::{LazyInit, g_cmp_str_options, g_search_substr, settings_manager},
+    window::EuphonicaWindow,
 };
 
 mod imp {
@@ -59,7 +60,7 @@ mod imp {
         pub collapsed: Cell<bool>,
 
         pub library: WeakRef<Library>,
-        pub initializing: Cell<bool>
+        pub initializing: Cell<bool>,
     }
 
     #[glib::object_subclass]
@@ -362,7 +363,7 @@ impl ArtistView {
                     .expect("Needs to be ListItem");
                 let artist_cell = ArtistCell::new(
                     item, cache,
-                    false // For ArtistView, don't immediately fetch avatars externally.
+                    false, // For ArtistView, don't immediately fetch avatars externally.
                 );
                 item.set_child(Some(&artist_cell));
             }

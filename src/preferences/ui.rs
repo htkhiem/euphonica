@@ -116,7 +116,11 @@ impl UIPreferences {
             .build();
         let use_hires_for_album_cells = imp.use_hires_for_album_cells.get();
         ui_settings
-            .bind("use-hires-for-album-cells", &use_hires_for_album_cells, "active")
+            .bind(
+                "use-hires-for-album-cells",
+                &use_hires_for_album_cells,
+                "active",
+            )
             .build();
         let title_wrap_mode = imp.title_wrap_mode.get();
         ui_settings

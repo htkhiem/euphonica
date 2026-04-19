@@ -21,7 +21,7 @@
 use crate::{
     application::EuphonicaApplication,
     client::{ClientState, ConnectionState, Result as ClientResult},
-    common::{Album, Artist, INode, ThemeSelector, blend_mode::*, paintables::FadePaintable},
+    common::{Album, Artist, INode, ThemeSelector, paintables::FadePaintable},
     library::{
         AlbumView, ArtistContentView, ArtistView, DynamicPlaylistView, FolderView, PlaylistView,
         RecentView,
@@ -37,9 +37,9 @@ use auto_palette::{
 };
 use glib::WeakRef;
 use gtk::{
-    CssProvider, gdk, gio,
+    CssProvider, cairo, gdk, gio,
     glib::{self, BoxedAnyObject, clone, closure_local},
-    graphene, gsk, cairo
+    graphene, gsk,
 };
 use image::{DynamicImage, imageops::FilterType};
 use libblur::{FastBlurChannels, ThreadingPolicy, stack_blur};
@@ -74,6 +74,11 @@ pub struct BlurConfig {
     radius: u32,
     is_dark: bool,
     fade: bool, // Whether this update requires fading to it. Those for updating radius shouldn't be faded.
+}
+
+#[inline]
+fn compute_visualizer_y(val: f32, surface_height: f32, scale_factor: f32) -> f32 {
+    (surface_height - val * scale_factor * 1_000_000.0).max(0.0)
 }
 
 fn run_blur(di: &DynamicImage, config: &BlurConfig) -> gdk::MemoryTexture {
@@ -245,8 +250,6 @@ mod imp {
         #[property(get, set)]
         pub visualizer_scale: Cell<f64>,
         #[property(get, set)]
-        pub visualizer_blend_mode: Cell<u32>,
-        #[property(get, set)]
         pub visualizer_use_splines: Cell<bool>,
         #[property(get, set)]
         pub visualizer_stroke_width: Cell<f64>,
@@ -260,6 +263,11 @@ mod imp {
         pub should_populate_visible: Cell<bool>,
 
         pub provider: CssProvider,
+
+        // FPS tracking (debug)
+        pub fps_frame_count: Cell<u64>,
+        pub fps_last_time: Cell<Option<std::time::Instant>>,
+        pub fps_tick_id: RefCell<Option<gtk::TickCallbackId>>,
     }
 
     #[glib::object_subclass]
@@ -409,10 +417,6 @@ mod imp {
 
             settings
                 .bind("visualizer-scale", obj, "visualizer-scale")
-                .build();
-
-            settings
-                .bind("visualizer-blend-mode", obj, "visualizer-blend-mode")
                 .build();
 
             settings
@@ -620,14 +624,39 @@ mod imp {
                 }
             ));
 
+            // FPS counter (debug) – prints to stdout every 2 seconds
+            // self.fps_frame_count.set(0);
+            // self.fps_last_time.set(Some(std::time::Instant::now()));
+            // let obj = self.obj();
+            // let fps_tick = obj.add_tick_callback(clone!(
+            //     #[weak(rename_to = this)]
+            //     self,
+            //     move |_widget, _delta| {
+            //         let count = this.fps_frame_count.get();
+            //         this.fps_frame_count.set(count + 1);
+            //         let now = std::time::Instant::now();
+            //         if let Some(last) = this.fps_last_time.get() {
+            //             let elapsed = now.duration_since(last);
+            //             if elapsed.as_secs_f64() >= 2.0 {
+            //                 let fps = count as f64 / elapsed.as_secs_f64();
+            //                 println!("FPS: {:.1}", fps);
+            //                 this.fps_frame_count.set(0);
+            //                 this.fps_last_time.set(Some(now));
+            //             }
+            //         } else {
+            //             this.fps_last_time.set(Some(now));
+            //         }
+            //         glib::ControlFlow::Continue
+            //     }
+            // ));
+            // self.fps_tick_id.replace(Some(fps_tick));
+
             self.update_accent_color();
         }
     }
     impl WidgetImpl for EuphonicaWindow {
         fn snapshot(&self, snapshot: &gtk::Snapshot) {
             let widget = self.obj();
-            let mut should_blend = false;
-            let blend_mode: BlendMode = self.visualizer_blend_mode.get().try_into().unwrap();
             // Statically-cached blur
             if self.use_album_art_bg.get() {
                 // Check if window has been resized (will need reblur)
@@ -640,10 +669,6 @@ mod imp {
                     // comes back with a better one.
                 }
                 if self.bg_paintable.will_paint() {
-                    if self.will_draw_spectrum() {
-                        should_blend = true;
-                        snapshot.push_blend(blend_mode.into());
-                    }
                     let bg_opacity = self.bg_opacity.get();
                     if bg_opacity < 1.0 {
                         snapshot.push_opacity(bg_opacity);
@@ -654,9 +679,6 @@ mod imp {
                         widget.height() as f64,
                     );
                     if bg_opacity < 1.0 {
-                        snapshot.pop();
-                    }
-                    if should_blend {
                         snapshot.pop();
                     }
                 }
@@ -685,25 +707,8 @@ mod imp {
                 match self.use_cairo.get() {
                     true => {
                         // New CPU‑only Cairo implementation
-                        self.draw_spectrum_cairo(
-                            snapshot,
-                            width32,
-                            height32,
-                            &data.0,
-                            scale,
-                            &fg,
-                            /* self.visualizer_top_opacity.get() as f32,
-                            self.visualizer_bottom_opacity.get() as f32, */
-                        );
-                        self.draw_spectrum_cairo(
-                            snapshot,
-                            width32,
-                            height32,
-                            &data.1,
-                            scale,
-                            &fg,
-                            /* self.visualizer_top_opacity.get() as f32,
-                            self.visualizer_bottom_opacity.get() as f32, */
+                        self.draw_spectrum_cairo_pair(
+                            snapshot, width32, height32, &data.0, &data.1, scale, &fg,
                         );
                     }
                     false => {
@@ -713,11 +718,6 @@ mod imp {
                     }
                 }
             }
-            if should_blend {
-                // Add top layer of blend node
-                snapshot.pop();
-            }
-
             // Call the parent class's snapshot() method to render child widgets
             self.parent_snapshot(snapshot);
         }
@@ -887,11 +887,11 @@ mod imp {
             snapshot.push_fill(&path, gsk::FillRule::Winding);
             let bottom_stop = gsk::ColorStop::new(
                 0.0,
-                color.with_alpha(self.visualizer_bottom_opacity.get() as f32 / 2.0)
+                color.with_alpha(self.visualizer_bottom_opacity.get() as f32 / 2.0),
             );
             let top_stop = gsk::ColorStop::new(
                 1.0,
-                color.with_alpha(self.visualizer_top_opacity.get() as f32 / 2.0)
+                color.with_alpha(self.visualizer_top_opacity.get() as f32 / 2.0),
             );
             snapshot.append_linear_gradient(
                 &graphene::Rect::new(0.0, y_min, width, height),
@@ -907,64 +907,150 @@ mod imp {
             }
         }
 
-        fn draw_spectrum_cairo(
+        /// Compute the y position of the highest point in spectrum data (snapshot coordinates).
+        fn compute_y_min(data: &[f32], height: f32, scale_factor: f32) -> f32 {
+            data.iter()
+                .map(|&v| {compute_visualizer_y(v, height, scale_factor)})
+                .fold(height, f32::min)
+        }
+
+        /// Draw one channel's spectrum data on an already-created Cairo context.
+        /// Returns the y_min of the highest point in Cairo coordinates.
+        fn draw_spectrum_cairo_channel(
+            &self,
+            cr: &cairo::Context,
+            width: f64,
+            height: f64,  // STILL WINDOW HEIGHT. Undocumented, but regardless of the passed bounds, the Cairo draw area still uses the full window's coordinates
+            y_min: f64,
+            data: &[f32],
+            scale: f32,
+            color: &gdk::RGBA,
+            has_fill: bool,
+            top_opacity: f64,
+            bottom_opacity: f64,
+        ) {
+            // ----------  Build the polygon ----------
+            let band_width = width / (data.len() as f64 - 1.0);
+            // --------- Fill (skip if both opacities are zero) -----------
+            if has_fill {
+                cr.move_to(0.0, height as f64);
+                // let scale_f64 = scale as f64;
+                let y0 = compute_visualizer_y(data[0], height as f32, scale) as f64;
+                cr.line_to(0.0, y0);
+                for (i, level) in data.iter().enumerate().skip(1) {
+                    let x = (i as f64 + 1.0) * band_width;
+                    let y = compute_visualizer_y(*level, height as f32, scale) as f64;
+                    cr.line_to(x, y);
+                }
+                // Park the cursor at the bottom-right corner before closing path
+                cr.line_to(width, height);
+                cr.close_path();
+                let gradient = cairo::LinearGradient::new(0.0, height, 0.0, y_min);
+                gradient.add_color_stop_rgba(
+                    0.0,
+                    color.red() as f64,
+                    color.green() as f64,
+                    color.blue() as f64,
+                    bottom_opacity / 2.0,
+                );
+                gradient.add_color_stop_rgba(
+                    1.0,
+                    color.red() as f64,
+                    color.green() as f64,
+                    color.blue() as f64,
+                    top_opacity / 2.0,
+                );
+                cr.set_source(&gradient);
+                cr.fill();
+            }
+
+            // Optional stroke
+            let stroke_width = self.visualizer_stroke_width.get();
+            if stroke_width > 0.0 {
+                // The above has flushed the edge data. Regenerate here.
+                let y0 = compute_visualizer_y(data[0], height as f32, scale) as f64;
+                cr.line_to(0.0, y0);
+                for (i, level) in data.iter().enumerate().skip(1) {
+                    let x = (i as f64 + 1.0) * band_width;
+                    let y = compute_visualizer_y(*level, height as f32, scale) as f64;
+                    cr.line_to(x, y);
+                }
+                // Park the cursor at the bottom-right corner before closing path
+                cr.line_to(width, height);
+                cr.set_line_width(stroke_width as f64);
+                cr.set_source_rgba(
+                    color.red() as f64,
+                    color.green() as f64,
+                    color.blue() as f64,
+                    self.visualizer_top_opacity.get(),
+                );
+                cr.stroke();
+            }
+        }
+
+        /// Draw both left and right spectrum channels on a single Cairo surface.
+        /// The surface is sized to the actual bounding box of the spectrum data,
+        /// significantly reducing allocation size compared to full-window surfaces.
+        fn draw_spectrum_cairo_pair(
             &self,
             snapshot: &gtk::Snapshot,
             width: f32,
             height: f32,
-            data: &[f32],
+            data_left: &[f32],
+            data_right: &[f32],
             scale: f32,
-            color: &gdk::RGBA
+            color: &gdk::RGBA,
         ) {
-            // Get a Cairo context that we can draw into.
-            // The snapshot will create a temporary GSK node that contains the surface.
-            if width > 0.0 && height > 0.0 {
-                let cr = snapshot.append_cairo(&graphene::Rect::new(0.0, 0.0, width, height));
-
-                // ----------  Build the polygon ----------
-                let band_width = width as f64 / (data.len() as f64 - 1.0);
-                let mut y_min = height as f64;
-                cr.move_to(0.0, y_min);
-                let y0 = (height - data[0] * scale * 1_000_000.0).max(0.0) as f64;
-                cr.line_to(0.0, y0);
-                y_min = y_min.min(y0);
-                for (i, level) in data.iter().enumerate().skip(1) {
-                    let x = (i as f64 + 1.0) * band_width;
-                    let y = (height - level * scale * 1_000_000.0).max(0.0) as f64;
-                    y_min = y_min.min(y);
-                    cr.line_to(x, y);
-                }
-                // Park the cursor at the bottom-right corner before closing path
-                cr.line_to(width as f64, height as f64);
-                cr.close_path();
-
-                // --------- Fill -----------
-                let gradient = cairo::LinearGradient::new(
-                    // Bottom left
-                    0.0, height as f64,
-                    // to highest point projected to bottom left
-                    0.0, y_min
-                );
-                gradient.add_color_stop_rgba(
-                    0.0, color.red() as f64, color.green() as f64, color.blue() as f64, 
-                    self.visualizer_bottom_opacity.get() / 2.0
-                );
-                gradient.add_color_stop_rgba(
-                    1.0, color.red() as f64, color.green() as f64, color.blue() as f64, 
-                    self.visualizer_top_opacity.get() / 2.0
-                );
-                cr.set_source(&gradient);
-                cr.fill();
-
-                // Optional stroke
-                let stroke_width = self.visualizer_stroke_width.get();
-                if stroke_width > 0.0 {
-                    cr.set_line_width(stroke_width as f64);
-                    cr.set_source_rgba(color.red() as f64, color.green() as f64, color.blue() as f64, 
-                    self.visualizer_top_opacity.get());
-                    cr.stroke();
-                }
+            if width <= 0.0 || height <= 0.0 {
+                return;
             }
+
+            let top_opacity = self.visualizer_top_opacity.get();
+            let bottom_opacity = self.visualizer_bottom_opacity.get();
+            let has_fill = top_opacity > 0.0 || bottom_opacity > 0.0;
+
+            // Find the bounding box (y_min) for both channels combined.
+            let y_min_left = Self::compute_y_min(data_left, height, scale);
+            let y_min_right = Self::compute_y_min(data_right, height, scale);
+            let y_min = y_min_left.min(y_min_right);
+
+            // Skip drawing entirely when spectrum is flat (near-silence).
+            let surface_height = (height - y_min) as f64;
+            if surface_height < 1.0 {
+                return;
+            }
+
+            // Allocate Cairo surface at the bounding box size instead of full window.
+            // Cairo coordinates are relative to this rect: (0, 0) = snapshot (0, y_min).
+            let cr = snapshot.append_cairo(&graphene::Rect::new(0.0, y_min, width, surface_height as f32));
+
+            // Draw left channel.
+            self.draw_spectrum_cairo_channel(
+                &cr,
+                width as f64,
+                height as f64,
+                y_min as f64,
+                data_left,
+                scale,
+                color,
+                has_fill,
+                top_opacity,
+                bottom_opacity,
+            );
+
+            // Draw right channel on the same surface.
+            self.draw_spectrum_cairo_channel(
+                &cr,
+                width as f64,
+                height as f64,
+                y_min as f64,
+                data_right,
+                scale,
+                color,
+                has_fill,
+                top_opacity,
+                bottom_opacity,
+            );
         }
 
         /// Whether any render node will be added to render the visualiser.

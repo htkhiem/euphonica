@@ -1,9 +1,9 @@
-use gtk::{CompositeTemplate, glib, graphene, gdk, gsk, prelude::*, subclass::prelude::*};
+use crate::{common::QualityGrade, utils};
 use glib::{Object, ParamSpec, ParamSpecDouble, ParamSpecObject, WeakRef, clone};
+use gtk::{CompositeTemplate, gdk, glib, graphene, gsk, prelude::*, subclass::prelude::*};
+use hsl;
 use once_cell::sync::Lazy;
 use std::cell::Cell;
-use hsl;
-use crate::{common::QualityGrade, utils};
 
 use super::Player;
 
@@ -158,26 +158,32 @@ mod imp {
             // Get the current accent colour via this object's foreground. This is possible as
             // we've set it to the fg-auto-accent CSS class, whose foreground colour is set to
             // the current accent (either system or picked from album art) by EuphonicaWindow.
-            let style= adw::StyleManager::default();
+            let style = adw::StyleManager::default();
             let accent = self.obj().color();
-            let cursor_x = (self.adjustment.value() / self.adjustment.upper()) as f32 * self.obj().width() as f32;
+            let cursor_x = (self.adjustment.value() / self.adjustment.upper()) as f32
+                * self.obj().width() as f32;
 
             // Draw highlight
-            let mut bottom_hsl = hsl::HSL::from_rgb(
-                &[(accent.red() * 255.0).round() as u8, 
-                (accent.green() * 255.0).round() as u8, 
-                (accent.blue() * 255.0).round() as u8]
-            );
+            let mut bottom_hsl = hsl::HSL::from_rgb(&[
+                (accent.red() * 255.0).round() as u8,
+                (accent.green() * 255.0).round() as u8,
+                (accent.blue() * 255.0).round() as u8,
+            ]);
             bottom_hsl.l = bottom_hsl.l.max(0.75);
             let bottom = bottom_hsl.to_rgb();
-            let bottom = gdk::RGBA::new(bottom.0 as f32 / 255.0, bottom.1 as f32 / 255.0, bottom.2 as f32 / 255.0, 1.0);
+            let bottom = gdk::RGBA::new(
+                bottom.0 as f32 / 255.0,
+                bottom.1 as f32 / 255.0,
+                bottom.2 as f32 / 255.0,
+                1.0,
+            );
             let stops = if style.is_dark() {
                 // In dark mode, the seekbar highlight glows the accent colour and the cursor glows white.
                 [
                     gsk::ColorStop::new(0.0, bottom),
                     gsk::ColorStop::new(0.15, accent.with_alpha(0.7)),
                     gsk::ColorStop::new(0.3, accent.with_alpha(0.4)),
-                    gsk::ColorStop::new(0.75, accent.with_alpha(0.0))
+                    gsk::ColorStop::new(0.75, accent.with_alpha(0.0)),
                 ]
             } else {
                 [
@@ -188,34 +194,28 @@ mod imp {
                 ]
             };
             snapshot.append_linear_gradient(
-                &graphene::Rect::new(
-                    0.0,
-                    0.0,
-                    cursor_x,
-                    self.obj().height() as f32,
-                ), 
-                &graphene::Point::new(0.0, self.obj().height() as f32), 
-                &graphene::Point::new(0.0, 0.0), 
-                &stops
+                &graphene::Rect::new(0.0, 0.0, cursor_x, self.obj().height() as f32),
+                &graphene::Point::new(0.0, self.obj().height() as f32),
+                &graphene::Point::new(0.0, 0.0),
+                &stops,
             );
             // FIXME: without a "solid colour" node the repainting will be erratic.
-            // This call does nothing visually & wastes GPU cycles but without it the seekbar 
+            // This call does nothing visually & wastes GPU cycles but without it the seekbar
             // won't redraw itself.
             snapshot.append_color(
                 &gdk::RGBA::TRANSPARENT,
-                &graphene::Rect::new(
-                    0.0,
-                    0.0,
-                    cursor_x,
-                    self.obj().height() as f32,
-                )
+                &graphene::Rect::new(0.0, 0.0, cursor_x, self.obj().height() as f32),
             );
 
             // Draw cursor
-            let cursor_color = if style.is_dark() {gdk::RGBA::WHITE} else {gdk::RGBA::BLACK};
+            let cursor_color = if style.is_dark() {
+                gdk::RGBA::WHITE
+            } else {
+                gdk::RGBA::BLACK
+            };
             let cursor_stops = [
                 gsk::ColorStop::new(0.25, cursor_color),
-                gsk::ColorStop::new(1.0, cursor_color.with_alpha(0.0))
+                gsk::ColorStop::new(1.0, cursor_color.with_alpha(0.0)),
             ];
             snapshot.append_linear_gradient(
                 &graphene::Rect::new(
@@ -224,10 +224,10 @@ mod imp {
                     0.0,
                     1.0,
                     self.obj().height() as f32,
-                ), 
-                &graphene::Point::new(0.0, self.obj().height() as f32), 
-                &graphene::Point::new(0.0, 0.0), 
-                &cursor_stops
+                ),
+                &graphene::Point::new(0.0, self.obj().height() as f32),
+                &graphene::Point::new(0.0, 0.0),
+                &cursor_stops,
             );
 
             self.parent_snapshot(snapshot);
@@ -272,9 +272,13 @@ impl Default for Seekbar {
 
 impl Seekbar {
     fn idle_queue_draw(&self) {
-        glib::idle_add_local_once(clone!(#[weak(rename_to = this)] self, move || {
-            this.queue_draw();
-        }));
+        glib::idle_add_local_once(clone!(
+            #[weak(rename_to = this)]
+            self,
+            move || {
+                this.queue_draw();
+            }
+        ));
     }
 
     pub fn new() -> Self {

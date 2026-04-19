@@ -2,8 +2,8 @@ use adw::prelude::*;
 use adw::subclass::prelude::*;
 use gtk::{
     CompositeTemplate, ListItem, SignalListItemFactory, SingleSelection,
-    glib::{self, closure_local, Properties, WeakRef, clone, subclass::Signal},
-    gio::{ActionEntry, SimpleActionGroup}
+    gio::{ActionEntry, SimpleActionGroup},
+    glib::{self, Properties, WeakRef, clone, closure_local, subclass::Signal},
 };
 use mpd::Subsystem;
 use std::{cell::Cell, cmp::Ordering, ops::Deref, rc::Rc};
@@ -13,7 +13,7 @@ use super::Library;
 use crate::{
     cache::Cache,
     client::{ClientState, ConnectionState},
-    common::{INode, ContentStack},
+    common::{ContentStack, INode},
     library::PlaylistContentView,
     library::playlist_row::PlaylistRow,
     utils::{g_cmp_str_options, settings_manager},
@@ -335,9 +335,13 @@ impl PlaylistView {
                 move |state, _| {
                     if state.connection_state() == ConnectionState::Connected {
                         // Newly-connected? Get all playlists.
-                        glib::spawn_future_local(clone!(#[weak] this, async move {
-                            this.init_playlists(false).await;
-                        }));
+                        glib::spawn_future_local(clone!(
+                            #[weak]
+                            this,
+                            async move {
+                                this.init_playlists(false).await;
+                            }
+                        ));
                     }
                 }
             ),
@@ -351,39 +355,43 @@ impl PlaylistView {
                 self,
                 move |_: ClientState, subsys: glib::BoxedAnyObject| {
                     if subsys.borrow::<Subsystem>().deref() == &Subsystem::Playlist {
-                        glib::spawn_future_local(clone!(#[weak] this, async move {
-                            let library = this.imp().library.upgrade().unwrap();
-                            // Reload playlists
-                            this.init_playlists(true).await;
-                            // Also try to reload content view too, if it's still bound to one.
-                            // If its currently-bound playlist has just been deleted, don't rebind it.
-                            // Instead, force-switch the nav view to this page.
-                            let content_view = this.imp().content_view.get();
-                            if let Some(playlist) = content_view.current_playlist() {
-                                // If this change involves renaming the current playlist, ensure
-                                // we have updated the playlist object to the new name BEFORE sending
-                                // the actual rename command to MPD, such this this will always occur
-                                // with the current name being the NEW one.
-                                // Else, we will lose track of the current playlist.
-                                let curr_name = playlist.get_name();
-                                // Temporarily unbind
-                                content_view.unbind(true);
-                                let playlists = library.playlists();
-                                if let Some(idx) = playlists.find_with_equal_func(move |obj| {
-                                    obj.downcast_ref::<INode>().unwrap().get_name() == curr_name
-                                }) {
-                                    this.on_playlist_clicked(
-                                        playlists
-                                            .item(idx)
-                                            .unwrap()
-                                            .downcast_ref::<INode>()
-                                            .unwrap(),
-                                    );
-                                } else {
-                                    this.pop();
+                        glib::spawn_future_local(clone!(
+                            #[weak]
+                            this,
+                            async move {
+                                let library = this.imp().library.upgrade().unwrap();
+                                // Reload playlists
+                                this.init_playlists(true).await;
+                                // Also try to reload content view too, if it's still bound to one.
+                                // If its currently-bound playlist has just been deleted, don't rebind it.
+                                // Instead, force-switch the nav view to this page.
+                                let content_view = this.imp().content_view.get();
+                                if let Some(playlist) = content_view.current_playlist() {
+                                    // If this change involves renaming the current playlist, ensure
+                                    // we have updated the playlist object to the new name BEFORE sending
+                                    // the actual rename command to MPD, such this this will always occur
+                                    // with the current name being the NEW one.
+                                    // Else, we will lose track of the current playlist.
+                                    let curr_name = playlist.get_name();
+                                    // Temporarily unbind
+                                    content_view.unbind(true);
+                                    let playlists = library.playlists();
+                                    if let Some(idx) = playlists.find_with_equal_func(move |obj| {
+                                        obj.downcast_ref::<INode>().unwrap().get_name() == curr_name
+                                    }) {
+                                        this.on_playlist_clicked(
+                                            playlists
+                                                .item(idx)
+                                                .unwrap()
+                                                .downcast_ref::<INode>()
+                                                .unwrap(),
+                                        );
+                                    } else {
+                                        this.pop();
+                                    }
                                 }
                             }
-                        }));
+                        ));
                     }
                 }
             ),

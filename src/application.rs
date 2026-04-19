@@ -345,7 +345,7 @@ impl EuphonicaApplication {
             let player = self.imp().player.get().unwrap().clone();
             glib::spawn_future_local(async move {
                 player.set_is_foreground(false).await;
-            });             
+            });
             let _ = self.imp().hold_guard.replace(Some(self.hold()));
             println!("Created a new hold guard");
         } else {

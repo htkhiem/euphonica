@@ -5,12 +5,18 @@ use gtk::{
     prelude::*,
     subclass::prelude::*,
 };
-use std::{cell::{Cell, RefCell}, rc::Rc};
 use std::sync::OnceLock;
+use std::{
+    cell::{Cell, RefCell},
+    rc::Rc,
+};
 
 use crate::{
-    cache::{Cache, placeholders::{EMPTY_ALBUM_STRING, EMPTY_ARTIST_STRING}},
-    common::{Marquee, Song, ImageStack},
+    cache::{
+        Cache,
+        placeholders::{EMPTY_ALBUM_STRING, EMPTY_ARTIST_STRING},
+    },
+    common::{ImageStack, Marquee, Song},
     player::{ratio_center_box::RatioCenterBox, seekbar2::Seekbar},
     utils::settings_manager,
 };
@@ -97,43 +103,33 @@ mod imp {
             let obj = self.obj();
 
             obj.bind_property("layout", &self.multi_layout_view.get(), "layout-name")
-                .transform_to(|_, layout: u32| {
-                    match layout {
-                        0 => Some("micro".to_value()),
-                        1 => Some("mini".to_value()),
-                        2 => Some("full".to_value()),
-                        _ => unimplemented!()
-                    }
+                .transform_to(|_, layout: u32| match layout {
+                    0 => Some("micro".to_value()),
+                    1 => Some("mini".to_value()),
+                    2 => Some("full".to_value()),
+                    _ => unimplemented!(),
                 })
                 .sync_create()
                 .build();
 
             obj.bind_property("layout", &self.seekbar.get(), "visible")
-                .transform_to(|_, layout: u32| {
-                    Some((layout > 0).to_value())
-                })
+                .transform_to(|_, layout: u32| Some((layout > 0).to_value()))
                 .sync_create()
                 .build();
 
             // Hide certain widgets when in compact mode
             obj.bind_property("layout", &self.album.get(), "visible")
-                .transform_to(|_, layout: u32| {
-                    Some((layout > 1).to_value())
-                })
+                .transform_to(|_, layout: u32| Some((layout > 1).to_value()))
                 .sync_create()
                 .build();
 
             obj.bind_property("layout", &self.output_section.get(), "visible")
-                .transform_to(|_, layout: u32| {
-                    Some((layout > 1).to_value())
-                })
+                .transform_to(|_, layout: u32| Some((layout > 1).to_value()))
                 .sync_create()
                 .build();
 
             obj.bind_property("layout", &self.vol_knob.get(), "visible")
-                .transform_to(|_, layout: u32| {
-                    Some((layout > 1).to_value())
-                })
+                .transform_to(|_, layout: u32| Some((layout > 1).to_value()))
                 .sync_create()
                 .build();
 
@@ -204,12 +200,19 @@ impl PlayerBar {
         knob.connect_notify_local(
             Some("value"),
             clone!(
-                #[weak] player,
+                #[weak]
+                player,
                 move |knob: &VolumeKnob, _| {
                     let val = knob.value().round() as i8;
-                    glib::spawn_future_local(clone!(#[weak] player, async move {
-                        if let Err(e) = player.send_set_volume(val).await {dbg!(e);}
-                    }));
+                    glib::spawn_future_local(clone!(
+                        #[weak]
+                        player,
+                        async move {
+                            if let Err(e) = player.send_set_volume(val).await {
+                                dbg!(e);
+                            }
+                        }
+                    ));
                 }
             ),
         );
@@ -217,18 +220,27 @@ impl PlayerBar {
         knob.connect_notify_local(
             Some("active"),
             clone!(
-                #[weak] player,
+                #[weak]
+                player,
                 move |knob: &VolumeKnob, _| {
                     let val = knob.value().round() as i8;
                     let muted = knob.is_active();
-                    glib::spawn_future_local(clone!(#[weak] player, async move {
-                        if muted {
-                            if let Err(e) = player.send_set_volume(0).await {dbg!(e);}
-                        } else {
-                            // Restore previous volume
-                            if let Err(e) = player.send_set_volume(val).await {dbg!(e);}
+                    glib::spawn_future_local(clone!(
+                        #[weak]
+                        player,
+                        async move {
+                            if muted {
+                                if let Err(e) = player.send_set_volume(0).await {
+                                    dbg!(e);
+                                }
+                            } else {
+                                // Restore previous volume
+                                if let Err(e) = player.send_set_volume(val).await {
+                                    dbg!(e);
+                                }
+                            }
                         }
-                    }));
+                    ));
                 }
             ),
         );
@@ -300,7 +312,8 @@ impl PlayerBar {
             "outputs-changed",
             false,
             closure_local!(
-                #[weak(rename_to = this)] self,
+                #[weak(rename_to = this)]
+                self,
                 move |player: Player| {
                     this.update_outputs(&player);
                 }
@@ -312,8 +325,10 @@ impl PlayerBar {
             "cover-changed",
             false,
             closure_local!(
-                #[weak(rename_to = this)] self,
-                #[weak] cache,
+                #[weak(rename_to = this)]
+                self,
+                #[weak]
+                cache,
                 move |p: Player| {
                     this.update_album_art(p.current_song(), cache.clone());
                 }
@@ -338,8 +353,10 @@ impl PlayerBar {
 
     fn update_album_art(&self, song: Option<Song>, cache: Rc<Cache>) {
         glib::spawn_future_local(clone!(
-            #[weak(rename_to = this)] self,
-            #[weak] cache,
+            #[weak(rename_to = this)]
+            self,
+            #[weak]
+            cache,
             async move {
                 if let Some(song) = song {
                     this.imp().albumart.show_spinner();

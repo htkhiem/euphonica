@@ -683,9 +683,10 @@ impl Player {
         if self.imp().use_visualizer.get() && self.imp().is_foreground.get() {
             let output = self.imp().fft_data.clone();
             if let Some(backend) = self.imp().fft_backend.borrow().as_ref()
-                && backend.clone().start(output).is_err() {
-                    eprintln!("Failed to start FFT backend");
-                };
+                && backend.clone().start(output).is_err()
+            {
+                eprintln!("Failed to start FFT backend");
+            };
         }
     }
 

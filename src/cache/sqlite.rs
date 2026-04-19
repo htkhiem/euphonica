@@ -806,10 +806,11 @@ pub fn insert_dynamic_playlist(
                     &format!("dynamic_playlist:{to_overwrite}"),
                     &format!("dynamic_playlist:{}", dp.name),
                 ],
-            ) {
-                tx.rollback().map_err(Error::Db)?;
-                return Err(Error::Db(db_err));
-            }
+            )
+        {
+            tx.rollback().map_err(Error::Db)?;
+            return Err(Error::Db(db_err));
+        }
     }
 
     // Bail out if current name already exists. The overwriting case should have already

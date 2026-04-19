@@ -78,7 +78,7 @@ mod imp {
         pub restore_last_pos: Cell<u8>,
 
         pub player: WeakRef<Player>,
-        pub initializing: Cell<bool>
+        pub initializing: Cell<bool>,
     }
 
     #[glib::object_subclass]
@@ -406,7 +406,7 @@ impl QueueView {
             self.imp().content_stack.show_content();
         } else {
             self.imp().content_stack.show_placeholder();
-        }   
+        }
     }
 
     pub fn bind_state(&self, player: &Player) {
@@ -433,11 +433,12 @@ impl QueueView {
         player_queue.connect_notify_local(
             Some("n-items"),
             clone!(
-                #[weak(rename_to = this)] self,
+                #[weak(rename_to = this)]
+                self,
                 move |queue, _| {
                     this.update_stack(queue);
                 }
-            )
+            ),
         );
 
         player
@@ -603,22 +604,23 @@ impl QueueView {
 impl LazyInit for QueueView {
     fn populate(&self) {
         if let Some(player) = self.imp().player.upgrade()
-            && !player.queue_is_initialized() 
-            && !self.imp().initializing.get() {
-                self.imp().initializing.set(true);
-                glib::spawn_future_local(clone!(
-                    #[weak]
-                    player,
-                    #[weak(rename_to = this)]
-                    self,
-                    async move {
-                        let stack = this.imp().content_stack.get();
-                        stack.show_spinner();
-                        player.update_queue().await;
-                        this.imp().initializing.set(false);
-                        this.update_stack(player.queue());
-                    }
-                ));
-            }
+            && !player.queue_is_initialized()
+            && !self.imp().initializing.get()
+        {
+            self.imp().initializing.set(true);
+            glib::spawn_future_local(clone!(
+                #[weak]
+                player,
+                #[weak(rename_to = this)]
+                self,
+                async move {
+                    let stack = this.imp().content_stack.get();
+                    stack.show_spinner();
+                    player.update_queue().await;
+                    this.imp().initializing.set(false);
+                    this.update_stack(player.queue());
+                }
+            ));
+        }
     }
 }

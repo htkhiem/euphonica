@@ -9,11 +9,15 @@ use gtk::{
 use std::{
     cell::{Cell, RefCell},
     fs::{self, File},
-    io::Write, rc::Rc,
+    io::Write,
+    rc::Rc,
 };
 
 use crate::{
-    cache::{Cache, placeholders::{EMPTY_ALBUM_STRING, EMPTY_ARTIST_STRING}},
+    cache::{
+        Cache,
+        placeholders::{EMPTY_ALBUM_STRING, EMPTY_ARTIST_STRING},
+    },
     client::{ClientState, state::StickersSupportLevel},
     common::{PictureStack, Rating, Song},
     player::seekbar::Seekbar,
@@ -217,9 +221,10 @@ impl PlayerPane {
             let curr_line_idx = player.current_lyric_line();
             for i in 0..n_lyric_lines {
                 if let Some(row) = lyrics_box.row_at_index(i as i32)
-                    && let Some(label) = row.child() {
-                        label.set_opacity(if i == curr_line_idx { 1.0 } else { 0.2 });
-                    }
+                    && let Some(label) = row.child()
+                {
+                    label.set_opacity(if i == curr_line_idx { 1.0 } else { 0.2 });
+                }
             }
             // Actually focus on several (currently 1) lines after the
             // current one, such that the next lines are visible too.
@@ -237,9 +242,10 @@ impl PlayerPane {
         } else {
             for i in 0..n_lyric_lines {
                 if let Some(row) = lyrics_box.row_at_index(i as i32)
-                    && let Some(label) = row.child() {
-                        label.set_opacity(1.0);
-                    }
+                    && let Some(label) = row.child()
+                {
+                    label.set_opacity(1.0);
+                }
             }
         }
     }
@@ -258,12 +264,19 @@ impl PlayerPane {
         knob.connect_notify_local(
             Some("value"),
             clone!(
-                #[weak] player,
+                #[weak]
+                player,
                 move |knob: &VolumeKnob, _| {
                     let val = knob.value().round() as i8;
-                    glib::spawn_future_local(clone!(#[weak] player, async move {
-                        if let Err(e) = player.send_set_volume(val).await {dbg!(e);}
-                    }));
+                    glib::spawn_future_local(clone!(
+                        #[weak]
+                        player,
+                        async move {
+                            if let Err(e) = player.send_set_volume(val).await {
+                                dbg!(e);
+                            }
+                        }
+                    ));
                 }
             ),
         );
@@ -271,18 +284,27 @@ impl PlayerPane {
         knob.connect_notify_local(
             Some("active"),
             clone!(
-                #[weak] player,
+                #[weak]
+                player,
                 move |knob: &VolumeKnob, _| {
                     let val = knob.value().round() as i8;
                     let muted = knob.is_active();
-                    glib::spawn_future_local(clone!(#[weak] player, async move {
-                        if muted {
-                            if let Err(e) = player.send_set_volume(0).await {dbg!(e);}
-                        } else {
-                            // Restore previous volume
-                            if let Err(e) = player.send_set_volume(val).await {dbg!(e);}
+                    glib::spawn_future_local(clone!(
+                        #[weak]
+                        player,
+                        async move {
+                            if muted {
+                                if let Err(e) = player.send_set_volume(0).await {
+                                    dbg!(e);
+                                }
+                            } else {
+                                // Restore previous volume
+                                if let Err(e) = player.send_set_volume(val).await {
+                                    dbg!(e);
+                                }
+                            }
                         }
-                    }));
+                    ));
                 }
             ),
         );
@@ -316,7 +338,8 @@ impl PlayerPane {
             .sync_create()
             .build();
         rg_btn.connect_clicked(clone!(
-            #[weak] player,
+            #[weak]
+            player,
             move |_| {
                 glib::spawn_future_local(async move {
                     player.cycle_replaygain().await;
@@ -436,7 +459,8 @@ impl PlayerPane {
             "changed",
             false,
             closure_local!(
-                #[weak] player,
+                #[weak]
+                player,
                 move |rating: Rating| {
                     let rating_val = rating.value();
                     let rating_opt = if rating_val > 0 {
@@ -538,8 +562,10 @@ impl PlayerPane {
             "cover-changed",
             false,
             closure_local!(
-                #[weak(rename_to = this)] self,
-                #[strong] cache,
+                #[weak(rename_to = this)]
+                self,
+                #[strong]
+                cache,
                 move |p: Player| {
                     this.update_album_art(p.current_song(), cache.clone());
                 }
@@ -715,8 +741,10 @@ impl PlayerPane {
 
     fn update_album_art(&self, song: Option<Song>, cache: Rc<Cache>) {
         glib::spawn_future_local(clone!(
-            #[weak(rename_to = this)] self,
-            #[weak] cache,
+            #[weak(rename_to = this)]
+            self,
+            #[weak]
+            cache,
             async move {
                 if let Some(song) = song {
                     this.imp().albumart.show_spinner();
