@@ -4,8 +4,9 @@ use gtk::{
     CompositeTemplate, ListItem, SignalListItemFactory, SingleSelection,
     gio::{ActionEntry, SimpleActionGroup},
     glib::{self},
-    glib::{Properties, WeakRef, clone, subclass::Signal},
+    glib::{Properties, SignalHandlerId, WeakRef, clone, subclass::Signal},
 };
+use std::cell::RefCell;
 use std::{cell::Cell, cmp::Ordering, rc::Rc, sync::OnceLock};
 
 use super::{AlbumCell, AlbumContentView, Library};
@@ -65,6 +66,8 @@ mod imp {
         // if they now match.
         pub last_search_len: Cell<usize>,
         pub library: WeakRef<Library>,
+        pub sort_by_id: RefCell<Option<SignalHandlerId>>,
+        pub sort_direction_id: RefCell<Option<SignalHandlerId>>,
 
         #[property(get, set)]
         pub collapsed: Cell<bool>,
@@ -94,7 +97,12 @@ mod imp {
             while let Some(child) = self.obj().first_child() {
                 child.unparent();
             }
-            println!("Disposing album view");
+            if let Some(id) = self.sort_by_id.take() {
+                self.sorter.disconnect(id);
+            }
+            if let Some(id) = self.sort_direction_id.take() {
+                self.sorter.disconnect(id);
+            }
         }
 
         fn constructed(&self) {
@@ -243,7 +251,7 @@ mod imp {
             ));
 
             // Update when changing sort settings
-            state.connect_changed(
+            self.sort_by_id.replace(Some(state.connect_changed(
                 Some("sort-by"),
                 clone!(
                     #[weak(rename_to = this)]
@@ -253,8 +261,8 @@ mod imp {
                         this.sorter.changed(gtk::SorterChange::Different);
                     }
                 ),
-            );
-            state.connect_changed(
+            )));
+            self.sort_direction_id.replace(Some(state.connect_changed(
                 Some("sort-direction"),
                 clone!(
                     #[weak(rename_to = this)]
@@ -265,7 +273,7 @@ mod imp {
                         this.sorter.changed(gtk::SorterChange::Inverted);
                     }
                 ),
-            );
+            )));
 
             // Set up search
             self.search_filter.set_filter_func(clone!(

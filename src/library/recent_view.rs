@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::rc::Rc;
 use std::{cell::Cell, sync::OnceLock};
 
@@ -8,7 +9,7 @@ use gtk::{
     glib::{self},
 };
 
-use glib::{Properties, WeakRef, clone, closure_local, subclass::Signal};
+use glib::{Properties, SignalHandlerId, WeakRef, clone, closure_local, subclass::Signal};
 
 use super::{AlbumCell, ArtistCell, Library};
 use crate::{
@@ -65,6 +66,8 @@ mod imp {
         pub song_list: TemplateChild<gtk::ListBox>,
 
         pub library: WeakRef<Library>,
+        pub player: WeakRef<Player>,
+        pub history_changed_id: RefCell<Option<SignalHandlerId>>,
 
         #[property(get, set)]
         pub collapsed: Cell<bool>,
@@ -91,6 +94,11 @@ mod imp {
         fn dispose(&self) {
             while let Some(child) = self.obj().first_child() {
                 child.unparent();
+            }
+            if let Some(id) = self.history_changed_id.take() {
+                if let Some(player) = self.obj().imp().player.upgrade() {
+                    player.disconnect(id);
+                }
             }
         }
 
@@ -222,18 +230,21 @@ impl RecentView {
         window: &EuphonicaWindow,
     ) {
         self.imp().library.set(Some(library));
+        self.imp().player.set(Some(player));
 
-        player.connect_closure(
-            "history-changed",
-            false,
-            closure_local!(
-                #[weak(rename_to = this)]
-                self,
-                move |_: Player| {
-                    this.on_history_changed();
-                }
-            ),
-        );
+        self.imp()
+            .history_changed_id
+            .replace(Some(player.connect_closure(
+                "history-changed",
+                false,
+                closure_local!(
+                    #[weak(rename_to = this)]
+                    self,
+                    move |_: Player| {
+                        this.on_history_changed();
+                    }
+                ),
+            )));
 
         self.setup_album_row(window, cache.clone());
         self.setup_artist_row(window, cache.clone());

@@ -192,7 +192,11 @@ impl UIPreferences {
             .build();
 
         ui_settings
-            .bind("visualizer-use-cairo", &imp.visualizer_use_cairo.get(), "active")
+            .bind(
+                "visualizer-use-cairo",
+                &imp.visualizer_use_cairo.get(),
+                "active",
+            )
             .build();
 
         ui_settings

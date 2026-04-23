@@ -1,5 +1,5 @@
 use ashpd::desktop::file_chooser::{FileFilter, SelectedFiles};
-use glib::{clone, closure_local};
+use glib::{SignalHandlerId, WeakRef, clone, closure_local};
 use gtk::{
     CompositeTemplate,
     glib::{self, Variant},
@@ -102,6 +102,11 @@ mod imp {
         // Index of visible child in output_widgets
         pub current_output: Cell<usize>,
         pub output_count: Cell<usize>,
+        pub player: WeakRef<Player>,
+        pub volume_changed_id: RefCell<Option<SignalHandlerId>>,
+        pub current_lyric_line_id: RefCell<Option<SignalHandlerId>>,
+        pub outputs_changed_id: RefCell<Option<SignalHandlerId>>,
+        pub cover_changed_id: RefCell<Option<SignalHandlerId>>,
     }
 
     // The central trait for subclassing a GObject
@@ -180,6 +185,25 @@ mod imp {
                 .sync_create()
                 .build();
         }
+
+        fn dispose(&self) {
+            // Disconnect player signal handlers to prevent callbacks
+            // from running on disposed widgets
+            if let Some(player) = self.player.upgrade() {
+                if let Some(id) = self.volume_changed_id.take() {
+                    player.disconnect(id);
+                }
+                if let Some(id) = self.current_lyric_line_id.take() {
+                    player.disconnect(id);
+                }
+                if let Some(id) = self.outputs_changed_id.take() {
+                    player.disconnect(id);
+                }
+                if let Some(id) = self.cover_changed_id.take() {
+                    player.disconnect(id);
+                }
+            }
+        }
     }
 
     // Trait shared by all widgets
@@ -251,6 +275,7 @@ impl PlayerPane {
     }
 
     pub fn setup(&self, player: &Player, cache: Rc<Cache>, client_state: &ClientState) {
+        self.imp().player.set(Some(player));
         self.setup_volume_knob(player);
         self.bind_state(player, cache, client_state);
         self.imp().playback_controls.setup(player);
@@ -310,15 +335,17 @@ impl PlayerPane {
         );
 
         // Only fired for EXTERNAL changes.
-        player.connect_closure(
-            "volume-changed",
-            false,
-            closure_local!(|_: Player, val: i8| {
-                if !knob.is_active() {
-                    knob.sync_value(val);
-                }
-            }),
-        );
+        self.imp()
+            .volume_changed_id
+            .replace(Some(player.connect_closure(
+                "volume-changed",
+                false,
+                closure_local!(|_: Player, val: i8| {
+                    if !knob.is_active() {
+                        knob.sync_value(val);
+                    }
+                }),
+            )));
 
         let rg_btn = self.imp().rg_btn.get();
         player
@@ -533,44 +560,50 @@ impl PlayerPane {
         // trigger a current-lyric-line notification (with current_lyric_line
         // at zero), which in turn runs this callback to highlight the initial
         // lyric line.
-        player.connect_notify_local(
-            Some("current-lyric-line"),
-            clone!(
-                #[weak(rename_to = this)]
-                self,
-                move |player, _| {
-                    this.update_lyrics_state(player);
-                }
-            ),
-        );
+        self.imp()
+            .current_lyric_line_id
+            .replace(Some(player.connect_notify_local(
+                Some("current-lyric-line"),
+                clone!(
+                    #[weak(rename_to = this)]
+                    self,
+                    move |player, _| {
+                        this.update_lyrics_state(player);
+                    }
+                ),
+            )));
 
         self.update_outputs(player);
-        player.connect_closure(
-            "outputs-changed",
-            false,
-            closure_local!(
-                #[weak(rename_to = this)]
-                self,
-                move |player: Player| {
-                    this.update_outputs(&player);
-                }
-            ),
-        );
+        self.imp()
+            .outputs_changed_id
+            .replace(Some(player.connect_closure(
+                "outputs-changed",
+                false,
+                closure_local!(
+                    #[weak(rename_to = this)]
+                    self,
+                    move |player: Player| {
+                        this.update_outputs(&player);
+                    }
+                ),
+            )));
 
         self.update_album_art(player.current_song(), cache.clone());
-        player.connect_closure(
-            "cover-changed",
-            false,
-            closure_local!(
-                #[weak(rename_to = this)]
-                self,
-                #[strong]
-                cache,
-                move |p: Player| {
-                    this.update_album_art(p.current_song(), cache.clone());
-                }
-            ),
-        );
+        self.imp()
+            .cover_changed_id
+            .replace(Some(player.connect_closure(
+                "cover-changed",
+                false,
+                closure_local!(
+                    #[weak(rename_to = this)]
+                    self,
+                    #[strong]
+                    cache,
+                    move |p: Player| {
+                        this.update_album_art(p.current_song(), cache.clone());
+                    }
+                ),
+            )));
 
         imp.prev_output.connect_clicked(clone!(
             #[weak(rename_to = this)]

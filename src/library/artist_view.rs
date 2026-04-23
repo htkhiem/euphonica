@@ -1,9 +1,10 @@
 use adw::prelude::*;
 use adw::subclass::prelude::*;
 use gtk::{CompositeTemplate, ListItem, SignalListItemFactory, SingleSelection, glib};
+use std::cell::RefCell;
 use std::{cell::Cell, cmp::Ordering, rc::Rc, sync::OnceLock};
 
-use glib::{Properties, WeakRef, clone, subclass::Signal};
+use glib::{Properties, SignalHandlerId, WeakRef, clone, subclass::Signal};
 
 use super::{ArtistCell, ArtistContentView, Library};
 use crate::{
@@ -60,6 +61,7 @@ mod imp {
         pub collapsed: Cell<bool>,
 
         pub library: WeakRef<Library>,
+        pub sort_direction_id: RefCell<Option<SignalHandlerId>>,
         pub initializing: Cell<bool>,
     }
 
@@ -85,7 +87,9 @@ mod imp {
             while let Some(child) = self.obj().first_child() {
                 child.unparent();
             }
-            println!("Disposing artist view");
+            if let Some(id) = self.sort_direction_id.take() {
+                self.sorter.disconnect(id);
+            }
         }
 
         fn constructed(&self) {
@@ -210,18 +214,20 @@ impl ArtistView {
         ));
 
         // Update when changing sort settings
-        state.connect_changed(
-            Some("sort-direction"),
-            clone!(
-                #[weak(rename_to = this)]
-                self,
-                move |_, _| {
-                    println!("Flipping sort...");
-                    // Don't actually sort, just flip the results :)
-                    this.imp().sorter.changed(gtk::SorterChange::Inverted);
-                }
-            ),
-        );
+        self.imp()
+            .sort_direction_id
+            .replace(Some(state.connect_changed(
+                Some("sort-direction"),
+                clone!(
+                    #[weak(rename_to = this)]
+                    self,
+                    move |_, _| {
+                        println!("Flipping sort...");
+                        // Don't actually sort, just flip the results :)
+                        this.imp().sorter.changed(gtk::SorterChange::Inverted);
+                    }
+                ),
+            )));
     }
 
     fn setup_search(&self) {

@@ -91,6 +91,8 @@ mod imp {
         pub window: WeakRef<EuphonicaWindow>,
         pub bindings: RefCell<Vec<Binding>>,
         pub cover_signal_id: RefCell<Option<SignalHandlerId>>,
+        pub cover_set_id: RefCell<Option<SignalHandlerId>>,
+        pub cover_cleared_id: RefCell<Option<SignalHandlerId>>,
         pub cache: OnceCell<Rc<Cache>>,
         #[derivative(Default(value = "Cell::new(true)"))]
         pub selecting_all: Cell<bool>, // Enables queuing the entire album efficiently
@@ -118,6 +120,15 @@ mod imp {
         fn dispose(&self) {
             while let Some(child) = self.obj().first_child() {
                 child.unparent();
+            }
+            if let Some(cache) = self.cache.get() {
+                let state = cache.get_cache_state();
+                if let Some(id) = self.cover_set_id.take() {
+                    state.disconnect(id);
+                }
+                if let Some(id) = self.cover_cleared_id.take() {
+                    state.disconnect(id);
+                }
             }
         }
 
@@ -513,32 +524,36 @@ impl AlbumContentView {
             .add_to_playlist
             .setup(library, &self.imp().sel_model);
         self.imp().library.set(Some(library));
-        cache_state.connect_closure(
-            "folder-cover-set",
-            false,
-            closure_local!(
-                #[weak(rename_to = this)]
-                self,
-                move |_: CacheState, uri: String, hires: gdk::Texture, _: gdk::Texture| {
-                    if this.album().is_some_and(|a| a.get_folder_uri() == uri) {
-                        this.update_cover(hires);
+        self.imp()
+            .cover_set_id
+            .replace(Some(cache_state.connect_closure(
+                "folder-cover-set",
+                false,
+                closure_local!(
+                    #[weak(rename_to = this)]
+                    self,
+                    move |_: CacheState, uri: String, hires: gdk::Texture, _: gdk::Texture| {
+                        if this.album().is_some_and(|a| a.get_folder_uri() == uri) {
+                            this.update_cover(hires);
+                        }
                     }
-                }
-            ),
-        );
-        cache_state.connect_closure(
-            "folder-cover-cleared",
-            false,
-            closure_local!(
-                #[weak(rename_to = this)]
-                self,
-                move |_: CacheState, uri: String| {
-                    if this.album().is_some_and(|a| a.get_folder_uri() == uri) {
-                        this.clear_cover();
+                ),
+            )));
+        self.imp()
+            .cover_cleared_id
+            .replace(Some(cache_state.connect_closure(
+                "folder-cover-cleared",
+                false,
+                closure_local!(
+                    #[weak(rename_to = this)]
+                    self,
+                    move |_: CacheState, uri: String| {
+                        if this.album().is_some_and(|a| a.get_folder_uri() == uri) {
+                            this.clear_cover();
+                        }
                     }
-                }
-            ),
-        );
+                ),
+            )));
 
         let rating = self.imp().rating.get();
         client_state

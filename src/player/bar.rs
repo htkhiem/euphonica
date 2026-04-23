@@ -1,4 +1,4 @@
-use glib::{clone, closure_local};
+use glib::{SignalHandlerId, WeakRef, clone, closure_local};
 use gtk::{
     CompositeTemplate,
     glib::{self, Properties, Variant, subclass::Signal},
@@ -74,6 +74,10 @@ mod imp {
         // Index of visible child in output_widgets
         pub current_output: Cell<usize>,
         pub output_count: Cell<usize>,
+        pub player: WeakRef<Player>,
+        pub volume_changed_id: RefCell<Option<SignalHandlerId>>,
+        pub outputs_changed_id: RefCell<Option<SignalHandlerId>>,
+        pub cover_changed_id: RefCell<Option<SignalHandlerId>>,
         #[property(get, set)]
         pub layout: Cell<u32>, // 0: micro, 1: mini, 2: full. TODO: turn into enum.
     }
@@ -146,6 +150,20 @@ mod imp {
             static SIGNALS: OnceLock<Vec<Signal>> = OnceLock::new();
             SIGNALS.get_or_init(|| vec![Signal::builder("goto-pane-clicked").build()])
         }
+
+        fn dispose(&self) {
+            if let Some(player) = self.player.upgrade() {
+                if let Some(id) = self.volume_changed_id.take() {
+                    player.disconnect(id);
+                }
+                if let Some(id) = self.outputs_changed_id.take() {
+                    player.disconnect(id);
+                }
+                if let Some(id) = self.cover_changed_id.take() {
+                    player.disconnect(id);
+                }
+            }
+        }
     }
 
     impl WidgetImpl for PlayerBar {}
@@ -173,6 +191,7 @@ impl PlayerBar {
     }
 
     pub fn setup(&self, player: &Player, cache: Rc<Cache>) {
+        self.imp().player.set(Some(player));
         self.setup_volume_knob(player);
         self.bind_state(player, cache);
         self.imp().playback_controls.setup(player);
@@ -246,15 +265,17 @@ impl PlayerBar {
         );
 
         // Only fired for EXTERNAL changes.
-        player.connect_closure(
-            "volume-changed",
-            false,
-            closure_local!(|_: Player, val: i8| {
-                if !knob.is_active() {
-                    knob.sync_value(val);
-                }
-            }),
-        );
+        self.imp()
+            .volume_changed_id
+            .replace(Some(player.connect_closure(
+                "volume-changed",
+                false,
+                closure_local!(|_: Player, val: i8| {
+                    if !knob.is_active() {
+                        knob.sync_value(val);
+                    }
+                }),
+            )));
     }
 
     fn bind_state(&self, player: &Player, cache: Rc<Cache>) {
@@ -308,32 +329,36 @@ impl PlayerBar {
             .build();
 
         self.update_outputs(player);
-        player.connect_closure(
-            "outputs-changed",
-            false,
-            closure_local!(
-                #[weak(rename_to = this)]
-                self,
-                move |player: Player| {
-                    this.update_outputs(&player);
-                }
-            ),
-        );
+        self.imp()
+            .outputs_changed_id
+            .replace(Some(player.connect_closure(
+                "outputs-changed",
+                false,
+                closure_local!(
+                    #[weak(rename_to = this)]
+                    self,
+                    move |player: Player| {
+                        this.update_outputs(&player);
+                    }
+                ),
+            )));
 
         self.update_album_art(player.current_song(), cache.clone());
-        player.connect_closure(
-            "cover-changed",
-            false,
-            closure_local!(
-                #[weak(rename_to = this)]
-                self,
-                #[weak]
-                cache,
-                move |p: Player| {
-                    this.update_album_art(p.current_song(), cache.clone());
-                }
-            ),
-        );
+        self.imp()
+            .cover_changed_id
+            .replace(Some(player.connect_closure(
+                "cover-changed",
+                false,
+                closure_local!(
+                    #[weak(rename_to = this)]
+                    self,
+                    #[weak]
+                    cache,
+                    move |p: Player| {
+                        this.update_album_art(p.current_song(), cache.clone());
+                    }
+                ),
+            )));
 
         self.imp().prev_output.connect_clicked(clone!(
             #[weak(rename_to = this)]

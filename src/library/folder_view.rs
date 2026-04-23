@@ -6,13 +6,14 @@ use crate::{
 };
 use adw::prelude::*;
 use adw::subclass::prelude::*;
-use glib::{ParamSpec, ParamSpecBoolean, WeakRef, clone, subclass::Signal};
+use glib::{ParamSpec, ParamSpecBoolean, SignalHandlerId, WeakRef, clone, subclass::Signal};
 use gtk::{
     CompositeTemplate, ListItem, SignalListItemFactory, SingleSelection,
     gio::{ActionEntry, SimpleActionGroup},
     glib,
 };
 use once_cell::sync::Lazy;
+use std::cell::RefCell;
 use std::{cell::Cell, cmp::Ordering, rc::Rc, sync::OnceLock};
 
 // Folder view implementation
@@ -80,6 +81,8 @@ mod imp {
         // if they now match.
         pub last_search_len: Cell<usize>,
         pub library: WeakRef<Library>,
+        pub sort_by_id: RefCell<Option<SignalHandlerId>>,
+        pub sort_direction_id: RefCell<Option<SignalHandlerId>>,
         pub collapsed: Cell<bool>,
         pub initializing: Cell<bool>,
     }
@@ -105,7 +108,12 @@ mod imp {
             while let Some(child) = self.obj().first_child() {
                 child.unparent();
             }
-            println!("Disposing folder view");
+            if let Some(id) = self.sort_by_id.take() {
+                self.sorter.disconnect(id);
+            }
+            if let Some(id) = self.sort_direction_id.take() {
+                self.sorter.disconnect(id);
+            }
         }
 
         fn constructed(&self) {
@@ -271,7 +279,7 @@ mod imp {
             ));
 
             // Update when changing sort settings
-            state.connect_changed(
+            self.sort_by_id.replace(Some(state.connect_changed(
                 Some("sort-by"),
                 clone!(
                     #[weak(rename_to = this)]
@@ -281,8 +289,8 @@ mod imp {
                         this.sorter.changed(gtk::SorterChange::Different);
                     }
                 ),
-            );
-            state.connect_changed(
+            )));
+            self.sort_direction_id.replace(Some(state.connect_changed(
                 Some("sort-direction"),
                 clone!(
                     #[weak(rename_to = this)]
@@ -293,7 +301,7 @@ mod imp {
                         this.sorter.changed(gtk::SorterChange::Inverted);
                     }
                 ),
-            );
+            )));
 
             // Setup searching
             library_settings

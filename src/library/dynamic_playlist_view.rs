@@ -4,8 +4,9 @@ use ashpd::desktop::file_chooser::SelectedFiles;
 use gtk::{
     CompositeTemplate, ListItem, SignalListItemFactory, SingleSelection,
     gio::{self, ActionEntry, SimpleActionGroup},
-    glib::{self, Properties, WeakRef, clone, closure_local, subclass::Signal},
+    glib::{self, Properties, SignalHandlerId, WeakRef, clone, closure_local, subclass::Signal},
 };
+use std::cell::RefCell;
 use std::{
     cell::{Cell, OnceCell},
     cmp::Ordering,
@@ -73,6 +74,7 @@ mod imp {
         pub library: WeakRef<Library>,
         pub cache: OnceCell<Rc<Cache>>,
         pub window: WeakRef<EuphonicaWindow>,
+        pub conn_state_id: RefCell<Option<SignalHandlerId>>,
         #[property(get, set)]
         pub collapsed: Cell<bool>,
     }
@@ -99,7 +101,12 @@ mod imp {
             while let Some(child) = self.obj().first_child() {
                 child.unparent();
             }
-            println!("Disposing DP view");
+            if let Some(cache) = self.cache.get() {
+                let state = cache.get_cache_state();
+                if let Some(id) = self.conn_state_id.take() {
+                    state.disconnect(id);
+                }
+            }
         }
 
         fn constructed(&self) {
@@ -457,32 +464,34 @@ impl DynamicPlaylistView {
         self.imp().window.set(Some(window));
         self.setup_listview();
 
-        client_state.connect_notify_local(
-            Some("connection-state"),
-            clone!(
-                #[weak(rename_to = this)]
-                self,
-                move |state, _| {
-                    if state.connection_state() == ConnectionState::Connected {
-                        glib::spawn_future_local(clone!(
-                            #[weak]
-                            this,
-                            async move {
-                                if let Err(e) = this.init_dyn_playlists(false).await
-                                    && let Some(win) = this.imp().window.upgrade()
-                                {
-                                    dbg!(e);
-                                    win.send_simple_toast(
-                                        "Couldn't load dynamic playlists (see console)",
-                                        3,
-                                    );
+        self.imp()
+            .conn_state_id
+            .replace(Some(client_state.connect_notify_local(
+                Some("connection-state"),
+                clone!(
+                    #[weak(rename_to = this)]
+                    self,
+                    move |state, _| {
+                        if state.connection_state() == ConnectionState::Connected {
+                            glib::spawn_future_local(clone!(
+                                #[weak]
+                                this,
+                                async move {
+                                    if let Err(e) = this.init_dyn_playlists(false).await
+                                        && let Some(win) = this.imp().window.upgrade()
+                                    {
+                                        dbg!(e);
+                                        win.send_simple_toast(
+                                            "Couldn't load dynamic playlists (see console)",
+                                            3,
+                                        );
+                                    }
                                 }
-                            }
-                        ));
+                            ));
+                        }
                     }
-                }
-            ),
-        );
+                ),
+            )));
 
         self.imp().create_btn.connect_clicked(clone!(
             #[weak(rename_to = this)]

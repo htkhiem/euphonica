@@ -35,7 +35,7 @@ use auto_palette::{ImageData, Palette, color::RGB};
 use glib::WeakRef;
 use gtk::{
     CssProvider, cairo, gdk, gio,
-    glib::{self, BoxedAnyObject, clone, closure_local},
+    glib::{self, BoxedAnyObject, SignalHandlerId, clone, closure_local},
     graphene, gsk,
 };
 use image::{DynamicImage, imageops::FilterType};
@@ -260,11 +260,23 @@ mod imp {
         pub should_populate_visible: Cell<bool>,
 
         pub provider: CssProvider,
+        pub client_state: OnceCell<ClientState>,
 
         // FPS tracking (debug)
         pub fps_frame_count: Cell<u64>,
         pub fps_last_time: Cell<Option<std::time::Instant>>,
         pub fps_tick_id: RefCell<Option<gtk::TickCallbackId>>,
+
+        // Signal handler IDs for disconnect on dispose
+        pub settings_bg_blur_id: RefCell<Option<SignalHandlerId>>,
+        pub settings_visualizer_id: RefCell<Option<SignalHandlerId>>,
+        pub client_state_idle_id: RefCell<Option<SignalHandlerId>>,
+        pub client_state_conn_state_id: RefCell<Option<SignalHandlerId>>,
+        pub player_cover_changed_id: RefCell<Option<SignalHandlerId>>,
+        pub client_state_pct_fg_id: RefCell<Option<SignalHandlerId>>,
+        pub client_state_pct_bg_id: RefCell<Option<SignalHandlerId>>,
+        pub client_state_n_fg_id: RefCell<Option<SignalHandlerId>>,
+        pub client_state_n_bg_id: RefCell<Option<SignalHandlerId>>,
     }
 
     #[glib::object_subclass]
@@ -286,7 +298,46 @@ mod imp {
     #[glib::derived_properties]
     impl ObjectImpl for EuphonicaWindow {
         fn dispose(&self) {
-            println!("Disposing EuphonicaWindow");
+            // Disconnect all signal handlers registered on global/long-lived objects
+            if let Some(id) = self.settings_bg_blur_id.take() {
+                let settings = settings_manager().child("ui");
+                settings.disconnect(id);
+            }
+            if let Some(id) = self.settings_visualizer_id.take() {
+                let settings = settings_manager().child("ui");
+                settings.disconnect(id);
+            }
+            if let Some(client_state) = self.client_state.get() {
+                if let Some(id) = self.client_state_idle_id.take() {
+                    client_state.disconnect(id);
+                }
+                if let Some(id) = self.client_state_conn_state_id.take() {
+                    client_state.disconnect(id);
+                }
+                if let Some(id) = self.client_state_pct_fg_id.take() {
+                    client_state.disconnect(id);
+                }
+                if let Some(id) = self.client_state_pct_bg_id.take() {
+                    client_state.disconnect(id);
+                }
+                if let Some(id) = self.client_state_n_fg_id.take() {
+                    client_state.disconnect(id);
+                }
+                if let Some(id) = self.client_state_n_bg_id.take() {
+                    client_state.disconnect(id);
+                }
+            }
+            if let Some(id) = self.player_cover_changed_id.take() {
+                if let Some(player) = self.player.upgrade() {
+                    player.disconnect(id);
+                }
+            }
+
+            // Remove display-level CSS provider
+            if let Some(display) = gdk::Display::default() {
+                let provider = &self.provider;
+                gtk::style_context_remove_provider_for_display(&display, provider);
+            }
         }
 
         fn constructed(&self) {
@@ -363,27 +414,29 @@ mod imp {
                 )
                 .build();
 
-            settings.connect_changed(
-                Some("bg-blur-radius"),
-                clone!(
-                    #[weak(rename_to = this)]
-                    self,
-                    move |_, _| {
-                        // Blur radius updates need not fade
-                        this.obj().queue_background_update(false);
-                    }
-                ),
-            );
-            settings.connect_changed(
-                Some("use-visualizer"),
-                clone!(
-                    #[weak(rename_to = this)]
-                    self,
-                    move |settings, key| {
-                        this.set_always_redraw(settings.boolean(key));
-                    }
-                ),
-            );
+            self.settings_bg_blur_id
+                .replace(Some(settings.connect_changed(
+                    Some("bg-blur-radius"),
+                    clone!(
+                        #[weak(rename_to = this)]
+                        self,
+                        move |_, _| {
+                            // Blur radius updates need not fade
+                            this.obj().queue_background_update(false);
+                        }
+                    ),
+                )));
+            self.settings_visualizer_id
+                .replace(Some(settings.connect_changed(
+                    Some("use-visualizer"),
+                    clone!(
+                        #[weak(rename_to = this)]
+                        self,
+                        move |settings, key| {
+                            this.set_always_redraw(settings.boolean(key));
+                        }
+                    ),
+                )));
 
             // If using album art as background we must disable the default coloured
             // backgrounds that navigation views use for their sidebars.
@@ -832,7 +885,7 @@ mod imp {
                 //   cp2 = P[i+1] - (P[i+2] - P[i]) / 6
                 // Boundary clamping: P[-1] = P[0], P[n+1] = P[n-1].
 
-                for i in 1..(n-1) {
+                for i in 1..(n - 1) {
                     let p0 = if i == 0 { 0 } else { i - 1 };
                     let p1 = i;
                     let p2 = i + 1;
@@ -851,10 +904,7 @@ mod imp {
             } else {
                 // Straight segments mode
                 for (band_idx, y) in ys[0..n].iter().enumerate().skip(1) {
-                    path_builder.line_to(
-                        (band_idx as f32) * band_width,
-                        *y,
-                    );
+                    path_builder.line_to((band_idx as f32) * band_width, *y);
                 }
             }
         }
@@ -1205,6 +1255,7 @@ impl EuphonicaWindow {
 
         let app = win.downcast_application();
         let client_state = app.get_client().get_client_state();
+        let _ = win.imp().client_state.set(client_state.clone());
         let player = app.get_player();
 
         // Construct all views first
@@ -1252,42 +1303,74 @@ impl EuphonicaWindow {
 
         win.queue_new_background();
 
-        client_state.connect_closure(
-            "idle",
-            false,
-            closure_local!(
-                #[watch(rename_to = this)]
-                win,
-                move |_: ClientState, subsys: BoxedAnyObject| {
-                    if subsys.borrow::<Subsystem>().deref() == &Subsystem::Database {
-                        this.send_simple_toast("Database updated with changes", 3);
+        win.imp()
+            .client_state_idle_id
+            .replace(Some(client_state.connect_closure(
+                "idle",
+                false,
+                closure_local!(
+                    #[watch(rename_to = this)]
+                    win,
+                    move |_: ClientState, subsys: BoxedAnyObject| {
+                        if subsys.borrow::<Subsystem>().deref() == &Subsystem::Database {
+                            this.send_simple_toast("Database updated with changes", 3);
+                        }
                     }
-                }
-            ),
-        );
+                ),
+            )));
         win.handle_connection_state(client_state.connection_state());
-        client_state.connect_notify_local(
-            Some("connection-state"),
-            clone!(
-                #[weak(rename_to = this)]
-                win,
-                move |state: &ClientState, _| {
-                    this.handle_connection_state(state.connection_state());
-                }
-            ),
-        );
+        win.imp()
+            .client_state_conn_state_id
+            .replace(Some(client_state.connect_notify_local(
+                Some("connection-state"),
+                clone!(
+                    #[weak(rename_to = this)]
+                    win,
+                    move |state: &ClientState, _| {
+                        this.handle_connection_state(state.connection_state());
+                    }
+                ),
+            )));
 
-        player.connect_closure(
-            "cover-changed",
-            false,
-            closure_local!(
-                #[watch(rename_to = this)]
-                win,
-                move |_: Player| {
-                    this.queue_new_background();
-                }
-            ),
-        );
+        win.imp()
+            .player_cover_changed_id
+            .replace(Some(player.connect_closure(
+                "cover-changed",
+                false,
+                closure_local!(
+                    #[watch(rename_to = this)]
+                    win,
+                    move |_: Player| {
+                        this.queue_new_background();
+                    }
+                ),
+            )));
+        win.handle_connection_state(client_state.connection_state());
+        *win.imp().client_state_conn_state_id.borrow_mut() =
+            Some(client_state.connect_notify_local(
+                Some("connection-state"),
+                clone!(
+                    #[weak(rename_to = this)]
+                    win,
+                    move |state: &ClientState, _| {
+                        this.handle_connection_state(state.connection_state());
+                    }
+                ),
+            ));
+
+        win.imp()
+            .player_cover_changed_id
+            .replace(Some(player.connect_closure(
+                "cover-changed",
+                false,
+                closure_local!(
+                    #[watch(rename_to = this)]
+                    win,
+                    move |_: Player| {
+                        this.queue_new_background();
+                    }
+                ),
+            )));
         win.imp().player.set(Some(player));
 
         win.imp().stack.connect_visible_child_name_notify(clone!(
@@ -1672,38 +1755,46 @@ impl EuphonicaWindow {
             .sync_create()
             .build();
 
-        state.connect_notify_local(
-            Some("pct-done-fg-tasks"),
-            clone!(
-                #[weak(rename_to = this)]
-                self,
-                move |state: &ClientState, _| this.update_fg_task_count(state)
-            ),
-        );
-        state.connect_notify_local(
-            Some("pct-done-bg-tasks"),
-            clone!(
-                #[weak(rename_to = this)]
-                self,
-                move |state: &ClientState, _| this.update_bg_task_count(state)
-            ),
-        );
-        state.connect_notify_local(
-            Some("n-fg-tasks"),
-            clone!(
-                #[weak(rename_to = this)]
-                self,
-                move |state: &ClientState, _| this.update_fg_task_count(state)
-            ),
-        );
-        state.connect_notify_local(
-            Some("n-bg-tasks"),
-            clone!(
-                #[weak(rename_to = this)]
-                self,
-                move |state: &ClientState, _| this.update_bg_task_count(state)
-            ),
-        );
+        self.imp()
+            .client_state_pct_fg_id
+            .replace(Some(state.connect_notify_local(
+                Some("pct-done-fg-tasks"),
+                clone!(
+                    #[weak(rename_to = this)]
+                    self,
+                    move |state: &ClientState, _| this.update_fg_task_count(state)
+                ),
+            )));
+        self.imp()
+            .client_state_pct_bg_id
+            .replace(Some(state.connect_notify_local(
+                Some("pct-done-bg-tasks"),
+                clone!(
+                    #[weak(rename_to = this)]
+                    self,
+                    move |state: &ClientState, _| this.update_bg_task_count(state)
+                ),
+            )));
+        self.imp()
+            .client_state_n_fg_id
+            .replace(Some(state.connect_notify_local(
+                Some("n-fg-tasks"),
+                clone!(
+                    #[weak(rename_to = this)]
+                    self,
+                    move |state: &ClientState, _| this.update_fg_task_count(state)
+                ),
+            )));
+        self.imp()
+            .client_state_n_bg_id
+            .replace(Some(state.connect_notify_local(
+                Some("n-bg-tasks"),
+                clone!(
+                    #[weak(rename_to = this)]
+                    self,
+                    move |state: &ClientState, _| this.update_bg_task_count(state)
+                ),
+            )));
 
         // Remove default libadwaita sidebar backgrounds when using
         // album art as background, or the visualiser is enabled, or both.

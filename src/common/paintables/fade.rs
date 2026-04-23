@@ -37,7 +37,8 @@ mod imp {
     #[glib::derived_properties]
     impl ObjectImpl for FadePaintable {
         fn dispose(&self) {
-            println!("Disposing FadePaintable");
+            self.current.borrow_mut().take();
+            self.previous.borrow_mut().take();
         }
     }
 

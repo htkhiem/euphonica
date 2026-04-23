@@ -92,6 +92,8 @@ mod imp {
         pub window: WeakRef<EuphonicaWindow>,
         pub bindings: RefCell<Vec<Binding>>,
         pub avatar_signal_id: RefCell<Option<SignalHandlerId>>,
+        pub avatar_set_id: RefCell<Option<SignalHandlerId>>,
+        pub avatar_cleared_id: RefCell<Option<SignalHandlerId>>,
         pub cache: OnceCell<Rc<Cache>>,
         #[derivative(Default(value = "Cell::new(true)"))]
         pub selecting_all: Cell<bool>, // Enables queuing all songs from this artist efficiently
@@ -120,6 +122,15 @@ mod imp {
         fn dispose(&self) {
             while let Some(child) = self.obj().first_child() {
                 child.unparent();
+            }
+            if let Some(cache) = self.cache.get() {
+                let state = cache.get_cache_state();
+                if let Some(id) = self.avatar_set_id.take() {
+                    state.disconnect(id);
+                }
+                if let Some(id) = self.avatar_cleared_id.take() {
+                    state.disconnect(id);
+                }
             }
         }
 
@@ -426,7 +437,8 @@ impl ArtistContentView {
     #[inline(always)]
     fn setup_info_box(&self) {
         let cache = self.imp().cache.get().unwrap();
-        cache.get_cache_state().connect_closure(
+        let state = cache.get_cache_state();
+        self.imp().avatar_set_id.replace(Some(state.connect_closure(
             "artist-avatar-set",
             false,
             closure_local!(
@@ -438,20 +450,22 @@ impl ArtistContentView {
                     }
                 }
             ),
-        );
-        cache.get_cache_state().connect_closure(
-            "artist-avatar-cleared",
-            false,
-            closure_local!(
-                #[weak(rename_to = this)]
-                self,
-                move |_: CacheState, tag: String| {
-                    if this.artist().is_some_and(|a| a.get_name() == tag) {
-                        this.update_avatar(None);
+        )));
+        self.imp()
+            .avatar_cleared_id
+            .replace(Some(state.connect_closure(
+                "artist-avatar-cleared",
+                false,
+                closure_local!(
+                    #[weak(rename_to = this)]
+                    self,
+                    move |_: CacheState, tag: String| {
+                        if this.artist().is_some_and(|a| a.get_name() == tag) {
+                            this.update_avatar(None);
+                        }
                     }
-                }
-            ),
-        );
+                ),
+            )));
     }
 
     fn setup_song_subview(&self) {
