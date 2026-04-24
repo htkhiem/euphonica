@@ -1472,6 +1472,10 @@ impl Player {
         self.client()?.set_mixramp_delay(new).await
     }
 
+    pub fn state(&self) -> PlaybackState {
+        self.imp().state.get()
+    }
+
     pub fn title(&self) -> Option<String> {
         self.current_song().map(|s| s.get_name().to_owned())
     }

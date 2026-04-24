@@ -1,11 +1,13 @@
 use crate::{common::QualityGrade, utils};
-use glib::{Object, ParamSpec, ParamSpecDouble, ParamSpecObject, WeakRef, clone};
-use gtk::{CompositeTemplate, gdk, glib, graphene, gsk, prelude::*, subclass::prelude::*};
+use adw::prelude::*;
+use glib::{Object, ParamSpec, ParamSpecDouble, ParamSpecObject, WeakRef, clone, SignalHandlerId};
+use gtk::{CompositeTemplate, gdk, glib, graphene, gsk, subclass::prelude::*};
 use hsl;
 use once_cell::sync::Lazy;
-use std::cell::Cell;
+use std::cell::{Cell, OnceCell, RefCell};
 
 use super::Player;
+use crate::player::PlaybackState;
 
 mod imp {
     use super::*;
@@ -27,6 +29,10 @@ mod imp {
         pub seekbar_clicked: Cell<bool>,
         pub old_pos: Cell<f64>,
         pub player: WeakRef<Player>,
+        pub wave_anim: OnceCell<adw::TimedAnimation>,
+        pub wave_pos: Cell<f64>,
+
+        pub state_id: RefCell<Option<SignalHandlerId>>,
     }
 
     // The central trait for subclassing a GObject
@@ -48,9 +54,41 @@ mod imp {
     }
 
     impl ObjectImpl for Seekbar {
+        fn dispose(&self) {
+            // Disconnect player signal handlers to prevent callbacks
+            // from running on disposed widgets
+            if let Some(player) = self.player.upgrade() {
+                if let Some(id) = self.state_id.take() {
+                    player.disconnect(id);
+                }
+            }
+        }
+
         fn constructed(&self) {
             self.parent_constructed();
             let obj = self.obj();
+
+            let anim_target = adw::CallbackAnimationTarget::new(clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |progress: f64| {
+                    this.wave_pos.set(progress);
+                    this.obj().queue_draw();
+                }
+            ));
+            self.wave_anim
+                .set(
+                    adw::TimedAnimation::builder()
+                        .target(&anim_target)
+                        .value_from(0.0)
+                        .value_to(1.0)
+                        .duration(6000)
+                        .repeat_count(0)
+                        .widget(obj.as_ref())
+                        .easing(adw::Easing::Linear)
+                        .build(),
+                )
+                .unwrap();
 
             // Connect gesture signals
             let drag = gtk::GestureDrag::new();
@@ -158,10 +196,11 @@ mod imp {
             // Get the current accent colour via this object's foreground. This is possible as
             // we've set it to the fg-auto-accent CSS class, whose foreground colour is set to
             // the current accent (either system or picked from album art) by EuphonicaWindow.
+            let width: f32 = self.obj().width() as f32;
+            let height = self.obj().height() as f32;
             let style = adw::StyleManager::default();
             let accent = self.obj().color();
-            let cursor_x = (self.adjustment.value() / self.adjustment.upper()) as f32
-                * self.obj().width() as f32;
+            let cursor_x = (self.adjustment.value() / self.adjustment.upper()) as f32 * width;
 
             // Draw highlight
             let mut bottom_hsl = hsl::HSL::from_rgb(&[
@@ -197,7 +236,6 @@ mod imp {
                 &graphene::Rect::new(0.0, 0.0, cursor_x, self.obj().height() as f32),
                 &graphene::Point::new(0.0, self.obj().height() as f32),
                 &graphene::Point::new(0.0, 0.0),
-                
                 &stops,
             );
             // FIXME: without a "solid colour" node the repainting will be erratic.
@@ -209,26 +247,27 @@ mod imp {
             );
 
             // Draw cursor
-            let cursor_color = if style.is_dark() {
-                gdk::RGBA::WHITE
-            } else {
-                gdk::RGBA::BLACK
-            };
-            let cursor_stops = [
-                gsk::ColorStop::new(0.25, cursor_color),
-                gsk::ColorStop::new(1.0, cursor_color.with_alpha(0.0)),
-            ];
+            let cursor_color = if style.is_dark() { &bottom } else { &accent };
+
+            // "Waves", going LTR
+            // Leftmost control point starts at -width then moves to 0.
+            // Gradient is two widths wide.
+            let wave_start_x = self.wave_pos.get() as f32 * width - width;
             snapshot.append_linear_gradient(
-                &graphene::Rect::new(
-                    // 1px wide cursor
-                    cursor_x - 1.0,
-                    0.0,
-                    1.0,
-                    self.obj().height() as f32,
-                ),
-                &graphene::Point::new(0.0, self.obj().height() as f32),
-                &graphene::Point::new(0.0, 0.0),
-                &cursor_stops,
+                &graphene::Rect::new(0.0, 0.0, cursor_x, height),
+                &graphene::Point::new(wave_start_x, 0.0),
+                &graphene::Point::new(wave_start_x + 2.0 * width, 0.0), // TODO: consider Aero-like diagonal waves
+                &[
+                    gsk::ColorStop::new(0.0, cursor_color.with_alpha(0.0)),
+                    gsk::ColorStop::new(0.125, cursor_color.with_alpha(0.1)),
+                    gsk::ColorStop::new(0.25, cursor_color.with_alpha(0.4)),
+                    gsk::ColorStop::new(0.375, cursor_color.with_alpha(0.1)),
+                    gsk::ColorStop::new(0.5, cursor_color.with_alpha(0.0)),
+                    gsk::ColorStop::new(0.625, cursor_color.with_alpha(0.1)),
+                    gsk::ColorStop::new(0.75, cursor_color.with_alpha(0.4)),
+                    gsk::ColorStop::new(0.875, cursor_color.with_alpha(0.1)),
+                    gsk::ColorStop::new(1.0, cursor_color.with_alpha(0.0)),
+                ],
             );
 
             self.parent_snapshot(snapshot);
@@ -294,6 +333,8 @@ impl Seekbar {
     pub fn set_position(&self, new: f64) {
         if !self.imp().seekbar_clicked.get() {
             self.imp().adjustment.set_value(new);
+            // FIXME: animation sometimes won't resume by itself
+            self.animate();
             self.idle_queue_draw();
         }
     }
@@ -344,5 +385,37 @@ impl Seekbar {
             .build();
 
         self.imp().player.set(Some(player));
+
+        self.imp()
+            .state_id
+            .replace(Some(player.connect_notify_local(
+                Some("playback-state"),
+                clone!(
+                    #[weak(rename_to = this)]
+                    self,
+                    move |_, _| {
+                        this.animate();
+                    }
+                ),
+            )));
+        self.animate();
+    }
+
+    pub fn animate(&self) {
+        if let Some(anim) = self.imp().wave_anim.get() {
+            let state = self.imp().player.upgrade().map(|p| p.state()).unwrap_or(PlaybackState::Stopped);
+            if state == PlaybackState::Playing {
+                match anim.state() {
+                    adw::AnimationState::Finished | adw::AnimationState::Idle => anim.play(),
+                    adw::AnimationState::Paused => anim.resume(),
+                    _ => {}
+                };
+            } else {
+                match anim.state() {
+                    adw::AnimationState::Playing => anim.pause(),
+                    _ => {}
+                };
+            }
+        }
     }
 }
