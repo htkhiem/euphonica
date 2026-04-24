@@ -195,8 +195,9 @@ mod imp {
             };
             snapshot.append_linear_gradient(
                 &graphene::Rect::new(0.0, 0.0, cursor_x, self.obj().height() as f32),
-                &graphene::Point::new(0.0, 0.0),
                 &graphene::Point::new(0.0, self.obj().height() as f32),
+                &graphene::Point::new(0.0, 0.0),
+                
                 &stops,
             );
             // FIXME: without a "solid colour" node the repainting will be erratic.
@@ -225,8 +226,8 @@ mod imp {
                     1.0,
                     self.obj().height() as f32,
                 ),
-                &graphene::Point::new(0.0, 0.0),
                 &graphene::Point::new(0.0, self.obj().height() as f32),
+                &graphene::Point::new(0.0, 0.0),
                 &cursor_stops,
             );
 

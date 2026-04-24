@@ -753,21 +753,30 @@ mod imp {
                     fg = adw::StyleManager::default().accent_color_rgba();
                 }
                 // Halve configured opacity since we're drawing two channels
+                let bar_height = self.player_bar_revealer.height() as f32;
+                // eprintln!("bar height: {}", bar_height);
                 let width32 = widget.width() as f32;
                 let height32 = widget.height() as f32;
+                let surface_height = (height32 - bar_height).max(0.0);
                 let data = mutex.lock().unwrap();
 
                 match self.visualizer_use_cairo.get() {
                     true => {
                         // New CPU‑only Cairo implementation
                         self.draw_spectrum_cairo_pair(
-                            snapshot, width32, height32, &data.0, &data.1, scale, &fg,
+                            snapshot,
+                            width32,
+                            surface_height,
+                            &data.0,
+                            &data.1,
+                            scale,
+                            &fg,
                         );
                     }
                     false => {
                         // Existing GSK‑node implementation
-                        self.draw_spectrum(snapshot, width32, height32, &data.0, scale, &fg);
-                        self.draw_spectrum(snapshot, width32, height32, &data.1, scale, &fg);
+                        self.draw_spectrum(snapshot, width32, surface_height, &data.0, scale, &fg);
+                        self.draw_spectrum(snapshot, width32, surface_height, &data.1, scale, &fg);
                     }
                 }
             }
@@ -873,7 +882,6 @@ mod imp {
         fn trace_spectrum_top(
             path_builder: &gsk::PathBuilder,
             band_width: f32,
-            height: f32, // STILL WINDOW HEIGHT
             ys: &[f32],
             use_splines: bool,
         ) {
@@ -929,7 +937,7 @@ mod imp {
             path_builder.move_to(0.0, height);
             path_builder.line_to(0.0, ys[0]);
             let use_splines = self.visualizer_use_splines.get();
-            Self::trace_spectrum_top(&path_builder, band_width, height, &ys, use_splines);
+            Self::trace_spectrum_top(&path_builder, band_width, &ys, use_splines);
             // Park at bottom-right
             path_builder.line_to(width, height);
             let path = path_builder.to_path();
@@ -964,7 +972,7 @@ mod imp {
                 let path_builder = gsk::PathBuilder::new();
                 path_builder.move_to(0.0, ys[0]);
                 let use_splines = self.visualizer_use_splines.get();
-                Self::trace_spectrum_top(&path_builder, band_width, height, &ys, use_splines);
+                Self::trace_spectrum_top(&path_builder, band_width, &ys, use_splines);
                 let path = path_builder.to_path();
                 snapshot.append_stroke(&path, &gsk::Stroke::new(stroke_width), top_stop.color());
             }
@@ -1131,13 +1139,13 @@ mod imp {
             }
 
             // Allocate Cairo surface at the bounding box size instead of full window.
-            // Cairo coordinates are relative to this rect: (0, 0) = snapshot (0, y_min).
+            // Cairo coords are still relative to the whole window.
             let stroke_width = self.visualizer_stroke_width.get();
             let cr = snapshot.append_cairo(&graphene::Rect::new(
                 0.0,
                 y_min - stroke_width as f32,
                 width,
-                surface_height as f32 + stroke_width as f32,
+                surface_height as f32,
             ));
 
             // Draw left channel.
@@ -1169,25 +1177,6 @@ mod imp {
                 bottom_opacity,
                 self.visualizer_use_splines.get(),
             );
-        }
-
-        /// Whether any render node will be added to render the visualiser.
-        ///
-        /// This check is necessary to babysit the blend node's assertion that
-        /// both layers be non-empty.
-        fn will_draw_spectrum(&self) -> bool {
-            if !self.use_visualizer.get() {
-                return false;
-            }
-            if self.visualizer_stroke_width.get() > 0.0 {
-                return true;
-            }
-            if let Some(mutex) = self.fft_data.get()
-                && let Ok(data) = mutex.lock()
-            {
-                return (data.0.iter().sum::<f32>() + data.1.iter().sum::<f32>()) > 0.0;
-            }
-            false
         }
 
         /// Fade to the new texture, or to nothing if playing song has no album art.

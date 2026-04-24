@@ -24,7 +24,9 @@
           <object class="GtkBox">
             <property name="spacing">6</property>
             <child>
-              <object class="GtkImage" id="quality_grade"/>
+              <object class="GtkImage" id="quality_grade">
+                <property name="pixel-size">12</property>
+              </object>
             </child>
             <child>
               <object class="GtkLabel" id="format_desc">
