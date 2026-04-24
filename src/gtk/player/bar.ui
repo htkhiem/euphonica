@@ -8,8 +8,28 @@
       <class name="sidebar-shade"/>
     </style>
     <property name="hexpand">true</property>
+    <property name="orientation">1</property>
+    <child>
+      <object class="GtkRevealer" id="seekbar_revealer">
+        <property name="transition-type">slide-up</property>
+        <child>
+          <object class="EuphonicaSeekbar2" id="seekbar">
+            <property name="hexpand">true</property>
+          </object>
+        </child>
+      </object>
+    </child>
+    <child>
+      <object class="GtkSeparator">
+        <property name="visible" bind-source="seekbar" bind-property="visible"/>
+        <property name="hexpand">true</property>
+      </object>
+    </child>
     <child>
       <object class="AdwMultiLayoutView" id="multi_layout_view">
+        <style>
+          <class name="padding-12"/>
+        </style>
         <property name="hexpand">true</property>
         <child type="goto-pane">
           <object class="GtkButton" id="goto_pane">
@@ -96,26 +116,11 @@
           <object class="EuphonicaPlaybackControls" id="playback_controls"/>
         </child>
 
-        <child type="seekbar">
-          <object class="GtkRevealer" id="seekbar_revealer">
-            <property name="height-request">12</property>            <!-- Serves as bottom padding when seekbar is hidden -->
-            <property name="transition-type">slide-down</property>
-            <child>
-              <object class="EuphonicaSeekbar2" id="seekbar">
-                <property name="hexpand">true</property>
-              </object>
-            </child>
-          </object>
-        </child>
-
         <child>
           <object class="AdwLayout">
             <property name="name">micro</property>
             <property name="content">
               <object class="GtkBox">
-                <style>
-                  <class name="padding-12"/>
-                </style>
                 <property name="spacing">6</property>
                 <property name="halign">center</property>
                 <property name="orientation">1</property>
@@ -151,9 +156,6 @@
                 <property name="orientation">1</property>
                 <child>
                   <object class="GtkCenterBox">
-                    <property name="margin-end">12</property>
-                    <property name="margin-start">12</property>
-                    <property name="margin-top">12</property>
                     <property name="start-widget">
                       <object class="AdwLayoutSlot">
                         <property name="id">infobox</property>
@@ -176,11 +178,6 @@
                     </property>
                   </object>
                 </child>
-                <child>
-                  <object class="AdwLayoutSlot">
-                    <property name="id">seekbar</property>
-                  </object>
-                </child>
               </object>
             </property>
           </object>
@@ -190,77 +187,64 @@
           <object class="AdwLayout">
             <property name="name">full</property>
             <property name="content">
-              <object class="GtkBox">
-                <property name="orientation">1</property>
-                <child>
-                  <object class="EuphonicaRatioCenterBox" id="full_center_box">
-                    <property name="max-center-ratio">0.95</property>
-                    <property name="margin-end">12</property>
-                    <property name="margin-start">12</property>
-                    <property name="margin-top">12</property>
-                    <property name="hexpand">true</property>
-                    <property name="left-widget">
-                      <object class="AdwLayoutSlot">
-                        <property name="id">infobox</property>
-                      </object>
-                    </property>
-                    <property name="center-widget">
-                      <object class="AdwLayoutSlot">
-                        <property name="id">playback-controls</property>
-                      </object>
-                    </property>
-                    <property name="right-widget">
-                      <object class="GtkBox" id="output_section">
-                        <property name="halign">end</property>
-                        <property name="visible">false</property>
-                        <child>
-                          <object class="GtkButton" id="prev_output">
-                            <property name="visible">false</property>
-                            <property name="sensitive">false</property>
-                            <property name="valign">center</property>
-                            <property name="icon-name">left-symbolic</property>
-                            <style>
-                              <class name="flat"/>
-                              <class name="circular"/>
-                            </style>
-                          </object>
-                        </child>
-                        <child>
-                          <object class="GtkStack" id="output_stack">
-                            <property name="transition-type">slide-left-right</property>
-                          </object>
-                        </child>
-                        <child>
-                          <object class="GtkButton" id="next_output">
-                            <property name="visible">false</property>
-                            <property name="sensitive">false</property>
-                            <property name="valign">center</property>
-                            <property name="icon-name">right-symbolic</property>
-                            <style>
-                              <class name="flat"/>
-                              <class name="circular"/>
-                            </style>
-                          </object>
-                        </child>
-                        <child>
-                          <object class="GtkSeparator">
-                            <style>
-                              <class name="spacer"/>
-                            </style>
-                          </object>
-                        </child>
-                        <child>
-                          <object class="EuphonicaVolumeKnob" id="vol_knob"/>
-                        </child>
-                      </object>
-                    </property>
-                  </object>
-                </child>
-                <child>
+              <object class="EuphonicaRatioCenterBox" id="full_center_box">
+                <property name="max-center-ratio">0.95</property>
+                <property name="hexpand">true</property>
+                <property name="left-widget">
                   <object class="AdwLayoutSlot">
-                    <property name="id">seekbar</property>
+                    <property name="id">infobox</property>
                   </object>
-                </child>
+                </property>
+                <property name="center-widget">
+                  <object class="AdwLayoutSlot">
+                    <property name="id">playback-controls</property>
+                  </object>
+                </property>
+                <property name="right-widget">
+                  <object class="GtkBox" id="output_section">
+                    <property name="halign">end</property>
+                    <property name="visible">false</property>
+                    <child>
+                      <object class="GtkButton" id="prev_output">
+                        <property name="visible">false</property>
+                        <property name="sensitive">false</property>
+                        <property name="valign">center</property>
+                        <property name="icon-name">left-symbolic</property>
+                        <style>
+                          <class name="flat"/>
+                          <class name="circular"/>
+                        </style>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="GtkStack" id="output_stack">
+                        <property name="transition-type">slide-left-right</property>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="GtkButton" id="next_output">
+                        <property name="visible">false</property>
+                        <property name="sensitive">false</property>
+                        <property name="valign">center</property>
+                        <property name="icon-name">right-symbolic</property>
+                        <style>
+                          <class name="flat"/>
+                          <class name="circular"/>
+                        </style>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="GtkSeparator">
+                        <style>
+                          <class name="spacer"/>
+                        </style>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="EuphonicaVolumeKnob" id="vol_knob"/>
+                    </child>
+                  </object>
+                </property>
               </object>
             </property>
           </object>
