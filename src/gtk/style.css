@@ -3,8 +3,8 @@ listview > row {
 }
 
 .queue-view-column {
-    margin-left: 12px;
-    margin-right: 12px;
+  margin-left: 12px;
+  margin-right: 12px;
 }
 
 .lyrics-box > undershoot {
@@ -14,15 +14,19 @@ listview > row {
 }
 
 .radius-6 {
-    border-radius: 6px;
+  border-radius: 6px;
 }
 
 .padding-12 {
-    padding: 12px;
+  padding: 12px;
 }
 
 .padding-6 {
-    padding: 6px;
+  padding: 6px;
+}
+
+.shift-on-hover {
+  transition: padding 0.2s ease-out;
 }
 
 .shift-down {

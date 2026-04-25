@@ -245,6 +245,7 @@ impl QueueView {
                     .expect("Needs to be ListItem");
                 let row = SongRow::new(Some(cache.clone()), Some(&player));
                 bind_row_by_expressions(&row, item);
+                row.add_css_class("shift-on-hover");
                 // row.set_index_visible(false);
                 // row.set_playing_indicator_visible(true);
 
