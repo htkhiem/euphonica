@@ -757,6 +757,11 @@ impl MpdWrapper {
         self.foreground(Task::SwapPos(pos1, pos2, s), r).await
     }
 
+    pub async fn move_id(&self, from_id: u32, to_pos: usize) -> ClientResult<()> {
+        let (s, r) = oneshot::channel();
+        self.foreground(Task::MoveId(from_id, to_pos, s), r).await
+    }
+
     pub async fn delete_at_pos(&self, pos: u32) -> ClientResult<()> {
         let (s, r) = oneshot::channel();
         self.foreground(Task::DeleteAtPos(pos, s), r).await

@@ -1,7 +1,7 @@
 use adw::prelude::*;
 use adw::subclass::prelude::*;
 use gtk::{
-    CompositeTemplate, ListItem, SignalListItemFactory, SingleSelection, gio,
+    CompositeTemplate, ListItem, SignalListItemFactory, SingleSelection, gio, gdk,
     glib::{self, Properties, WeakRef, clone, closure_local, subclass::Signal},
 };
 use mpd::{
@@ -78,10 +78,6 @@ mod imp {
         pub restore_last_pos: Cell<u8>,
 
         pub player: WeakRef<Player>,
-
-        // TODO: find a smarter way to store these between prepare and drag-begin
-        pub drag_x: Cell<f64>,
-        pub drag_y: Cell<f64>,
 
         // Avoid multiple inits running concurrently
         pub initializing: Cell<bool>,
@@ -198,20 +194,31 @@ fn format_song_count(count: u32) -> Option<String> {
     }
 }
 
+fn bind_row_by_expressions(row: &SongRow, item: &ListItem) {
+    row.set_index_visible(false);
+    row.set_playing_indicator_visible(true);
+
+    item.property_expression("item")
+        .chain_property::<Song>("name")
+        .bind(row, "name", gtk::Widget::NONE);
+
+    row.set_first_attrib_icon_name(Some("library-music-symbolic"));
+    item.property_expression("item")
+        .chain_property::<Song>("album")
+        .bind(row, "first-attrib-text", gtk::Widget::NONE);
+    row.set_second_attrib_icon_name(Some("music-artist-symbolic"));
+    item.property_expression("item")
+        .chain_property::<Song>("artist")
+        .bind(row, "second-attrib-text", gtk::Widget::NONE);
+
+    item.property_expression("item")
+        .chain_property::<Song>("quality-grade")
+        .bind(row, "quality-grade", gtk::Widget::NONE);
+}
+
 impl QueueView {
     pub fn new() -> Self {
         Self::default()
-    }
-
-    fn set_drag_hotspot(&self, x: f64, y: f64) {
-        let imp = self.imp();
-        imp.drag_x.set(x);
-        imp.drag_y.set(y);
-    }
-
-    fn get_drag_hotspot(&self) -> (f64, f64) {
-        let imp = self.imp();
-        (imp.drag_x.get(), imp.drag_y.get())
     }
 
     pub fn setup_listview(&self, player: &Player, cache: Rc<Cache>) {
@@ -237,25 +244,26 @@ impl QueueView {
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
                 let row = SongRow::new(Some(cache.clone()), Some(&player));
-                row.set_index_visible(false);
-                row.set_playing_indicator_visible(true);
+                bind_row_by_expressions(&row, item);
+                // row.set_index_visible(false);
+                // row.set_playing_indicator_visible(true);
 
-                item.property_expression("item")
-                    .chain_property::<Song>("name")
-                    .bind(&row, "name", gtk::Widget::NONE);
+                // item.property_expression("item")
+                //     .chain_property::<Song>("name")
+                //     .bind(&row, "name", gtk::Widget::NONE);
 
-                row.set_first_attrib_icon_name(Some("library-music-symbolic"));
-                item.property_expression("item")
-                    .chain_property::<Song>("album")
-                    .bind(&row, "first-attrib-text", gtk::Widget::NONE);
-                row.set_second_attrib_icon_name(Some("music-artist-symbolic"));
-                item.property_expression("item")
-                    .chain_property::<Song>("artist")
-                    .bind(&row, "second-attrib-text", gtk::Widget::NONE);
+                // row.set_first_attrib_icon_name(Some("library-music-symbolic"));
+                // item.property_expression("item")
+                //    .chain_property::<Song>("album")
+                //     .bind(&row, "first-attrib-text", gtk::Widget::NONE);
+                // row.set_second_attrib_icon_name(Some("music-artist-symbolic"));
+                // item.property_expression("item")
+                //     .chain_property::<Song>("artist")
+                //     .bind(&row, "second-attrib-text", gtk::Widget::NONE);
 
-                item.property_expression("item")
-                    .chain_property::<Song>("quality-grade")
-                    .bind(&row, "quality-grade", gtk::Widget::NONE);
+                // item.property_expression("item")
+                //     .chain_property::<Song>("quality-grade")
+                //     .bind(&row, "quality-grade", gtk::Widget::NONE);
                 let end_widget = RowEditButtons::new(
                     item,
                     // Raise action
@@ -316,7 +324,7 @@ impl QueueView {
                 
                 // Handle drag-n-drop (DnD)
                 let drag_source = gtk::DragSource::new();
-                drag_source.set_actions(gdk::DragAction::MOVE); // TODO: probably not needed? not moving files across apps
+                drag_source.set_actions(gdk::DragAction::COPY); // TODO: probably not needed? not moving files across apps
                 drag_source.connect_prepare(clone!(
                     #[weak]
                     this,
@@ -324,13 +332,13 @@ impl QueueView {
                     item,
                     #[upgrade_or]
                     None,
-                    move |_, x, y| {
-                        this.set_drag_hotspot(x, y);
-                        // Pass the queue_id of the song being dragged to the drop target
+                    move |_, _x, _y| {
+                        // FIXME: nonzero hotspots cause the drag icon to fly off-screen.
+                        // Pass the whole song GObject
                         if let Some(song) = item.item().and_downcast::<Song>() {
-                            song.set_floating(true);
-                            song.get_info().queue_id
-                            .map(|id| gdk::ContentProvider::for_value(&id.to_value()))
+                            song.set_floating(true);  // Used to prevent the row being dragged to act as a drop target for itself
+                            song.set_queue_pos(item.position());  // Ensure the Song object contains the up-to-date queue pos for local updating
+                            Some(gdk::ContentProvider::for_value(&song.to_value()))
                         } else {
                             None
                         }
@@ -338,23 +346,29 @@ impl QueueView {
                 ));
                 drag_source.connect_drag_begin(clone!(
                     #[weak]
+                    row,
+                    #[weak]
                     this,
                     #[weak]
                     item,
-                    move |source, _drag| {
-                        println!("Drag begin");
-                        let child = item
-                            .child()
-                            .and_downcast::<SongRow>()
-                            .expect("The child has to be a `SongRow`.");
-                        let (hot_x, hot_y) = this.get_drag_hotspot();
-                        source.set_icon(
-                            Some(&gtk::WidgetPaintable::new(Some(&child))),
-                            hot_x.round() as i32,
-                            hot_y.round() as i32,
-                        );
+                    move |_source, drag| {
+                        // To avoid problems with hotspot positioning quirks (caused by other rows changing padding upon hover)
+                        // the icon will be a standalone copy of the original row.
+                        // Additional benefit: we get to customise how it looks.
+                        let drag_widget = SongRow::new(Some(cache.clone()), None);
+                        // Give it the same size as the real row
+                        drag_widget.set_size_request(row.width(), row.height());
+                        drag_widget.set_thumbnail_visible(false);
+                        bind_row_by_expressions(&drag_widget, &item);
+                        
+                        // The drag icon version should have an opaque background for legibility when rendered over other rows.
+                        // Adwaita already has a .card class that does that + adds rounded corners and drop shadows too.
+                        // Looks nice IMO.
+                        drag_widget.add_css_class("card");
+                        let drag_icon = gtk::DragIcon::for_drag(&drag);
+                        drag_icon.set_child(Some(&drag_widget));
                     }
-                ));
+                )); 
                 drag_source.connect_drag_end(clone!(
                     #[weak]
                     item,
@@ -367,11 +381,13 @@ impl QueueView {
                 row.add_controller(drag_source);
                 // If another row is being held above this one in a DnD operation, make some space by increasing top
                 // or bottom padding (depending on whether the mouse is over the upper or lower half of this row)
-                let drop_controller = gtk::DropControllerMotion::new();
+                let drop_controller = gtk::DropTarget::new(Song::static_type(), gdk::DragAction::COPY);
                 drop_controller.connect_motion(clone!(
                     #[weak]
                     row,
-                    move |_, x, y| {
+                    #[upgrade_or]
+                    gdk::DragAction::COPY,
+                    move |_, _x, y| {
                         if !row.is_floating() {
                             let has_shift_up = row.has_css_class("shift-up");
                             let has_shift_down = row.has_css_class("shift-down");
@@ -390,6 +406,7 @@ impl QueueView {
                                 row.remove_css_class("shift-up");
                             }
                         }
+                        gdk::DragAction::COPY
                     }
                 ));
                 drop_controller.connect_leave(clone!(
@@ -406,6 +423,40 @@ impl QueueView {
                         }
                     }
                 ));
+
+                drop_controller.connect_drop(clone!(
+                    #[weak]
+                    row,
+                    #[weak]
+                    item,
+                    #[weak]
+                    player,
+                    #[upgrade_or]
+                    false,
+                    move |_, song, x, y| {
+                        if !row.is_floating() {
+                            if let Ok(song) = song.get::<Song>() {
+                                // Get queue pos of row being dropped onto
+                                let target_pos = item.position() + if y > row.height() as f64 / 2.0 {
+                                    // If is lower half, place dropped song after this one
+                                    1    
+                                } else {
+                                    0
+                                };
+                                glib::spawn_future_local(async move {
+                                    dbg!(player.move_to(&song, target_pos).await);
+                                });
+                                true
+                            } else {
+                                false
+                            }
+                        } else {
+                            // Ignore if dropped atop itself
+                            false
+                        }
+                    }
+                ));
+
                 row.add_controller(drop_controller);
             }
         ));
