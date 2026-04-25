@@ -12,13 +12,15 @@ use std::{
 
 use super::{AlbumCell, Library};
 use crate::{
-    cache::{Cache, CacheState, placeholders::EMPTY_ARTIST_STRING},
-    common::{Album, Artist, ContentView, RowAddButtons, Song, SongRow, ContentStack},
+    cache::{Cache, CacheState, Error as CacheError, placeholders::EMPTY_ARTIST_STRING},
+    common::{Album, Artist, ContentStack, ContentView, RowAddButtons, Song, SongRow},
     library::add_to_playlist::AddToPlaylistButton,
     utils::{format_secs_as_duration, settings_manager, tokio_runtime},
+    window::EuphonicaWindow,
 };
 
 mod imp {
+
     use super::*;
 
     #[derive(Debug, CompositeTemplate, Derivative)]
@@ -87,8 +89,11 @@ mod imp {
 
         pub library: WeakRef<Library>,
         pub artist: RefCell<Option<Artist>>,
+        pub window: WeakRef<EuphonicaWindow>,
         pub bindings: RefCell<Vec<Binding>>,
         pub avatar_signal_id: RefCell<Option<SignalHandlerId>>,
+        pub avatar_set_id: RefCell<Option<SignalHandlerId>>,
+        pub avatar_cleared_id: RefCell<Option<SignalHandlerId>>,
         pub cache: OnceCell<Rc<Cache>>,
         #[derivative(Default(value = "Cell::new(true)"))]
         pub selecting_all: Cell<bool>, // Enables queuing all songs from this artist efficiently
@@ -117,6 +122,15 @@ mod imp {
         fn dispose(&self) {
             while let Some(child) = self.obj().first_child() {
                 child.unparent();
+            }
+            if let Some(cache) = self.cache.get() {
+                let state = cache.get_cache_state();
+                if let Some(id) = self.avatar_set_id.take() {
+                    state.disconnect(id);
+                }
+                if let Some(id) = self.avatar_cleared_id.take() {
+                    state.disconnect(id);
+                }
             }
         }
 
@@ -209,25 +223,24 @@ mod imp {
                                 .expect("ashpd file open await failure")
                                 .response();
 
-                            sender.send(
-                                if let Ok(files) = maybe_files {
-                                    let uris = files.uris();
-                                    if !uris.is_empty() {
-                                        Some(uris[0].to_string())
-                                    } else {
-                                        None
-                                    }
+                            let _ = sender.send(if let Ok(files) = maybe_files {
+                                let uris = files.uris();
+                                if !uris.is_empty() {
+                                    Some(uris[0].to_string())
                                 } else {
-                                    println!("{maybe_files:?}");
                                     None
                                 }
-                            );
+                            } else {
+                                println!("{maybe_files:?}");
+                                None
+                            });
                         });
                         glib::spawn_future_local(clone!(
                             #[weak]
                             obj,
                             async move {
-                                if let Some(tag) = receiver.await.expect("Broken oneshot receiver") {
+                                if let Some(tag) = receiver.await.expect("Broken oneshot receiver")
+                                {
                                     obj.set_avatar(tag);
                                 }
                             }
@@ -244,11 +257,13 @@ mod imp {
                             #[weak]
                             obj,
                             async move {
-                                if let (Some(artist), Some(cache)) = (
-                                    obj.artist(),
-                                    obj.imp().cache.get(),
-                                ) {
-                                    cache.clear_artist_avatar(artist.get_name().to_owned(), true).await;
+                                if let (Some(artist), Some(cache)) =
+                                    (obj.artist(), obj.imp().cache.get())
+                                    && let Err(e) = cache
+                                        .clear_artist_avatar(artist.get_name().to_owned(), true)
+                                        .await
+                                {
+                                    obj.show_cache_error("Couldn't clear avatar", e);
                                 }
                             }
                         ));
@@ -332,6 +347,12 @@ impl Default for ArtistContentView {
 }
 
 impl ArtistContentView {
+    fn show_cache_error(&self, prefix: &str, err: CacheError) {
+        if let Some(win) = self.imp().window.upgrade() {
+            win.send_simple_toast(&format!("{}: {}", prefix, dbg!(err).message()), 3);
+        }
+    }
+
     fn artist(&self) -> Option<Artist> {
         self.imp().artist.borrow().as_ref().cloned()
     }
@@ -360,14 +381,24 @@ impl ArtistContentView {
                 stack.set_visible(false);
             } else {
                 stack.set_visible(true);
-                if stack.visible_child_name().is_none_or(|name| name != "spinner")  {
+                if stack
+                    .visible_child_name()
+                    .is_none_or(|name| name != "spinner")
+                {
                     stack.set_visible_child_name("spinner");
                 }
                 let cache = self.imp().cache.get().unwrap().clone();
                 let bio_text = self.imp().bio_text.get();
                 let bio_link = self.imp().bio_link.get();
                 let bio_attrib = self.imp().bio_attrib.get();
-                let res = cache.get_artist_meta(artist.get_info(), true, overwrite).await;
+                let res = cache
+                    .get_artist_meta(
+                        artist.get_info(),
+                        true,
+                        overwrite,
+                        self.imp().window.upgrade().as_ref(),
+                    )
+                    .await;
                 stack.set_visible_child_name("content");
                 match res {
                     Ok(Some(meta)) => {
@@ -406,7 +437,8 @@ impl ArtistContentView {
     #[inline(always)]
     fn setup_info_box(&self) {
         let cache = self.imp().cache.get().unwrap();
-        cache.get_cache_state().connect_closure(
+        let state = cache.get_cache_state();
+        self.imp().avatar_set_id.replace(Some(state.connect_closure(
             "artist-avatar-set",
             false,
             closure_local!(
@@ -418,20 +450,22 @@ impl ArtistContentView {
                     }
                 }
             ),
-        );
-        cache.get_cache_state().connect_closure(
-            "artist-avatar-cleared",
-            false,
-            closure_local!(
-                #[weak(rename_to = this)]
-                self,
-                move |_: CacheState, tag: String| {
-                    if this.artist().is_some_and(|a| a.get_name() == tag) {
-                        this.update_avatar(None);
+        )));
+        self.imp()
+            .avatar_cleared_id
+            .replace(Some(state.connect_closure(
+                "artist-avatar-cleared",
+                false,
+                closure_local!(
+                    #[weak(rename_to = this)]
+                    self,
+                    move |_: CacheState, tag: String| {
+                        if this.artist().is_some_and(|a| a.get_name() == tag) {
+                            this.update_avatar(None);
+                        }
                     }
-                }
-            ),
-        );
+                ),
+            )));
     }
 
     fn setup_song_subview(&self) {
@@ -449,7 +483,11 @@ impl ArtistContentView {
                             this.set_is_queuing(true);
                             let library = this.imp().library.upgrade().unwrap();
                             if this.imp().selecting_all.get() {
-                                if let Err(e) = library.queue_artist(&artist, false, true, true).await {dbg!(e);}
+                                if let Err(e) =
+                                    library.queue_artist(&artist, false, true, true).await
+                                {
+                                    dbg!(e);
+                                }
                             } else {
                                 let store = &this.imp().song_list;
                                 // Get list of selected songs
@@ -460,7 +498,9 @@ impl ArtistContentView {
                                 iter.for_each(|idx| {
                                     songs.push(store.item(idx).and_downcast::<Song>().unwrap())
                                 });
-                                if let Err(e) = library.queue_songs(&songs, true, true).await {dbg!(e);}
+                                if let Err(e) = library.queue_songs(&songs, true, true).await {
+                                    dbg!(e);
+                                }
                             }
                             this.set_is_queuing(false);
                         }
@@ -641,12 +681,13 @@ impl ArtistContentView {
             .build();
     }
 
-    pub fn setup(&self, library: &Library, cache: Rc<Cache>) {
+    pub fn setup(&self, library: &Library, cache: Rc<Cache>, window: &EuphonicaWindow) {
         self.imp()
             .cache
             .set(cache)
             .expect("Could not register artist content view with cache controller");
         self.imp().library.set(Some(library));
+        self.imp().window.set(Some(window));
 
         self.setup_info_box();
         self.setup_song_subview();
@@ -663,11 +704,12 @@ impl ArtistContentView {
             #[weak(rename_to = this)]
             self,
             async move {
-                if let (Some(artist), Some(cache)) = (
-                    this.artist(),
-                    this.imp().cache.get(),
-                ) {
-                    cache.set_artist_avatar(artist.get_name().to_owned(), &path, true).await;
+                if let (Some(artist), Some(cache)) = (this.artist(), this.imp().cache.get())
+                    && let Err(e) = cache
+                        .set_artist_avatar(artist.get_name().to_owned(), &path, true)
+                        .await
+                {
+                    this.show_cache_error("Couldn't set cover", e);
                 }
             }
         ));
@@ -685,15 +727,22 @@ impl ArtistContentView {
             let cache = self.imp().cache.get().unwrap().clone();
             if overwrite {
                 // Don't notify, else we'd interrupt the spinner
-                let _ = cache.clear_artist_avatar(info.name.to_owned(), false);
+                if let Err(e) = cache.clear_artist_avatar(info.name.to_owned(), false).await {
+                    self.show_cache_error("Couldn't clear avatar", e);
+                }
             }
-            match cache.get_artist_avatar(
-                info, false, true  // Content page is the one to fetch external sources
-            ).await {
+            match cache
+                .get_artist_avatar(
+                    info, false, true, // Content page is the one to fetch external sources
+                )
+                .await
+            {
                 Ok(maybe_tex) => {
                     self.update_avatar(maybe_tex.as_ref());
                 }
-                Err(e) => {dbg!(e);}
+                Err(e) => {
+                    self.show_cache_error("Couldn't fetch avatar", e);
+                }
             }
         }
     }
@@ -739,13 +788,17 @@ impl ArtistContentView {
                 let song_list = this.imp().song_list.clone();
                 song_list.remove_all();
                 // Important, MPD-side content first
-                let _ = library.get_artist_content(
-                    &artist,
-                    |album| {album_list.append(&album);},
-                    |songs| {
-                        song_list.extend_from_slice(&songs);
-                    }
-                ).await;
+                let _ = library
+                    .get_artist_content(
+                        &artist,
+                        |album| {
+                            album_list.append(&album);
+                        },
+                        |songs| {
+                            song_list.extend_from_slice(&songs);
+                        },
+                    )
+                    .await;
                 if album_list.n_items() > 0 {
                     album_stack.show_content();
                 } else {
@@ -768,10 +821,10 @@ impl ArtistContentView {
         for binding in self.imp().bindings.take().into_iter() {
             binding.unbind();
         }
-        if let Some(id) = self.imp().avatar_signal_id.take() {
-            if let Some(cache) = self.imp().cache.get() {
-                cache.get_cache_state().disconnect(id);
-            }
+        if let Some(id) = self.imp().avatar_signal_id.take()
+            && let Some(cache) = self.imp().cache.get()
+        {
+            cache.get_cache_state().disconnect(id);
         }
         // Unset metadata widgets
         self.imp().avatar.set_text(None);

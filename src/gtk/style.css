@@ -42,6 +42,22 @@ listview > row {
     padding: 0px;
 }
 
+.play-button {
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+
+.seekbar2 {
+  padding-left: 12px;
+  padding-right: 12px;
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+
+.seekbar2 * {
+  color: var(--window-fg-color);
+}
+
 .border-radius-12 {
     border-radius: 12px;
 }
@@ -61,7 +77,6 @@ listview > row {
 
 .player-bar {
     border-top: 1px solid @borders;
-    padding: 12pt;
 }
 
 /* Fixes the weirdly dark vertical edges between panes */
@@ -78,12 +93,12 @@ listview > row {
  * by the nav sidebars' backgrounds by their shade_color equivalent.
  * Only do this when blurred background is enabled AND there is a song with an album art playing. */
 .no-shading overlay-split-view > .sidebar-pane {
-  background: @sidebar_shade_color;
+  background: var(--sidebar-shade-color);
 }
 
 /* Any other widget needing to be shaded similarly to the sidebar when album art is used as background. */
 .no-shading .sidebar-shade {
-  background: @sidebar_shade_color;
+  background: var(--sidebar-shade-color);
 }
 
 .no-shading .nested-split-view > .sidebar-pane {
@@ -143,4 +158,9 @@ listview > row {
   -gtk-icon-source: -gtk-icontheme("object-select-symbolic");
   background-color: var(--accent-bg-color);
   color: var(--accent-fg-color);
+}
+
+/* Avoid colouring text within elements with auto-accent applied */
+.fg-auto-accent label {
+  color: var(--view-fg-color);
 }

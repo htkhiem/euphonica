@@ -1,5 +1,5 @@
-use std::{borrow::Cow, fmt};
 use std::str::FromStr;
+use std::{borrow::Cow, fmt};
 
 use mpd::{Query, Term, search::Operation as TagOperation};
 use once_cell::sync::Lazy;
@@ -237,22 +237,10 @@ pub enum QueryLhs {
     Base, // from this directory
     // Tags
     LastMod,
-    Any(
-        #[serde(deserialize_with = "deserialize_tag_op")]
-        TagOperation
-    ), // will match any tag
-    Album(
-        #[serde(deserialize_with = "deserialize_tag_op")]
-        TagOperation
-    ),
-    AlbumArtist(
-        #[serde(deserialize_with = "deserialize_tag_op")]
-        TagOperation
-    ),
-    Artist(
-        #[serde(deserialize_with = "deserialize_tag_op")]
-        TagOperation
-    ),
+    Any(#[serde(deserialize_with = "deserialize_tag_op")] TagOperation), // will match any tag
+    Album(#[serde(deserialize_with = "deserialize_tag_op")] TagOperation),
+    AlbumArtist(#[serde(deserialize_with = "deserialize_tag_op")] TagOperation),
+    Artist(#[serde(deserialize_with = "deserialize_tag_op")] TagOperation),
     // more to come
 }
 
@@ -269,7 +257,8 @@ impl<'de> Visitor<'de> for TagOperationVisitor {
 
     fn visit_unit<E>(self) -> Result<Self::Value, E>
     where
-        E: serde::de::Error, {
+        E: serde::de::Error,
+    {
         Ok(TagOperation::Equals)
     }
 
@@ -283,13 +272,17 @@ impl<'de> Visitor<'de> for TagOperationVisitor {
             "notequals" => Ok(TagOperation::NotEquals),
             "contains" => Ok(TagOperation::Contains),
             "startswith" => Ok(TagOperation::StartsWith),
-            _ => Err(E::custom(format!("{value} is not one of (equals, notequals, contains, startswith)")))
+            _ => Err(E::custom(format!(
+                "{value} is not one of (equals, notequals, contains, startswith)"
+            ))),
         }
     }
 }
 
-
-fn deserialize_tag_op<'de, D>(deser: D) -> Result<TagOperation, D::Error> where D: Deserializer<'de> {
+fn deserialize_tag_op<'de, D>(deser: D) -> Result<TagOperation, D::Error>
+where
+    D: Deserializer<'de>,
+{
     deser.deserialize_any(TagOperationVisitor)
 }
 

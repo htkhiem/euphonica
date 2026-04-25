@@ -11,3 +11,9 @@ pub struct LrcLibResponse {
     #[serde(rename = "syncedLyrics")]
     pub synced: Option<String>,
 }
+
+#[derive(Deserialize)]
+#[non_exhaustive]
+pub struct LrcLibErrorResponse {
+    pub code: i32,
+}

@@ -284,6 +284,10 @@ impl Album {
     pub fn get_stickers(&self) -> &RefCell<Stickers> {
         &self.imp().stickers
     }
+
+    pub fn set_stickers(&self, stickers: Stickers) {
+        let _ = &self.imp().stickers.replace(stickers);
+    }
 }
 
 impl Default for Album {

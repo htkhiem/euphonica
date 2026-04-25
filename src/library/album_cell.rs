@@ -1,14 +1,18 @@
-use glib::{
-    Object, ParamSpec, ParamSpecChar, ParamSpecInt, ParamSpecString, ParamSpecBoolean, clone, closure_local,
-    signal::SignalHandlerId, WeakRef
+use derivative::Derivative;
+use gtk::{
+    CompositeTemplate, Image, Label, gdk,
+    glib::{
+        self, Object, ParamSpec, ParamSpecBoolean, ParamSpecChar, ParamSpecInt, ParamSpecString,
+        WeakRef, clone, closure_local, signal::SignalHandlerId,
+    },
+    prelude::*,
+    subclass::prelude::*,
 };
-use gtk::{CompositeTemplate, Image, Label, gdk, prelude::*, subclass::prelude::*};
 use once_cell::sync::Lazy;
 use std::{
     cell::{Cell, OnceCell, RefCell},
     rc::Rc,
 };
-use derivative::Derivative;
 
 use crate::{
     cache::{
@@ -16,9 +20,8 @@ use crate::{
         placeholders::{EMPTY_ALBUM_STRING, EMPTY_ARTIST_STRING},
     },
     common::{
-        Album, Rating,
+        Album, PictureStack, Rating,
         marquee::{Marquee, MarqueeWrapMode},
-        PictureStack
     },
     utils::settings_manager,
 };
@@ -50,7 +53,7 @@ mod imp {
         // Vector holding the bindings to properties of the Album GObject
         pub cover_signal_ids: RefCell<Option<(SignalHandlerId, SignalHandlerId)>>,
         pub cache: OnceCell<Rc<Cache>>,
-        pub hires: Cell<bool>
+        pub hires: Cell<bool>,
     }
 
     // The central trait for subclassing a GObject
@@ -192,11 +195,7 @@ mod imp {
             // Always as wide as the image, no matter how long the title is.
             let image_size = self.image_size.get();
             if orientation == gtk::Orientation::Horizontal {
-                (
-                    image_size,
-                    image_size,
-                    -1, -1,
-                )
+                (image_size, image_size, -1, -1)
             } else {
                 // Ensure we request enough vertical space for a square cover at the
                 // given width. Horizontal rectangular album covers look really weird.
@@ -208,13 +207,11 @@ mod imp {
                 // Return order reminder: min, natural, min baseline, natural baseline.
                 let raw_cover_size = self.cover.measure(gtk::Orientation::Vertical, for_size);
                 let diff = (for_size - raw_cover_size.0).max(0);
-                let res = self.inner.get().measure(gtk::Orientation::Vertical, for_size);
-                (
-                    res.0 + diff,
-                    res.1.max(res.0 + diff),
-                    res.2,
-                    res.3
-                )
+                let res = self
+                    .inner
+                    .get()
+                    .measure(gtk::Orientation::Vertical, for_size);
+                (res.0 + diff, res.1.max(res.0 + diff), res.2, res.3)
             }
         }
 
@@ -329,7 +326,12 @@ impl AlbumCell {
                     #[weak(rename_to = this)]
                     res,
                     move |_: CacheState, uri: String, _: gdk::Texture, thumb: gdk::Texture| {
-                        if this.imp().album.upgrade().is_some_and(|a| a.get_folder_uri() == uri) {
+                        if this
+                            .imp()
+                            .album
+                            .upgrade()
+                            .is_some_and(|a| a.get_folder_uri() == uri)
+                        {
                             this.imp().cover.show(&thumb);
                         }
                     }
@@ -342,7 +344,12 @@ impl AlbumCell {
                     #[weak(rename_to = this)]
                     res,
                     move |_: CacheState, uri: String| {
-                        if this.imp().album.upgrade().is_some_and(|a| a.get_folder_uri() == uri) {
+                        if this
+                            .imp()
+                            .album
+                            .upgrade()
+                            .is_some_and(|a| a.get_folder_uri() == uri)
+                        {
                             this.imp().cover.clear();
                         }
                     }
@@ -363,12 +370,19 @@ impl AlbumCell {
             self,
             async move {
                 if let Some(album) = this.album() {
-                    let res = this.imp().cache.get().unwrap().clone().get_album_cover(
-                        album.get_info(), !this.imp().hires.get(), true
-                    ).await;
+                    let res = this
+                        .imp()
+                        .cache
+                        .get()
+                        .unwrap()
+                        .clone()
+                        .get_album_cover(album.get_info(), !this.imp().hires.get(), true)
+                        .await;
                     // Check again as cell might have been bound to a different album
                     // while awaiting
-                    if this.album().is_some_and(|a| a.get_info().get_comp_id() == album.get_info().get_comp_id()) {
+                    if this.album().is_some_and(|a| {
+                        a.get_info().get_comp_id() == album.get_info().get_comp_id()
+                    }) {
                         match res {
                             Ok(Some(tex)) => {
                                 this.imp().cover.show(&tex);

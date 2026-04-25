@@ -194,9 +194,7 @@ create table if not exists `artists` (
     `data` BLOB not null,
     primary key (`name`)
 );
-create unique index if not exists `artist_mbid` on `artists` (
-    `mbid`
-);
+create unique index if not exists `artist_mbid` on `artists` (`mbid`);
 create unique index if not exists `artist_name` on `artists` (`name`);
 
 create table if not exists `songs` (
@@ -400,7 +398,11 @@ impl TryFrom<&Row<'_>> for LyricsRow {
     }
 }
 
-pub fn find_album_meta(title: &str, mbid: Option<&str>, artist: Option<&str>) -> Result<Option<AlbumMeta>, Error> {
+pub fn find_album_meta(
+    title: &str,
+    mbid: Option<&str>,
+    artist: Option<&str>,
+) -> Result<Option<AlbumMeta>, Error> {
     let query: Result<AlbumMetaRow, SqliteError>;
     let conn = SQLITE_POOL.get().unwrap();
     if let Some(mbid) = mbid {
@@ -421,12 +423,8 @@ pub fn find_album_meta(title: &str, mbid: Option<&str>, artist: Option<&str>) ->
             let res = row.try_into()?;
             Ok(Some(res))
         }
-        Err(SqliteError::QueryReturnedNoRows) => {
-            Ok(None)
-        }
-        Err(e) => {
-            Err(Error::Db(e))
-        }
+        Err(SqliteError::QueryReturnedNoRows) => Ok(None),
+        Err(e) => Err(Error::Db(e)),
     }
 }
 
@@ -455,29 +453,18 @@ pub fn find_artist_meta(name: &str, mbid: Option<&str>) -> Result<Option<ArtistM
 }
 
 pub fn write_album_meta(album: &AlbumInfo, meta: &AlbumMeta) -> Result<(), Error> {
-    let mut conn = SQLITE_POOL.get().unwrap();
-    let tx = conn.transaction().map_err(Error::Db)?;
-    if let Some(mbid) = album.mbid.as_deref() {
-        tx.execute("delete from albums where mbid = ?1", params![mbid])
-            .map_err(Error::Db)?;
-    } else if let (title, Some(artist)) = (&album.title, album.get_artist_tag()) {
-        tx.execute(
-            "delete from albums where title = ?1 and artist = ?2",
-            params![title, artist],
-        )
-        .map_err(Error::Db)?;
-    } else {
-        tx.rollback().map_err(Error::Db)?;
-        return Err(Error::InsufficientKey);
-    }
-    tx.execute(
-        "insert into albums (folder_uri, mbid, title, artist, last_modified, data) values (?1,?2,?3,?4,?5,?6)",
+    let conn = SQLITE_POOL.get().unwrap();
+    conn.execute(
+        "insert into albums (folder_uri, mbid, title, artist, last_modified, data)
+        values (?1,?2,?3,?4,CURRENT_TIMESTAMP,?5)
+        ON CONFLICT(mbid) DO UPDATE SET title=?3, artist=?4, data=?5, last_modified=CURRENT_TIMESTAMP
+        ON CONFLICT(title, artist) DO UPDATE SET mbid=?2, data=?5, last_modified=CURRENT_TIMESTAMP
+        ",
         params![
             &album.folder_uri,
             &album.mbid,
             &album.title,
             &album.get_artist_tag(),
-            OffsetDateTime::now_utc(),
             bson::serialize_to_vec(
                 &bson
                     ::serialize_to_document(meta)
@@ -485,34 +472,25 @@ pub fn write_album_meta(album: &AlbumInfo, meta: &AlbumMeta) -> Result<(), Error
             ).map_err(Error::DocToBytes)?
         ]
     ).map_err(Error::Db)?;
-    tx.commit().map_err(Error::Db)?;
     Ok(())
 }
 
 pub fn write_artist_meta(artist: &ArtistInfo, meta: &ArtistMeta) -> Result<(), Error> {
-    let mut conn = SQLITE_POOL.get().unwrap();
-    let tx = conn.transaction().map_err(Error::Db)?;
-    if let Some(mbid) = artist.mbid.as_deref() {
-        tx.execute("delete from artists where mbid = ?1", params![mbid])
-            .map_err(Error::Db)?;
-    } else {
-        tx.execute("delete from artists where name = ?1", params![&artist.name])
-            .map_err(Error::Db)?;
-    }
-    tx.execute(
-        "insert into artists (name, mbid, last_modified, data) values (?1,?2,?3,?4)",
+    let conn = SQLITE_POOL.get().unwrap();
+    conn.execute(
+        "insert into artists (name, mbid, last_modified, data)
+        values (?1,?2,CURRENT_TIMESTAMP,?3)
+        ON CONFLICT(mbid) DO UPDATE SET name=?1, data=?3, last_modified=CURRENT_TIMESTAMP
+        ON CONFLICT(name) DO UPDATE SET mbid=?2, data=?3, last_modified=CURRENT_TIMESTAMP
+        ",
         params![
             &artist.name,
             &artist.mbid,
-            OffsetDateTime::now_utc(),
-            bson::serialize_to_vec(
-                &bson::serialize_to_document(meta).map_err(Error::ObjectToDoc)?
-            )
-            .map_err(Error::DocToBytes)?
+            bson::serialize_to_vec(&bson::serialize_to_document(meta).map_err(Error::ObjectToDoc)?)
+                .map_err(Error::DocToBytes)?
         ],
     )
     .map_err(Error::Db)?;
-    tx.commit().map_err(Error::Db)?;
     Ok(())
 }
 
@@ -621,7 +599,8 @@ pub fn register_image_key(
     tx.execute(
         "delete from images where key = ?1 and is_thumbnail = ?2",
         params![final_key, is_thumbnail as i32],
-    ).map_err(Error::Db)?;
+    )
+    .map_err(Error::Db)?;
 
     tx.execute(
         "insert into images (key, is_thumbnail, filename, last_modified) values (?1,?2,?3,?4)",
@@ -631,8 +610,9 @@ pub fn register_image_key(
             // Callers should interpret empty names as "tried but didn't find anything, don't try again"
             filename.unwrap_or(""),
             OffsetDateTime::now_utc()
-        ])
-      .map_err(Error::Db)?;
+        ],
+    )
+    .map_err(Error::Db)?;
     tx.commit().map_err(Error::Db)?;
     Ok(())
 }
@@ -652,7 +632,8 @@ pub fn unregister_image_key(
     tx.execute(
         "delete from images where key = ?1 and is_thumbnail = ?2",
         params![final_key, is_thumbnail as i32],
-    ).map_err(Error::Db)?;
+    )
+    .map_err(Error::Db)?;
     tx.commit().map_err(Error::Db)?;
     Ok(())
 }
@@ -818,17 +799,17 @@ pub fn insert_dynamic_playlist(
         .map_err(Error::Db)?;
 
         // Migrate image cache entry (if one exists) to new name
-        if to_overwrite != dp.name {
-            if let Err(db_err) = tx.execute(
+        if to_overwrite != dp.name
+            && let Err(db_err) = tx.execute(
                 "update images set key = ?1 where key = ?2",
                 params![
                     &format!("dynamic_playlist:{to_overwrite}"),
                     &format!("dynamic_playlist:{}", dp.name),
                 ],
-            ) {
-                tx.rollback().map_err(Error::Db)?;
-                return Err(Error::Db(db_err));
-            }
+            )
+        {
+            tx.rollback().map_err(Error::Db)?;
+            return Err(Error::Db(db_err));
         }
     }
 

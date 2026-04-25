@@ -160,6 +160,12 @@ pub struct LastfmAlbumResponse {
     pub album: LastfmAlbum,
 }
 
+#[derive(Deserialize)]
+#[non_exhaustive]
+pub struct LastfmErrorResponse {
+    pub error: i32,
+}
+
 // Artist
 #[derive(Deserialize, Debug)]
 #[non_exhaustive]

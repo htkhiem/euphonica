@@ -1,15 +1,17 @@
 use adw::prelude::*;
 use adw::subclass::prelude::*;
 use gtk::{CompositeTemplate, ListItem, SignalListItemFactory, SingleSelection, glib};
+use std::cell::RefCell;
 use std::{cell::Cell, cmp::Ordering, rc::Rc, sync::OnceLock};
 
-use glib::{Properties, WeakRef, clone, subclass::Signal};
+use glib::{Properties, SignalHandlerId, WeakRef, clone, subclass::Signal};
 
 use super::{ArtistCell, ArtistContentView, Library};
 use crate::{
     cache::Cache,
     common::{Artist, ContentStack},
     utils::{LazyInit, g_cmp_str_options, g_search_substr, settings_manager},
+    window::EuphonicaWindow,
 };
 
 mod imp {
@@ -59,6 +61,8 @@ mod imp {
         pub collapsed: Cell<bool>,
 
         pub library: WeakRef<Library>,
+        pub sort_direction_id: RefCell<Option<SignalHandlerId>>,
+        pub initializing: Cell<bool>,
     }
 
     #[glib::object_subclass]
@@ -83,7 +87,9 @@ mod imp {
             while let Some(child) = self.obj().first_child() {
                 child.unparent();
             }
-            println!("Disposing artist view");
+            if let Some(id) = self.sort_direction_id.take() {
+                self.sorter.disconnect(id);
+            }
         }
 
         fn constructed(&self) {
@@ -131,14 +137,14 @@ impl ArtistView {
         res
     }
 
-    pub fn setup(&self, library: &Library, cache: Rc<Cache>) {
+    pub fn setup(&self, library: &Library, cache: Rc<Cache>, window: &EuphonicaWindow) {
         self.imp().library.set(Some(library));
         self.setup_sort();
         self.setup_search();
         self.setup_gridview(cache.clone());
 
         let content_view = self.imp().content_view.get();
-        content_view.setup(library, cache);
+        content_view.setup(library, cache, window);
         self.imp().content_page.connect_hidden(move |_| {
             content_view.unbind();
         });
@@ -208,18 +214,20 @@ impl ArtistView {
         ));
 
         // Update when changing sort settings
-        state.connect_changed(
-            Some("sort-direction"),
-            clone!(
-                #[weak(rename_to = this)]
-                self,
-                move |_, _| {
-                    println!("Flipping sort...");
-                    // Don't actually sort, just flip the results :)
-                    this.imp().sorter.changed(gtk::SorterChange::Inverted);
-                }
-            ),
-        );
+        self.imp()
+            .sort_direction_id
+            .replace(Some(state.connect_changed(
+                Some("sort-direction"),
+                clone!(
+                    #[weak(rename_to = this)]
+                    self,
+                    move |_, _| {
+                        println!("Flipping sort...");
+                        // Don't actually sort, just flip the results :)
+                        this.imp().sorter.changed(gtk::SorterChange::Inverted);
+                    }
+                ),
+            )));
     }
 
     fn setup_search(&self) {
@@ -361,7 +369,7 @@ impl ArtistView {
                     .expect("Needs to be ListItem");
                 let artist_cell = ArtistCell::new(
                     item, cache,
-                    false // For ArtistView, don't immediately fetch avatars externally.
+                    false, // For ArtistView, don't immediately fetch avatars externally.
                 );
                 item.set_child(Some(&artist_cell));
             }
@@ -427,16 +435,21 @@ impl ArtistView {
 impl LazyInit for ArtistView {
     fn populate(&self) {
         if let Some(library) = self.imp().library.upgrade() {
-            let stack = self.imp().stack.get();
-            stack.show_spinner();
-            glib::spawn_future_local(async move {
-                let _ = library.init_artists(false).await;
-                if library.artists().n_items() > 0 {
-                    stack.show_content();
-                } else {
-                    stack.show_placeholder();
-                }
-            });
+            if !self.imp().initializing.get() {
+                self.imp().initializing.set(true);
+                let stack = self.imp().stack.get();
+                let this = self.clone();
+                stack.show_spinner();
+                glib::spawn_future_local(async move {
+                    let _ = library.init_artists(false).await;
+                    if library.artists().n_items() > 0 {
+                        stack.show_content();
+                    } else {
+                        stack.show_placeholder();
+                    }
+                    this.imp().initializing.set(false);
+                });
+            }
         }
     }
 }

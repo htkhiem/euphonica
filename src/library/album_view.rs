@@ -1,18 +1,19 @@
 use adw::prelude::*;
 use adw::subclass::prelude::*;
-use gio::{ActionEntry, SimpleActionGroup};
-use glib::{Properties, clone, subclass::Signal, WeakRef};
 use gtk::{
     CompositeTemplate, ListItem, SignalListItemFactory, SingleSelection,
+    gio::{ActionEntry, SimpleActionGroup},
     glib::{self},
+    glib::{Properties, SignalHandlerId, WeakRef, clone, subclass::Signal},
 };
+use std::cell::RefCell;
 use std::{cell::Cell, cmp::Ordering, rc::Rc, sync::OnceLock};
 
 use super::{AlbumCell, AlbumContentView, Library};
 use crate::{
     cache::Cache,
     client::ClientState,
-    common::{Album, Rating, ContentStack},
+    common::{Album, ContentStack, Rating},
     utils::{LazyInit, g_cmp_options, g_cmp_str_options, g_search_substr, settings_manager},
     window::EuphonicaWindow,
 };
@@ -65,9 +66,13 @@ mod imp {
         // if they now match.
         pub last_search_len: Cell<usize>,
         pub library: WeakRef<Library>,
+        pub sort_by_id: RefCell<Option<SignalHandlerId>>,
+        pub sort_direction_id: RefCell<Option<SignalHandlerId>>,
 
         #[property(get, set)]
         pub collapsed: Cell<bool>,
+
+        pub initializing: Cell<bool>,
     }
 
     #[glib::object_subclass]
@@ -92,7 +97,12 @@ mod imp {
             while let Some(child) = self.obj().first_child() {
                 child.unparent();
             }
-            println!("Disposing album view");
+            if let Some(id) = self.sort_by_id.take() {
+                self.sorter.disconnect(id);
+            }
+            if let Some(id) = self.sort_direction_id.take() {
+                self.sorter.disconnect(id);
+            }
         }
 
         fn constructed(&self) {
@@ -241,7 +251,7 @@ mod imp {
             ));
 
             // Update when changing sort settings
-            state.connect_changed(
+            self.sort_by_id.replace(Some(state.connect_changed(
                 Some("sort-by"),
                 clone!(
                     #[weak(rename_to = this)]
@@ -251,8 +261,8 @@ mod imp {
                         this.sorter.changed(gtk::SorterChange::Different);
                     }
                 ),
-            );
-            state.connect_changed(
+            )));
+            self.sort_direction_id.replace(Some(state.connect_changed(
                 Some("sort-direction"),
                 clone!(
                     #[weak(rename_to = this)]
@@ -263,7 +273,7 @@ mod imp {
                         this.sorter.changed(gtk::SorterChange::Inverted);
                     }
                 ),
-            );
+            )));
 
             // Set up search
             self.search_filter.set_filter_func(clone!(
@@ -429,9 +439,7 @@ impl AlbumView {
         client_state: &ClientState,
         window: &EuphonicaWindow,
     ) {
-        self.imp()
-            .library
-            .set(Some(library));
+        self.imp().library.set(Some(library));
         self.setup_gridview(cache.clone());
 
         let content_view = self.imp().content_view.get();
@@ -565,16 +573,21 @@ impl AlbumView {
 impl LazyInit for AlbumView {
     fn populate(&self) {
         if let Some(library) = self.imp().library.upgrade() {
-            let stack = self.imp().stack.get();
-            stack.show_spinner();
-            glib::spawn_future_local(async move {
-                let _ = library.init_albums().await;
-                if library.albums().n_items() > 0 {
-                    stack.show_content();
-                } else {
-                    stack.show_placeholder();
-                }
-            });
+            if !self.imp().initializing.get() {
+                self.imp().initializing.set(true);
+                let stack = self.imp().stack.get();
+                let this = self.clone();
+                stack.show_spinner();
+                glib::spawn_future_local(async move {
+                    let _ = library.init_albums().await;
+                    if library.albums().n_items() > 0 {
+                        stack.show_content();
+                    } else {
+                        stack.show_placeholder();
+                    }
+                    this.imp().initializing.set(false);
+                });
+            }
         }
     }
 }

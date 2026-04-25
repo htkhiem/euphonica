@@ -1,7 +1,8 @@
-use ::glib::clone;
 use adw::prelude::*;
-use glib::subclass::Signal;
-use gtk::subclass::prelude::*;
+use gtk::{
+    glib::{self, clone, subclass::Signal},
+    subclass::prelude::*,
+};
 
 use adw::ColorScheme;
 

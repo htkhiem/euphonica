@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <template class="EuphonicaSeekbar2" parent="GtkBox">
+    <property name="orientation">1</property>
+    <style>
+      <class name="fg-auto-accent"/>
+    </style>
+    <child>
+      <object class="GtkCenterBox">
+        <style>
+          <class name="seekbar2"/>
+          <class name="caption"/>
+          <class name="dimmed"/>
+        </style>
+        <property name="hexpand">true</property>
+        <property name="start-widget">
+          <object class="GtkLabel" id="elapsed">
+            <style>
+              <class name="caption"/>
+            </style>
+          </object>
+        </property>
+        <property name="center-widget">
+          <object class="GtkBox">
+            <property name="spacing">6</property>
+            <child>
+              <object class="GtkImage" id="quality_grade">
+                <property name="pixel-size">12</property>
+              </object>
+            </child>
+            <child>
+              <object class="GtkLabel" id="format_desc">
+                <style>
+                  <class name="caption"/>
+                </style>
+              </object>
+            </child>
+            <child>
+              <object class="GtkSeparator"/>
+            </child>
+            <child>
+              <object class="GtkLabel" id="bitrate">
+                <style>
+                  <class name="caption"/>
+                </style>
+              </object>
+            </child>
+          </object>
+        </property>
+        <property name="end-widget">
+          <object class="GtkLabel" id="duration">
+            <style>
+              <class name="caption"/>
+            </style>
+          </object>
+        </property>
+      </object>
+    </child>
+  </template>
+</interface>

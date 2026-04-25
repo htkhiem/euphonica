@@ -6,46 +6,26 @@ use crate::{
     utils::meta_provider_settings,
 };
 
-use gio::prelude::SettingsExt;
-use reqwest::{
-    blocking::{Client, Response},
-    header::USER_AGENT,
-};
+use gtk::gio::prelude::SettingsExt;
+use reqwest::{blocking::Client, header::USER_AGENT};
 
 use super::{
     super::{MetadataProvider, models, prelude::*},
-    LrcLibResponse, PROVIDER_KEY,
+    LrcLibErrorResponse, LrcLibResponse, PROVIDER_KEY,
 };
 
 pub const API_ROOT: &str = "https://lrclib.net/api/";
 
 pub struct LrcLibWrapper {
     client: Client,
-    last_request_time: SystemTime
-}
-
-impl LrcLibWrapper {
-    fn get_lrclib(&mut self, params: &[(&str, &str)]) -> Option<Response> {
-        sleep_between_requests(self.last_request_time);
-        let resp = self
-            .client
-            .get(format!("{API_ROOT}search"))
-            .query(params)
-            .header(USER_AGENT, APPLICATION_USER_AGENT)
-            .send();
-        self.last_request_time = SystemTime::now();
-        if let Ok(res) = resp {
-            return Some(res);
-        }
-        None
-    }
+    last_request_time: SystemTime,
 }
 
 impl MetadataProvider for LrcLibWrapper {
     fn new() -> Self {
         Self {
             client: Client::new(),
-            last_request_time: SystemTime::now()
+            last_request_time: SystemTime::now(),
         }
     }
 
@@ -54,8 +34,8 @@ impl MetadataProvider for LrcLibWrapper {
         &mut self,
         _key: &mut AlbumInfo,
         existing: Option<models::AlbumMeta>,
-    ) -> Option<models::AlbumMeta> {
-        existing
+    ) -> MetadataResult<Option<models::AlbumMeta>> {
+        Ok(existing)
     }
 
     /// LRCLIB only provides song lyrics.
@@ -63,11 +43,11 @@ impl MetadataProvider for LrcLibWrapper {
         &mut self,
         _key: &mut ArtistInfo,
         existing: Option<models::ArtistMeta>,
-    ) -> Option<models::ArtistMeta> {
-        existing
+    ) -> MetadataResult<Option<models::ArtistMeta>> {
+        Ok(existing)
     }
 
-    fn get_lyrics(&mut self, key: &SongInfo) -> Option<models::Lyrics> {
+    fn get_lyrics(&mut self, key: &SongInfo) -> MetadataResult<Option<models::Lyrics>> {
         if meta_provider_settings(PROVIDER_KEY).boolean("enabled") {
             let mut params: Vec<(&str, &str)> = Vec::new();
             params.push(("track_name", &key.title));
@@ -77,11 +57,21 @@ impl MetadataProvider for LrcLibWrapper {
             if let Some(album) = &key.album {
                 params.push(("album_name", &album.title));
             }
-
-            if let Some(resp) = self.get_lrclib(&params) {
-                match resp.status() {
-                    reqwest::StatusCode::OK => {
-                        match resp.json::<Vec<LrcLibResponse>>() {
+            sleep_between_requests(self.last_request_time);
+            self.last_request_time = SystemTime::now();
+            let mut resp = self
+                .client
+                .get(format!("{API_ROOT}search"))
+                .query(&params)
+                .header(USER_AGENT, APPLICATION_USER_AGENT)
+                .send();
+            if resp.is_ok() {
+                resp = resp.unwrap().error_for_status();
+            }
+            match resp {
+                Ok(resp) => {
+                    if let Ok(text) = resp.text() {
+                        match serde_json::from_str::<Vec<LrcLibResponse>>(&text) {
                             Ok(parsed) => {
                                 if !parsed.is_empty() {
                                     let mut best_idx: usize = 0;
@@ -99,44 +89,41 @@ impl MetadataProvider for LrcLibWrapper {
                                         }
                                     }
                                     let mut res: Option<models::Lyrics> = None;
-                                    if let Some(synced) = parsed[best_idx].synced.as_ref() {
-                                        if let Ok(lyrics) =
+                                    if let Some(synced) = parsed[best_idx].synced.as_ref()
+                                        && let Ok(lyrics) =
                                             models::Lyrics::try_from_synced_lrclib_str(synced)
-                                        {
-                                            res = Some(lyrics);
-                                        }
+                                    {
+                                        res = Some(lyrics);
                                     }
-                                    if res.is_none() {
-                                        if let Ok(lyrics) =
+                                    if res.is_none()
+                                        && let Ok(lyrics) =
                                             models::Lyrics::try_from_plain_lrclib_str(
                                                 &parsed[best_idx].plain,
                                             )
-                                        {
-                                            res = Some(lyrics);
-                                        }
+                                    {
+                                        res = Some(lyrics);
                                     }
-                                    res
+                                    Ok(res)
                                 } else {
-                                    None
+                                    Ok(None)
                                 }
                             }
-                            Err(e) => {
-                                dbg!(e);
-                                None
-                            }
+                            Err(_) => match serde_json::from_str::<LrcLibErrorResponse>(&text) {
+                                Ok(err_resp) => match err_resp.code {
+                                    404 => Err(MetadataError::NotFound(None)),
+                                    _ => Err(MetadataError::Other(None)),
+                                },
+                                Err(_) => Err(MetadataError::Parse(None)),
+                            },
                         }
-                    }
-                    code => {
-                        dbg!(code);
-                        None
+                    } else {
+                        Err(MetadataError::Parse(None))
                     }
                 }
-                // Pick the one with the closest duration to our song
-            } else {
-                None
+                Err(e) => Err(MetadataError::Reqwest(None, e)),
             }
         } else {
-            None
+            Ok(None)
         }
     }
 }

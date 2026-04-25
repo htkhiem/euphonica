@@ -1,4 +1,4 @@
-use gio::Cancellable;
+use gtk::gio::Cancellable;
 use libsecret::*;
 use std::collections::HashMap;
 
@@ -16,9 +16,16 @@ pub fn get_mpd_password() -> Result<Option<String>, String> {
     let mut attributes = HashMap::new();
     attributes.insert("type", "mpd");
 
-    libsecret::password_lookup_sync(Some(&schema), attributes, Cancellable::NONE)
-        .map(|op| op.map(|gs| gs.as_str().to_owned()))
-        .map_err(|ge| format!("{ge:?}"))
+    match libsecret::password_lookup_sync(Some(&schema), attributes, Cancellable::NONE) {
+        Ok(pw) => Ok(pw.map(|gs| gs.as_str().to_owned())),
+        Err(ge) => {
+            if ge.message().eq("The name is not activatable") {
+                Ok(None)
+            } else {
+                Err(format!("{ge:?}"))
+            }
+        }
+    }
 }
 
 pub async fn get_mpd_password_async() -> Result<Option<String>, String> {
@@ -26,9 +33,16 @@ pub async fn get_mpd_password_async() -> Result<Option<String>, String> {
     let mut attributes = HashMap::new();
     attributes.insert("type", "mpd");
 
-    libsecret::password_lookup_future(Some(&schema), attributes).await
-        .map(|op| op.map(|gs| gs.as_str().to_owned()))
-        .map_err(|ge| format!("{ge:?}"))
+    match libsecret::password_lookup_future(Some(&schema), attributes).await {
+        Ok(pw) => Ok(pw.map(|gs| gs.as_str().to_owned())),
+        Err(ge) => {
+            if ge.message().eq("The name is not activatable") {
+                Ok(None)
+            } else {
+                Err(format!("{ge:?}"))
+            }
+        }
+    }
 }
 
 pub async fn set_mpd_password(maybe_password: Option<&str>) -> Result<(), String> {

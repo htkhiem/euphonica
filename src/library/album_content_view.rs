@@ -1,13 +1,9 @@
 use super::{Library, artist_tag::ArtistTag};
 use crate::{
-    cache::{
-        Cache, CacheState,
-        placeholders::EMPTY_ALBUM_STRING,
-    },
+    cache::{Cache, CacheState, Error as CacheError, placeholders::EMPTY_ALBUM_STRING},
     client::{ClientState, state::StickersSupportLevel},
     common::{
-        Album, Artist, ContentView, Rating, RowAddButtons, Song, SongRow,
-        ImageStack, ContentStack
+        Album, Artist, ContentStack, ContentView, ImageStack, Rating, RowAddButtons, Song, SongRow,
     },
     library::add_to_playlist::AddToPlaylistButton,
     utils::{format_secs_as_duration, tokio_runtime},
@@ -95,6 +91,8 @@ mod imp {
         pub window: WeakRef<EuphonicaWindow>,
         pub bindings: RefCell<Vec<Binding>>,
         pub cover_signal_id: RefCell<Option<SignalHandlerId>>,
+        pub cover_set_id: RefCell<Option<SignalHandlerId>>,
+        pub cover_cleared_id: RefCell<Option<SignalHandlerId>>,
         pub cache: OnceCell<Rc<Cache>>,
         #[derivative(Default(value = "Cell::new(true)"))]
         pub selecting_all: Cell<bool>, // Enables queuing the entire album efficiently
@@ -122,6 +120,15 @@ mod imp {
         fn dispose(&self) {
             while let Some(child) = self.obj().first_child() {
                 child.unparent();
+            }
+            if let Some(cache) = self.cache.get() {
+                let state = cache.get_cache_state();
+                if let Some(id) = self.cover_set_id.take() {
+                    state.disconnect(id);
+                }
+                if let Some(id) = self.cover_cleared_id.take() {
+                    state.disconnect(id);
+                }
             }
         }
 
@@ -155,11 +162,7 @@ mod imp {
             ));
 
             self.song_list
-                .bind_property(
-                    "n-items",
-                    &self.track_count.get(),
-                    "label"
-                )
+                .bind_property("n-items", &self.track_count.get(), "label")
                 .sync_create()
                 .build();
 
@@ -181,24 +184,32 @@ mod imp {
             let obj = self.obj();
             let action_clear_rating = ActionEntry::builder("clear-rating")
                 .activate(clone!(
-                    #[weak] obj,
+                    #[weak]
+                    obj,
                     move |_, _, _| {
-                        glib::spawn_future_local(clone!(#[weak] obj, async move {
-                            if let (Some(album), Some(library)) = (
-                                obj.imp().album.borrow().as_ref(),
-                                obj.imp().library.upgrade(),
-                            ) {
-                                if let Err(e) = library.rate_album(album, None).await {dbg!(e);} else {
-                                    obj.imp().rating.set_value(-1);
+                        glib::spawn_future_local(clone!(
+                            #[weak]
+                            obj,
+                            async move {
+                                if let (Some(album), Some(library)) = (
+                                    obj.imp().album.borrow().as_ref(),
+                                    obj.imp().library.upgrade(),
+                                ) {
+                                    if let Err(e) = library.rate_album(album, None).await {
+                                        dbg!(e);
+                                    } else {
+                                        obj.imp().rating.set_value(-1);
+                                    }
                                 }
                             }
-                        }));
+                        ));
                     }
                 ))
                 .build();
             let action_set_album_art = ActionEntry::builder("set-album-art")
                 .activate(clone!(
-                    #[weak] obj,
+                    #[weak]
+                    obj,
                     move |_, _, _| {
                         let (sender, receiver) = oneshot::channel();
                         tokio_runtime().spawn(async move {
@@ -211,8 +222,8 @@ mod imp {
                                 .expect("ashpd file open await failure")
                                 .response();
 
-                            sender.send(
-                                if let Ok(files) = maybe_files {
+                            sender
+                                .send(if let Ok(files) = maybe_files {
                                     let uris = files.uris();
                                     if !uris.is_empty() {
                                         Some(uris[0].to_string())
@@ -222,14 +233,15 @@ mod imp {
                                 } else {
                                     println!("{maybe_files:?}");
                                     None
-                                }
-                            ).expect("Broken oneshot sender");
+                                })
+                                .expect("Broken oneshot sender");
                         });
                         glib::spawn_future_local(clone!(
                             #[weak]
                             obj,
                             async move {
-                                if let Some(path) = receiver.await.expect("Broken oneshot receiver") {
+                                if let Some(path) = receiver.await.expect("Broken oneshot receiver")
+                                {
                                     obj.set_cover(&path).await;
                                 }
                             }
@@ -239,17 +251,20 @@ mod imp {
                 .build();
             let action_clear_album_art = ActionEntry::builder("clear-album-art")
                 .activate(clone!(
-                    #[weak] obj,
+                    #[weak]
+                    obj,
                     move |_, _, _| {
                         glib::spawn_future_local(clone!(
                             #[weak]
                             obj,
                             async move {
-                                if let (Some(album), Some(cache)) = (
-                                    obj.imp().album.borrow().as_ref(),
-                                    obj.imp().cache.get(),
-                                ) {
-                                    if let Err(e) = cache.clear_cover(album.get_folder_uri().to_owned(), true).await {dbg!(e);}
+                                if let (Some(album), Some(cache)) =
+                                    (obj.imp().album.borrow().as_ref(), obj.imp().cache.get())
+                                    && let Err(e) = cache
+                                        .clear_cover(album.get_folder_uri().to_owned(), true)
+                                        .await
+                                {
+                                    obj.show_cache_error("Couldn't clear cover", e);
                                 }
                             }
                         ));
@@ -259,7 +274,8 @@ mod imp {
 
             let action_refetch_metadata = ActionEntry::builder("refetch-metadata")
                 .activate(clone!(
-                    #[weak] obj,
+                    #[weak]
+                    obj,
                     move |_, _, _| {
                         glib::spawn_future_local(clone!(
                             #[weak]
@@ -291,19 +307,31 @@ mod imp {
                                         let mut songs: Vec<Song> =
                                             Vec::with_capacity(store.n_items() as usize);
                                         for i in 0..store.n_items() {
-                                            songs.push(store.item(i).and_downcast::<Song>().unwrap());
+                                            songs.push(
+                                                store.item(i).and_downcast::<Song>().unwrap(),
+                                            );
                                         }
-                                        if let Err(e) = library.insert_songs_next(&songs).await {dbg!(e);}
+                                        if let Err(e) = library.insert_songs_next(&songs).await {
+                                            dbg!(e);
+                                        }
                                     } else {
                                         // Get list of selected songs
                                         let sel = &obj.imp().sel_model.selection();
-                                        let mut songs: Vec<Song> = Vec::with_capacity(sel.size() as usize);
-                                        let (iter, first_idx) = BitsetIter::init_first(sel).unwrap();
-                                        songs.push(store.item(first_idx).and_downcast::<Song>().unwrap());
+                                        let mut songs: Vec<Song> =
+                                            Vec::with_capacity(sel.size() as usize);
+                                        let (iter, first_idx) =
+                                            BitsetIter::init_first(sel).unwrap();
+                                        songs.push(
+                                            store.item(first_idx).and_downcast::<Song>().unwrap(),
+                                        );
                                         iter.for_each(|idx| {
-                                            songs.push(store.item(idx).and_downcast::<Song>().unwrap())
+                                            songs.push(
+                                                store.item(idx).and_downcast::<Song>().unwrap(),
+                                            )
                                         });
-                                        if let Err(e) = library.insert_songs_next(&songs).await {dbg!(e);}
+                                        if let Err(e) = library.insert_songs_next(&songs).await {
+                                            dbg!(e);
+                                        }
                                     }
                                     obj.set_is_queuing(false);
                                 }
@@ -377,6 +405,12 @@ impl Default for AlbumContentView {
 }
 
 impl AlbumContentView {
+    fn show_cache_error(&self, prefix: &str, err: CacheError) {
+        if let Some(win) = self.imp().window.upgrade() {
+            win.send_simple_toast(&format!("{}: {}", prefix, dbg!(err).message()), 3);
+        }
+    }
+
     fn get_library(&self) -> Option<Library> {
         self.imp().library.upgrade()
     }
@@ -405,19 +439,28 @@ impl AlbumContentView {
                 stack.set_visible(false);
             } else {
                 stack.set_visible(true);
-                if stack.visible_child_name().is_none_or(|name| name != "spinner")  {
+                if stack
+                    .visible_child_name()
+                    .is_none_or(|name| name != "spinner")
+                {
                     stack.set_visible_child_name("spinner");
                 }
                 let cache = self.imp().cache.get().unwrap().clone();
                 let wiki_text = self.imp().wiki_text.get();
                 let wiki_link = self.imp().wiki_link.get();
                 let wiki_attrib = self.imp().wiki_attrib.get();
-                let res = cache.get_album_meta(album.get_info(), true, overwrite).await;
+                let res = cache
+                    .get_album_meta(
+                        album.get_info(),
+                        true,
+                        overwrite,
+                        self.imp().window.upgrade().as_ref(),
+                    )
+                    .await;
                 stack.set_visible_child_name("content");
                 match res {
                     Ok(Some(meta)) => {
                         if let Some(wiki) = meta.wiki {
-
                             wiki_text.set_visible(true);
                             wiki_text.set_label(&wiki.content);
                             if let Some(url) = wiki.url.as_ref() {
@@ -450,8 +493,12 @@ impl AlbumContentView {
 
     /// Set a user-selected path as the new local cover.
     pub async fn set_cover(&self, path: &str) {
-        if let (Some(album), Some(cache)) = (self.album(), self.imp().cache.get()) {
-            if let Err(e) = cache.set_cover(album.get_folder_uri().to_owned(), path, true).await {dbg!(e);}
+        if let (Some(album), Some(cache)) = (self.album(), self.imp().cache.get())
+            && let Err(e) = cache
+                .set_cover(album.get_folder_uri().to_owned(), path, true)
+                .await
+        {
+            self.show_cache_error("Couldn't set cover", e);
         }
     }
 
@@ -477,32 +524,36 @@ impl AlbumContentView {
             .add_to_playlist
             .setup(library, &self.imp().sel_model);
         self.imp().library.set(Some(library));
-        cache_state.connect_closure(
-            "folder-cover-set",
-            false,
-            closure_local!(
-                #[weak(rename_to = this)]
-                self,
-                move |_: CacheState, uri: String, hires: gdk::Texture, _: gdk::Texture| {
-                    if this.album().is_some_and(|a| a.get_folder_uri() == uri) {
-                        this.update_cover(hires);
+        self.imp()
+            .cover_set_id
+            .replace(Some(cache_state.connect_closure(
+                "folder-cover-set",
+                false,
+                closure_local!(
+                    #[weak(rename_to = this)]
+                    self,
+                    move |_: CacheState, uri: String, hires: gdk::Texture, _: gdk::Texture| {
+                        if this.album().is_some_and(|a| a.get_folder_uri() == uri) {
+                            this.update_cover(hires);
+                        }
                     }
-                }
-            ),
-        );
-        cache_state.connect_closure(
-            "folder-cover-cleared",
-            false,
-            closure_local!(
-                #[weak(rename_to = this)]
-                self,
-                move |_: CacheState, uri: String| {
-                    if this.album().is_some_and(|a| a.get_folder_uri() == uri) {
-                        this.clear_cover();
+                ),
+            )));
+        self.imp()
+            .cover_cleared_id
+            .replace(Some(cache_state.connect_closure(
+                "folder-cover-cleared",
+                false,
+                closure_local!(
+                    #[weak(rename_to = this)]
+                    self,
+                    move |_: CacheState, uri: String| {
+                        if this.album().is_some_and(|a| a.get_folder_uri() == uri) {
+                            this.clear_cover();
+                        }
                     }
-                }
-            ),
-        );
+                ),
+            )));
 
         let rating = self.imp().rating.get();
         client_state
@@ -517,22 +568,30 @@ impl AlbumContentView {
             "changed",
             false,
             closure_local!(
-                #[weak(rename_to = this)] self,
+                #[weak(rename_to = this)]
+                self,
                 move |rating: Rating| {
-                    glib::spawn_future_local(clone!(#[weak] this, #[weak] rating, async move {
-                        if let (Some(album), Some(library)) =
-                            (this.album(), this.get_library())
-                        {
-                            let rating_val = rating.value();
-                            let rating_opt = if rating_val > 0 {
-                                Some(rating_val)
-                            } else {
-                                None
-                            };
-                            album.set_rating(rating_opt);
-                            if let Err(e) = library.rate_album(&album, rating_opt).await {dbg!(e);}
+                    glib::spawn_future_local(clone!(
+                        #[weak]
+                        this,
+                        #[weak]
+                        rating,
+                        async move {
+                            if let (Some(album), Some(library)) = (this.album(), this.get_library())
+                            {
+                                let rating_val = rating.value();
+                                let rating_opt = if rating_val > 0 {
+                                    Some(rating_val)
+                                } else {
+                                    None
+                                };
+                                album.set_rating(rating_opt);
+                                if let Err(e) = library.rate_album(&album, rating_opt).await {
+                                    dbg!(e);
+                                }
+                            }
                         }
-                    }));
+                    ));
                 }
             ),
         );
@@ -545,12 +604,14 @@ impl AlbumContentView {
                     #[weak]
                     this,
                     async move {
-                        if let (Some(album), Some(library)) =
-                            (this.album(), this.get_library())
-                        {
+                        if let (Some(album), Some(library)) = (this.album(), this.get_library()) {
                             this.set_is_queuing(true);
                             if this.imp().selecting_all.get() {
-                                if let Err(e) = library.queue_album(album.clone(), true, true, None).await {dbg!(e);}
+                                if let Err(e) =
+                                    library.queue_album(album.clone(), true, true, None).await
+                                {
+                                    dbg!(e);
+                                }
                             } else {
                                 let store = &this.imp().song_list;
                                 // Get list of selected songs
@@ -561,7 +622,9 @@ impl AlbumContentView {
                                 iter.for_each(|idx| {
                                     songs.push(store.item(idx).and_downcast::<Song>().unwrap())
                                 });
-                                if let Err(e) = library.queue_songs(&songs, true, true).await {dbg!(e);}
+                                if let Err(e) = library.queue_songs(&songs, true, true).await {
+                                    dbg!(e);
+                                }
                             }
                             this.set_is_queuing(false);
                         }
@@ -580,12 +643,14 @@ impl AlbumContentView {
                     #[weak]
                     this,
                     async move {
-                        if let (Some(album), Some(library)) =
-                            (this.album(), this.get_library())
-                        {
+                        if let (Some(album), Some(library)) = (this.album(), this.get_library()) {
                             this.set_is_queuing(true);
                             if this.imp().selecting_all.get() {
-                                if let Err(e) = library.queue_album(album.clone(), false, false, None).await {dbg!(e);}
+                                if let Err(e) =
+                                    library.queue_album(album.clone(), false, false, None).await
+                                {
+                                    dbg!(e);
+                                }
                             } else {
                                 let store = &this.imp().song_list;
                                 // Get list of selected songs
@@ -596,7 +661,9 @@ impl AlbumContentView {
                                 iter.for_each(|idx| {
                                     songs.push(store.item(idx).and_downcast::<Song>().unwrap())
                                 });
-                                if let Err(e) = library.queue_songs(&songs, false, false).await {dbg!(e);}
+                                if let Err(e) = library.queue_songs(&songs, false, false).await {
+                                    dbg!(e);
+                                }
                             }
                             this.set_is_queuing(false);
                         }
@@ -697,16 +764,22 @@ impl AlbumContentView {
 
         // Setup click action
         self.imp().content.connect_activate(clone!(
-            #[weak(rename_to = this)] self,
+            #[weak(rename_to = this)]
+            self,
             move |_, position| {
-                glib::spawn_future_local(clone!(#[weak] this, async move {
-                    if let (Some(album), Some(library)) =
-                        (this.album(), this.get_library())
-                    {
-                        if let Err(e) = library.queue_album(album.clone(), true, true, Some(position)).await {dbg!(e);}
+                glib::spawn_future_local(clone!(
+                    #[weak]
+                    this,
+                    async move {
+                        if let (Some(album), Some(library)) = (this.album(), this.get_library())
+                            && let Err(e) = library
+                                .queue_album(album.clone(), true, true, Some(position))
+                                .await
+                        {
+                            dbg!(e);
+                        }
                     }
-                }));
-
+                ));
             }
         ));
     }
@@ -728,18 +801,21 @@ impl AlbumContentView {
             // Remove existing entry in SQLite, which might be an empty "do not retry" placeholder.
             if overwrite {
                 // Don't notify, else we'd interrupt the spinner
-                let _ = cache.clear_cover(info.folder_uri.to_owned(), false).await;
+                if let Err(e) = cache.clear_cover(info.folder_uri.to_owned(), false).await {
+                    self.show_cache_error("Couldn't clear cover", e);
+                }
             }
-            match cache.get_album_cover(
-                info, false, true
-            ).await {
+            match cache.get_album_cover(info, false, true).await {
                 Ok(Some(tex)) => {
                     self.update_cover(tex);
                 }
                 Ok(None) => {
                     self.clear_cover();
                 }
-                Err(e) => {dbg!(e);}
+                Err(e) => {
+                    self.show_cache_error("Couldn't fetch cover", e);
+                    self.clear_cover();
+                }
             }
         }
     }
@@ -832,18 +908,22 @@ impl AlbumContentView {
                 stack.show_spinner();
                 let song_list = this.imp().song_list.clone();
                 song_list.remove_all();
-                match library.get_album_songs(
-                    album.get_title().to_owned(),
-                    &mut |songs| {song_list.extend_from_slice(&songs);}
-                ).await {
+                match library
+                    .get_album_songs(&album, &mut |songs| {
+                        song_list.extend_from_slice(&songs);
+                    })
+                    .await
+                {
                     Ok(()) => {
                         if song_list.n_items() > 0 {
                             stack.show_content();
                         } else {
                             stack.show_placeholder();
                         }
-                    },
-                    Err(e) => {dbg!(e);}
+                    }
+                    Err(e) => {
+                        dbg!(e);
+                    }
                 };
                 this.imp().runtime.set_label(&format_secs_as_duration(
                     song_list
@@ -874,10 +954,10 @@ impl AlbumContentView {
         }
         self.imp().artist_tags.remove_all();
 
-        if let Some(id) = self.imp().cover_signal_id.take() {
-            if let Some(cache) = self.imp().cache.get() {
-                cache.get_cache_state().disconnect(id);
-            }
+        if let Some(id) = self.imp().cover_signal_id.take()
+            && let Some(cache) = self.imp().cache.get()
+        {
+            cache.get_cache_state().disconnect(id);
         }
         if let Some(_) = self.imp().album.take() {
             self.clear_cover();

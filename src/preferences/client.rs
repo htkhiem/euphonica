@@ -1,18 +1,21 @@
-use ::glib::closure_local;
 use duplicate::duplicate;
-use std::{rc::Rc, str::FromStr};
+use std::str::FromStr;
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
-use gtk::{CompositeTemplate, glib};
+use gtk::{
+    CompositeTemplate,
+    glib::{self, closure_local},
+};
 
 use glib::clone;
 
 use mpd::status::AudioFormat;
 
 use crate::{
+    application::EuphonicaApplication,
     client::{
-        ClientState, ConnectionState, MpdWrapper,
+        ClientState, ConnectionState,
         password::{get_mpd_password_async, set_mpd_password},
         state::StickersSupportLevel,
     },
@@ -371,9 +374,9 @@ impl ClientPreferences {
         row.set_subtitle(&subtitle);
     }
 
-    pub fn setup(&self, client: Rc<MpdWrapper>, player: &Player) {
+    pub fn setup(&self, app: &EuphonicaApplication, player: &Player) {
         let imp = self.imp();
-        let client_state = client.clone().get_client_state();
+        let client_state = app.get_client().get_client_state();
         // Populate with current gsettings values
         let settings = utils::settings_manager();
 
@@ -478,7 +481,7 @@ impl ClientPreferences {
             #[strong]
             conn_settings,
             #[weak]
-            client,
+            app,
             move |_| {
                 if this.imp().mpd_use_unix_socket.is_active() {
                     let _ = conn_settings
@@ -494,7 +497,7 @@ impl ClientPreferences {
                 let password_val = this.imp().mpd_password.text();
                 glib::spawn_future_local(clone!(
                     #[weak]
-                    client,
+                    app,
                     async move {
                         let password: Option<&str> = if password_val.is_empty() {
                             None
@@ -503,10 +506,12 @@ impl ClientPreferences {
                         };
                         match set_mpd_password(password).await {
                             Ok(()) => {
-                                client.connect().await;
+                                if let Err(e) = app.refresh().await {
+                                    dbg!(e);
+                                }
                             }
                             Err(msg) => {
-                                println!("{msg}");
+                                dbg!(msg);
                             }
                         }
                     }
@@ -633,7 +638,13 @@ impl ClientPreferences {
                         imp.fft_n_bins.value().round() as u32,
                     )
                     .expect("Cannot save visualizer settings");
-                player.restart_fft_thread();
+                glib::spawn_future_local(clone!(
+                    #[weak]
+                    player,
+                    async move {
+                        player.restart_fft_thread().await;
+                    }
+                ));
             }
         ));
     }

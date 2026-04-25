@@ -19,14 +19,25 @@
  */
 
 use crate::{
-    EuphonicaWindow, cache::Cache, client::MpdWrapper, config::{APPLICATION_USER_AGENT, VERSION}, library::Library, player::Player, preferences::Preferences, utils::{settings_manager, tokio_runtime}
+    EuphonicaWindow,
+    cache::Cache,
+    client::{MpdWrapper, Result as ClientResult},
+    config::VERSION,
+    library::Library,
+    player::Player,
+    preferences::Preferences,
+    utils::{settings_manager, tokio_runtime},
 };
 use adw::prelude::*;
 use adw::subclass::prelude::*;
-use gtk::{gio, glib};
+use gtk::{
+    gio,
+    glib::{self, clone},
+};
 use std::{
     cell::{Cell, OnceCell, RefCell},
     fs::create_dir_all,
+    ops::ControlFlow,
     path::PathBuf,
     rc::Rc,
 };
@@ -150,16 +161,9 @@ mod imp {
                 // Create controllers
                 // These two are GObjects (already refcounted by GLib)
                 let player = Player::default();
-                player.setup(
-                    self.obj().clone(),
-                    client.clone(),
-                    cache.clone(),
-                );
+                player.setup(self.obj().clone(), client.clone(), cache.clone());
                 let library = Library::default();
-                library.setup(
-                    client.clone(),
-                    player.clone(),
-                );
+                library.setup(client.clone(), player.clone());
 
                 let _ = self.cache.set(cache);
                 let _ = self.client.set(client);
@@ -172,13 +176,28 @@ mod imp {
                 obj.set_accels_for_action("app.fullscreen", &["F11"]);
                 obj.set_accels_for_action("app.refresh", &["F5"]);
 
-                application.refresh();
+                glib::spawn_future_local(clone!(
+                    #[weak]
+                    application,
+                    async move {
+                        if let Err(e) = application.refresh().await {
+                            dbg!(e);
+                        }
+                    }
+                ));
 
                 self.initialized.set(true);
 
                 // If this is the main instance, respect the minimized flag
                 if !self.start_minimized.get() {
-                    self.player.get().unwrap().set_is_foreground(true);
+                    let player = self.player.get().unwrap();
+                    glib::spawn_future_local(clone!(
+                        #[weak]
+                        player,
+                        async move {
+                            player.set_is_foreground(true).await;
+                        }
+                    ));
                     self.obj().raise_window();
                 }
             } else {
@@ -201,8 +220,6 @@ glib::wrapper! {
 
 impl EuphonicaApplication {
     pub fn new(application_id: &str, flags: &gio::ApplicationFlags) -> Self {
-        // TODO: Find a better place to put these
-        musicbrainz_rs::config::set_user_agent(APPLICATION_USER_AGENT);
         let app: EuphonicaApplication = glib::Object::builder()
             .property("application-id", application_id)
             .property("flags", flags)
@@ -212,7 +229,7 @@ impl EuphonicaApplication {
             if vd.lookup_value("minimized", None).is_some() {
                 this.imp().start_minimized.set(true);
             }
-            -1 // let execution continue
+            ControlFlow::Continue(())
         });
 
         // Background mode
@@ -242,7 +259,17 @@ impl EuphonicaApplication {
             .activate(move |app: &Self, _, _| app.toggle_fullscreen())
             .build();
         let refresh_action = gio::ActionEntry::builder("refresh")
-            .activate(move |app: &Self, _, _| app.refresh())
+            .activate(move |app: &Self, _, _| {
+                glib::spawn_future_local(clone!(
+                    #[weak]
+                    app,
+                    async move {
+                        if let Err(e) = app.refresh().await {
+                            dbg!(e);
+                        }
+                    }
+                ));
+            })
             .build();
         let update_db_action = gio::ActionEntry::builder("update-db")
             .activate(move |app: &Self, _, _| app.update_db())
@@ -301,14 +328,24 @@ impl EuphonicaApplication {
             let window = EuphonicaWindow::new(self);
             window.upcast()
         };
-        self.imp().player.get().unwrap().set_is_foreground(true);
+        let player = self.imp().player.get().unwrap().clone();
+        glib::spawn_future_local(async move {
+            player.set_is_foreground(true).await;
+        });
+        let player = self.imp().player.get().unwrap().clone();
+        glib::spawn_future_local(async move {
+            player.set_is_foreground(true).await;
+        });
         window.present();
     }
 
     pub fn on_window_closed(&self) {
         let settings = settings_manager().child("state");
         if settings.boolean("run-in-background") {
-            self.imp().player.get().unwrap().set_is_foreground(false);
+            let player = self.imp().player.get().unwrap().clone();
+            glib::spawn_future_local(async move {
+                player.set_is_foreground(false).await;
+            });
             let _ = self.imp().hold_guard.replace(Some(self.hold()));
             println!("Created a new hold guard");
         } else {
@@ -317,13 +354,11 @@ impl EuphonicaApplication {
         }
     }
 
-    fn refresh(&self) {
-        let client = self.get_client();
-        glib::spawn_future_local(async move {
-            if let Err(e) = client.connect().await {
-                dbg!(e);
-            }
-        });
+    pub async fn refresh(&self) -> ClientResult<()> {
+        self.get_client().connect().await?;
+        self.get_library().clear();
+        self.get_player().clear();
+        Ok(())
     }
 
     fn update_db(&self) {
@@ -342,7 +377,7 @@ impl EuphonicaApplication {
             .application_icon("io.github.htkhiem.Euphonica")
             .developer_name("htkhiem2000")
             .version(VERSION)
-            .developers(vec!["htkhiem2000", "sonicv6"])
+            .developers(vec!["htkhiem2000", "ShadiestGoat", "sonicv6"])
             .license_type(gtk::License::Gpl30)
             .copyright("© 2026 htkhiem2000")
             .build();
@@ -356,7 +391,7 @@ impl EuphonicaApplication {
 
     pub fn show_preferences(&self) {
         let window = self.active_window().unwrap();
-        let prefs = Preferences::new(self.get_client(), self.get_cache(), self.get_player());
+        let prefs = Preferences::new(self, self.get_cache(), self.get_player());
         prefs.present(Some(&window));
         prefs.update();
     }

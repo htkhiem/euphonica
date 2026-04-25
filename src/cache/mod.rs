@@ -6,4 +6,5 @@ pub use state::CacheState;
 pub mod placeholders;
 
 pub use controller::Cache;
+pub use controller::Error;
 pub use controller::ImageAction;

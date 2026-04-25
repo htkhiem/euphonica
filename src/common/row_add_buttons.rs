@@ -1,6 +1,9 @@
-use ::glib::clone;
-use glib::Object;
-use gtk::{CompositeTemplate, glib, prelude::*, subclass::prelude::*};
+use gtk::{
+    CompositeTemplate,
+    glib::{self, Object, clone},
+    prelude::*,
+    subclass::prelude::*,
+};
 use std::cell::RefCell;
 
 use crate::{common::Song, library::Library};

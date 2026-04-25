@@ -1,10 +1,9 @@
-use glib::{
-    BoxedAnyObject,
+use gtk::glib::{
+    self, BoxedAnyObject, Properties, derived_properties,
     prelude::*,
-    subclass::{Signal, prelude::*}, Properties, derived_properties
+    subclass::{Signal, prelude::*},
 };
 use std::{cell::Cell, sync::OnceLock};
-
 
 #[derive(Default, Debug, Copy, Clone, PartialEq, Eq, glib::Enum)]
 #[enum_type(name = "EuphonicaConnectionState")]
@@ -74,7 +73,7 @@ mod imp {
                 pct_done_bg_tasks: Cell::new(0.0),
                 has_pending: Cell::new(false),
                 stickers_support_level: Cell::default(),
-                supports_playlists: Cell::new(true)
+                supports_playlists: Cell::new(true),
             }
         }
     }
@@ -89,7 +88,7 @@ mod imp {
                         .param_types([
                             BoxedAnyObject::static_type(), // mpd::Subsystem::to_str
                         ])
-                        .build()
+                        .build(),
                 ]
             })
         }
@@ -117,11 +116,9 @@ impl ClientState {
     fn update_has_pending(&self) {
         let total = self.imp().n_bg_tasks.get() + self.imp().n_fg_tasks.get();
         let old = self.imp().has_pending.get();
-        if old {
-            if total == 0 {
-                self.imp().has_pending.set(false);
-                self.notify("has-pending");
-            }
+        if total == 0 {
+            self.imp().has_pending.set(false);
+            self.notify("has-pending");
         } else {
             // Only start showing the popover when there are more than 3 queued tasks,
             // else the thing will look strobey.

@@ -1,13 +1,14 @@
-use std::rc::Rc;
-
 use adw::prelude::*;
 use adw::subclass::prelude::*;
-use glib::{clone, closure_local};
-use gtk::{CompositeTemplate, ListItem, SignalListItemFactory, SingleSelection, gdk, gio};
+use gtk::{
+    CompositeTemplate, ListItem, SignalListItemFactory, SingleSelection, gio,
+    glib::{self, Properties, WeakRef, clone, closure_local, subclass::Signal},
+};
 use mpd::{
     SaveMode,
     error::{Error as MpdError, ErrorCode as MpdErrorCode, ServerError},
 };
+use std::{cell::Cell, rc::Rc, sync::OnceLock};
 
 use super::PlayerPane;
 
@@ -23,11 +24,6 @@ use crate::{
 use super::Player;
 
 mod imp {
-    use std::{cell::Cell, sync::OnceLock};
-
-    use ::glib::WeakRef;
-    use glib::{Properties, subclass::Signal};
-
     use super::*;
 
     #[derive(Debug, Properties, Default, CompositeTemplate)]
@@ -82,11 +78,13 @@ mod imp {
         pub restore_last_pos: Cell<u8>,
 
         pub player: WeakRef<Player>,
-        pub initialized: Cell<bool>,
 
         // TODO: find a smarter way to store these between prepare and drag-begin
         pub drag_x: Cell<f64>,
         pub drag_y: Cell<f64>,
+
+        // Avoid multiple inits running concurrently
+        pub initializing: Cell<bool>,
     }
 
     #[glib::object_subclass]
@@ -501,7 +499,7 @@ impl QueueView {
         diag.set_response_appearance("append", adw::ResponseAppearance::Suggested);
         diag.set_response_appearance("overwrite", adw::ResponseAppearance::Destructive);
         match diag
-            .choose_future(&self.imp().window.upgrade().unwrap())
+            .choose_future(self.imp().window.upgrade().as_ref())
             .await
             .as_str()
         {
@@ -513,6 +511,15 @@ impl QueueView {
             }
             _ => {}
         };
+    }
+
+    /// Determine whether to present an empty placeholder or queue contents
+    pub fn update_stack(&self, queue: &gio::ListStore) {
+        if queue.n_items() > 0 {
+            self.imp().content_stack.show_content();
+        } else {
+            self.imp().content_stack.show_placeholder();
+        }
     }
 
     pub fn bind_state(&self, player: &Player) {
@@ -535,6 +542,17 @@ impl QueueView {
             .transform_to(|_, size: u32| format_song_count(size))
             .sync_create()
             .build();
+
+        player_queue.connect_notify_local(
+            Some("n-items"),
+            clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |queue, _| {
+                    this.update_stack(queue);
+                }
+            ),
+        );
 
         player
             .bind_property("supports-playlists", &save, "visible")
@@ -698,7 +716,11 @@ impl QueueView {
 
 impl LazyInit for QueueView {
     fn populate(&self) {
-        if let Some(player) = self.imp().player.upgrade() {
+        if let Some(player) = self.imp().player.upgrade()
+            && !player.queue_is_initialized()
+            && !self.imp().initializing.get()
+        {
+            self.imp().initializing.set(true);
             glib::spawn_future_local(clone!(
                 #[weak]
                 player,
@@ -708,11 +730,8 @@ impl LazyInit for QueueView {
                     let stack = this.imp().content_stack.get();
                     stack.show_spinner();
                     player.update_queue().await;
-                    if player.queue().n_items() > 0 {
-                        stack.show_content();
-                    } else {
-                        stack.show_placeholder();
-                    }
+                    this.imp().initializing.set(false);
+                    this.update_stack(player.queue());
                 }
             ));
         }

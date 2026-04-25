@@ -1,20 +1,20 @@
 use async_channel::{Receiver, Sender};
-use gio::prelude::SettingsExt;
+use gtk::gio::prelude::SettingsExt;
 use mpd::{
+    Channel, Client, EditAction, GroupedValues, Id, Idle, Output, Query, ReplayGain, SaveMode,
+    Status, Subsystem, Term, Version,
     error::{
         Error as MpdError, ErrorCode as MpdErrorCode, ProtoError, Result as MpdResult, ServerError,
     },
     search::Window,
     song::PosIdChange,
-    Channel, Client, EditAction, GroupedValues, Id, Idle, Output, Query, ReplayGain, SaveMode,
-    Status, Subsystem, Term, Version,
 };
 use oneshot::Sender as OneShotSender;
 use rand::seq::SliceRandom;
 use resolve_path::PathResolveExt;
 use rustc_hash::FxHashSet;
 use std::{
-    borrow::Cow, cmp::Ordering as StdOrdering, net::TcpStream, ops::Range,
+    borrow::Cow, cell::RefCell, cmp::Ordering as StdOrdering, net::TcpStream, ops::Range,
     os::unix::net::UnixStream, result,
 };
 
@@ -22,16 +22,16 @@ use crate::{
     cache::sqlite,
     client::stream::StreamWrapper,
     common::{
+        AlbumInfo, DynamicPlaylist, SongInfo, Stickers,
         dynamic_playlist::{Ordering, QueryLhs, Rule, StickerObjectType, StickerOperation},
         inode::INodeInfo,
-        AlbumInfo, DynamicPlaylist, SongInfo, Stickers,
     },
     player::PlaybackFlow,
-    utils::{self, save_and_register_image},
+    utils,
 };
 
 use super::StickerSetMode;
-use super::{get_past_unix_timestamp, password, BATCH_SIZE, FETCH_LIMIT};
+use super::{BATCH_SIZE, FETCH_LIMIT, get_past_unix_timestamp, password};
 
 fn cmp_options_nulls_last<T: Ord>(a: Option<&T>, b: Option<&T>) -> StdOrdering {
     match (a, b) {
@@ -229,20 +229,20 @@ pub enum Task {
         Cow<'static, str>,
         Responder<()>,
     ),
-    FindStickerOp(
-        /// Type
-        &'static str,
-        /// Base URI
-        String,
-        /// Name (LHS)
-        Cow<'static, str>,
-        /// Operator
-        &'static str,
-        /// Value (RHS)
-        Cow<'static, str>,
-        Window,
-        Responder<Vec<String>>,
-    ),
+    // FindStickerOp(
+    //     /// Type
+    //     &'static str,
+    //     /// Base URI
+    //     String,
+    //     /// Name (LHS)
+    //     Cow<'static, str>,
+    //     /// Operator
+    //     &'static str,
+    //     /// Value (RHS)
+    //     Cow<'static, str>,
+    //     Window,
+    //     Responder<Vec<String>>,
+    // ),
     GetPlaylists(Responder<Vec<INodeInfo>>),
     LoadPlaylist(String, Responder<()>),
     SaveQueueAsPlaylist(
@@ -298,7 +298,7 @@ pub enum Task {
         /// URI to song file
         String,
         /// Full paths to high-resolution and low-resolution file, respectively
-        Responder<Option<(String, String)>>,
+        Responder<Option<utils::RegisteredImageBundle>>,
     ),
     /// Get a song's folder cover (cover.jpg/png/webp in the same folder).
     /// Will try to download from MPD if one isn't already available locally.
@@ -306,7 +306,7 @@ pub enum Task {
         /// URI to folder with trailing slash
         String,
         /// Full paths to high-resolution and low-resolution file, respectively
-        Responder<Option<(String, String)>>,
+        Responder<Option<utils::RegisteredImageBundle>>,
     ),
     /// Query distinct values of a tag, optionally grouped by another
     List(
@@ -335,12 +335,12 @@ pub enum Task {
     /// This utilises commandlists for better efficiency.
     InsertMultiple(Vec<String>, usize, Responder<Vec<usize>>),
     FindAdd(Query<'static>, Responder<()>),
-    ClearTagTypes(Responder<()>),
-    EnableTagTypes(
-        /// If none, will enable all tag types
-        Option<Vec<&'static str>>,
-        Responder<()>,
-    ),
+    // ClearTagTypes(Responder<()>),
+    // EnableTagTypes(
+    //     /// If none, will enable all tag types
+    //     Option<Vec<&'static str>>,
+    //     Responder<()>,
+    // ),
     ResolveDynamicPlaylist(
         /// The DP itself
         DynamicPlaylist,
@@ -398,18 +398,15 @@ impl Connection {
     }
 
     pub fn connect(&mut self) -> Result<Version> {
-        if let Err(e) = self.disconnect() {
-            println!("Warning: did not cleanly disconnect");
-        }
         let settings = utils::settings_manager().child("client");
-        // dbg!("Disconnected successfully");
+        // eprintln!("Attempting connection...");
 
         // self.state.set_connection_state(ConnectionState::Connecting);
         let use_unix_socket = settings.boolean("mpd-use-unix-socket");
         let mut client = if use_unix_socket {
             let path = settings.string("mpd-unix-socket");
             let path = path.as_str();
-            println!("Connecting to local socket {}", &path);
+            eprintln!("Connecting to local socket {}", &path);
             if let Ok(resolved) = path.try_resolve() {
                 mpd::Client::new(StreamWrapper::new_unix(
                     UnixStream::connect(resolved).map_err(|_| Error::Socket)?,
@@ -427,26 +424,36 @@ impl Connection {
                 settings.string("mpd-host"),
                 settings.uint("mpd-port")
             );
-            println!("Connecting to TCP socket {}", &addr);
+            eprintln!("Connecting to TCP socket {}", &addr);
             mpd::Client::new(StreamWrapper::new_tcp(
                 TcpStream::connect(addr).map_err(|_| Error::Tcp)?,
             ))
             .map_err(Error::Mpd)?
         };
 
-        // dbg!("Connected, now authenticating");
+        // eprintln!("Connected, now authenticating");
 
         // If there is a password configured, use it to authenticate.
-        if let Some(password) = password::get_mpd_password().map_err(|_| Error::CredentialStore)? {
-            client.login(&password).map_err(Error::Mpd)?;
+        match password::get_mpd_password().map_err(|_| Error::CredentialStore) {
+            Ok(Some(password)) => {
+                if let Err(e) = client.login(&password).map_err(Error::Mpd) {
+                    return Err(dbg!(e));
+                }
+                // eprintln!("Successfully authenticated");
+            }
+            Ok(None) => {
+                // eprintln!("No password was specified.");
+            }
+            Err(e) => {
+                return Err(dbg!(e));
+            }
         }
 
-        // dbg!("Successfully authenticated");
-
         // Doubles as a litmus test to see if we are authenticated.
-        client.subscribe(&self.wake_channel).map_err(Error::Mpd)?;
-
-        // dbg!("Subscribed to wake channel");
+        if let Err(e) = client.subscribe(&self.wake_channel).map_err(Error::Mpd) {
+            return Err(dbg!(e));
+        }
+        // eprintln!("Subscribed to wake channel");
 
         let version = client.version;
         self.client.replace(client);
@@ -459,15 +466,12 @@ impl Connection {
 
     pub fn disconnect(&mut self) -> Result<()> {
         if let Some(mut client) = self.client.take() {
-            println!("Closing connection");
-
-            // Now close the main client
             client.close().map_err(Error::Mpd)?;
         }
-
         Ok(())
     }
 
+    /// Auto-retry wrapper around the bare client object.
     #[inline]
     fn client_then<F, T>(&mut self, then: F) -> Result<T>
     where
@@ -508,8 +512,6 @@ impl Connection {
         final_res
     }
 
-    // Will also handle reconnection & retrying if the first attempt returns MpdError::Io.
-    // Subsequent attempts
     #[inline]
     fn respond_with_client<F, T>(&mut self, then: F, resp: Responder<T>)
     where
@@ -518,11 +520,13 @@ impl Connection {
         let _ = resp.send(self.client_then(then));
     }
 
+    /// Downloads an image or returns an already existing image for a given uri
+    /// Will resp with 2 image names (not full paths): (high res, thumb)
     fn maybe_download_image<F>(
         &mut self,
         uri: String,
         download_func: F,
-        resp: Responder<Option<(String, String)>>,
+        resp: Responder<Option<utils::RegisteredImageBundle>>,
     ) where
         F: Fn(&mut Client<StreamWrapper>, &String) -> MpdResult<Vec<u8>>,
     {
@@ -533,7 +537,16 @@ impl Connection {
         let hires = sqlite::find_image_by_key(&uri, None, false).expect("Sqlite DB error");
         let thumb = sqlite::find_image_by_key(&uri, None, true).expect("Sqlite DB error");
         if let (Some(hires), Some(thumb)) = (hires, thumb) {
-            let _ = resp.send(Ok(Some((hires, thumb))));
+            let _ = resp.send(Ok(Some(utils::RegisteredImageBundle {
+                hires: utils::RegisteredImage {
+                    name: hires,
+                    img: RefCell::new(None),
+                },
+                thumb: utils::RegisteredImage {
+                    name: thumb,
+                    img: RefCell::new(None),
+                },
+            })));
         } else {
             // Not available locally => try to download
             self.respond_with_client(
@@ -542,10 +555,10 @@ impl Connection {
                         Ok(bytes) => {
                             let dyn_img = image::load_from_memory(&bytes)
                                 .expect("Unable to read image from bytes");
-                            Ok(save_and_register_image(Some(dyn_img), &uri, None))
+                            Ok(Some(utils::save_and_register_image(dyn_img, &uri, None)))
                         }
                         Err(MpdError::Proto(ProtoError::NotPair)) => {
-                            println!("GetEmbeddedCover: empty output");
+                            println!("maybe_download_image: empty output for '{}'", uri);
                             // Empty output. Treat as not available.
                             Ok(None)
                         }
@@ -635,6 +648,8 @@ impl Connection {
                         for tag_value in names.into_iter() {
                             let mut query = Query::new();
                             query.and(Term::Tag(Cow::Borrowed(tag_type_str)), tag_value);
+                            let mut curr_len: usize = 0;
+                            let mut more: bool = true;
                             while more && (curr_len) < FETCH_LIMIT {
                                 let songs = self.client_then(|c| {
                                     c.find(
@@ -805,11 +820,9 @@ impl Connection {
                 songs_stickers.truncate(limit as usize);
             }
             songs = songs_stickers.into_iter().map(|tup| tup.0).collect();
-            if cache {
-                if let Err(db_err) = sqlite::cache_dynamic_playlist_results(&dp.name, &songs) {
-                    println!("Failed to cache DP query result. Queuing will be incorrect!");
-                    dbg!(db_err);
-                }
+            if cache && let Err(db_err) = sqlite::cache_dynamic_playlist_results(&dp.name, &songs) {
+                println!("Failed to cache DP query result. Queuing will be incorrect!");
+                dbg!(db_err);
             }
         } else {
             songs = Vec::with_capacity(0);
@@ -876,11 +889,11 @@ impl Connection {
                     Task::DeleteSticker(typ, uri, name, resp) => {
                         self.respond_with_client(|c| c.delete_sticker(typ, &uri, &name), resp)
                     }
-                    Task::FindStickerOp(typ, base_uri, name, op, value, window, resp) => self
-                        .respond_with_client(
-                            |c| c.find_sticker_op(typ, &base_uri, &name, op, &value, window),
-                            resp,
-                        ),
+                    // Task::FindStickerOp(typ, base_uri, name, op, value, window, resp) => self
+                    //     .respond_with_client(
+                    //         |c| c.find_sticker_op(typ, &base_uri, &name, op, &value, window),
+                    //         resp,
+                    //     ),
                     Task::GetPlaylists(resp) => self.respond_with_client(
                         |c| {
                             c.playlists().map(|playlists| {
@@ -909,7 +922,6 @@ impl Connection {
                         |c| {
                             c.songs(id).map(|mut songs| {
                                 if !songs.is_empty() {
-                                    // Found a song. Now fetch its stickers.
                                     let res = SongInfo::from(std::mem::take(&mut songs[0]));
                                     Some(res)
                                 } else {
@@ -1034,19 +1046,19 @@ impl Connection {
                     Task::FindAdd(query, resp) => {
                         self.respond_with_client(|c| c.findadd(&query), resp)
                     }
-                    Task::ClearTagTypes(resp) => {
-                        self.respond_with_client(|c| c.tagtypes_clear(), resp)
-                    }
-                    Task::EnableTagTypes(types, resp) => self.respond_with_client(
-                        move |c| {
-                            if let Some(types) = types.as_deref() {
-                                c.tagtypes_enable(types)
-                            } else {
-                                c.tagtypes_all()
-                            }
-                        },
-                        resp,
-                    ),
+                    // Task::ClearTagTypes(resp) => {
+                    //     self.respond_with_client(|c| c.tagtypes_clear(), resp)
+                    // }
+                    // Task::EnableTagTypes(types, resp) => self.respond_with_client(
+                    //     move |c| {
+                    //         if let Some(types) = types.as_deref() {
+                    //             c.tagtypes_enable(types)
+                    //         } else {
+                    //             c.tagtypes_all()
+                    //         }
+                    //     },
+                    //     resp,
+                    // ),
                     Task::ResolveDynamicPlaylist(dp, cache, resp) => {
                         let _ = resp.send(self.resolve_dynamic_playlist_rules(dp, cache));
                     }
@@ -1059,13 +1071,11 @@ impl Connection {
                 for change in changes.iter() {
                     match change {
                         Subsystem::Message => {
-                            if let Ok(msgs) = client.readmessages() {
-                                for msg in msgs {
-                                    let content = msg.message.as_str();
-                                    // Send any message to get out of wait().
-                                    // println!("Client received message: {content}");
-                                }
-                            }
+                            // Right now we only use messages as a way to wake an idle client connection up.
+                            // Otherwise there's nothing to act on.
+                            // However, we still need to explicitly "read" the messages from the server
+                            // otherwise no more idle notifications will be sent.
+                            let _ = client.readmessages();
                         }
                         other => {
                             sender.send_blocking(*other).map_err(|_| Error::Internal)?;

@@ -1,5 +1,9 @@
-use glib::{Properties, WeakRef, clone};
-use gtk::{CompositeTemplate, glib, prelude::*, subclass::prelude::*};
+use gtk::{
+    CompositeTemplate, gio, glib,
+    glib::{Properties, WeakRef, clone},
+    prelude::*,
+    subclass::prelude::*,
+};
 use std::cell::{Cell, OnceCell};
 
 use crate::{

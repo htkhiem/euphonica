@@ -156,6 +156,15 @@
 			</description>
 		</key>
 
+        <key name="n-tries" type="u">
+			<default>3</default>
+			<summary></summary>
+			<description>
+			  Number of fetch retries upon connection errors before giving up, plus one initial try.
+              For example, to retry at most 3 times, set this to 4.
+			</description>
+		</key>
+
 		<child schema="io.github.htkhiem.Euphonica.metaprovider.lastfm" name="lastfm"/>
 		<child schema="io.github.htkhiem.Euphonica.metaprovider.musicbrainz" name="musicbrainz"/>
 		<child schema="io.github.htkhiem.Euphonica.metaprovider.lrclib" name="lrclib"/>
@@ -214,7 +223,7 @@
 		</key>
 
 		<key name="visualizer-spectrum-bins" type="u">
-			<default>5</default>
+			<default>10</default>
 		</key>
 
 		<key name="visualizer-spectrum-use-log-bins" type='b'>
@@ -247,7 +256,7 @@
 			<default>true</default>
 		</key>
 		<key name="bg-blur-radius" type="u">
-			<default>48</default>
+			<default>256</default>
 		</key>
 		<key name="bg-opacity" type="d">
 			<default>0.36</default>
@@ -263,6 +272,11 @@
 		</key>
 		<key name="use-visualizer" type="b">
 			<default>true</default>
+		</key>
+		<key name="visualizer-use-cairo" type="b">
+			<default>true</default>
+			<summary>Render using Cairo</summary>
+			<description>On certain hardware (e.g., NVIDIA GPUs), Cairo (CPU) rendering may be more performant than GSK.</description>
 		</key>
 		<key name="visualizer-top-opacity" type="d">
 			<default>0.9</default>

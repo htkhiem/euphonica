@@ -89,18 +89,6 @@ Other ways to install Euphonica are listed below:
   <summary><h3>Nixpkgs</h3></summary>
 
   The Nix package is kindly maintained by [@paperdigits](https://github.com/paperdigits) [here](https://search.nixos.org/packages?channel=unstable&show=euphonica&from=0&size=50&sort=relevance&type=packages).
-
-  ```bash
-  # NixOS configuration
-  environment.systemPackages = [
-    pkgs.euphonica
-  ];
-  
-  # For standalone Nix, without flakes:
-  nix-env -iA nixpkgs.euphonica
-  # With flakes:
-  nix profile install nixpkgs#euphonica
-  ```
 </details>
 
 ## Set-up
@@ -179,12 +167,20 @@ Euphonica requires some preparation before it can be used, especially if you hav
 </details>
 
 ## TODO
-- Make client code fully async
+- For v1.0, think of a new UI to cleanly resolve the following issues:
+  - Recent View not being very useful.
+  - **More browser-like navigation between pages, with actual navigation history instead of leading back to the outermost view**.
+  - Album x Genre grouping.
+  - A "Tracks" view that displays the library track by track, with advanced sorting & filtering.
+  - Advanced filtering and sorting in Albums, Artists and Tracks View.
+  - Make use efficient use of screen real estate on larger displays (currently looks nice for 1080p & below, but kind of stretched above that).
+  - Clutter & inconveniences with having both a bottom player bar and a sidebar.
+  - Less cluttered & more compact bottom bar, should we keep it.
+    - UI should look symmetrical too as the bottom bar already is.
+  - A less out-of-place and more touch-friendly volume knob design.
 - User-editable album wikis and artist bios
 - Metadata sync between Euphonica instances (instead of being stored locally)
 - Local socket-exclusive features:
   - Library management operations such as tag editing (will require access to the files themselves)
   - Save downloaded album arts and artist avatars directly into the music folders themselves so other instances
     and clients can use them.
-- Browse by genre
-- An "All tracks" page with advanced, freeform querying to take full advantage of MPD v0.21+'s new query syntax
