@@ -53,7 +53,7 @@ mod imp {
         pub playing_signal_id: RefCell<Option<SignalHandlerId>>,
         pub cache: OnceCell<Rc<Cache>>,
         pub player: WeakRef<Player>,
-        pub draggable: Cell<bool>,
+        pub is_floating: Cell<bool>,
     }
 
     // The central trait for subclassing a GObject
@@ -106,7 +106,6 @@ mod imp {
                     ParamSpecBoolean::builder("index-visible").build(),
                     ParamSpecString::builder("index").build(),
                     ParamSpecBoolean::builder("thumbnail-visible").build(),
-                    ParamSpecBoolean::builder("draggable").build(),
                     ParamSpecString::builder("name").build(),
                     ParamSpecString::builder("quality-grade").build(),
                     ParamSpecString::builder("first-attrib-icon-name").build(),
@@ -128,7 +127,6 @@ mod imp {
                 "index-visible" => self.thumbnail.is_visible().to_value(),
                 "index" => self.index.label().to_value(),
                 "thumbnail-visible" => self.thumbnail.is_visible().to_value(),
-                "draggable" => self.draggable.get().to_value(),
                 "name" => self.name.label().label().to_value(),
                 "quality-grade" => self.quality_grade.icon_name().to_value(),
                 "first-attrib-icon-name" => self.first_attrib_icon.icon_name().to_value(),
@@ -168,11 +166,6 @@ mod imp {
                 "thumbnail-visible" => {
                     if let Ok(vis) = value.get::<bool>() {
                         self.thumbnail.set_visible(vis);
-                    }
-                }
-                "draggable" => {
-                    if let Ok(val) = value.get::<bool>() {
-                        self.draggable.set(val);
                     }
                 }
                 "name" => {
@@ -386,14 +379,12 @@ impl SongRow {
     
     pub fn is_floating(&self) -> bool {
         // If there is no song being referred to, the getter should return False
-        self.imp().song.upgrade().is_some_and(|s| s.is_floating())
+        self.imp().is_floating.get()
     }
 
     pub fn set_floating(&self, is_floating: bool) {
         // If there is no song being referred to, the setter should be a noop
-        if let Some(song) = self.imp().song.upgrade() {
-            song.set_floating(is_floating);
-        }
+        self.imp().is_floating.set(is_floating);
     }
 
     pub fn set_index_visible(&self, vis: bool) {

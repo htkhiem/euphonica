@@ -336,7 +336,6 @@ impl QueueView {
                         // FIXME: nonzero hotspots cause the drag icon to fly off-screen.
                         // Pass the whole song GObject
                         if let Some(song) = item.item().and_downcast::<Song>() {
-                            song.set_floating(true);  // Used to prevent the row being dragged to act as a drop target for itself
                             song.set_queue_pos(item.position());  // Ensure the Song object contains the up-to-date queue pos for local updating
                             Some(gdk::ContentProvider::for_value(&song.to_value()))
                         } else {
@@ -352,6 +351,7 @@ impl QueueView {
                     #[weak]
                     item,
                     move |_source, drag| {
+                        row.set_floating(true);
                         // To avoid problems with hotspot positioning quirks (caused by other rows changing padding upon hover)
                         // the icon will be a standalone copy of the original row.
                         // Additional benefit: we get to customise how it looks.
@@ -371,11 +371,9 @@ impl QueueView {
                 )); 
                 drag_source.connect_drag_end(clone!(
                     #[weak]
-                    item,
+                    row,
                     move |_, _, _| {
-                        if let Some(song) = item.item().and_downcast::<Song>() {
-                            song.set_floating(false);
-                        }
+                        row.set_floating(false);
                     }
                 ));
                 row.add_controller(drag_source);
@@ -434,6 +432,7 @@ impl QueueView {
                     #[upgrade_or]
                     false,
                     move |_, song, x, y| {
+                        row.set_floating(false);
                         if !row.is_floating() {
                             if let Ok(song) = song.get::<Song>() {
                                 // Get queue pos of row being dropped onto
@@ -444,7 +443,7 @@ impl QueueView {
                                     0
                                 };
                                 glib::spawn_future_local(async move {
-                                    dbg!(player.move_to(&song, target_pos).await);
+                                    player.move_to(&song, target_pos).await;
                                 });
                                 true
                             } else {

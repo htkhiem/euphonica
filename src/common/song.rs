@@ -153,8 +153,6 @@ mod imp {
         pub stickers: RefCell<Stickers>,
         pub queue_pos: Cell<u32>,
         pub is_playing: Cell<bool>,
-        // For drag-and-drop UI ops
-        pub is_floating: Cell<bool>
     }
 
     #[glib::object_subclass]
@@ -167,8 +165,7 @@ mod imp {
                 info: OnceCell::new(),
                 stickers: RefCell::new(Stickers::default()),
                 queue_pos: Cell::new(0),
-                is_playing: Cell::new(false),
-                is_floating: Cell::new(false)
+                is_playing: Cell::new(false)
             }
         }
     }
@@ -264,14 +261,6 @@ impl Song {
 
     pub fn stickers(&self) -> Ref<'_, Stickers> {
         self.imp().stickers.borrow()
-    }
-
-    pub fn is_floating(&self) -> bool {
-        self.imp().is_floating.get()
-    }
-
-    pub fn set_floating(&self, is_floating: bool) {
-        self.imp().is_floating.set(is_floating);
     }
 
     pub fn get_rating(&self) -> Option<i8> {
