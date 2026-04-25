@@ -763,24 +763,28 @@ impl QueueView {
 
 impl LazyInit for QueueView {
     fn populate(&self) {
-        if let Some(player) = self.imp().player.upgrade()
-            && !player.queue_is_initialized()
-            && !self.imp().initializing.get()
-        {
-            self.imp().initializing.set(true);
-            glib::spawn_future_local(clone!(
-                #[weak]
-                player,
-                #[weak(rename_to = this)]
-                self,
-                async move {
-                    let stack = this.imp().content_stack.get();
-                    stack.show_spinner();
-                    player.update_queue().await;
-                    this.imp().initializing.set(false);
-                    this.update_stack(player.queue());
-                }
-            ));
+        if let Some(player) = self.imp().player.upgrade() {
+            if !player.queue_is_initialized() {
+                if !self.imp().initializing.get() {
+                    self.imp().initializing.set(true);
+                    glib::spawn_future_local(clone!(
+                        #[weak]
+                        player,
+                        #[weak(rename_to = this)]
+                        self,
+                        async move {
+                            let stack = this.imp().content_stack.get();
+                            stack.show_spinner();
+                            player.update_queue().await;
+                            this.imp().initializing.set(false);
+                            this.update_stack(player.queue());
+                        }
+                    ));
+                } // Else just wait
+            } else {
+                // Already initialised (probably reopeing window from background mode)
+                self.update_stack(player.queue());
+            }
         }
     }
 }
