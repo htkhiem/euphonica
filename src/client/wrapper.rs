@@ -182,14 +182,13 @@ impl MpdWrapper {
 
     pub async fn disconnect(&self, stop: bool, end_state: ConnectionState) -> ClientResult<()> {
         // Clients might be currently disconnected so don't exit on error.
-        // In case both are running, disconnect the background first as we need to use 
+        // In case both are running, disconnect the background first as we need to use
         // the foreground client to wake it up.
         let (s, r) = oneshot::channel();
         self.background(Task::Disconnect(stop, s), r).await?;
         let (s, r) = oneshot::channel();
         self.foreground(Task::Disconnect(stop, s), r).await?;
-        self.state
-            .set_connection_state(end_state);
+        self.state.set_connection_state(end_state);
         self.client_version.take();
         Ok(())
     }
@@ -309,11 +308,12 @@ impl MpdWrapper {
         if let Err(ClientError::Mpd(MpdError::Server(e))) = self
             .get_known_stickers("song", String::from("euphonica_sticker_test"))
             .await
-            && e.code == MpdErrorCode::UnknownCmd {
-                println!("Sticker DB not enabled. Disabling stickers-related functionality...");
-                self.state
-                    .set_stickers_support_level(StickersSupportLevel::Disabled);
-            }
+            && e.code == MpdErrorCode::UnknownCmd
+        {
+            println!("Sticker DB not enabled. Disabling stickers-related functionality...");
+            self.state
+                .set_stickers_support_level(StickersSupportLevel::Disabled);
+        }
         self.client_version.replace(Some(version));
 
         let (s, r) = oneshot::channel();
@@ -570,7 +570,7 @@ impl MpdWrapper {
                     ),
                     r,
                 )
-                .await 
+                .await
             {
                 Ok(song_infos) => {
                     if !song_infos.is_empty() {
@@ -757,6 +757,11 @@ impl MpdWrapper {
         self.foreground(Task::SwapPos(pos1, pos2, s), r).await
     }
 
+    pub async fn move_id(&self, from_id: u32, to_pos: usize) -> ClientResult<()> {
+        let (s, r) = oneshot::channel();
+        self.foreground(Task::MoveId(from_id, to_pos, s), r).await
+    }
+
     pub async fn delete_at_pos(&self, pos: u32) -> ClientResult<()> {
         let (s, r) = oneshot::channel();
         self.foreground(Task::DeleteAtPos(pos, s), r).await
@@ -777,12 +782,18 @@ impl MpdWrapper {
         self.foreground(Task::UpdateDb(s), r).await
     }
 
-    pub async fn get_embedded_cover(&self, uri: String) -> ClientResult<Option<utils::RegisteredImageBundle>> {
+    pub async fn get_embedded_cover(
+        &self,
+        uri: String,
+    ) -> ClientResult<Option<utils::RegisteredImageBundle>> {
         let (s, r) = oneshot::channel();
         self.background(Task::GetEmbeddedCover(uri, s), r).await
     }
 
-    pub async fn get_folder_cover(&self, folder_uri: String) -> ClientResult<Option<utils::RegisteredImageBundle>> {
+    pub async fn get_folder_cover(
+        &self,
+        folder_uri: String,
+    ) -> ClientResult<Option<utils::RegisteredImageBundle>> {
         let (s, r) = oneshot::channel();
         self.background(Task::GetFolderCover(folder_uri, s), r)
             .await
@@ -825,11 +836,13 @@ impl MpdWrapper {
                         let res: Album = album_info.into();
                         let (s, r) = oneshot::channel();
                         // Optionally fetch album stickers
-                        if let Ok(stickers) = self.foreground(
-                            Task::GetKnownStickers("album", res.get_title().to_owned(), s),
-                            r,
-                        )
-                        .await {
+                        if let Ok(stickers) = self
+                            .foreground(
+                                Task::GetKnownStickers("album", res.get_title().to_owned(), s),
+                                r,
+                            )
+                            .await
+                        {
                             res.set_stickers(stickers);
                         }
                         respond(res);

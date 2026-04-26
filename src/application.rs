@@ -332,7 +332,34 @@ impl EuphonicaApplication {
         glib::spawn_future_local(async move {
             player.set_is_foreground(true).await;
         });
+        let player = self.imp().player.get().unwrap().clone();
+        glib::spawn_future_local(async move {
+            player.set_is_foreground(true).await;
+        });
         window.present();
+    }
+
+    fn execute_on_exit_action(&self) {
+        let settings = settings_manager().child("state");
+        let action = settings.enum_("on-exit-action");
+
+        let player = self.imp().player.get().unwrap().clone();
+        // Refer to the gschema for enum definition
+        match action {
+            0 => {
+                // The 'do nothing' option
+            },
+            1 => {
+                glib::MainContext::default().block_on(player.pause());
+            }
+            2 => {
+                glib::MainContext::default().block_on(player.stop());
+            }
+            3 => {
+                glib::MainContext::default().block_on(player.clear_queue());
+            }
+            _ => unimplemented!()
+        }
     }
 
     pub fn on_window_closed(&self) {
@@ -341,19 +368,20 @@ impl EuphonicaApplication {
             let player = self.imp().player.get().unwrap().clone();
             glib::spawn_future_local(async move {
                 player.set_is_foreground(false).await;
-            });             
+            });
             let _ = self.imp().hold_guard.replace(Some(self.hold()));
             println!("Created a new hold guard");
         } else {
             println!("Dropping hold guard");
             let _ = self.imp().hold_guard.take();
+            self.execute_on_exit_action();
         }
     }
 
     pub async fn refresh(&self) -> ClientResult<()> {
         self.get_client().connect().await?;
         self.get_library().clear();
-        self.get_player().clear().await;
+        self.get_player().clear();
         Ok(())
     }
 

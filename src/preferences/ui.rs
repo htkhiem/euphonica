@@ -40,6 +40,8 @@ mod imp {
         #[template_child]
         pub use_visualizer: TemplateChild<adw::ExpanderRow>,
         #[template_child]
+        pub visualizer_use_cairo: TemplateChild<adw::SwitchRow>,
+        #[template_child]
         pub visualizer_min_hz: TemplateChild<adw::SpinRow>,
         #[template_child]
         pub visualizer_max_hz: TemplateChild<adw::SpinRow>,
@@ -116,7 +118,11 @@ impl UIPreferences {
             .build();
         let use_hires_for_album_cells = imp.use_hires_for_album_cells.get();
         ui_settings
-            .bind("use-hires-for-album-cells", &use_hires_for_album_cells, "active")
+            .bind(
+                "use-hires-for-album-cells",
+                &use_hires_for_album_cells,
+                "active",
+            )
             .build();
         let title_wrap_mode = imp.title_wrap_mode.get();
         ui_settings
@@ -183,6 +189,14 @@ impl UIPreferences {
 
         ui_settings
             .bind("vol-knob-sensitivity", &vol_knob_sensitivity, "value")
+            .build();
+
+        ui_settings
+            .bind(
+                "visualizer-use-cairo",
+                &imp.visualizer_use_cairo.get(),
+                "active",
+            )
             .build();
 
         ui_settings

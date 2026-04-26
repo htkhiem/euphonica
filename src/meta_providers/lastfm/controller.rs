@@ -119,9 +119,7 @@ impl MetadataProvider for LastfmWrapper {
                             Err(MetadataError::Parse(existing))
                         }
                     }
-                    Err(e) => {
-                        Err(MetadataError::Reqwest(existing, e))
-                    }
+                    Err(e) => Err(MetadataError::Reqwest(existing, e)),
                 }
             } else {
                 Err(MetadataError::Credential(existing))
@@ -214,9 +212,7 @@ impl MetadataProvider for LastfmWrapper {
                             Err(MetadataError::Parse(existing))
                         }
                     }
-                    Err(e) => {
-                        Err(MetadataError::Reqwest(existing, e))
-                    }
+                    Err(e) => Err(MetadataError::Reqwest(existing, e)),
                 }
             } else {
                 Err(MetadataError::Credential(existing))

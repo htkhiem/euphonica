@@ -280,6 +280,13 @@ pub enum Task {
     PlayAtPos(u32, Responder<()>),
     // SwapId(Id, Id, Responder<()>),
     SwapPos(u32, u32, Responder<()>),
+    MoveId(
+        // Id of the song being moved
+        u32,
+        // Desired position in queue after move
+        usize,
+        Responder<()>,
+    ),
     // DeleteAtId(Id, Responder<()>),
     DeleteAtPos(u32, Responder<()>),
     ClearQueue(Responder<()>),
@@ -820,11 +827,10 @@ impl Connection {
                 songs_stickers.truncate(limit as usize);
             }
             songs = songs_stickers.into_iter().map(|tup| tup.0).collect();
-            if cache
-                && let Err(db_err) = sqlite::cache_dynamic_playlist_results(&dp.name, &songs) {
-                    println!("Failed to cache DP query result. Queuing will be incorrect!");
-                    dbg!(db_err);
-                }
+            if cache && let Err(db_err) = sqlite::cache_dynamic_playlist_results(&dp.name, &songs) {
+                println!("Failed to cache DP query result. Queuing will be incorrect!");
+                dbg!(db_err);
+            }
         } else {
             songs = Vec::with_capacity(0);
         }
@@ -985,6 +991,8 @@ impl Connection {
                     Task::SwapPos(p1, p2, resp) => {
                         self.respond_with_client(|c| c.swap(p1, p2), resp)
                     }
+                    Task::MoveId(from_id, to_pos, resp) => self
+                        .respond_with_client(|c| c.shift(Id(from_id), &to_pos.to_string()), resp),
                     Task::DeleteAtPos(p, resp) => self.respond_with_client(|c| c.delete(p), resp),
                     Task::ClearQueue(resp) => self.respond_with_client(|c| c.clear(), resp),
                     Task::Seek(pos, resp) => self.respond_with_client(|c| c.rewind(pos), resp),

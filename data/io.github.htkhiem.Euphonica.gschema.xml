@@ -32,6 +32,13 @@
 		<value nick="wrap" value="2"/>
 	</enum>
 
+	<enum id="io.github.htkhiem.Euphonica.onexitaction">
+		<value nick="nothing" value="0"/>
+		<value nick="pause" value="1"/>
+		<value nick="stop" value="2"/>
+		<value nick="stop-and-clear" value="3"/>
+	</enum>
+
 	<schema id="io.github.htkhiem.Euphonica" path="/io/github/htkhiem/Euphonica/">
 		<child schema="io.github.htkhiem.Euphonica.ui" name="ui"/>
 		<child schema="io.github.htkhiem.Euphonica.state" name="state"/>
@@ -100,7 +107,7 @@
 
 	<schema id="io.github.htkhiem.Euphonica.library" path="/io/github/htkhiem/Euphonica/library/">
 		<key name="artist-tag-delims" type="as">
-			<default>[",", ";", ":", "&amp;", "/", "//", "\\", "\\\\", " X ", "feat.", "ft.", "duet with", "special guest"]</default>
+			<default>[",", ";", ":", "&amp;", "/", "//", "\\", "\\\\", " X ", "feat.", " ft.", "(ft.", ",ft.", "duet with", "special guest"]</default>
 		</key>
 		<key name="artist-tag-delim-exceptions" type="as">
 			<default>["Simon &amp; Garfunkel", "Above &amp; Beyond"]</default>
@@ -223,7 +230,7 @@
 		</key>
 
 		<key name="visualizer-spectrum-bins" type="u">
-			<default>5</default>
+			<default>10</default>
 		</key>
 
 		<key name="visualizer-spectrum-use-log-bins" type='b'>
@@ -256,7 +263,7 @@
 			<default>true</default>
 		</key>
 		<key name="bg-blur-radius" type="u">
-			<default>48</default>
+			<default>256</default>
 		</key>
 		<key name="bg-opacity" type="d">
 			<default>0.36</default>
@@ -273,12 +280,18 @@
 		<key name="use-visualizer" type="b">
 			<default>true</default>
 		</key>
+		<key name="visualizer-use-cairo" type="b">
+			<default>true</default>
+			<summary>Render using Cairo</summary>
+			<description>On certain hardware (e.g., NVIDIA GPUs), Cairo (CPU) rendering may be more performant than GSK.</description>
+		</key>
 		<key name="visualizer-top-opacity" type="d">
-			<default>0.9</default>
+			<default>0.75</default>
 		</key>
 		<key name="visualizer-scale" type="d">
 			<default>1.0</default>
 		</key>
+		<!-- DEPRECATED AND UNUSED -->
 		<key name="visualizer-blend-mode" type="u">
 			<default>6</default>
 			<summary>Index of gsk::BlendMode variant</summary>
@@ -328,6 +341,10 @@
 		</key>
 		<key name="start-minimized" type="b">
 			<default>true</default>
+		</key>
+		<key name="on-exit-action" enum='io.github.htkhiem.Euphonica.onexitaction'>
+			<default>'nothing'</default>
+			<summary>Action to perform on MPD when Euphonica exits</summary>
 		</key>
 	</schema>
 

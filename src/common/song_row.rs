@@ -5,18 +5,20 @@ use glib::{
 use gtk::{CompositeTemplate, gdk, glib, prelude::*, subclass::prelude::*};
 use once_cell::sync::Lazy;
 use std::{
-    cell::{OnceCell, RefCell},
+    cell::{Cell, OnceCell, RefCell},
     rc::Rc,
 };
 
 use crate::{
     cache::{Cache, CacheState},
-    common::{QualityGrade, ImageStack, ImageState, Marquee, Song},
+    common::{ImageStack, ImageState, Marquee, QualityGrade, Song},
     player::Player,
 };
 
 // Wrapper around the common row object to implement song thumbnail fetch logic.
 mod imp {
+    use glib::value::FromValue;
+
     use super::*;
 
     #[derive(Default, CompositeTemplate)]
@@ -50,7 +52,8 @@ mod imp {
         pub thumbnail_signal_ids: RefCell<Option<(SignalHandlerId, SignalHandlerId)>>,
         pub playing_signal_id: RefCell<Option<SignalHandlerId>>,
         pub cache: OnceCell<Rc<Cache>>,
-        pub player: WeakRef<Player>
+        pub player: WeakRef<Player>,
+        pub is_floating: Cell<bool>,
     }
 
     // The central trait for subclassing a GObject
@@ -92,6 +95,7 @@ mod imp {
                     this.name.set_should_run_and_check(false);
                 }
             ));
+
             self.obj().add_controller(hover_ctl);
         }
         fn properties() -> &'static [ParamSpec] {
@@ -251,10 +255,14 @@ impl SongRow {
                             // This only affects folder-level arts, so only use them when we currently
                             // don't have any art.
                             if res.imp().thumbnail.get_state() == ImageState::Empty
-                                && res.imp().song.upgrade().is_some_and(|s| s.get_folder_uri() == uri) {
-                                    res.imp().thumbnail.show(&thumb);
-                                }
-
+                                && res
+                                    .imp()
+                                    .song
+                                    .upgrade()
+                                    .is_some_and(|s| s.get_folder_uri() == uri)
+                            {
+                                res.imp().thumbnail.show(&thumb);
+                            }
                         }
                     ),
                 ),
@@ -265,7 +273,12 @@ impl SongRow {
                         #[weak]
                         res,
                         move |_: CacheState, uri: &str| {
-                            if res.imp().song.upgrade().is_some_and(|s| s.get_folder_uri() == uri) {
+                            if res
+                                .imp()
+                                .song
+                                .upgrade()
+                                .is_some_and(|s| s.get_folder_uri() == uri)
+                            {
                                 res.imp().thumbnail.clear();
                             }
                         }
@@ -290,7 +303,6 @@ impl SongRow {
                         }
                     ),
                 )));
-            res.update_playing_indicator(player);
         }
 
         res
@@ -320,14 +332,16 @@ impl SongRow {
             #[weak(rename_to = this)]
             self,
             async move {
-                if let (Some(cache), Some(song)) = (
-                    this.imp().cache.get(),
-                    this.song()
-                ) {
-                    let res = cache.clone().get_song_cover(song.get_info(), true, true).await;
+                if let (Some(cache), Some(song)) = (this.imp().cache.get(), this.song()) {
+                    let res = cache
+                        .clone()
+                        .get_song_cover(song.get_info(), true, true)
+                        .await;
                     // Check again as row might have been bound to a different song
                     // while awaiting
-                    if this.song().is_some_and(|a| a.get_info().get_comp_id() == song.get_info().get_comp_id()) {
+                    if this.song().is_some_and(|a| {
+                        a.get_info().get_comp_id() == song.get_info().get_comp_id()
+                    }) {
                         match res {
                             Ok(Some(tex)) => this.imp().thumbnail.show(&tex),
                             Ok(None) => this.imp().thumbnail.clear(),
@@ -346,6 +360,9 @@ impl SongRow {
 
     pub fn on_bind(&self, song: &Song) {
         self.imp().song.set(Some(song));
+        if let Some(player) = self.imp().player.upgrade() {
+            self.update_playing_indicator(&player);
+        }
         self.schedule_thumbnail();
     }
 
@@ -360,6 +377,16 @@ impl SongRow {
 
     pub fn set_is_playing(&self, playing: bool) {
         self.imp().playing_indicator.set_reveal_child(playing);
+    }
+
+    pub fn is_floating(&self) -> bool {
+        // If there is no song being referred to, the getter should return False
+        self.imp().is_floating.get()
+    }
+
+    pub fn set_floating(&self, is_floating: bool) {
+        // If there is no song being referred to, the setter should be a noop
+        self.imp().is_floating.set(is_floating);
     }
 
     pub fn set_index_visible(&self, vis: bool) {

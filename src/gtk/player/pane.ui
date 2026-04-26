@@ -3,6 +3,7 @@
   <requires lib="gtk" version="4.0" />
   <requires lib="Adw" version="1.0" />
   <template class="EuphonicaPlayerPane" parent="GtkBox">
+    <property name="orientation">1</property>
     <object class="GtkPopover" id="crossfade_popover">
       <property name="has-arrow">true</property>
       <property name="name">crossfade_popover</property>
@@ -239,9 +240,34 @@
       </property>
     </object>
     <child>
+      <object class="GtkSeparator"/>
+    </child>
+    <child>
+      <object class="EuphonicaPictureStack" id="albumart">
+        <property name="hexpand">true</property>
+      </object>
+    </child>
+    <child>
+      <object class="GtkRevealer" id="seekbar_revealer">
+        <property name="transition-type">slide-up</property>
+        <child>
+          <object class="EuphonicaSeekbar2" id="seekbar">
+            <property name="hexpand">true</property>
+            <style>
+              <class name="sidebar-shade"/>
+            </style>
+          </object>
+        </child>
+      </object>
+    </child>
+    <child>
+      <object class="GtkSeparator"/>
+    </child>
+    <child>
       <object class="AdwClamp">
         <property name="maximum-size">480px</property>
         <property name="tightening-threshold">360px</property>
+        <property name="margin-top">12px</property>
         <property name="margin-bottom">12px</property>
         <property name="child">
           <object class="GtkBox">
@@ -250,21 +276,7 @@
             </style>
             <property name="orientation">vertical</property>
             <property name="spacing">12</property>
-            <child>
-              <object class="GtkBox"> <!-- Wraps around picture to give it rounded corners & card shadow -->
-                <property name="height-request">180sp</property>
-                <property name="halign">center</property>
-                <style>
-                  <class name="card" />
-                </style>
-                <property name="overflow">hidden</property> <!-- Needed to clip image behind corners -->
-                <child>
-                  <object class="EuphonicaPictureStack" id="albumart">
-                    <property name="hexpand">true</property>
-                  </object>
-                </child>
-              </object>
-            </child>
+            
             <child>
               <object class="GtkBox" id="info_box">
                 <property name="orientation">vertical</property>
@@ -415,16 +427,6 @@
                         </style>
                         <property name="icon-name">speaker-0-symbolic</property>
                         <property name="popover">output_popover</property>
-                      </object>
-                    </child>
-                  </object>
-                </child>
-                <child>
-                  <object class="GtkRevealer" id="seekbar_revealer">
-                    <property name="transition-type">slide-down</property>
-                    <child>
-                      <object class="EuphonicaSeekbar" id="seekbar">
-                        <property name="hexpand">true</property>
                       </object>
                     </child>
                   </object>

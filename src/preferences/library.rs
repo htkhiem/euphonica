@@ -1,7 +1,7 @@
-use std::cell::Cell;
 use adw::prelude::*;
 use adw::subclass::prelude::*;
 use gtk::{CompositeTemplate, gio, glib};
+use std::cell::Cell;
 
 use glib::clone;
 

@@ -1,10 +1,12 @@
 use once_cell::sync::Lazy;
 use std::{
-    cell::{OnceCell, RefCell, Cell},
+    cell::{Cell, OnceCell, RefCell},
     rc::Rc,
 };
 
-use glib::{clone, Object, closure_local, signal::SignalHandlerId, ParamSpec, ParamSpecString, WeakRef};
+use glib::{
+    Object, ParamSpec, ParamSpecString, WeakRef, clone, closure_local, signal::SignalHandlerId,
+};
 use gtk::{CompositeTemplate, gdk, glib, prelude::*, subclass::prelude::*};
 
 use crate::{
@@ -25,7 +27,7 @@ mod imp {
         pub avatar_signal_ids: RefCell<Option<(SignalHandlerId, SignalHandlerId)>>,
         pub cache: OnceCell<Rc<Cache>>,
         pub artist: WeakRef<Artist>,
-        pub external: Cell<bool>
+        pub external: Cell<bool>,
     }
 
     // The central trait for subclassing a GObject
@@ -113,7 +115,12 @@ impl ArtistCell {
                     #[weak(rename_to = this)]
                     res,
                     move |_: CacheState, name: String, _: gdk::Texture, thumb: gdk::Texture| {
-                        if this.imp().artist.upgrade().is_some_and(|a| a.get_name() == name) {
+                        if this
+                            .imp()
+                            .artist
+                            .upgrade()
+                            .is_some_and(|a| a.get_name() == name)
+                        {
                             this.update_avatar(Some(&thumb));
                         }
                     }
@@ -126,7 +133,12 @@ impl ArtistCell {
                     #[weak(rename_to = this)]
                     res,
                     move |_: CacheState, name: String| {
-                        if this.imp().artist.upgrade().is_some_and(|a| a.get_name() == name) {
+                        if this
+                            .imp()
+                            .artist
+                            .upgrade()
+                            .is_some_and(|a| a.get_name() == name)
+                        {
                             this.update_avatar(None);
                         }
                     }
@@ -174,25 +186,33 @@ impl ArtistCell {
             #[strong]
             artist,
             async move {
-                let res = this.imp().cache.get().unwrap().clone().get_artist_avatar(
-                    artist.get_info(), true,
-                    this.imp().external.get()
-                ).await;
+                let res = this
+                    .imp()
+                    .cache
+                    .get()
+                    .unwrap()
+                    .clone()
+                    .get_artist_avatar(artist.get_info(), true, this.imp().external.get())
+                    .await;
                 // Check again as row might have been bound to a different playlist
                 // while awaiting
-                if this.imp().artist.upgrade().is_some_and(
-                    |a| a.get_info().get_comp_id() == artist.get_info().get_comp_id()
-                ) {
+                if this
+                    .imp()
+                    .artist
+                    .upgrade()
+                    .is_some_and(|a| a.get_info().get_comp_id() == artist.get_info().get_comp_id())
+                {
                     match res {
                         Ok(maybe_tex) => {
                             this.update_avatar(maybe_tex.as_ref());
                         }
-                        Err(e) => {dbg!(e);}
+                        Err(e) => {
+                            dbg!(e);
+                        }
                     }
                 }
             }
         ));
-
     }
 
     pub fn unbind(&self) {

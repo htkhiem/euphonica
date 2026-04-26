@@ -7,8 +7,7 @@
     <property name="icon-name">globe-symbolic</property>
     <child>
       <object class="AdwPreferencesGroup">
-        <property name="title" translatable="true">MPRIS Daemon</property>
-        <property name="description" translatable="true">Control your MPD instance via keyboard shortcuts and shell applets without having to keep the Euphonica window open.</property>
+        <property name="title" translatable="true">System</property>
         <child>
           <object class="AdwSwitchRow" id="enable_mpris">
             <property name="title" translatable="true">Enable MPRIS integration</property>
@@ -46,6 +45,25 @@
                 <property name="icon-name">content-loading-symbolic</property>
               </object>
             </child>
+          </object>
+        </child>
+        <child>
+          <object class="AdwComboRow" id="on_exit_action">
+            <style>
+              <class name="wide-suffixes"/>
+            </style>
+            <property name="title" translatable="true">Playback behaviour on quit</property>
+            <property name="subtitle" translatable="true">Not triggered upon backgrounding.</property>
+            <property name="model">
+              <object class="GtkStringList">
+                <items>
+                  <item translatable="true">Do nothing</item>
+                  <item translatable="true">Pause</item>
+                  <item translatable="true">Stop</item>
+                  <item translatable="true">Stop &amp; clear</item>
+                </items>
+              </object>
+            </property>
           </object>
         </child>
       </object>

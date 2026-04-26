@@ -1,7 +1,8 @@
 use gtk::{
-    CompositeTemplate, glib, prelude::*, subclass::prelude::*,
+    CompositeTemplate, gio, glib,
     glib::{Properties, WeakRef, clone},
-    gio
+    prelude::*,
+    subclass::prelude::*,
 };
 use std::cell::{Cell, OnceCell};
 

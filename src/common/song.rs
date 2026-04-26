@@ -61,13 +61,15 @@ fn parse_date(datestr: &str) -> Option<Date> {
 
     if let Some(month_str) = comps.next()
         && let Ok(month) = month_str.parse::<u8>()
-            && let Ok(month_enum) = Month::try_from(month) {
-                month_val = month_enum;
-            }
+        && let Ok(month_enum) = Month::try_from(month)
+    {
+        month_val = month_enum;
+    }
     if let Some(day_str) = comps.next()
-        && let Ok(day) = day_str.parse::<u8>() {
-            day_val = day;
-        }
+        && let Ok(day) = day_str.parse::<u8>()
+    {
+        day_val = day;
+    }
     if let Ok(date) = Date::from_calendar_date(year_val.unwrap(), month_val, day_val) {
         return Some(date);
     }
@@ -494,10 +496,11 @@ impl From<mpd::song::Song> for SongInfo {
         // The bits == 1 check only works with htkhiem's fork of rust-mpd with DSD correction
         let maybe_extension = Path::new(&res.uri).extension().and_then(OsStr::to_str);
         if let Some(extension) = maybe_extension
-            && ["dsf", "dff", "wsd"].contains(&extension) {
-                // Is probably DSD
-                res.quality_grade = QualityGrade::DSD;
-            }
+            && ["dsf", "dff", "wsd"].contains(&extension)
+        {
+            // Is probably DSD
+            res.quality_grade = QualityGrade::DSD;
+        }
         let mut albumsort: Option<String> = None;
         let mut artist_mbids: Vec<String> = Vec::new();
         let mut artistsorts: Vec<String> = Vec::new();
@@ -539,18 +542,19 @@ impl From<mpd::song::Song> for SongInfo {
                 // "date" => res.imp().release_date.replace(Some(val.clone())),
                 tags::FORMAT => {
                     if let Some(extension) = maybe_extension
-                        && let Ok(format) = val.parse::<AudioFormat>() {
-                            if ["flac", "alac", "wv", "ape"].contains(&extension) {
-                                // Is probably lossless PCM
-                                if format.rate > 48000 && format.bits >= 24 {
-                                    res.quality_grade = QualityGrade::HiRes;
-                                } else {
-                                    res.quality_grade = QualityGrade::CD;
-                                }
+                        && let Ok(format) = val.parse::<AudioFormat>()
+                    {
+                        if ["flac", "alac", "wv", "ape"].contains(&extension) {
+                            // Is probably lossless PCM
+                            if format.rate > 48000 && format.bits >= 24 {
+                                res.quality_grade = QualityGrade::HiRes;
                             } else {
-                                res.quality_grade = QualityGrade::Lossy;
+                                res.quality_grade = QualityGrade::CD;
                             }
+                        } else {
+                            res.quality_grade = QualityGrade::Lossy;
                         }
+                    }
                 }
                 tags::RELEASE_DATE => {
                     res.release_date = parse_date(val.as_ref());
