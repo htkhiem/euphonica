@@ -70,6 +70,10 @@ listview > row {
     border-radius: 6px;
 }
 
+.border-radius-0 {
+  border-radius: 0px;
+}
+
 .no-bg {
     background-color: unset;
 }

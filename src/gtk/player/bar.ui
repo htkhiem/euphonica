@@ -27,80 +27,80 @@
     </child>
     <child>
       <object class="AdwMultiLayoutView" id="multi_layout_view">
-        <style>
-          <class name="padding-12"/>
-        </style>
         <property name="hexpand">true</property>
         <child type="goto-pane">
-          <object class="GtkButton" id="goto_pane">
-            <property name="tooltip-text">Jump to Now Playing</property>
-            <style>
-              <class name="flat"/>
-            </style>
-            <property name="icon-name">dock-right-symbolic</property>
-          </object>
-        </child>
-        <child type="infobox">
           <object class="GtkRevealer" id="infobox_revealer">
             <property name="transition-type">slide-right</property>
             <property name="transition-duration">1000</property>
             <property name="child">
-              <object class="GtkBox">
-                <property name="spacing">6</property>
-                <property name="hexpand">true</property>
+              <object class="GtkButton" id="goto_pane">
+                <style>
+                  <class name="padding-12"/>
+                  <class name="border-radius-0"/>
+                  <class name="flat"/>
+                </style>
+                <property name="hexpand">1</property>
+                <property name="halign">fill</property>
                 <child>
+
                   <object class="GtkBox">
-                    <property name="overflow">hidden</property>
-                    <style>
-                      <class name="border-radius-6" />
-                    </style>
-                    <child>
-                      <object class="EuphonicaImageStack" id="albumart">
-                        <property name="size">36</property>
-                      </object>
-                    </child>
-                  </object>
-                </child>
-                <child>
-                  <object class="GtkBox" id="info_box">
-                    <property name="valign">center</property>
-                    <property name="orientation">1</property>
                     <property name="spacing">6</property>
-                    <child>
-                      <object class="EuphonicaMarquee" id="song_name">
-                        <property name="should-run">true</property>
-                        <style>
-                          <class name="heading" />
-                        </style>
-                        <property name="speed">20</property>
-                      </object>
-                    </child>
+                    <property name="hexpand">true</property>
                     <child>
                       <object class="GtkBox">
+                        <property name="overflow">hidden</property>
+                        <style>
+                          <class name="border-radius-6" />
+                        </style>
+                        <child>
+                          <object class="EuphonicaImageStack" id="albumart">
+                            <property name="size">36</property>
+                          </object>
+                        </child>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="GtkBox" id="info_box">
+                        <property name="valign">center</property>
+                        <property name="orientation">1</property>
                         <property name="spacing">6</property>
                         <child>
-                          <object class="GtkLabel" id="artist">
-                            <property name="ellipsize">end</property>
-                            <property name="halign">start</property>
+                          <object class="EuphonicaMarquee" id="song_name">
+                            <property name="should-run">true</property>
                             <style>
-                              <class name="caption" />
+                              <class name="heading" />
                             </style>
-                            <property name="label">Unknown Artist</property>
+                            <property name="speed">20</property>
                           </object>
                         </child>
                         <child>
-                          <object class="GtkSeparator">
-                            <property name="visible" bind-source="album" bind-property="visible" bind-flags="sync-create"/>
-                          </object>
-                        </child>
-                        <child>
-                          <object class="GtkLabel" id="album">
-                            <property name="ellipsize">end</property>
-                            <property name="halign">start</property>
-                            <style>
-                              <class name="caption" />
-                            </style>
-                            <property name="label">Untitled Album</property>
+                          <object class="GtkBox">
+                            <property name="spacing">6</property>
+                            <child>
+                              <object class="GtkLabel" id="artist">
+                                <property name="ellipsize">end</property>
+                                <property name="halign">start</property>
+                                <style>
+                                  <class name="caption" />
+                                </style>
+                                <property name="label">Unknown Artist</property>
+                              </object>
+                            </child>
+                            <child>
+                              <object class="GtkSeparator">
+                                <property name="visible" bind-source="album" bind-property="visible" bind-flags="sync-create"/>
+                              </object>
+                            </child>
+                            <child>
+                              <object class="GtkLabel" id="album">
+                                <property name="ellipsize">end</property>
+                                <property name="halign">start</property>
+                                <style>
+                                  <class name="caption" />
+                                </style>
+                                <property name="label">Untitled Album</property>
+                              </object>
+                            </child>
                           </object>
                         </child>
                       </object>
@@ -125,21 +125,15 @@
                 <property name="halign">fill</property>
                 <property name="orientation">1</property>
                 <child>
-                  <object class="GtkCenterBox">
-                    <property name="start-widget">
-                      <object class="AdwLayoutSlot">
-                        <property name="id">infobox</property>
-                      </object>
-                    </property>
-                    <property name="end-widget">
-                      <object class="AdwLayoutSlot">
-                        <property name="id">goto-pane</property>
-                      </object>
-                    </property>
+                  <object class="AdwLayoutSlot">
+                    <property name="id">goto-pane</property>
                   </object>
                 </child>
                 <child>
                   <object class="AdwLayoutSlot">
+                    <property name="margin-start">12</property>
+                    <property name="margin-end">12</property>
+                    <property name="margin-bottom">12</property>
                     <property name="id">playback-controls</property>
                   </object>
                 </child>
@@ -158,22 +152,15 @@
                   <object class="GtkCenterBox">
                     <property name="start-widget">
                       <object class="AdwLayoutSlot">
-                        <property name="id">infobox</property>
+                        <property name="id">goto-pane</property>
                       </object>
                     </property>
                     <property name="end-widget">
-                      <object class="GtkBox">
-                        <property name="spacing">6</property>
-                        <child>
-                          <object class="AdwLayoutSlot">
-                            <property name="id">goto-pane</property>
-                          </object>
-                        </child>
-                        <child>
-                          <object class="AdwLayoutSlot">
-                            <property name="id">playback-controls</property>
-                          </object>
-                        </child>
+                      <object class="AdwLayoutSlot">
+                        <property name="id">playback-controls</property>
+                        <style>
+                          <class name="padding-12"/>
+                        </style>
                       </object>
                     </property>
                   </object>
@@ -192,16 +179,20 @@
                 <property name="hexpand">true</property>
                 <property name="left-widget">
                   <object class="AdwLayoutSlot">
-                    <property name="id">infobox</property>
+                    <property name="id">goto-pane</property>
                   </object>
                 </property>
                 <property name="center-widget">
                   <object class="AdwLayoutSlot">
+                    <property name="valign">center</property>
                     <property name="id">playback-controls</property>
                   </object>
                 </property>
                 <property name="right-widget">
                   <object class="GtkBox" id="output_section">
+                    <style>
+                      <class name="padding-12"/>
+                    </style>
                     <property name="halign">end</property>
                     <property name="visible">false</property>
                     <child>
