@@ -5,7 +5,7 @@ use glib::{
 use gtk::{CompositeTemplate, gdk, glib, prelude::*, subclass::prelude::*};
 use once_cell::sync::Lazy;
 use std::{
-    cell::{OnceCell, RefCell},
+    cell::{Cell, OnceCell, RefCell},
     rc::Rc,
 };
 
@@ -17,6 +17,8 @@ use crate::{
 
 // Wrapper around the common row object to implement song thumbnail fetch logic.
 mod imp {
+    use glib::value::FromValue;
+
     use super::*;
 
     #[derive(Default, CompositeTemplate)]
@@ -51,6 +53,7 @@ mod imp {
         pub playing_signal_id: RefCell<Option<SignalHandlerId>>,
         pub cache: OnceCell<Rc<Cache>>,
         pub player: WeakRef<Player>,
+        pub is_floating: Cell<bool>,
     }
 
     // The central trait for subclassing a GObject
@@ -92,6 +95,7 @@ mod imp {
                     this.name.set_should_run_and_check(false);
                 }
             ));
+
             self.obj().add_controller(hover_ctl);
         }
         fn properties() -> &'static [ParamSpec] {
@@ -371,6 +375,16 @@ impl SongRow {
 
     pub fn set_is_playing(&self, playing: bool) {
         self.imp().playing_indicator.set_reveal_child(playing);
+    }
+    
+    pub fn is_floating(&self) -> bool {
+        // If there is no song being referred to, the getter should return False
+        self.imp().is_floating.get()
+    }
+
+    pub fn set_floating(&self, is_floating: bool) {
+        // If there is no song being referred to, the setter should be a noop
+        self.imp().is_floating.set(is_floating);
     }
 
     pub fn set_index_visible(&self, vis: bool) {

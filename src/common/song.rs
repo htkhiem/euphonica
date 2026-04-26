@@ -165,7 +165,7 @@ mod imp {
                 info: OnceCell::new(),
                 stickers: RefCell::new(Stickers::default()),
                 queue_pos: Cell::new(0),
-                is_playing: Cell::new(false),
+                is_playing: Cell::new(false)
             }
         }
     }

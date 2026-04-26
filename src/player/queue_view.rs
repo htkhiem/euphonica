@@ -1,7 +1,7 @@
 use adw::prelude::*;
 use adw::subclass::prelude::*;
 use gtk::{
-    CompositeTemplate, ListItem, SignalListItemFactory, SingleSelection, gio,
+    CompositeTemplate, ListItem, SignalListItemFactory, SingleSelection, gio, gdk,
     glib::{self, Properties, WeakRef, clone, closure_local, subclass::Signal},
 };
 use mpd::{
@@ -78,6 +78,8 @@ mod imp {
         pub restore_last_pos: Cell<u8>,
 
         pub player: WeakRef<Player>,
+
+        // Avoid multiple inits running concurrently
         pub initializing: Cell<bool>,
     }
 
@@ -192,6 +194,28 @@ fn format_song_count(count: u32) -> Option<String> {
     }
 }
 
+fn bind_row_by_expressions(row: &SongRow, item: &ListItem) {
+    row.set_index_visible(false);
+    row.set_playing_indicator_visible(true);
+
+    item.property_expression("item")
+        .chain_property::<Song>("name")
+        .bind(row, "name", gtk::Widget::NONE);
+
+    row.set_first_attrib_icon_name(Some("library-music-symbolic"));
+    item.property_expression("item")
+        .chain_property::<Song>("album")
+        .bind(row, "first-attrib-text", gtk::Widget::NONE);
+    row.set_second_attrib_icon_name(Some("music-artist-symbolic"));
+    item.property_expression("item")
+        .chain_property::<Song>("artist")
+        .bind(row, "second-attrib-text", gtk::Widget::NONE);
+
+    item.property_expression("item")
+        .chain_property::<Song>("quality-grade")
+        .bind(row, "quality-grade", gtk::Widget::NONE);
+}
+
 impl QueueView {
     pub fn new() -> Self {
         Self::default()
@@ -209,6 +233,8 @@ impl QueueView {
         let factory = SignalListItemFactory::new();
 
         factory.connect_setup(clone!(
+            #[weak(rename_to = this)]
+            self,
             #[weak]
             player,
             #[weak]
@@ -218,25 +244,27 @@ impl QueueView {
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
                 let row = SongRow::new(Some(cache.clone()), Some(&player));
-                row.set_index_visible(false);
-                row.set_playing_indicator_visible(true);
+                bind_row_by_expressions(&row, item);
+                row.add_css_class("shift-on-hover");
+                // row.set_index_visible(false);
+                // row.set_playing_indicator_visible(true);
 
-                item.property_expression("item")
-                    .chain_property::<Song>("name")
-                    .bind(&row, "name", gtk::Widget::NONE);
+                // item.property_expression("item")
+                //     .chain_property::<Song>("name")
+                //     .bind(&row, "name", gtk::Widget::NONE);
 
-                row.set_first_attrib_icon_name(Some("library-music-symbolic"));
-                item.property_expression("item")
-                    .chain_property::<Song>("album")
-                    .bind(&row, "first-attrib-text", gtk::Widget::NONE);
-                row.set_second_attrib_icon_name(Some("music-artist-symbolic"));
-                item.property_expression("item")
-                    .chain_property::<Song>("artist")
-                    .bind(&row, "second-attrib-text", gtk::Widget::NONE);
+                // row.set_first_attrib_icon_name(Some("library-music-symbolic"));
+                // item.property_expression("item")
+                //    .chain_property::<Song>("album")
+                //     .bind(&row, "first-attrib-text", gtk::Widget::NONE);
+                // row.set_second_attrib_icon_name(Some("music-artist-symbolic"));
+                // item.property_expression("item")
+                //     .chain_property::<Song>("artist")
+                //     .bind(&row, "second-attrib-text", gtk::Widget::NONE);
 
-                item.property_expression("item")
-                    .chain_property::<Song>("quality-grade")
-                    .bind(&row, "quality-grade", gtk::Widget::NONE);
+                // item.property_expression("item")
+                //     .chain_property::<Song>("quality-grade")
+                //     .bind(&row, "quality-grade", gtk::Widget::NONE);
                 let end_widget = RowEditButtons::new(
                     item,
                     // Raise action
@@ -294,6 +322,138 @@ impl QueueView {
                 );
                 row.set_end_widget(Some(&end_widget.into()));
                 item.set_child(Some(&row));
+                
+                // Handle drag-n-drop (DnD)
+                let drag_source = gtk::DragSource::new();
+                drag_source.set_actions(gdk::DragAction::COPY); // TODO: probably not needed? not moving files across apps
+                drag_source.connect_prepare(clone!(
+                    #[weak]
+                    item,
+                    #[upgrade_or]
+                    None,
+                    move |_, _x, _y| {
+                        // FIXME: nonzero hotspots cause the drag icon to fly off-screen.
+                        // Pass the whole song GObject
+                        if let Some(song) = item.item().and_downcast::<Song>() {
+                            song.set_queue_pos(item.position());  // Ensure the Song object contains the up-to-date queue pos for local updating
+                            Some(gdk::ContentProvider::for_value(&song.to_value()))
+                        } else {
+                            None
+                        }
+                    }
+                ));
+                drag_source.connect_drag_begin(clone!(
+                    #[weak]
+                    row,
+                    #[weak]
+                    item,
+                    move |_source, drag| {
+                        row.set_floating(true);
+                        // To avoid problems with hotspot positioning quirks (caused by other rows changing padding upon hover)
+                        // the icon will be a standalone copy of the original row.
+                        // Additional benefit: we get to customise how it looks.
+                        let drag_widget = SongRow::new(None, None);
+                        // Give it the same size as the real row
+                        drag_widget.set_size_request(row.width(), row.height());
+                        drag_widget.set_thumbnail_visible(false);
+                        bind_row_by_expressions(&drag_widget, &item);
+                        
+                        // The drag icon version should have an opaque background for legibility when rendered over other rows.
+                        // Adwaita already has a .card class that does that + adds rounded corners and drop shadows too.
+                        // Looks nice IMO.
+                        drag_widget.add_css_class("card");
+                        let drag_icon = gtk::DragIcon::for_drag(&drag);
+                        drag_icon.set_child(Some(&drag_widget));
+                    }
+                )); 
+                drag_source.connect_drag_end(clone!(
+                    #[weak]
+                    row,
+                    move |_, _, _| {
+                        row.set_floating(false);
+                    }
+                ));
+                row.add_controller(drag_source);
+                // If another row is being held above this one in a DnD operation, make some space by increasing top
+                // or bottom padding (depending on whether the mouse is over the upper or lower half of this row)
+                let drop_controller = gtk::DropTarget::new(Song::static_type(), gdk::DragAction::COPY);
+                drop_controller.connect_motion(clone!(
+                    #[weak]
+                    row,
+                    #[upgrade_or]
+                    gdk::DragAction::COPY,
+                    move |_, _x, y| {
+                        if !row.is_floating() {
+                            let has_shift_up = row.has_css_class("shift-up");
+                            let has_shift_down = row.has_css_class("shift-down");
+                            let is_lower_half = y > row.height() as f64 / 2.0;
+
+                            let should_shift_down = !is_lower_half;
+                            let should_shift_up = is_lower_half;
+                            if should_shift_down && !has_shift_down {
+                                row.add_css_class("shift-down");
+                            } else if !should_shift_down && has_shift_down {
+                                row.remove_css_class("shift-down");
+                            }
+                            if should_shift_up && !has_shift_up {
+                                row.add_css_class("shift-up");
+                            } else if !should_shift_up && has_shift_up {
+                                row.remove_css_class("shift-up");
+                            }
+                        }
+                        gdk::DragAction::COPY
+                    }
+                ));
+                drop_controller.connect_leave(clone!(
+                    #[weak]
+                    row,
+                    move |_| {
+                        if !row.is_floating() {
+                            if row.has_css_class("shift-up") {
+                                row.remove_css_class("shift-up");
+                            }
+                            if row.has_css_class("shift-down") {
+                                row.remove_css_class("shift-down");
+                            }
+                        }
+                    }
+                ));
+
+                drop_controller.connect_drop(clone!(
+                    #[weak]
+                    row,
+                    #[weak]
+                    item,
+                    #[weak]
+                    player,
+                    #[upgrade_or]
+                    false,
+                    move |_, song, x, y| {
+                        row.set_floating(false);
+                        if !row.is_floating() {
+                            if let Ok(song) = song.get::<Song>() {
+                                // Get queue pos of row being dropped onto
+                                let target_pos = item.position() + if y > row.height() as f64 / 2.0 {
+                                    // If is lower half, place dropped song after this one
+                                    1    
+                                } else {
+                                    0
+                                };
+                                glib::spawn_future_local(async move {
+                                    player.move_to(&song, target_pos).await;
+                                });
+                                true
+                            } else {
+                                false
+                            }
+                        } else {
+                            // Ignore if dropped atop itself
+                            false
+                        }
+                    }
+                ));
+
+                row.add_controller(drop_controller);
             }
         ));
         factory.connect_bind(clone!(
