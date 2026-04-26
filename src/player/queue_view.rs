@@ -328,8 +328,6 @@ impl QueueView {
                 drag_source.set_actions(gdk::DragAction::COPY); // TODO: probably not needed? not moving files across apps
                 drag_source.connect_prepare(clone!(
                     #[weak]
-                    this,
-                    #[weak]
                     item,
                     #[upgrade_or]
                     None,
@@ -348,15 +346,13 @@ impl QueueView {
                     #[weak]
                     row,
                     #[weak]
-                    this,
-                    #[weak]
                     item,
                     move |_source, drag| {
                         row.set_floating(true);
                         // To avoid problems with hotspot positioning quirks (caused by other rows changing padding upon hover)
                         // the icon will be a standalone copy of the original row.
                         // Additional benefit: we get to customise how it looks.
-                        let drag_widget = SongRow::new(Some(cache.clone()), None);
+                        let drag_widget = SongRow::new(None, None);
                         // Give it the same size as the real row
                         drag_widget.set_size_request(row.width(), row.height());
                         drag_widget.set_thumbnail_visible(false);
