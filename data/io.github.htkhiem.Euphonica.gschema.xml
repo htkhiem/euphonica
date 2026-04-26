@@ -107,7 +107,7 @@
 
 	<schema id="io.github.htkhiem.Euphonica.library" path="/io/github/htkhiem/Euphonica/library/">
 		<key name="artist-tag-delims" type="as">
-			<default>[",", ";", ":", "&amp;", "/", "//", "\\", "\\\\", " X ", "feat.", "ft.", "duet with", "special guest"]</default>
+			<default>[",", ";", ":", "&amp;", "/", "//", "\\", "\\\\", " X ", "feat.", " ft.", "(ft.", ",ft.", "duet with", "special guest"]</default>
 		</key>
 		<key name="artist-tag-delim-exceptions" type="as">
 			<default>["Simon &amp; Garfunkel", "Above &amp; Beyond"]</default>
@@ -286,11 +286,12 @@
 			<description>On certain hardware (e.g., NVIDIA GPUs), Cairo (CPU) rendering may be more performant than GSK.</description>
 		</key>
 		<key name="visualizer-top-opacity" type="d">
-			<default>0.9</default>
+			<default>0.75</default>
 		</key>
 		<key name="visualizer-scale" type="d">
 			<default>1.0</default>
 		</key>
+		<!-- DEPRECATED AND UNUSED -->
 		<key name="visualizer-blend-mode" type="u">
 			<default>6</default>
 			<summary>Index of gsk::BlendMode variant</summary>
