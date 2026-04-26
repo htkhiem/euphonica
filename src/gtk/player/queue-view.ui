@@ -30,10 +30,11 @@
         <style>
           <class name="nested-split-view"/>
         </style>
+        <property name="sidebar-position">1</property>
         <property name="min-sidebar-width">240</property>
-        <property name="max-sidebar-width">3840</property>
+        <property name="max-sidebar-width">768</property>
         <property name="sidebar-width-fraction">0.45</property>
-        <property name="content">
+        <property name="sidebar">
           <object class="AdwNavigationPage">
             <property name="title" translatable="yes">Now Playing</property>
             <property name="tag">now_playing</property>
@@ -56,7 +57,7 @@
             </property>
           </object>
         </property>
-        <property name="sidebar">
+        <property name="content">
           <object class="AdwNavigationPage">
             <style>
               <class name="light-right-edge"/>
@@ -123,33 +124,41 @@
                   </object>
                 </child>
                 <property name="content">
-                  <object class="EuphonicaContentStack" id="content_stack">
-                    <property name="placeholder">
-                      <object class="AdwStatusPage">
-                        <property name="title" translatable="true">Empty Queue</property>
-                        <property name="description" translatable="true">Add songs from your library to start listening</property>
-                        <property name="icon-name">music-note-single-symbolic</property>
-                      </object>
-                    </property>
-                    <property name="content">
-                      <object class="GtkScrolledWindow" id="scrolled_window">
-                        <property name="hscrollbar-policy">never</property>
-                        <property name="vscrollbar-policy">automatic</property>
-                        <property name="propagate-natural-height">true</property>
-                        <property name="has-frame">false</property>
-                        <property name="vexpand">true</property>
-                        <property name="hexpand">true</property>
-                        <property name="child">
-                          <object class="GtkListView" id="queue">
-                            <property name="show-separators">true</property>
-                            <property name="single-click-activate">true</property>
-                            <style>
-                              <class name="no-bg"/>
-                            </style>
+                  <object class="GtkBox">
+                    <property name="orientation">1</property>
+                    <child>
+                      <object class="GtkSeparator"/>
+                    </child>
+                    <child>
+                      <object class="EuphonicaContentStack" id="content_stack">
+                        <property name="placeholder">
+                          <object class="AdwStatusPage">
+                            <property name="title" translatable="true">Empty Queue</property>
+                            <property name="description" translatable="true">Add songs from your library to start listening</property>
+                            <property name="icon-name">music-note-single-symbolic</property>
+                          </object>
+                        </property>
+                        <property name="content">
+                          <object class="GtkScrolledWindow" id="scrolled_window">
+                            <property name="hscrollbar-policy">never</property>
+                            <property name="vscrollbar-policy">automatic</property>
+                            <property name="propagate-natural-height">true</property>
+                            <property name="has-frame">false</property>
+                            <property name="vexpand">true</property>
+                            <property name="hexpand">true</property>
+                            <property name="child">
+                              <object class="GtkListView" id="queue">
+                                <property name="show-separators">true</property>
+                                <property name="single-click-activate">true</property>
+                                <style>
+                                  <class name="no-bg"/>
+                                </style>
+                              </object>
+                            </property>
                           </object>
                         </property>
                       </object>
-                    </property>
+                    </child>
                   </object>
                 </property>
               </object>

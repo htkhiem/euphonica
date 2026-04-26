@@ -1568,7 +1568,7 @@ impl EuphonicaWindow {
         let revealer = self.imp().player_bar_revealer.get();
         if self.imp().sidebar.showing_queue_view() {
             let queue_view = self.imp().queue_view.get();
-            if (queue_view.pane_collapsed() && queue_view.show_content())
+            if (queue_view.pane_collapsed() && !queue_view.show_content())
                 || !queue_view.pane_collapsed()
             {
                 revealer.set_reveal_child(false);
@@ -1585,7 +1585,7 @@ impl EuphonicaWindow {
         self.imp()
             .split_view
             .set_show_sidebar(!self.imp().split_view.is_collapsed());
-        self.imp().queue_view.set_show_content(true);
+        self.imp().queue_view.set_show_content(false);
     }
 
     pub fn goto_album(&self, album: &Album) {

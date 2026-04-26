@@ -20,7 +20,7 @@ use crate::{
     },
     client::{ClientState, state::StickersSupportLevel},
     common::{PictureStack, Rating, Song},
-    player::seekbar::Seekbar,
+    player::seekbar2::Seekbar,
     utils::{self, settings_manager},
 };
 

@@ -122,7 +122,7 @@
             <property name="content">
               <object class="GtkBox">
                 <property name="spacing">6</property>
-                <property name="halign">center</property>
+                <property name="halign">fill</property>
                 <property name="orientation">1</property>
                 <child>
                   <object class="GtkCenterBox">
