@@ -1,6 +1,6 @@
 use crate::{common::QualityGrade, utils};
 use adw::prelude::*;
-use glib::{Object, ParamSpec, ParamSpecDouble, ParamSpecObject, WeakRef, clone, SignalHandlerId};
+use glib::{Object, ParamSpec, ParamSpecDouble, ParamSpecObject, SignalHandlerId, WeakRef, clone};
 use gtk::{CompositeTemplate, gdk, glib, graphene, gsk, subclass::prelude::*};
 use hsl;
 use once_cell::sync::Lazy;
@@ -405,7 +405,12 @@ impl Seekbar {
 
     pub fn animate(&self) {
         if let Some(anim) = self.imp().wave_anim.get() {
-            let state = self.imp().player.upgrade().map(|p| p.state()).unwrap_or(PlaybackState::Stopped);
+            let state = self
+                .imp()
+                .player
+                .upgrade()
+                .map(|p| p.state())
+                .unwrap_or(PlaybackState::Stopped);
             if state == PlaybackState::Playing {
                 match anim.state() {
                     adw::AnimationState::Finished | adw::AnimationState::Idle => anim.play(),

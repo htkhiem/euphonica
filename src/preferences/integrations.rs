@@ -37,6 +37,8 @@ mod imp {
 
         #[template_child]
         pub order_box: TemplateChild<gtk::ListBox>,
+        #[template_child]
+        pub on_exit_action: TemplateChild<adw::ComboRow>,
         pub cache: OnceCell<Rc<Cache>>,
     }
 
@@ -86,6 +88,23 @@ impl IntegrationsPreferences {
         player_settings
             .bind("enable-mpris", &enable_mpris, "active")
             .build();
+
+        // On exit action
+        let on_exit_action = imp.on_exit_action.get();
+        let enum_val = state_settings.enum_("on-exit-action");
+        let selected = match enum_val {
+            0 => 0,
+            1 => 1,
+            2 => 2,
+            3 => 3,
+            _ => 0,
+        };
+        on_exit_action.set_selected(selected);
+        let on_exit_settings = state_settings.clone();
+        on_exit_action.connect_notify_local(Some("selected"), move |row, _| {
+            let _ = on_exit_settings.set_enum("on-exit-action", row.selected() as i32);
+        });
+
         let run_in_background = imp.run_in_background.get();
         let autostart = imp.autostart.get();
         let start_minimized = imp.start_minimized.get();

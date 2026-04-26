@@ -282,10 +282,10 @@ pub enum Task {
     SwapPos(u32, u32, Responder<()>),
     MoveId(
         // Id of the song being moved
-        u32, 
+        u32,
         // Desired position in queue after move
         usize,
-        Responder<()>
+        Responder<()>,
     ),
     // DeleteAtId(Id, Responder<()>),
     DeleteAtPos(u32, Responder<()>),
@@ -991,7 +991,8 @@ impl Connection {
                     Task::SwapPos(p1, p2, resp) => {
                         self.respond_with_client(|c| c.swap(p1, p2), resp)
                     }
-                    Task::MoveId(from_id,to_pos , resp) => self.respond_with_client(|c| c.shift(Id(from_id), &to_pos.to_string()), resp),
+                    Task::MoveId(from_id, to_pos, resp) => self
+                        .respond_with_client(|c| c.shift(Id(from_id), &to_pos.to_string()), resp),
                     Task::DeleteAtPos(p, resp) => self.respond_with_client(|c| c.delete(p), resp),
                     Task::ClearQueue(resp) => self.respond_with_client(|c| c.clear(), resp),
                     Task::Seek(pos, resp) => self.respond_with_client(|c| c.rewind(pos), resp),

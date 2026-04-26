@@ -1665,6 +1665,14 @@ impl Player {
         self.client()?.clear_queue().await
     }
 
+    pub async fn pause(&self) -> ClientResult<()> {
+        self.client()?.pause(true).await
+    }
+
+    pub async fn stop(&self) -> ClientResult<()> {
+        self.client()?.stop().await
+    }
+
     pub async fn send_set_volume(&self, val: i8) -> ClientResult<()> {
         let old_vol = self.imp().volume.replace(val);
         if old_vol != val {
@@ -1759,7 +1767,9 @@ impl Player {
         };
         self.imp().queue.remove(song.get_queue_pos());
         self.imp().queue.insert(local_new_pos, song);
-        self.client()?.move_id(song.get_queue_id(), to_pos as usize).await
+        self.client()?
+            .move_id(song.get_queue_id(), to_pos as usize)
+            .await
     }
 
     pub async fn save_queue(&self, name: String, save_mode: SaveMode) -> ClientResult<()> {

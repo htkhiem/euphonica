@@ -246,25 +246,6 @@ impl QueueView {
                 let row = SongRow::new(Some(cache.clone()), Some(&player));
                 bind_row_by_expressions(&row, item);
                 row.add_css_class("shift-on-hover");
-                // row.set_index_visible(false);
-                // row.set_playing_indicator_visible(true);
-
-                // item.property_expression("item")
-                //     .chain_property::<Song>("name")
-                //     .bind(&row, "name", gtk::Widget::NONE);
-
-                // row.set_first_attrib_icon_name(Some("library-music-symbolic"));
-                // item.property_expression("item")
-                //    .chain_property::<Song>("album")
-                //     .bind(&row, "first-attrib-text", gtk::Widget::NONE);
-                // row.set_second_attrib_icon_name(Some("music-artist-symbolic"));
-                // item.property_expression("item")
-                //     .chain_property::<Song>("artist")
-                //     .bind(&row, "second-attrib-text", gtk::Widget::NONE);
-
-                // item.property_expression("item")
-                //     .chain_property::<Song>("quality-grade")
-                //     .bind(&row, "quality-grade", gtk::Widget::NONE);
                 let end_widget = RowEditButtons::new(
                     item,
                     // Raise action

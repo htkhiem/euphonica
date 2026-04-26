@@ -339,6 +339,29 @@ impl EuphonicaApplication {
         window.present();
     }
 
+    fn execute_on_exit_action(&self) {
+        let settings = settings_manager().child("state");
+        let action = settings.enum_("on-exit-action");
+
+        let player = self.imp().player.get().unwrap().clone();
+        // Refer to the gschema for enum definition
+        match action {
+            0 => {
+                // The 'do nothing' option
+            },
+            1 => {
+                glib::MainContext::default().block_on(player.pause());
+            }
+            2 => {
+                glib::MainContext::default().block_on(player.stop());
+            }
+            3 => {
+                glib::MainContext::default().block_on(player.clear_queue());
+            }
+            _ => unimplemented!()
+        }
+    }
+
     pub fn on_window_closed(&self) {
         let settings = settings_manager().child("state");
         if settings.boolean("run-in-background") {
@@ -351,6 +374,7 @@ impl EuphonicaApplication {
         } else {
             println!("Dropping hold guard");
             let _ = self.imp().hold_guard.take();
+            self.execute_on_exit_action();
         }
     }
 

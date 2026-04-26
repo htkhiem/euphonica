@@ -28,9 +28,9 @@ pub enum InternalEditAction {
     ShiftForward(u32),
     MovePos(
         /// From position
-        u32, 
+        u32,
         /// To position
-        u32
+        u32,
     ),
     Remove(u32),
 }
@@ -98,7 +98,7 @@ impl HistoryStep {
                 };
                 let to_move = list.item(local_new_pos).unwrap();
                 list.remove(local_new_pos);
-                
+
                 list.insert(from_pos, &to_move);
             }
         }
@@ -872,7 +872,7 @@ impl PlaylistContentView {
                         // FIXME: nonzero hotspots cause the drag icon to fly off-screen.
                         // Pass the whole song GObject
                         if let Some(song) = item.item().and_downcast::<Song>() {
-                            song.set_queue_pos(item.position());  // Not queue pos, but playlist order
+                            song.set_queue_pos(item.position()); // Not queue pos, but playlist order
                             Some(gdk::ContentProvider::for_value(&song.to_value()))
                         } else {
                             None
@@ -894,7 +894,7 @@ impl PlaylistContentView {
                         drag_widget.set_size_request(row.width(), row.height());
                         drag_widget.set_thumbnail_visible(false);
                         bind_editing_row_by_expressions(&drag_widget, &item);
-                        
+
                         // The drag icon version should have an opaque background for legibility when rendered over other rows.
                         // Adwaita already has a .card class that does that + adds rounded corners and drop shadows too.
                         // Looks nice IMO.
@@ -902,7 +902,7 @@ impl PlaylistContentView {
                         let drag_icon = gtk::DragIcon::for_drag(&drag);
                         drag_icon.set_child(Some(&drag_widget));
                     }
-                )); 
+                ));
                 drag_source.connect_drag_end(clone!(
                     #[weak]
                     row,
@@ -913,7 +913,8 @@ impl PlaylistContentView {
                 row.add_controller(drag_source);
                 // If another row is being held above this one in a DnD operation, make some space by increasing top
                 // or bottom padding (depending on whether the mouse is over the upper or lower half of this row)
-                let drop_controller = gtk::DropTarget::new(Song::static_type(), gdk::DragAction::COPY);
+                let drop_controller =
+                    gtk::DropTarget::new(Song::static_type(), gdk::DragAction::COPY);
                 drop_controller.connect_motion(clone!(
                     #[weak]
                     row,
@@ -970,12 +971,13 @@ impl PlaylistContentView {
                         if !row.is_floating() {
                             if let Ok(song) = song.get::<Song>() {
                                 // Get queue pos of row being dropped onto
-                                let target_pos = item.position() + if y > row.height() as f64 / 2.0 {
-                                    // If is lower half, place dropped song after this one
-                                    1    
-                                } else {
-                                    0
-                                };
+                                let target_pos = item.position()
+                                    + if y > row.height() as f64 / 2.0 {
+                                        // If is lower half, place dropped song after this one
+                                        1
+                                    } else {
+                                        0
+                                    };
                                 this.move_pos(song.get_queue_pos(), target_pos);
                                 true
                             } else {
@@ -1264,7 +1266,7 @@ impl PlaylistContentView {
     pub fn move_pos(&self, from_pos: u32, to_pos: u32) {
         let step = HistoryStep {
             action: InternalEditAction::MovePos(from_pos, to_pos),
-            song: None
+            song: None,
         };
         step.forward(&self.imp().editing_song_list);
         self.imp().push_history(step);

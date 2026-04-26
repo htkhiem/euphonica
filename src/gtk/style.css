@@ -172,3 +172,8 @@ listview > row {
 .fg-auto-accent label {
   color: var(--view-fg-color);
 }
+
+/* For Adwaita combo rows with a lot to say */
+.wide-suffixes box box.suffixes {
+  width: 60px;
+}

@@ -32,6 +32,13 @@
 		<value nick="wrap" value="2"/>
 	</enum>
 
+	<enum id="io.github.htkhiem.Euphonica.onexitaction">
+		<value nick="nothing" value="0"/>
+		<value nick="pause" value="1"/>
+		<value nick="stop" value="2"/>
+		<value nick="stop-and-clear" value="3"/>
+	</enum>
+
 	<schema id="io.github.htkhiem.Euphonica" path="/io/github/htkhiem/Euphonica/">
 		<child schema="io.github.htkhiem.Euphonica.ui" name="ui"/>
 		<child schema="io.github.htkhiem.Euphonica.state" name="state"/>
@@ -333,6 +340,10 @@
 		</key>
 		<key name="start-minimized" type="b">
 			<default>true</default>
+		</key>
+		<key name="on-exit-action" enum='io.github.htkhiem.Euphonica.onexitaction'>
+			<default>'nothing'</default>
+			<summary>Action to perform on MPD when Euphonica exits</summary>
 		</key>
 	</schema>
 

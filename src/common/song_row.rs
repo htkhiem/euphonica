@@ -378,7 +378,7 @@ impl SongRow {
     pub fn set_is_playing(&self, playing: bool) {
         self.imp().playing_indicator.set_reveal_child(playing);
     }
-    
+
     pub fn is_floating(&self) -> bool {
         // If there is no song being referred to, the getter should return False
         self.imp().is_floating.get()
