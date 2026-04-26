@@ -303,7 +303,6 @@ impl SongRow {
                         }
                     ),
                 )));
-            res.update_playing_indicator(player);
         }
 
         res
@@ -361,6 +360,9 @@ impl SongRow {
 
     pub fn on_bind(&self, song: &Song) {
         self.imp().song.set(Some(song));
+        if let Some(player) = self.imp().player.upgrade() {
+            self.update_playing_indicator(&player);
+        }
         self.schedule_thumbnail();
     }
 
