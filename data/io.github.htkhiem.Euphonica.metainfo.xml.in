@@ -49,24 +49,28 @@
   <launchable type="desktop-id">io.github.htkhiem.Euphonica.desktop</launchable>
   <screenshots>
     <screenshot type="default">
-      <image>https://i.ibb.co/x87WDVKw/album-view.png</image>
+      <image>https://i.ibb.co/Csv0cYvg/album-view.png</image>
       <caption>Album View</caption>
     </screenshot>
     <screenshot>
-      <image>https://i.ibb.co/sv2cXFY7/album-content-view.png</image>
+      <image>https://i.ibb.co/TDCRLp6K/album-content-view.png</image>
       <caption>Album Content View</caption>
     </screenshot>
     <screenshot>
-      <image>https://i.ibb.co/XrP2rsqw/dyn-playlist-editor-view.png</image>
+      <image>https://i.ibb.co/TxBSwm9K/dyn-playlist-editor.png</image>
       <caption>Dynamic Playlist Editor</caption>
     </screenshot>
     <screenshot>
-      <image>https://i.ibb.co/ymFPcLHL/mini-layouts.png</image>
+      <image>https://i.ibb.co/5X8nyncm/mini-ui.png</image>
       <caption>UI at different sizes</caption>
     </screenshot>
     <screenshot>
-      <image>https://i.ibb.co/zVfGVyYw/queue-view.png</image>
+      <image>https://i.ibb.co/v6TQPwL2/queue-view.png</image>
       <caption>Queue View</caption>
+    </screenshot>
+    <screenshot>
+      <image>https://i.ibb.co/S7Df5389/viz-settings.png</image>
+      <caption>Visualiser appearance settings</caption>
     </screenshot>
   </screenshots>
 
