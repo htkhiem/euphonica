@@ -23,6 +23,8 @@ mod imp {
         pub use_hires_for_album_cells: TemplateChild<adw::SwitchRow>,
         #[template_child]
         pub title_wrap_mode: TemplateChild<adw::ComboRow>,
+        #[template_child]
+        pub auto_scroll_to_playing: TemplateChild<adw::SwitchRow>,
 
         #[template_child]
         pub use_album_art_as_bg: TemplateChild<adw::ExpanderRow>,
@@ -142,6 +144,11 @@ impl UIPreferences {
                         .into(),
                 )
             })
+            .build();
+
+        let auto_scroll_to_playing = imp.auto_scroll_to_playing.get();
+        ui_settings
+            .bind("auto-scroll-to-playing", &auto_scroll_to_playing, "active")
             .build();
         let use_album_art_as_bg = imp.use_album_art_as_bg.get();
         let bg_blur_radius = imp.bg_blur_radius.get();

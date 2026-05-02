@@ -1,7 +1,7 @@
 use adw::prelude::*;
 use adw::subclass::prelude::*;
 use gtk::{
-    CompositeTemplate, ListItem, SignalListItemFactory, SingleSelection, gio, gdk,
+    CompositeTemplate, ListItem, SignalListItemFactory, SingleSelection, gdk, gio,
     glib::{self, Properties, WeakRef, clone, closure_local, subclass::Signal},
 };
 use mpd::{
@@ -17,7 +17,7 @@ use crate::{
     client::{ClientState, Error as ClientError},
     common::{ContentStack, RowEditButtons, Song, SongRow},
     player::controller::SwapDirection,
-    utils::LazyInit,
+    utils::{LazyInit, settings_manager},
     window::EuphonicaWindow,
 };
 
@@ -303,7 +303,7 @@ impl QueueView {
                 );
                 row.set_end_widget(Some(&end_widget.into()));
                 item.set_child(Some(&row));
-                
+
                 // Handle drag-n-drop (DnD)
                 let drag_source = gtk::DragSource::new();
                 drag_source.set_actions(gdk::DragAction::COPY); // TODO: probably not needed? not moving files across apps
@@ -316,7 +316,7 @@ impl QueueView {
                         // FIXME: nonzero hotspots cause the drag icon to fly off-screen.
                         // Pass the whole song GObject
                         if let Some(song) = item.item().and_downcast::<Song>() {
-                            song.set_queue_pos(item.position());  // Ensure the Song object contains the up-to-date queue pos for local updating
+                            song.set_queue_pos(item.position()); // Ensure the Song object contains the up-to-date queue pos for local updating
                             Some(gdk::ContentProvider::for_value(&song.to_value()))
                         } else {
                             None
@@ -338,7 +338,7 @@ impl QueueView {
                         drag_widget.set_size_request(row.width(), row.height());
                         drag_widget.set_thumbnail_visible(false);
                         bind_row_by_expressions(&drag_widget, &item);
-                        
+
                         // The drag icon version should have an opaque background for legibility when rendered over other rows.
                         // Adwaita already has a .card class that does that + adds rounded corners and drop shadows too.
                         // Looks nice IMO.
@@ -346,7 +346,7 @@ impl QueueView {
                         let drag_icon = gtk::DragIcon::for_drag(&drag);
                         drag_icon.set_child(Some(&drag_widget));
                     }
-                )); 
+                ));
                 drag_source.connect_drag_end(clone!(
                     #[weak]
                     row,
@@ -357,7 +357,8 @@ impl QueueView {
                 row.add_controller(drag_source);
                 // If another row is being held above this one in a DnD operation, make some space by increasing top
                 // or bottom padding (depending on whether the mouse is over the upper or lower half of this row)
-                let drop_controller = gtk::DropTarget::new(Song::static_type(), gdk::DragAction::COPY);
+                let drop_controller =
+                    gtk::DropTarget::new(Song::static_type(), gdk::DragAction::COPY);
                 drop_controller.connect_motion(clone!(
                     #[weak]
                     row,
@@ -414,12 +415,13 @@ impl QueueView {
                         if !row.is_floating() {
                             if let Ok(song) = song.get::<Song>() {
                                 // Get queue pos of row being dropped onto
-                                let target_pos = item.position() + if y > row.height() as f64 / 2.0 {
-                                    // If is lower half, place dropped song after this one
-                                    1    
-                                } else {
-                                    0
-                                };
+                                let target_pos = item.position()
+                                    + if y > row.height() as f64 / 2.0 {
+                                        // If is lower half, place dropped song after this one
+                                        1
+                                    } else {
+                                        0
+                                    };
                                 glib::spawn_future_local(async move {
                                     player.move_to(&song, target_pos).await;
                                 });
@@ -550,6 +552,27 @@ impl QueueView {
         }
     }
 
+    pub fn maybe_auto_scroll_to_playing(&self) {
+        let settings = settings_manager().child("ui");
+        if !settings.boolean("auto-scroll-to-playing") {
+            return;
+        }
+        if let Some(model) = self.imp().queue.model() {
+            let n = model.n_items();
+            if let Some(player) = self.imp().player.upgrade() {
+                if let Some(pos) = player.queue_pos() {
+                    eprintln!("Playing pos: {}", pos);
+                    if pos < n {
+                        eprintln!("Auto-scrolling to playing track...");
+                        self.imp()
+                            .queue
+                            .scroll_to(pos, gtk::ListScrollFlags::FOCUS, None);
+                    }
+                }
+            }
+        }
+    }
+
     pub fn bind_state(&self, player: &Player) {
         let player_queue = player.queue();
         let queue_title = self.imp().queue_title.get();
@@ -604,7 +627,6 @@ impl QueueView {
                                 adj.set_value(old_pos);
                             } else {
                                 this.imp().restore_last_pos.set(checks_left - 1);
-                                // this.imp().restore_last_pos.set(false);
                             }
                         }
                     }
@@ -725,6 +747,17 @@ impl QueueView {
                 ));
             }
         ));
+
+        player.connect_notify_local(
+            Some("queue-id"),
+            clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |_, _| {
+                    this.maybe_auto_scroll_to_playing();
+                }
+            ),
+        );
     }
 
     pub fn setup(

@@ -314,6 +314,10 @@
 		<key name="max-columns" type="u">
 			<default>7</default>
 		</key>
+		<key name="auto-scroll-to-playing" type="b">
+			<default>true</default>
+			<summary>Automatically scroll to the currently playing song in the queue</summary>
+		</key>
 	</schema>
 
 	<schema id="io.github.htkhiem.Euphonica.state" path="/io/github/htkhiem/Euphonica/state/">

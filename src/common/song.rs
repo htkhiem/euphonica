@@ -642,6 +642,9 @@ impl From<mpd::song::Song> for Song {
 impl From<SongInfo> for Song {
     fn from(info: SongInfo) -> Self {
         let res = glib::Object::new::<Self>();
+        if let Some(pos) = info.queue_pos {
+            res.imp().queue_pos.set(pos);
+        }
         let _ = res.imp().info.set(info);
         res
     }

@@ -67,6 +67,12 @@
             <property name="selected">1</property>
           </object>
         </child>
+        <child>
+          <object class="AdwSwitchRow" id="auto_scroll_to_playing">
+            <property name="title" translatable="true">Auto-scroll to currently playing</property>
+            <property name="subtitle" translatable="true">Automatically scroll the queue to highlight the currently playing song.</property>
+          </object>
+        </child>
       </object>
     </child>
     <child>

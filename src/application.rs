@@ -348,7 +348,7 @@ impl EuphonicaApplication {
         match action {
             0 => {
                 // The 'do nothing' option
-            },
+            }
             1 => {
                 glib::MainContext::default().block_on(player.pause());
             }
@@ -358,7 +358,7 @@ impl EuphonicaApplication {
             3 => {
                 glib::MainContext::default().block_on(player.clear_queue());
             }
-            _ => unimplemented!()
+            _ => unimplemented!(),
         }
     }
 
