@@ -40,22 +40,22 @@ The below were captured with a mix of dark and light modes.
 
 
 - Album View[^1]
-  <img width="1050" height="750" alt="album-view" src="https://github.com/user-attachments/assets/1d87df01-4dea-4a1c-8373-b71d2dd438fc" />
+  <img width="2100" height="1500" alt="album-view" src="https://github.com/user-attachments/assets/a262c79b-6078-4075-9986-7311fefc4d8e" />
   
 - UI at different sizes[^1]
-  <img width="1050" height="750" alt="mini-layouts" src="https://github.com/user-attachments/assets/9bf9c836-bb24-49df-8c71-22ede891bc01" />
+  <img width="2100" height="1500" alt="mini-ui" src="https://github.com/user-attachments/assets/234e4fb8-2d3c-444c-b2cc-605147989f35" />
 
 - Queue View[^1]
-  <img width="1050" height="750" alt="queue-view" src="https://github.com/user-attachments/assets/2b33ffe9-7639-4eb4-80f4-f95480017f69" />
+  <img width="2100" height="1500" alt="queue-view" src="https://github.com/user-attachments/assets/585547f5-95ca-4de7-b8c5-bd3de14948cd" />
 
 - Album wiki as fetched from Last.fm[^1][^2]
-  <img width="1050" height="750" alt="album-content-view" src="https://github.com/user-attachments/assets/4f9e0a94-7b4d-410a-882c-abbefe400e24" />
+  <img width="2100" height="1500" alt="album-content-view" src="https://github.com/user-attachments/assets/5ef8bcbc-53f2-44df-bb0d-8711bf03429f" />
   
 - Dynamic Playlist Editor[^1]
-  <img width="1050" height="750" alt="dyn-playlist-editor-view" src="https://github.com/user-attachments/assets/269b2561-5f25-4510-939f-49353c70e4d9" />
+  <img width="2100" height="1500" alt="dyn-playlist-editor" src="https://github.com/user-attachments/assets/971b1c88-59d1-4750-a72b-6af56bc7aa9a" />
 
 - Settings GUI for pretty much everything[^1]
-  ![visualiser-customisation](https://github.com/user-attachments/assets/baed1ece-be17-4f39-81b3-df17e1460417)
+  <img width="2100" height="1500" alt="viz-settings" src="https://github.com/user-attachments/assets/efc07616-e74a-4955-8f8b-da4c5762537d" />
 
 
 [^1]: Actual album arts and artist images have been replaced with random pictures from [Pexels](https://www.pexels.com/). All credits go to the original authors.
