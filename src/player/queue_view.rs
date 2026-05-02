@@ -156,10 +156,27 @@ mod imp {
                 ))
                 .build();
 
+            let action_scroll_to_playing = gio::ActionEntry::builder("scroll-to-playing")
+                .activate(clone!(
+                    #[weak]
+                    obj,
+                    move |_, _, _| {
+                        obj.scroll_to_playing();
+                    }
+                ))
+                .build();
+
             // Create a new action group and add actions to it
             let actions = gio::SimpleActionGroup::new();
-            actions.add_action_entries([action_clear_rating]);
+            actions.add_action_entries([action_clear_rating, action_scroll_to_playing]);
             self.obj().insert_action_group("queue-view", Some(&actions));
+
+            let shortcut_controller = gtk::ShortcutController::new();
+            let trigger = gtk::ShortcutTrigger::parse_string("<Shift>o");
+            let action = gtk::NamedAction::new("queue-view.scroll-to-playing");
+            let shortcut = gtk::Shortcut::new(trigger, Some(action));
+            shortcut_controller.add_shortcut(shortcut);
+            self.obj().add_controller(shortcut_controller);
         }
 
         fn signals() -> &'static [Signal] {
@@ -552,18 +569,12 @@ impl QueueView {
         }
     }
 
-    pub fn maybe_auto_scroll_to_playing(&self) {
-        let settings = settings_manager().child("ui");
-        if !settings.boolean("auto-scroll-to-playing") {
-            return;
-        }
+    pub fn scroll_to_playing(&self) {
         if let Some(model) = self.imp().queue.model() {
             let n = model.n_items();
             if let Some(player) = self.imp().player.upgrade() {
                 if let Some(pos) = player.queue_pos() {
-                    eprintln!("Playing pos: {}", pos);
                     if pos < n {
-                        eprintln!("Auto-scrolling to playing track...");
                         self.imp()
                             .queue
                             .scroll_to(pos, gtk::ListScrollFlags::FOCUS, None);
@@ -754,7 +765,10 @@ impl QueueView {
                 #[weak(rename_to = this)]
                 self,
                 move |_, _| {
-                    this.maybe_auto_scroll_to_playing();
+                    let settings = settings_manager().child("ui");
+                    if settings.boolean("auto-scroll-to-playing") {
+                        this.scroll_to_playing();
+                    }
                 }
             ),
         );
