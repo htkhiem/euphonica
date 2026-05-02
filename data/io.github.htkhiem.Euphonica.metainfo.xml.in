@@ -71,6 +71,26 @@
   </screenshots>
 
   <releases>
+    <release version="0.99.3-beta" date="2026-05-02">
+      <url type="details">https://github.com/htkhiem/euphonica/releases/tag/v0.99.3-beta</url>
+      <description>
+        <p>New: Drag-and-drop to reorder tracks in Queue View and Playlist Editor.</p>
+        <p>New: Volume knob now supports angular dragging for touchscreen use.</p>
+        <p>New: Queue View search by track name, artist or both.</p>
+        <p>New: Queue View now automatically scroll to playing track.</p>
+        <p>New: Optional playback actions upon closing Euphonica (do nothing, pause, stop, stop and clear queue). Defaults to 'do nothing'.</p>
+        <p>New: Cairo-based visualiser renderer in addition to the GSK one. Serves as the new default as it is usually more performant.</p>
+        <p>New: Overall significant visualiser performance improvements for both renderers especially on 4K+ displays.</p>
+        <p>Change: New, more compact seekbar design with animated wave-like lighting pattern. Volume knob also has a new gradients-based look.</p>
+        <p>Change: Play/pause button is now a suggested-action pill.</p>
+        <p>Change: More compact bottom bar design.</p>
+        <p>Change: Tweaked Now Playing pane to expose volume knob directly and symmetrically + use the new seekbar.</p>
+        <p>Change: Visualiser now uses Catmull-Rom curves instead for smoother looks.</p>
+        <p>Change: Default multi-artist tag delimiters adjusted to avoid splitting artists with '.ft' in their names.</p>
+        <p>Fix: Several memory leaks. Euphonica should now properly free a lot of memory upon backgrounding.</p>
+        <p>Fix: Queue View stuck at loading spinner upon resurfacing from background mode.</p>
+      </description>
+    </release>
     <release version="0.99.2-beta" date="2026-03-28">
       <url type="details">https://github.com/htkhiem/euphonica/releases/tag/v0.99.2-beta</url>
       <description>

@@ -16,7 +16,7 @@
     </child>
     <child>
       <object class="AdwBreakpoint">
-        <condition>max-width: 480</condition>
+        <condition>max-width: 530</condition>
         <setter object="split_view" property="collapsed">true</setter>
         <setter object="recent_view" property="collapsed">true</setter>
         <setter object="album_view" property="collapsed">true</setter>

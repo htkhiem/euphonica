@@ -1,14 +1,14 @@
 use adw::prelude::*;
 use adw::subclass::prelude::*;
 use gtk::{
-    CompositeTemplate, ListItem, SignalListItemFactory, SingleSelection, gdk, gio,
+    CompositeTemplate, CustomFilter, ListItem, SignalListItemFactory, SingleSelection, gdk, gio,
     glib::{self, Properties, WeakRef, clone, closure_local, subclass::Signal},
 };
 use mpd::{
     SaveMode,
     error::{Error as MpdError, ErrorCode as MpdErrorCode, ServerError},
 };
-use std::{cell::Cell, rc::Rc, sync::OnceLock};
+use std::{cell::Cell, cmp::Ordering, rc::Rc, sync::OnceLock};
 
 use super::PlayerPane;
 
@@ -17,7 +17,7 @@ use crate::{
     client::{ClientState, Error as ClientError},
     common::{ContentStack, RowEditButtons, Song, SongRow},
     player::controller::SwapDirection,
-    utils::{LazyInit, settings_manager},
+    utils::{LazyInit, g_search_substr, settings_manager},
     window::EuphonicaWindow,
 };
 
@@ -48,6 +48,20 @@ mod imp {
         pub consume: TemplateChild<gtk::ToggleButton>,
         #[template_child]
         pub clear_queue: TemplateChild<gtk::Button>,
+
+        #[template_child]
+        pub search_btn: TemplateChild<gtk::ToggleButton>,
+        #[template_child]
+        pub search_mode: TemplateChild<gtk::DropDown>,
+        #[template_child]
+        pub search_bar: TemplateChild<gtk::SearchBar>,
+        #[template_child]
+        pub search_entry: TemplateChild<gtk::SearchEntry>,
+
+        pub search_filter: CustomFilter,
+
+        // Keep last length to optimise search
+        pub last_search_len: Cell<usize>,
 
         #[template_child]
         pub save: TemplateChild<gtk::MenuButton>,
@@ -177,6 +191,83 @@ mod imp {
             let shortcut = gtk::Shortcut::new(trigger, Some(action));
             shortcut_controller.add_shortcut(shortcut);
             self.obj().add_controller(shortcut_controller);
+
+            // Set up search
+            let library_settings = settings_manager().child("library");
+            self.search_filter.set_filter_func(clone!(
+                #[weak(rename_to = this)]
+                self,
+                #[strong]
+                library_settings,
+                #[upgrade_or]
+                true,
+                move |obj| {
+                    let song = obj
+                        .downcast_ref::<Song>()
+                        .expect("Search obj has to be a common::Song.");
+
+                    let search_term = this.search_entry.text();
+                    if search_term.is_empty() {
+                        return true;
+                    }
+
+                    let case_sensitive = library_settings.boolean("search-case-sensitive");
+                    match this.search_mode.selected() {
+                        0 => {
+                            // Match either title or artist
+                            g_search_substr(Some(song.get_name()), &search_term, case_sensitive)
+                                || g_search_substr(
+                                    song.get_artist_tag(),
+                                    &search_term,
+                                    case_sensitive,
+                                )
+                        }
+                        1 => {
+                            // Match only title
+                            g_search_substr(Some(song.get_name()), &search_term, case_sensitive)
+                        }
+                        2 => {
+                            // Match only artist
+                            g_search_substr(song.get_artist_tag(), &search_term, case_sensitive)
+                        }
+                        _ => true,
+                    }
+                }
+            ));
+
+            let search_entry = self.search_entry.get();
+            search_entry.connect_search_changed(clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |entry| {
+                    let text = entry.text();
+                    let new_len = text.len();
+                    let old_len = this.last_search_len.replace(new_len);
+                    match new_len.cmp(&old_len) {
+                        Ordering::Greater => {
+                            this.search_filter.changed(gtk::FilterChange::MoreStrict);
+                        }
+                        Ordering::Less => {
+                            this.search_filter.changed(gtk::FilterChange::LessStrict);
+                        }
+                        Ordering::Equal => {
+                            this.search_filter.changed(gtk::FilterChange::Different);
+                        }
+                    }
+                }
+            ));
+
+            let search_mode = self.search_mode.get();
+            search_mode.connect_notify_local(
+                Some("selected"),
+                clone!(
+                    #[weak(rename_to = this)]
+                    self,
+                    move |_, _| {
+                        this.search_filter.changed(gtk::FilterChange::Different);
+                    }
+                ),
+            );
         }
 
         fn signals() -> &'static [Signal] {
@@ -243,7 +334,25 @@ impl QueueView {
         // Set selection mode
         // TODO: Allow click to jump to song
         let queue_model = player.queue().clone();
-        let sel_model = SingleSelection::new(Some(queue_model));
+
+        // Setup search bar
+        let search_bar = self.imp().search_bar.get();
+        let search_entry = self.imp().search_entry.get();
+        search_bar.connect_entry(&search_entry);
+
+        let search_btn = self.imp().search_btn.get();
+        search_btn
+            .bind_property("active", &search_bar, "search-mode-enabled")
+            .sync_create()
+            .build();
+
+        // Chain filter
+        let filter_model = gtk::FilterListModel::new(
+            Some(queue_model.clone()),
+            Some(self.imp().search_filter.clone()),
+        );
+        filter_model.set_incremental(true);
+        let sel_model = SingleSelection::new(Some(filter_model));
         self.imp().queue.set_model(Some(&sel_model));
 
         // Set up factory

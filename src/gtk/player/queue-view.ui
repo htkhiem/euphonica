@@ -36,6 +36,9 @@
         <property name="sidebar-width-fraction">0.45</property>
         <property name="sidebar">
           <object class="AdwNavigationPage">
+            <style>
+              <class name="light-left-edge"/>
+            </style>
             <property name="title" translatable="yes">Now Playing</property>
             <property name="tag">now_playing</property>
             <property name="child">
@@ -59,9 +62,6 @@
         </property>
         <property name="content">
           <object class="AdwNavigationPage">
-            <style>
-              <class name="light-right-edge"/>
-            </style>
             <property name="title" translatable="yes">Queue</property>
             <property name="tag">queue</property>
             <property name="child">
@@ -108,6 +108,12 @@
                             </style>
                           </object>
                         </child>
+                        <child>
+                          <object class="GtkToggleButton" id="search_btn">
+                            <property name="icon-name">edit-find-symbolic</property>
+                            <property name="tooltip-text" translatable="true">Search queue</property>
+                          </object>
+                        </child>
                       </object>
                     </child>
                     <child type="end">
@@ -119,6 +125,34 @@
                         <property name="action-name">navigation.push</property>
                         <property name="action-target">'now_playing'</property>
                         <property name="icon-name">play-symbolic</property>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+                <child type="top">
+                  <object class="GtkSearchBar" id="search_bar">
+                    <property name="key-capture-widget">queue_pane_view</property>
+                    <child>
+                      <object class="GtkBox">
+                        <property name="spacing">6</property>
+                        <child>
+                          <object class="GtkDropDown" id="search_mode">
+                            <property name="model">
+                              <object class="GtkStringList">
+                                <items>
+                                  <item translatable="yes">Either</item>
+                                  <item translatable="yes">Title</item>
+                                  <item translatable="yes">Artist</item>
+                                </items>
+                              </object>
+                            </property>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkSearchEntry" id="search_entry">
+                            <property name="width-request">100</property>
+                          </object>
+                        </child>
                       </object>
                     </child>
                   </object>

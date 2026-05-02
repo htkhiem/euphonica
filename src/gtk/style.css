@@ -92,6 +92,10 @@ listview > row {
 	border-right: 1px solid @borders;
 }
 
+.light-left-edge {
+	border-left: 1px solid @borders;
+}
+
 .player-pane {
     padding-left: 12px;
     padding-right: 12px;
