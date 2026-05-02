@@ -272,7 +272,7 @@ impl PlayerPane {
                 #[weak]
                 player,
                 move |knob: &VolumeKnob, _| {
-                    if knob.is_active() {
+                    if !knob.is_active() {
                         let val = knob.value().round() as i8;
                         glib::spawn_future_local(clone!(
                             #[weak]
