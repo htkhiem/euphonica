@@ -441,6 +441,7 @@ impl Connection {
         // eprintln!("Connected, now authenticating");
 
         // If there is a password configured, use it to authenticate.
+        let mut cred_store_fail = false;
         match password::get_mpd_password().map_err(|_| Error::CredentialStore) {
             Ok(Some(password)) => {
                 if let Err(e) = client.login(&password).map_err(Error::Mpd) {
@@ -451,14 +452,14 @@ impl Connection {
             Ok(None) => {
                 // eprintln!("No password was specified.");
             }
-            Err(e) => {
-                return Err(dbg!(e));
+            Err(_) => {
+                cred_store_fail = true;
             }
         }
 
         // Doubles as a litmus test to see if we are authenticated.
         if let Err(e) = client.subscribe(&self.wake_channel).map_err(Error::Mpd) {
-            return Err(dbg!(e));
+            return Err(dbg!(if cred_store_fail {Error::CredentialStore} else {e}));
         }
         // eprintln!("Subscribed to wake channel");
 
