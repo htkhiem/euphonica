@@ -25,7 +25,13 @@
     </child>
     <child>
       <object class="GtkButton" id="play_pause_btn">
+        <style>
+          <class name="pill"/>
+          <class name="play-button"/>
+          <class name="suggested-action"/>
+        </style>
         <property name="valign">center</property>
+        <property name="width-request">80</property>
         <child>
           <object class="GtkStack" id="play_pause_symbol">
             <property name="transition-type">rotate-left-right</property>
@@ -37,8 +43,7 @@
                     <property name="icon-name">pause-large-symbolic</property>
                     <property name="icon_size">1</property>
                     <style>
-                      <class name="circular"/>
-                      <class name="flat"/>
+                      <class name="pill"/>
                     </style>
                   </object>
                 </property>
@@ -61,10 +66,6 @@
             </child>
           </object>
         </child>
-        <style>
-          <class name="circular"/>
-          <class name="padding-6"/>
-        </style>
       </object>
     </child>
     <child>

@@ -27,10 +27,6 @@ mod imp {
         #[template_child]
         pub icon_btn: TemplateChild<gtk::MenuButton>,
         #[template_child]
-        pub icon: TemplateChild<gtk::Image>,
-        #[template_child]
-        pub name: TemplateChild<gtk::Label>,
-        #[template_child]
         pub enable_output: TemplateChild<gtk::Switch>,
         #[template_child]
         pub options_preview: TemplateChild<gtk::Label>,
@@ -70,32 +66,27 @@ glib::wrapper! {
 
 impl MpdOutput {
     fn set_dim(&self) {
-        let icon = self.imp().icon.get();
-        let label = self.imp().name.get();
-        let is_dimmed = icon.has_css_class("dim-label");
         let is_enabled = self.imp().enable_output.is_active();
+        let is_dimmed = self.has_css_class("dimmed");
         if is_enabled && is_dimmed {
-            icon.remove_css_class("dim-label");
-            label.remove_css_class("dim-label");
+            self.remove_css_class("dimmed");
         } else if !is_enabled && !is_dimmed {
-            icon.add_css_class("dim-label");
-            label.add_css_class("dim-label");
+            self.add_css_class("dimmed");
         }
     }
 
     pub fn update_state(&self, output: &Output) {
         // Get state
         let imp = self.imp();
-        let name = imp.name.get();
-        let icon = imp.icon.get();
         let enable_output = imp.enable_output.get();
         let options_preview = imp.options_preview.get();
 
-        name.set_label(&output.name);
+        let btn = self.imp().icon_btn.get();
+        btn.set_tooltip_text(Some(&output.name));
         if enable_output.is_active() != output.enabled {
             enable_output.set_active(output.enabled);
         }
-        icon.set_icon_name(Some(map_icon_name(&output.plugin)));
+        btn.set_icon_name(map_icon_name(&output.plugin));
         if !output.attributes.is_empty() {
             // Big TODO: editable runtime attributes
             let mut attribs: Vec<String> = Vec::with_capacity(output.attributes.len());
@@ -118,15 +109,19 @@ impl MpdOutput {
 
         let id = output.id;
         res.imp().enable_output.connect_active_notify(clone!(
-            #[weak] player,
+            #[weak]
+            player,
             move |sw| {
                 let active = sw.is_active();
                 glib::spawn_future_local(clone!(
-                    #[weak] player,
+                    #[weak]
+                    player,
                     async move {
                         match player.set_output(id, active).await {
                             Ok(()) => {}
-                            Err(e) => {dbg!(e);}
+                            Err(e) => {
+                                dbg!(e);
+                            }
                         }
                     }
                 ));

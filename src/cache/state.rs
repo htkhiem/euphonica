@@ -59,9 +59,9 @@ mod imp {
                 vec![
                     Signal::builder("folder-cover-set")
                         .param_types([
-                            String::static_type(), // folder URI
-                            gdk::Texture::static_type(),   // handle to hires texture
-                            gdk::Texture::static_type(),   // handle to thumbnail texture
+                            String::static_type(),       // folder URI
+                            gdk::Texture::static_type(), // handle to hires texture
+                            gdk::Texture::static_type(), // handle to thumbnail texture
                         ])
                         .build(),
                     Signal::builder("folder-cover-cleared")
@@ -71,9 +71,9 @@ mod imp {
                         .build(),
                     Signal::builder("artist-avatar-set")
                         .param_types([
-                            String::static_type(), // Artist name (may be part of a tag)
-                            gdk::Texture::static_type(),   // handle to hires texture
-                            gdk::Texture::static_type(),   // handle to thumbnail texture
+                            String::static_type(),       // Artist name (may be part of a tag)
+                            gdk::Texture::static_type(), // handle to hires texture
+                            gdk::Texture::static_type(), // handle to thumbnail texture
                         ])
                         .build(),
                     Signal::builder("artist-avatar-cleared")

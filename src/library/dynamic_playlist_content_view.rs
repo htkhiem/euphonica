@@ -1,7 +1,10 @@
 use super::{DynamicPlaylistView, Library, artist_tag::ArtistTag};
 use crate::{
     cache::{Cache, sqlite},
-    common::{ContentView, DynamicPlaylist, Song, SongRow, dynamic_playlist::AutoRefresh, INodeType, inode::INodeInfo, ImageStack, ContentStack},
+    common::{
+        ContentStack, ContentView, DynamicPlaylist, INodeType, ImageStack, Song, SongRow,
+        dynamic_playlist::AutoRefresh, inode::INodeInfo,
+    },
     utils::{self, format_secs_as_duration, get_time_ago_desc},
     window::EuphonicaWindow,
 };
@@ -134,7 +137,10 @@ mod imp {
                                 (this.library.upgrade(), this.dp.borrow_mut().as_ref())
                             {
                                 this.obj().set_is_queuing(true);
-                                if let Err(e) = library.queue_cached_dynamic_playlist(dp.name.to_owned(), true, true).await {
+                                if let Err(e) = library
+                                    .queue_cached_dynamic_playlist(dp.name.to_owned(), true, true)
+                                    .await
+                                {
                                     dbg!(e);
                                 }
                                 this.obj().set_is_queuing(false);
@@ -156,7 +162,10 @@ mod imp {
                                 (this.library.upgrade(), this.dp.borrow_mut().as_ref())
                             {
                                 this.obj().set_is_queuing(true);
-                                if let Err(e) = library.queue_cached_dynamic_playlist(dp.name.to_owned(), false, false).await {
+                                if let Err(e) = library
+                                    .queue_cached_dynamic_playlist(dp.name.to_owned(), false, false)
+                                    .await
+                                {
                                     dbg!(e);
                                 }
                                 this.obj().set_is_queuing(false);
@@ -215,8 +224,8 @@ mod imp {
                                     .expect("ashpd file open await failure")
                                     .response();
 
-                                sender.send(
-                                    match maybe_files {
+                                sender
+                                    .send(match maybe_files {
                                         Ok(files) => {
                                             let uris = files.uris();
                                             if !uris.is_empty() {
@@ -229,25 +238,25 @@ mod imp {
                                             dbg!(err);
                                             None
                                         }
-                                    }
-                                ).expect("Broken oneshot sender");
-
+                                    })
+                                    .expect("Broken oneshot sender");
                             });
                             glib::spawn_future_local(async move {
                                 if let Some(path) = receiver.await.expect("Broken oneshot receiver")
-                                    && !path.is_empty() {
-                                        // Assume ashpd always return filesystem spec
-                                        let filepath =
-                                            urlencoding::decode(if path.starts_with("file://") {
-                                                &path[7..]
-                                            } else {
-                                                &path
-                                            })
-                                            .expect("Path must be in UTF-8")
-                                            .into_owned();
-                                        utils::export_to_json(&dp, &filepath)
-                                            .expect("Unable to write file");
-                                    }
+                                    && !path.is_empty()
+                                {
+                                    // Assume ashpd always return filesystem spec
+                                    let filepath =
+                                        urlencoding::decode(if path.starts_with("file://") {
+                                            &path[7..]
+                                        } else {
+                                            &path
+                                        })
+                                        .expect("Path must be in UTF-8")
+                                        .into_owned();
+                                    utils::export_to_json(&dp, &filepath)
+                                        .expect("Unable to write file");
+                                }
                             });
                         }
                     }
@@ -267,15 +276,26 @@ mod imp {
                                     (this.dp.borrow().as_ref(), this.library.upgrade())
                                 {
                                     let window = this.window.upgrade().unwrap();
-                                    match library.save_dynamic_playlist_state(dp.name.to_owned()).await {
+                                    match library
+                                        .save_dynamic_playlist_state(dp.name.to_owned())
+                                        .await
+                                    {
                                         Ok(Some(fixed_name)) => {
                                             window.goto_playlist(
-                                                &INodeInfo::new(&fixed_name, None, INodeType::Playlist).into(),
+                                                &INodeInfo::new(
+                                                    &fixed_name,
+                                                    None,
+                                                    INodeType::Playlist,
+                                                )
+                                                .into(),
                                             );
                                         }
                                         Ok(None) => {
                                             // TODO: translations
-                                            window.send_simple_toast("No songs to save as fixed playlist", 5);
+                                            window.send_simple_toast(
+                                                "No songs to save as fixed playlist",
+                                                5,
+                                            );
                                         }
                                         Err(e) => {
                                             dbg!(e);
@@ -444,26 +464,31 @@ impl DynamicPlaylistContentView {
 
     async fn update_cover(&self, name: String) {
         self.imp().cover.show_spinner();
-        match self.imp().cache.get().unwrap().get_playlist_cover(name, true, false).await {
+        match self
+            .imp()
+            .cache
+            .get()
+            .unwrap()
+            .get_playlist_cover(name, true, false)
+            .await
+        {
             Ok(Some(tex)) => {
                 self.imp().cover.show(&tex);
             }
             Ok(None) => {
                 self.imp().cover.clear();
             }
-            Err(e) => {dbg!(e);}
+            Err(e) => {
+                dbg!(e);
+            }
         }
     }
 
     #[inline]
     fn update_song_list(&self, songs: &[Song]) {
-        self.imp()
-            .runtime
-            .set_label(
-                &format_secs_as_duration(
-                    songs.iter().map(|s| s.get_duration()).sum::<u64>() as f64
-                )
-            );
+        self.imp().runtime.set_label(&format_secs_as_duration(
+            songs.iter().map(|s| s.get_duration()).sum::<u64>() as f64,
+        ));
         self.imp().track_count.set_label(&songs.len().to_string());
         self.imp().song_list.extend_from_slice(songs);
         self.imp().last_refreshed.set_label(&get_time_ago_desc(
@@ -539,14 +564,14 @@ impl DynamicPlaylistContentView {
                     // Check whether we need to perform an auto-refresh
                     if dp.auto_refresh != AutoRefresh::None
                         && OffsetDateTime::now_utc().unix_timestamp() - last_refresh
-                        > match dp.auto_refresh {
-                            AutoRefresh::None => i64::MAX,
-                            AutoRefresh::Hourly => 3600,
-                            AutoRefresh::Daily => 86400,
-                            AutoRefresh::Weekly => 86400 * 7,
-                            AutoRefresh::Monthly => 86400 * 30,
-                            AutoRefresh::Yearly => 86400 * 365,
-                        }
+                            > match dp.auto_refresh {
+                                AutoRefresh::None => i64::MAX,
+                                AutoRefresh::Hourly => 3600,
+                                AutoRefresh::Daily => 86400,
+                                AutoRefresh::Weekly => 86400 * 7,
+                                AutoRefresh::Monthly => 86400 * 30,
+                                AutoRefresh::Yearly => 86400 * 365,
+                            }
                     {
                         if let Some(window) = self.imp().window.upgrade() {
                             window.send_simple_toast("Auto-refreshing...", 3);

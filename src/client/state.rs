@@ -1,11 +1,9 @@
 use gtk::glib::{
-    self,
-    BoxedAnyObject,
+    self, BoxedAnyObject, Properties, derived_properties,
     prelude::*,
-    subclass::{Signal, prelude::*}, Properties, derived_properties
+    subclass::{Signal, prelude::*},
 };
 use std::{cell::Cell, sync::OnceLock};
-
 
 #[derive(Default, Debug, Copy, Clone, PartialEq, Eq, glib::Enum)]
 #[enum_type(name = "EuphonicaConnectionState")]
@@ -75,7 +73,7 @@ mod imp {
                 pct_done_bg_tasks: Cell::new(0.0),
                 has_pending: Cell::new(false),
                 stickers_support_level: Cell::default(),
-                supports_playlists: Cell::new(true)
+                supports_playlists: Cell::new(true),
             }
         }
     }
@@ -90,7 +88,7 @@ mod imp {
                         .param_types([
                             BoxedAnyObject::static_type(), // mpd::Subsystem::to_str
                         ])
-                        .build()
+                        .build(),
                 ]
             })
         }

@@ -1,18 +1,19 @@
 use super::{Library, generic_row::GenericRow};
 use crate::{
     cache::Cache,
-    common::{INode, INodeType, ContentStack},
+    common::{ContentStack, INode, INodeType},
     utils::{LazyInit, g_cmp_str_options, settings_manager},
 };
 use adw::prelude::*;
 use adw::subclass::prelude::*;
-use glib::{ParamSpec, ParamSpecBoolean, WeakRef, clone, subclass::Signal};
+use glib::{ParamSpec, ParamSpecBoolean, SignalHandlerId, WeakRef, clone, subclass::Signal};
 use gtk::{
-    CompositeTemplate, ListItem, SignalListItemFactory, SingleSelection, 
+    CompositeTemplate, ListItem, SignalListItemFactory, SingleSelection,
+    gio::{ActionEntry, SimpleActionGroup},
     glib,
-    gio::{ActionEntry, SimpleActionGroup}
 };
 use once_cell::sync::Lazy;
+use std::cell::RefCell;
 use std::{cell::Cell, cmp::Ordering, rc::Rc, sync::OnceLock};
 
 // Folder view implementation
@@ -80,8 +81,10 @@ mod imp {
         // if they now match.
         pub last_search_len: Cell<usize>,
         pub library: WeakRef<Library>,
+        pub sort_by_id: RefCell<Option<SignalHandlerId>>,
+        pub sort_direction_id: RefCell<Option<SignalHandlerId>>,
         pub collapsed: Cell<bool>,
-        pub initializing: Cell<bool>
+        pub initializing: Cell<bool>,
     }
 
     #[glib::object_subclass]
@@ -105,7 +108,12 @@ mod imp {
             while let Some(child) = self.obj().first_child() {
                 child.unparent();
             }
-            println!("Disposing folder view");
+            if let Some(id) = self.sort_by_id.take() {
+                self.sorter.disconnect(id);
+            }
+            if let Some(id) = self.sort_direction_id.take() {
+                self.sorter.disconnect(id);
+            }
         }
 
         fn constructed(&self) {
@@ -117,7 +125,9 @@ mod imp {
                 self,
                 move |_| {
                     glib::spawn_future_local(clone!(
-                        #[weak] this, async move {
+                        #[weak]
+                        this,
+                        async move {
                             if let Some(lib) = this.library.upgrade() {
                                 lib.folder_backward().await;
                             }
@@ -131,7 +141,9 @@ mod imp {
                 self,
                 move |_| {
                     glib::spawn_future_local(clone!(
-                        #[weak] this, async move {
+                        #[weak]
+                        this,
+                        async move {
                             if let Some(lib) = this.library.upgrade() {
                                 lib.folder_forward().await;
                             }
@@ -267,7 +279,7 @@ mod imp {
             ));
 
             // Update when changing sort settings
-            state.connect_changed(
+            self.sort_by_id.replace(Some(state.connect_changed(
                 Some("sort-by"),
                 clone!(
                     #[weak(rename_to = this)]
@@ -277,8 +289,8 @@ mod imp {
                         this.sorter.changed(gtk::SorterChange::Different);
                     }
                 ),
-            );
-            state.connect_changed(
+            )));
+            self.sort_direction_id.replace(Some(state.connect_changed(
                 Some("sort-direction"),
                 clone!(
                     #[weak(rename_to = this)]
@@ -289,7 +301,7 @@ mod imp {
                         this.sorter.changed(gtk::SorterChange::Inverted);
                     }
                 ),
-            );
+            )));
 
             // Setup searching
             library_settings
@@ -454,9 +466,15 @@ impl FolderView {
         //   - Send an lsinfo query with the newly-updated URI.
         //   - Switch to loading page.
         // - Else: do nothing (adding songs and playlists are done with buttons to the right of each row).
-        glib::spawn_future_local(clone!(#[weak(rename_to = this)] self, #[weak] inode, async move {
-            if let Some(name) = inode.get_name()
-                && inode.get_info().inode_type == INodeType::Folder {
+        glib::spawn_future_local(clone!(
+            #[weak(rename_to = this)]
+            self,
+            #[weak]
+            inode,
+            async move {
+                if let Some(name) = inode.get_name()
+                    && inode.get_info().inode_type == INodeType::Folder
+                {
                     let stack = this.imp().stack.get();
                     stack.show_spinner();
                     this.library().navigate_to(name).await;
@@ -466,7 +484,8 @@ impl FolderView {
                         stack.show_placeholder();
                     }
                 }
-        }));
+            }
+        ));
     }
 
     fn setup_listview(&self, _cache: Rc<Cache>, library: Library) {
@@ -537,17 +556,15 @@ impl LazyInit for FolderView {
                 let stack = self.imp().stack.get();
                 let this = self.clone();
                 stack.show_spinner();
-                glib::spawn_future_local(
-                    async move {
-                        library.get_folder_contents().await;
-                        if library.folder_inodes().n_items() > 0 {
-                            stack.show_content();
-                        } else {
-                            stack.show_placeholder();
-                        }
-                        this.imp().initializing.set(false);
+                glib::spawn_future_local(async move {
+                    library.get_folder_contents().await;
+                    if library.folder_inodes().n_items() > 0 {
+                        stack.show_content();
+                    } else {
+                        stack.show_placeholder();
                     }
-                );
+                    this.imp().initializing.set(false);
+                });
             }
         }
     }

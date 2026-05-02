@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::rc::Rc;
 use std::{cell::Cell, sync::OnceLock};
 
@@ -8,13 +9,13 @@ use gtk::{
     glib::{self},
 };
 
-use glib::{Properties, WeakRef, clone, closure_local, subclass::Signal};
+use glib::{Properties, SignalHandlerId, WeakRef, clone, closure_local, subclass::Signal};
 
 use super::{AlbumCell, ArtistCell, Library};
 use crate::{
-    client::{Result as ClientResult},
     cache::Cache,
-    common::{Album, Artist, RowAddButtons, Song, SongRow, marquee::MarqueeWrapMode, ContentStack},
+    client::Result as ClientResult,
+    common::{Album, Artist, ContentStack, RowAddButtons, Song, SongRow, marquee::MarqueeWrapMode},
     player::Player,
     utils::LazyInit,
     window::EuphonicaWindow,
@@ -65,6 +66,8 @@ mod imp {
         pub song_list: TemplateChild<gtk::ListBox>,
 
         pub library: WeakRef<Library>,
+        pub player: WeakRef<Player>,
+        pub history_changed_id: RefCell<Option<SignalHandlerId>>,
 
         #[property(get, set)]
         pub collapsed: Cell<bool>,
@@ -92,6 +95,11 @@ mod imp {
             while let Some(child) = self.obj().first_child() {
                 child.unparent();
             }
+            if let Some(id) = self.history_changed_id.take() {
+                if let Some(player) = self.obj().imp().player.upgrade() {
+                    player.disconnect(id);
+                }
+            }
         }
 
         fn constructed(&self) {
@@ -112,15 +120,22 @@ mod imp {
             ));
 
             self.clear.connect_clicked(clone!(
-                #[weak(rename_to = this)] self,
+                #[weak(rename_to = this)]
+                self,
                 move |_| {
-                    glib::spawn_future_local(clone!(#[weak] this, async move {
-                        if let Err(e) = this.library.upgrade().unwrap().clear_recent_songs().await {
-                            dbg!(e);
-                        } else {
-                            this.obj().on_history_changed();
+                    glib::spawn_future_local(clone!(
+                        #[weak]
+                        this,
+                        async move {
+                            if let Err(e) =
+                                this.library.upgrade().unwrap().clear_recent_songs().await
+                            {
+                                dbg!(e);
+                            } else {
+                                this.obj().on_history_changed();
+                            }
                         }
-                    }));
+                    ));
                 }
             ));
 
@@ -215,18 +230,21 @@ impl RecentView {
         window: &EuphonicaWindow,
     ) {
         self.imp().library.set(Some(library));
+        self.imp().player.set(Some(player));
 
-        player.connect_closure(
-            "history-changed",
-            false,
-            closure_local!(
-                #[weak(rename_to = this)]
-                self,
-                move |_: Player| {
-                    this.on_history_changed();
-                }
-            ),
-        );
+        self.imp()
+            .history_changed_id
+            .replace(Some(player.connect_closure(
+                "history-changed",
+                false,
+                closure_local!(
+                    #[weak(rename_to = this)]
+                    self,
+                    move |_: Player| {
+                        this.on_history_changed();
+                    }
+                ),
+            )));
 
         self.setup_album_row(window, cache.clone());
         self.setup_artist_row(window, cache.clone());
@@ -234,11 +252,15 @@ impl RecentView {
     }
 
     pub fn on_history_changed(&self) {
-        glib::spawn_future_local(clone!(#[weak(rename_to = this)] self, async move {
-            if let Err(e) = this.init_recent(true).await {
-                dbg!(e);
+        glib::spawn_future_local(clone!(
+            #[weak(rename_to = this)]
+            self,
+            async move {
+                if let Err(e) = this.init_recent(true).await {
+                    dbg!(e);
+                }
             }
-        }));
+        ));
     }
 
     fn setup_album_row(&self, window: &EuphonicaWindow, cache: Rc<Cache>) {
@@ -383,7 +405,7 @@ impl RecentView {
                 let artist_cell = ArtistCell::new(
                     item, cache,
                     // Only displaying at most 30 artists, so we can be the one to fetch externally
-                    true
+                    true,
                 );
                 item.set_child(Some(&artist_cell));
                 adj.set_value(0.0);
@@ -486,10 +508,14 @@ impl RecentView {
 
 impl LazyInit for RecentView {
     fn populate(&self) {
-        glib::spawn_future_local(clone!(#[weak(rename_to = this)] self, async move {
-            if let Err(e) = this.init_recent(false).await {
-                dbg!(e);
+        glib::spawn_future_local(clone!(
+            #[weak(rename_to = this)]
+            self,
+            async move {
+                if let Err(e) = this.init_recent(false).await {
+                    dbg!(e);
+                }
             }
-        }));
+        ));
     }
 }

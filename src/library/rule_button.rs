@@ -1,12 +1,13 @@
-use std::{cell::Cell, ops::RangeBounds, str::FromStr};
-use once_cell::sync::Lazy;
+use glib::Properties;
 use gtk::{
     CompositeTemplate,
-    glib::{self, WeakRef, Object, clone}, 
-    prelude::*, subclass::prelude::*
+    glib::{self, Object, WeakRef, clone},
+    prelude::*,
+    subclass::prelude::*,
 };
 use mpd::search::Operation as TagOperation;
-use glib::Properties;
+use once_cell::sync::Lazy;
+use std::{cell::Cell, ops::RangeBounds, str::FromStr};
 
 use crate::common::{
     Stickers,

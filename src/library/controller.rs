@@ -243,7 +243,7 @@ impl Library {
     }
 
     pub async fn rate_album(&self, album: &Album, score: Option<i8>) -> ClientResult<()> {
-        if let Some(score) = score {             
+        if let Some(score) = score {
             self.client()
                 .set_sticker(
                     tags::ALBUM,
@@ -683,9 +683,10 @@ impl Library {
                     .collect();
                 for song in filtered.iter() {
                     if let Some(album) = song.album.as_ref()
-                        && visited_albums.insert(album.get_comp_id().to_owned()) {
-                            respond_album(album.clone().into());
-                        }
+                        && visited_albums.insert(album.get_comp_id().to_owned())
+                    {
+                        respond_album(album.clone().into());
+                    }
                 }
                 respond_song(filtered.into_iter().map(|si| si.into()).collect());
             })

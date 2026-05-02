@@ -23,6 +23,8 @@ mod imp {
         pub use_hires_for_album_cells: TemplateChild<adw::SwitchRow>,
         #[template_child]
         pub title_wrap_mode: TemplateChild<adw::ComboRow>,
+        #[template_child]
+        pub auto_scroll_to_playing: TemplateChild<adw::SwitchRow>,
 
         #[template_child]
         pub use_album_art_as_bg: TemplateChild<adw::ExpanderRow>,
@@ -39,6 +41,8 @@ mod imp {
 
         #[template_child]
         pub use_visualizer: TemplateChild<adw::ExpanderRow>,
+        #[template_child]
+        pub visualizer_use_cairo: TemplateChild<adw::SwitchRow>,
         #[template_child]
         pub visualizer_min_hz: TemplateChild<adw::SpinRow>,
         #[template_child]
@@ -116,7 +120,11 @@ impl UIPreferences {
             .build();
         let use_hires_for_album_cells = imp.use_hires_for_album_cells.get();
         ui_settings
-            .bind("use-hires-for-album-cells", &use_hires_for_album_cells, "active")
+            .bind(
+                "use-hires-for-album-cells",
+                &use_hires_for_album_cells,
+                "active",
+            )
             .build();
         let title_wrap_mode = imp.title_wrap_mode.get();
         ui_settings
@@ -136,6 +144,11 @@ impl UIPreferences {
                         .into(),
                 )
             })
+            .build();
+
+        let auto_scroll_to_playing = imp.auto_scroll_to_playing.get();
+        ui_settings
+            .bind("auto-scroll-to-playing", &auto_scroll_to_playing, "active")
             .build();
         let use_album_art_as_bg = imp.use_album_art_as_bg.get();
         let bg_blur_radius = imp.bg_blur_radius.get();
@@ -183,6 +196,14 @@ impl UIPreferences {
 
         ui_settings
             .bind("vol-knob-sensitivity", &vol_knob_sensitivity, "value")
+            .build();
+
+        ui_settings
+            .bind(
+                "visualizer-use-cairo",
+                &imp.visualizer_use_cairo.get(),
+                "active",
+            )
             .build();
 
         ui_settings

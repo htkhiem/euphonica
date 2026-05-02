@@ -1,7 +1,10 @@
-use gtk::{CompositeTemplate, gdk::{self}, prelude::*, subclass::prelude::*, glib::{
-    self,
-    Properties, derived_properties
-}};
+use gtk::{
+    CompositeTemplate,
+    gdk::{self},
+    glib::{self, Properties, derived_properties},
+    prelude::*,
+    subclass::prelude::*,
+};
 use std::cell::Cell;
 
 use crate::cache::placeholders::{ALBUMART_PLACEHOLDER, ALBUMART_THUMBNAIL_PLACEHOLDER};
@@ -23,7 +26,7 @@ mod imp {
         #[property(get, set)]
         pub size: Cell<i32>,
         #[property(get)]
-        pub is_thumbnail: Cell<bool>
+        pub is_thumbnail: Cell<bool>,
     }
 
     // The central trait for subclassing a GObject
@@ -94,13 +97,11 @@ impl ImageStack {
 
     #[inline]
     fn show_placeholder(&self, thumb: bool) {
-        self.imp().image.set_paintable(Some(
-            if thumb {
-                &*ALBUMART_THUMBNAIL_PLACEHOLDER
-            } else {
-                &*ALBUMART_PLACEHOLDER
-            }
-        ));
+        self.imp().image.set_paintable(Some(if thumb {
+            &*ALBUMART_THUMBNAIL_PLACEHOLDER
+        } else {
+            &*ALBUMART_PLACEHOLDER
+        }));
     }
 
     pub fn set_is_thumbnail(&self, new: bool) {
@@ -117,14 +118,24 @@ impl ImageStack {
 
     pub fn clear(&self) {
         self.show_placeholder(self.imp().is_thumbnail.get());
-        if self.imp().stack.visible_child_name().is_none_or(|name| name != "image")  {
+        if self
+            .imp()
+            .stack
+            .visible_child_name()
+            .is_none_or(|name| name != "image")
+        {
             self.imp().stack.set_visible_child_name("image");
         }
         self.set_state(ImageState::Empty);
     }
 
     pub fn show_spinner(&self) {
-        if self.imp().stack.visible_child_name().is_none_or(|name| name != "spinner")  {
+        if self
+            .imp()
+            .stack
+            .visible_child_name()
+            .is_none_or(|name| name != "spinner")
+        {
             self.imp().stack.set_visible_child_name("spinner");
         }
         if self.get_state() == ImageState::Image {
@@ -135,7 +146,12 @@ impl ImageStack {
 
     pub fn show(&self, paintable: &impl IsA<gdk::Paintable>) {
         self.imp().image.set_paintable(Some(paintable));
-        if self.imp().stack.visible_child_name().is_none_or(|name| name != "image")  {
+        if self
+            .imp()
+            .stack
+            .visible_child_name()
+            .is_none_or(|name| name != "image")
+        {
             self.imp().stack.set_visible_child_name("image");
         }
         self.set_state(ImageState::Image);

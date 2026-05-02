@@ -1,4 +1,4 @@
-use gtk::{gsk, glib};
+use gtk::{glib, gsk};
 
 /// Our version of gsk::BlendMode, with additional methods to facilitate storing in GSettings.
 #[derive(Default, Debug, Clone, Copy, Eq, PartialEq, glib::Enum)]

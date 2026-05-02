@@ -683,9 +683,10 @@ impl Player {
         if self.imp().use_visualizer.get() && self.imp().is_foreground.get() {
             let output = self.imp().fft_data.clone();
             if let Some(backend) = self.imp().fft_backend.borrow().as_ref()
-                && backend.clone().start(output).is_err() {
-                    eprintln!("Failed to start FFT backend");
-                };
+                && backend.clone().start(output).is_err()
+            {
+                eprintln!("Failed to start FFT backend");
+            };
         }
     }
 
@@ -712,7 +713,7 @@ impl Player {
         self.imp().current_song.borrow().as_ref().cloned()
     }
 
-    pub async fn clear(&self) -> ClientResult<()> {
+    pub fn clear(&self) -> ClientResult<()> {
         self.stop_polling();
         self.imp().queue.remove_all();
         self.imp().outputs.remove_all();
@@ -758,7 +759,7 @@ impl Player {
                                     }
                                 }
                                 ConnectionState::Connecting => {
-                                    if let Err(e) = this.clear().await {
+                                    if let Err(e) = this.clear() {
                                         dbg!(e);
                                     }
                                 }
@@ -1471,6 +1472,10 @@ impl Player {
         self.client()?.set_mixramp_delay(new).await
     }
 
+    pub fn state(&self) -> PlaybackState {
+        self.imp().state.get()
+    }
+
     pub fn title(&self) -> Option<String> {
         self.current_song().map(|s| s.get_name().to_owned())
     }
@@ -1660,6 +1665,14 @@ impl Player {
         self.client()?.clear_queue().await
     }
 
+    pub async fn pause(&self) -> ClientResult<()> {
+        self.client()?.pause(true).await
+    }
+
+    pub async fn stop(&self) -> ClientResult<()> {
+        self.client()?.stop().await
+    }
+
     pub async fn send_set_volume(&self, val: i8) -> ClientResult<()> {
         let old_vol = self.imp().volume.replace(val);
         if old_vol != val {
@@ -1739,6 +1752,24 @@ impl Player {
             }
         }
         Ok(())
+    }
+
+    pub async fn move_to(&self, song: &Song, to_pos: u32) -> ClientResult<()> {
+        self.register_local_queue_changes(1);
+        // Perform local update first
+        // We need to remove the item from the liststore, then add it back in.
+        // After removal, if the item precedes the target pos, the target pos would
+        // be one behind the original one.
+        let local_new_pos = if song.get_queue_pos() < to_pos {
+            to_pos - 1
+        } else {
+            to_pos
+        };
+        self.imp().queue.remove(song.get_queue_pos());
+        self.imp().queue.insert(local_new_pos, song);
+        self.client()?
+            .move_id(song.get_queue_id(), to_pos as usize)
+            .await
     }
 
     pub async fn save_queue(&self, name: String, save_mode: SaveMode) -> ClientResult<()> {

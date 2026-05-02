@@ -67,6 +67,12 @@
             <property name="selected">1</property>
           </object>
         </child>
+        <child>
+          <object class="AdwSwitchRow" id="auto_scroll_to_playing">
+            <property name="title" translatable="true">Auto-scroll to currently playing</property>
+            <property name="subtitle" translatable="true">Automatically scroll the queue to highlight the currently playing song.</property>
+          </object>
+        </child>
       </object>
     </child>
     <child>
@@ -241,6 +247,12 @@
                     <property name="step-increment">0.05</property>
                   </object>
                 </property>
+              </object>
+            </child>
+            <child>
+              <object class="AdwSwitchRow" id="visualizer_use_cairo">
+                <property name="title" translatable="true">Use Cairo renderer</property>
+                <property name="subtitle" translatable="true">On certain hardware (e.g., NVIDIA GPUs), the CPU-based Cairo renderer may be faster at drawing the visualiser.</property>
               </object>
             </child>
             <child>

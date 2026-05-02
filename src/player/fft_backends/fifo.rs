@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use gtk::{
     gio::{self, prelude::*},
-    glib::{self, clone}
+    glib::{self, clone},
 };
 use std::{
     cell::RefCell,

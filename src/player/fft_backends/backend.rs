@@ -1,10 +1,10 @@
+use crate::player::Player;
+use async_trait::async_trait;
+use gtk::glib::{self, prelude::*};
 use std::{
     rc::Rc,
     sync::{Arc, Mutex},
 };
-use gtk::{glib::{self, prelude::*}};
-use async_trait::async_trait;
-use crate::player::Player;
 
 #[derive(Clone, Copy, Debug, glib::Enum, PartialEq, Default)]
 #[enum_type(name = "EuphonicaFftStatus")]

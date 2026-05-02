@@ -3,18 +3,24 @@ use std::str::FromStr;
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
-use gtk::{CompositeTemplate, glib::{self, closure_local}};
+use gtk::{
+    CompositeTemplate,
+    glib::{self, closure_local},
+};
 
 use glib::clone;
 
 use mpd::status::AudioFormat;
 
 use crate::{
-    application::EuphonicaApplication, client::{
+    application::EuphonicaApplication,
+    client::{
         ClientState, ConnectionState,
         password::{get_mpd_password_async, set_mpd_password},
         state::StickersSupportLevel,
-    }, player::{FftStatus, Player}, utils
+    },
+    player::{FftStatus, Player},
+    utils,
 };
 
 // Allows us to implicitly grant read access to files outside of the sandbox.
@@ -633,7 +639,9 @@ impl ClientPreferences {
                     )
                     .expect("Cannot save visualizer settings");
                 glib::spawn_future_local(clone!(
-                    #[weak] player, async move {
+                    #[weak]
+                    player,
+                    async move {
                         player.restart_fft_thread().await;
                     }
                 ));

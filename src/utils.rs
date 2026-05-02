@@ -1,12 +1,16 @@
 use crate::cache::sqlite;
 use crate::config::APPLICATION_ID;
 use aho_corasick::AhoCorasick;
-use gtk::{gdk, glib, gio::{self, prelude::*}, Ordering};
-use image::{imageops::FilterType, DynamicImage, RgbImage};
+use gtk::{
+    Ordering, gdk,
+    gio::{self, prelude::*},
+    glib,
+};
+use image::{DynamicImage, RgbImage, imageops::FilterType};
 use mpd::status::AudioFormat;
 use once_cell::sync::Lazy;
-use serde::de::DeserializeOwned;
 use serde::Serialize;
+use serde::de::DeserializeOwned;
 use std::cell::RefCell;
 use std::fmt::Write;
 use std::fs::File;
@@ -16,10 +20,10 @@ use std::sync::OnceLock;
 use std::sync::RwLock;
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
-use time::error::IndeterminateOffset;
-use time::format_description::{parse_owned, OwnedFormatItem};
 use time::OffsetDateTime;
 use time::UtcOffset;
+use time::error::IndeterminateOffset;
+use time::format_description::{OwnedFormatItem, parse_owned};
 use tokio::runtime::Runtime;
 use uuid::Uuid;
 
@@ -276,8 +280,7 @@ impl RegisteredImage {
                 .set_format(gdk::MemoryFormat::R8g8b8)
                 .set_stride((rgb_image.width() * 3) as usize)
                 .set_bytes(Some(&glib::Bytes::from_owned(rgb_image.into_raw())))
-                .build()
-            )
+                .build())
         } else {
             let mut res = get_image_cache_path();
             res.push(&self.name);

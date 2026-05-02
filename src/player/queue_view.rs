@@ -1,14 +1,19 @@
 use adw::prelude::*;
 use adw::subclass::prelude::*;
 use gtk::{
-    CompositeTemplate, ListItem, SignalListItemFactory, SingleSelection, gio,
-    glib::{self, Properties, WeakRef, clone, closure_local, subclass::Signal},
+    CompositeTemplate, CustomFilter, ListItem, SignalListItemFactory, SingleSelection, gdk, gio,
+    glib::{self, Properties, SignalHandlerId, WeakRef, clone, closure_local, subclass::Signal},
 };
 use mpd::{
     SaveMode,
     error::{Error as MpdError, ErrorCode as MpdErrorCode, ServerError},
 };
-use std::{cell::Cell, rc::Rc, sync::OnceLock};
+use std::{
+    cell::{Cell, RefCell},
+    cmp::Ordering,
+    rc::Rc,
+    sync::OnceLock,
+};
 
 use super::PlayerPane;
 
@@ -17,7 +22,7 @@ use crate::{
     client::{ClientState, Error as ClientError},
     common::{ContentStack, RowEditButtons, Song, SongRow},
     player::controller::SwapDirection,
-    utils::LazyInit,
+    utils::{LazyInit, g_search_substr, settings_manager},
     window::EuphonicaWindow,
 };
 
@@ -50,6 +55,20 @@ mod imp {
         pub clear_queue: TemplateChild<gtk::Button>,
 
         #[template_child]
+        pub search_btn: TemplateChild<gtk::ToggleButton>,
+        #[template_child]
+        pub search_mode: TemplateChild<gtk::DropDown>,
+        #[template_child]
+        pub search_bar: TemplateChild<gtk::SearchBar>,
+        #[template_child]
+        pub search_entry: TemplateChild<gtk::SearchEntry>,
+
+        pub search_filter: CustomFilter,
+
+        // Keep last length to optimise search
+        pub last_search_len: Cell<usize>,
+
+        #[template_child]
         pub save: TemplateChild<gtk::MenuButton>,
         #[template_child]
         pub save_name: TemplateChild<gtk::Entry>,
@@ -78,7 +97,12 @@ mod imp {
         pub restore_last_pos: Cell<u8>,
 
         pub player: WeakRef<Player>,
-        pub initializing: Cell<bool>
+
+        pub player_queue_n_items_id: RefCell<Option<SignalHandlerId>>,
+        pub player_queue_id_id: RefCell<Option<SignalHandlerId>>,
+
+        // Avoid multiple inits running concurrently
+        pub initializing: Cell<bool>,
     }
 
     #[glib::object_subclass]
@@ -105,6 +129,14 @@ mod imp {
         fn dispose(&self) {
             while let Some(child) = self.obj().first_child() {
                 child.unparent();
+            }
+            if let Some(player) = self.player.upgrade() {
+                if let Some(id) = self.player_queue_n_items_id.take() {
+                    player.queue().disconnect(id);
+                }
+                if let Some(id) = self.player_queue_id_id.take() {
+                    player.disconnect(id);
+                }
             }
             println!("Disposing queue view");
         }
@@ -154,10 +186,104 @@ mod imp {
                 ))
                 .build();
 
+            let action_scroll_to_playing = gio::ActionEntry::builder("scroll-to-playing")
+                .activate(clone!(
+                    #[weak]
+                    obj,
+                    move |_, _, _| {
+                        obj.scroll_to_playing();
+                    }
+                ))
+                .build();
+
             // Create a new action group and add actions to it
             let actions = gio::SimpleActionGroup::new();
-            actions.add_action_entries([action_clear_rating]);
+            actions.add_action_entries([action_clear_rating, action_scroll_to_playing]);
             self.obj().insert_action_group("queue-view", Some(&actions));
+
+            let shortcut_controller = gtk::ShortcutController::new();
+            let trigger = gtk::ShortcutTrigger::parse_string("<Shift>o");
+            let action = gtk::NamedAction::new("queue-view.scroll-to-playing");
+            let shortcut = gtk::Shortcut::new(trigger, Some(action));
+            shortcut_controller.add_shortcut(shortcut);
+            self.obj().add_controller(shortcut_controller);
+
+            // Set up search
+            let library_settings = settings_manager().child("library");
+            self.search_filter.set_filter_func(clone!(
+                #[weak(rename_to = this)]
+                self,
+                #[strong]
+                library_settings,
+                #[upgrade_or]
+                true,
+                move |obj| {
+                    let song = obj
+                        .downcast_ref::<Song>()
+                        .expect("Search obj has to be a common::Song.");
+
+                    let search_term = this.search_entry.text();
+                    if search_term.is_empty() {
+                        return true;
+                    }
+
+                    let case_sensitive = library_settings.boolean("search-case-sensitive");
+                    match this.search_mode.selected() {
+                        0 => {
+                            // Match either title or artist
+                            g_search_substr(Some(song.get_name()), &search_term, case_sensitive)
+                                || g_search_substr(
+                                    song.get_artist_tag(),
+                                    &search_term,
+                                    case_sensitive,
+                                )
+                        }
+                        1 => {
+                            // Match only title
+                            g_search_substr(Some(song.get_name()), &search_term, case_sensitive)
+                        }
+                        2 => {
+                            // Match only artist
+                            g_search_substr(song.get_artist_tag(), &search_term, case_sensitive)
+                        }
+                        _ => true,
+                    }
+                }
+            ));
+
+            let search_entry = self.search_entry.get();
+            search_entry.connect_search_changed(clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |entry| {
+                    let text = entry.text();
+                    let new_len = text.len();
+                    let old_len = this.last_search_len.replace(new_len);
+                    match new_len.cmp(&old_len) {
+                        Ordering::Greater => {
+                            this.search_filter.changed(gtk::FilterChange::MoreStrict);
+                        }
+                        Ordering::Less => {
+                            this.search_filter.changed(gtk::FilterChange::LessStrict);
+                        }
+                        Ordering::Equal => {
+                            this.search_filter.changed(gtk::FilterChange::Different);
+                        }
+                    }
+                }
+            ));
+
+            let search_mode = self.search_mode.get();
+            search_mode.connect_notify_local(
+                Some("selected"),
+                clone!(
+                    #[weak(rename_to = this)]
+                    self,
+                    move |_, _| {
+                        this.search_filter.changed(gtk::FilterChange::Different);
+                    }
+                ),
+            );
         }
 
         fn signals() -> &'static [Signal] {
@@ -192,6 +318,28 @@ fn format_song_count(count: u32) -> Option<String> {
     }
 }
 
+fn bind_row_by_expressions(row: &SongRow, item: &ListItem) {
+    row.set_index_visible(false);
+    row.set_playing_indicator_visible(true);
+
+    item.property_expression("item")
+        .chain_property::<Song>("name")
+        .bind(row, "name", gtk::Widget::NONE);
+
+    row.set_first_attrib_icon_name(Some("library-music-symbolic"));
+    item.property_expression("item")
+        .chain_property::<Song>("album")
+        .bind(row, "first-attrib-text", gtk::Widget::NONE);
+    row.set_second_attrib_icon_name(Some("music-artist-symbolic"));
+    item.property_expression("item")
+        .chain_property::<Song>("artist")
+        .bind(row, "second-attrib-text", gtk::Widget::NONE);
+
+    item.property_expression("item")
+        .chain_property::<Song>("quality-grade")
+        .bind(row, "quality-grade", gtk::Widget::NONE);
+}
+
 impl QueueView {
     pub fn new() -> Self {
         Self::default()
@@ -202,13 +350,33 @@ impl QueueView {
         // Set selection mode
         // TODO: Allow click to jump to song
         let queue_model = player.queue().clone();
-        let sel_model = SingleSelection::new(Some(queue_model));
+
+        // Setup search bar
+        let search_bar = self.imp().search_bar.get();
+        let search_entry = self.imp().search_entry.get();
+        search_bar.connect_entry(&search_entry);
+
+        let search_btn = self.imp().search_btn.get();
+        search_btn
+            .bind_property("active", &search_bar, "search-mode-enabled")
+            .sync_create()
+            .build();
+
+        // Chain filter
+        let filter_model = gtk::FilterListModel::new(
+            Some(queue_model.clone()),
+            Some(self.imp().search_filter.clone()),
+        );
+        filter_model.set_incremental(true);
+        let sel_model = SingleSelection::new(Some(filter_model));
         self.imp().queue.set_model(Some(&sel_model));
 
         // Set up factory
         let factory = SignalListItemFactory::new();
 
         factory.connect_setup(clone!(
+            #[weak(rename_to = this)]
+            self,
             #[weak]
             player,
             #[weak]
@@ -218,25 +386,8 @@ impl QueueView {
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
                 let row = SongRow::new(Some(cache.clone()), Some(&player));
-                row.set_index_visible(false);
-                row.set_playing_indicator_visible(true);
-
-                item.property_expression("item")
-                    .chain_property::<Song>("name")
-                    .bind(&row, "name", gtk::Widget::NONE);
-
-                row.set_first_attrib_icon_name(Some("library-music-symbolic"));
-                item.property_expression("item")
-                    .chain_property::<Song>("album")
-                    .bind(&row, "first-attrib-text", gtk::Widget::NONE);
-                row.set_second_attrib_icon_name(Some("music-artist-symbolic"));
-                item.property_expression("item")
-                    .chain_property::<Song>("artist")
-                    .bind(&row, "second-attrib-text", gtk::Widget::NONE);
-
-                item.property_expression("item")
-                    .chain_property::<Song>("quality-grade")
-                    .bind(&row, "quality-grade", gtk::Widget::NONE);
+                bind_row_by_expressions(&row, item);
+                row.add_css_class("shift-on-hover");
                 let end_widget = RowEditButtons::new(
                     item,
                     // Raise action
@@ -294,6 +445,140 @@ impl QueueView {
                 );
                 row.set_end_widget(Some(&end_widget.into()));
                 item.set_child(Some(&row));
+
+                // Handle drag-n-drop (DnD)
+                let drag_source = gtk::DragSource::new();
+                drag_source.set_actions(gdk::DragAction::COPY); // TODO: probably not needed? not moving files across apps
+                drag_source.connect_prepare(clone!(
+                    #[weak]
+                    item,
+                    #[upgrade_or]
+                    None,
+                    move |_, _x, _y| {
+                        // FIXME: nonzero hotspots cause the drag icon to fly off-screen.
+                        // Pass the whole song GObject
+                        if let Some(song) = item.item().and_downcast::<Song>() {
+                            song.set_queue_pos(item.position()); // Ensure the Song object contains the up-to-date queue pos for local updating
+                            Some(gdk::ContentProvider::for_value(&song.to_value()))
+                        } else {
+                            None
+                        }
+                    }
+                ));
+                drag_source.connect_drag_begin(clone!(
+                    #[weak]
+                    row,
+                    #[weak]
+                    item,
+                    move |_source, drag| {
+                        row.set_floating(true);
+                        // To avoid problems with hotspot positioning quirks (caused by other rows changing padding upon hover)
+                        // the icon will be a standalone copy of the original row.
+                        // Additional benefit: we get to customise how it looks.
+                        let drag_widget = SongRow::new(None, None);
+                        // Give it the same size as the real row
+                        drag_widget.set_size_request(row.width(), row.height());
+                        drag_widget.set_thumbnail_visible(false);
+                        bind_row_by_expressions(&drag_widget, &item);
+
+                        // The drag icon version should have an opaque background for legibility when rendered over other rows.
+                        // Adwaita already has a .card class that does that + adds rounded corners and drop shadows too.
+                        // Looks nice IMO.
+                        drag_widget.add_css_class("card");
+                        let drag_icon = gtk::DragIcon::for_drag(&drag);
+                        drag_icon.set_child(Some(&drag_widget));
+                    }
+                ));
+                drag_source.connect_drag_end(clone!(
+                    #[weak]
+                    row,
+                    move |_, _, _| {
+                        row.set_floating(false);
+                    }
+                ));
+                row.add_controller(drag_source);
+                // If another row is being held above this one in a DnD operation, make some space by increasing top
+                // or bottom padding (depending on whether the mouse is over the upper or lower half of this row)
+                let drop_controller =
+                    gtk::DropTarget::new(Song::static_type(), gdk::DragAction::COPY);
+                drop_controller.connect_motion(clone!(
+                    #[weak]
+                    row,
+                    #[upgrade_or]
+                    gdk::DragAction::COPY,
+                    move |_, _x, y| {
+                        if !row.is_floating() {
+                            let has_shift_up = row.has_css_class("shift-up");
+                            let has_shift_down = row.has_css_class("shift-down");
+                            let is_lower_half = y > row.height() as f64 / 2.0;
+
+                            let should_shift_down = !is_lower_half;
+                            let should_shift_up = is_lower_half;
+                            if should_shift_down && !has_shift_down {
+                                row.add_css_class("shift-down");
+                            } else if !should_shift_down && has_shift_down {
+                                row.remove_css_class("shift-down");
+                            }
+                            if should_shift_up && !has_shift_up {
+                                row.add_css_class("shift-up");
+                            } else if !should_shift_up && has_shift_up {
+                                row.remove_css_class("shift-up");
+                            }
+                        }
+                        gdk::DragAction::COPY
+                    }
+                ));
+                drop_controller.connect_leave(clone!(
+                    #[weak]
+                    row,
+                    move |_| {
+                        if !row.is_floating() {
+                            if row.has_css_class("shift-up") {
+                                row.remove_css_class("shift-up");
+                            }
+                            if row.has_css_class("shift-down") {
+                                row.remove_css_class("shift-down");
+                            }
+                        }
+                    }
+                ));
+
+                drop_controller.connect_drop(clone!(
+                    #[weak]
+                    row,
+                    #[weak]
+                    item,
+                    #[weak]
+                    player,
+                    #[upgrade_or]
+                    false,
+                    move |_, song, x, y| {
+                        row.set_floating(false);
+                        if !row.is_floating() {
+                            if let Ok(song) = song.get::<Song>() {
+                                // Get queue pos of row being dropped onto
+                                let target_pos = item.position()
+                                    + if y > row.height() as f64 / 2.0 {
+                                        // If is lower half, place dropped song after this one
+                                        1
+                                    } else {
+                                        0
+                                    };
+                                glib::spawn_future_local(async move {
+                                    player.move_to(&song, target_pos).await;
+                                });
+                                true
+                            } else {
+                                false
+                            }
+                        } else {
+                            // Ignore if dropped atop itself
+                            false
+                        }
+                    }
+                ));
+
+                row.add_controller(drop_controller);
             }
         ));
         factory.connect_bind(clone!(
@@ -400,6 +685,30 @@ impl QueueView {
         };
     }
 
+    /// Determine whether to present an empty placeholder or queue contents
+    pub fn update_stack(&self, queue: &gio::ListStore) {
+        if queue.n_items() > 0 {
+            self.imp().content_stack.show_content();
+        } else {
+            self.imp().content_stack.show_placeholder();
+        }
+    }
+
+    pub fn scroll_to_playing(&self) {
+        if let Some(model) = self.imp().queue.model() {
+            let n = model.n_items();
+            if let Some(player) = self.imp().player.upgrade() {
+                if let Some(pos) = player.queue_pos() {
+                    if pos < n {
+                        self.imp()
+                            .queue
+                            .scroll_to(pos, gtk::ListScrollFlags::FOCUS, None);
+                    }
+                }
+            }
+        }
+    }
+
     pub fn bind_state(&self, player: &Player) {
         let player_queue = player.queue();
         let queue_title = self.imp().queue_title.get();
@@ -421,19 +730,18 @@ impl QueueView {
             .sync_create()
             .build();
 
-        player_queue.connect_notify_local(
-            Some("n-items"),
-            clone!(
-                #[weak(rename_to = this)] self,
-                move |queue, _| {
-                    if queue.n_items() > 0 {
-                        this.imp().content_stack.show_content();
-                    } else {
-                        this.imp().content_stack.show_placeholder();
+        self.imp()
+            .player_queue_n_items_id
+            .replace(Some(player_queue.connect_notify_local(
+                Some("n-items"),
+                clone!(
+                    #[weak(rename_to = this)]
+                    self,
+                    move |queue, _| {
+                        this.update_stack(queue);
                     }
-                }
-            )
-        );
+                ),
+            )));
 
         player
             .bind_property("supports-playlists", &save, "visible")
@@ -457,7 +765,6 @@ impl QueueView {
                                 adj.set_value(old_pos);
                             } else {
                                 this.imp().restore_last_pos.set(checks_left - 1);
-                                // this.imp().restore_last_pos.set(false);
                             }
                         }
                     }
@@ -578,6 +885,22 @@ impl QueueView {
                 ));
             }
         ));
+
+        self.imp()
+            .player_queue_id_id
+            .replace(Some(player.connect_notify_local(
+                Some("queue-id"),
+                clone!(
+                    #[weak(rename_to = this)]
+                    self,
+                    move |_, _| {
+                        let settings = settings_manager().child("ui");
+                        if settings.boolean("auto-scroll-to-playing") {
+                            this.scroll_to_playing();
+                        }
+                    }
+                ),
+            )));
     }
 
     pub fn setup(
@@ -597,22 +920,28 @@ impl QueueView {
 
 impl LazyInit for QueueView {
     fn populate(&self) {
-        if let Some(player) = self.imp().player.upgrade()
-            && !player.queue_is_initialized() 
-            && !self.imp().initializing.get() {
-                self.imp().initializing.set(true);
-                glib::spawn_future_local(clone!(
-                    #[weak]
-                    player,
-                    #[weak(rename_to = this)]
-                    self,
-                    async move {
-                        let stack = this.imp().content_stack.get();
-                        stack.show_spinner();
-                        player.update_queue().await;
-                        this.imp().initializing.set(false);
-                    }
-                ));
+        if let Some(player) = self.imp().player.upgrade() {
+            if !player.queue_is_initialized() {
+                if !self.imp().initializing.get() {
+                    self.imp().initializing.set(true);
+                    glib::spawn_future_local(clone!(
+                        #[weak]
+                        player,
+                        #[weak(rename_to = this)]
+                        self,
+                        async move {
+                            let stack = this.imp().content_stack.get();
+                            stack.show_spinner();
+                            player.update_queue().await;
+                            this.imp().initializing.set(false);
+                            this.update_stack(player.queue());
+                        }
+                    ));
+                } // Else just wait
+            } else {
+                // Already initialised (probably reopeing window from background mode)
+                self.update_stack(player.queue());
             }
+        }
     }
 }

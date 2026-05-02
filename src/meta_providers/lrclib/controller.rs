@@ -92,17 +92,17 @@ impl MetadataProvider for LrcLibWrapper {
                                     if let Some(synced) = parsed[best_idx].synced.as_ref()
                                         && let Ok(lyrics) =
                                             models::Lyrics::try_from_synced_lrclib_str(synced)
-                                        {
-                                            res = Some(lyrics);
-                                        }
+                                    {
+                                        res = Some(lyrics);
+                                    }
                                     if res.is_none()
                                         && let Ok(lyrics) =
                                             models::Lyrics::try_from_plain_lrclib_str(
                                                 &parsed[best_idx].plain,
                                             )
-                                        {
-                                            res = Some(lyrics);
-                                        }
+                                    {
+                                        res = Some(lyrics);
+                                    }
                                     Ok(res)
                                 } else {
                                     Ok(None)

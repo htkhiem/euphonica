@@ -1,23 +1,23 @@
-use ashpd::desktop::file_chooser::SelectedFiles;
 use adw::subclass::prelude::*;
+use ashpd::desktop::file_chooser::SelectedFiles;
 use derivative::Derivative;
-use glib::{Binding, clone, closure_local, signal::SignalHandlerId, WeakRef};
+use gio::{ActionEntry, SimpleActionGroup};
+use glib::{Binding, WeakRef, clone, closure_local, signal::SignalHandlerId};
 use gtk::{
     BitsetIter, CompositeTemplate, ListItem, SignalListItemFactory, gdk, gio, glib, prelude::*,
 };
+use mpd::SaveMode;
 use mpd::error::{Error as MpdError, ErrorCode as MpdErrorCode, ServerError};
 use std::{
-    cell::{OnceCell, RefCell, Cell},
+    cell::{Cell, OnceCell, RefCell},
     rc::Rc,
 };
-use gio::{ActionEntry, SimpleActionGroup};
-use mpd::SaveMode;
 
 use super::Library;
 use crate::{
     cache::Cache,
     client::Error as ClientError,
-    common::{INode, RowAddButtons, RowEditButtons, Song, SongRow, ImageStack, ContentStack},
+    common::{ContentStack, INode, ImageStack, RowAddButtons, RowEditButtons, Song, SongRow},
     utils::{format_secs_as_duration, tokio_runtime},
     window::EuphonicaWindow,
 };
@@ -26,6 +26,12 @@ use crate::{
 pub enum InternalEditAction {
     ShiftBackward(u32),
     ShiftForward(u32),
+    MovePos(
+        /// From position
+        u32,
+        /// To position
+        u32,
+    ),
     Remove(u32),
 }
 
@@ -56,6 +62,19 @@ impl HistoryStep {
             InternalEditAction::Remove(idx) => {
                 list.remove(idx);
             }
+            InternalEditAction::MovePos(from_pos, to_pos) => {
+                // We need to remove the item from the liststore, then add it back in.
+                // After removal, if the item precedes the target pos, the target pos would
+                // be one behind the original one.
+                let local_new_pos = if from_pos < to_pos {
+                    to_pos - 1
+                } else {
+                    to_pos
+                };
+                let to_move = list.item(from_pos).unwrap();
+                list.remove(from_pos);
+                list.insert(local_new_pos, &to_move);
+            }
         }
     }
 
@@ -69,6 +88,18 @@ impl HistoryStep {
             }
             InternalEditAction::Remove(idx) => {
                 list.insert(idx, self.song.as_ref().unwrap());
+            }
+            InternalEditAction::MovePos(from_pos, to_pos) => {
+                // Mirrored version of the forward one
+                let local_new_pos = if from_pos < to_pos {
+                    to_pos - 1
+                } else {
+                    to_pos
+                };
+                let to_move = list.item(local_new_pos).unwrap();
+                list.remove(local_new_pos);
+
+                list.insert(from_pos, &to_move);
             }
         }
     }
@@ -206,11 +237,7 @@ mod imp {
             self.parent_constructed();
 
             self.song_list
-                .bind_property(
-                    "n-items",
-                    &self.track_count.get(),
-                    "label"
-                )
+                .bind_property("n-items", &self.track_count.get(), "label")
                 .sync_create()
                 .build();
 
@@ -317,25 +344,24 @@ mod imp {
                                 .expect("ashpd file open await failure")
                                 .response();
 
-                            sender.send(
-                                if let Ok(files) = maybe_files {
-                                    let uris = files.uris();
-                                    if !uris.is_empty() {
-                                        Some(uris[0].to_string())
-                                    } else {
-                                        None
-                                    }
+                            sender.send(if let Ok(files) = maybe_files {
+                                let uris = files.uris();
+                                if !uris.is_empty() {
+                                    Some(uris[0].to_string())
                                 } else {
-                                    println!("{maybe_files:?}");
                                     None
                                 }
-                            );
+                            } else {
+                                println!("{maybe_files:?}");
+                                None
+                            });
                         });
                         glib::spawn_future_local(clone!(
                             #[weak]
                             obj,
                             async move {
-                                if let Some(path) = receiver.await.expect("Broken oneshot receiver") {
+                                if let Some(path) = receiver.await.expect("Broken oneshot receiver")
+                                {
                                     obj.set_cover(path);
                                 }
                             }
@@ -348,14 +374,19 @@ mod imp {
                     #[weak]
                     obj,
                     move |_, _, _| {
-                        glib::spawn_future_local(clone!(#[weak] obj, async move {
-                            let title = obj.imp().title.label().to_string();
-                            if !title.is_empty()
-                                && let Some(cache) = obj.imp().cache.get() {
+                        glib::spawn_future_local(clone!(
+                            #[weak]
+                            obj,
+                            async move {
+                                let title = obj.imp().title.label().to_string();
+                                if !title.is_empty()
+                                    && let Some(cache) = obj.imp().cache.get()
+                                {
                                     obj.clear_cover();
                                     cache.clear_playlist_cover(title).await;
                                 }
-                        }));
+                            }
+                        ));
                     }
                 ))
                 .build();
@@ -405,39 +436,56 @@ mod imp {
         }
 
         pub fn exit_edit_mode(&self, apply: bool) {
-            glib::spawn_future_local(clone!(#[weak(rename_to = this)] self, async move {
-                if apply {
-                    // Currently if the command list fails halfway we'll still
-                    // clear the undo history.
-                    if this.history_idx.get() > 0 {
-                        let song_count = this.editing_song_list.n_items();
-                        let mut song_list: Vec<Song> = Vec::with_capacity(song_count as usize);
-                        for i in 0..song_count {
-                            song_list.push(
-                                this.editing_song_list
-                                    .item(i)
-                                    .unwrap()
-                                    .downcast_ref::<Song>()
-                                    .unwrap()
-                                    .clone(),
-                            );
+            glib::spawn_future_local(clone!(
+                #[weak(rename_to = this)]
+                self,
+                async move {
+                    if apply {
+                        // Currently if the command list fails halfway we'll still
+                        // clear the undo history.
+                        if this.history_idx.get() > 0 {
+                            let song_count = this.editing_song_list.n_items();
+                            let mut song_list: Vec<Song> = Vec::with_capacity(song_count as usize);
+                            for i in 0..song_count {
+                                song_list.push(
+                                    this.editing_song_list
+                                        .item(i)
+                                        .unwrap()
+                                        .downcast_ref::<Song>()
+                                        .unwrap()
+                                        .clone(),
+                                );
+                            }
+                            if let Err(e) = this
+                                .library
+                                .upgrade()
+                                .unwrap()
+                                .add_songs_to_playlist(
+                                    this.playlist
+                                        .borrow()
+                                        .as_ref()
+                                        .unwrap()
+                                        .get_uri()
+                                        .to_owned(),
+                                    &song_list,
+                                    SaveMode::Replace,
+                                )
+                                .await
+                            {
+                                dbg!(e);
+                            };
+                            this.history_idx.replace(0);
                         }
-                        if let Err(e) = this.library.upgrade().unwrap().add_songs_to_playlist(
-                            this.playlist.borrow().as_ref().unwrap().get_uri().to_owned(),
-                            &song_list,
-                            SaveMode::Replace,
-                        ).await {dbg!(e);};
-                        this.history_idx.replace(0);
+                        this.history.borrow_mut().clear();
+                        this.edit_undo.set_sensitive(false);
+                        this.edit_redo.set_sensitive(false);
                     }
-                    this.history.borrow_mut().clear();
-                    this.edit_undo.set_sensitive(false);
-                    this.edit_redo.set_sensitive(false);
+                    // Just fade back, no need to clear the list (won't lag us
+                    // since we're not rendering it)
+                    this.action_row.set_visible_child_name("queue-mode");
+                    this.subview_stack.set_visible_child_name("queue-mode");
                 }
-                // Just fade back, no need to clear the list (won't lag us
-                // since we're not rendering it)
-                this.action_row.set_visible_child_name("queue-mode");
-                this.subview_stack.set_visible_child_name("queue-mode");
-            }));
+            ));
         }
 
         pub fn undo(&self) {
@@ -499,19 +547,38 @@ impl Default for PlaylistContentView {
     }
 }
 
+fn bind_editing_row_by_expressions(row: &SongRow, item: &ListItem) {
+    item.property_expression("item")
+        .chain_property::<Song>("name")
+        .bind(row, "name", gtk::Widget::NONE);
+
+    row.set_first_attrib_icon_name(Some("library-music-symbolic"));
+    item.property_expression("item")
+        .chain_property::<Song>("album")
+        .bind(row, "first-attrib-text", gtk::Widget::NONE);
+
+    row.set_second_attrib_icon_name(Some("music-artist-symbolic"));
+    item.property_expression("item")
+        .chain_property::<Song>("artist")
+        .bind(row, "second-attrib-text", gtk::Widget::NONE);
+
+    row.set_third_attrib_icon_name(Some("hourglass-symbolic"));
+    item.property_expression("item")
+        .chain_property::<Song>("duration")
+        .chain_closure::<String>(closure_local!(|_: Option<glib::Object>, dur: u64| {
+            format_secs_as_duration(dur as f64)
+        }))
+        .bind(row, "third-attrib-text", gtk::Widget::NONE);
+
+    item.property_expression("item")
+        .chain_property::<Song>("quality-grade")
+        .bind(row, "quality-grade", gtk::Widget::NONE);
+}
+
 impl PlaylistContentView {
-    pub fn setup(
-        &self,
-        library: &Library,
-        cache: Rc<Cache>,
-        window: &EuphonicaWindow,
-    ) {
-        self.imp()
-            .window
-            .set(Some(window));
-        self.imp()
-            .library
-            .set(Some(library));
+    pub fn setup(&self, library: &Library, cache: Rc<Cache>, window: &EuphonicaWindow) {
+        self.imp().window.set(Some(window));
+        self.imp().library.set(Some(library));
 
         let _ = self.imp().cache.set(cache.clone());
         let infobox_revealer = self.imp().infobox_revealer.get();
@@ -540,25 +607,35 @@ impl PlaylistContentView {
             #[weak(rename_to = this)]
             self,
             move |_| {
-                glib::spawn_future_local(clone!(#[weak] this, async move {
-                    let library = this.imp().library.upgrade().unwrap();
-                    if let Some(playlist) = this.imp().playlist.borrow().as_ref() {
-                        if this.imp().selecting_all.get() {
-                            library.queue_playlist(playlist.get_name().unwrap().to_owned(), true, true).await;
-                        } else {
-                            let store = &this.imp().song_list;
-                            // Get list of selected songs
-                            let sel = &this.imp().sel_model.selection();
-                            let mut songs: Vec<Song> = Vec::with_capacity(sel.size() as usize);
-                            let (iter, first_idx) = BitsetIter::init_first(sel).unwrap();
-                            songs.push(store.item(first_idx).and_downcast::<Song>().unwrap());
-                            iter.for_each(|idx| {
-                                songs.push(store.item(idx).and_downcast::<Song>().unwrap())
-                            });
-                            library.queue_songs(&songs, true, true).await;
+                glib::spawn_future_local(clone!(
+                    #[weak]
+                    this,
+                    async move {
+                        let library = this.imp().library.upgrade().unwrap();
+                        if let Some(playlist) = this.imp().playlist.borrow().as_ref() {
+                            if this.imp().selecting_all.get() {
+                                library
+                                    .queue_playlist(
+                                        playlist.get_name().unwrap().to_owned(),
+                                        true,
+                                        true,
+                                    )
+                                    .await;
+                            } else {
+                                let store = &this.imp().song_list;
+                                // Get list of selected songs
+                                let sel = &this.imp().sel_model.selection();
+                                let mut songs: Vec<Song> = Vec::with_capacity(sel.size() as usize);
+                                let (iter, first_idx) = BitsetIter::init_first(sel).unwrap();
+                                songs.push(store.item(first_idx).and_downcast::<Song>().unwrap());
+                                iter.for_each(|idx| {
+                                    songs.push(store.item(idx).and_downcast::<Song>().unwrap())
+                                });
+                                library.queue_songs(&songs, true, true).await;
+                            }
                         }
                     }
-                }));
+                ));
             }
         ));
         let append_queue_btn = self.imp().append_queue.get();
@@ -566,25 +643,35 @@ impl PlaylistContentView {
             #[weak(rename_to = this)]
             self,
             move |_| {
-                glib::spawn_future_local(clone!(#[weak] this, async move {
-                    let library = this.imp().library.upgrade().unwrap();
-                    if let Some(playlist) = this.imp().playlist.borrow().as_ref() {
-                        if this.imp().selecting_all.get() {
-                            library.queue_playlist(playlist.get_name().unwrap().to_owned(), false, false).await;
-                        } else {
-                            let store = &this.imp().song_list;
-                            // Get list of selected songs
-                            let sel = &this.imp().sel_model.selection();
-                            let mut songs: Vec<Song> = Vec::with_capacity(sel.size() as usize);
-                            let (iter, first_idx) = BitsetIter::init_first(sel).unwrap();
-                            songs.push(store.item(first_idx).and_downcast::<Song>().unwrap());
-                            iter.for_each(|idx| {
-                                songs.push(store.item(idx).and_downcast::<Song>().unwrap())
-                            });
-                            library.queue_songs(&songs, false, false).await;
+                glib::spawn_future_local(clone!(
+                    #[weak]
+                    this,
+                    async move {
+                        let library = this.imp().library.upgrade().unwrap();
+                        if let Some(playlist) = this.imp().playlist.borrow().as_ref() {
+                            if this.imp().selecting_all.get() {
+                                library
+                                    .queue_playlist(
+                                        playlist.get_name().unwrap().to_owned(),
+                                        false,
+                                        false,
+                                    )
+                                    .await;
+                            } else {
+                                let store = &this.imp().song_list;
+                                // Get list of selected songs
+                                let sel = &this.imp().sel_model.selection();
+                                let mut songs: Vec<Song> = Vec::with_capacity(sel.size() as usize);
+                                let (iter, first_idx) = BitsetIter::init_first(sel).unwrap();
+                                songs.push(store.item(first_idx).and_downcast::<Song>().unwrap());
+                                iter.for_each(|idx| {
+                                    songs.push(store.item(idx).and_downcast::<Song>().unwrap())
+                                });
+                                library.queue_songs(&songs, false, false).await;
+                            }
                         }
                     }
-                }));
+                ));
             }
         ));
 
@@ -666,15 +753,26 @@ impl PlaylistContentView {
             #[weak(rename_to = this)]
             self,
             move |_| {
-                glib::spawn_future_local(clone!(#[weak] this, async move {
-                    let library = this.imp().library.upgrade().unwrap();
-                    if let Some(playlist) = this.imp().playlist.borrow().as_ref() {
-                        // Close popover and exit view
-                        this.imp().delete_menu_btn.set_active(false);
-                        this.imp().window.upgrade().unwrap().get_playlist_view().pop();
-                        let _ = library.delete_playlist(playlist.get_name().unwrap().to_owned()).await;
+                glib::spawn_future_local(clone!(
+                    #[weak]
+                    this,
+                    async move {
+                        let library = this.imp().library.upgrade().unwrap();
+                        if let Some(playlist) = this.imp().playlist.borrow().as_ref() {
+                            // Close popover and exit view
+                            this.imp().delete_menu_btn.set_active(false);
+                            this.imp()
+                                .window
+                                .upgrade()
+                                .unwrap()
+                                .get_playlist_view()
+                                .pop();
+                            let _ = library
+                                .delete_playlist(playlist.get_name().unwrap().to_owned())
+                                .await;
+                        }
                     }
-                }));
+                ));
             }
         ));
 
@@ -732,48 +830,28 @@ impl PlaylistContentView {
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
                 let row = SongRow::new(Some(cache), None);
-                item.property_expression("item")
-                    .chain_property::<Song>("name")
-                    .bind(&row, "name", gtk::Widget::NONE);
-
-                row.set_first_attrib_icon_name(Some("library-music-symbolic"));
-                item.property_expression("item")
-                    .chain_property::<Song>("album")
-                    .bind(&row, "first-attrib-text", gtk::Widget::NONE);
-
-                row.set_second_attrib_icon_name(Some("music-artist-symbolic"));
-                item.property_expression("item")
-                    .chain_property::<Song>("artist")
-                    .bind(&row, "second-attrib-text", gtk::Widget::NONE);
-
-                row.set_third_attrib_icon_name(Some("hourglass-symbolic"));
-                item.property_expression("item")
-                    .chain_property::<Song>("duration")
-                    .chain_closure::<String>(closure_local!(|_: Option<glib::Object>, dur: u64| {
-                        format_secs_as_duration(dur as f64)
-                    }))
-                    .bind(&row, "third-attrib-text", gtk::Widget::NONE);
-
-                item.property_expression("item")
-                    .chain_property::<Song>("quality-grade")
-                    .bind(&row, "quality-grade", gtk::Widget::NONE);
+                row.add_css_class("shift-on-hover");
+                bind_editing_row_by_expressions(&row, item);
                 let end_widget = RowEditButtons::new(
                     item,
                     // Raise action
                     clone!(
-                        #[weak] this,
+                        #[weak]
+                        this,
                         move |_, idx| {
                             this.shift_backward(idx);
                         }
                     ),
                     clone!(
-                        #[weak] this,
+                        #[weak]
+                        this,
                         move |_, idx| {
                             this.shift_forward(idx);
                         }
                     ),
                     clone!(
-                        #[weak] this,
+                        #[weak]
+                        this,
                         move |_, idx| {
                             this.remove(idx);
                         }
@@ -781,6 +859,138 @@ impl PlaylistContentView {
                 );
                 row.set_end_widget(Some(&end_widget.into()));
                 item.set_child(Some(&row));
+
+                // Handle drag-n-drop (DnD)
+                let drag_source = gtk::DragSource::new();
+                drag_source.set_actions(gdk::DragAction::COPY); // TODO: probably not needed? not moving files across apps
+                drag_source.connect_prepare(clone!(
+                    #[weak]
+                    item,
+                    #[upgrade_or]
+                    None,
+                    move |_, _x, _y| {
+                        // FIXME: nonzero hotspots cause the drag icon to fly off-screen.
+                        // Pass the whole song GObject
+                        if let Some(song) = item.item().and_downcast::<Song>() {
+                            song.set_queue_pos(item.position()); // Not queue pos, but playlist order
+                            Some(gdk::ContentProvider::for_value(&song.to_value()))
+                        } else {
+                            None
+                        }
+                    }
+                ));
+                drag_source.connect_drag_begin(clone!(
+                    #[weak]
+                    row,
+                    #[weak]
+                    item,
+                    move |_source, drag| {
+                        row.set_floating(true);
+                        // To avoid problems with hotspot positioning quirks (caused by other rows changing padding upon hover)
+                        // the icon will be a standalone copy of the original row.
+                        // Additional benefit: we get to customise how it looks.
+                        let drag_widget = SongRow::new(None, None);
+                        // Give it the same size as the real row
+                        drag_widget.set_size_request(row.width(), row.height());
+                        drag_widget.set_thumbnail_visible(false);
+                        bind_editing_row_by_expressions(&drag_widget, &item);
+
+                        // The drag icon version should have an opaque background for legibility when rendered over other rows.
+                        // Adwaita already has a .card class that does that + adds rounded corners and drop shadows too.
+                        // Looks nice IMO.
+                        drag_widget.add_css_class("card");
+                        let drag_icon = gtk::DragIcon::for_drag(&drag);
+                        drag_icon.set_child(Some(&drag_widget));
+                    }
+                ));
+                drag_source.connect_drag_end(clone!(
+                    #[weak]
+                    row,
+                    move |_, _, _| {
+                        row.set_floating(false);
+                    }
+                ));
+                row.add_controller(drag_source);
+                // If another row is being held above this one in a DnD operation, make some space by increasing top
+                // or bottom padding (depending on whether the mouse is over the upper or lower half of this row)
+                let drop_controller =
+                    gtk::DropTarget::new(Song::static_type(), gdk::DragAction::COPY);
+                drop_controller.connect_motion(clone!(
+                    #[weak]
+                    row,
+                    #[upgrade_or]
+                    gdk::DragAction::COPY,
+                    move |_, _x, y| {
+                        if !row.is_floating() {
+                            let has_shift_up = row.has_css_class("shift-up");
+                            let has_shift_down = row.has_css_class("shift-down");
+                            let is_lower_half = y > row.height() as f64 / 2.0;
+
+                            let should_shift_down = !is_lower_half;
+                            let should_shift_up = is_lower_half;
+                            if should_shift_down && !has_shift_down {
+                                row.add_css_class("shift-down");
+                            } else if !should_shift_down && has_shift_down {
+                                row.remove_css_class("shift-down");
+                            }
+                            if should_shift_up && !has_shift_up {
+                                row.add_css_class("shift-up");
+                            } else if !should_shift_up && has_shift_up {
+                                row.remove_css_class("shift-up");
+                            }
+                        }
+                        gdk::DragAction::COPY
+                    }
+                ));
+                drop_controller.connect_leave(clone!(
+                    #[weak]
+                    row,
+                    move |_| {
+                        if !row.is_floating() {
+                            if row.has_css_class("shift-up") {
+                                row.remove_css_class("shift-up");
+                            }
+                            if row.has_css_class("shift-down") {
+                                row.remove_css_class("shift-down");
+                            }
+                        }
+                    }
+                ));
+
+                drop_controller.connect_drop(clone!(
+                    #[weak]
+                    this,
+                    #[weak]
+                    row,
+                    #[weak]
+                    item,
+                    #[upgrade_or]
+                    false,
+                    move |_, song, x, y| {
+                        row.set_floating(false);
+                        if !row.is_floating() {
+                            if let Ok(song) = song.get::<Song>() {
+                                // Get queue pos of row being dropped onto
+                                let target_pos = item.position()
+                                    + if y > row.height() as f64 / 2.0 {
+                                        // If is lower half, place dropped song after this one
+                                        1
+                                    } else {
+                                        0
+                                    };
+                                this.move_pos(song.get_queue_pos(), target_pos);
+                                true
+                            } else {
+                                false
+                            }
+                        } else {
+                            // Ignore if dropped atop itself
+                            false
+                        }
+                    }
+                ));
+
+                row.add_controller(drop_controller);
             }
         ));
 
@@ -924,11 +1134,14 @@ impl PlaylistContentView {
                 let name = playlist.get_uri().to_owned();
                 // Fetch high resolution playlist cover
                 this.imp().cover.show_spinner();
-                match this.imp().cache.get().unwrap().get_playlist_cover(
-                    name.clone(),
-                    false,
-                    false,
-                ).await {
+                match this
+                    .imp()
+                    .cache
+                    .get()
+                    .unwrap()
+                    .get_playlist_cover(name.clone(), false, false)
+                    .await
+                {
                     Ok(Some(tex)) => {
                         this.update_cover(&tex);
                     }
@@ -946,12 +1159,15 @@ impl PlaylistContentView {
                 content_stack.show_spinner();
                 let song_list = this.imp().song_list.clone();
                 song_list.remove_all();
-                let _ = this.imp().library.upgrade().unwrap().get_playlist_songs(
-                    name,
-                    &mut |songs| {
+                let _ = this
+                    .imp()
+                    .library
+                    .upgrade()
+                    .unwrap()
+                    .get_playlist_songs(name, &mut |songs| {
                         song_list.extend_from_slice(&songs);
-                    }
-                ).await;
+                    })
+                    .await;
                 if song_list.n_items() > 0 {
                     content_stack.show_content();
                 } else {
@@ -971,8 +1187,6 @@ impl PlaylistContentView {
                 ));
             }
         ));
-
-
     }
 
     pub fn unbind(&self, clear_contents: bool) {
@@ -980,9 +1194,10 @@ impl PlaylistContentView {
             binding.unbind();
         }
         if let Some(id) = self.imp().cover_signal_id.take()
-            && let Some(cache) = self.imp().cache.get() {
-                cache.get_cache_state().disconnect(id);
-            }
+            && let Some(cache) = self.imp().cache.get()
+        {
+            cache.get_cache_state().disconnect(id);
+        }
         if clear_contents {
             self.imp().song_list.remove_all();
         }
@@ -995,13 +1210,18 @@ impl PlaylistContentView {
 
     /// Set a user-selected path as the new local avatar.
     pub fn set_cover(&self, path: String) {
-        glib::spawn_future_local(clone!(#[weak(rename_to = this)] self, async move {
-            let title = this.imp().title.label();
-            if !title.is_empty()
-                && let Some(cache) = this.imp().cache.get() {
+        glib::spawn_future_local(clone!(
+            #[weak(rename_to = this)]
+            self,
+            async move {
+                let title = this.imp().title.label();
+                if !title.is_empty()
+                    && let Some(cache) = this.imp().cache.get()
+                {
                     cache.set_playlist_cover(title.to_string(), &path).await;
                 }
-        }));
+            }
+        ));
     }
 
     #[inline]
@@ -1041,6 +1261,15 @@ impl PlaylistContentView {
             step.forward(&self.imp().editing_song_list);
             self.imp().push_history(step);
         }
+    }
+
+    pub fn move_pos(&self, from_pos: u32, to_pos: u32) {
+        let step = HistoryStep {
+            action: InternalEditAction::MovePos(from_pos, to_pos),
+            song: None,
+        };
+        step.forward(&self.imp().editing_song_list);
+        self.imp().push_history(step);
     }
 
     pub fn remove(&self, idx: u32) {

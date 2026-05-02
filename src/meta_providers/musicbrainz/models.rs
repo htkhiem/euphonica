@@ -114,12 +114,13 @@ impl From<Artist> for models::ArtistMeta {
                 for relation in relations.into_iter() {
                     if (relation.relation_type == "image" || relation.relation_type == "picture")
                         && let RelationContent::Url(url) = relation.content
-                            && let Some(direct) = transform_wikimedia_url(&url.resource) {
-                                image.push(ImageMeta {
-                                    size: ImageSize::Large,
-                                    url: direct,
-                                });
-                            }
+                        && let Some(direct) = transform_wikimedia_url(&url.resource)
+                    {
+                        image.push(ImageMeta {
+                            size: ImageSize::Large,
+                            url: direct,
+                        });
+                    }
                 }
             }
         } else {
