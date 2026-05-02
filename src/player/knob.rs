@@ -2,13 +2,14 @@ use gtk::{
     CompositeTemplate, cairo as cr,
     glib::{
         self, Object, ParamSpec, ParamSpecBoolean, ParamSpecDouble, clone, prelude::*,
-        subclass::prelude::*,
+        subclass::{prelude::*, Signal}
     },
-    graphene, gsk,
+    graphene, gsk, gdk,
     prelude::*,
     subclass::prelude::*,
 };
-use std::{cell::Cell, f64::consts::PI};
+use once_cell::sync::Lazy;
+use std::{cell::Cell, f64::consts::PI, sync::OnceLock};
 
 fn convert_to_dbfs(pct: f64) -> Result<f64, ()> {
     // Accepts 0-100
@@ -18,10 +19,16 @@ fn convert_to_dbfs(pct: f64) -> Result<f64, ()> {
     Err(())
 }
 
+#[derive(Default, Clone, Copy)]
+pub enum OverflowSide {
+    #[default]
+    Normal,
+    CW,
+    CCW
+}
+
 mod imp {
     use super::*;
-    use gtk::gdk;
-    use once_cell::sync::Lazy;
 
     #[derive(Default, CompositeTemplate)]
     #[template(resource = "/io/github/htkhiem/Euphonica/gtk/player/volume-knob.ui")]
@@ -31,7 +38,13 @@ mod imp {
         pub sensitivity: Cell<f64>,
         pub use_dbfs: Cell<bool>,
         // 0 to 100. Full precision for smooth scrolling effect.
-        pub value: Cell<f64>, // Active state means muted
+        pub value: Cell<f64>,
+        pub drag_origin: Cell<(f64, f64)>,
+        // Relative to centre & normalised to widget size. Used to disambiguate between the two sides of the bottom mark (0% or 100%).
+        pub prev_drag_pos: Cell<(f64, f64)>,
+        pub overflow_side: Cell<OverflowSide>,
+        // Used to disambiguate a quick click (to toggle mute) from a drag (to change volume)
+        pub was_dragging: Cell<bool>
     }
 
     // The central trait for subclassing a GObject
@@ -46,6 +59,10 @@ mod imp {
             Self {
                 use_dbfs: Cell::new(false),
                 sensitivity: Cell::new(1.0),
+                drag_origin: Cell::default(),
+                prev_drag_pos: Cell::default(),
+                overflow_side: Cell::default(),
+                was_dragging: Cell::default(),
                 value: Cell::new(0.0),
             }
         }
@@ -70,11 +87,17 @@ mod imp {
                 this.imp().update_readout();
             });
             obj.connect_notify_local(Some("active"), |this, _| {
-                this.imp().update_readout();
+                if !this.imp().was_dragging.get() {
+                    this.imp().update_readout();
+                    this.emit_by_name::<()>("mute-toggled", &[&this.is_active()]);
+                } else {
+                    this.imp().was_dragging.set(false);
+                    // Return to prev status
+                    this.set_active(!this.is_active());
+                }
             });
 
             // Enable scrolling to change volume
-            // TODO: Implement angular dragging
             // TODO: Let user control scroll sensitivity
             let scroll_ctl = gtk::EventControllerScroll::default();
             scroll_ctl.set_flags(gtk::EventControllerScrollFlags::VERTICAL);
@@ -94,6 +117,82 @@ mod imp {
                 }
             ));
             obj.add_controller(scroll_ctl);
+
+            // Enable angular dragging to change volume
+            let drag_ctl = gtk::GestureDrag::new();
+            drag_ctl.set_propagation_phase(gtk::PropagationPhase::Capture);
+            drag_ctl.connect_drag_begin(clone!(
+                #[weak(rename_to = this)]
+                obj,
+                move |_, x, y| {
+                    this.imp().drag_origin.set((x, y));
+                    let (w, h) = (this.width() as f64, this.height() as f64);
+                    this.imp().prev_drag_pos.set(((x - w/2.0) / w, -(y - h/2.0) / h));
+                    this.imp().overflow_side.set(OverflowSide::Normal);
+                }
+            ));
+            drag_ctl.connect_drag_update(clone!(
+                #[weak(rename_to = this)]
+                obj,
+                move |_, x, y| {
+                    // Disambiguate click & drag
+                    if x.abs() >= 2.0 || y.abs() >= 2.0 {
+                        this.imp().was_dragging.set(true);
+                        let drag_origin = this.imp().drag_origin.get();
+                        let (w, h) = (this.width() as f64, this.height() as f64);
+                        let (cx, cy) = (w / 2.0, h / 2.0);
+                        let curr_pos = (
+                            (drag_origin.0 + x - cx) / w,
+                            -(drag_origin.1 + y - cy) / h
+                        );
+                        let mut curr_pct = (curr_pos.0.atan2(curr_pos.1) / PI + 1.0) / 2.0;
+                        
+                        // To handle the bottom angle (either 0% or 100%):
+                        // If last known drag location was within the first 25%, do not allow volume to jump to 100%,
+                        // Else if last known drag location was within the last 25%, do not allow volume to drop to 0%,
+                        // Otherwise, set volume as usual and update last known drag location for future checks.
+                        let prev_pos = this.imp().prev_drag_pos.get();
+                        match this.imp().overflow_side.get() {
+                            OverflowSide::Normal => {
+                                // Check if will overflow
+                                if prev_pos.1 < 0.0 && prev_pos.0 < 0.0 && curr_pos.0 > 0.0 {
+                                    // Prevent overflow from 0% to 100%
+                                    curr_pct = 0.0;
+                                    this.imp().overflow_side.set(OverflowSide::CCW);
+                                }
+                                else if prev_pos.1 < 0.0 && prev_pos.0 > 0.0 && curr_pos.0 < 0.0 {
+                                    // Prevent overflow from 100% to 0%
+                                    curr_pct = 1.0;
+                                    this.imp().overflow_side.set(OverflowSide::CW);
+                                }
+                            }
+                            OverflowSide::CCW => {
+                                // If cursor returns to the original side VIA THE BOTTOM, return to normal behaviour
+                                if prev_pos.1 < 0.0 && prev_pos.0 > 0.0 && curr_pos.0 < 0.0 {
+                                    this.imp().overflow_side.set(OverflowSide::Normal);
+                                } else {
+                                    // Else continue clamping
+                                    curr_pct = 0.0;
+                                }
+                            }
+                            OverflowSide::CW => {
+                                // If cursor returns to the original side VIA THE BOTTOM, return to normal behaviour
+                                if prev_pos.1 < 0.0 && prev_pos.0 < 0.0 && curr_pos.0 > 0.0 {
+                                    this.imp().overflow_side.set(OverflowSide::Normal);
+                                } else {
+                                    // Else continue clamping
+                                    curr_pct = 1.0;
+                                }
+                            }
+                        }
+                        this.set_value(curr_pct * 100.0);
+                        this.imp().prev_drag_pos.set(curr_pos);
+                        this.queue_draw();
+                    }
+                }
+            ));
+            
+            obj.add_controller(drag_ctl);
         }
         fn properties() -> &'static [ParamSpec] {
             static PROPERTIES: Lazy<Vec<ParamSpec>> = Lazy::new(|| {
@@ -112,6 +211,7 @@ mod imp {
                 "value" => self.value.get().to_value(),
                 "sensitivity" => self.sensitivity.get().to_value(),
                 "use-dbfs" => self.use_dbfs.get().to_value(),
+                "drag-in-progress" => self.was_dragging.get().to_value(),
                 _ => unimplemented!(),
             }
         }
@@ -139,6 +239,20 @@ mod imp {
                 }
                 _ => unimplemented!(),
             }
+        }
+
+        fn signals() -> &'static [Signal] {
+            static SIGNALS: OnceLock<Vec<Signal>> = OnceLock::new();
+            SIGNALS.get_or_init(|| {
+                vec![
+                    // Use this instead of 'active' to avoid problems with drags.
+                    Signal::builder("mute-toggled")
+                        .param_types([
+                            bool::static_type(),
+                        ])
+                        .build(),
+                ]
+            })
         }
     }
 
@@ -277,6 +391,14 @@ impl VolumeKnob {
             self.notify("value");
         }
     }
+
+    // pub fn was_dragging(&self) -> bool {
+    //     self.imp().was_dragging.get()
+    // }
+
+    // pub fn reset_was_dragging(&self) {
+    //     self.imp().was_dragging.set(false);
+    // }
 
     pub fn sync_value(&self, new_rounded: i8) {
         // Set volume based on rounded i8 value silently.
