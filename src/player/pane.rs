@@ -84,8 +84,6 @@ mod imp {
         #[template_child]
         pub clear_lyrics: TemplateChild<gtk::Button>,
         #[template_child]
-        pub output_btn: TemplateChild<gtk::MenuButton>,
-        #[template_child]
         pub output_section: TemplateChild<gtk::Box>,
         #[template_child]
         pub output_stack: TemplateChild<gtk::Stack>,
@@ -162,24 +160,6 @@ mod imp {
                         Some("lyrics-on-symbolic")
                     } else {
                         Some("lyrics-off-symbolic")
-                    }
-                })
-                .sync_create()
-                .build();
-
-            self.vol_knob
-                .bind_property("value", &self.output_btn.get(), "icon-name")
-                .transform_to(|_, level: f64| {
-                    if level > 75.0 {
-                        Some("speaker-4-symbolic")
-                    } else if level > 50.0 {
-                        Some("speaker-3-symbolic")
-                    } else if level > 25.0 {
-                        Some("speaker-2-symbolic")
-                    } else if level > 0.0 {
-                        Some("speaker-1-symbolic")
-                    } else {
-                        Some("speaker-0-symbolic")
                     }
                 })
                 .sync_create()
