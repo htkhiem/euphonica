@@ -2,13 +2,18 @@ use adw::prelude::*;
 use adw::subclass::prelude::*;
 use gtk::{
     CompositeTemplate, CustomFilter, ListItem, SignalListItemFactory, SingleSelection, gdk, gio,
-    glib::{self, Properties, WeakRef, clone, closure_local, subclass::Signal},
+    glib::{self, Properties, SignalHandlerId, WeakRef, clone, closure_local, subclass::Signal},
 };
 use mpd::{
     SaveMode,
     error::{Error as MpdError, ErrorCode as MpdErrorCode, ServerError},
 };
-use std::{cell::Cell, cmp::Ordering, rc::Rc, sync::OnceLock};
+use std::{
+    cell::{Cell, RefCell},
+    cmp::Ordering,
+    rc::Rc,
+    sync::OnceLock,
+};
 
 use super::PlayerPane;
 
@@ -93,6 +98,9 @@ mod imp {
 
         pub player: WeakRef<Player>,
 
+        pub player_queue_n_items_id: RefCell<Option<SignalHandlerId>>,
+        pub player_queue_id_id: RefCell<Option<SignalHandlerId>>,
+
         // Avoid multiple inits running concurrently
         pub initializing: Cell<bool>,
     }
@@ -121,6 +129,14 @@ mod imp {
         fn dispose(&self) {
             while let Some(child) = self.obj().first_child() {
                 child.unparent();
+            }
+            if let Some(player) = self.player.upgrade() {
+                if let Some(id) = self.player_queue_n_items_id.take() {
+                    player.queue().disconnect(id);
+                }
+                if let Some(id) = self.player_queue_id_id.take() {
+                    player.disconnect(id);
+                }
             }
             println!("Disposing queue view");
         }
@@ -714,16 +730,18 @@ impl QueueView {
             .sync_create()
             .build();
 
-        player_queue.connect_notify_local(
-            Some("n-items"),
-            clone!(
-                #[weak(rename_to = this)]
-                self,
-                move |queue, _| {
-                    this.update_stack(queue);
-                }
-            ),
-        );
+        self.imp()
+            .player_queue_n_items_id
+            .replace(Some(player_queue.connect_notify_local(
+                Some("n-items"),
+                clone!(
+                    #[weak(rename_to = this)]
+                    self,
+                    move |queue, _| {
+                        this.update_stack(queue);
+                    }
+                ),
+            )));
 
         player
             .bind_property("supports-playlists", &save, "visible")
@@ -868,19 +886,21 @@ impl QueueView {
             }
         ));
 
-        player.connect_notify_local(
-            Some("queue-id"),
-            clone!(
-                #[weak(rename_to = this)]
-                self,
-                move |_, _| {
-                    let settings = settings_manager().child("ui");
-                    if settings.boolean("auto-scroll-to-playing") {
-                        this.scroll_to_playing();
+        self.imp()
+            .player_queue_id_id
+            .replace(Some(player.connect_notify_local(
+                Some("queue-id"),
+                clone!(
+                    #[weak(rename_to = this)]
+                    self,
+                    move |_, _| {
+                        let settings = settings_manager().child("ui");
+                        if settings.boolean("auto-scroll-to-playing") {
+                            this.scroll_to_playing();
+                        }
                     }
-                }
-            ),
-        );
+                ),
+            )));
     }
 
     pub fn setup(
