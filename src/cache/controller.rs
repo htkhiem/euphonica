@@ -2,12 +2,7 @@
 // you name it.
 // This helps avoid having to query the same thing multiple times,
 // whether from MPD or from Last.fm.
-// Images are stored as resized PNG files on disk.
-// - Album arts are named with hashes of their URIs (down to the album's
-//   folder). This is because all albums have URIs, but not all have
-//   MusicBrainz IDs.
-// - Artist avatars are named with hashes of their names. Artist names can be substrings
-//   of artist tags instead of the full tags.
+// - Images are stored as resized PNG files on disk.
 // - Text data is stored as BSON blobs in SQLite.
 use futures::TryFutureExt;
 extern crate bson;
@@ -233,12 +228,11 @@ fn load_image(
 // thrashing while quickly scrolling through like a million albums.
 // This cache's keys are the filenames themselves.
 
-// Currently we allow at most 15 columns in GridViews, which results in a maximum
-// of 15 * (30 + 2) = 480 widgets being bound at any one time for each GridView.
-// There are two big GridViews always kept in memory: the Album and Artist Views.
-// To be safe, allow 960 textures to be kept in the cache at any one time.
+// Keeping ~256 textures around doesn't mean there can only be 256 on screen at any time.
+// This cache merely keeps an additional strong ref alive in case a texture goes out of view.
+// As long as one is in view it is held by the widget displaying it.
 static IMAGE_CACHE: Lazy<Mutex<LruCache<String, Texture>>> =
-    Lazy::new(|| Mutex::new(LruCache::new(NonZeroUsize::new(960).unwrap())));
+    Lazy::new(|| Mutex::new(LruCache::new(NonZeroUsize::new(256).unwrap())));
 
 // We use an Asyncified container to queue tasks, such that two requests for the
 // same texture are never run concurrently. This allows one request to cache the

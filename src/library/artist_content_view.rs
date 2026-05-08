@@ -636,12 +636,15 @@ impl ArtistContentView {
         factory.connect_setup(clone!(
             #[weak]
             cache,
+            #[weak(rename_to = this)]
+            self,
             move |_, list_item| {
                 let item = list_item
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
                 // TODO: refactor album cells to use expressions too
-                let album_cell = AlbumCell::new(item, cache, None);
+                let album_subview = this.imp().album_subview.get();
+                let album_cell = AlbumCell::new(item, cache, None, Some(album_subview));
                 item.set_child(Some(&album_cell));
             }
         ));

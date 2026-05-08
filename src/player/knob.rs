@@ -1,10 +1,11 @@
 use gtk::{
-    CompositeTemplate, cairo as cr,
+    CompositeTemplate, cairo as cr, gdk,
     glib::{
-        self, Object, ParamSpec, ParamSpecBoolean, ParamSpecDouble, clone, prelude::*,
-        subclass::{prelude::*, Signal}
+        self, Object, ParamSpec, ParamSpecBoolean, ParamSpecDouble, clone,
+        prelude::*,
+        subclass::{Signal, prelude::*},
     },
-    graphene, gsk, gdk,
+    graphene, gsk,
     prelude::*,
     subclass::prelude::*,
 };
@@ -24,7 +25,7 @@ pub enum OverflowSide {
     #[default]
     Normal,
     CW,
-    CCW
+    CCW,
 }
 
 mod imp {
@@ -44,7 +45,7 @@ mod imp {
         pub prev_drag_pos: Cell<(f64, f64)>,
         pub overflow_side: Cell<OverflowSide>,
         // Used to disambiguate a quick click (to toggle mute) from a drag (to change volume)
-        pub was_dragging: Cell<bool>
+        pub was_dragging: Cell<bool>,
     }
 
     // The central trait for subclassing a GObject
@@ -127,7 +128,9 @@ mod imp {
                 move |_, x, y| {
                     this.imp().drag_origin.set((x, y));
                     let (w, h) = (this.width() as f64, this.height() as f64);
-                    this.imp().prev_drag_pos.set(((x - w/2.0) / w, -(y - h/2.0) / h));
+                    this.imp()
+                        .prev_drag_pos
+                        .set(((x - w / 2.0) / w, -(y - h / 2.0) / h));
                     this.imp().overflow_side.set(OverflowSide::Normal);
                 }
             ));
@@ -141,12 +144,10 @@ mod imp {
                         let drag_origin = this.imp().drag_origin.get();
                         let (w, h) = (this.width() as f64, this.height() as f64);
                         let (cx, cy) = (w / 2.0, h / 2.0);
-                        let curr_pos = (
-                            (drag_origin.0 + x - cx) / w,
-                            -(drag_origin.1 + y - cy) / h
-                        );
+                        let curr_pos =
+                            ((drag_origin.0 + x - cx) / w, -(drag_origin.1 + y - cy) / h);
                         let mut curr_pct = (curr_pos.0.atan2(curr_pos.1) / PI + 1.0) / 2.0;
-                        
+
                         // To handle the bottom angle (either 0% or 100%):
                         // If last known drag location was within the first 25%, do not allow volume to jump to 100%,
                         // Else if last known drag location was within the last 25%, do not allow volume to drop to 0%,
@@ -159,8 +160,7 @@ mod imp {
                                     // Prevent overflow from 0% to 100%
                                     curr_pct = 0.0;
                                     this.imp().overflow_side.set(OverflowSide::CCW);
-                                }
-                                else if prev_pos.1 < 0.0 && prev_pos.0 > 0.0 && curr_pos.0 < 0.0 {
+                                } else if prev_pos.1 < 0.0 && prev_pos.0 > 0.0 && curr_pos.0 < 0.0 {
                                     // Prevent overflow from 100% to 0%
                                     curr_pct = 1.0;
                                     this.imp().overflow_side.set(OverflowSide::CW);
@@ -191,7 +191,7 @@ mod imp {
                     }
                 }
             ));
-            
+
             obj.add_controller(drag_ctl);
         }
         fn properties() -> &'static [ParamSpec] {
@@ -247,9 +247,7 @@ mod imp {
                 vec![
                     // Use this instead of 'active' to avoid problems with drags.
                     Signal::builder("mute-toggled")
-                        .param_types([
-                            bool::static_type(),
-                        ])
+                        .param_types([bool::static_type()])
                         .build(),
                 ]
             })

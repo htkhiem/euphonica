@@ -459,7 +459,11 @@ impl Connection {
 
         // Doubles as a litmus test to see if we are authenticated.
         if let Err(e) = client.subscribe(&self.wake_channel).map_err(Error::Mpd) {
-            return Err(dbg!(if cred_store_fail {Error::CredentialStore} else {e}));
+            return Err(dbg!(if cred_store_fail {
+                Error::CredentialStore
+            } else {
+                e
+            }));
         }
         // eprintln!("Subscribed to wake channel");
 

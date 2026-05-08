@@ -504,11 +504,13 @@ impl AlbumView {
         factory.connect_setup(clone!(
             #[weak]
             cache,
+            #[weak]
+            grid_view,
             move |_, list_item| {
                 let item = list_item
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
-                let album_cell = AlbumCell::new(item, cache, None);
+                let album_cell = AlbumCell::new(item, cache, None, Some(grid_view));
                 item.set_child(Some(&album_cell));
             }
         ));

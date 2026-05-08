@@ -284,7 +284,6 @@ impl PlayerPane {
                             }
                         ));
                     }
-                    
                 }
             ),
         );
@@ -293,7 +292,8 @@ impl PlayerPane {
             "mute-toggled",
             false,
             closure_local!(
-                #[weak] player,
+                #[weak]
+                player,
                 move |knob: &VolumeKnob, is_muted: bool| {
                     let val = knob.value().round() as i8;
                     glib::spawn_future_local(clone!(

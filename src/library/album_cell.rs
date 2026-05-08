@@ -54,6 +54,14 @@ mod imp {
         pub cover_signal_ids: RefCell<Option<(SignalHandlerId, SignalHandlerId)>>,
         pub cache: OnceCell<Rc<Cache>>,
         pub hires: Cell<bool>,
+        // Stored GridView for visibility checks in bind() and the tick callback.
+        pub viewport: OnceCell<WeakRef<gtk::GridView>>,
+        // Tracks whether the cell is currently within the viewport, used
+        // to detect visibility transitions (entering/exiting the viewport).
+        pub should_load_texture: Cell<bool>,
+        // Use this to block loading images immediately upon construction when hires
+        // is set to true (as that would trigger the setter before a viewport is set)
+        pub obj_ready: Cell<bool>,
     }
 
     // The central trait for subclassing a GObject
@@ -235,7 +243,12 @@ glib::wrapper! {
 }
 
 impl AlbumCell {
-    pub fn new(item: &gtk::ListItem, cache: Rc<Cache>, wrap_mode: Option<MarqueeWrapMode>) -> Self {
+    pub fn new(
+        item: &gtk::ListItem,
+        cache: Rc<Cache>,
+        wrap_mode: Option<MarqueeWrapMode>,
+        viewport: Option<gtk::GridView>,
+    ) -> Self {
         let res: Self = Object::builder().build();
         let cache_state = cache.get_cache_state();
         res.imp()
@@ -356,6 +369,43 @@ impl AlbumCell {
                 ),
             ),
         )));
+
+        // Set up dynamic texture loading if a GridView is available.
+        if let Some(vp) = viewport {
+            let weak_vp = WeakRef::new();
+            weak_vp.set(Some(&vp));
+            let _ = res.imp().viewport.set(weak_vp);
+            glib::idle_add_local(clone!(
+                #[weak(rename_to = this)] res,
+                #[upgrade_or] glib::ControlFlow::Break,
+                move || {
+                let imp = this.imp();
+                let is_visible = this.should_load_texture();
+                let was_visible = imp.should_load_texture.replace(is_visible);
+
+                if was_visible != is_visible {
+                    if is_visible {
+                        // println!("AlbumCell is now visible");
+                        if imp.album.upgrade().is_some() {
+                            glib::idle_add_local_once(clone!(
+                                #[weak]
+                                this,
+                                move || {
+                                    this.update_cover();
+                                }
+                            ));
+                        }
+                    } else {
+                        // println!("AlbumCell scrolled out of view");
+                        imp.cover.clear();
+                    }
+                }
+
+                glib::ControlFlow::Continue
+            }));
+        }
+        res.imp().obj_ready.set(true);
+
         res
     }
 
@@ -403,12 +453,45 @@ impl AlbumCell {
         ));
     }
 
+    fn should_load_texture(&self) -> bool {
+        if !self.imp().obj_ready.get() {
+            return false;
+        }
+        // The road to this whole mess lies undocumented in the GTK source code.
+        // Nice use of my 2 evenings.
+        match self.imp().viewport.get().and_then(|w| w.upgrade()) {
+            Some(vp) => {
+                if let Some(bounds) = self.compute_bounds(&vp) {
+                    let cell_x = bounds.x() as f64;
+                    let cell_y = bounds.y() as f64;
+                    let cell_w = bounds.width() as f64;
+                    let cell_h = bounds.height() as f64;
+                    if cell_w == 0.0 && cell_h == 0.0 {
+                        // If the bounds are the zero rectangle then we can bail early.
+                        return false;
+                    }
+                    let vis_w = vp.width().max(0) as f64;
+                    let vis_h = vp.height().max(0) as f64;
+                    // Note: compute_bounds() on a viewport-like widget will return coordinates 
+                    // in a rather weird way: always by the viewport's location within the window,
+                    // with scrolling affecting the positions of the widgets therein. In other words,
+                    // within this coordinate system, the rendered area's top left corner is always at 
+                    // (0, 0) and the AlbumCell's location might be in the negative.
+                    ((cell_x <= vis_w && cell_x >= 0.0) || (cell_x + cell_w <= vis_w && cell_x + cell_w >= 0.0))
+                        && ((cell_y <= vis_h && cell_y >= 0.0) || (cell_y + cell_h <= vis_h && cell_y + cell_h >= 0.0))
+                } else {
+                    false // we're in a GridView; don't load until given a bound
+                }
+            }
+            None => true,
+        }
+    }
+
     pub fn bind(&self, album: &Album) {
-        // The string properties are bound using property expressions in setup().
-        // Fetch album cover once here.
-        // Set once first (like sync_create)
         self.imp().album.set(Some(album));
-        self.update_cover();
+        if self.should_load_texture() {
+            self.update_cover();
+        }
     }
 
     pub fn unbind(&self) {
@@ -436,7 +519,9 @@ impl AlbumCell {
         if old != new {
             self.imp().cover.set_is_thumbnail(!new);
             self.notify("hires");
-            self.update_cover();
+            if self.should_load_texture() {
+                self.update_cover();
+            }
         }
     }
 }
