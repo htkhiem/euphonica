@@ -359,16 +359,17 @@ impl Cache {
             Ok(Some(tex)) => return Ok(Some(tex)),
             Ok(None) => {}
             Err(Error::PriorFailure) => failed_before = true,
-            // Err(Error::FileNotFound) => {
-            //     return Box::pin(self.get_cover(
-            //         &folder_key_owned,
-            //         &embedded_key_owned,
-            //         thumbnail,
-            //         external,
-            //         album,
-            //     ))
-            //     .await;
-            // }
+            Err(Error::FileNotFound) => {
+                // Retry (DB entry should have been purged by get_image_internal)
+                return Box::pin(self.get_cover(
+                    &folder_key_owned,
+                    &embedded_key_owned,
+                    thumbnail,
+                    external,
+                    album,
+                ))
+                .await;
+            }
             Err(e) => return Err(e),
         }
 
