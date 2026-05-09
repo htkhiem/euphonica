@@ -564,13 +564,16 @@ impl Connection {
             self.respond_with_client(
                 |c| {
                     match download_func(c, &uri) {
-                        Ok(bytes) => {
-                            let dyn_img = image::load_from_memory(&bytes)
-                                .expect("Unable to read image from bytes");
-                            Ok(Some(utils::save_and_register_image(dyn_img, &uri, None)))
-                        }
+                        Ok(bytes) => Ok(Some(utils::save_and_register_image(
+                            image::load_from_memory(&bytes).map_err(|_| {
+                                MpdError::Parse(mpd::error::ParseError::BadValue(
+                                    "unexpected EOF in texture".into(),
+                                ))
+                            })?,
+                            &uri,
+                            None,
+                        ))),
                         Err(MpdError::Proto(ProtoError::NotPair)) => {
-                            println!("maybe_download_image: empty output for '{}'", uri);
                             // Empty output. Treat as not available.
                             Ok(None)
                         }
