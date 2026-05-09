@@ -488,6 +488,10 @@ impl FolderView {
         ));
     }
 
+    pub fn search_bar(&self) -> gtk::SearchBar {
+        self.imp().search_bar.get()
+    }
+
     fn setup_listview(&self, _cache: Rc<Cache>, library: Library) {
         // Setup search bar
         let search_bar = self.imp().search_bar.get();

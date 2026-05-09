@@ -104,7 +104,7 @@ impl ArtistTag {
 
         res.imp().name.set_label(artist.get_name());
 
-        res.imp().artist.set(artist.clone());
+        let _ = res.imp().artist.set(artist.clone());
 
         let _ = res.imp().avatar_signal_ids.replace(Some((
             cache_state.connect_closure(

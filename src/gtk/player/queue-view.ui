@@ -131,7 +131,6 @@
                 </child>
                 <child type="top">
                   <object class="GtkSearchBar" id="search_bar">
-                    <property name="key-capture-widget">queue_pane_view</property>
                     <child>
                       <object class="GtkBox">
                         <property name="spacing">6</property>

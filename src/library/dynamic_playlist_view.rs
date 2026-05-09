@@ -414,6 +414,10 @@ impl DynamicPlaylistView {
         self.imp().nav_view.pop();
     }
 
+    pub fn search_bar(&self) -> gtk::SearchBar {
+        self.imp().search_bar.get()
+    }
+
     pub async fn delete(&self, name: &str) {
         if let Some(library) = self.imp().library.upgrade() {
             self.imp().nav_view.pop();

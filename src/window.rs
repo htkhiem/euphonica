@@ -1367,6 +1367,7 @@ impl EuphonicaWindow {
             win,
             move |_| {
                 this.maybe_populate_visible();
+                this.update_search_capture();
             }
         ));
 
@@ -1577,6 +1578,35 @@ impl EuphonicaWindow {
             }
         } else {
             revealer.set_reveal_child(true);
+        }
+    }
+
+    fn update_search_capture(&self) {
+        let imp = self.imp();
+        if let Some(curr_child) = imp.stack.visible_child_name() {
+            imp.album_view.search_bar().set_key_capture_widget(
+                (curr_child == "albums").then_some(self),
+            );
+
+            imp.artist_view.search_bar().set_key_capture_widget(
+                (curr_child == "artists").then_some(self),
+            );
+
+            imp.folder_view.search_bar().set_key_capture_widget(
+                (curr_child == "folders").then_some(self),
+            );
+
+            imp.dyn_playlist_view.search_bar().set_key_capture_widget(
+                (curr_child == "dynamic_playlists").then_some(self),
+            );
+
+            imp.playlist_view.search_bar().set_key_capture_widget(
+                (curr_child == "playlists").then_some(self),
+            );
+
+            imp.queue_view.search_bar().set_key_capture_widget(
+                (curr_child == "queue").then_some(self),
+            );
         }
     }
 

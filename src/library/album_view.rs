@@ -449,6 +449,10 @@ impl AlbumView {
         });
     }
 
+    pub fn search_bar(&self) -> gtk::SearchBar {
+        self.imp().search_bar.get()
+    }
+
     pub fn on_album_clicked(&self, album: &Album) {
         // - Upon receiving click signal, get the list item at the indicated activate index.
         // - Extract album from that list item.

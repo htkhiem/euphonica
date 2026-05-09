@@ -376,33 +376,36 @@ impl AlbumCell {
             weak_vp.set(Some(&vp));
             let _ = res.imp().viewport.set(weak_vp);
             glib::idle_add_local(clone!(
-                #[weak(rename_to = this)] res,
-                #[upgrade_or] glib::ControlFlow::Break,
+                #[weak(rename_to = this)]
+                res,
+                #[upgrade_or]
+                glib::ControlFlow::Break,
                 move || {
-                let imp = this.imp();
-                let is_visible = this.should_load_texture();
-                let was_visible = imp.should_load_texture.replace(is_visible);
+                    let imp = this.imp();
+                    let is_visible = this.should_load_texture();
+                    let was_visible = imp.should_load_texture.replace(is_visible);
 
-                if was_visible != is_visible {
-                    if is_visible {
-                        // println!("AlbumCell is now visible");
-                        if imp.album.upgrade().is_some() {
-                            glib::idle_add_local_once(clone!(
-                                #[weak]
-                                this,
-                                move || {
-                                    this.update_cover();
-                                }
-                            ));
+                    if was_visible != is_visible {
+                        if is_visible {
+                            // println!("AlbumCell is now visible");
+                            if imp.album.upgrade().is_some() {
+                                glib::idle_add_local_once(clone!(
+                                    #[weak]
+                                    this,
+                                    move || {
+                                        this.update_cover();
+                                    }
+                                ));
+                            }
+                        } else {
+                            // println!("AlbumCell scrolled out of view");
+                            imp.cover.clear();
                         }
-                    } else {
-                        // println!("AlbumCell scrolled out of view");
-                        imp.cover.clear();
                     }
-                }
 
-                glib::ControlFlow::Continue
-            }));
+                    glib::ControlFlow::Continue
+                }
+            ));
         }
         res.imp().obj_ready.set(true);
 
@@ -472,13 +475,15 @@ impl AlbumCell {
                     }
                     let vis_w = vp.width().max(0) as f64;
                     let vis_h = vp.height().max(0) as f64;
-                    // Note: compute_bounds() on a viewport-like widget will return coordinates 
+                    // Note: compute_bounds() on a viewport-like widget will return coordinates
                     // in a rather weird way: always by the viewport's location within the window,
                     // with scrolling affecting the positions of the widgets therein. In other words,
-                    // within this coordinate system, the rendered area's top left corner is always at 
+                    // within this coordinate system, the rendered area's top left corner is always at
                     // (0, 0) and the AlbumCell's location might be in the negative.
-                    ((cell_x <= vis_w && cell_x >= 0.0) || (cell_x + cell_w <= vis_w && cell_x + cell_w >= 0.0))
-                        && ((cell_y <= vis_h && cell_y >= 0.0) || (cell_y + cell_h <= vis_h && cell_y + cell_h >= 0.0))
+                    ((cell_x <= vis_w && cell_x >= 0.0)
+                        || (cell_x + cell_w <= vis_w && cell_x + cell_w >= 0.0))
+                        && ((cell_y <= vis_h && cell_y >= 0.0)
+                            || (cell_y + cell_h <= vis_h && cell_y + cell_h >= 0.0))
                 } else {
                     false // we're in a GridView; don't load until given a bound
                 }

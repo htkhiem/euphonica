@@ -916,6 +916,10 @@ impl QueueView {
         self.bind_state(player);
         self.imp().player.set(Some(player));
     }
+
+    pub fn search_bar(&self) -> gtk::SearchBar {
+        self.imp().search_bar.get()
+    }
 }
 
 impl LazyInit for QueueView {
