@@ -538,16 +538,21 @@ impl Connection {
         &mut self,
         uri: String,
         download_func: F,
+        register_key: Option<String>,
         resp: Responder<Option<utils::RegisteredImageBundle>>,
     ) where
         F: Fn(&mut Client<StreamWrapper>, &String) -> MpdResult<Vec<u8>>,
     {
+        // `register_key` overrides the key used for DB lookup and registration.
+        // This lets us store a folder-level key even when the fetch URI is track-level.
+        let key = register_key.as_deref().unwrap_or(&uri);
+
         // Always check with our DB first, as multiple calls may be spawned
         // asynchronously when no cover was locally available.
         // Only one of those calls should cause a download; other calls
         // should start using the local cached version as soon as possible.
-        let hires = sqlite::find_image_by_key(&uri, None, false).expect("Sqlite DB error");
-        let thumb = sqlite::find_image_by_key(&uri, None, true).expect("Sqlite DB error");
+        let hires = sqlite::find_image_by_key(key, None, false).expect("Sqlite DB error");
+        let thumb = sqlite::find_image_by_key(key, None, true).expect("Sqlite DB error");
         if let (Some(hires), Some(thumb)) = (hires, thumb) {
             let _ = resp.send(Ok(Some(utils::RegisteredImageBundle {
                 hires: utils::RegisteredImage {
@@ -570,7 +575,7 @@ impl Connection {
                                     "unexpected EOF in texture".into(),
                                 ))
                             })?,
-                            &uri,
+                            key,
                             None,
                         ))),
                         Err(MpdError::Proto(ProtoError::NotPair)) => {
@@ -1017,11 +1022,19 @@ impl Connection {
                     }
                     Task::UpdateDb(resp) => self.respond_with_client(|c| c.update(), resp),
                     Task::GetEmbeddedCover(uri, resp) => {
-                        self.maybe_download_image(uri, |client, uri| client.readpicture(uri), resp)
+                        // Assume the URI is track-level.
+                        let folder_uri = utils::strip_filename_linux(&uri).to_owned();
+                        self.maybe_download_image(
+                            uri,
+                            |client, uri| client.readpicture(uri),
+                            Some(folder_uri),
+                            resp,
+                        )
                     }
                     Task::GetFolderCover(folder_uri, resp) => self.maybe_download_image(
                         folder_uri,
                         |client, uri| client.albumart(uri),
+                        None, // Assume folder-level URI, no need to override
                         resp,
                     ),
                     Task::List(term, query, groupby, resp) => {

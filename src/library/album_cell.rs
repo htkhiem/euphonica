@@ -26,6 +26,10 @@ use crate::{
     utils::settings_manager,
 };
 
+// As soon as a cell comes within this close of the render area, treat it as
+// visible & load album art early to avoid showing loading spinners.
+static WING_DEPTH: f64 = 384.0;
+
 mod imp {
     use super::*;
 
@@ -480,10 +484,10 @@ impl AlbumCell {
                     // with scrolling affecting the positions of the widgets therein. In other words,
                     // within this coordinate system, the rendered area's top left corner is always at
                     // (0, 0) and the AlbumCell's location might be in the negative.
-                    ((cell_x <= vis_w && cell_x >= 0.0)
-                        || (cell_x + cell_w <= vis_w && cell_x + cell_w >= 0.0))
-                        && ((cell_y <= vis_h && cell_y >= 0.0)
-                            || (cell_y + cell_h <= vis_h && cell_y + cell_h >= 0.0))
+                    ((cell_x <= vis_w + WING_DEPTH && cell_x >= -WING_DEPTH)
+                        || (cell_x + cell_w <= vis_w + WING_DEPTH && cell_x + cell_w >= -WING_DEPTH))
+                        && ((cell_y <= vis_h + WING_DEPTH && cell_y >= -WING_DEPTH)
+                            || (cell_y + cell_h <= vis_h + WING_DEPTH && cell_y + cell_h >= -WING_DEPTH))
                 } else {
                     false // we're in a GridView; don't load until given a bound
                 }

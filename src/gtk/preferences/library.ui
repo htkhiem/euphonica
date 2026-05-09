@@ -3,7 +3,17 @@
 	<requires lib="gtk" version="4.0" />
 	<requires lib="Adw" version="1.0" />
 	<template class="EuphonicaLibraryPreferences" parent="AdwPreferencesPage">
-        <property name="title" translatable="true">Library</property>
+		<object class="AdwAlertDialog" id="clear_cache_dialog">
+			<property name="heading" translatable="yes">Clear all cached images?</property>
+			<property name="body" translatable="yes">This action cannot be undone.</property>
+			<property name="default-response">cancel</property>
+			<property name="close-response">cancel</property>
+			<responses>
+				<response id="cancel" translatable="yes">_Cancel</response>
+				<response id="clear" translatable="yes" appearance="destructive">C_lear</response>
+			</responses>
+		</object>
+		<property name="title" translatable="true">Library</property>
 		<property name="icon-name">library-music-symbolic</property>
 		<child>
 			<object class="AdwPreferencesGroup">
@@ -174,6 +184,73 @@
 					</object>
 				</property>
 				<child>
+					<object class="AdwActionRow">
+						<property name="title" translatable="true">Image format</property>
+						<property name="subtitle" translatable="true">Format for cached album art and avatars. PNG takes up much more disk space, but might look slightly better. Requires redownloading.</property>
+						<child>
+							<object class="AdwToggleGroup" id="image_format">
+								<property name="valign">center</property>
+								<property name="can-shrink">false</property>
+								<child>
+									<object class="AdwToggle">
+										<property name="label">JPEG</property>
+										<property name="name">jpeg</property>
+									</object>
+								</child>
+								<child>
+									<object class="AdwToggle">
+										<property name="label">PNG</property>
+										<property name="name">png</property>
+									</object>
+								</child>
+							</object>
+						</child>
+					</object>
+				</child>
+				<child>
+					<object class="AdwActionRow">
+						<property name="title" translatable="true">Maximum resolution</property>
+						<property name="subtitle" translatable="true">Maximum resolution for cached images. Requires redownloading.</property>
+						<child>
+							<object class="GtkScale" id="max_image_resolution">
+								<property name="draw-value">false</property>
+								<property name="width-request">200</property>
+								<marks>
+									<mark value="256" position="2">256</mark>
+									<mark value="512" position="3">512</mark>
+									<mark value="1024" position="2">1024</mark>
+									<mark value="1536" position="3">1536</mark>
+									<mark value="2048" position="2">2048</mark>
+									<mark value="3072" position="3">3072</mark>
+									<mark value="4096" position="2">4096</mark>
+								</marks>
+								<property name="adjustment">
+									<object class="GtkAdjustment">
+										<property name="lower">256</property>
+										<property name="upper">4096</property>
+										<property name="value">1024</property>
+									</object>
+								</property>
+							</object>
+						</child>
+					</object>
+				</child>
+				<child>
+					<object class="AdwActionRow" id="clear_cache_row">
+						<property name="title" translatable="true">Clear cached images</property>
+						<property name="subtitle" translatable="true">Remove all cached images and clear image database entries</property>
+						<child type="suffix">
+							<object class="GtkButton" id="clear_cache_btn">
+								<property name="valign">center</property>
+								<property name="label" translatable="true">Clear</property>
+								<style>
+									<class name="destructive-action"/>
+								</style>
+							</object>
+						</child>
+					</object>
+				</child>
+				<child>
 					<object class="AdwActionRow" id="image_cache_size">
 						<style>
 							<class name="property"/>
@@ -199,5 +276,5 @@
 				</child>
 			</object>
 		</child>
-    </template>
+	</template>
 </interface>

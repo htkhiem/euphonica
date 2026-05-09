@@ -293,182 +293,116 @@ impl Cache {
         self.state.clone()
     }
 
-    /// Try to get a cover image for the given song. This prioritises the embedded cover
-    /// over the cover image file in the same folder.
+    /// Try to get a cover image for the given song. This prioritises the folder-level
+    /// cover image over embedded covers of the track.
     /// Returns a gdk::Texture from cache if available.
     /// Failing that, we'll search local storage.
-    /// Still failing that, if `external` is true, it will try to get one from MPD.
+    /// Still failing that, if `external` is true, it will try to get one from MPD
+    /// or external metadata providers.
     pub async fn get_song_cover(
         self: Rc<Self>,
         song: &SongInfo,
         thumbnail: bool,
         external: bool,
     ) -> Result<Option<Texture>> {
-        let mut embedded_failed_before = false;
-        let mut folder_failed_before = false;
-        let uri = song.uri.to_owned();
-        // Try to get embedded cover from in-memory cache or local storage first.
-        match self
-            .local
-            .call(move |_| get_image_internal(&uri, None, thumbnail))
-            .await
-        {
-            Ok(Some(tex)) => {
-                return Ok(Some(tex));
-            }
-            Ok(None) => {}
-            Err(Error::PriorFailure) => {
-                embedded_failed_before = true;
-            }
-            Err(Error::FileNotFound) => {
-                // Retry (DB entry should have been purged by get_image_internal)
-                return Box::pin(self.get_song_cover(song, thumbnail, external)).await;
-            }
-            Err(e) => {
-                return Err(e);
-            }
-        }
-
-        // Now try to get a folder cover, again from in-memory cache or local storage.
         let folder_uri = strip_filename_linux(&song.uri).to_owned();
-        match self
-            .local
-            .call(move |_| get_image_internal(&folder_uri, None, thumbnail))
+        let album = song.album.as_ref().cloned();
+        self.get_cover(&folder_uri, &song.uri, thumbnail, external, album)
             .await
-        {
-            Ok(Some(tex)) => {
-                return Ok(Some(tex));
-            }
-            Ok(None) => {}
-            Err(Error::PriorFailure) => {
-                folder_failed_before = true;
-            }
-            Err(Error::FileNotFound) => {
-                // Retry (DB entry should have been purged by get_image_internal)
-                return Box::pin(self.get_song_cover(song, thumbnail, external)).await;
-            }
-            Err(e) => {
-                return Err(e);
-            }
-        }
-
-        if external {
-            if !embedded_failed_before
-                && settings_manager()
-                    .child("client")
-                    .boolean("mpd-download-album-art")
-                && let Some(bundle) = self
-                    .mpd_client
-                    .get_embedded_cover(song.uri.clone())
-                    .map_err(Error::Client)
-                    .await?
-            {
-                return Ok(bundle.take_texture(thumbnail).map(Some)?);
-            }
-            if let (false, Some(album)) = (folder_failed_before, song.album.as_ref().cloned())
-                && let Some(meta) = self.get_album_meta(&album, true, false, None).await?
-            {
-                return self
-                    .external
-                    .call(move |_| load_image(&album.folder_uri, None, &meta.image, thumbnail))
-                    .await;
-            }
-        }
-        Ok(None)
     }
 
     /// Try to get a cover image for the given album. This prioritises the folder image
     /// file over embedded covers of its tracks.
     /// Returns a gdk::Texture from cache if available.
     /// Failing that, we'll search local storage.
-    /// Still failing that, if `external` is true, it will try to get one from MPD.
+    /// Still failing that, if `external` is true, it will try to get one from MPD
+    /// or external metadata providers.
     pub async fn get_album_cover(
         self: Rc<Self>,
         album: &AlbumInfo,
         thumbnail: bool,
         external: bool,
     ) -> Result<Option<Texture>> {
-        let mut embedded_failed_before = false;
-        let mut folder_failed_before = false;
+        self.get_cover(
+            &album.folder_uri,
+            &album.example_uri,
+            thumbnail,
+            external,
+            Some(album.to_owned()),
+        )
+        .await
+    }
 
-        // Try to find the image file first.
-        let folder_uri = album.folder_uri.to_owned();
+    /// Shared cover lookup. `folder_key` is the URI used for folder-level images,
+    /// `embedded_key` is the URI used for embedded (track-level) images.
+    /// If `album` is provided, it is used for external metadata lookups.
+    async fn get_cover(
+        self: Rc<Self>,
+        folder_key: &str,
+        embedded_key: &str,
+        thumbnail: bool,
+        external: bool,
+        album: Option<AlbumInfo>,
+    ) -> Result<Option<Texture>> {
+        let mut failed_before = false;
+
+        let folder_key_owned = folder_key.to_owned();
+        let embedded_key_owned = embedded_key.to_owned();
+
+        // 1. Check if we have it cached locally
+        let folder_key_cached = folder_key_owned.clone();
         match self
             .local
-            .call(move |_| get_image_internal(&folder_uri, None, thumbnail))
+            .call(move |_| get_image_internal(&folder_key_cached, None, thumbnail))
             .await
         {
-            Ok(Some(tex)) => {
-                return Ok(Some(tex));
-            }
+            Ok(Some(tex)) => return Ok(Some(tex)),
             Ok(None) => {}
-            Err(Error::PriorFailure) => {
-                folder_failed_before = true;
-            }
-            Err(Error::FileNotFound) => {
-                // Retry (DB entry should have been purged by get_image_internal)
-                return Box::pin(self.get_album_cover(album, thumbnail, external)).await;
-            }
-            Err(e) => {
-                return Err(e);
-            }
+            Err(Error::PriorFailure) => failed_before = true,
+            // Err(Error::FileNotFound) => {
+            //     return Box::pin(self.get_cover(
+            //         &folder_key_owned,
+            //         &embedded_key_owned,
+            //         thumbnail,
+            //         external,
+            //         album,
+            //     ))
+            //     .await;
+            // }
+            Err(e) => return Err(e),
         }
 
-        // Now try to get the embedded art from one of its tracks.
-        let example_uri = album.example_uri.to_owned();
-        match self
-            .local
-            .call(move |_| get_image_internal(&example_uri, None, thumbnail))
-            .await
-        {
-            Ok(Some(tex)) => {
-                return Ok(Some(tex));
-            }
-            Ok(None) => {}
-            Err(Error::PriorFailure) => {
-                embedded_failed_before = true;
-            }
-            Err(Error::FileNotFound) => {
-                // Retry (DB entry should have been purged by get_image_internal)
-                return Box::pin(self.get_album_cover(album, thumbnail, external)).await;
-            }
-            Err(e) => {
-                return Err(e);
-            }
-        }
-
-        if external {
-            if !folder_failed_before
-                && settings_manager()
+        // 2. Nope, fall back to downloading fresh
+        if external  && !failed_before{
+            if settings_manager()
                     .child("client")
                     .boolean("mpd-download-album-art")
-                && let Some(bundle) = self
+            {
+                // 2a. MPD folder-level cover
+                if let Some(bundle) = self
                     .mpd_client
-                    .get_folder_cover(album.folder_uri.to_owned())
+                    .get_folder_cover(folder_key_owned.to_owned())
                     .map_err(Error::Client)
                     .await?
-            {
-                return Ok(bundle.take_texture(thumbnail).map(Some)?);
-            }
-
-            if !embedded_failed_before
-                && settings_manager()
-                    .child("client")
-                    .boolean("mpd-download-album-art")
-                && let Some(bundle) = self
+                {
+                    return Ok(bundle.take_texture(thumbnail).map(Some)?);
+                }
+                // 2b. MPD embedded cover, WILL BE SAVED AS FOLDER-LEVEL ART such that all future calls from tracks in the
+                // same folder will point to this one. This way we avoid downloading the same embedded art from each track.
+                if let Some(bundle) = self
                     .mpd_client
-                    .get_embedded_cover(album.example_uri.to_owned())
+                    .get_embedded_cover(embedded_key_owned.to_owned())
                     .map_err(Error::Client)
                     .await?
-            {
-                return Ok(bundle.take_texture(thumbnail).map(Some)?);
+                {
+                    return Ok(bundle.take_texture(thumbnail).map(Some)?);
+                }
             }
 
-            if let (false, Some(meta)) = (
-                folder_failed_before,
-                self.get_album_meta(album, true, false, None).await?,
-            ) {
-                let album = album.to_owned();
+            // 2c. Go outside & scream
+            if let Some(album) = album
+                && let Some(meta) = self.get_album_meta(&album, true, false, None).await?
+            {
                 return self
                     .external
                     .call(move |_| load_image(&album.folder_uri, None, &meta.image, thumbnail))
@@ -855,5 +789,11 @@ impl Cache {
         } else {
             Ok(None)
         }
+    }
+
+    pub async fn clear_image_cache(&self) -> Result<()> {
+        self.local
+            .call(move |_| sqlite::clear_all_images().map_err(Error::Sqlite))
+            .await
     }
 }
