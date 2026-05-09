@@ -60,6 +60,7 @@ mod imp {
         pub hires: Cell<bool>,
         // Stored GridView for visibility checks in bind() and the tick callback.
         pub viewport: OnceCell<WeakRef<gtk::GridView>>,
+        pub tick_callback: RefCell<Option<gtk::TickCallbackId>>,
         // Tracks whether the cell is currently within the viewport, used
         // to detect visibility transitions (entering/exiting the viewport).
         pub should_load_texture: Cell<bool>,
@@ -89,6 +90,10 @@ mod imp {
         fn dispose(&self) {
             while let Some(child) = self.obj().first_child() {
                 child.unparent();
+            }
+
+            if let Some(tick_callback) = self.tick_callback.take() {
+                tick_callback.remove();
             }
 
             if let Some((update_id, clear_id)) = self.cover_signal_ids.take() {
@@ -379,12 +384,8 @@ impl AlbumCell {
             let weak_vp = WeakRef::new();
             weak_vp.set(Some(&vp));
             let _ = res.imp().viewport.set(weak_vp);
-            glib::idle_add_local(clone!(
-                #[weak(rename_to = this)]
-                res,
-                #[upgrade_or]
-                glib::ControlFlow::Break,
-                move || {
+            let _ = res.imp().tick_callback.replace(Some(res.add_tick_callback(
+                move |this, _frameclock| {
                     let imp = this.imp();
                     let is_visible = this.should_load_texture();
                     let was_visible = imp.should_load_texture.replace(is_visible);
@@ -408,8 +409,8 @@ impl AlbumCell {
                     }
 
                     glib::ControlFlow::Continue
-                }
-            ));
+                },
+            )));
         }
         res.imp().obj_ready.set(true);
 
@@ -485,9 +486,11 @@ impl AlbumCell {
                     // within this coordinate system, the rendered area's top left corner is always at
                     // (0, 0) and the AlbumCell's location might be in the negative.
                     ((cell_x <= vis_w + WING_DEPTH && cell_x >= -WING_DEPTH)
-                        || (cell_x + cell_w <= vis_w + WING_DEPTH && cell_x + cell_w >= -WING_DEPTH))
+                        || (cell_x + cell_w <= vis_w + WING_DEPTH
+                            && cell_x + cell_w >= -WING_DEPTH))
                         && ((cell_y <= vis_h + WING_DEPTH && cell_y >= -WING_DEPTH)
-                            || (cell_y + cell_h <= vis_h + WING_DEPTH && cell_y + cell_h >= -WING_DEPTH))
+                            || (cell_y + cell_h <= vis_h + WING_DEPTH
+                                && cell_y + cell_h >= -WING_DEPTH))
                 } else {
                     false // we're in a GridView; don't load until given a bound
                 }
