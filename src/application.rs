@@ -175,6 +175,13 @@ mod imp {
                 obj.set_accels_for_action("app.quit", &["<primary>q"]);
                 obj.set_accels_for_action("app.fullscreen", &["F11"]);
                 obj.set_accels_for_action("app.refresh", &["F5"]);
+                obj.set_accels_for_action("app.view-recent", &["<Ctrl>1"]);
+                obj.set_accels_for_action("app.view-albums", &["<Ctrl>2"]);
+                obj.set_accels_for_action("app.view-artists", &["<Ctrl>3"]);
+                obj.set_accels_for_action("app.view-folders", &["<Ctrl>4"]);
+                obj.set_accels_for_action("app.view-dynamic-playlists", &["<Ctrl>5"]);
+                obj.set_accels_for_action("app.view-playlists", &["<Ctrl>6"]);
+                obj.set_accels_for_action("app.view-queue", &["<Ctrl>7"]);
 
                 glib::spawn_future_local(clone!(
                     #[weak]
@@ -284,6 +291,28 @@ impl EuphonicaApplication {
         let preferences_action = gio::ActionEntry::builder("preferences")
             .activate(move |app: &Self, _, _| app.show_preferences())
             .build();
+        let view_recent_action = gio::ActionEntry::builder("view-recent")
+            .activate(move |app: &Self, _, _| app.switch_to_view("recent"))
+            .build();
+        let view_albums_action = gio::ActionEntry::builder("view-albums")
+            .activate(move |app: &Self, _, _| app.switch_to_view("albums"))
+            .build();
+        let view_artists_action = gio::ActionEntry::builder("view-artists")
+            .activate(move |app: &Self, _, _| app.switch_to_view("artists"))
+            .build();
+        let view_folders_action = gio::ActionEntry::builder("view-folders")
+            .activate(move |app: &Self, _, _| app.switch_to_view("folders"))
+            .build();
+        let view_dyn_playlists_action = gio::ActionEntry::builder("view-dynamic-playlists")
+            .activate(move |app: &Self, _, _| app.switch_to_view("dynamic_playlists"))
+            .build();
+        let view_playlists_action = gio::ActionEntry::builder("view-playlists")
+            .activate(move |app: &Self, _, _| app.switch_to_view("playlists"))
+            .build();
+        let view_queue_action = gio::ActionEntry::builder("view-queue")
+            .activate(move |app: &Self, _, _| app.switch_to_view("queue"))
+            .build();
+
         self.add_action_entries([
             toggle_fullscreen_action,
             refresh_action,
@@ -291,6 +320,13 @@ impl EuphonicaApplication {
             quit_action,
             about_action,
             preferences_action,
+            view_recent_action,
+            view_albums_action,
+            view_artists_action,
+            view_folders_action,
+            view_dyn_playlists_action,
+            view_playlists_action,
+            view_queue_action
         ]);
     }
 
@@ -424,5 +460,13 @@ impl EuphonicaApplication {
     pub fn quit_app(&self) {
         self.imp().hold_guard.take();
         self.quit();
+    }
+
+    pub fn switch_to_view(&self, view_name: &str) {
+        if let Some(window) = self.active_window() {
+            if let Some(euphonica_window) = window.downcast_ref::<EuphonicaWindow>() {
+                euphonica_window.imp().sidebar.get().set_view(view_name);
+            }
+        }
     }
 }
