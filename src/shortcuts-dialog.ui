@@ -119,38 +119,26 @@
         <property name="title" translatable="yes">Queue Control</property>
         <child>
           <object class="AdwShortcutsItem">
-            <property name="title" translatable="yes">Shift Track Backward</property>
-            <property name="accelerator">&lt;Shift&gt;Up</property>
-          </object>
-        </child>
-        <child>
-          <object class="AdwShortcutsItem">
-            <property name="title" translatable="yes">Shift Track Forward</property>
-            <property name="accelerator">&lt;Shift&gt;Down</property>
-          </object>
-        </child>
-        <child>
-          <object class="AdwShortcutsItem">
             <property name="title" translatable="yes">Stop &amp; Clear Queue</property>
-            <property name="accelerator">&lt;Alt&gt;c</property>
+            <property name="action-name">queue-view.stop-and-clear</property>
           </object>
         </child>
         <child>
           <object class="AdwShortcutsItem">
             <property name="title" translatable="yes">Save Current Queue</property>
-            <property name="accelerator">&lt;Ctrl&gt;s</property>
+            <property name="action-name">queue-view.save</property>
           </object>
         </child>
         <child>
           <object class="AdwShortcutsItem">
             <property name="title" translatable="yes">Jump to Current Song</property>
-            <property name="accelerator">&lt;Ctrl&gt;o</property>
+            <property name="action-name">queue-view.jump-to-current</property>
           </object>
         </child>
         <child>
           <object class="AdwShortcutsItem">
             <property name="title" translatable="yes">Toggle Queue Auto-scroll</property>
-            <property name="accelerator">&lt;Ctrl&gt;u</property>
+            <property name="action-name">queue-view.toggle-autoscroll</property>
           </object>
         </child>
       </object>
@@ -192,6 +180,12 @@
           <object class="AdwShortcutsItem">
             <property name="title" translatable="yes">Jump to MPD Playlists</property>
             <property name="action-name">app.view-playlists</property>
+          </object>
+        </child>
+        <child>
+          <object class="AdwShortcutsItem">
+            <property name="title" translatable="yes">Jump to Queue</property>
+            <property name="action-name">app.view-queue</property>
           </object>
         </child>
         <child>

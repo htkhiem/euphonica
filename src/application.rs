@@ -326,7 +326,7 @@ impl EuphonicaApplication {
             view_folders_action,
             view_dyn_playlists_action,
             view_playlists_action,
-            view_queue_action
+            view_queue_action,
         ]);
     }
 

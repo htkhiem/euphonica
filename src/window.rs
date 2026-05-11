@@ -677,33 +677,6 @@ mod imp {
                 }
             ));
 
-            // FPS counter (debug) – prints to stdout every 2 seconds
-            // self.fps_frame_count.set(0);
-            // self.fps_last_time.set(Some(std::time::Instant::now()));
-            // let obj = self.obj();
-            // let fps_tick = obj.add_tick_callback(clone!(
-            //     #[weak(rename_to = this)]
-            //     self,
-            //     move |_widget, _delta| {
-            //         let count = this.fps_frame_count.get();
-            //         this.fps_frame_count.set(count + 1);
-            //         let now = std::time::Instant::now();
-            //         if let Some(last) = this.fps_last_time.get() {
-            //             let elapsed = now.duration_since(last);
-            //             if elapsed.as_secs_f64() >= 2.0 {
-            //                 let fps = count as f64 / elapsed.as_secs_f64();
-            //                 println!("FPS: {:.1}", fps);
-            //                 this.fps_frame_count.set(0);
-            //                 this.fps_last_time.set(Some(now));
-            //             }
-            //         } else {
-            //             this.fps_last_time.set(Some(now));
-            //         }
-            //         glib::ControlFlow::Continue
-            //     }
-            // ));
-            // self.fps_tick_id.replace(Some(fps_tick));
-
             self.update_accent_color();
         }
     }
