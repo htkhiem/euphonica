@@ -408,7 +408,7 @@ impl PlayerBar {
             // Update stack
             self.imp()
                 .output_stack
-                .set_visible_child(&self.imp().output_widgets.borrow()[new_idx as usize]);
+                .set_visible_child(&self.imp().output_widgets.borrow()[new_idx.max(0) as usize]);
         }
     }
 }

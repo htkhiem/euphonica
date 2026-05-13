@@ -1621,13 +1621,13 @@ impl Player {
             if curr_idx == 0 {
                 curr_idx = n_outputs - 1;
             } else {
-                curr_idx += 1;
+                curr_idx -= 1;
             }
         } else {
             if curr_idx >= n_outputs - 1 {
                 curr_idx = 0;
             } else {
-                curr_idx -= 1;
+                curr_idx += 1;
             }
         }
         self.imp().current_output.set(curr_idx);

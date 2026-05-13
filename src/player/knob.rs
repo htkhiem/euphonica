@@ -54,6 +54,7 @@ mod imp {
         // Used to disambiguate a quick click (to toggle mute) from a drag (to change volume)
         pub was_dragging: Cell<bool>,
         pub volume_changed_id: RefCell<Option<SignalHandlerId>>,
+        pub muted_id: RefCell<Option<SignalHandlerId>>,
         pub player: WeakRef<Player>,
     }
 
@@ -75,6 +76,7 @@ mod imp {
                 was_dragging: Cell::default(),
                 value: Cell::new(0.0),
                 volume_changed_id: RefCell::new(None),
+                muted_id: RefCell::new(None),
                 player: WeakRef::new(),
             }
         }
@@ -90,6 +92,14 @@ mod imp {
 
     // Trait shared by all GObjects
     impl ObjectImpl for VolumeKnob {
+        fn dispose(&self) {
+            if let Some(player) = self.player.upgrade() {
+                if let Some(id) = self.muted_id.take() {
+                    player.disconnect(id);
+                }
+            }
+        }
+
         fn constructed(&self) {
             self.parent_constructed();
             let obj_ = self.obj();
@@ -427,6 +437,19 @@ impl VolumeKnob {
                         if !player.is_muted() {
                             this.sync_value(vol);
                         }
+                    }
+                ),
+            )));
+
+        self.imp()
+            .muted_id
+            .replace(Some(player.connect_notify_local(
+                Some("is-muted"),
+                clone!(
+                    #[weak(rename_to = this)]
+                    self,
+                    move |_, _| {
+                        this.imp().update_readout();
                     }
                 ),
             )));
