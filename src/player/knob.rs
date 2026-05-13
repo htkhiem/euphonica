@@ -433,10 +433,8 @@ impl VolumeKnob {
                 closure_local!(
                     #[weak(rename_to = this)]
                     self,
-                    move |player: &Player, vol: i8| {
-                        if !player.is_muted() {
-                            this.sync_value(vol);
-                        }
+                    move |_: &Player, vol: i8| {
+                        this.sync_value(vol);
                     }
                 ),
             )));

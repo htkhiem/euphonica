@@ -1733,6 +1733,9 @@ impl Player {
     pub async fn send_set_volume(&self, val: i8) -> ClientResult<()> {
         let old_vol = self.imp().volume.replace(val);
         if old_vol != val {
+            // Propagate to the other knob. Technically this alerts the source knob too
+            // but since the value is the same it'll be silently ignored.
+            self.emit_by_name::<()>("volume-changed", &[&val]);
             self.client()?.set_volume(val).await?;
             self.imp()
                 .expected_volume_changes
