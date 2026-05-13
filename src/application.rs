@@ -24,7 +24,7 @@ use crate::{
     client::{MpdWrapper, Result as ClientResult},
     config::VERSION,
     library::Library,
-    player::Player,
+    player::{Player, QueueView},
     preferences::Preferences,
     utils::{settings_manager, tokio_runtime},
 };
@@ -182,6 +182,32 @@ mod imp {
                 obj.set_accels_for_action("app.view-dynamic-playlists", &["<Ctrl>5"]);
                 obj.set_accels_for_action("app.view-playlists", &["<Ctrl>6"]);
                 obj.set_accels_for_action("app.view-queue", &["<Ctrl>7"]);
+                obj.set_accels_for_action("queue.scroll-to-playing", &["<Shift>o"]);
+                obj.set_accels_for_action("queue.stop-and-clear", &["<Alt>c"]);
+                obj.set_accels_for_action("queue.save", &["<Ctrl>s"]);
+                obj.set_accels_for_action("queue.jump-to-current", &["<Ctrl>o"]);
+                obj.set_accels_for_action("queue.toggle-autoscroll", &["<Ctrl>u"]);
+
+                // Playback shortcuts
+                obj.set_accels_for_action("player.toggle-playback", &["<Ctrl>p"]);
+                obj.set_accels_for_action("player.next-song", &["<Shift>period"]);
+                obj.set_accels_for_action("player.prev-song", &["<Shift>comma"]);
+                obj.set_accels_for_action("player.seek-forward", &["<Shift>f"]);
+                obj.set_accels_for_action("player.seek-backward", &["<Shift>b"]);
+                obj.set_accels_for_action("player.stop", &["<Ctrl><Shift>s"]);
+                obj.set_accels_for_action("player.toggle-random", &["<Alt>z"]);
+                obj.set_accels_for_action("player.toggle-repeat", &["<Alt>r"]);
+                obj.set_accels_for_action("player.toggle-consume", &["<Shift>r"]);
+                obj.set_accels_for_action("player.toggle-replaygain", &["<Shift>y"]);
+                obj.set_accels_for_action("player.cycle-crossfade", &["<Alt>x"]);
+                obj.set_accels_for_action("player.volume-up", &["<Ctrl>up"]);
+                obj.set_accels_for_action("player.volume-down", &["<Ctrl>down"]);
+                obj.set_accels_for_action("player.toggle-mute", &["<Ctrl>m"]);
+                obj.set_accels_for_action("player.next-output", &["<Ctrl>right"]);
+                obj.set_accels_for_action("player.prev-output", &["<Ctrl>left"]);
+
+                // Spectrum visualiser
+                obj.set_accels_for_action("spectrum-visualizer-toggle", &["F8"]);
 
                 glib::spawn_future_local(clone!(
                     #[weak]
@@ -261,17 +287,30 @@ impl EuphonicaApplication {
         self.imp().client.get().unwrap().clone()
     }
 
+    fn get_queue_view_if_in_view(&self) -> Option<QueueView> {
+        if let Some(win) = self.active_window().and_downcast::<EuphonicaWindow>() {
+            let stack = win.get_stack();
+            if stack.visible_child_name().as_deref() != Some("queue") {
+                None
+            } else {
+                Some(win.get_queue_view())
+            }
+        } else {
+            None
+        }
+    }
+
     fn setup_gactions(&self) {
         let toggle_fullscreen_action = gio::ActionEntry::builder("fullscreen")
-            .activate(move |app: &Self, _, _| app.toggle_fullscreen())
+            .activate(move |this: &Self, _, _| this.toggle_fullscreen())
             .build();
         let refresh_action = gio::ActionEntry::builder("refresh")
-            .activate(move |app: &Self, _, _| {
+            .activate(move |this: &Self, _, _| {
                 glib::spawn_future_local(clone!(
-                    #[weak]
-                    app,
+                    #[weak(rename_to = this)]
+                    this,
                     async move {
-                        if let Err(e) = app.refresh().await {
+                        if let Err(e) = this.refresh().await {
                             dbg!(e);
                         }
                     }
@@ -279,39 +318,338 @@ impl EuphonicaApplication {
             })
             .build();
         let update_db_action = gio::ActionEntry::builder("update-db")
-            .activate(move |app: &Self, _, _| app.update_db())
+            .activate(move |this: &Self, _, _| this.update_db())
             .build();
         // Overrides background mode and ends instance
         let quit_action = gio::ActionEntry::builder("quit")
-            .activate(move |app: &Self, _, _| app.quit_app())
+            .activate(move |this: &Self, _, _| this.quit_app())
             .build();
         let about_action = gio::ActionEntry::builder("about")
-            .activate(move |app: &Self, _, _| app.show_about())
+            .activate(move |this: &Self, _, _| this.show_about())
             .build();
         let preferences_action = gio::ActionEntry::builder("preferences")
-            .activate(move |app: &Self, _, _| app.show_preferences())
+            .activate(move |this: &Self, _, _| this.show_preferences())
             .build();
         let view_recent_action = gio::ActionEntry::builder("view-recent")
-            .activate(move |app: &Self, _, _| app.switch_to_view("recent"))
+            .activate(move |this: &Self, _, _| this.switch_to_view("recent"))
             .build();
         let view_albums_action = gio::ActionEntry::builder("view-albums")
-            .activate(move |app: &Self, _, _| app.switch_to_view("albums"))
+            .activate(move |this: &Self, _, _| this.switch_to_view("albums"))
             .build();
         let view_artists_action = gio::ActionEntry::builder("view-artists")
-            .activate(move |app: &Self, _, _| app.switch_to_view("artists"))
+            .activate(move |this: &Self, _, _| this.switch_to_view("artists"))
             .build();
         let view_folders_action = gio::ActionEntry::builder("view-folders")
-            .activate(move |app: &Self, _, _| app.switch_to_view("folders"))
+            .activate(move |this: &Self, _, _| this.switch_to_view("folders"))
             .build();
         let view_dyn_playlists_action = gio::ActionEntry::builder("view-dynamic-playlists")
-            .activate(move |app: &Self, _, _| app.switch_to_view("dynamic_playlists"))
+            .activate(move |this: &Self, _, _| this.switch_to_view("dynamic_playlists"))
             .build();
         let view_playlists_action = gio::ActionEntry::builder("view-playlists")
-            .activate(move |app: &Self, _, _| app.switch_to_view("playlists"))
+            .activate(move |this: &Self, _, _| this.switch_to_view("playlists"))
             .build();
         let view_queue_action = gio::ActionEntry::builder("view-queue")
-            .activate(move |app: &Self, _, _| app.switch_to_view("queue"))
+            .activate(move |this: &Self, _, _| this.switch_to_view("queue"))
             .build();
+
+        let queue_scroll_to_playing_action = gio::ActionEntry::builder("queue.scroll-to-playing")
+            .activate(move |this: &Self, _, _| {
+                if let Some(view) = this.get_queue_view_if_in_view() {
+                    view.scroll_to_playing();
+                }
+            })
+            .build();
+
+        let queue_stop_and_clear_action = gio::ActionEntry::builder("queue.stop-and-clear")
+            .activate(move |this: &Self, _, _| {
+                if let Some(view) = this.get_queue_view_if_in_view() {
+                    glib::spawn_future_local(clone!(
+                        #[weak]
+                        view,
+                        async move {
+                            view.stop_and_clear().await;
+                        }
+                    ));
+                }
+            })
+            .build();
+
+        let queue_save_action = gio::ActionEntry::builder("queue.save")
+            .activate(move |this: &Self, _, _| {
+                if let Some(view) = this.get_queue_view_if_in_view() {
+                    view.save();
+                }
+            })
+            .build();
+
+        let queue_jump_to_current_action = gio::ActionEntry::builder("queue.jump-to-current")
+            .activate(move |this: &Self, _, _| {
+                if let Some(view) = this.get_queue_view_if_in_view() {
+                    view.jump_to_current();
+                }
+            })
+            .build();
+
+        let queue_toggle_autoscroll_action = gio::ActionEntry::builder("queue.toggle-autoscroll")
+            .activate(move |this: &Self, _, _| {
+                if let Some(view) = this.get_queue_view_if_in_view() {
+                    view.toggle_autoscroll();
+                }
+            })
+            .build();
+
+        let player_toggle_playback_action = gio::ActionEntry::builder("player.toggle-playback")
+            .activate(move |this: &Self, _, _| {
+                let player = this.get_player().clone();
+                glib::spawn_future_local(clone!(
+                    #[weak]
+                    player,
+                    async move {
+                        if let Err(e) = player.toggle_playback().await {
+                            dbg!(e);
+                        }
+                    }
+                ));
+            })
+            .build();
+
+        let player_next_song_action = gio::ActionEntry::builder("player.next-song")
+            .activate(move |this: &Self, _, _| {
+                let player = this.get_player().clone();
+                glib::spawn_future_local(clone!(
+                    #[weak]
+                    player,
+                    async move {
+                        if let Err(e) = player.next_song().await {
+                            dbg!(e);
+                        }
+                    }
+                ));
+            })
+            .build();
+
+        let player_prev_song_action = gio::ActionEntry::builder("player.prev-song")
+            .activate(move |this: &Self, _, _| {
+                let player = this.get_player().clone();
+                glib::spawn_future_local(clone!(
+                    #[weak]
+                    player,
+                    async move {
+                        if let Err(e) = player.prev_song().await {
+                            dbg!(e);
+                        }
+                    }
+                ));
+            })
+            .build();
+
+        let player_seek_forward_action = gio::ActionEntry::builder("player.seek-forward")
+            .activate(move |this: &Self, _, _| {
+                let player = this.get_player().clone();
+                glib::spawn_future_local(clone!(
+                    #[weak]
+                    player,
+                    async move {
+                        let pos = player.position() + 10.0;
+                        if let Err(e) = player.send_seek(pos).await {
+                            dbg!(e);
+                        }
+                    }
+                ));
+            })
+            .build();
+
+        let player_seek_backward_action = gio::ActionEntry::builder("player.seek-backward")
+            .activate(move |this: &Self, _, _| {
+                let player = this.get_player().clone();
+                glib::spawn_future_local(clone!(
+                    #[weak]
+                    player,
+                    async move {
+                        let pos = player.position() - 10.0;
+                        if pos < 0.0 {
+                            let _ = player.send_seek(0.0).await;
+                        } else if let Err(e) = player.send_seek(pos).await {
+                            dbg!(e);
+                        }
+                    }
+                ));
+            })
+            .build();
+
+        let player_stop_action = gio::ActionEntry::builder("player.stop")
+            .activate(move |this: &Self, _, _| {
+                let player = this.get_player().clone();
+                glib::spawn_future_local(clone!(
+                    #[weak]
+                    player,
+                    async move {
+                        if let Err(e) = player.stop().await {
+                            dbg!(e);
+                        }
+                    }
+                ));
+            })
+            .build();
+
+        let player_toggle_random_action = gio::ActionEntry::builder("player.toggle-random")
+            .activate(move |this: &Self, _, _| {
+                let player = this.get_player().clone();
+                glib::spawn_future_local(clone!(
+                    #[weak]
+                    player,
+                    async move {
+                        let new_state = !player.random();
+                        if let Err(e) = player.set_random(new_state).await {
+                            dbg!(e);
+                        }
+                    }
+                ));
+            })
+            .build();
+
+        let player_toggle_repeat_action = gio::ActionEntry::builder("player.toggle-repeat")
+            .activate(move |this: &Self, _, _| {
+                let player = this.get_player().clone();
+                glib::spawn_future_local(clone!(
+                    #[weak]
+                    player,
+                    async move {
+                        if let Err(e) = player.cycle_playback_flow().await {
+                            dbg!(e);
+                        }
+                    }
+                ));
+            })
+            .build();
+
+        let player_toggle_consume_action = gio::ActionEntry::builder("player.toggle-consume")
+            .activate(move |this: &Self, _, _| {
+                let player = this.get_player().clone();
+                glib::spawn_future_local(clone!(
+                    #[weak]
+                    player,
+                    async move {
+                        let new_state = !player.consume();
+                        if let Err(e) = player.set_consume(new_state).await {
+                            dbg!(e);
+                        }
+                    }
+                ));
+            })
+            .build();
+
+        let player_toggle_replaygain_action = gio::ActionEntry::builder("player.toggle-replaygain")
+            .activate(move |this: &Self, _, _| {
+                let player = this.get_player().clone();
+                glib::spawn_future_local(clone!(
+                    #[weak]
+                    player,
+                    async move {
+                        if let Err(e) = player.cycle_replaygain().await {
+                            dbg!(e);
+                        }
+                    }
+                ));
+            })
+            .build();
+
+        let player_cycle_crossfade_action = gio::ActionEntry::builder("player.cycle-crossfade")
+            .activate(move |this: &Self, _, _| {
+                let player = this.get_player().clone();
+                glib::spawn_future_local(clone!(
+                    #[weak]
+                    player,
+                    async move {
+                        let current = player.crossfade();
+                        let next = match current {
+                            0.0 => 1.0,
+                            1.0 => 3.0,
+                            3.0 => 5.0,
+                            5.0 => 10.0,
+                            10.0 => 0.0,
+                            v => v,
+                        };
+                        if let Err(e) = player.set_crossfade(next).await {
+                            dbg!(e);
+                        }
+                    }
+                ));
+            })
+            .build();
+
+        let player_volume_up_action = gio::ActionEntry::builder("player.volume-up")
+            .activate(move |this: &Self, _, _| {
+                let player = this.get_player().clone();
+                glib::spawn_future_local(clone!(
+                    #[weak]
+                    player,
+                    async move {
+                        let vol = player.mpd_volume().saturating_add(2);
+                        if let Err(e) = player.send_set_volume(vol).await {
+                            dbg!(e);
+                        }
+                    }
+                ));
+            })
+            .build();
+
+        let player_volume_down_action = gio::ActionEntry::builder("player.volume-down")
+            .activate(move |this: &Self, _, _| {
+                let player = this.get_player().clone();
+                glib::spawn_future_local(clone!(
+                    #[weak]
+                    player,
+                    async move {
+                        let vol = player.mpd_volume().saturating_sub(2);
+                        if let Err(e) = player.send_set_volume(vol).await {
+                            dbg!(e);
+                        }
+                    }
+                ));
+            })
+            .build();
+
+        let player_toggle_mute_action = gio::ActionEntry::builder("player.toggle-mute")
+            .activate(move |this: &Self, _, _| {
+                let player = this.get_player().clone();
+                glib::spawn_future_local(clone!(
+                    #[weak]
+                    player,
+                    async move {
+                        if let Err(e) = player.toggle_mute().await {
+                            dbg!(e);
+                        }
+                    }
+                ));
+            })
+            .build();
+
+        let player_cycle_output_action = gio::ActionEntry::builder("player.next-output")
+            .activate(move |this: &Self, _, _| {
+                this.get_player().cycle_output(false);
+            })
+            .build();
+
+        let player_cycle_output_prev_action = gio::ActionEntry::builder("player.prev-output")
+            .activate(move |this: &Self, _, _| {
+                this.get_player().cycle_output(true);
+            })
+            .build();
+
+        let spectrum_visualizer_toggle_action =
+            gio::ActionEntry::builder("spectrum-visualizer-toggle")
+                .activate(move |this: &Self, _, _| {
+                    let Some(window) = this.active_window() else {
+                        return;
+                    };
+                    let Some(euphonica_window) = window.downcast_ref::<EuphonicaWindow>() else {
+                        return;
+                    };
+                    let imp = euphonica_window.imp();
+                    imp.use_visualizer.set(!imp.use_visualizer.get());
+                })
+                .build();
 
         self.add_action_entries([
             toggle_fullscreen_action,
@@ -327,6 +665,28 @@ impl EuphonicaApplication {
             view_dyn_playlists_action,
             view_playlists_action,
             view_queue_action,
+            queue_scroll_to_playing_action,
+            queue_stop_and_clear_action,
+            queue_save_action,
+            queue_jump_to_current_action,
+            queue_toggle_autoscroll_action,
+            player_toggle_playback_action,
+            player_next_song_action,
+            player_prev_song_action,
+            player_seek_forward_action,
+            player_seek_backward_action,
+            player_stop_action,
+            player_toggle_random_action,
+            player_toggle_repeat_action,
+            player_toggle_consume_action,
+            player_toggle_replaygain_action,
+            player_cycle_crossfade_action,
+            player_volume_up_action,
+            player_volume_down_action,
+            player_toggle_mute_action,
+            player_cycle_output_action,
+            player_cycle_output_prev_action,
+            spectrum_visualizer_toggle_action,
         ]);
     }
 

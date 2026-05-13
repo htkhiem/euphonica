@@ -374,10 +374,10 @@ impl Cache {
         }
 
         // 2. Nope, fall back to downloading fresh
-        if external  && !failed_before{
+        if external && !failed_before {
             if settings_manager()
-                    .child("client")
-                    .boolean("mpd-download-album-art")
+                .child("client")
+                .boolean("mpd-download-album-art")
             {
                 // 2a. MPD folder-level cover
                 if let Some(bundle) = self

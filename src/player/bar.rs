@@ -72,10 +72,8 @@ mod imp {
 
         pub output_widgets: RefCell<Vec<MpdOutput>>,
         // Index of visible child in output_widgets
-        pub current_output: Cell<usize>,
-        pub output_count: Cell<usize>,
         pub player: WeakRef<Player>,
-        pub volume_changed_id: RefCell<Option<SignalHandlerId>>,
+        pub current_output_id: RefCell<Option<SignalHandlerId>>,
         pub outputs_changed_id: RefCell<Option<SignalHandlerId>>,
         pub cover_changed_id: RefCell<Option<SignalHandlerId>>,
         #[property(get, set)]
@@ -153,9 +151,6 @@ mod imp {
 
         fn dispose(&self) {
             if let Some(player) = self.player.upgrade() {
-                if let Some(id) = self.volume_changed_id.take() {
-                    player.disconnect(id);
-                }
                 if let Some(id) = self.outputs_changed_id.take() {
                     player.disconnect(id);
                 }
@@ -192,96 +187,15 @@ impl PlayerBar {
 
     pub fn setup(&self, player: &Player, cache: Rc<Cache>) {
         self.imp().player.set(Some(player));
-        self.setup_volume_knob(player);
         self.bind_state(player, cache);
         self.imp().playback_controls.setup(player);
         self.imp().seekbar.setup(player);
     }
 
-    fn setup_volume_knob(&self, player: &Player) {
-        let settings = settings_manager().child("ui");
-        let knob = self.imp().vol_knob.get();
-        knob.set_value(player.mpd_volume() as f64);
-
-        settings
-            .bind("vol-knob-unit", &knob, "use-dbfs")
-            .get_only()
-            .mapping(|v: &Variant, _| {
-                Some((v.get::<String>().unwrap().as_str() == "decibels").to_value())
-            })
-            .build();
-
-        settings
-            .bind("vol-knob-sensitivity", &knob, "sensitivity")
-            .mapping(|v: &Variant, _| Some(v.get::<f64>().unwrap().to_value()))
-            .build();
-
-        knob.connect_notify_local(
-            Some("value"),
-            clone!(
-                #[weak]
-                player,
-                move |knob: &VolumeKnob, _| {
-                    if !knob.is_active() {
-                        let val = knob.value().round() as i8;
-                        glib::spawn_future_local(clone!(
-                            #[weak]
-                            player,
-                            async move {
-                                if let Err(e) = player.send_set_volume(val).await {
-                                    dbg!(e);
-                                }
-                            }
-                        ));
-                    }
-                }
-            ),
-        );
-
-        knob.connect_closure(
-            "mute-toggled",
-            false,
-            closure_local!(
-                #[weak]
-                player,
-                move |knob: &VolumeKnob, is_muted: bool| {
-                    let val = knob.value().round() as i8;
-                    glib::spawn_future_local(clone!(
-                        #[weak]
-                        player,
-                        async move {
-                            if is_muted {
-                                if let Err(e) = player.send_set_volume(0).await {
-                                    dbg!(e);
-                                }
-                            } else {
-                                // Restore previous volume
-                                if let Err(e) = player.send_set_volume(val).await {
-                                    dbg!(e);
-                                }
-                            }
-                        }
-                    ));
-                }
-            ),
-        );
-
-        // Only fired for EXTERNAL changes.
-        self.imp()
-            .volume_changed_id
-            .replace(Some(player.connect_closure(
-                "volume-changed",
-                false,
-                closure_local!(|_: Player, val: i8| {
-                    if !knob.is_active() {
-                        knob.sync_value(val);
-                    }
-                }),
-            )));
-    }
-
     fn bind_state(&self, player: &Player, cache: Rc<Cache>) {
         let imp = self.imp();
+
+        self.imp().vol_knob.setup(player);
 
         let infobox_revealer = imp.infobox_revealer.get();
         let seekbar_revealer = imp.seekbar_revealer.get();
@@ -332,6 +246,19 @@ impl PlayerBar {
 
         self.update_outputs(player);
         self.imp()
+            .current_output_id
+            .replace(Some(player.connect_notify_local(
+                Some("current-output"),
+                clone!(
+                    #[weak(rename_to = this)]
+                    self,
+                    move |player, _| {
+                        this.set_visible_output(player.current_output());
+                    }
+                ),
+            )));
+
+        self.imp()
             .outputs_changed_id
             .replace(Some(player.connect_closure(
                 "outputs-changed",
@@ -363,17 +290,17 @@ impl PlayerBar {
             )));
 
         self.imp().prev_output.connect_clicked(clone!(
-            #[weak(rename_to = this)]
-            self,
+            #[weak]
+            player,
             move |_| {
-                this.prev_output();
+                player.cycle_output(false);
             }
         ));
         self.imp().next_output.connect_clicked(clone!(
-            #[weak(rename_to = this)]
-            self,
+            #[weak]
+            player,
             move |_| {
-                this.next_output();
+                player.cycle_output(true);
             }
         ));
     }
@@ -460,39 +387,28 @@ impl PlayerBar {
                 }
             }
         }
-        let _ = self.imp().output_count.replace(new_len);
-        self.set_visible_output(self.imp().current_output.get() as i32);
+        self.set_visible_output(player.current_output());
     }
 
     fn set_visible_output(&self, new_idx: i32) {
-        if self.imp().output_count.get() > 0 {
-            let max = self.imp().output_count.get() - 1;
-            if new_idx as usize >= max {
-                let _ = self.imp().current_output.replace(max);
+        let output_count = self.imp().output_stack.pages().n_items();
+        if output_count > 0 {
+            let max = (output_count - 1) as i32;
+            if new_idx >= max {
                 self.imp().next_output.set_sensitive(false);
                 self.imp().prev_output.set_sensitive(true);
             } else if new_idx <= 0 {
-                let _ = self.imp().current_output.replace(0);
                 self.imp().next_output.set_sensitive(true);
                 self.imp().prev_output.set_sensitive(false);
             } else {
-                let _ = self.imp().current_output.replace(new_idx as usize);
                 self.imp().next_output.set_sensitive(true);
                 self.imp().prev_output.set_sensitive(true);
             }
 
             // Update stack
-            self.imp().output_stack.set_visible_child(
-                &self.imp().output_widgets.borrow()[self.imp().current_output.get()],
-            );
+            self.imp()
+                .output_stack
+                .set_visible_child(&self.imp().output_widgets.borrow()[new_idx as usize]);
         }
-    }
-
-    fn next_output(&self) {
-        self.set_visible_output(self.imp().current_output.get() as i32 + 1);
-    }
-
-    fn prev_output(&self) {
-        self.set_visible_output(self.imp().current_output.get() as i32 - 1);
     }
 }

@@ -1,7 +1,8 @@
 use gtk::{
     CompositeTemplate, cairo as cr, gdk,
     glib::{
-        self, Object, ParamSpec, ParamSpecBoolean, ParamSpecDouble, clone,
+        self, Object, ParamSpec, ParamSpecBoolean, ParamSpecDouble, SignalHandlerId, Variant,
+        WeakRef, clone, closure_local,
         prelude::*,
         subclass::{Signal, prelude::*},
     },
@@ -10,7 +11,13 @@ use gtk::{
     subclass::prelude::*,
 };
 use once_cell::sync::Lazy;
-use std::{cell::Cell, f64::consts::PI, sync::OnceLock};
+use std::{
+    cell::{Cell, RefCell},
+    f64::consts::PI,
+    sync::OnceLock,
+};
+
+use crate::{player::Player, utils::settings_manager};
 
 fn convert_to_dbfs(pct: f64) -> Result<f64, ()> {
     // Accepts 0-100
@@ -46,6 +53,8 @@ mod imp {
         pub overflow_side: Cell<OverflowSide>,
         // Used to disambiguate a quick click (to toggle mute) from a drag (to change volume)
         pub was_dragging: Cell<bool>,
+        pub volume_changed_id: RefCell<Option<SignalHandlerId>>,
+        pub player: WeakRef<Player>,
     }
 
     // The central trait for subclassing a GObject
@@ -54,7 +63,7 @@ mod imp {
         // `NAME` needs to match `class` attribute of template
         const NAME: &'static str = "EuphonicaVolumeKnob";
         type Type = super::VolumeKnob;
-        type ParentType = gtk::ToggleButton;
+        type ParentType = gtk::Button;
 
         fn new() -> Self {
             Self {
@@ -65,6 +74,8 @@ mod imp {
                 overflow_side: Cell::default(),
                 was_dragging: Cell::default(),
                 value: Cell::new(0.0),
+                volume_changed_id: RefCell::new(None),
+                player: WeakRef::new(),
             }
         }
 
@@ -83,18 +94,12 @@ mod imp {
             self.parent_constructed();
             let obj_ = self.obj();
             let obj = obj_.as_ref();
-            self.update_readout();
-            obj.connect_notify_local(Some("value"), |this, _| {
-                this.imp().update_readout();
-            });
-            obj.connect_notify_local(Some("active"), |this, _| {
+
+            obj.connect_clicked(move |this| {
                 if !this.imp().was_dragging.get() {
-                    this.imp().update_readout();
-                    this.emit_by_name::<()>("mute-toggled", &[&this.is_active()]);
+                    this.emit_by_name::<()>("mute-toggled", &[&true]);
                 } else {
                     this.imp().was_dragging.set(false);
-                    // Return to prev status
-                    this.set_active(!this.is_active());
                 }
             });
 
@@ -113,7 +118,6 @@ mod imp {
                     if (0.0..=100.0).contains(&new_vol) {
                         this.set_value(new_vol);
                     }
-                    this.queue_draw();
                     glib::signal::Propagation::Proceed
                 }
             ));
@@ -211,7 +215,6 @@ mod imp {
                 "value" => self.value.get().to_value(),
                 "sensitivity" => self.sensitivity.get().to_value(),
                 "use-dbfs" => self.use_dbfs.get().to_value(),
-                "drag-in-progress" => self.was_dragging.get().to_value(),
                 _ => unimplemented!(),
             }
         }
@@ -245,7 +248,8 @@ mod imp {
             static SIGNALS: OnceLock<Vec<Signal>> = OnceLock::new();
             SIGNALS.get_or_init(|| {
                 vec![
-                    // Use this instead of 'active' to avoid problems with drags.
+                    // We're just a normal button now, but we need to avoid sending out a clicked signal
+                    // upon ending drag operations, hence this thing
                     Signal::builder("mute-toggled")
                         .param_types([bool::static_type()])
                         .build(),
@@ -329,16 +333,15 @@ mod imp {
 
     impl ButtonImpl for VolumeKnob {}
 
-    impl ToggleButtonImpl for VolumeKnob {}
-
     impl VolumeKnob {
-        pub fn update_readout(&self) {
-            let obj = self.obj();
-            let val = self.value.get();
-            if obj.is_active() {
-                obj.set_label("—"); // can you believe a human copypasted an em dash here
-            } else {
-                if self.use_dbfs.get() {
+        pub fn update_readout(&self) -> bool {
+            if let Some(player) = self.player.upgrade() {
+                let is_muted = player.is_muted();
+                let obj = self.obj();
+                let val = self.value.get();
+                if is_muted {
+                    obj.set_label("—"); // can you believe a human copypasted an em dash here
+                } else if self.use_dbfs.get() {
                     if let Ok(dbfs) = convert_to_dbfs(val) {
                         obj.set_label(&format!("{dbfs:.0}"));
                     } else if val > 0.0 {
@@ -349,6 +352,9 @@ mod imp {
                 } else {
                     obj.set_label(&format!("{val:.0}"));
                 }
+                is_muted
+            } else {
+                false
             }
         }
     }
@@ -356,7 +362,7 @@ mod imp {
 
 glib::wrapper! {
     pub struct VolumeKnob(ObjectSubclass<imp::VolumeKnob>)
-    @extends gtk::ToggleButton, gtk::Button, gtk::Widget,
+    @extends gtk::Button, gtk::Widget,
     @implements gtk::Accessible, gtk::Actionable, gtk::Buildable, gtk::ConstraintTarget;
 }
 
@@ -368,7 +374,62 @@ impl Default for VolumeKnob {
 
 impl VolumeKnob {
     pub fn new() -> Self {
-        Object::builder().build()
+        let res = Object::builder().build();
+
+        let settings = settings_manager().child("ui");
+
+        settings
+            .bind("vol-knob-unit", &res, "use-dbfs")
+            .get_only()
+            .mapping(|v: &Variant, _| {
+                Some((v.get::<String>().unwrap().as_str() == "decibels").to_value())
+            })
+            .build();
+
+        settings
+            .bind("vol-knob-sensitivity", &res, "sensitivity")
+            .mapping(|v: &Variant, _| Some(v.get::<f64>().unwrap().to_value()))
+            .build();
+
+        res
+    }
+
+    pub fn setup(&self, player: &Player) {
+        self.imp().player.set(Some(player));
+        self.set_value(player.mpd_volume() as f64);
+        self.imp().update_readout();
+        self.connect_clicked(move |this| {
+            glib::spawn_future_local(clone!(
+                #[weak]
+                this,
+                async move {
+                    if let Some(player) = this.imp().player.upgrade() {
+                        if let Err(e) = player.toggle_mute().await {
+                            dbg!(e);
+                        } else {
+                            this.imp().update_readout();
+                        }
+                    }
+                }
+            ));
+        });
+
+        // Only fired for EXTERNAL changes.
+        self.imp()
+            .volume_changed_id
+            .replace(Some(player.connect_closure(
+                "volume-changed",
+                false,
+                closure_local!(
+                    #[weak(rename_to = this)]
+                    self,
+                    move |player: &Player, vol: i8| {
+                        if !player.is_muted() {
+                            this.sync_value(vol);
+                        }
+                    }
+                ),
+            )));
     }
 
     pub fn sensitivity(&self) -> f64 {
@@ -384,19 +445,27 @@ impl VolumeKnob {
     }
 
     pub fn set_value(&self, val: f64) {
-        let old_val = self.imp().value.replace(val);
-        if old_val != val {
-            self.notify("value");
+        if let Some(player) = self.imp().player.upgrade() {
+            let old_val = self.imp().value.replace(val);
+            if old_val != val {
+                self.notify("value");
+                self.queue_draw();
+            }
+            let is_muted = self.imp().update_readout();
+            if !is_muted {
+                let val = self.value().round() as i8;
+                glib::spawn_future_local(clone!(
+                    #[weak]
+                    player,
+                    async move {
+                        if let Err(e) = player.send_set_volume(val).await {
+                            dbg!(e);
+                        }
+                    }
+                ));
+            }
         }
     }
-
-    // pub fn was_dragging(&self) -> bool {
-    //     self.imp().was_dragging.get()
-    // }
-
-    // pub fn reset_was_dragging(&self) {
-    //     self.imp().was_dragging.set(false);
-    // }
 
     pub fn sync_value(&self, new_rounded: i8) {
         // Set volume based on rounded i8 value silently.

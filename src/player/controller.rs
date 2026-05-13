@@ -224,6 +224,7 @@ mod imp {
         pub use_visualizer: Cell<bool>,
         pub fft_backend_idx: Cell<i32>,
         pub outputs: gio::ListStore,
+        pub current_output: Cell<i32>, // Index of currently visible output in widgets
         pub saved_to_history: Cell<bool>,
         pub is_foreground: Cell<bool>,
         // To improve efficiency & avoid UI scroll resetting problems we'll
@@ -241,6 +242,12 @@ mod imp {
         pub expected_queue_version: Cell<u32>,
         // Used to silence idle subsystem messages about volume changes invoked by us.
         pub expected_volume_changes: Cell<u32>,
+        // Simulated mute state (not MPD-side mute).
+        // When muted, volume is set to 0 and saved_volume holds the previous level.
+        pub saved_volume: Cell<i8>,
+        // Whether the player is currently in simulated mute state.
+        // Updated by toggle_mute() and synced from volume-changed signal.
+        pub is_muted: Cell<bool>,
     }
 
     #[glib::object_subclass]
@@ -299,11 +306,14 @@ mod imp {
                 use_visualizer: Cell::new(false),
                 fft_backend_idx: Cell::new(0),
                 outputs: gio::ListStore::new::<BoxedAnyObject>(),
+                current_output: Cell::new(0),
                 saved_to_history: Cell::new(false),
                 is_foreground: Cell::new(false),
                 queue_version: Cell::new(0),
                 expected_queue_version: Cell::new(0),
                 expected_volume_changes: Cell::new(0),
+                saved_volume: Cell::new(0),
+                is_muted: Cell::new(false),
             }
         }
     }
@@ -407,7 +417,9 @@ mod imp {
                         .build(),
                     ParamSpecString::builder("format-desc").read_only().build(),
                     ParamSpecInt::builder("fft-backend-idx").build(),
+                    ParamSpecInt::builder("current-output").read_only().build(),
                     ParamSpecBoolean::builder("pipewire-restart-between-songs").build(),
+                    ParamSpecBoolean::builder("is-muted").read_only().build(),
                 ]
             });
             PROPERTIES.as_ref()
@@ -441,9 +453,11 @@ mod imp {
                 "fft-status" => obj.fft_status().to_value(),
                 "format-desc" => obj.format_desc().to_value(),
                 "fft-backend-idx" => self.fft_backend_idx.get().to_value(),
+                "current-output" => obj.current_output().to_value(),
                 "pipewire-restart-between-songs" => {
                     self.pipewire_restart_between_songs.get().to_value()
                 }
+                "is-muted" => obj.is_muted().to_value(),
                 _ => unimplemented!(),
             }
         }
@@ -707,6 +721,14 @@ impl Player {
 
     pub fn outputs(&self) -> gio::ListStore {
         self.imp().outputs.clone()
+    }
+
+    pub fn current_output(&self) -> i32 {
+        if self.imp().outputs.n_items() == 0 {
+            self.imp().current_output.get()
+        } else {
+            -1
+        }
     }
 
     pub fn current_song(&self) -> Option<Song> {
@@ -1548,6 +1570,18 @@ impl Player {
         self.imp().volume.get()
     }
 
+    pub fn random(&self) -> bool {
+        self.imp().random.get()
+    }
+
+    pub fn consume(&self) -> bool {
+        self.imp().consume.get()
+    }
+
+    pub fn crossfade(&self) -> f64 {
+        self.imp().crossfade.get()
+    }
+
     pub fn queue_id(&self) -> Option<u32> {
         self.current_song().map(|s| s.get_queue_id())
     }
@@ -1574,6 +1608,29 @@ impl Player {
     /// Seek to current position. Called when the seekbar is released.
     pub async fn send_seek(&self, new_pos: f64) -> ClientResult<()> {
         self.client()?.seek_current_song(new_pos).await
+    }
+
+    pub fn cycle_output(&self, backward: bool) {
+        let outputs = &self.imp().outputs;
+        if outputs.n_items() == 0 {
+            return;
+        }
+        let n_outputs = self.imp().outputs.n_items() as i32;
+        let mut curr_idx = self.imp().current_output.get();
+        if backward {
+            if curr_idx == 0 {
+                curr_idx = n_outputs - 1;
+            } else {
+                curr_idx += 1;
+            }
+        } else {
+            if curr_idx >= n_outputs - 1 {
+                curr_idx = 0;
+            } else {
+                curr_idx -= 1;
+            }
+        }
+        self.imp().current_output.set(curr_idx);
     }
 
     /// Seek to the timestamp of a lyric line
@@ -1680,6 +1737,34 @@ impl Player {
             self.imp()
                 .expected_volume_changes
                 .set(self.imp().expected_volume_changes.get() + 1);
+        }
+        Ok(())
+    }
+
+    pub fn is_muted(&self) -> bool {
+        self.imp().is_muted.get()
+    }
+
+    pub fn set_is_muted(&self, state: bool) {
+        let old = self.imp().is_muted.replace(state);
+        if old != state {
+            self.notify("is-muted");
+        }
+    }
+
+    /// Simulated mute: saves current volume, sets MPD volume to 0.
+    /// On toggle back, restores the saved volume.
+    pub async fn toggle_mute(&self) -> ClientResult<()> {
+        if self.is_muted() {
+            // Unmute: restore saved volume
+            let saved = self.imp().saved_volume.get();
+            self.send_set_volume(saved).await?;
+            self.set_is_muted(false);
+        } else {
+            // Mute: save current volume, set to 0
+            self.imp().saved_volume.set(self.imp().volume.get());
+            self.send_set_volume(0).await?;
+            self.set_is_muted(true);
         }
         Ok(())
     }

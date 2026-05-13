@@ -9,7 +9,7 @@ use mpd::{
     error::{Error as MpdError, ErrorCode as MpdErrorCode, ServerError},
 };
 use std::{
-    cell::{Cell, RefCell, OnceCell},
+    cell::{Cell, OnceCell, RefCell},
     cmp::Ordering,
     rc::Rc,
     sync::OnceLock,
@@ -207,7 +207,7 @@ mod imp {
                             #[weak]
                             obj,
                             async move {
-                                obj.queue_stop_and_clear().await;
+                                obj.stop_and_clear().await;
                             }
                         ));
                     }
@@ -219,7 +219,7 @@ mod imp {
                     #[weak]
                     obj,
                     move |_, _, _| {
-                        obj.queue_save();
+                        obj.save();
                     }
                 ))
                 .build();
@@ -229,7 +229,7 @@ mod imp {
                     #[weak]
                     obj,
                     move |_, _, _| {
-                        obj.queue_jump_to_current();
+                        obj.jump_to_current();
                     }
                 ))
                 .build();
@@ -239,7 +239,7 @@ mod imp {
                     #[weak]
                     obj,
                     move |_, _, _| {
-                        obj.queue_toggle_autoscroll();
+                        obj.toggle_autoscroll();
                     }
                 ))
                 .build();
@@ -255,35 +255,6 @@ mod imp {
                 action_toggle_autoscroll,
             ]);
             self.obj().insert_action_group("queue-view", Some(&actions));
-
-            let shortcut_controller = gtk::ShortcutController::new();
-
-            // <Shift>O -> scroll-to-playing
-            let trigger = gtk::ShortcutTrigger::parse_string("<Shift>o");
-            let action = gtk::NamedAction::new("queue-view.scroll-to-playing");
-            shortcut_controller.add_shortcut(gtk::Shortcut::new(trigger, Some(action)));
-
-            // <Alt>C -> stop-and-clear
-            let trigger = gtk::ShortcutTrigger::parse_string("<Alt>C");
-            let action = gtk::NamedAction::new("queue-view.stop-and-clear");
-            shortcut_controller.add_shortcut(gtk::Shortcut::new(trigger, Some(action)));
-
-            // <Ctrl>S -> save
-            let trigger = gtk::ShortcutTrigger::parse_string("<Ctrl>S");
-            let action = gtk::NamedAction::new("queue-view.save");
-            shortcut_controller.add_shortcut(gtk::Shortcut::new(trigger, Some(action)));
-
-            // <Ctrl>O -> jump-to-current
-            let trigger = gtk::ShortcutTrigger::parse_string("<Ctrl>O");
-            let action = gtk::NamedAction::new("queue-view.jump-to-current");
-            shortcut_controller.add_shortcut(gtk::Shortcut::new(trigger, Some(action)));
-
-            // <Ctrl>U -> toggle-autoscroll
-            let trigger = gtk::ShortcutTrigger::parse_string("<Ctrl>U");
-            let action = gtk::NamedAction::new("queue-view.toggle-autoscroll");
-            shortcut_controller.add_shortcut(gtk::Shortcut::new(trigger, Some(action)));
-
-            self.obj().add_controller(shortcut_controller);
 
             // Set up search
             let library_settings = settings_manager().child("library");
@@ -998,7 +969,7 @@ impl QueueView {
     pub fn search_bar(&self) -> gtk::SearchBar {
         self.imp().search_bar.get()
     }
- 
+
     #[inline]
     pub fn selection_model(&self) -> &SingleSelection {
         self.imp().sel_model.get().unwrap()
@@ -1008,7 +979,7 @@ impl QueueView {
         self.imp().save.get().set_active(true);
     }
 
-    async fn queue_stop_and_clear(&self) {
+    pub async fn stop_and_clear(&self) {
         if let Some(player) = self.imp().player.upgrade() {
             let _ = player.stop().await;
             let _ = player.clear_queue().await;
@@ -1018,18 +989,18 @@ impl QueueView {
         }
     }
 
-    fn queue_save(&self) {
+    pub fn save(&self) {
         self.open_save();
     }
 
-    fn queue_jump_to_current(&self) {
+    pub fn jump_to_current(&self) {
         self.scroll_to_playing();
         if let Some(window) = self.imp().window.upgrade() {
             window.send_simple_toast("Jumped to currently playing song", 3);
         }
     }
 
-    fn queue_toggle_autoscroll(&self) {
+    pub fn toggle_autoscroll(&self) {
         let settings = settings_manager().child("ui");
         let current = settings.boolean("auto-scroll-to-playing");
         settings.set_boolean("auto-scroll-to-playing", !current);

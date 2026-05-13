@@ -1402,6 +1402,10 @@ impl EuphonicaWindow {
         self.imp().dyn_playlist_view.get()
     }
 
+    pub fn get_queue_view(&self) -> QueueView {
+        self.imp().queue_view.get()
+    }
+
     pub fn send_simple_toast(&self, title: &str, timeout: u32) {
         let toast = adw::Toast::builder().title(title).timeout(timeout).build();
         self.imp().toast_overlay.add_toast(toast);
