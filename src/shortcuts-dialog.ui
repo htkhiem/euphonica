@@ -7,109 +7,103 @@
         <child>
           <object class="AdwShortcutsItem">
             <property name="title" translatable="yes">Play/Pause</property>
-            <property name="accelerator">&lt;Ctrl&gt;p</property>
+            <property name="action-name">app.toggle-playback</property>
           </object>
         </child>
         <child>
           <object class="AdwShortcutsItem">
             <property name="title" translatable="yes">Next</property>
-            <property name="accelerator">&lt;Shift&gt;period</property>
+            <property name="action-name">app.next-song</property>
           </object>
         </child>
         <child>
           <object class="AdwShortcutsItem">
             <property name="title" translatable="yes">Previous</property>
-            <property name="accelerator">&lt;Shift&gt;comma</property>
+            <property name="action-name">app.prev-song</property>
           </object>
         </child>
         <child>
           <object class="AdwShortcutsItem">
             <property name="title" translatable="yes">Seek Forward 10s</property>
-            <property name="accelerator">&lt;Shift&gt;f</property>
+            <property name="action-name">app.seek-forward</property>
           </object>
         </child>
         <child>
           <object class="AdwShortcutsItem">
             <property name="title" translatable="yes">Seek Backward 10s</property>
-            <property name="accelerator">&lt;Shift&gt;b</property>
+            <property name="action-name">app.seek-backward</property>
           </object>
         </child>
         <child>
           <object class="AdwShortcutsItem">
             <property name="title" translatable="yes">Stop</property>
-            <property name="accelerator">&lt;Ctrl&gt;&lt;Shift&gt;s</property>
+            <property name="action-name">app.stop</property>
           </object>
         </child>
         <child>
           <object class="AdwShortcutsItem">
             <property name="title" translatable="yes">Toggle Random</property>
-            <property name="accelerator">&lt;Alt&gt;z</property>
+            <property name="action-name">app.toggle-random</property>
           </object>
         </child>
         <child>
           <object class="AdwShortcutsItem">
-            <property name="title" translatable="yes">Toggle Repeat</property>
-            <property name="accelerator">&lt;Alt&gt;r</property>
-          </object>
-        </child>
-        <child>
-          <object class="AdwShortcutsItem">
-            <property name="title" translatable="yes">Toggle Single</property>
-            <property name="accelerator">&lt;Alt&gt;y</property>
+            <property name="title" translatable="yes">Cycle Playback Flow</property>
+            <property name="action-name">app.cycle-flow</property>
           </object>
         </child>
         <child>
           <object class="AdwShortcutsItem">
             <property name="title" translatable="yes">Toggle Consume</property>
-            <property name="accelerator">&lt;Shift&gt;r</property>
+            <property name="action-name">app.toggle-consume</property>
           </object>
         </child>
         <child>
           <object class="AdwShortcutsItem">
             <property name="title" translatable="yes">Toggle ReplayGain</property>
-            <property name="accelerator">&lt;Shift&gt;y</property>
+            <property name="action-name">app.cycle-replaygain</property>
           </object>
         </child>
         <child>
           <object class="AdwShortcutsItem">
             <property name="title" translatable="yes">Cycle Crossfade Duration</property>
-            <property name="accelerator">&lt;Alt&gt;x</property>
+            <property name="action-name">app.cycle-crossfade</property>
           </object>
         </child>
         <child>
           <object class="AdwShortcutsItem">
             <property name="title" translatable="yes">Increase Volume 2%</property>
-            <property name="accelerator">&lt;Ctrl&gt;Up</property>
+            <property name="action-name">app.volume-up</property>
           </object>
         </child>
         <child>
           <object class="AdwShortcutsItem">
             <property name="title" translatable="yes">Decrease Volume 2%</property>
-            <property name="accelerator">&lt;Ctrl&gt;Down</property>
+            <property name="action-name">app.volume-down</property>
           </object>
         </child>
         <child>
           <object class="AdwShortcutsItem">
             <property name="title" translatable="yes">Toggle Mute</property>
-            <property name="accelerator">&lt;Ctrl&gt;m</property>
+            <property name="action-name">app.toggle-mute</property>
           </object>
         </child>
         <child>
           <object class="AdwShortcutsItem">
             <property name="title" translatable="yes">Next Output Device</property>
-            <property name="accelerator">&lt;Ctrl&gt;Right</property>
+            <property name="action-name">app.next-output</property>
           </object>
         </child>
         <child>
           <object class="AdwShortcutsItem">
             <property name="title" translatable="yes">Previous Output Device</property>
-            <property name="accelerator">&lt;Ctrl&gt;Left</property>
+            <property name="action-name">app.prev-output</property>
           </object>
         </child>
         <child>
           <object class="AdwShortcutsItem">
             <property name="title" translatable="yes">Toggle Current Output Device</property>
-            <property name="accelerator">&lt;Ctrl&gt;/</property>
+            <property name="action-name">app.toggle-output</property>
           </object>
         </child>
       </object>
@@ -120,25 +114,31 @@
         <child>
           <object class="AdwShortcutsItem">
             <property name="title" translatable="yes">Stop &amp; Clear Queue</property>
-            <property name="action-name">queue-view.stop-and-clear</property>
+            <property name="action-name">queue.stop-and-clear</property>
           </object>
         </child>
         <child>
           <object class="AdwShortcutsItem">
             <property name="title" translatable="yes">Save Current Queue</property>
-            <property name="action-name">queue-view.save</property>
+            <property name="action-name">win.save</property>
           </object>
         </child>
         <child>
           <object class="AdwShortcutsItem">
             <property name="title" translatable="yes">Jump to Current Song</property>
-            <property name="action-name">queue-view.jump-to-current</property>
+            <property name="action-name">queue.jump-to-current</property>
           </object>
         </child>
         <child>
           <object class="AdwShortcutsItem">
             <property name="title" translatable="yes">Toggle Queue Auto-scroll</property>
-            <property name="action-name">queue-view.toggle-autoscroll</property>
+            <property name="action-name">queue.toggle-autoscroll</property>
+          </object>
+        </child>
+        <child>
+          <object class="AdwShortcutsItem">
+            <property name="title" translatable="yes">Scroll to Playing</property>
+            <property name="action-name">queue.scroll-to-playing</property>
           </object>
         </child>
       </object>
@@ -149,55 +149,55 @@
         <child>
           <object class="AdwShortcutsItem">
             <property name="title" translatable="yes">Jump to Recents</property>
-            <property name="action-name">app.view-recent</property>
+            <property name="action-name">win.view-recent</property>
           </object>
         </child>
         <child>
           <object class="AdwShortcutsItem">
             <property name="title" translatable="yes">Jump to Album View</property>
-            <property name="action-name">app.view-albums</property>
+            <property name="action-name">win.view-albums</property>
           </object>
         </child>
         <child>
           <object class="AdwShortcutsItem">
             <property name="title" translatable="yes">Jump to Artist View</property>
-            <property name="action-name">app.view-artists</property>
+            <property name="action-name">win.view-artists</property>
           </object>
         </child>
         <child>
           <object class="AdwShortcutsItem">
             <property name="title" translatable="yes">Jump to Folder View</property>
-            <property name="action-name">app.view-folders</property>
+            <property name="action-name">win.view-folders</property>
           </object>
         </child>
         <child>
           <object class="AdwShortcutsItem">
             <property name="title" translatable="yes">Jump to Dynamic Playlists</property>
-            <property name="action-name">app.view-dynamic-playlists</property>
+            <property name="action-name">win.view-dynamic-playlists</property>
           </object>
         </child>
         <child>
           <object class="AdwShortcutsItem">
             <property name="title" translatable="yes">Jump to MPD Playlists</property>
-            <property name="action-name">app.view-playlists</property>
+            <property name="action-name">win.view-playlists</property>
           </object>
         </child>
         <child>
           <object class="AdwShortcutsItem">
             <property name="title" translatable="yes">Jump to Queue</property>
-            <property name="action-name">app.view-queue</property>
+            <property name="action-name">win.view-queue</property>
           </object>
         </child>
         <child>
           <object class="AdwShortcutsItem">
             <property name="title" translatable="yes">Toggle Spectrum Visualiser</property>
-            <property name="accelerator">F8</property>
+            <property name="action-name">app.toggle-visualizer</property>
           </object>
         </child>
         <child>
           <object class="AdwShortcutsItem">
             <property name="title" translatable="yes">Toggle Fullscreen</property>
-            <property name="accelerator">F11</property>
+            <property name="action-name">app.fullscreen</property>
           </object>
         </child>
       </object>
@@ -208,43 +208,19 @@
         <child>
           <object class="AdwShortcutsItem">
             <property name="title" translatable="yes">Undo</property>
-            <property name="accelerator">&lt;Ctrl&gt;z</property>
+            <property name="action-name">playlist-editor.undo</property>
           </object>
         </child>
         <child>
           <object class="AdwShortcutsItem">
             <property name="title" translatable="yes">Redo</property>
-            <property name="accelerator">&lt;Ctrl&gt;y</property>
+            <property name="action-name">playlist-editor.redo</property>
           </object>
         </child>
         <child>
           <object class="AdwShortcutsItem">
             <property name="title" translatable="yes">Save</property>
-            <property name="accelerator">&lt;Ctrl&gt;s</property>
-          </object>
-        </child>
-        <child>
-          <object class="AdwShortcutsItem">
-            <property name="title" translatable="yes">Select Previous Track</property>
-            <property name="accelerator">Up</property>
-          </object>
-        </child>
-        <child>
-          <object class="AdwShortcutsItem">
-            <property name="title" translatable="yes">Select Next Track</property>
-            <property name="accelerator">Down</property>
-          </object>
-        </child>
-        <child>
-          <object class="AdwShortcutsItem">
-            <property name="title" translatable="yes">Shift Selected Track Backward</property>
-            <property name="accelerator">&lt;Shift&gt;Up</property>
-          </object>
-        </child>
-        <child>
-          <object class="AdwShortcutsItem">
-            <property name="title" translatable="yes">Shift Selected Track Forward</property>
-            <property name="accelerator">&lt;Shift&gt;Down</property>
+            <property name="action-name">win.save</property>
           </object>
         </child>
       </object>
@@ -255,13 +231,13 @@
         <child>
           <object class="AdwShortcutsItem">
             <property name="title" translatable="yes">Save</property>
-            <property name="accelerator">&lt;Ctrl&gt;s</property>
+            <property name="action-name">win.save</property>
           </object>
         </child>
         <child>
           <object class="AdwShortcutsItem">
             <property name="title" translatable="yes">Refresh</property>
-            <property name="accelerator">&lt;Ctrl&gt;r</property>
+            <property name="action-name">dyn-playlist-editor.refresh</property>
           </object>
         </child>
       </object>
@@ -272,13 +248,13 @@
         <child>
           <object class="AdwShortcutsItem">
             <property name="title" translatable="yes">Refresh</property>
-            <property name="accelerator">F5</property>
+            <property name="action-name">app.refresh</property>
           </object>
         </child>
         <child>
           <object class="AdwShortcutsItem">
             <property name="title" translatable="yes">Update Database</property>
-            <property name="accelerator">F6</property>
+            <property name="action-name">app.update-db</property>
           </object>
         </child>
         <child>
