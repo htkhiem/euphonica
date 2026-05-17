@@ -23,7 +23,8 @@ use crate::{
     client::{ClientState, ConnectionState, Result as ClientResult},
     common::{Album, Artist, INode, ThemeSelector, paintables::FadePaintable},
     library::{
-        AlbumView, ArtistContentView, ArtistView, DynamicPlaylistEditorView, DynamicPlaylistView, FolderView, PlaylistView, RecentView
+        AlbumView, ArtistContentView, ArtistView, DynamicPlaylistEditorView, DynamicPlaylistView,
+        FolderView, PlaylistView, RecentView,
     },
     player::{Player, PlayerBar, QueueView},
     sidebar::Sidebar,
@@ -1639,7 +1640,7 @@ impl EuphonicaWindow {
     }
 
     fn maybe_get_dyn_playlist_editor(&self) -> Option<DynamicPlaylistEditorView> {
-        self.is_in_view("dynamic-playlists")
+        self.is_in_view("dynamic_playlists")
             .then(|| self.imp().dyn_playlist_view.maybe_get_editor())
             .flatten()
     }
@@ -1744,6 +1745,22 @@ impl EuphonicaWindow {
         let view_queue_action = gio::ActionEntry::builder("view-queue")
             .activate(move |this: &Self, _, _| this.switch_to_view("queue"))
             .build();
+        // Universal "save" action. Exact behaviour depends on current view.
+        let save_action = gio::ActionEntry::builder("save")
+            .activate(clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |_, _, _| {
+                    if this.is_in_view("queue") {
+                        this.imp().queue_view.save();
+                    } else if this.is_in_playlist_editor() {
+                        this.imp().playlist_view.content_view().exit_edit_mode(true);
+                    } else if let Some(editor) = this.maybe_get_dyn_playlist_editor() {
+                        editor.on_save_btn_clicked();
+                    }
+                }
+            ))
+            .build();
 
         // These go into the "win" group
         self.add_action_entries([
@@ -1753,7 +1770,8 @@ impl EuphonicaWindow {
             view_folders_action,
             view_dyn_playlists_action,
             view_playlists_action,
-            view_queue_action
+            view_queue_action,
+            save_action
         ]);
 
         // To skip having to deal with widget focus we'll define all the actions at the app level.
@@ -1787,17 +1805,6 @@ impl EuphonicaWindow {
             ))
             .build();
 
-        let queue_save_action = gio::ActionEntry::builder("save")
-            .activate(clone!(
-                #[weak(rename_to = this)]
-                self,
-                move |_, _, _| {
-                    if this.is_in_view("queue") {
-                        this.imp().queue_view.save();
-                    }
-                }
-            ))
-            .build();
 
         let queue_jump_to_current_action = gio::ActionEntry::builder("jump-to-current")
             .activate(clone!(
@@ -1828,7 +1835,6 @@ impl EuphonicaWindow {
         queue_actions.add_action_entries([
             queue_scroll_to_playing_action,
             queue_stop_and_clear_action,
-            queue_save_action,
             queue_jump_to_current_action,
             queue_toggle_autoscroll_action,
         ]);
@@ -1841,7 +1847,6 @@ impl EuphonicaWindow {
                 self,
                 move |_, _, _| {
                     if this.is_in_playlist_editor() {
-                        println!("Is in playlist editor!");
                         this.imp().playlist_view.content_view().undo();
                     }
                 }
@@ -1860,38 +1865,10 @@ impl EuphonicaWindow {
             ))
             .build();
 
-        let playlist_editor_save_action = gio::ActionEntry::builder("save")
-            .activate(clone!(
-                #[weak(rename_to = this)]
-                self,
-                move |_, _, _| {
-                    if this.is_in_playlist_editor() {
-                        this.imp().playlist_view.content_view().exit_edit_mode(true);
-                    }
-                }
-            ))
-            .build();
-
         let playlist_editor_actions = SimpleActionGroup::new();
-        playlist_editor_actions.add_action_entries([
-            playlist_editor_undo_action,
-            playlist_editor_redo_action,
-            playlist_editor_save_action,
-        ]);
+        playlist_editor_actions
+            .add_action_entries([playlist_editor_undo_action, playlist_editor_redo_action]);
         self.insert_action_group("playlist-editor", Some(&playlist_editor_actions));
-
-        // Dynamic Playlist Editor actions
-        let dyn_playlist_editor_save_action = gio::ActionEntry::builder("save")
-            .activate(clone!(
-                #[weak(rename_to = this)]
-                self,
-                move |_, _, _| {
-                    if let Some(editor) = this.maybe_get_dyn_playlist_editor() {
-                        editor.on_save_btn_clicked();
-                    }
-                }
-            ))
-            .build();
 
         let dyn_playlist_editor_refresh_action = gio::ActionEntry::builder("refresh")
             .activate(clone!(
@@ -1908,10 +1885,7 @@ impl EuphonicaWindow {
             .build();
 
         let dyn_playlist_editor_actions = SimpleActionGroup::new();
-        dyn_playlist_editor_actions.add_action_entries([
-            dyn_playlist_editor_save_action,
-            dyn_playlist_editor_refresh_action,
-        ]);
+        dyn_playlist_editor_actions.add_action_entries([dyn_playlist_editor_refresh_action]);
         self.insert_action_group("dyn-playlist-editor", Some(&dyn_playlist_editor_actions));
     }
 

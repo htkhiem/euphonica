@@ -177,14 +177,7 @@ mod imp {
                 obj.set_accels_for_action("app.fullscreen", &["F11"]);
                 obj.set_accels_for_action("app.refresh", &["F5"]);
                 obj.set_accels_for_action("app.update-db", &["F6"]);
-                obj.set_accels_for_action("app.toggle-visualizer", &["F8"]);
-                obj.set_accels_for_action("app.view-recent", &["<Ctrl>1"]);
-                obj.set_accels_for_action("app.view-albums", &["<Ctrl>2"]);
-                obj.set_accels_for_action("app.view-artists", &["<Ctrl>3"]);
-                obj.set_accels_for_action("app.view-folders", &["<Ctrl>4"]);
-                obj.set_accels_for_action("app.view-dynamic-playlists", &["<Ctrl>5"]);
-                obj.set_accels_for_action("app.view-playlists", &["<Ctrl>6"]);
-                obj.set_accels_for_action("app.view-queue", &["<Ctrl>7"]);
+                obj.set_accels_for_action("app.toggle-visualizer", &["F8"]);                
                 
                 // Playback shortcuts
                 obj.set_accels_for_action("app.toggle-playback", &["<Ctrl>p"]);
@@ -538,6 +531,17 @@ impl EuphonicaApplication {
             })
             .build();
 
+        let player_toggle_output_action = gio::ActionEntry::builder("toggle-output")
+            .activate(move |this: &Self, _, _| {
+                let player = this.get_player().clone();
+                glib::spawn_future_local(async move {
+                    if let Err(e) = player.toggle_current_output().await {
+                        dbg!(e);
+                    }
+                });
+            })
+            .build();
+
         let toggle_visualizer_action = gio::ActionEntry::builder("toggle-visualizer")
             .activate(move |_, _, _| {
                 eprintln!("Toggling visualizer");
@@ -569,6 +573,7 @@ impl EuphonicaApplication {
             player_toggle_mute_action,
             player_next_output_action,
             player_prev_output_action,
+            player_toggle_output_action,
             toggle_visualizer_action,
         ]);
     }
@@ -607,15 +612,20 @@ impl EuphonicaApplication {
             let window = EuphonicaWindow::new(self);
 
             // Window-level keybinds, have to be created again for every new window
+            self.set_accels_for_action("win.view-recent", &["<Ctrl>1"]);
+            self.set_accels_for_action("win.view-albums", &["<Ctrl>2"]);
+            self.set_accels_for_action("win.view-artists", &["<Ctrl>3"]);
+            self.set_accels_for_action("win.view-folders", &["<Ctrl>4"]);
+            self.set_accels_for_action("win.view-dynamic-playlists", &["<Ctrl>5"]);
+            self.set_accels_for_action("win.view-playlists", &["<Ctrl>6"]);
+            self.set_accels_for_action("win.view-queue", &["<Ctrl>7"]);
             self.set_accels_for_action("queue.scroll-to-playing", &["<Shift>o"]);
             self.set_accels_for_action("queue.stop-and-clear", &["<Alt>c"]);
-            self.set_accels_for_action("queue.save", &["<Ctrl>s"]);
+            self.set_accels_for_action("win.save", &["<Ctrl>s"]);
             self.set_accels_for_action("queue.jump-to-current", &["<Ctrl>o"]);
             self.set_accels_for_action("queue.toggle-autoscroll", &["<Ctrl>u"]);
             self.set_accels_for_action("playlist-editor.undo", &["<Ctrl>z"]);
             self.set_accels_for_action("playlist-editor.redo", &["<Ctrl>y"]);
-            self.set_accels_for_action("playlist-editor.save", &["<Ctrl>s"]);
-            self.set_accels_for_action("dyn-playlist-editor.save", &["<Ctrl>s"]);
             self.set_accels_for_action("dyn-playlist-editor.refresh", &["<Ctrl>r"]);
             window.upcast()
         };

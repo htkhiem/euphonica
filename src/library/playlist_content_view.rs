@@ -433,6 +433,7 @@ mod imp {
             self.action_row.set_visible_child_name("edit-mode");
             self.subview_stack.set_visible_child_name("edit-mode");
             self.edit_apply.set_sensitive(false);
+            self.is_editing.set(true);
         }
 
         pub fn push_history(&self, step: HistoryStep) {
@@ -1289,6 +1290,7 @@ impl PlaylistContentView {
                 // since we're not rendering it)
                 this.action_row.set_visible_child_name("queue-mode");
                 this.subview_stack.set_visible_child_name("queue-mode");
+                this.is_editing.set(false);
             }
         ));
     }
