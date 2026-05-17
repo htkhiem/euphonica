@@ -30,6 +30,7 @@ It exists to sate my need for something that's got the bling and the features to
   - In other words, your artist tags can be pretty messy and Euphonica will still be able to correctly split them into individual artists.
 - Performant album art fetching & display (LRU-cached to both cut down on disk reads and RAM usage).
 - Volume knob with dBFS readout support ('cuz why not?).
+- `ncmpcpp`-inspired keyboard shortcuts.
 - User-friendly configuration UI & GSettings backend.
 - MPD passwords are securely stored in your user's login keyring.
 - Commands are bundled into lists for efficient MPD-side processing where possible.
@@ -63,7 +64,7 @@ The below were captured with a mix of dark and light modes.
 
 ## Installation
 
-Euphonica is still in very early development, and so far has only been tested on Arch Linux (btw).
+NOTE: Beta-quality, here be dragons.
 
 The preferred way to install Euphonica is as a Flatpak app via Flathub:
 
@@ -170,16 +171,12 @@ Euphonica requires some preparation before it can be used, especially if you hav
 - For v1.0, think of a new UI to cleanly resolve the following issues:
   - Recent View not being very useful.
   - **More browser-like navigation between pages, with actual navigation history instead of leading back to the outermost view**.
-  - Album x Genre grouping.
+  - How to integrate genre grouping/searching. Aside from being a top-level view by itself, we'd also like to
+    look up albums, artists and tracks by genre too.
   - A "Tracks" view that displays the library track by track, with advanced sorting & filtering.
   - Advanced filtering and sorting in Albums, Artists and Tracks View.
   - Make use efficient use of screen real estate on larger displays (currently looks nice for 1080p & below, but kind of stretched above that).
-  - Clutter & inconveniences with having both a bottom player bar and a sidebar.
-  - Less cluttered & more compact bottom bar, should we keep it.
-    - UI should look symmetrical too as the bottom bar already is.
-  - A less out-of-place and more touch-friendly volume knob design.
 - User-editable album wikis and artist bios
-- Metadata sync between Euphonica instances (instead of being stored locally)
 - Local socket-exclusive features:
   - Library management operations such as tag editing (will require access to the files themselves)
   - Save downloaded album arts and artist avatars directly into the music folders themselves so other instances
