@@ -152,7 +152,7 @@ impl From<LoopStatus> for PlaybackFlow {
     }
 }
 
-fn cycle_replaygain(curr: ReplayGain) -> ReplayGain {
+pub fn get_next_replaygain(curr: ReplayGain) -> ReplayGain {
     match curr {
         ReplayGain::Off => ReplayGain::Auto,
         ReplayGain::Auto => ReplayGain::Track,
@@ -1478,7 +1478,7 @@ impl Player {
     }
 
     pub async fn cycle_replaygain(&self) -> ClientResult<()> {
-        let next_rg = cycle_replaygain(self.imp().replaygain.get());
+        let next_rg = get_next_replaygain(self.imp().replaygain.get());
         self.client()?.set_replaygain(next_rg).await
     }
 
@@ -1626,18 +1626,17 @@ impl Player {
             return;
         }
         let mut curr_idx = self.imp().current_output.get();
-        
+
         let n_outputs = self.imp().outputs.n_items() as i32;
-        
+
         if backward && curr_idx > 0 {
             curr_idx -= 1;
-        } else if curr_idx < n_outputs {
+        } else if !backward && curr_idx < n_outputs - 1 {
             curr_idx += 1;
         }
 
         self.imp().current_output.set(curr_idx);
         self.notify("current-output");
-
     }
 
     /// Seek to the timestamp of a lyric line

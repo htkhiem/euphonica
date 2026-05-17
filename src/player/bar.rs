@@ -1,15 +1,13 @@
 use glib::{SignalHandlerId, WeakRef, clone, closure_local};
 use gtk::{
     CompositeTemplate,
-    glib::{self, Properties, Variant, subclass::Signal},
+    glib::{self, Properties, subclass::Signal},
     prelude::*,
     subclass::prelude::*,
 };
+use std::cell::{Cell, RefCell};
+use std::rc::Rc;
 use std::sync::OnceLock;
-use std::{
-    cell::{Cell, RefCell},
-    rc::Rc,
-};
 
 use crate::{
     cache::{
@@ -21,7 +19,7 @@ use crate::{
     utils::settings_manager,
 };
 
-use super::{MpdOutput, PlaybackControls, PlaybackState, Player, VolumeKnob};
+use super::{MpdOutput, OutputControls, PlaybackControls, PlaybackState, Player, VolumeKnob};
 
 mod imp {
     use super::*;
@@ -60,21 +58,13 @@ mod imp {
         #[template_child]
         pub output_section: TemplateChild<gtk::Box>,
         #[template_child]
-        pub output_stack: TemplateChild<gtk::Stack>,
-        #[template_child]
-        pub prev_output: TemplateChild<gtk::Button>,
-        #[template_child]
-        pub next_output: TemplateChild<gtk::Button>,
+        pub output_controls: TemplateChild<OutputControls>,
         #[template_child]
         pub goto_pane: TemplateChild<gtk::Button>,
         #[template_child]
         pub vol_knob: TemplateChild<VolumeKnob>,
 
-        pub output_widgets: RefCell<Vec<MpdOutput>>,
-        // Index of visible child in output_widgets
         pub player: WeakRef<Player>,
-        pub current_output_id: RefCell<Option<SignalHandlerId>>,
-        pub outputs_changed_id: RefCell<Option<SignalHandlerId>>,
         pub cover_changed_id: RefCell<Option<SignalHandlerId>>,
         #[property(get, set)]
         pub layout: Cell<u32>, // 0: micro, 1: mini, 2: full. TODO: turn into enum.
@@ -151,9 +141,6 @@ mod imp {
 
         fn dispose(&self) {
             if let Some(player) = self.player.upgrade() {
-                if let Some(id) = self.outputs_changed_id.take() {
-                    player.disconnect(id);
-                }
                 if let Some(id) = self.cover_changed_id.take() {
                     player.disconnect(id);
                 }
@@ -189,6 +176,7 @@ impl PlayerBar {
         self.imp().player.set(Some(player));
         self.bind_state(player, cache);
         self.imp().playback_controls.setup(player);
+        self.imp().output_controls.setup(player);
         self.imp().seekbar.setup(player);
     }
 
@@ -244,34 +232,6 @@ impl PlayerBar {
             .sync_create()
             .build();
 
-        self.update_outputs(player);
-        self.imp()
-            .current_output_id
-            .replace(Some(player.connect_notify_local(
-                Some("current-output"),
-                clone!(
-                    #[weak(rename_to = this)]
-                    self,
-                    move |player, _| {
-                        this.set_visible_output(player.current_output());
-                    }
-                ),
-            )));
-
-        self.imp()
-            .outputs_changed_id
-            .replace(Some(player.connect_closure(
-                "outputs-changed",
-                false,
-                closure_local!(
-                    #[weak(rename_to = this)]
-                    self,
-                    move |player: Player| {
-                        this.update_outputs(&player);
-                    }
-                ),
-            )));
-
         self.update_album_art(player.current_song(), cache.clone());
         self.imp()
             .cover_changed_id
@@ -288,21 +248,6 @@ impl PlayerBar {
                     }
                 ),
             )));
-
-        self.imp().prev_output.connect_clicked(clone!(
-            #[weak]
-            player,
-            move |_| {
-                player.switch_output(true);
-            }
-        ));
-        self.imp().next_output.connect_clicked(clone!(
-            #[weak]
-            player,
-            move |_| {
-                player.switch_output(false);
-            }
-        ));
     }
 
     fn update_album_art(&self, song: Option<Song>, cache: Rc<Cache>) {
@@ -327,91 +272,5 @@ impl PlayerBar {
                 }
             }
         ));
-    }
-
-    fn update_outputs(&self, player: &Player) {
-        println!("Updating outputs...");
-        let outputs = player.outputs();
-        let outputs: Vec<glib::BoxedAnyObject> = (0..outputs.n_items())
-            .map(|i| {
-                outputs
-                    .item(i)
-                    .unwrap()
-                    .downcast::<glib::BoxedAnyObject>()
-                    .unwrap()
-            })
-            .collect();
-        let section = self.imp().output_section.get();
-        let stack = self.imp().output_stack.get();
-        let new_len = outputs.len();
-        if new_len == 0 {
-            section.set_visible(false);
-        } else {
-            section.set_visible(true);
-            if new_len > 1 {
-                self.imp().prev_output.set_visible(true);
-                self.imp().next_output.set_visible(true);
-            } else {
-                self.imp().prev_output.set_visible(false);
-                self.imp().next_output.set_visible(false);
-            }
-        }
-        // Handle new/removed outputs
-        // Pretty rare though...
-        {
-            let mut output_widgets = self.imp().output_widgets.borrow_mut();
-            let curr_len = output_widgets.len();
-            if curr_len >= new_len {
-                // Trim down
-                for w in &output_widgets[new_len..] {
-                    stack.remove(w);
-                }
-                output_widgets.truncate(new_len);
-                // Overwrite state of the remaining widgets
-                // Note that this does not re-populate the stack, so the visible
-                // child won't be changed.
-                for (w, o) in output_widgets.iter().zip(outputs) {
-                    w.update_state(&o.borrow());
-                }
-            } else {
-                // Need to add more widgets
-                // Override state of all current widgets. Personal reminder:
-                // zip() is auto-truncated to the shorter of the two iters.
-                for (w, o) in output_widgets.iter().zip(&outputs) {
-                    w.update_state(&o.borrow());
-                }
-                output_widgets.reserve_exact(new_len - curr_len);
-                for o in &outputs[curr_len..] {
-                    let w = MpdOutput::from_output(&o.borrow(), player);
-                    stack.add_child(&w);
-                    output_widgets.push(w);
-                }
-            }
-        }
-        // Use this to update sensitivity of back/forward
-        self.set_visible_output(player.current_output());
-    }
-
-    fn set_visible_output(&self, new_idx: i32) {
-        let outputs = self.imp().output_widgets.borrow();
-        let output_count = outputs.len();
-        if output_count > 0 && new_idx >= 0 {
-            let max = output_count - 1;
-            if new_idx as usize >= max {
-                self.imp().next_output.set_sensitive(false);
-                self.imp().prev_output.set_sensitive(true);
-            } else if new_idx <= 0 {
-                self.imp().next_output.set_sensitive(true);
-                self.imp().prev_output.set_sensitive(false);
-            } else {
-                self.imp().next_output.set_sensitive(true);
-                self.imp().prev_output.set_sensitive(true);
-            }
-
-            // Update stack
-            self.imp()
-                .output_stack
-                .set_visible_child(&outputs[new_idx as usize]);
-        }
     }
 }

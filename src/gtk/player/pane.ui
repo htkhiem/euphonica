@@ -381,40 +381,8 @@
                   </object>
                 </child>
                 <child>
-                  <object class="GtkBox" id="output_section">
-                    <property name="visible">false</property>
-                    <property name="halign">center</property>
-                    <child>
-                      <object class="GtkButton" id="prev_output">
-                        <property name="visible">false</property>
-                        <property name="sensitive">false</property>
-                        <property name="valign">center</property>
-                        <property name="icon-name">left-symbolic</property>
-                        <style>
-                          <class name="flat"/>
-                          <class name="circular"/>
-                        </style>
-                      </object>
-                    </child>
-                    <child>
-                      <object class="GtkStack" id="output_stack">
-                        <property name="transition-type">slide-left-right</property>
-                      </object>
-                    </child>
-                    <child>
-                      <object class="GtkButton" id="next_output">
-                        <property name="visible">false</property>
-                        <property name="sensitive">false</property>
-                        <property name="valign">center</property>
-                        <property name="icon-name">right-symbolic</property>
-                        <style>
-                          <class name="flat"/>
-                          <class name="circular"/>
-                        </style>
-                      </object>
-                    </child>
-                  </object>
-                </child>
+                   <object class="EuphonicaOutputControls" id="output_controls"/>
+                 </child>
               </object>
             </child>
           </object>
