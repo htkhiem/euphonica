@@ -526,4 +526,8 @@ impl PlaylistView {
             }
         ));
     }
+
+    pub fn content_view(&self) -> PlaylistContentView {
+        self.imp().content_view.get()
+    }
 }

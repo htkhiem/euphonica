@@ -1,17 +1,11 @@
 extern crate mpd;
 use crate::{
-    application::EuphonicaApplication,
-    cache::{Cache, sqlite},
-    client::{
+    application::EuphonicaApplication, cache::{Cache, sqlite}, client::{
         ClientState, ConnectionState, Error as ClientError, MpdWrapper, Result as ClientResult,
         StickerSetMode,
-    },
-    common::{QualityGrade, Song, Stickers},
-    config::APPLICATION_ID,
-    meta_providers::models::Lyrics,
-    utils::{
+    }, common::{QualityGrade, Song, Stickers}, config::APPLICATION_ID, meta_providers::models::Lyrics, player::output::MpdOutput, utils::{
         current_unix_timestamp, get_image_cache_path, prettify_audio_format, settings_manager,
-    },
+    }
 };
 use async_lock::OnceCell as AsyncOnceCell;
 use mpris_server::{
@@ -25,8 +19,7 @@ use adw::subclass::prelude::*;
 use glib::{BoxedAnyObject, clone, closure_local, subclass::Signal};
 use gtk::{gio, glib, prelude::*};
 use mpd::{
-    ReplayGain, SaveMode, Subsystem,
-    status::{AudioFormat, State},
+    Output, ReplayGain, SaveMode, Subsystem, status::{AudioFormat, State}
 };
 use std::{
     cell::{Cell, OnceCell, RefCell},
@@ -1637,6 +1630,24 @@ impl Player {
 
         self.imp().current_output.set(curr_idx);
         self.notify("current-output");
+    }
+
+    /// Toggle the current output device on/off
+    pub async fn toggle_current_output(&self) -> ClientResult<()> {
+        let outputs = &self.imp().outputs;
+        if outputs.n_items() == 0 {
+            return Ok(());
+        }
+        let curr_idx = self.imp().current_output.get();
+        let output = outputs
+            .item(curr_idx as u32)
+            .and_then(|obj| obj.downcast::<glib::BoxedAnyObject>().ok())
+            .map(|boxed| boxed.borrow::<Output>().clone());
+        if let Some(output) = output {
+            self.set_output(output.id, !output.enabled).await
+        } else {
+            Ok(())
+        }
     }
 
     /// Seek to the timestamp of a lyric line

@@ -23,8 +23,7 @@ use crate::{
     client::{ClientState, ConnectionState, Result as ClientResult},
     common::{Album, Artist, INode, ThemeSelector, paintables::FadePaintable},
     library::{
-        AlbumView, ArtistContentView, ArtistView, DynamicPlaylistView, FolderView, PlaylistView,
-        RecentView,
+        AlbumView, ArtistContentView, ArtistView, DynamicPlaylistEditorView, DynamicPlaylistView, FolderView, PlaylistView, RecentView
     },
     player::{Player, PlayerBar, QueueView},
     sidebar::Sidebar,
@@ -34,7 +33,8 @@ use adw::{ColorScheme, StyleManager, prelude::*, subclass::prelude::*};
 use auto_palette::{ImageData, Palette, color::RGB};
 use glib::WeakRef;
 use gtk::{
-    CssProvider, cairo, gdk, gio::{self, SimpleActionGroup},
+    CssProvider, cairo, gdk,
+    gio::{self, SimpleActionGroup},
     glib::{self, BoxedAnyObject, SignalHandlerId, clone, closure_local},
     graphene, gsk,
 };
@@ -1628,7 +1628,20 @@ impl EuphonicaWindow {
 
     fn is_in_view(&self, view_name: &str) -> bool {
         let stack = self.get_stack();
-        stack.visible_child_name().as_deref().is_some_and(|child_name| child_name == view_name)
+        stack
+            .visible_child_name()
+            .as_deref()
+            .is_some_and(|child_name| child_name == view_name)
+    }
+
+    fn is_in_playlist_editor(&self) -> bool {
+        self.is_in_view("playlists") && self.imp().playlist_view.content_view().is_editing()
+    }
+
+    fn maybe_get_dyn_playlist_editor(&self) -> Option<DynamicPlaylistEditorView> {
+        self.is_in_view("dynamic-playlists")
+            .then(|| self.imp().dyn_playlist_view.maybe_get_editor())
+            .flatten()
     }
 
     /// Set blurred background to a new image, if enabled. Use thumbnail version to
@@ -1732,13 +1745,6 @@ impl EuphonicaWindow {
             .activate(move |this: &Self, _, _| this.switch_to_view("queue"))
             .build();
 
-        let spectrum_visualizer_toggle_action =
-            gio::ActionEntry::builder("spectrum-visualizer-toggle")
-                .activate(move |this: &Self, _, _| {
-                    this.imp().use_visualizer.set(!this.imp().use_visualizer.get());
-                })
-                .build();
-
         // These go into the "win" group
         self.add_action_entries([
             view_recent_action,
@@ -1747,8 +1753,7 @@ impl EuphonicaWindow {
             view_folders_action,
             view_dyn_playlists_action,
             view_playlists_action,
-            view_queue_action,
-            spectrum_visualizer_toggle_action,
+            view_queue_action
         ]);
 
         // To skip having to deal with widget focus we'll define all the actions at the app level.
@@ -1759,10 +1764,11 @@ impl EuphonicaWindow {
                 #[weak(rename_to = this)]
                 self,
                 move |_, _, _| {
-                if this.is_in_view("queue") {
-                    this.imp().queue_view.scroll_to_playing();
+                    if this.is_in_view("queue") {
+                        this.imp().queue_view.scroll_to_playing();
+                    }
                 }
-            }))
+            ))
             .build();
 
         let queue_stop_and_clear_action = gio::ActionEntry::builder("stop-and-clear")
@@ -1770,16 +1776,15 @@ impl EuphonicaWindow {
                 #[weak(rename_to = this)]
                 self,
                 move |_, _, _| {
-                if this.is_in_view("queue") {
-                    let view = this.imp().queue_view.get();
-                    this.send_simple_toast("Stopping & clearing queue...", 3);
-                    glib::spawn_future_local(
-                        async move {
+                    if this.is_in_view("queue") {
+                        let view = this.imp().queue_view.get();
+                        this.send_simple_toast("Stopping & clearing queue...", 3);
+                        glib::spawn_future_local(async move {
                             view.stop_and_clear().await;
-                        }
-                    );
+                        });
+                    }
                 }
-            }))
+            ))
             .build();
 
         let queue_save_action = gio::ActionEntry::builder("save")
@@ -1787,10 +1792,11 @@ impl EuphonicaWindow {
                 #[weak(rename_to = this)]
                 self,
                 move |_, _, _| {
-                if this.is_in_view("queue") {
-                    this.imp().queue_view.save();
+                    if this.is_in_view("queue") {
+                        this.imp().queue_view.save();
+                    }
                 }
-            }))
+            ))
             .build();
 
         let queue_jump_to_current_action = gio::ActionEntry::builder("jump-to-current")
@@ -1798,10 +1804,11 @@ impl EuphonicaWindow {
                 #[weak(rename_to = this)]
                 self,
                 move |_, _, _| {
-                if this.is_in_view("queue") {
-                    this.imp().queue_view.jump_to_current();
+                    if this.is_in_view("queue") {
+                        this.imp().queue_view.jump_to_current();
+                    }
                 }
-            }))
+            ))
             .build();
 
         let queue_toggle_autoscroll_action = gio::ActionEntry::builder("toggle-autoscroll")
@@ -1809,10 +1816,11 @@ impl EuphonicaWindow {
                 #[weak(rename_to = this)]
                 self,
                 move |_, _, _| {
-                if this.is_in_view("queue") {
-                    this.imp().queue_view.toggle_autoscroll();
+                    if this.is_in_view("queue") {
+                        this.imp().queue_view.toggle_autoscroll();
+                    }
                 }
-            }))
+            ))
             .build();
 
         // Queue View-exclusive
@@ -1825,6 +1833,86 @@ impl EuphonicaWindow {
             queue_toggle_autoscroll_action,
         ]);
         self.insert_action_group("queue", Some(&queue_actions));
+
+        // Playlist Editor actions
+        let playlist_editor_undo_action = gio::ActionEntry::builder("undo")
+            .activate(clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |_, _, _| {
+                    if this.is_in_playlist_editor() {
+                        println!("Is in playlist editor!");
+                        this.imp().playlist_view.content_view().undo();
+                    }
+                }
+            ))
+            .build();
+
+        let playlist_editor_redo_action = gio::ActionEntry::builder("redo")
+            .activate(clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |_, _, _| {
+                    if this.is_in_playlist_editor() {
+                        this.imp().playlist_view.content_view().redo();
+                    }
+                }
+            ))
+            .build();
+
+        let playlist_editor_save_action = gio::ActionEntry::builder("save")
+            .activate(clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |_, _, _| {
+                    if this.is_in_playlist_editor() {
+                        this.imp().playlist_view.content_view().exit_edit_mode(true);
+                    }
+                }
+            ))
+            .build();
+
+        let playlist_editor_actions = SimpleActionGroup::new();
+        playlist_editor_actions.add_action_entries([
+            playlist_editor_undo_action,
+            playlist_editor_redo_action,
+            playlist_editor_save_action,
+        ]);
+        self.insert_action_group("playlist-editor", Some(&playlist_editor_actions));
+
+        // Dynamic Playlist Editor actions
+        let dyn_playlist_editor_save_action = gio::ActionEntry::builder("save")
+            .activate(clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |_, _, _| {
+                    if let Some(editor) = this.maybe_get_dyn_playlist_editor() {
+                        editor.on_save_btn_clicked();
+                    }
+                }
+            ))
+            .build();
+
+        let dyn_playlist_editor_refresh_action = gio::ActionEntry::builder("refresh")
+            .activate(clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |_, _, _| {
+                    if let Some(editor) = this.maybe_get_dyn_playlist_editor() {
+                        glib::spawn_future_local(async move {
+                            editor.preview_result().await;
+                        });
+                    }
+                }
+            ))
+            .build();
+
+        let dyn_playlist_editor_actions = SimpleActionGroup::new();
+        dyn_playlist_editor_actions.add_action_entries([
+            dyn_playlist_editor_save_action,
+            dyn_playlist_editor_refresh_action,
+        ]);
+        self.insert_action_group("dyn-playlist-editor", Some(&dyn_playlist_editor_actions));
     }
 
     fn update_fg_task_count(&self, state: &ClientState) {

@@ -24,7 +24,7 @@ use crate::{
     client::{MpdWrapper, Result as ClientResult},
     config::VERSION,
     library::Library,
-    player::{Player, QueueView, get_next_replaygain},
+    player::{Player, get_next_replaygain},
     preferences::Preferences,
     utils::{settings_manager, tokio_runtime},
 };
@@ -176,6 +176,8 @@ mod imp {
                 obj.set_accels_for_action("app.quit", &["<primary>q"]);
                 obj.set_accels_for_action("app.fullscreen", &["F11"]);
                 obj.set_accels_for_action("app.refresh", &["F5"]);
+                obj.set_accels_for_action("app.update-db", &["F6"]);
+                obj.set_accels_for_action("app.toggle-visualizer", &["F8"]);
                 obj.set_accels_for_action("app.view-recent", &["<Ctrl>1"]);
                 obj.set_accels_for_action("app.view-albums", &["<Ctrl>2"]);
                 obj.set_accels_for_action("app.view-artists", &["<Ctrl>3"]);
@@ -183,7 +185,7 @@ mod imp {
                 obj.set_accels_for_action("app.view-dynamic-playlists", &["<Ctrl>5"]);
                 obj.set_accels_for_action("app.view-playlists", &["<Ctrl>6"]);
                 obj.set_accels_for_action("app.view-queue", &["<Ctrl>7"]);
-
+                
                 // Playback shortcuts
                 obj.set_accels_for_action("app.toggle-playback", &["<Ctrl>p"]);
                 obj.set_accels_for_action("app.next-song", &["<Shift>greater"]);
@@ -201,9 +203,7 @@ mod imp {
                 obj.set_accels_for_action("app.toggle-mute", &["<Ctrl>m"]);
                 obj.set_accels_for_action("app.next-output", &["<Ctrl><Shift>Right"]);
                 obj.set_accels_for_action("app.prev-output", &["<Ctrl><Shift>Left"]);
-
-                // Spectrum visualiser
-                obj.set_accels_for_action("spectrum-visualizer-toggle", &["F8"]);
+                obj.set_accels_for_action("app.toggle-output", &["<Ctrl>slash"]);
 
                 glib::spawn_future_local(clone!(
                     #[weak]
@@ -487,7 +487,7 @@ impl EuphonicaApplication {
                         3.0 => 5.0,
                         5.0 => 10.0,
                         10.0 => 0.0,
-                        v => 1.0, // Any other custom value will be set to 1 to enter the "predefined values loop"
+                        _ => 1.0, // Any other custom value will be set to 1 to enter the "predefined values loop"
                     };
                     if let Err(e) = player.set_crossfade(next).await {
                         dbg!(e);
@@ -538,6 +538,14 @@ impl EuphonicaApplication {
             })
             .build();
 
+        let toggle_visualizer_action = gio::ActionEntry::builder("toggle-visualizer")
+            .activate(move |_, _, _| {
+                eprintln!("Toggling visualizer");
+                let settings = settings_manager().child("ui");
+                let _ = settings.set_boolean("use-visualizer", !settings.boolean("use-visualizer"));
+            })
+            .build();
+
         self.add_action_entries([
             toggle_fullscreen_action,
             refresh_action,
@@ -561,6 +569,7 @@ impl EuphonicaApplication {
             player_toggle_mute_action,
             player_next_output_action,
             player_prev_output_action,
+            toggle_visualizer_action,
         ]);
     }
 
@@ -603,6 +612,11 @@ impl EuphonicaApplication {
             self.set_accels_for_action("queue.save", &["<Ctrl>s"]);
             self.set_accels_for_action("queue.jump-to-current", &["<Ctrl>o"]);
             self.set_accels_for_action("queue.toggle-autoscroll", &["<Ctrl>u"]);
+            self.set_accels_for_action("playlist-editor.undo", &["<Ctrl>z"]);
+            self.set_accels_for_action("playlist-editor.redo", &["<Ctrl>y"]);
+            self.set_accels_for_action("playlist-editor.save", &["<Ctrl>s"]);
+            self.set_accels_for_action("dyn-playlist-editor.save", &["<Ctrl>s"]);
+            self.set_accels_for_action("dyn-playlist-editor.refresh", &["<Ctrl>r"]);
             window.upcast()
         };
         let player = self.imp().player.get().unwrap().clone();

@@ -707,4 +707,16 @@ impl DynamicPlaylistView {
             }
         ));
     }
+
+    pub fn maybe_get_editor(&self) -> Option<DynamicPlaylistEditorView> {
+        (self.imp().nav_view.visible_page_tag().as_deref() == Some("editor"))
+            .then(|| {
+                self.imp()
+                    .nav_view
+                    .visible_page()?
+                    .child()
+                    .and_downcast::<DynamicPlaylistEditorView>()
+            })
+            .flatten()
+    }
 }
