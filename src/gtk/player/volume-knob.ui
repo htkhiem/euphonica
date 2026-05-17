@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <interface>
-  <template class="EuphonicaVolumeKnob" parent="GtkToggleButton">
+  <template class="EuphonicaVolumeKnob" parent="GtkButton">
     <property name="valign">center</property>
     <style>
       <class name="circular"></class>

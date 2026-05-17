@@ -17,8 +17,6 @@ use crate::{
 
 // Wrapper around the common row object to implement song thumbnail fetch logic.
 mod imp {
-    use glib::value::FromValue;
-
     use super::*;
 
     #[derive(Default, CompositeTemplate)]

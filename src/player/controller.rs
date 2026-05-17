@@ -1,17 +1,11 @@
 extern crate mpd;
 use crate::{
-    application::EuphonicaApplication,
-    cache::{Cache, sqlite},
-    client::{
+    application::EuphonicaApplication, cache::{Cache, sqlite}, client::{
         ClientState, ConnectionState, Error as ClientError, MpdWrapper, Result as ClientResult,
         StickerSetMode,
-    },
-    common::{QualityGrade, Song, Stickers},
-    config::APPLICATION_ID,
-    meta_providers::models::Lyrics,
-    utils::{
+    }, common::{QualityGrade, Song, Stickers}, config::APPLICATION_ID, meta_providers::models::Lyrics, player::output::MpdOutput, utils::{
         current_unix_timestamp, get_image_cache_path, prettify_audio_format, settings_manager,
-    },
+    }
 };
 use async_lock::OnceCell as AsyncOnceCell;
 use mpris_server::{
@@ -25,8 +19,7 @@ use adw::subclass::prelude::*;
 use glib::{BoxedAnyObject, clone, closure_local, subclass::Signal};
 use gtk::{gio, glib, prelude::*};
 use mpd::{
-    ReplayGain, SaveMode, Subsystem,
-    status::{AudioFormat, State},
+    Output, ReplayGain, SaveMode, Subsystem, status::{AudioFormat, State}
 };
 use std::{
     cell::{Cell, OnceCell, RefCell},
@@ -152,7 +145,7 @@ impl From<LoopStatus> for PlaybackFlow {
     }
 }
 
-fn cycle_replaygain(curr: ReplayGain) -> ReplayGain {
+pub fn get_next_replaygain(curr: ReplayGain) -> ReplayGain {
     match curr {
         ReplayGain::Off => ReplayGain::Auto,
         ReplayGain::Auto => ReplayGain::Track,
@@ -224,6 +217,7 @@ mod imp {
         pub use_visualizer: Cell<bool>,
         pub fft_backend_idx: Cell<i32>,
         pub outputs: gio::ListStore,
+        pub current_output: Cell<i32>, // Index of currently visible output in widgets
         pub saved_to_history: Cell<bool>,
         pub is_foreground: Cell<bool>,
         // To improve efficiency & avoid UI scroll resetting problems we'll
@@ -241,6 +235,12 @@ mod imp {
         pub expected_queue_version: Cell<u32>,
         // Used to silence idle subsystem messages about volume changes invoked by us.
         pub expected_volume_changes: Cell<u32>,
+        // Simulated mute state (not MPD-side mute).
+        // When muted, volume is set to 0 and saved_volume holds the previous level.
+        pub saved_volume: Cell<i8>,
+        // Whether the player is currently in simulated mute state.
+        // Updated by toggle_mute() and synced from volume-changed signal.
+        pub is_muted: Cell<bool>,
     }
 
     #[glib::object_subclass]
@@ -299,11 +299,14 @@ mod imp {
                 use_visualizer: Cell::new(false),
                 fft_backend_idx: Cell::new(0),
                 outputs: gio::ListStore::new::<BoxedAnyObject>(),
+                current_output: Cell::new(0),
                 saved_to_history: Cell::new(false),
                 is_foreground: Cell::new(false),
                 queue_version: Cell::new(0),
                 expected_queue_version: Cell::new(0),
                 expected_volume_changes: Cell::new(0),
+                saved_volume: Cell::new(0),
+                is_muted: Cell::new(false),
             }
         }
     }
@@ -407,7 +410,9 @@ mod imp {
                         .build(),
                     ParamSpecString::builder("format-desc").read_only().build(),
                     ParamSpecInt::builder("fft-backend-idx").build(),
+                    ParamSpecInt::builder("current-output").read_only().build(),
                     ParamSpecBoolean::builder("pipewire-restart-between-songs").build(),
+                    ParamSpecBoolean::builder("is-muted").read_only().build(),
                 ]
             });
             PROPERTIES.as_ref()
@@ -441,9 +446,11 @@ mod imp {
                 "fft-status" => obj.fft_status().to_value(),
                 "format-desc" => obj.format_desc().to_value(),
                 "fft-backend-idx" => self.fft_backend_idx.get().to_value(),
+                "current-output" => obj.current_output().to_value(),
                 "pipewire-restart-between-songs" => {
                     self.pipewire_restart_between_songs.get().to_value()
                 }
+                "is-muted" => obj.is_muted().to_value(),
                 _ => unimplemented!(),
             }
         }
@@ -707,6 +714,14 @@ impl Player {
 
     pub fn outputs(&self) -> gio::ListStore {
         self.imp().outputs.clone()
+    }
+
+    pub fn current_output(&self) -> i32 {
+        if self.imp().outputs.n_items() > 0 {
+            self.imp().current_output.get()
+        } else {
+            -1
+        }
     }
 
     pub fn current_song(&self) -> Option<Song> {
@@ -1447,8 +1462,16 @@ impl Player {
         self.client()?.set_playback_flow(next_flow).await
     }
 
+    pub fn playback_flow(&self) -> PlaybackFlow {
+        self.imp().flow.get()
+    }
+
+    pub fn replaygain(&self) -> ReplayGain {
+        self.imp().replaygain.get()
+    }
+
     pub async fn cycle_replaygain(&self) -> ClientResult<()> {
-        let next_rg = cycle_replaygain(self.imp().replaygain.get());
+        let next_rg = get_next_replaygain(self.imp().replaygain.get());
         self.client()?.set_replaygain(next_rg).await
     }
 
@@ -1548,6 +1571,18 @@ impl Player {
         self.imp().volume.get()
     }
 
+    pub fn random(&self) -> bool {
+        self.imp().random.get()
+    }
+
+    pub fn consume(&self) -> bool {
+        self.imp().consume.get()
+    }
+
+    pub fn crossfade(&self) -> f64 {
+        self.imp().crossfade.get()
+    }
+
     pub fn queue_id(&self) -> Option<u32> {
         self.current_song().map(|s| s.get_queue_id())
     }
@@ -1574,6 +1609,45 @@ impl Player {
     /// Seek to current position. Called when the seekbar is released.
     pub async fn send_seek(&self, new_pos: f64) -> ClientResult<()> {
         self.client()?.seek_current_song(new_pos).await
+    }
+
+    /// No cycling (too confusing with the default slide animation)
+    pub fn switch_output(&self, backward: bool) {
+        let outputs = &self.imp().outputs;
+        let n_outputs = outputs.n_items();
+        if n_outputs == 0 {
+            return;
+        }
+        let mut curr_idx = self.imp().current_output.get();
+
+        let n_outputs = self.imp().outputs.n_items() as i32;
+
+        if backward && curr_idx > 0 {
+            curr_idx -= 1;
+        } else if !backward && curr_idx < n_outputs - 1 {
+            curr_idx += 1;
+        }
+
+        self.imp().current_output.set(curr_idx);
+        self.notify("current-output");
+    }
+
+    /// Toggle the current output device on/off
+    pub async fn toggle_current_output(&self) -> ClientResult<()> {
+        let outputs = &self.imp().outputs;
+        if outputs.n_items() == 0 {
+            return Ok(());
+        }
+        let curr_idx = self.imp().current_output.get();
+        let output = outputs
+            .item(curr_idx as u32)
+            .and_then(|obj| obj.downcast::<glib::BoxedAnyObject>().ok())
+            .map(|boxed| boxed.borrow::<Output>().clone());
+        if let Some(output) = output {
+            self.set_output(output.id, !output.enabled).await
+        } else {
+            Ok(())
+        }
     }
 
     /// Seek to the timestamp of a lyric line
@@ -1676,10 +1750,41 @@ impl Player {
     pub async fn send_set_volume(&self, val: i8) -> ClientResult<()> {
         let old_vol = self.imp().volume.replace(val);
         if old_vol != val {
+            // Propagate to the other knob. Technically this alerts the source knob too
+            // but since the value is the same it'll be silently ignored.
+            self.emit_by_name::<()>("volume-changed", &[&val]);
             self.client()?.set_volume(val).await?;
             self.imp()
                 .expected_volume_changes
                 .set(self.imp().expected_volume_changes.get() + 1);
+        }
+        Ok(())
+    }
+
+    pub fn is_muted(&self) -> bool {
+        self.imp().is_muted.get()
+    }
+
+    pub fn set_is_muted(&self, state: bool) {
+        let old = self.imp().is_muted.replace(state);
+        if old != state {
+            self.notify("is-muted");
+        }
+    }
+
+    /// Simulated mute: saves current volume, sets MPD volume to 0.
+    /// On toggle back, restores the saved volume.
+    pub async fn toggle_mute(&self) -> ClientResult<()> {
+        if self.is_muted() {
+            // Unmute: restore saved volume
+            let saved = self.imp().saved_volume.get();
+            self.send_set_volume(saved).await?;
+            self.set_is_muted(false);
+        } else {
+            // Mute: save current volume, set to 0
+            self.imp().saved_volume.set(self.imp().volume.get());
+            self.send_set_volume(0).await?;
+            self.set_is_muted(true);
         }
         Ok(())
     }

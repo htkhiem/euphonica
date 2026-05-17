@@ -221,7 +221,7 @@ pub fn resize_convert_image(dyn_img: DynamicImage) -> (RgbImage, RgbImage) {
     // Avoid resizing to larger than the original image.
     let w = dyn_img.width();
     let h = dyn_img.height();
-    let hires_size = settings.uint("hires-image-size").min(w.max(h));
+    let hires_size = settings.uint("max-image-resolution").min(w.max(h));
     let thumbnail_short_edge = settings.uint("thumbnail-image-size");
     // For thumbnails, scale such that the short edge is equal to thumbnail_size.
     let thumbnail_sizes = if w > h {
@@ -246,6 +246,7 @@ pub fn resize_convert_image(dyn_img: DynamicImage) -> (RgbImage, RgbImage) {
 }
 
 /// returns the image name that this is saved as
+#[inline]
 pub fn save_and_register_single_image(
     img: &RgbImage,
     key: &str,
@@ -253,10 +254,17 @@ pub fn save_and_register_single_image(
     is_thumb: bool,
 ) -> String {
     let mut path = get_image_cache_path();
-    let name = Uuid::new_v4().simple().to_string() + ".png";
+    let settings = settings_manager().child("library");
+    let ext = settings.string("image-format").to_string();
+    let image_format = match ext.as_str() {
+        "png" => image::ImageFormat::Png,
+        "jpeg" => image::ImageFormat::Jpeg,
+        _ => unimplemented!(),
+    };
+    let name = format!("{}.{}", Uuid::new_v4().simple().to_string(), &ext);
     path.push(&name);
 
-    img.save(&path)
+    img.save_with_format(&path, image_format)
         .unwrap_or_else(|_| panic!("Couldn't save downloaded image to {:?}", &path));
 
     sqlite::register_image_key(key, prefix, Some(&name), is_thumb).expect("Sqlite error");
@@ -314,7 +322,7 @@ impl RegisteredImageBundle {
     }
 }
 
-/// this is really a util wrap around resizing the dyn_img & registering. For fine grain control, you can call those individually
+/// Utility for resizing the dyn_img & registering.
 pub fn save_and_register_image(
     dyn_img: DynamicImage,
     key: &str,

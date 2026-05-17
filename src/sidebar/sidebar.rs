@@ -429,13 +429,17 @@ impl Sidebar {
     }
 
     pub fn set_view(&self, view_name: &str) {
-        // TODO: something less dumb than this
         match view_name {
             "albums" => self.imp().albums_btn.set_active(true),
             "artists" => self.imp().artists_btn.set_active(true),
-            "queue" => self.imp().queue_btn.set_active(true),
+            "folders" => self.imp().folders_btn.set_active(true),
             "playlists" => self.imp().playlists_btn.set_active(true),
-            _ => unimplemented!(),
-        };
+            "dynamic_playlists" => self.imp().dyn_playlists_btn.set_active(true),
+            "recent" => self.imp().recent_btn.set_active(true),
+            "queue" => self.imp().queue_btn.set_active(true),
+            _ => {
+                eprintln!("Unknown view: {}", view_name);
+            }
+        }
     }
 }

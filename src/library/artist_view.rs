@@ -154,6 +154,10 @@ impl ArtistView {
         self.imp().content_view.get()
     }
 
+    pub fn search_bar(&self) -> gtk::SearchBar {
+        self.imp().search_bar.get()
+    }
+
     fn setup_sort(&self) {
         // TODO: use albumsort & albumartistsort tags where available
         // Setup sort widget & actions

@@ -449,6 +449,10 @@ impl AlbumView {
         });
     }
 
+    pub fn search_bar(&self) -> gtk::SearchBar {
+        self.imp().search_bar.get()
+    }
+
     pub fn on_album_clicked(&self, album: &Album) {
         // - Upon receiving click signal, get the list item at the indicated activate index.
         // - Extract album from that list item.
@@ -504,11 +508,13 @@ impl AlbumView {
         factory.connect_setup(clone!(
             #[weak]
             cache,
+            #[weak]
+            grid_view,
             move |_, list_item| {
                 let item = list_item
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
-                let album_cell = AlbumCell::new(item, cache, None);
+                let album_cell = AlbumCell::new(item, cache, None, Some(grid_view));
                 item.set_child(Some(&album_cell));
             }
         ));

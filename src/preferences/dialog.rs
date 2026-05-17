@@ -65,7 +65,7 @@ impl Preferences {
         let res = Self::default();
 
         res.imp().client_tab.get().setup(app, player);
-        res.imp().library_tab.get().setup();
+        res.imp().library_tab.get().setup(cache.clone());
         res.imp().ui_tab.get().setup();
         res.imp().integrations_tab.get().setup(cache);
 

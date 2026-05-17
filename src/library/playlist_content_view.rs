@@ -254,28 +254,28 @@ mod imp {
                 #[weak(rename_to = this)]
                 self,
                 move |_| {
-                    this.exit_edit_mode(false);
+                    this.obj().exit_edit_mode(false);
                 }
             ));
             self.edit_undo.connect_clicked(clone!(
                 #[weak(rename_to = this)]
                 self,
                 move |_| {
-                    this.undo();
+                    this.obj().undo();
                 }
             ));
             self.edit_redo.connect_clicked(clone!(
                 #[weak(rename_to = this)]
                 self,
                 move |_| {
-                    this.redo();
+                    this.obj().redo();
                 }
             ));
             self.edit_apply.connect_clicked(clone!(
                 #[weak(rename_to = this)]
                 self,
                 move |_| {
-                    this.exit_edit_mode(true);
+                    this.obj().exit_edit_mode(true);
                 }
             ));
 
@@ -402,7 +402,7 @@ mod imp {
     impl WidgetImpl for PlaylistContentView {}
 
     impl PlaylistContentView {
-        fn update_btn_sensitivity(&self) {
+        pub fn update_btn_sensitivity(&self) {
             let curr_idx = self.history_idx.get();
             self.edit_undo.set_sensitive(curr_idx > 0);
             self.edit_redo
@@ -433,89 +433,7 @@ mod imp {
             self.action_row.set_visible_child_name("edit-mode");
             self.subview_stack.set_visible_child_name("edit-mode");
             self.edit_apply.set_sensitive(false);
-        }
-
-        pub fn exit_edit_mode(&self, apply: bool) {
-            glib::spawn_future_local(clone!(
-                #[weak(rename_to = this)]
-                self,
-                async move {
-                    if apply {
-                        // Currently if the command list fails halfway we'll still
-                        // clear the undo history.
-                        if this.history_idx.get() > 0 {
-                            let song_count = this.editing_song_list.n_items();
-                            let mut song_list: Vec<Song> = Vec::with_capacity(song_count as usize);
-                            for i in 0..song_count {
-                                song_list.push(
-                                    this.editing_song_list
-                                        .item(i)
-                                        .unwrap()
-                                        .downcast_ref::<Song>()
-                                        .unwrap()
-                                        .clone(),
-                                );
-                            }
-                            if let Err(e) = this
-                                .library
-                                .upgrade()
-                                .unwrap()
-                                .add_songs_to_playlist(
-                                    this.playlist
-                                        .borrow()
-                                        .as_ref()
-                                        .unwrap()
-                                        .get_uri()
-                                        .to_owned(),
-                                    &song_list,
-                                    SaveMode::Replace,
-                                )
-                                .await
-                            {
-                                dbg!(e);
-                            };
-                            this.history_idx.replace(0);
-                        }
-                        this.history.borrow_mut().clear();
-                        this.edit_undo.set_sensitive(false);
-                        this.edit_redo.set_sensitive(false);
-                    }
-                    // Just fade back, no need to clear the list (won't lag us
-                    // since we're not rendering it)
-                    this.action_row.set_visible_child_name("queue-mode");
-                    this.subview_stack.set_visible_child_name("queue-mode");
-                }
-            ));
-        }
-
-        pub fn undo(&self) {
-            // If not at 0, get the history step at history_idx, perform
-            // the necessary edits on the editing_song_list to revert its
-            // changes, then decrement history_idx.
-            let curr_idx = self.history_idx.get();
-            if curr_idx > 0 {
-                let history = self.history.borrow();
-                let step = &history[curr_idx - 1];
-                step.backward(&self.editing_song_list);
-                self.history_idx.replace(curr_idx - 1);
-                self.update_btn_sensitivity();
-            }
-        }
-
-        pub fn redo(&self) {
-            // If not at the latest history step, execute the action on
-            // the editing_song_list, then increment history_idx.
-            let curr_idx = self.history_idx.get();
-            let history = self.history.borrow();
-            if curr_idx < history.len() {
-                // Current index is always 1-based, i.e. 1 points to the 0th element of the history vec.
-                // Since redoing means executing the NEXT step, not the current, we need to get the
-                // (curr_idx - 1 + 1)th step in the history.
-                let step = &history[curr_idx];
-                step.forward(&self.editing_song_list);
-                self.history_idx.replace(curr_idx + 1);
-                self.update_btn_sensitivity();
-            }
+            self.is_editing.set(true);
         }
 
         pub fn push_history(&self, step: HistoryStep) {
@@ -1202,7 +1120,7 @@ impl PlaylistContentView {
             self.imp().song_list.remove_all();
         }
         // Always clear the editing song list & exit edit mode without saving
-        self.imp().exit_edit_mode(false);
+        self.exit_edit_mode(false);
         if self.imp().editing_song_list.n_items() > 0 {
             self.imp().editing_song_list.remove_all();
         }
@@ -1238,6 +1156,10 @@ impl PlaylistContentView {
     #[inline]
     pub fn current_playlist(&self) -> Option<INode> {
         self.imp().playlist.borrow().clone()
+    }
+
+    pub fn is_editing(&self) -> bool {
+        self.imp().is_editing.get()
     }
 
     pub fn shift_backward(&self, idx: u32) {
@@ -1287,5 +1209,89 @@ impl PlaylistContentView {
         };
         step.forward(&self.imp().editing_song_list);
         self.imp().push_history(step);
+    }
+
+    pub fn undo(&self) {
+        // If not at 0, get the history step at history_idx, perform
+        // the necessary edits on the editing_song_list to revert its
+        // changes, then decrement history_idx.
+        let curr_idx = self.imp().history_idx.get();
+        if curr_idx > 0 {
+            let history = self.imp().history.borrow();
+            let step = &history[curr_idx - 1];
+            step.backward(&self.imp().editing_song_list);
+            self.imp().history_idx.replace(curr_idx - 1);
+            self.imp().update_btn_sensitivity();
+        }
+    }
+
+    pub fn redo(&self) {
+        // If not at the latest history step, execute the action on
+        // the editing_song_list, then increment history_idx.
+        let curr_idx = self.imp().history_idx.get();
+        let history = self.imp().history.borrow();
+        if curr_idx < history.len() {
+            // Current index is always 1-based, i.e. 1 points to the 0th element of the history vec.
+            // Since redoing means executing the NEXT step, not the current, we need to get the
+            // (curr_idx - 1 + 1)th step in the history.
+            let step = &history[curr_idx];
+            step.forward(&self.imp().editing_song_list);
+            self.imp().history_idx.replace(curr_idx + 1);
+            self.imp().update_btn_sensitivity();
+        }
+    }
+
+    pub fn exit_edit_mode(&self, apply: bool) {
+        glib::spawn_future_local(clone!(
+            #[weak(rename_to = this)]
+            self.imp(),
+            async move {
+                if apply {
+                    // Currently if the command list fails halfway we'll still
+                    // clear the undo history.
+                    if this.history_idx.get() > 0 {
+                        let song_count = this.editing_song_list.n_items();
+                        let mut song_list: Vec<Song> = Vec::with_capacity(song_count as usize);
+                        for i in 0..song_count {
+                            song_list.push(
+                                this.editing_song_list
+                                    .item(i)
+                                    .unwrap()
+                                    .downcast_ref::<Song>()
+                                    .unwrap()
+                                    .clone(),
+                            );
+                        }
+                        if let Err(e) = this
+                            .library
+                            .upgrade()
+                            .unwrap()
+                            .add_songs_to_playlist(
+                                this.playlist
+                                    .borrow()
+                                    .as_ref()
+                                    .unwrap()
+                                    .get_uri()
+                                    .to_owned(),
+                                &song_list,
+                                SaveMode::Replace,
+                            )
+                            .await
+                        {
+                            dbg!(e);
+                        };
+                        this.history_idx.replace(0);
+                    }
+                    this.history.borrow_mut().clear();
+                    this.edit_undo.set_sensitive(false);
+                    this.edit_redo.set_sensitive(false);
+                }
+                // Just fade back, no need to clear the list (won't lag us
+                // since we're not rendering it)
+                this.action_row.set_visible_child_name("queue-mode");
+                this.subview_stack.set_visible_child_name("queue-mode");
+                this.is_editing.set(false);
+            }
+        ));
     }
 }
