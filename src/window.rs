@@ -34,7 +34,7 @@ use adw::{ColorScheme, StyleManager, prelude::*, subclass::prelude::*};
 use auto_palette::{ImageData, Palette, color::RGB};
 use glib::WeakRef;
 use gtk::{
-    CssProvider, cairo, gdk, gio,
+    CssProvider, cairo, gdk, gio::{self, SimpleActionGroup},
     glib::{self, BoxedAnyObject, SignalHandlerId, clone, closure_local},
     graphene, gsk,
 };
@@ -1370,6 +1370,7 @@ impl EuphonicaWindow {
 
         win.bind_state();
         win.setup_signals();
+        win.setup_gactions();
 
         // Refresh background
         win.queue_new_background();
@@ -1625,6 +1626,11 @@ impl EuphonicaWindow {
         }
     }
 
+    fn is_in_view(&self, view_name: &str) -> bool {
+        let stack = self.get_stack();
+        stack.visible_child_name().as_deref().is_some_and(|child_name| child_name == view_name)
+    }
+
     /// Set blurred background to a new image, if enabled. Use thumbnail version to
     /// minimise disk read time.
     fn queue_new_background(&self) {
@@ -1695,6 +1701,130 @@ impl EuphonicaWindow {
             .unwrap()
             .downcast::<crate::application::EuphonicaApplication>()
             .unwrap()
+    }
+
+    fn switch_to_view(&self, view_name: &str) {
+        self.imp().sidebar.get().set_view(view_name);
+    }
+
+    /// These are view-related actions. In the rather unlikely case that we decide to allow multiple Euphonica windows
+    /// (not sure if there's even a need for that) these will only go off on the focused window.
+    fn setup_gactions(&self) {
+        let view_recent_action = gio::ActionEntry::builder("view-recent")
+            .activate(move |this: &Self, _, _| this.switch_to_view("recent"))
+            .build();
+        let view_albums_action = gio::ActionEntry::builder("view-albums")
+            .activate(move |this: &Self, _, _| this.switch_to_view("albums"))
+            .build();
+        let view_artists_action = gio::ActionEntry::builder("view-artists")
+            .activate(move |this: &Self, _, _| this.switch_to_view("artists"))
+            .build();
+        let view_folders_action = gio::ActionEntry::builder("view-folders")
+            .activate(move |this: &Self, _, _| this.switch_to_view("folders"))
+            .build();
+        let view_dyn_playlists_action = gio::ActionEntry::builder("view-dynamic-playlists")
+            .activate(move |this: &Self, _, _| this.switch_to_view("dynamic_playlists"))
+            .build();
+        let view_playlists_action = gio::ActionEntry::builder("view-playlists")
+            .activate(move |this: &Self, _, _| this.switch_to_view("playlists"))
+            .build();
+        let view_queue_action = gio::ActionEntry::builder("view-queue")
+            .activate(move |this: &Self, _, _| this.switch_to_view("queue"))
+            .build();
+
+        let spectrum_visualizer_toggle_action =
+            gio::ActionEntry::builder("spectrum-visualizer-toggle")
+                .activate(move |this: &Self, _, _| {
+                    this.imp().use_visualizer.set(!this.imp().use_visualizer.get());
+                })
+                .build();
+
+        // These go into the "win" group
+        self.add_action_entries([
+            view_recent_action,
+            view_albums_action,
+            view_artists_action,
+            view_folders_action,
+            view_dyn_playlists_action,
+            view_playlists_action,
+            view_queue_action,
+            spectrum_visualizer_toggle_action,
+        ]);
+
+        // To skip having to deal with widget focus we'll define all the actions at the app level.
+        // To handle name collisions (such as queue save vs playlist save), we place the actions into groups.
+        // All groups are still attached to the app instance though.
+        let queue_scroll_to_playing_action = gio::ActionEntry::builder("scroll-to-playing")
+            .activate(clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |_, _, _| {
+                if this.is_in_view("queue") {
+                    this.imp().queue_view.scroll_to_playing();
+                }
+            }))
+            .build();
+
+        let queue_stop_and_clear_action = gio::ActionEntry::builder("stop-and-clear")
+            .activate(clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |_, _, _| {
+                if this.is_in_view("queue") {
+                    let view = this.imp().queue_view.get();
+                    this.send_simple_toast("Stopping & clearing queue...", 3);
+                    glib::spawn_future_local(
+                        async move {
+                            view.stop_and_clear().await;
+                        }
+                    );
+                }
+            }))
+            .build();
+
+        let queue_save_action = gio::ActionEntry::builder("save")
+            .activate(clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |_, _, _| {
+                if this.is_in_view("queue") {
+                    this.imp().queue_view.save();
+                }
+            }))
+            .build();
+
+        let queue_jump_to_current_action = gio::ActionEntry::builder("jump-to-current")
+            .activate(clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |_, _, _| {
+                if this.is_in_view("queue") {
+                    this.imp().queue_view.jump_to_current();
+                }
+            }))
+            .build();
+
+        let queue_toggle_autoscroll_action = gio::ActionEntry::builder("toggle-autoscroll")
+            .activate(clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |_, _, _| {
+                if this.is_in_view("queue") {
+                    this.imp().queue_view.toggle_autoscroll();
+                }
+            }))
+            .build();
+
+        // Queue View-exclusive
+        let queue_actions = SimpleActionGroup::new();
+        queue_actions.add_action_entries([
+            queue_scroll_to_playing_action,
+            queue_stop_and_clear_action,
+            queue_save_action,
+            queue_jump_to_current_action,
+            queue_toggle_autoscroll_action,
+        ]);
+        self.insert_action_group("queue", Some(&queue_actions));
     }
 
     fn update_fg_task_count(&self, state: &ClientState) {

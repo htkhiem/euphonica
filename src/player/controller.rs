@@ -724,7 +724,7 @@ impl Player {
     }
 
     pub fn current_output(&self) -> i32 {
-        if self.imp().outputs.n_items() == 0 {
+        if self.imp().outputs.n_items() > 0 {
             self.imp().current_output.get()
         } else {
             -1
@@ -1469,6 +1469,14 @@ impl Player {
         self.client()?.set_playback_flow(next_flow).await
     }
 
+    pub fn playback_flow(&self) -> PlaybackFlow {
+        self.imp().flow.get()
+    }
+
+    pub fn replaygain(&self) -> ReplayGain {
+        self.imp().replaygain.get()
+    }
+
     pub async fn cycle_replaygain(&self) -> ClientResult<()> {
         let next_rg = cycle_replaygain(self.imp().replaygain.get());
         self.client()?.set_replaygain(next_rg).await
@@ -1610,27 +1618,26 @@ impl Player {
         self.client()?.seek_current_song(new_pos).await
     }
 
-    pub fn cycle_output(&self, backward: bool) {
+    /// No cycling (too confusing with the default slide animation)
+    pub fn switch_output(&self, backward: bool) {
         let outputs = &self.imp().outputs;
-        if outputs.n_items() == 0 {
+        let n_outputs = outputs.n_items();
+        if n_outputs == 0 {
             return;
         }
-        let n_outputs = self.imp().outputs.n_items() as i32;
         let mut curr_idx = self.imp().current_output.get();
-        if backward {
-            if curr_idx == 0 {
-                curr_idx = n_outputs - 1;
-            } else {
-                curr_idx -= 1;
-            }
-        } else {
-            if curr_idx >= n_outputs - 1 {
-                curr_idx = 0;
-            } else {
-                curr_idx += 1;
-            }
+        
+        let n_outputs = self.imp().outputs.n_items() as i32;
+        
+        if backward && curr_idx > 0 {
+            curr_idx -= 1;
+        } else if curr_idx < n_outputs {
+            curr_idx += 1;
         }
+
         self.imp().current_output.set(curr_idx);
+        self.notify("current-output");
+
     }
 
     /// Seek to the timestamp of a lyric line

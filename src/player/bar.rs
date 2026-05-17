@@ -293,14 +293,14 @@ impl PlayerBar {
             #[weak]
             player,
             move |_| {
-                player.cycle_output(false);
+                player.switch_output(true);
             }
         ));
         self.imp().next_output.connect_clicked(clone!(
             #[weak]
             player,
             move |_| {
-                player.cycle_output(true);
+                player.switch_output(false);
             }
         ));
     }
@@ -330,6 +330,7 @@ impl PlayerBar {
     }
 
     fn update_outputs(&self, player: &Player) {
+        println!("Updating outputs...");
         let outputs = player.outputs();
         let outputs: Vec<glib::BoxedAnyObject> = (0..outputs.n_items())
             .map(|i| {
@@ -387,14 +388,16 @@ impl PlayerBar {
                 }
             }
         }
+        // Use this to update sensitivity of back/forward
         self.set_visible_output(player.current_output());
     }
 
     fn set_visible_output(&self, new_idx: i32) {
-        let output_count = self.imp().output_stack.pages().n_items();
-        if output_count > 0 {
-            let max = (output_count - 1) as i32;
-            if new_idx >= max {
+        let outputs = self.imp().output_widgets.borrow();
+        let output_count = outputs.len();
+        if output_count > 0 && new_idx >= 0 {
+            let max = output_count - 1;
+            if new_idx as usize >= max {
                 self.imp().next_output.set_sensitive(false);
                 self.imp().prev_output.set_sensitive(true);
             } else if new_idx <= 0 {
@@ -408,7 +411,7 @@ impl PlayerBar {
             // Update stack
             self.imp()
                 .output_stack
-                .set_visible_child(&self.imp().output_widgets.borrow()[new_idx.max(0) as usize]);
+                .set_visible_child(&outputs[new_idx as usize]);
         }
     }
 }

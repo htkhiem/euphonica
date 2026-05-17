@@ -533,7 +533,7 @@ impl PlayerPane {
             #[weak]
             player,
             move |_| {
-                player.cycle_output(true);
+                player.switch_output(true);
             }
         ));
 
@@ -541,7 +541,7 @@ impl PlayerPane {
             #[weak]
             player,
             move |_| {
-                player.cycle_output(false);
+                player.switch_output(false);
             }
         ));
 
@@ -782,20 +782,7 @@ impl PlayerPane {
     }
 
     fn set_visible_output(&self, new_idx: i32) {
-        let output_count = self.imp().output_stack.pages().n_items();
-        if output_count > 0 {
-            let max = (output_count - 1) as i32;
-            if new_idx >= max {
-                self.imp().next_output.set_sensitive(false);
-                self.imp().prev_output.set_sensitive(true);
-            } else if new_idx <= 0 {
-                self.imp().next_output.set_sensitive(true);
-                self.imp().prev_output.set_sensitive(false);
-            } else {
-                self.imp().next_output.set_sensitive(true);
-                self.imp().prev_output.set_sensitive(true);
-            }
-
+        if self.imp().output_widgets.borrow().len() > 0 {
             // Update stack
             self.imp()
                 .output_stack
