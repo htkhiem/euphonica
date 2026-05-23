@@ -792,10 +792,10 @@ impl MpdWrapper {
 
     pub async fn get_folder_cover(
         &self,
-        folder_uri: String,
+        example_uri: String,
     ) -> ClientResult<Option<utils::RegisteredImageBundle>> {
         let (s, r) = oneshot::channel();
-        self.background(Task::GetFolderCover(folder_uri, s), r)
+        self.background(Task::GetFolderCover(example_uri, s), r)
             .await
     }
 

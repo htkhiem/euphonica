@@ -382,7 +382,7 @@ impl Cache {
                 // 2a. MPD folder-level cover
                 if let Some(bundle) = self
                     .mpd_client
-                    .get_folder_cover(folder_key_owned.to_owned())
+                    .get_folder_cover(embedded_key_owned.to_owned())
                     .map_err(Error::Client)
                     .await?
                 {

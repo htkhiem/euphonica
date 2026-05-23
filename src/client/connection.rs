@@ -27,7 +27,7 @@ use crate::{
         inode::INodeInfo,
     },
     player::PlaybackFlow,
-    utils,
+    utils::{self, strip_filename_linux},
 };
 
 use super::StickerSetMode;
@@ -533,19 +533,25 @@ impl Connection {
     }
 
     /// Downloads an image or returns an already existing image for a given uri
-    /// Will resp with 2 image names (not full paths): (high res, thumb)
+    /// Will resp with 2 image names (not full paths): (high res, thumb).
+    /// Note to self: no prefix handling here because all images downloaded from MPD are album arts.
     fn maybe_download_image<F>(
         &mut self,
-        uri: String,
+        example_uri: String,   // Must be a full URI (not the truncated folder_uri) to avoid problems with remote connections
         download_func: F,
-        register_key: Option<String>,
+        register_key: Option<String>,   // defaults to folder-level URI of the above example_uri
         resp: Responder<Option<utils::RegisteredImageBundle>>,
     ) where
         F: Fn(&mut Client<StreamWrapper>, &String) -> MpdResult<Vec<u8>>,
     {
         // `register_key` overrides the key used for DB lookup and registration.
-        // This lets us store a folder-level key even when the fetch URI is track-level.
-        let key = register_key.as_deref().unwrap_or(&uri);
+        // This lets us store a folder-level key even when the fetch URI is track-level.   
+        // unwrap_or_else to avoid having to run strip_filename_linux when register_key.is_some().
+        let key = register_key.as_deref().unwrap_or_else(
+            // We still internally truncate to folder-level URI for mapping purposes, e.g. avoiding downloading
+            // the same album art more than once when given different URIs within the same folder.
+            || strip_filename_linux(&example_uri)
+        );
 
         // Always check with our DB first, as multiple calls may be spawned
         // asynchronously when no cover was locally available.
@@ -568,7 +574,7 @@ impl Connection {
             // Not available locally => try to download
             self.respond_with_client(
                 |c| {
-                    match download_func(c, &uri) {
+                    match download_func(c, &example_uri) {
                         Ok(bytes) => Ok(Some(utils::save_and_register_image(
                             image::load_from_memory(&bytes).map_err(|_| {
                                 MpdError::Parse(mpd::error::ParseError::BadValue(
@@ -1031,8 +1037,8 @@ impl Connection {
                             resp,
                         )
                     }
-                    Task::GetFolderCover(folder_uri, resp) => self.maybe_download_image(
-                        folder_uri,
+                    Task::GetFolderCover(example_uri, resp) => self.maybe_download_image(
+                        example_uri,
                         |client, uri| client.albumart(uri),
                         None, // Assume folder-level URI, no need to override
                         resp,
