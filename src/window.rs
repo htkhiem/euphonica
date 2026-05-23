@@ -732,23 +732,25 @@ mod imp {
                 let surface_height = (height32 - bar_height).max(0.0);
                 let data = mutex.lock().unwrap();
 
-                match self.visualizer_use_cairo.get() {
-                    true => {
-                        // New CPU‑only Cairo implementation
-                        self.draw_spectrum_cairo_pair(
-                            snapshot,
-                            width32,
-                            surface_height,
-                            &data.0,
-                            &data.1,
-                            scale,
-                            &fg,
-                        );
-                    }
-                    false => {
-                        // Existing GSK‑node implementation
-                        self.draw_spectrum(snapshot, width32, surface_height, &data.0, scale, &fg);
-                        self.draw_spectrum(snapshot, width32, surface_height, &data.1, scale, &fg);
+                if width32 > 0.0 && surface_height > 0.0 {
+                    match self.visualizer_use_cairo.get() {
+                        true => {
+                            // New CPU‑only Cairo implementation
+                            self.draw_spectrum_cairo_pair(
+                                snapshot,
+                                width32,
+                                surface_height,
+                                &data.0,
+                                &data.1,
+                                scale,
+                                &fg,
+                            );
+                        }
+                        false => {
+                            // Existing GSK‑node implementation
+                            self.draw_spectrum(snapshot, width32, surface_height, &data.0, scale, &fg);
+                            self.draw_spectrum(snapshot, width32, surface_height, &data.1, scale, &fg);
+                        }
                     }
                 }
             }

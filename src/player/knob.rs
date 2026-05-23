@@ -272,72 +272,75 @@ mod imp {
     impl WidgetImpl for VolumeKnob {
         fn snapshot(&self, snapshot: &gtk::Snapshot) {
             let (w, h) = (self.obj().width(), self.obj().height());
-            let centre = (w as f64 / 2.0, h as f64 / 2.0);
-            let min_dim = w.min(h) as f64;
-            let bounds = graphene::Rect::new(0.0, 0.0, w as f32, h as f32);
-            // Fade out the previous gradient conically
-            snapshot.push_mask(gsk::MaskMode::Alpha);
-            // Conic gradient goes clockwise. Rotation=0 means starting at 12 o'clock.
-            // Our knob starts at 6 o'clock so we'll use a 180-deg rotation.
-            snapshot.append_conic_gradient(
-                &bounds,
-                &graphene::Point::new(centre.0 as f32, centre.1 as f32),
-                180.0,
-                &[
-                    gsk::ColorStop::new(0.0, gdk::RGBA::BLACK.with_alpha(0.0)),
-                    // Full opacity at the current vol level's angle
-                    gsk::ColorStop::new(self.value.get() as f32 / 100.0, gdk::RGBA::BLACK),
-                ],
-            );
-            snapshot.pop();
+            // Silence Gsk-CRITICAL
+            if w > 0 && h > 0 {
+                let centre = (w as f64 / 2.0, h as f64 / 2.0);
+                let min_dim = w.min(h) as f64;
+                let bounds = graphene::Rect::new(0.0, 0.0, w as f32, h as f32);
+                // Fade out the previous gradient conically
+                snapshot.push_mask(gsk::MaskMode::Alpha);
+                // Conic gradient goes clockwise. Rotation=0 means starting at 12 o'clock.
+                // Our knob starts at 6 o'clock so we'll use a 180-deg rotation.
+                snapshot.append_conic_gradient(
+                    &bounds,
+                    &graphene::Point::new(centre.0 as f32, centre.1 as f32),
+                    180.0,
+                    &[
+                        gsk::ColorStop::new(0.0, gdk::RGBA::BLACK.with_alpha(0.0)),
+                        // Full opacity at the current vol level's angle
+                        gsk::ColorStop::new(self.value.get() as f32 / 100.0, gdk::RGBA::BLACK),
+                    ],
+                );
+                snapshot.pop();
 
-            let cr = snapshot.append_cairo(&bounds);
-            let fg = self.obj().color();
-            // New design: piechart-like mask + glowy radial gradient.
-            // Also use a conical fading effect to more clearly indicate that this is a twistable
-            // and not just a button with fancy gradients when it's turned to 100%.
-            // Rendering model is a hybrid of Cairo (CPU) and GSK (maybe GPU) due to:
-            // - Cairo drawing partial circular arcs in a very straightforward way (GSK doesn't), but
-            // - GSK knowing what a conical gradient is.
-            cr.move_to(centre.0, centre.1 + min_dim);
-            cr.line_to(centre.0, centre.1);
-            cr.arc_negative(
-                centre.0,
-                centre.1,
-                min_dim / 2.0 - 1.0,
-                PI / 2.0 + 2.0 * PI * self.value.get() / 100.0,
-                PI / 2.0,
-            );
-            cr.close_path();
-            let radial = cr::RadialGradient::new(
-                // Outer circle
-                centre.0,
-                centre.1,
-                min_dim / 2.0 - 1.0,
-                // Inner circle
-                centre.0,
-                centre.1,
-                min_dim / 2.0 - 10.0, // How far inward the gradient will extend
-            );
-            radial.add_color_stop_rgba(
-                0.0,
-                fg.red() as f64,
-                fg.green() as f64,
-                fg.blue() as f64,
-                1.0,
-            );
-            radial.add_color_stop_rgba(
-                1.0,
-                fg.red() as f64,
-                fg.green() as f64,
-                fg.blue() as f64,
-                0.0,
-            );
-            cr.set_source(radial);
-            cr.fill();
-            snapshot.pop();
+                let cr = snapshot.append_cairo(&bounds);
+                let fg = self.obj().color();
+                // New design: piechart-like mask + glowy radial gradient.
+                // Also use a conical fading effect to more clearly indicate that this is a twistable
+                // and not just a button with fancy gradients when it's turned to 100%.
+                // Rendering model is a hybrid of Cairo (CPU) and GSK (maybe GPU) due to:
+                // - Cairo drawing partial circular arcs in a very straightforward way (GSK doesn't), but
+                // - GSK knowing what a conical gradient is.
+                cr.move_to(centre.0, centre.1 + min_dim);
+                cr.line_to(centre.0, centre.1);
+                cr.arc_negative(
+                    centre.0,
+                    centre.1,
+                    min_dim / 2.0 - 1.0,
+                    PI / 2.0 + 2.0 * PI * self.value.get() / 100.0,
+                    PI / 2.0,
+                );
+                cr.close_path();
+                let radial = cr::RadialGradient::new(
+                    // Outer circle
+                    centre.0,
+                    centre.1,
+                    min_dim / 2.0 - 1.0,
+                    // Inner circle
+                    centre.0,
+                    centre.1,
+                    min_dim / 2.0 - 10.0, // How far inward the gradient will extend
+                );
+                radial.add_color_stop_rgba(
+                    0.0,
+                    fg.red() as f64,
+                    fg.green() as f64,
+                    fg.blue() as f64,
+                    1.0,
+                );
+                radial.add_color_stop_rgba(
+                    1.0,
+                    fg.red() as f64,
+                    fg.green() as f64,
+                    fg.blue() as f64,
+                    0.0,
+                );
+                cr.set_source(radial);
+                cr.fill();
+                snapshot.pop();
 
-            self.parent_snapshot(snapshot);
+                self.parent_snapshot(snapshot);
+            }
         }
     }
 
