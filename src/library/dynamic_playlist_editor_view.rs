@@ -130,7 +130,6 @@ mod imp {
             while let Some(child) = self.obj().first_child() {
                 child.unparent();
             }
-            println!("Disposing DynamicPlaylistEditorView");
         }
 
         fn constructed(&self) {
@@ -724,7 +723,7 @@ impl DynamicPlaylistEditorView {
             });
     }
 
-    async fn preview_result(&self) {
+    pub async fn preview_result(&self) {
         self.imp().refresh_btn.set_sensitive(false);
         self.imp().content_pages.set_visible_child_name("spinner");
         self.imp().song_list.remove_all();
@@ -736,7 +735,7 @@ impl DynamicPlaylistEditorView {
         dp.name = tmp_name.clone();
         self.imp().tmp_name.replace(tmp_name);
 
-        println!("{:?}", &dp);
+        // println!("{:?}", &dp);
 
         // Don't cache as self DP is still being edited
         match self
@@ -854,7 +853,7 @@ impl DynamicPlaylistEditorView {
     }
 
     // Overwrite parameter is not applicable when editing an existing playlist.
-    fn on_save_btn_clicked(&self) {
+    pub fn on_save_btn_clicked(&self) {
         let btn = self.imp().save_btn.get();
         let stack = self.imp().save_btn_content.get();
         btn.set_sensitive(false);

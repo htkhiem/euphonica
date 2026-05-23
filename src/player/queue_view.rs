@@ -9,7 +9,7 @@ use mpd::{
     error::{Error as MpdError, ErrorCode as MpdErrorCode, ServerError},
 };
 use std::{
-    cell::{Cell, RefCell},
+    cell::{Cell, OnceCell, RefCell},
     cmp::Ordering,
     rc::Rc,
     sync::OnceLock,
@@ -101,6 +101,8 @@ mod imp {
         pub player_queue_n_items_id: RefCell<Option<SignalHandlerId>>,
         pub player_queue_id_id: RefCell<Option<SignalHandlerId>>,
 
+        pub sel_model: OnceCell<SingleSelection>,
+
         // Avoid multiple inits running concurrently
         pub initializing: Cell<bool>,
     }
@@ -138,7 +140,6 @@ mod imp {
                     player.disconnect(id);
                 }
             }
-            println!("Disposing queue view");
         }
 
         fn constructed(&self) {
@@ -196,17 +197,63 @@ mod imp {
                 ))
                 .build();
 
+            let action_stop_and_clear = gio::ActionEntry::builder("stop-and-clear")
+                .activate(clone!(
+                    #[weak]
+                    obj,
+                    move |_, _, _| {
+                        glib::spawn_future_local(clone!(
+                            #[weak]
+                            obj,
+                            async move {
+                                obj.stop_and_clear().await;
+                            }
+                        ));
+                    }
+                ))
+                .build();
+
+            let action_save = gio::ActionEntry::builder("save")
+                .activate(clone!(
+                    #[weak]
+                    obj,
+                    move |_, _, _| {
+                        obj.save();
+                    }
+                ))
+                .build();
+
+            let action_jump_to_current = gio::ActionEntry::builder("jump-to-current")
+                .activate(clone!(
+                    #[weak]
+                    obj,
+                    move |_, _, _| {
+                        obj.jump_to_current();
+                    }
+                ))
+                .build();
+
+            let action_toggle_autoscroll = gio::ActionEntry::builder("toggle-autoscroll")
+                .activate(clone!(
+                    #[weak]
+                    obj,
+                    move |_, _, _| {
+                        obj.toggle_autoscroll();
+                    }
+                ))
+                .build();
+
             // Create a new action group and add actions to it
             let actions = gio::SimpleActionGroup::new();
-            actions.add_action_entries([action_clear_rating, action_scroll_to_playing]);
+            actions.add_action_entries([
+                action_clear_rating,
+                action_scroll_to_playing,
+                action_stop_and_clear,
+                action_save,
+                action_jump_to_current,
+                action_toggle_autoscroll,
+            ]);
             self.obj().insert_action_group("queue-view", Some(&actions));
-
-            let shortcut_controller = gtk::ShortcutController::new();
-            let trigger = gtk::ShortcutTrigger::parse_string("<Shift>o");
-            let action = gtk::NamedAction::new("queue-view.scroll-to-playing");
-            let shortcut = gtk::Shortcut::new(trigger, Some(action));
-            shortcut_controller.add_shortcut(shortcut);
-            self.obj().add_controller(shortcut_controller);
 
             // Set up search
             let library_settings = settings_manager().child("library");
@@ -369,6 +416,7 @@ impl QueueView {
         );
         filter_model.set_incremental(true);
         let sel_model = SingleSelection::new(Some(filter_model));
+        self.imp().sel_model.set(sel_model.clone());
         self.imp().queue.set_model(Some(&sel_model));
 
         // Set up factory
@@ -915,6 +963,50 @@ impl QueueView {
         self.imp().player_pane.setup(player, cache, client_state);
         self.bind_state(player);
         self.imp().player.set(Some(player));
+    }
+
+    pub fn search_bar(&self) -> gtk::SearchBar {
+        self.imp().search_bar.get()
+    }
+
+    #[inline]
+    pub fn selection_model(&self) -> &SingleSelection {
+        self.imp().sel_model.get().unwrap()
+    }
+
+    pub fn open_save(&self) {
+        self.imp().save.get().set_active(true);
+    }
+
+    pub async fn stop_and_clear(&self) {
+        if let Some(player) = self.imp().player.upgrade() {
+            let _ = player.stop().await;
+            let _ = player.clear_queue().await;
+        }
+        if let Some(window) = self.imp().window.upgrade() {
+            window.send_simple_toast("Playback stopped and queue cleared", 3);
+        }
+    }
+
+    pub fn save(&self) {
+        self.open_save();
+    }
+
+    pub fn jump_to_current(&self) {
+        self.scroll_to_playing();
+        if let Some(window) = self.imp().window.upgrade() {
+            window.send_simple_toast("Jumped to currently playing song", 3);
+        }
+    }
+
+    pub fn toggle_autoscroll(&self) {
+        let settings = settings_manager().child("ui");
+        let current = settings.boolean("auto-scroll-to-playing");
+        settings.set_boolean("auto-scroll-to-playing", !current);
+        let state = if !current { "on" } else { "off" };
+        if let Some(window) = self.imp().window.upgrade() {
+            window.send_simple_toast(&format!("Queue auto-scroll: {state}"), 3);
+        }
     }
 }
 

@@ -154,6 +154,10 @@ impl ArtistView {
         self.imp().content_view.get()
     }
 
+    pub fn search_bar(&self) -> gtk::SearchBar {
+        self.imp().search_bar.get()
+    }
+
     fn setup_sort(&self) {
         // TODO: use albumsort & albumartistsort tags where available
         // Setup sort widget & actions
@@ -222,7 +226,6 @@ impl ArtistView {
                     #[weak(rename_to = this)]
                     self,
                     move |_, _| {
-                        println!("Flipping sort...");
                         // Don't actually sort, just flip the results :)
                         this.imp().sorter.changed(gtk::SorterChange::Inverted);
                     }
@@ -425,7 +428,6 @@ impl ArtistView {
                     .item(position)
                     .and_downcast::<Artist>()
                     .expect("The item has to be a `common::Artist`.");
-                println!("Clicked on {:?}", &artist);
                 this.on_artist_clicked(&artist);
             }
         ));

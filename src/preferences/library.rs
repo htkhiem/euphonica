@@ -1,11 +1,11 @@
 use adw::prelude::*;
 use adw::subclass::prelude::*;
 use gtk::{CompositeTemplate, gio, glib};
-use std::cell::Cell;
+use std::{cell::Cell, rc::Rc};
 
 use glib::clone;
 
-use crate::utils;
+use crate::{cache::Cache, utils};
 
 mod imp {
     use super::*;
@@ -46,6 +46,17 @@ mod imp {
         pub open_cache_folder: TemplateChild<adw::ButtonRow>,
         #[template_child]
         pub refresh_cache_stats_btn: TemplateChild<gtk::Button>,
+
+        #[template_child]
+        pub store_lossless_images: TemplateChild<adw::SwitchRow>,
+        #[template_child]
+        pub max_image_resolution: TemplateChild<gtk::Scale>,
+        #[template_child]
+        pub clear_cache_row: TemplateChild<adw::ActionRow>,
+        #[template_child]
+        pub clear_cache_btn: TemplateChild<gtk::Button>,
+        #[template_child]
+        pub clear_cache_dialog: TemplateChild<adw::AlertDialog>,
 
         pub n_async_in_progress: Cell<u8>,
     }
@@ -100,7 +111,7 @@ impl Default for LibraryPreferences {
 }
 
 impl LibraryPreferences {
-    pub fn setup(&self) {
+    pub fn setup(&self, cache: Rc<Cache>) {
         let imp = self.imp();
         // Populate with current gsettings values
         let settings = utils::settings_manager();
@@ -130,6 +141,44 @@ impl LibraryPreferences {
         library_settings
             .bind("pause-recent", &imp.pause_recent.get(), "active")
             .build();
+
+        // Image cache settings
+        library_settings
+            .bind("store-lossless-images", &imp.store_lossless_images.get(), "active")
+            .build();
+
+        let max_res = imp.max_image_resolution.get();
+        library_settings
+            .bind("max-image-resolution", &max_res.adjustment(), "value")
+            .set()
+            .build();
+
+        self.imp().clear_cache_btn.connect_clicked(clone!(
+            #[weak(rename_to = this)]
+            self,
+            move |_| {
+                let dialog = this.imp().clear_cache_dialog.get();
+                dialog.choose(
+                    Some(&this),
+                    Option::<gio::Cancellable>::None.as_ref(),
+                    clone!(
+                        #[weak]
+                        this,
+                        #[weak]
+                        cache,
+                        move |resp| {
+                            if resp == "clear" {
+                                glib::spawn_future_local(async move {
+                                    if cache.clear_image_cache().await.is_ok() {
+                                        this.refresh_cache_stats();
+                                    }
+                                });
+                            }
+                        }
+                    ),
+                );
+            }
+        ));
 
         // Setup artist section
         let artist_delims_buf = imp.artist_delims.buffer();
@@ -222,7 +271,7 @@ impl LibraryPreferences {
         if self.imp().n_async_in_progress.get() == 0 {
             self.imp().image_cache_size.set_subtitle("Computing...");
             self.imp().info_db_size.set_subtitle("Computing...");
-            self.imp().n_async_in_progress.set(3);
+            self.imp().n_async_in_progress.set(2);
 
             gio::File::for_path(utils::get_image_cache_path()).measure_disk_usage_async(
                 gio::FileMeasureFlags::NONE,

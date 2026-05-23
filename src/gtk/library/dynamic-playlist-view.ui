@@ -44,7 +44,6 @@
                 </child>
                 <child type="top">
                   <object class="GtkSearchBar" id="search_bar">
-                    <property name="key-capture-widget">nav_view</property>
                     <child>
                       <object class="GtkSearchEntry" id="search_entry">
                         <property name="search-delay">150</property>

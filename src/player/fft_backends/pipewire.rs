@@ -203,7 +203,6 @@ impl FftBackendImpl for PipeWireFftBackend {
                 fg_sender,
                 move || {
                     // Get list of devices
-                    println!("PipeWire: getting list of devices");
                     {
                         let mainloop = Arc::new(
                             pw::main_loop::MainLoopBox::new(None)
@@ -232,7 +231,6 @@ impl FftBackendImpl for PipeWireFftBackend {
                                     } else if props.get("media.class").is_some_and(|mclass| {
                                         mclass == "Audio/Sink" || mclass == "Stream/Output/Audio"
                                     }) {
-                                        println!("Found new PipeWire output node: {}", &node_name);
                                         devices_clone.lock().unwrap().push(OutputNode {
                                             node_name: node_name.to_owned(),
                                             display_name: props
@@ -256,7 +254,6 @@ impl FftBackendImpl for PipeWireFftBackend {
                         let roundtrip_listener = core
                             .add_listener_local()
                             .done(move |id, seq| {
-                                println!("Sync done signal received with seq: {}", seq.seq());
                                 if id == pw::core::PW_ID_CORE && seq.seq() == target_seq.seq() {
                                     // println!("All globalobjects have been received, quitting get_devices mainloop");
                                     mainloop_clone.quit();
@@ -341,7 +338,6 @@ impl FftBackendImpl for PipeWireFftBackend {
                         if *curr_device_lock >= 0 {
                             let node_name =
                                 devices[*curr_device_lock as usize].node_name.to_owned();
-                            println!("Connecting PipeWire stream to node '{}'", &node_name);
                             props = properties! {
                                 *pw::keys::MEDIA_TYPE => "Audio",
                                 *pw::keys::MEDIA_CATEGORY => "Capture",
@@ -351,7 +347,6 @@ impl FftBackendImpl for PipeWireFftBackend {
                                 *pw::keys::STREAM_MONITOR => "true",
                             };
                         } else {
-                            println!("Autoconnecting PipeWire stream");
                             props = properties! {
                                 *pw::keys::MEDIA_TYPE => "Audio",
                                 *pw::keys::MEDIA_CATEGORY => "Capture",
@@ -392,13 +387,12 @@ impl FftBackendImpl for PipeWireFftBackend {
                                 if media_type != MediaType::Audio
                                     || media_subtype != MediaSubtype::Raw
                                 {
-                                    println!("Not MediaType::Audio || MediaSubtype::Raw, skipping");
+                                    eprintln!("Not MediaType::Audio || MediaSubtype::Raw, skipping");
                                     return;
                                 }
 
-                                println!("Setting up stream format");
                                 let Ok(_) = user_data.format.parse(param) else {
-                                    println!("Failed to parse format");
+                                    eprintln!("Failed to parse format");
                                     let _ = fg_sender
                                         .send_blocking(PipeWireMsg::Status(FftStatus::Invalid));
                                     return;
@@ -504,11 +498,10 @@ impl FftBackendImpl for PipeWireFftBackend {
                             | pw::stream::StreamFlags::NO_CONVERT,
                         &mut params,
                     ) else {
-                        println!("Failed to connect PipeWire stream");
+                        eprintln!("Failed to connect PipeWire stream");
                         let _ = fg_sender.send_blocking(PipeWireMsg::Status(FftStatus::Invalid));
                         return;
                     };
-                    println!("Stream connected");
                     pw_loop.run();
                 }
             ));
@@ -530,7 +523,7 @@ impl FftBackendImpl for PipeWireFftBackend {
                     // println!("FFT: locking format");
                     {
                         let Ok(format_lock) = format.lock() else {
-                            println!("PipeWire FFT: unable to lock format");
+                            eprintln!("PipeWire FFT: unable to lock format");
                             let _ =
                                 fg_sender.send_blocking(PipeWireMsg::Status(FftStatus::Invalid));
                             return;
@@ -605,7 +598,7 @@ impl FftBackendImpl for PipeWireFftBackend {
                             }
                             // println!("FFT L: {:?}\tR: {:?}", &output_lock.0, &output_lock.1);
                         } else {
-                            println!("FFT: Failed to lock output for writing");
+                            eprintln!("FFT: Failed to lock output for writing");
                             let _ =
                                 fg_sender.send_blocking(PipeWireMsg::Status(FftStatus::Invalid));
                             return;

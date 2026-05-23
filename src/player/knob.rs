@@ -1,15 +1,23 @@
 use gtk::{
-    CompositeTemplate, cairo as cr,
+    CompositeTemplate, cairo as cr, gdk,
     glib::{
-        self, Object, ParamSpec, ParamSpecBoolean, ParamSpecDouble, clone, prelude::*,
-        subclass::{prelude::*, Signal}
+        self, Object, ParamSpec, ParamSpecBoolean, ParamSpecDouble, SignalHandlerId, Variant,
+        WeakRef, clone, closure_local,
+        prelude::*,
+        subclass::{Signal, prelude::*},
     },
-    graphene, gsk, gdk,
+    graphene, gsk,
     prelude::*,
     subclass::prelude::*,
 };
 use once_cell::sync::Lazy;
-use std::{cell::Cell, f64::consts::PI, sync::OnceLock};
+use std::{
+    cell::{Cell, RefCell},
+    f64::consts::PI,
+    sync::OnceLock,
+};
+
+use crate::{player::Player, utils::settings_manager};
 
 fn convert_to_dbfs(pct: f64) -> Result<f64, ()> {
     // Accepts 0-100
@@ -24,7 +32,7 @@ pub enum OverflowSide {
     #[default]
     Normal,
     CW,
-    CCW
+    CCW,
 }
 
 mod imp {
@@ -44,7 +52,10 @@ mod imp {
         pub prev_drag_pos: Cell<(f64, f64)>,
         pub overflow_side: Cell<OverflowSide>,
         // Used to disambiguate a quick click (to toggle mute) from a drag (to change volume)
-        pub was_dragging: Cell<bool>
+        pub was_dragging: Cell<bool>,
+        pub volume_changed_id: RefCell<Option<SignalHandlerId>>,
+        pub muted_id: RefCell<Option<SignalHandlerId>>,
+        pub player: WeakRef<Player>,
     }
 
     // The central trait for subclassing a GObject
@@ -53,7 +64,7 @@ mod imp {
         // `NAME` needs to match `class` attribute of template
         const NAME: &'static str = "EuphonicaVolumeKnob";
         type Type = super::VolumeKnob;
-        type ParentType = gtk::ToggleButton;
+        type ParentType = gtk::Button;
 
         fn new() -> Self {
             Self {
@@ -64,6 +75,9 @@ mod imp {
                 overflow_side: Cell::default(),
                 was_dragging: Cell::default(),
                 value: Cell::new(0.0),
+                volume_changed_id: RefCell::new(None),
+                muted_id: RefCell::new(None),
+                player: WeakRef::new(),
             }
         }
 
@@ -78,22 +92,24 @@ mod imp {
 
     // Trait shared by all GObjects
     impl ObjectImpl for VolumeKnob {
+        fn dispose(&self) {
+            if let Some(player) = self.player.upgrade() {
+                if let Some(id) = self.muted_id.take() {
+                    player.disconnect(id);
+                }
+            }
+        }
+
         fn constructed(&self) {
             self.parent_constructed();
             let obj_ = self.obj();
             let obj = obj_.as_ref();
-            self.update_readout();
-            obj.connect_notify_local(Some("value"), |this, _| {
-                this.imp().update_readout();
-            });
-            obj.connect_notify_local(Some("active"), |this, _| {
+
+            obj.connect_clicked(move |this| {
                 if !this.imp().was_dragging.get() {
-                    this.imp().update_readout();
-                    this.emit_by_name::<()>("mute-toggled", &[&this.is_active()]);
+                    this.emit_by_name::<()>("mute-toggled", &[&true]);
                 } else {
                     this.imp().was_dragging.set(false);
-                    // Return to prev status
-                    this.set_active(!this.is_active());
                 }
             });
 
@@ -112,7 +128,6 @@ mod imp {
                     if (0.0..=100.0).contains(&new_vol) {
                         this.set_value(new_vol);
                     }
-                    this.queue_draw();
                     glib::signal::Propagation::Proceed
                 }
             ));
@@ -127,7 +142,9 @@ mod imp {
                 move |_, x, y| {
                     this.imp().drag_origin.set((x, y));
                     let (w, h) = (this.width() as f64, this.height() as f64);
-                    this.imp().prev_drag_pos.set(((x - w/2.0) / w, -(y - h/2.0) / h));
+                    this.imp()
+                        .prev_drag_pos
+                        .set(((x - w / 2.0) / w, -(y - h / 2.0) / h));
                     this.imp().overflow_side.set(OverflowSide::Normal);
                 }
             ));
@@ -141,12 +158,10 @@ mod imp {
                         let drag_origin = this.imp().drag_origin.get();
                         let (w, h) = (this.width() as f64, this.height() as f64);
                         let (cx, cy) = (w / 2.0, h / 2.0);
-                        let curr_pos = (
-                            (drag_origin.0 + x - cx) / w,
-                            -(drag_origin.1 + y - cy) / h
-                        );
+                        let curr_pos =
+                            ((drag_origin.0 + x - cx) / w, -(drag_origin.1 + y - cy) / h);
                         let mut curr_pct = (curr_pos.0.atan2(curr_pos.1) / PI + 1.0) / 2.0;
-                        
+
                         // To handle the bottom angle (either 0% or 100%):
                         // If last known drag location was within the first 25%, do not allow volume to jump to 100%,
                         // Else if last known drag location was within the last 25%, do not allow volume to drop to 0%,
@@ -159,8 +174,7 @@ mod imp {
                                     // Prevent overflow from 0% to 100%
                                     curr_pct = 0.0;
                                     this.imp().overflow_side.set(OverflowSide::CCW);
-                                }
-                                else if prev_pos.1 < 0.0 && prev_pos.0 > 0.0 && curr_pos.0 < 0.0 {
+                                } else if prev_pos.1 < 0.0 && prev_pos.0 > 0.0 && curr_pos.0 < 0.0 {
                                     // Prevent overflow from 100% to 0%
                                     curr_pct = 1.0;
                                     this.imp().overflow_side.set(OverflowSide::CW);
@@ -191,7 +205,7 @@ mod imp {
                     }
                 }
             ));
-            
+
             obj.add_controller(drag_ctl);
         }
         fn properties() -> &'static [ParamSpec] {
@@ -211,7 +225,6 @@ mod imp {
                 "value" => self.value.get().to_value(),
                 "sensitivity" => self.sensitivity.get().to_value(),
                 "use-dbfs" => self.use_dbfs.get().to_value(),
-                "drag-in-progress" => self.was_dragging.get().to_value(),
                 _ => unimplemented!(),
             }
         }
@@ -245,11 +258,10 @@ mod imp {
             static SIGNALS: OnceLock<Vec<Signal>> = OnceLock::new();
             SIGNALS.get_or_init(|| {
                 vec![
-                    // Use this instead of 'active' to avoid problems with drags.
+                    // We're just a normal button now, but we need to avoid sending out a clicked signal
+                    // upon ending drag operations, hence this thing
                     Signal::builder("mute-toggled")
-                        .param_types([
-                            bool::static_type(),
-                        ])
+                        .param_types([bool::static_type()])
                         .build(),
                 ]
             })
@@ -260,87 +272,89 @@ mod imp {
     impl WidgetImpl for VolumeKnob {
         fn snapshot(&self, snapshot: &gtk::Snapshot) {
             let (w, h) = (self.obj().width(), self.obj().height());
-            let centre = (w as f64 / 2.0, h as f64 / 2.0);
-            let min_dim = w.min(h) as f64;
-            let bounds = graphene::Rect::new(0.0, 0.0, w as f32, h as f32);
-            // Fade out the previous gradient conically
-            snapshot.push_mask(gsk::MaskMode::Alpha);
-            // Conic gradient goes clockwise. Rotation=0 means starting at 12 o'clock.
-            // Our knob starts at 6 o'clock so we'll use a 180-deg rotation.
-            snapshot.append_conic_gradient(
-                &bounds,
-                &graphene::Point::new(centre.0 as f32, centre.1 as f32),
-                180.0,
-                &[
-                    gsk::ColorStop::new(0.0, gdk::RGBA::BLACK.with_alpha(0.0)),
-                    // Full opacity at the current vol level's angle
-                    gsk::ColorStop::new(self.value.get() as f32 / 100.0, gdk::RGBA::BLACK),
-                ],
-            );
-            snapshot.pop();
+            // Silence Gsk-CRITICAL
+            if w > 0 && h > 0 {
+                let centre = (w as f64 / 2.0, h as f64 / 2.0);
+                let min_dim = w.min(h) as f64;
+                let bounds = graphene::Rect::new(0.0, 0.0, w as f32, h as f32);
+                // Fade out the previous gradient conically
+                snapshot.push_mask(gsk::MaskMode::Alpha);
+                // Conic gradient goes clockwise. Rotation=0 means starting at 12 o'clock.
+                // Our knob starts at 6 o'clock so we'll use a 180-deg rotation.
+                snapshot.append_conic_gradient(
+                    &bounds,
+                    &graphene::Point::new(centre.0 as f32, centre.1 as f32),
+                    180.0,
+                    &[
+                        gsk::ColorStop::new(0.0, gdk::RGBA::BLACK.with_alpha(0.0)),
+                        // Full opacity at the current vol level's angle
+                        gsk::ColorStop::new(self.value.get() as f32 / 100.0, gdk::RGBA::BLACK),
+                    ],
+                );
+                snapshot.pop();
 
-            let cr = snapshot.append_cairo(&bounds);
-            let fg = self.obj().color();
-            // New design: piechart-like mask + glowy radial gradient.
-            // Also use a conical fading effect to more clearly indicate that this is a twistable
-            // and not just a button with fancy gradients when it's turned to 100%.
-            // Rendering model is a hybrid of Cairo (CPU) and GSK (maybe GPU) due to:
-            // - Cairo drawing partial circular arcs in a very straightforward way (GSK doesn't), but
-            // - GSK knowing what a conical gradient is.
-            cr.move_to(centre.0, centre.1 + min_dim);
-            cr.line_to(centre.0, centre.1);
-            cr.arc_negative(
-                centre.0,
-                centre.1,
-                min_dim / 2.0 - 1.0,
-                PI / 2.0 + 2.0 * PI * self.value.get() / 100.0,
-                PI / 2.0,
-            );
-            cr.close_path();
-            let radial = cr::RadialGradient::new(
-                // Outer circle
-                centre.0,
-                centre.1,
-                min_dim / 2.0 - 1.0,
-                // Inner circle
-                centre.0,
-                centre.1,
-                min_dim / 2.0 - 10.0, // How far inward the gradient will extend
-            );
-            radial.add_color_stop_rgba(
-                0.0,
-                fg.red() as f64,
-                fg.green() as f64,
-                fg.blue() as f64,
-                1.0,
-            );
-            radial.add_color_stop_rgba(
-                1.0,
-                fg.red() as f64,
-                fg.green() as f64,
-                fg.blue() as f64,
-                0.0,
-            );
-            cr.set_source(radial);
-            cr.fill();
-            snapshot.pop();
+                let cr = snapshot.append_cairo(&bounds);
+                let fg = self.obj().color();
+                // New design: piechart-like mask + glowy radial gradient.
+                // Also use a conical fading effect to more clearly indicate that this is a twistable
+                // and not just a button with fancy gradients when it's turned to 100%.
+                // Rendering model is a hybrid of Cairo (CPU) and GSK (maybe GPU) due to:
+                // - Cairo drawing partial circular arcs in a very straightforward way (GSK doesn't), but
+                // - GSK knowing what a conical gradient is.
+                cr.move_to(centre.0, centre.1 + min_dim);
+                cr.line_to(centre.0, centre.1);
+                cr.arc_negative(
+                    centre.0,
+                    centre.1,
+                    min_dim / 2.0 - 1.0,
+                    PI / 2.0 + 2.0 * PI * self.value.get() / 100.0,
+                    PI / 2.0,
+                );
+                cr.close_path();
+                let radial = cr::RadialGradient::new(
+                    // Outer circle
+                    centre.0,
+                    centre.1,
+                    min_dim / 2.0 - 1.0,
+                    // Inner circle
+                    centre.0,
+                    centre.1,
+                    min_dim / 2.0 - 10.0, // How far inward the gradient will extend
+                );
+                radial.add_color_stop_rgba(
+                    0.0,
+                    fg.red() as f64,
+                    fg.green() as f64,
+                    fg.blue() as f64,
+                    1.0,
+                );
+                radial.add_color_stop_rgba(
+                    1.0,
+                    fg.red() as f64,
+                    fg.green() as f64,
+                    fg.blue() as f64,
+                    0.0,
+                );
+                cr.set_source(radial);
+                cr.fill();
+                snapshot.pop();
 
-            self.parent_snapshot(snapshot);
+                self.parent_snapshot(snapshot);
+            }
         }
     }
 
     impl ButtonImpl for VolumeKnob {}
 
-    impl ToggleButtonImpl for VolumeKnob {}
-
     impl VolumeKnob {
-        pub fn update_readout(&self) {
-            let obj = self.obj();
-            let val = self.value.get();
-            if obj.is_active() {
-                obj.set_label("—"); // can you believe a human copypasted an em dash here
-            } else {
-                if self.use_dbfs.get() {
+        pub fn update_readout(&self) -> bool {
+            if let Some(player) = self.player.upgrade() {
+                let is_muted = player.is_muted();
+                let obj = self.obj();
+                let val = self.value.get();
+                if is_muted {
+                    obj.set_label("—"); // can you believe a human copypasted an em dash here
+                } else if self.use_dbfs.get() {
                     if let Ok(dbfs) = convert_to_dbfs(val) {
                         obj.set_label(&format!("{dbfs:.0}"));
                     } else if val > 0.0 {
@@ -351,6 +365,9 @@ mod imp {
                 } else {
                     obj.set_label(&format!("{val:.0}"));
                 }
+                is_muted
+            } else {
+                false
             }
         }
     }
@@ -358,7 +375,7 @@ mod imp {
 
 glib::wrapper! {
     pub struct VolumeKnob(ObjectSubclass<imp::VolumeKnob>)
-    @extends gtk::ToggleButton, gtk::Button, gtk::Widget,
+    @extends gtk::Button, gtk::Widget,
     @implements gtk::Accessible, gtk::Actionable, gtk::Buildable, gtk::ConstraintTarget;
 }
 
@@ -370,7 +387,73 @@ impl Default for VolumeKnob {
 
 impl VolumeKnob {
     pub fn new() -> Self {
-        Object::builder().build()
+        let res = Object::builder().build();
+
+        let settings = settings_manager().child("ui");
+
+        settings
+            .bind("vol-knob-unit", &res, "use-dbfs")
+            .get_only()
+            .mapping(|v: &Variant, _| {
+                Some((v.get::<String>().unwrap().as_str() == "decibels").to_value())
+            })
+            .build();
+
+        settings
+            .bind("vol-knob-sensitivity", &res, "sensitivity")
+            .mapping(|v: &Variant, _| Some(v.get::<f64>().unwrap().to_value()))
+            .build();
+
+        res
+    }
+
+    pub fn setup(&self, player: &Player) {
+        self.imp().player.set(Some(player));
+        self.set_value(player.mpd_volume() as f64);
+        self.imp().update_readout();
+        self.connect_clicked(move |this| {
+            glib::spawn_future_local(clone!(
+                #[weak]
+                this,
+                async move {
+                    if let Some(player) = this.imp().player.upgrade() {
+                        if let Err(e) = player.toggle_mute().await {
+                            dbg!(e);
+                        } else {
+                            this.imp().update_readout();
+                        }
+                    }
+                }
+            ));
+        });
+
+        // Only fired for EXTERNAL changes.
+        self.imp()
+            .volume_changed_id
+            .replace(Some(player.connect_closure(
+                "volume-changed",
+                false,
+                closure_local!(
+                    #[weak(rename_to = this)]
+                    self,
+                    move |_: &Player, vol: i8| {
+                        this.sync_value(vol);
+                    }
+                ),
+            )));
+
+        self.imp()
+            .muted_id
+            .replace(Some(player.connect_notify_local(
+                Some("is-muted"),
+                clone!(
+                    #[weak(rename_to = this)]
+                    self,
+                    move |_, _| {
+                        this.imp().update_readout();
+                    }
+                ),
+            )));
     }
 
     pub fn sensitivity(&self) -> f64 {
@@ -386,19 +469,27 @@ impl VolumeKnob {
     }
 
     pub fn set_value(&self, val: f64) {
-        let old_val = self.imp().value.replace(val);
-        if old_val != val {
-            self.notify("value");
+        if let Some(player) = self.imp().player.upgrade() {
+            let old_val = self.imp().value.replace(val);
+            if old_val != val {
+                self.notify("value");
+                self.queue_draw();
+            }
+            let is_muted = self.imp().update_readout();
+            if !is_muted {
+                let val = self.value().round() as i8;
+                glib::spawn_future_local(clone!(
+                    #[weak]
+                    player,
+                    async move {
+                        if let Err(e) = player.send_set_volume(val).await {
+                            dbg!(e);
+                        }
+                    }
+                ));
+            }
         }
     }
-
-    // pub fn was_dragging(&self) -> bool {
-    //     self.imp().was_dragging.get()
-    // }
-
-    // pub fn reset_was_dragging(&self) {
-    //     self.imp().was_dragging.set(false);
-    // }
 
     pub fn sync_value(&self, new_rounded: i8) {
         // Set volume based on rounded i8 value silently.

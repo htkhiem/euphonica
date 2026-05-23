@@ -223,11 +223,6 @@ impl IntegrationsPreferences {
                 .unwrap()
                 .downcast_ref::<ProviderRow>()
                 .unwrap();
-            println!(
-                "Provider {} priority {}",
-                provider_row.key(),
-                provider_row.priority()
-            );
             new_order.push((provider_row.priority(), provider_row.key()));
             idx += 1;
         }

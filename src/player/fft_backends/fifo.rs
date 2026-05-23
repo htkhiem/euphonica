@@ -60,12 +60,10 @@ impl FftBackendImpl for FifoFftBackend {
     fn start(self: Rc<Self>, output: Arc<Mutex<(Vec<f32>, Vec<f32>)>>) -> Result<(), ()> {
         self.stop_flag.store(false, Ordering::Relaxed);
         let curr_status = self.status();
-        println!("Current status: {curr_status:?}");
         if curr_status != FftStatus::Reading && curr_status != FftStatus::Stopping {
             let stop_flag = self.stop_flag.clone();
             let (sender, receiver) = async_channel::unbounded::<FftStatus>();
             let fft_handle = gio::spawn_blocking(move || {
-                println!("Starting FIFO backend");
                 let settings = settings_manager();
                 let player_settings = settings.child("player");
                 // Will require starting a new thread to account for path and format changes
@@ -161,7 +159,7 @@ impl FftBackendImpl for FifoFftBackend {
                                         let _ = sender.send_blocking(FftStatus::ValidNotReading);
                                     }
                                     _ => {
-                                        println!("FFT ERR: {:?}", &e);
+                                        dbg!(e);
                                         break 'outer;
                                     }
                                 },
@@ -169,7 +167,6 @@ impl FftBackendImpl for FifoFftBackend {
                             // Placed here such that we can use the first iteration to verify
                             // that the seis_errttings are correct.
                             if stop_flag.load(Ordering::Relaxed) {
-                                println!("Stopping thread...");
                                 return;
                             } else if !was_reading {
                                 was_reading = true;
@@ -207,7 +204,7 @@ impl FftBackendImpl for FifoFftBackend {
 
             return Ok(());
         } else {
-            println!("Another FIFO thread is already running");
+            eprintln!("Another FIFO thread is already running");
         }
         Err(())
     }

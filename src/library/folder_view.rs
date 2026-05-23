@@ -285,7 +285,6 @@ mod imp {
                     #[weak(rename_to = this)]
                     self,
                     move |_, _| {
-                        println!("Updating sort...");
                         this.sorter.changed(gtk::SorterChange::Different);
                     }
                 ),
@@ -296,7 +295,6 @@ mod imp {
                     #[weak(rename_to = this)]
                     self,
                     move |_, _| {
-                        println!("Flipping sort...");
                         // Don't actually sort, just flip the results :)
                         this.sorter.changed(gtk::SorterChange::Inverted);
                     }
@@ -486,6 +484,10 @@ impl FolderView {
                 }
             }
         ));
+    }
+
+    pub fn search_bar(&self) -> gtk::SearchBar {
+        self.imp().search_bar.get()
     }
 
     fn setup_listview(&self, _cache: Rc<Cache>, library: Library) {

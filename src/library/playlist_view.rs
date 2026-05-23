@@ -430,6 +430,10 @@ impl PlaylistView {
         }
     }
 
+    pub fn search_bar(&self) -> gtk::SearchBar {
+        self.imp().search_bar.get()
+    }
+
     fn setup_listview(&self) {
         let library = self.imp().library.upgrade().unwrap();
         let cache = self.imp().cache.get().unwrap();
@@ -517,9 +521,12 @@ impl PlaylistView {
                     .item(position)
                     .and_downcast::<INode>()
                     .expect("The item has to be a `common::INode`.");
-                println!("Clicked on {:?}", &inode);
                 this.on_playlist_clicked(&inode);
             }
         ));
+    }
+
+    pub fn content_view(&self) -> PlaylistContentView {
+        self.imp().content_view.get()
     }
 }

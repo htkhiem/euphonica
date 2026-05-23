@@ -15,7 +15,9 @@ use crate::{
         inode::INodeInfo,
     },
     meta_providers::models::{AlbumMeta, ArtistMeta, Lyrics, LyricsParseError},
-    utils::{format_datetime_local_tz, get_doc_cache_path, strip_filename_linux},
+    utils::{
+        format_datetime_local_tz, get_doc_cache_path, get_image_cache_path, strip_filename_linux,
+    },
 };
 
 static SQLITE_POOL: Lazy<r2d2::Pool<SqliteConnectionManager>> = Lazy::new(|| {
@@ -91,7 +93,6 @@ pragma user_version = 2;",
                     |row| row.get::<usize, String>(0),
                 ) {
                     Ok(_) => {
-                        println!("Upgrading local metadata DB to version 1...");
                         // Migrate album table schema: album table now accepts non-unique folder URIs
                         conn.execute_batch(
                             "begin;
@@ -296,6 +297,7 @@ pub enum Error {
     Db(SqliteError),
     InsufficientKey,
     KeyAlreadyExists,
+    Filesystem,
 }
 
 impl From<SqliteError> for Error {
@@ -747,6 +749,22 @@ pub fn clear_history() -> Result<(), Error> {
         .map_err(Error::Db)?;
     tx.execute("delete from artists_history", [])
         .map_err(Error::Db)?;
+    tx.commit().map_err(Error::Db)?;
+    Ok(())
+}
+
+pub fn clear_all_images() -> Result<(), Error> {
+    // Delete all image files
+    let img_path = get_image_cache_path();
+    if img_path.exists() {
+        std::fs::remove_dir_all(&img_path).map_err(|_| Error::Filesystem)?;
+        std::fs::create_dir(&img_path).map_err(|_| Error::Filesystem)?;
+    }
+
+    // Clear the images table in SQLite
+    let mut conn = SQLITE_POOL.get().unwrap();
+    let tx = conn.transaction().map_err(Error::Db)?;
+    tx.execute("delete from images", []).map_err(Error::Db)?;
     tx.commit().map_err(Error::Db)?;
     Ok(())
 }

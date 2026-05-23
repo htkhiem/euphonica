@@ -414,6 +414,10 @@ impl DynamicPlaylistView {
         self.imp().nav_view.pop();
     }
 
+    pub fn search_bar(&self) -> gtk::SearchBar {
+        self.imp().search_bar.get()
+    }
+
     pub async fn delete(&self, name: &str) {
         if let Some(library) = self.imp().library.upgrade() {
             self.imp().nav_view.pop();
@@ -698,9 +702,20 @@ impl DynamicPlaylistView {
                     .item(position)
                     .and_downcast::<INode>()
                     .expect("The item has to be a `common::INode`.");
-                println!("Clicked on {:?}", &inode);
                 this.on_playlist_clicked(&inode);
             }
         ));
+    }
+
+    pub fn maybe_get_editor(&self) -> Option<DynamicPlaylistEditorView> {
+        (self.imp().nav_view.visible_page_tag().as_deref() == Some("editor"))
+            .then(|| {
+                self.imp()
+                    .nav_view
+                    .visible_page()?
+                    .child()
+                    .and_downcast::<DynamicPlaylistEditorView>()
+            })
+            .flatten()
     }
 }

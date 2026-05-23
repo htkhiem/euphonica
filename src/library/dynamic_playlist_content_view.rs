@@ -101,7 +101,6 @@ mod imp {
             while let Some(child) = self.obj().first_child() {
                 child.unparent();
             }
-            println!("Disposing DPC view");
         }
 
         fn constructed(&self) {

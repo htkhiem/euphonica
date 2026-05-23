@@ -28,9 +28,8 @@
           </object>
         </child>
         <child type="top">
-          <object class="GtkSearchBar" id="search_bar">
-            <property name="key-capture-widget">top_view</property>
-            <child>
+           <object class="GtkSearchBar" id="search_bar">
+                <child>
               <object class="GtkSearchEntry" id="search_entry">
                 <property name="search-delay">150</property>
                 <property name="width-request">100</property>

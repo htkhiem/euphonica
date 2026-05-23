@@ -39,6 +39,14 @@
 		<value nick="stop-and-clear" value="3"/>
 	</enum>
 
+	<!-- Unused, but kept for compatibility -->
+	<enum id="io.github.htkhiem.Euphonica.imageformat">
+		<value nick="jpeg" value="0"/>
+		<value nick="png" value="1"/>
+	</enum>
+
+	
+
 	<schema id="io.github.htkhiem.Euphonica" path="/io/github/htkhiem/Euphonica/">
 		<child schema="io.github.htkhiem.Euphonica.ui" name="ui"/>
 		<child schema="io.github.htkhiem.Euphonica.state" name="state"/>
@@ -138,6 +146,15 @@
 		</key>
 		<key name="pause-recent" type="b">
 			<default>false</default>
+		</key>
+
+		<key name="store-lossless-images" type="b">
+			<default>false</default>
+		</key>
+
+		<key name="max-image-resolution" type="u">
+			<default>1024</default>
+			<summary>Maximum resolution for cached images</summary>
 		</key>
 	</schema>
 

@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <template class="EuphonicaOutputControls" parent="GtkBox">
+    <property name="visible">true</property>
+    <property name="halign">center</property>
+    <child>
+      <object class="GtkButton" id="prev_output">
+        <property name="visible">false</property>
+        <property name="sensitive">false</property>
+        <property name="valign">center</property>
+        <property name="icon-name">left-symbolic</property>
+        <style>
+          <class name="flat"/>
+          <class name="circular"/>
+        </style>
+      </object>
+    </child>
+    <child>
+      <object class="GtkStack" id="output_stack">
+        <property name="transition-type">slide-left-right</property>
+      </object>
+    </child>
+    <child>
+      <object class="GtkButton" id="next_output">
+        <property name="visible">false</property>
+        <property name="sensitive">false</property>
+        <property name="valign">center</property>
+        <property name="icon-name">right-symbolic</property>
+        <style>
+          <class name="flat"/>
+          <class name="circular"/>
+        </style>
+      </object>
+    </child>
+  </template>
+</interface>

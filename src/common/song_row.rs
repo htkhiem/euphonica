@@ -17,8 +17,6 @@ use crate::{
 
 // Wrapper around the common row object to implement song thumbnail fetch logic.
 mod imp {
-    use glib::value::FromValue;
-
     use super::*;
 
     #[derive(Default, CompositeTemplate)]
@@ -350,9 +348,10 @@ impl SongRow {
                                 this.imp().thumbnail.clear();
                             }
                         }
-                    } else {
-                        println!("SongRow now bound to a different song, ignoring texture");
                     }
+                    // else {
+                    //     println!("SongRow now bound to a different song, ignoring texture");
+                    // }
                 }
             }
         ));

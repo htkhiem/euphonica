@@ -46,6 +46,10 @@
     <p>Euphonica is solely a music player programme and does not provide any media content or sources. Users must provide their own content or manually configure Euphonica to access third party online services.</p>
   </description>
 
+  <keywords>
+    <keyword translate="no">MPD</keyword>
+  </keywords>
+
   <launchable type="desktop-id">io.github.htkhiem.Euphonica.desktop</launchable>
   <screenshots>
     <screenshot type="default">
@@ -75,6 +79,19 @@
   </screenshots>
 
   <releases>
+    <release version="0.99.4-beta" date="2026-05-23">
+      <url type="details">https://github.com/htkhiem/euphonica/releases/tag/v0.99.4-beta</url>
+      <description>
+        <p>New: ncmpcpp-inspired keyboard shortcuts and new searchable Shortcuts dialog.</p>
+        <p>New: More cache controls: image format, size and graceful clear-cache option.</p>
+        <p>Change: Euphonica now always tries to use folder-level cover art first, cutting down on duplicated downloads.</p>
+        <p>Change: New images are now stored as lossy WebP to vastly reduce cache size on disk. Quality loss should be pretty much imperceptible.</p>
+        <p>Change: Reduced RAM usage and significantly sped up album art loads thanks to more intelligent screen visibility checks.</p>
+        <p>Fix: Type-to-search now fully works! Previously they were intermittent (due to focus sometimes being stolen by the sidebar).</p>
+        <p>Fix: Album art downloads should now be far more reliable for remote collections.</p>
+        <p>Fix: Sync values between volume knobs (in the bar and in the pane).</p>
+      </description>
+    </release>
     <release version="0.99.3-beta" date="2026-05-02">
       <url type="details">https://github.com/htkhiem/euphonica/releases/tag/v0.99.3-beta</url>
       <description>

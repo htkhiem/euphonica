@@ -198,79 +198,82 @@ mod imp {
             // the current accent (either system or picked from album art) by EuphonicaWindow.
             let width: f32 = self.obj().width() as f32;
             let height = self.obj().height() as f32;
-            let style = adw::StyleManager::default();
-            let accent = self.obj().color();
-            let cursor_x = (self.adjustment.value() / self.adjustment.upper()) as f32 * width;
+            // This check is solely to babysit that Gsk-CRITICAL error
+            if width > 0.0 && height > 0.0 {
+                let style = adw::StyleManager::default();
+                let accent = self.obj().color();
+                let cursor_x = (self.adjustment.value() / self.adjustment.upper()) as f32 * width;
 
-            // Draw highlight
-            let mut bottom_hsl = hsl::HSL::from_rgb(&[
-                (accent.red() * 255.0).round() as u8,
-                (accent.green() * 255.0).round() as u8,
-                (accent.blue() * 255.0).round() as u8,
-            ]);
-            bottom_hsl.l = bottom_hsl.l.max(0.75);
-            let bottom = bottom_hsl.to_rgb();
-            let bottom = gdk::RGBA::new(
-                bottom.0 as f32 / 255.0,
-                bottom.1 as f32 / 255.0,
-                bottom.2 as f32 / 255.0,
-                1.0,
-            );
-            let stops = if style.is_dark() {
-                // In dark mode, the seekbar highlight glows the accent colour and the cursor glows white.
-                [
-                    gsk::ColorStop::new(0.0, bottom),
-                    gsk::ColorStop::new(0.15, accent.with_alpha(0.5)),
-                    gsk::ColorStop::new(0.3, accent.with_alpha(0.3)),
-                    gsk::ColorStop::new(0.75, accent.with_alpha(0.0)),
-                ]
-            } else {
-                [
-                    gsk::ColorStop::new(0.0, accent),
-                    gsk::ColorStop::new(0.15, accent.with_alpha(0.5)),
-                    gsk::ColorStop::new(0.3, accent.with_alpha(0.3)),
-                    gsk::ColorStop::new(0.75, accent.with_alpha(0.0)),
-                ]
-            };
-            snapshot.append_linear_gradient(
-                &graphene::Rect::new(0.0, 0.0, cursor_x, self.obj().height() as f32),
-                &graphene::Point::new(0.0, self.obj().height() as f32),
-                &graphene::Point::new(0.0, 0.0),
-                &stops,
-            );
-            // FIXME: without a "solid colour" node the repainting will be erratic.
-            // This call does nothing visually & wastes GPU cycles but without it the seekbar
-            // won't redraw itself.
-            snapshot.append_color(
-                &gdk::RGBA::TRANSPARENT,
-                &graphene::Rect::new(0.0, 0.0, cursor_x, self.obj().height() as f32),
-            );
+                // Draw highlight
+                let mut bottom_hsl = hsl::HSL::from_rgb(&[
+                    (accent.red() * 255.0).round() as u8,
+                    (accent.green() * 255.0).round() as u8,
+                    (accent.blue() * 255.0).round() as u8,
+                ]);
+                bottom_hsl.l = bottom_hsl.l.max(0.75);
+                let bottom = bottom_hsl.to_rgb();
+                let bottom = gdk::RGBA::new(
+                    bottom.0 as f32 / 255.0,
+                    bottom.1 as f32 / 255.0,
+                    bottom.2 as f32 / 255.0,
+                    1.0,
+                );
+                let stops = if style.is_dark() {
+                    // In dark mode, the seekbar highlight glows the accent colour and the cursor glows white.
+                    [
+                        gsk::ColorStop::new(0.0, bottom),
+                        gsk::ColorStop::new(0.15, accent.with_alpha(0.5)),
+                        gsk::ColorStop::new(0.3, accent.with_alpha(0.3)),
+                        gsk::ColorStop::new(0.75, accent.with_alpha(0.0)),
+                    ]
+                } else {
+                    [
+                        gsk::ColorStop::new(0.0, accent),
+                        gsk::ColorStop::new(0.15, accent.with_alpha(0.5)),
+                        gsk::ColorStop::new(0.3, accent.with_alpha(0.3)),
+                        gsk::ColorStop::new(0.75, accent.with_alpha(0.0)),
+                    ]
+                };
+                snapshot.append_linear_gradient(
+                    &graphene::Rect::new(0.0, 0.0, cursor_x, self.obj().height() as f32),
+                    &graphene::Point::new(0.0, self.obj().height() as f32),
+                    &graphene::Point::new(0.0, 0.0),
+                    &stops,
+                );
+                // FIXME: without a "solid colour" node the repainting will be erratic.
+                // This call does nothing visually & wastes GPU cycles but without it the seekbar
+                // won't redraw itself.
+                snapshot.append_color(
+                    &gdk::RGBA::TRANSPARENT,
+                    &graphene::Rect::new(0.0, 0.0, cursor_x, self.obj().height() as f32),
+                );
 
-            // Draw cursor
-            let cursor_color = if style.is_dark() { &bottom } else { &accent };
+                // Draw cursor
+                let cursor_color = if style.is_dark() { &bottom } else { &accent };
 
-            // "Waves", going LTR
-            // Leftmost control point starts at -width then moves to 0.
-            // Gradient is two widths wide.
-            let wave_start_x = self.wave_pos.get() as f32 * width - width;
-            snapshot.append_linear_gradient(
-                &graphene::Rect::new(0.0, 0.0, cursor_x, height),
-                &graphene::Point::new(wave_start_x, 0.0),
-                &graphene::Point::new(wave_start_x + 2.0 * width, 0.0), // TODO: consider Aero-like diagonal waves
-                &[
-                    gsk::ColorStop::new(0.0, cursor_color.with_alpha(0.0)),
-                    gsk::ColorStop::new(0.125, cursor_color.with_alpha(0.1)),
-                    gsk::ColorStop::new(0.245, cursor_color.with_alpha(0.4)),
-                    gsk::ColorStop::new(0.255, cursor_color.with_alpha(0.4)),
-                    gsk::ColorStop::new(0.375, cursor_color.with_alpha(0.1)),
-                    gsk::ColorStop::new(0.5, cursor_color.with_alpha(0.0)),
-                    gsk::ColorStop::new(0.625, cursor_color.with_alpha(0.1)),
-                    gsk::ColorStop::new(0.745, cursor_color.with_alpha(0.4)),
-                    gsk::ColorStop::new(0.755, cursor_color.with_alpha(0.4)),
-                    gsk::ColorStop::new(0.875, cursor_color.with_alpha(0.1)),
-                    gsk::ColorStop::new(1.0, cursor_color.with_alpha(0.0)),
-                ],
-            );
+                // "Waves", going LTR
+                // Leftmost control point starts at -width then moves to 0.
+                // Gradient is two widths wide.
+                let wave_start_x = self.wave_pos.get() as f32 * width - width;
+                snapshot.append_linear_gradient(
+                    &graphene::Rect::new(0.0, 0.0, cursor_x, height),
+                    &graphene::Point::new(wave_start_x, 0.0),
+                    &graphene::Point::new(wave_start_x + 2.0 * width, 0.0), // TODO: consider Aero-like diagonal waves
+                    &[
+                        gsk::ColorStop::new(0.0, cursor_color.with_alpha(0.0)),
+                        gsk::ColorStop::new(0.125, cursor_color.with_alpha(0.1)),
+                        gsk::ColorStop::new(0.245, cursor_color.with_alpha(0.4)),
+                        gsk::ColorStop::new(0.255, cursor_color.with_alpha(0.4)),
+                        gsk::ColorStop::new(0.375, cursor_color.with_alpha(0.1)),
+                        gsk::ColorStop::new(0.5, cursor_color.with_alpha(0.0)),
+                        gsk::ColorStop::new(0.625, cursor_color.with_alpha(0.1)),
+                        gsk::ColorStop::new(0.745, cursor_color.with_alpha(0.4)),
+                        gsk::ColorStop::new(0.755, cursor_color.with_alpha(0.4)),
+                        gsk::ColorStop::new(0.875, cursor_color.with_alpha(0.1)),
+                        gsk::ColorStop::new(1.0, cursor_color.with_alpha(0.0)),
+                    ],
+                );
+            }
 
             self.parent_snapshot(snapshot);
         }

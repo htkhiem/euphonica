@@ -27,7 +27,7 @@ use crate::{
         inode::INodeInfo,
     },
     player::PlaybackFlow,
-    utils,
+    utils::{self, strip_filename_linux},
 };
 
 use super::StickerSetMode;
@@ -459,7 +459,11 @@ impl Connection {
 
         // Doubles as a litmus test to see if we are authenticated.
         if let Err(e) = client.subscribe(&self.wake_channel).map_err(Error::Mpd) {
-            return Err(dbg!(if cred_store_fail {Error::CredentialStore} else {e}));
+            return Err(dbg!(if cred_store_fail {
+                Error::CredentialStore
+            } else {
+                e
+            }));
         }
         // eprintln!("Subscribed to wake channel");
 
@@ -529,21 +533,32 @@ impl Connection {
     }
 
     /// Downloads an image or returns an already existing image for a given uri
-    /// Will resp with 2 image names (not full paths): (high res, thumb)
+    /// Will resp with 2 image names (not full paths): (high res, thumb).
+    /// Note to self: no prefix handling here because all images downloaded from MPD are album arts.
     fn maybe_download_image<F>(
         &mut self,
-        uri: String,
+        example_uri: String,   // Must be a full URI (not the truncated folder_uri) to avoid problems with remote connections
         download_func: F,
+        register_key: Option<String>,   // defaults to folder-level URI of the above example_uri
         resp: Responder<Option<utils::RegisteredImageBundle>>,
     ) where
         F: Fn(&mut Client<StreamWrapper>, &String) -> MpdResult<Vec<u8>>,
     {
+        // `register_key` overrides the key used for DB lookup and registration.
+        // This lets us store a folder-level key even when the fetch URI is track-level.   
+        // unwrap_or_else to avoid having to run strip_filename_linux when register_key.is_some().
+        let key = register_key.as_deref().unwrap_or_else(
+            // We still internally truncate to folder-level URI for mapping purposes, e.g. avoiding downloading
+            // the same album art more than once when given different URIs within the same folder.
+            || strip_filename_linux(&example_uri)
+        );
+
         // Always check with our DB first, as multiple calls may be spawned
         // asynchronously when no cover was locally available.
         // Only one of those calls should cause a download; other calls
         // should start using the local cached version as soon as possible.
-        let hires = sqlite::find_image_by_key(&uri, None, false).expect("Sqlite DB error");
-        let thumb = sqlite::find_image_by_key(&uri, None, true).expect("Sqlite DB error");
+        let hires = sqlite::find_image_by_key(key, None, false).expect("Sqlite DB error");
+        let thumb = sqlite::find_image_by_key(key, None, true).expect("Sqlite DB error");
         if let (Some(hires), Some(thumb)) = (hires, thumb) {
             let _ = resp.send(Ok(Some(utils::RegisteredImageBundle {
                 hires: utils::RegisteredImage {
@@ -559,14 +574,17 @@ impl Connection {
             // Not available locally => try to download
             self.respond_with_client(
                 |c| {
-                    match download_func(c, &uri) {
-                        Ok(bytes) => {
-                            let dyn_img = image::load_from_memory(&bytes)
-                                .expect("Unable to read image from bytes");
-                            Ok(Some(utils::save_and_register_image(dyn_img, &uri, None)))
-                        }
+                    match download_func(c, &example_uri) {
+                        Ok(bytes) => Ok(Some(utils::save_and_register_image(
+                            image::load_from_memory(&bytes).map_err(|_| {
+                                MpdError::Parse(mpd::error::ParseError::BadValue(
+                                    "unexpected EOF in texture".into(),
+                                ))
+                            })?,
+                            key,
+                            None,
+                        ))),
                         Err(MpdError::Proto(ProtoError::NotPair)) => {
-                            println!("maybe_download_image: empty output for '{}'", uri);
                             // Empty output. Treat as not available.
                             Ok(None)
                         }
@@ -741,7 +759,6 @@ impl Connection {
                 more = false;
             }
         }
-        println!("Length after query_clauses: {}", uris.len());
 
         // Get matching URIs for each sticker condition
         // TODO: Optimise sticker operations by limiting to any found URI query clause.
@@ -774,14 +791,11 @@ impl Connection {
                     }
                 }
             }
-
-            println!("Length of matches of sticker_clause: {}", set.len());
             uris.retain(move |elem| set.contains(elem));
             if uris.is_empty() {
                 // Return early
                 return Ok(Vec::with_capacity(0));
             }
-            println!("Length afterwards: {}", uris.len());
         }
 
         // Then, fetch the tags and stickers needed for display and sorting.
@@ -829,7 +843,6 @@ impl Connection {
             }
             songs = songs_stickers.into_iter().map(|tup| tup.0).collect();
             if cache && let Err(db_err) = sqlite::cache_dynamic_playlist_results(&dp.name, &songs) {
-                println!("Failed to cache DP query result. Queuing will be incorrect!");
                 dbg!(db_err);
             }
         } else {
@@ -1010,11 +1023,19 @@ impl Connection {
                     }
                     Task::UpdateDb(resp) => self.respond_with_client(|c| c.update(), resp),
                     Task::GetEmbeddedCover(uri, resp) => {
-                        self.maybe_download_image(uri, |client, uri| client.readpicture(uri), resp)
+                        // Assume the URI is track-level.
+                        let folder_uri = utils::strip_filename_linux(&uri).to_owned();
+                        self.maybe_download_image(
+                            uri,
+                            |client, uri| client.readpicture(uri),
+                            Some(folder_uri),
+                            resp,
+                        )
                     }
-                    Task::GetFolderCover(folder_uri, resp) => self.maybe_download_image(
-                        folder_uri,
+                    Task::GetFolderCover(example_uri, resp) => self.maybe_download_image(
+                        example_uri,
                         |client, uri| client.albumart(uri),
+                        None, // Assume folder-level URI, no need to override
                         resp,
                     ),
                     Task::List(term, query, groupby, resp) => {

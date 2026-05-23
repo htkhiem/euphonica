@@ -5,7 +5,7 @@
     <file preprocess="xml-stripblanks">gtk/song-row.ui</file>
     <file preprocess="xml-stripblanks">gtk/row-add-buttons.ui</file>
     <file preprocess="xml-stripblanks">gtk/row-edit-buttons.ui</file>
-    <file preprocess="xml-stripblanks">gtk/help-overlay.ui</file>
+    <file preprocess="xml-stripblanks">shortcuts-dialog.ui</file>
     <file preprocess="xml-stripblanks">gtk/sidebar-button.ui</file>
     <file preprocess="xml-stripblanks">gtk/sidebar.ui</file>
     <file preprocess="xml-stripblanks">gtk/marquee.ui</file>
@@ -41,6 +41,7 @@
     <file preprocess="xml-stripblanks">gtk/player/seekbar2.ui</file>
     <file preprocess="xml-stripblanks">gtk/player/playback-controls.ui</file>
     <file preprocess="xml-stripblanks">gtk/player/output.ui</file>
+    <file preprocess="xml-stripblanks">gtk/player/output-controls.ui</file>
     <file preprocess="xml-stripblanks">gtk/player/volume-knob.ui</file>
     <file preprocess="xml-stripblanks">gtk/preferences/dialog.ui</file>
     <file preprocess="xml-stripblanks">gtk/preferences/client.ui</file>
