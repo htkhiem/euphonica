@@ -46,6 +46,10 @@
     <p>Euphonica is solely a music player programme and does not provide any media content or sources. Users must provide their own content or manually configure Euphonica to access third party online services.</p>
   </description>
 
+  <keywords>
+    <keyword translate="no">MPD</keyword>
+  </keywords>
+
   <launchable type="desktop-id">io.github.htkhiem.Euphonica.desktop</launchable>
   <screenshots>
     <screenshot type="default">
