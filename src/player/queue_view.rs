@@ -140,7 +140,6 @@ mod imp {
                     player.disconnect(id);
                 }
             }
-            println!("Disposing queue view");
         }
 
         fn constructed(&self) {

@@ -257,7 +257,6 @@ mod imp {
                     #[weak(rename_to = this)]
                     self,
                     move |_, _| {
-                        println!("Updating sort...");
                         this.sorter.changed(gtk::SorterChange::Different);
                     }
                 ),
@@ -268,7 +267,6 @@ mod imp {
                     #[weak(rename_to = this)]
                     self,
                     move |_, _| {
-                        println!("Flipping sort...");
                         // Don't actually sort, just flip the results :)
                         this.sorter.changed(gtk::SorterChange::Inverted);
                     }

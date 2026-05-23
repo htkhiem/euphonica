@@ -375,7 +375,6 @@ mod imp {
                     obj,
                     move |_: ThemeSelector, scheme: ColorScheme| {
                         let style = StyleManager::default();
-                        println!("Setting theme to {:?}", &scheme);
                         style.set_color_scheme(scheme);
 
                         // Trigger a background update which will update accent colour too
@@ -641,7 +640,6 @@ mod imp {
                             curr_path = None;
                         }
                         WindowMessage::Stop => {
-                            println!("Stopping background blur thread...");
                             break 'outer;
                         }
                         _ => unreachable!(), // we shouldn't ever send BlurResult to the child thread

@@ -132,7 +132,6 @@ impl OutputControls {
     }
 
     fn update_outputs(&self, player: &Player) {
-        println!("Updating outputs...");
         let outputs = player.outputs();
         let outputs: Vec<glib::BoxedAnyObject> = (0..outputs.n_items())
             .map(|i| {

@@ -224,9 +224,10 @@ impl PlaylistRow {
                             dbg!(e);
                         }
                     }
-                } else {
-                    println!("PlaylistRow now bound to a different playlist, ignoring texture");
                 }
+                // else {
+                //     println!("PlaylistRow now bound to a different playlist, ignoring texture");
+                // }
             }
         ));
     }

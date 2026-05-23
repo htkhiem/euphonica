@@ -93,7 +93,6 @@ pragma user_version = 2;",
                     |row| row.get::<usize, String>(0),
                 ) {
                     Ok(_) => {
-                        println!("Upgrading local metadata DB to version 1...");
                         // Migrate album table schema: album table now accepts non-unique folder URIs
                         conn.execute_batch(
                             "begin;

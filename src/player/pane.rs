@@ -496,7 +496,6 @@ impl PlayerPane {
                 #[weak]
                 player,
                 move |_, _| {
-                    println!("show-lyrics changed");
                     this.update_lyrics_availability(&player);
                 }
             ),
@@ -510,7 +509,6 @@ impl PlayerPane {
                 #[weak]
                 player,
                 move |_, _| {
-                    println!("use-synced-lyrics changed");
                     this.update_lyrics_state(&player);
                 }
             ),

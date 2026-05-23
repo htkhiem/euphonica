@@ -494,9 +494,6 @@ impl MpdWrapper {
             if e.detail.contains("disabled") {
                 self.state.set_supports_playlists(false);
                 println!("Playlists are not supported.");
-            } else {
-                println!("Playlist operation error: {e}");
-                // TODO
             }
         }
         res
@@ -846,9 +843,10 @@ impl MpdWrapper {
                             res.set_stickers(stickers);
                         }
                         respond(res);
-                    } else {
-                        println!("No album info found for {tag}");
                     }
+                    // else {
+                    //     println!("No album info found for {tag}");
+                    // }
                 }
             }
         }
@@ -1218,8 +1216,6 @@ impl MpdWrapper {
 
 impl Drop for MpdWrapper {
     fn drop(&mut self) {
-        println!("App closed. Closing clients...");
-
         executor::block_on(async move {
             let _ = self.disconnect(true, ConnectionState::NotConnected).await;
         });

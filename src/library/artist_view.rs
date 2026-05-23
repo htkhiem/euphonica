@@ -226,7 +226,6 @@ impl ArtistView {
                     #[weak(rename_to = this)]
                     self,
                     move |_, _| {
-                        println!("Flipping sort...");
                         // Don't actually sort, just flip the results :)
                         this.imp().sorter.changed(gtk::SorterChange::Inverted);
                     }
@@ -429,7 +428,6 @@ impl ArtistView {
                     .item(position)
                     .and_downcast::<Artist>()
                     .expect("The item has to be a `common::Artist`.");
-                println!("Clicked on {:?}", &artist);
                 this.on_artist_clicked(&artist);
             }
         ));

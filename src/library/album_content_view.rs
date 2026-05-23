@@ -231,7 +231,6 @@ mod imp {
                                         None
                                     }
                                 } else {
-                                    println!("{maybe_files:?}");
                                     None
                                 })
                                 .expect("Broken oneshot sender");

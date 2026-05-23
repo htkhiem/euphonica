@@ -213,8 +213,6 @@ mod imp {
                                 .set_string("mpd-fifo-path", uris[0].as_str())
                                 .expect("Unable to save FIFO path");
                         }
-                    } else {
-                        println!("{maybe_files:?}");
                     }
                 });
             });
@@ -233,7 +231,6 @@ mod imp {
                     }
                 })
                 .set_mapping(|val, _| {
-                    println!("Setting backend idx...");
                     if let Ok(idx) = val.get::<u32>() {
                         match idx {
                             0 => Some("fifo".to_variant()),
@@ -408,7 +405,7 @@ impl ClientPreferences {
                     }
                 }
                 Err(e) => {
-                    println!("{e:?}");
+                    dbg!(e);
                 }
             }
         });
@@ -610,7 +607,6 @@ impl ClientPreferences {
             #[weak]
             player,
             move |_| {
-                println!("Restarting FFT thread...");
                 let imp = this.imp();
                 let pw_dev_idx = imp.pipewire_devices.selected();
                 if pw_dev_idx != gtk::INVALID_LIST_POSITION {

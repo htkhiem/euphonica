@@ -453,9 +453,10 @@ impl AlbumCell {
                                 dbg!(e);
                             }
                         }
-                    } else {
-                        println!("AlbumCell now bound to a different album, ignoring texture");
                     }
+                    // else {
+                    //     println!("AlbumCell now bound to a different album, ignoring texture");
+                    // }
                 }
             }
         ));

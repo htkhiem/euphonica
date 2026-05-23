@@ -130,7 +130,6 @@ mod imp {
             while let Some(child) = self.obj().first_child() {
                 child.unparent();
             }
-            println!("Disposing DynamicPlaylistEditorView");
         }
 
         fn constructed(&self) {
@@ -736,7 +735,7 @@ impl DynamicPlaylistEditorView {
         dp.name = tmp_name.clone();
         self.imp().tmp_name.replace(tmp_name);
 
-        println!("{:?}", &dp);
+        // println!("{:?}", &dp);
 
         // Don't cache as self DP is still being edited
         match self

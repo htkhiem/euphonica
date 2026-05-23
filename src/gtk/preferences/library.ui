@@ -184,27 +184,9 @@
 					</object>
 				</property>
 				<child>
-					<object class="AdwActionRow">
-						<property name="title" translatable="true">Image format</property>
-						<property name="subtitle" translatable="true">Format for cached album art and avatars. PNG takes up much more disk space, but might look slightly better. Requires redownloading.</property>
-						<child>
-							<object class="AdwToggleGroup" id="image_format">
-								<property name="valign">center</property>
-								<property name="can-shrink">false</property>
-								<child>
-									<object class="AdwToggle">
-										<property name="label">JPEG</property>
-										<property name="name">jpeg</property>
-									</object>
-								</child>
-								<child>
-									<object class="AdwToggle">
-										<property name="label">PNG</property>
-										<property name="name">png</property>
-									</object>
-								</child>
-							</object>
-						</child>
+					<object class="AdwSwitchRow" id="store_lossless_images">
+						<property name="title" translatable="true">Store images as lossless</property>
+						<property name="subtitle" translatable="true">WebP supports both lossy and lossless. Lossless files are much larger but may look slightly better. Requires redownloading.</property>
 					</object>
 				</child>
 				<child>

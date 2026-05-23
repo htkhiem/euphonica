@@ -11,7 +11,7 @@ use mpd::status::AudioFormat;
 use once_cell::sync::Lazy;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
-use std::cell::RefCell;
+use std::{cell::RefCell, path::Path};
 use std::fmt::Write;
 use std::fs::File;
 use std::io::{BufReader, BufWriter};
@@ -26,6 +26,7 @@ use time::error::IndeterminateOffset;
 use time::format_description::{OwnedFormatItem, parse_owned};
 use tokio::runtime::Runtime;
 use uuid::Uuid;
+use webp;
 
 static APP_CACHE_PATH: Lazy<PathBuf> = Lazy::new(|| {
     let mut res = glib::user_cache_dir();
@@ -216,7 +217,7 @@ pub fn read_image_from_bytes(bytes: Vec<u8>) -> Option<DynamicImage> {
 /// Two images will be returned: a high-resolution version and a thumbnail version.
 /// Their major axis's resolution is determined by the keys hires-image-size and
 /// thumbnail-image-size in the gschema respectively.
-pub fn resize_convert_image(dyn_img: DynamicImage) -> (RgbImage, RgbImage) {
+pub fn resize_convert_image(dyn_img: DynamicImage) -> (DynamicImage, DynamicImage) {
     let settings = settings_manager().child("library");
     // Avoid resizing to larger than the original image.
     let w = dyn_img.width();
@@ -236,36 +237,43 @@ pub fn resize_convert_image(dyn_img: DynamicImage) -> (RgbImage, RgbImage) {
         )
     };
     (
-        dyn_img
+        DynamicImage::ImageRgb8(dyn_img
             .resize(hires_size, hires_size, FilterType::Triangle)
-            .into_rgb8(),
-        dyn_img
+            .to_rgb8()
+        ),
+        DynamicImage::ImageRgb8(dyn_img
             .thumbnail(thumbnail_sizes.0, thumbnail_sizes.1)
-            .into_rgb8(),
+            .to_rgb8()
+        )
     )
 }
 
 /// returns the image name that this is saved as
 #[inline]
 pub fn save_and_register_single_image(
-    img: &RgbImage,
+    img: &DynamicImage,
     key: &str,
     prefix: Option<&'static str>,
     is_thumb: bool,
 ) -> String {
     let mut path = get_image_cache_path();
     let settings = settings_manager().child("library");
-    let ext = settings.string("image-format").to_string();
-    let image_format = match ext.as_str() {
-        "png" => image::ImageFormat::Png,
-        "jpeg" => image::ImageFormat::Jpeg,
-        _ => unimplemented!(),
-    };
-    let name = format!("{}.{}", Uuid::new_v4().simple().to_string(), &ext);
+    let name = format!("{}.{}", Uuid::new_v4().simple().to_string(), "webp");
     path.push(&name);
-
-    img.save_with_format(&path, image_format)
+    if settings.boolean("store-lossless-images") {
+        // WebP encoder in rust image crate is lossless
+        img.save_with_format(&path, image::ImageFormat::WebP)
         .unwrap_or_else(|_| panic!("Couldn't save downloaded image to {:?}", &path));
+    } else {
+        let encoder = webp::Encoder::from_image(&img).unwrap();
+        // Default to 90% quality (not sure if this should even be user selectable)
+        let webp: webp::WebPMemory = encoder.encode(90.0);
+        std::fs::write(&path, &*webp).unwrap();
+    }
+    
+    
+
+    
 
     sqlite::register_image_key(key, prefix, Some(&name), is_thumb).expect("Sqlite error");
 
@@ -276,7 +284,7 @@ pub struct RegisteredImage {
     /// image name (eg. uayhsjdkjasuijad.png)
     pub name: String,
     /// this field is only present if it is returned by a method that created the image
-    pub img: RefCell<Option<RgbImage>>,
+    pub img: RefCell<Option<DynamicImage>>,
 }
 
 impl RegisteredImage {
@@ -287,7 +295,7 @@ impl RegisteredImage {
                 .set_height(rgb_image.height() as i32)
                 .set_format(gdk::MemoryFormat::R8g8b8)
                 .set_stride((rgb_image.width() * 3) as usize)
-                .set_bytes(Some(&glib::Bytes::from_owned(rgb_image.into_raw())))
+                .set_bytes(Some(&glib::Bytes::from_owned(rgb_image.to_rgb8().into_raw())))
                 .build())
         } else {
             let mut res = get_image_cache_path();
@@ -327,7 +335,7 @@ pub fn save_and_register_image(
     dyn_img: DynamicImage,
     key: &str,
     prefix: Option<&'static str>,
-) -> RegisteredImageBundle {
+) -> RegisteredImageBundle {    
     let (hires_img, thumb_img) = resize_convert_image(dyn_img);
     let hires_k = save_and_register_single_image(&hires_img, key, prefix, false);
     let thumb_k = save_and_register_single_image(&thumb_img, key, prefix, true);

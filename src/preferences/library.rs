@@ -48,7 +48,7 @@ mod imp {
         pub refresh_cache_stats_btn: TemplateChild<gtk::Button>,
 
         #[template_child]
-        pub image_format: TemplateChild<adw::ToggleGroup>,
+        pub store_lossless_images: TemplateChild<adw::SwitchRow>,
         #[template_child]
         pub max_image_resolution: TemplateChild<gtk::Scale>,
         #[template_child]
@@ -143,9 +143,8 @@ impl LibraryPreferences {
             .build();
 
         // Image cache settings
-        let image_format = imp.image_format.get();
         library_settings
-            .bind("image-format", &image_format, "active-name")
+            .bind("store-lossless-images", &imp.store_lossless_images.get(), "active")
             .build();
 
         let max_res = imp.max_image_resolution.get();

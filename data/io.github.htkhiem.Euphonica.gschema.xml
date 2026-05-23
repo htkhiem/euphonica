@@ -39,6 +39,7 @@
 		<value nick="stop-and-clear" value="3"/>
 	</enum>
 
+	<!-- Unused, but kept for compatibility -->
 	<enum id="io.github.htkhiem.Euphonica.imageformat">
 		<value nick="jpeg" value="0"/>
 		<value nick="png" value="1"/>
@@ -147,9 +148,8 @@
 			<default>false</default>
 		</key>
 
-		<key name="image-format" enum="io.github.htkhiem.Euphonica.imageformat">
-			<default>'jpeg'</default>
-			<summary>Format for cached images</summary>
+		<key name="store-lossless-images" type="b">
+			<default>false</default>
 		</key>
 
 		<key name="max-image-resolution" type="u">

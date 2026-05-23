@@ -702,7 +702,6 @@ impl DynamicPlaylistView {
                     .item(position)
                     .and_downcast::<INode>()
                     .expect("The item has to be a `common::INode`.");
-                println!("Clicked on {:?}", &inode);
                 this.on_playlist_clicked(&inode);
             }
         ));

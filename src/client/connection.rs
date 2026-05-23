@@ -759,7 +759,6 @@ impl Connection {
                 more = false;
             }
         }
-        println!("Length after query_clauses: {}", uris.len());
 
         // Get matching URIs for each sticker condition
         // TODO: Optimise sticker operations by limiting to any found URI query clause.
@@ -792,14 +791,11 @@ impl Connection {
                     }
                 }
             }
-
-            println!("Length of matches of sticker_clause: {}", set.len());
             uris.retain(move |elem| set.contains(elem));
             if uris.is_empty() {
                 // Return early
                 return Ok(Vec::with_capacity(0));
             }
-            println!("Length afterwards: {}", uris.len());
         }
 
         // Then, fetch the tags and stickers needed for display and sorting.
@@ -847,7 +843,6 @@ impl Connection {
             }
             songs = songs_stickers.into_iter().map(|tup| tup.0).collect();
             if cache && let Err(db_err) = sqlite::cache_dynamic_playlist_results(&dp.name, &songs) {
-                println!("Failed to cache DP query result. Queuing will be incorrect!");
                 dbg!(db_err);
             }
         } else {

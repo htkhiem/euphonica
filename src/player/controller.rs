@@ -536,7 +536,6 @@ mod imp {
                                 let old = this.fft_backend_idx.replace(new);
 
                                 if old != new {
-                                    println!("Switching FFT backend...");
                                     this.obj().maybe_stop_fft_thread().await;
                                     this.fft_backend
                                         .replace(Some(this.obj().init_fft_backend()));
@@ -698,6 +697,7 @@ impl Player {
     }
 
     async fn maybe_stop_fft_thread(&self) {
+        println!("Stopping PipeWire backend...");
         if let Some(backend) = self.imp().fft_backend.borrow().as_ref() {
             backend.stop().await;
         }
@@ -863,11 +863,11 @@ impl Player {
         match self.get_mpris().await {
             Ok(mpris) => {
                 if let Err(err) = mpris.properties_changed(properties).await {
-                    println!("{err:?}");
+                    dbg!(err);
                 }
             }
             Err(err) => {
-                println!("No MPRIS server: {err:?}");
+                dbg!(err);
             }
         }
     }
@@ -877,11 +877,11 @@ impl Player {
             Ok(mpris) => {
                 let pos_time = Time::from_millis((position * 1000.0).round() as i64);
                 if let Err(err) = mpris.emit(MprisSignal::Seeked { position: pos_time }).await {
-                    println!("{err:?}");
+                    dbg!(err);
                 }
             }
             Err(err) => {
-                println!("No MPRIS server: {err:?}");
+                dbg!(err);
             }
         }
     }
@@ -1123,12 +1123,9 @@ impl Player {
                                                 == new_song.get_info().get_comp_id()
                                         }) {
                                             this.update_lyrics(lyrics);
-                                            println!("Fetched new lyrics");
                                         }
                                     }
-                                    Ok(None) => {
-                                        println!("No lyrics found");
-                                    }
+                                    Ok(None) => {}
                                     Err(e) => {
                                         dbg!(e);
                                     }
@@ -1156,7 +1153,7 @@ impl Player {
                         self.emit_by_name::<()>("cover-changed", &[]);
                     }
                     Ok(None) => {
-                        println!(
+                        eprintln!(
                             "[WARNING] returned status says there is a song playing but none can be fetched. Slow connection?"
                         );
                     }
@@ -1213,7 +1210,6 @@ impl Player {
         // status responses after a "stop" command will still come with the ID of the last-played
         // song, which is not what we want.
         if status.song.is_none() || status.state == State::Stop {
-            println!("No song playing right now");
             // No song is playing. Update state accordingly.
             if let Some(_) = self.imp().current_song.take() {
                 self.imp().saved_to_history.set(false);
@@ -1255,7 +1251,6 @@ impl Player {
                     })
                 && (0.0..2.0).contains(&secs_to_end)
             {
-                println!("Stopping PipeWire backend to allow samplerate change...");
                 self.maybe_stop_fft_thread().await; // FIXME: we can't block while running in an async loop
             }
         } else {
@@ -1692,7 +1687,7 @@ impl Player {
                     // Start playing first song in queue.
                     self.client()?.play_at(0, false).await
                 } else {
-                    println!("Queue is empty; nothing to play");
+                    eprintln!("Queue is empty; nothing to play");
                     Ok(())
                 }
             }
@@ -1712,7 +1707,7 @@ impl Player {
                     backend.name() == "pipewire" && backend.status() != FftStatus::ValidNotReading
                 })
         {
-            println!("Stopping PipeWire backend to allow samplerate change...");
+            
             self.maybe_stop_fft_thread().await;
         }
         self.client()?.prev().await
@@ -1729,7 +1724,6 @@ impl Player {
                     backend.name() == "pipewire" && backend.status() != FftStatus::ValidNotReading
                 })
         {
-            println!("Stopping PipeWire backend to allow samplerate change...");
             self.maybe_stop_fft_thread().await;
         }
         self.client()?.next().await
@@ -1800,7 +1794,6 @@ impl Player {
                     backend.name() == "pipewire" && backend.status() != FftStatus::ValidNotReading
                 })
         {
-            println!("Stopping PipeWire backend to allow samplerate change...");
             self.maybe_stop_fft_thread().await;
         }
         self.client()?.play_at(song.get_queue_id(), true).await

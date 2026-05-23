@@ -394,7 +394,6 @@ impl Library {
                 .await
                 .unwrap()
                 .map_err(|_| ClientError::Internal)?;
-            println!("Received {} dynamic playlists", inode_infos.len());
             self.imp().dyn_playlists.extend_from_slice(
                 &inode_infos
                     .into_iter()

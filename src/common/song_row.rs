@@ -348,9 +348,10 @@ impl SongRow {
                                 this.imp().thumbnail.clear();
                             }
                         }
-                    } else {
-                        println!("SongRow now bound to a different song, ignoring texture");
                     }
+                    // else {
+                    //     println!("SongRow now bound to a different song, ignoring texture");
+                    // }
                 }
             }
         ));

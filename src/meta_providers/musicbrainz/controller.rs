@@ -78,7 +78,7 @@ impl MetadataProvider for MusicBrainzWrapper {
                     new_result = release.into();
                 }
                 Err(e) => {
-                    println!("[MusicBrainz] Could not fetch album metadata: {:?}", &e);
+                    eprintln!("[MusicBrainz] Could not fetch album metadata: {:?}", &e);
                     return Err(pack_error(existing, e));
                 }
             }
@@ -103,17 +103,17 @@ impl MetadataProvider for MusicBrainzWrapper {
                     if let Some(first) = found.entities.into_iter().nth(0) {
                         new_result = first.into();
                     } else {
-                        println!("[MusicBrainz] No release found for artist & album title");
+                        eprintln!("[MusicBrainz] No release found for artist & album title");
                         return Err(MetadataError::NotFound(existing));
                     }
                 }
                 Err(e) => {
-                    println!("[MusicBrainz] Could not fetch album metadata: {:?}", &e);
+                    eprintln!("[MusicBrainz] Could not fetch album metadata: {:?}", &e);
                     return Err(pack_error(existing, e));
                 }
             }
         } else {
-            println!("[MusicBrainz] Either MBID or BOTH album name & artist must be provided");
+            eprintln!("[MusicBrainz] Either MBID or BOTH album name & artist must be provided");
             return Err(MetadataError::InsufficientKey(existing));
         }
 
@@ -158,7 +158,6 @@ impl MetadataProvider for MusicBrainzWrapper {
                 {
                     Ok(artist) => {
                         let new: models::ArtistMeta = artist.into();
-                        println!("{:?}", &new);
                         // If there is existing data, merge new data to it
                         Ok(Some(if let Some(old) = existing {
                             old.merge(new)
@@ -167,7 +166,7 @@ impl MetadataProvider for MusicBrainzWrapper {
                         }))
                     }
                     Err(e) => {
-                        println!("[MusicBrainz] Could not fetch artist metadata: {:?}", &e);
+                        eprintln!("[MusicBrainz] Could not fetch artist metadata: {:?}", &e);
                         Err(pack_error(existing, e))
                     }
                 }
@@ -185,7 +184,6 @@ impl MetadataProvider for MusicBrainzWrapper {
                     Ok(found) => {
                         if let Some(first) = found.entities.into_iter().nth(0) {
                             let new: models::ArtistMeta = first.into();
-                            println!("{:?}", &new);
                             // If there is existing data, merge new data to it
                             Ok(Some(if let Some(old) = existing {
                                 old.merge(new)

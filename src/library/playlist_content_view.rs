@@ -230,7 +230,6 @@ mod imp {
             while let Some(child) = self.obj().first_child() {
                 child.unparent();
             }
-            println!("Disposing playlist content view");
         }
 
         fn constructed(&self) {
@@ -344,7 +343,7 @@ mod imp {
                                 .expect("ashpd file open await failure")
                                 .response();
 
-                            sender.send(if let Ok(files) = maybe_files {
+                            let _ = sender.send(if let Ok(files) = maybe_files {
                                 let uris = files.uris();
                                 if !uris.is_empty() {
                                     Some(uris[0].to_string())
@@ -352,7 +351,6 @@ mod imp {
                                     None
                                 }
                             } else {
-                                println!("{maybe_files:?}");
                                 None
                             });
                         });

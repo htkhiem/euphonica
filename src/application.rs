@@ -544,7 +544,6 @@ impl EuphonicaApplication {
 
         let toggle_visualizer_action = gio::ActionEntry::builder("toggle-visualizer")
             .activate(move |_, _, _| {
-                eprintln!("Toggling visualizer");
                 let settings = settings_manager().child("ui");
                 let _ = settings.set_boolean("use-visualizer", !settings.boolean("use-visualizer"));
             })
@@ -671,9 +670,9 @@ impl EuphonicaApplication {
                 player.set_is_foreground(false).await;
             });
             let _ = self.imp().hold_guard.replace(Some(self.hold()));
-            println!("Created a new hold guard");
+            // println!("Created a new hold guard");
         } else {
-            println!("Dropping hold guard");
+            // println!("Dropping hold guard");
             let _ = self.imp().hold_guard.take();
             self.execute_on_exit_action();
         }
