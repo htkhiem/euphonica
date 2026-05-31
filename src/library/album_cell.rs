@@ -96,8 +96,8 @@ mod imp {
                 child.unparent();
             }
 
-            if let Some(handler) = self.check_visible_handler.take() {
-                self.obj().disconnect(handler);
+            if let (Some(handler), Some(window)) = (self.check_visible_handler.take(), self.window.upgrade()) {
+                window.disconnect(handler);
             }
 
             if let Some((update_id, clear_id)) = self.cover_signal_ids.take() {
