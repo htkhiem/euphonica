@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::cell::OnceCell;
 use std::rc::Rc;
 use std::{cell::Cell, sync::OnceLock};
 
@@ -69,8 +70,9 @@ mod imp {
         pub player: WeakRef<Player>,
         pub history_changed_id: RefCell<Option<SignalHandlerId>>,
 
-        #[property(get, set)]
+       #[property(get, set)]
         pub collapsed: Cell<bool>,
+        pub window: OnceCell<WeakRef<EuphonicaWindow>>,
     }
 
     #[glib::object_subclass]
@@ -222,7 +224,7 @@ impl RecentView {
         res
     }
 
-    pub fn setup(
+   pub fn setup(
         &self,
         library: &Library,
         player: &Player,
@@ -231,6 +233,12 @@ impl RecentView {
     ) {
         self.imp().library.set(Some(library));
         self.imp().player.set(Some(player));
+        let weak = WeakRef::new();
+        weak.set(Some(window));
+        self.imp()
+            .window
+            .set(weak)
+            .expect("RecentView window already set");
 
         self.imp()
             .history_changed_id
@@ -293,11 +301,13 @@ impl RecentView {
         // Reset scroll position to zero every time a new item is created such that
         // upon startup or insertion of a new just-listened album we'll be at the
         // start of the row.
-        factory.connect_setup(clone!(
+       factory.connect_setup(clone!(
             #[weak]
             cache,
             #[weak]
             adj,
+            #[weak]
+            window,
             #[weak(rename_to = this)]
             self,
             move |_, list_item| {
@@ -305,8 +315,13 @@ impl RecentView {
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
                 let album_row = this.imp().album_row.get();
-                let album_cell =
-                    AlbumCell::new(item, cache, Some(MarqueeWrapMode::Scroll), Some(album_row));
+                let album_cell = AlbumCell::new(
+                    item,
+                    cache,
+                    Some(MarqueeWrapMode::Scroll),
+                    Some(window.clone()),
+                    Some(album_row),
+                );
                 // propagating the tallest cell's height to the revealer if said row wasn't
                 // the first initialised.
                 item.set_child(Some(&album_cell));

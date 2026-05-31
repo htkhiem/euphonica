@@ -15,6 +15,7 @@ use std::{
 };
 
 use crate::{
+    window::EuphonicaWindow,
     cache::{
         Cache, CacheState,
         placeholders::{EMPTY_ALBUM_STRING, EMPTY_ARTIST_STRING},
@@ -58,9 +59,12 @@ mod imp {
         pub cover_signal_ids: RefCell<Option<(SignalHandlerId, SignalHandlerId)>>,
         pub cache: OnceCell<Rc<Cache>>,
         pub hires: Cell<bool>,
-        // Stored GridView for visibility checks in bind() and the tick callback.
+        // Stored GridView for visibility checks in bind() and the signal handler.
         pub viewport: OnceCell<WeakRef<gtk::GridView>>,
-        pub tick_callback: RefCell<Option<gtk::TickCallbackId>>,
+        // Weak reference to the window for connecting to the check-visible signal.
+        pub window: WeakRef<EuphonicaWindow>,
+        // Signal handler ID for disconnecting from the window's check-visible signal.
+        pub check_visible_handler: RefCell<Option<SignalHandlerId>>,
         // Tracks whether the cell is currently within the viewport, used
         // to detect visibility transitions (entering/exiting the viewport).
         pub should_load_texture: Cell<bool>,
@@ -92,8 +96,8 @@ mod imp {
                 child.unparent();
             }
 
-            if let Some(tick_callback) = self.tick_callback.take() {
-                tick_callback.remove();
+            if let Some(handler) = self.check_visible_handler.take() {
+                self.obj().disconnect(handler);
             }
 
             if let Some((update_id, clear_id)) = self.cover_signal_ids.take() {
@@ -256,6 +260,7 @@ impl AlbumCell {
         item: &gtk::ListItem,
         cache: Rc<Cache>,
         wrap_mode: Option<MarqueeWrapMode>,
+        window: Option<crate::window::EuphonicaWindow>,
         viewport: Option<gtk::GridView>,
     ) -> Self {
         let res: Self = Object::builder().build();
@@ -384,34 +389,45 @@ impl AlbumCell {
             let weak_vp = WeakRef::new();
             weak_vp.set(Some(&vp));
             let _ = res.imp().viewport.set(weak_vp);
-            let _ = res.imp().tick_callback.replace(Some(res.add_tick_callback(
-                move |this, _frameclock| {
-                    let imp = this.imp();
-                    let is_visible = this.should_load_texture();
-                    let was_visible = imp.should_load_texture.replace(is_visible);
+        }
 
-                    if was_visible != is_visible {
-                        if is_visible {
-                            // println!("AlbumCell is now visible");
-                            if imp.album.upgrade().is_some() {
-                                glib::idle_add_local_once(clone!(
-                                    #[weak]
-                                    this,
-                                    move || {
-                                        this.update_cover();
-                                    }
-                                ));
+        // Store weak reference to the window for signal connection.
+        res.imp().window.set(window.as_ref());
+
+        // Connect to the window's check-visible signal for visibility checks.
+        if let Some(window) = window {
+            let handler = window.connect_closure(
+                "check-visible",
+                false,
+                closure_local!(
+                    #[weak(rename_to = this)]
+                    res,
+                    move |_: &EuphonicaWindow| {
+                        let imp = this.imp();
+                        let is_visible = this.should_load_texture();
+                        let was_visible = imp.should_load_texture.replace(is_visible);
+
+                        if was_visible != is_visible {
+                            if is_visible {
+                                if imp.album.upgrade().is_some() {
+                                    glib::idle_add_local_once(clone!(
+                                        #[weak]
+                                        this,
+                                        move || {
+                                            this.update_cover();
+                                        }
+                                    ));
+                                }
+                            } else {
+                                imp.cover.clear();
                             }
-                        } else {
-                            // println!("AlbumCell scrolled out of view");
-                            imp.cover.clear();
                         }
                     }
-
-                    glib::ControlFlow::Continue
-                },
-            )));
+                ),
+            );
+            res.imp().check_visible_handler.replace(Some(handler));
         }
+
         res.imp().obj_ready.set(true);
 
         res
