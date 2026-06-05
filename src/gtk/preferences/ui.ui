@@ -48,7 +48,7 @@
         <child>
           <object class="AdwSwitchRow" id="use_hires_for_album_cells">
             <property name="title" translatable="true">Use high-resolution textures for album cells</property>
-            <property name="subtitle" translatable="true">Increases VRAM usage.</property>
+            <property name="subtitle" translatable="true">Increases VRAM usage. Thumbnails will still be loaded first when system is under load.</property>
           </object>
         </child>
         <child>
