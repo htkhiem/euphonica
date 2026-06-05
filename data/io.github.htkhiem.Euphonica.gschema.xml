@@ -156,6 +156,11 @@
 			<default>1024</default>
 			<summary>Maximum resolution for cached images</summary>
 		</key>
+
+		<key name="use-hires-backlog-threshold" type="u">
+			<default>10</default>
+			<summary>Number of pending cover load tasks at which hires album art loading is deferred in favor of thumbnails</summary>
+		</key>
 	</schema>
 
 	<schema id="io.github.htkhiem.Euphonica.metaprovider" path="/io/github/htkhiem/Euphonica/metaprovider/">

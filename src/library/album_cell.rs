@@ -16,10 +16,8 @@ use std::{
 
 use crate::{
     window::EuphonicaWindow,
-    cache::{
-        Cache, CacheState,
-        placeholders::{EMPTY_ALBUM_STRING, EMPTY_ARTIST_STRING},
-    },
+    cache::{BACKLOG_THRESHOLD, Cache, CacheState},
+    cache::placeholders::{EMPTY_ALBUM_STRING, EMPTY_ARTIST_STRING},
     common::{
         Album, PictureStack, Rating,
         marquee::{Marquee, MarqueeWrapMode},
@@ -71,6 +69,9 @@ mod imp {
         // Use this to block loading images immediately upon construction when hires
         // is set to true (as that would trigger the setter before a viewport is set)
         pub obj_ready: Cell<bool>,
+        // Set to true when hires was deferred due to high backlog; triggers an
+        // upgrade to hires once the backlog drops below the threshold.
+        pub deferred_hires: Cell<bool>,
     }
 
     // The central trait for subclassing a GObject
@@ -407,20 +408,22 @@ impl AlbumCell {
                         let is_visible = this.should_load_texture();
                         let was_visible = imp.should_load_texture.replace(is_visible);
 
-                        if was_visible != is_visible {
-                            if is_visible {
+                        if is_visible {
+                            if was_visible != is_visible {
                                 if imp.album.upgrade().is_some() {
                                     glib::idle_add_local_once(clone!(
                                         #[weak]
                                         this,
                                         move || {
-                                            this.update_cover();
+                                            this.update_cover(true);
                                         }
                                     ));
                                 }
-                            } else {
-                                imp.cover.clear();
+                            } else if imp.deferred_hires.get() {
+                                this.try_upgrade_hires();
                             }
+                        } else if was_visible != is_visible {
+                            imp.cover.clear();
                         }
                     }
                 ),
@@ -437,8 +440,24 @@ impl AlbumCell {
         self.imp().album.upgrade()
     }
 
-    fn update_cover(&self) {
-        self.imp().cover.show_spinner();
+  fn update_cover(&self, show_spinner: bool) {
+        let imp = self.imp();
+
+        // If hires is requested, check backlog to decide resolution.
+        if imp.hires.get() {
+            let backlog = imp.cache.get().unwrap().backlog();
+            if backlog >= *BACKLOG_THRESHOLD {
+                // Too many pending tasks; defer hires and load thumbnail instead.
+                imp.deferred_hires.set(true);
+            }
+        } else {
+            imp.deferred_hires.set(false);
+        }
+
+        let thumbnail_for_fetch = !imp.hires.get() || imp.deferred_hires.get();
+        if show_spinner {
+            imp.cover.show_spinner();
+        }
         glib::spawn_future_local(clone!(
             #[weak(rename_to = this)]
             self,
@@ -450,7 +469,7 @@ impl AlbumCell {
                         .get()
                         .unwrap()
                         .clone()
-                        .get_album_cover(album.get_info(), !this.imp().hires.get(), true)
+                        .get_album_cover(album.get_info(), thumbnail_for_fetch)
                         .await;
                     // Check again as cell might have been bound to a different album
                     // while awaiting
@@ -470,12 +489,20 @@ impl AlbumCell {
                             }
                         }
                     }
-                    // else {
-                    //     println!("AlbumCell now bound to a different album, ignoring texture");
-                    // }
                 }
             }
         ));
+    }
+
+    fn try_upgrade_hires(&self) {
+        let imp = self.imp();
+        if imp.deferred_hires.get() && self.should_load_texture() {
+            let backlog = imp.cache.get().unwrap().backlog();
+            if backlog < *BACKLOG_THRESHOLD {
+                imp.deferred_hires.set(false);
+                self.update_cover(false);
+            }
+        }
     }
 
     fn should_load_texture(&self) -> bool {
@@ -518,14 +545,16 @@ impl AlbumCell {
 
     pub fn bind(&self, album: &Album) {
         self.imp().album.set(Some(album));
+        self.imp().deferred_hires.set(false);
         if self.should_load_texture() {
-            self.update_cover();
+            self.update_cover(true);
         }
     }
 
     pub fn unbind(&self) {
         self.imp().cover.clear();
         self.imp().album.set(None);
+        self.imp().deferred_hires.set(false);
     }
 
     pub fn image_size(&self) -> i32 {
@@ -548,8 +577,13 @@ impl AlbumCell {
         if old != new {
             self.imp().cover.set_is_thumbnail(!new);
             self.notify("hires");
-            if self.should_load_texture() {
-                self.update_cover();
+            if new {
+                self.imp().deferred_hires.set(false);
+          if self.should_load_texture() {
+                    self.update_cover(true);
+                }
+            } else {
+                self.imp().deferred_hires.set(false);
             }
         }
     }

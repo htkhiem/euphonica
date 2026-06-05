@@ -16,6 +16,7 @@ use image::ImageReader;
 use lru::LruCache;
 use once_cell::sync::Lazy;
 use std::num::NonZeroUsize;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::{fmt, fs::create_dir_all, rc::Rc, result, sync::Mutex};
 
 use crate::{
@@ -234,6 +235,16 @@ fn load_image(
 static IMAGE_CACHE: Lazy<Mutex<LruCache<String, Texture>>> =
     Lazy::new(|| Mutex::new(LruCache::new(NonZeroUsize::new(256).unwrap())));
 
+/// Threshold for deferring hires album art loading. When the pending task count
+/// reaches this value, new album art requests fall back to thumbnails.
+pub static BACKLOG_THRESHOLD: Lazy<usize> = Lazy::new(|| {
+    settings_manager()
+        .child("library")
+        .uint("use-hires-backlog-threshold")
+        .try_into()
+        .unwrap_or(10)
+});
+
 // We use an Asyncified container to queue tasks, such that two requests for the
 // same texture are never run concurrently. This allows one request to cache the
 // texture in-memory for all subsequent requests.
@@ -245,6 +256,8 @@ pub struct Cache {
     // Asyncified container for operations involving API calls (should sleep after each call).
     external: Asyncified<()>,
     state: CacheState,
+    // Tracks in-flight get_cover requests for backpressure-aware hires loading.
+    pending_tasks: AtomicUsize,
 }
 
 impl fmt::Debug for Cache {
@@ -284,6 +297,7 @@ impl Cache {
                 }))
                 .unwrap(),
             state: CacheState::default(),
+            pending_tasks: AtomicUsize::new(0),
         };
 
         Rc::new(cache)
@@ -293,21 +307,24 @@ impl Cache {
         self.state.clone()
     }
 
+    /// Returns the number of pending cover lookup tasks.
+    pub fn backlog(&self) -> usize {
+        self.pending_tasks.load(Ordering::Relaxed)
+    }
+
     /// Try to get a cover image for the given song. This prioritises the folder-level
     /// cover image over embedded covers of the track.
     /// Returns a gdk::Texture from cache if available.
     /// Failing that, we'll search local storage.
-    /// Still failing that, if `external` is true, it will try to get one from MPD
-    /// or external metadata providers.
+    /// Still failing that, it will try to get one from MPD or external metadata providers.
     pub async fn get_song_cover(
         self: Rc<Self>,
         song: &SongInfo,
         thumbnail: bool,
-        external: bool,
     ) -> Result<Option<Texture>> {
         let folder_uri = strip_filename_linux(&song.uri).to_owned();
         let album = song.album.as_ref().cloned();
-        self.get_cover(&folder_uri, &song.uri, thumbnail, external, album)
+        self.get_cover(&folder_uri, &song.uri, thumbnail, album)
             .await
     }
 
@@ -315,19 +332,16 @@ impl Cache {
     /// file over embedded covers of its tracks.
     /// Returns a gdk::Texture from cache if available.
     /// Failing that, we'll search local storage.
-    /// Still failing that, if `external` is true, it will try to get one from MPD
-    /// or external metadata providers.
+    /// Still failing that, it will try to get one from MPD or external metadata providers.
     pub async fn get_album_cover(
         self: Rc<Self>,
         album: &AlbumInfo,
         thumbnail: bool,
-        external: bool,
     ) -> Result<Option<Texture>> {
         self.get_cover(
             &album.folder_uri,
             &album.example_uri,
             thumbnail,
-            external,
             Some(album.to_owned()),
         )
         .await
@@ -341,9 +355,11 @@ impl Cache {
         folder_key: &str,
         embedded_key: &str,
         thumbnail: bool,
-        external: bool,
         album: Option<AlbumInfo>,
     ) -> Result<Option<Texture>> {
+        // Track pending tasks for backpressure-aware hires loading.
+        self.pending_tasks.fetch_add(1, Ordering::Relaxed);
+
         let mut failed_before = false;
 
         let folder_key_owned = folder_key.to_owned();
@@ -356,25 +372,31 @@ impl Cache {
             .call(move |_| get_image_internal(&folder_key_cached, None, thumbnail))
             .await
         {
-            Ok(Some(tex)) => return Ok(Some(tex)),
+            Ok(Some(tex)) => {
+                self.pending_tasks.fetch_sub(1, Ordering::Relaxed);
+                return Ok(Some(tex))
+            },
             Ok(None) => {}
             Err(Error::PriorFailure) => failed_before = true,
             Err(Error::FileNotFound) => {
+                self.pending_tasks.fetch_sub(1, Ordering::Relaxed);
                 // Retry (DB entry should have been purged by get_image_internal)
                 return Box::pin(self.get_cover(
                     &folder_key_owned,
                     &embedded_key_owned,
                     thumbnail,
-                    external,
                     album,
                 ))
                 .await;
             }
-            Err(e) => return Err(e),
+            Err(e) => {
+                self.pending_tasks.fetch_sub(1, Ordering::Relaxed);
+                return Err(e)
+            },
         }
 
         // 2. Nope, fall back to downloading fresh
-        if external && !failed_before {
+        if !failed_before {
             if settings_manager()
                 .child("client")
                 .boolean("mpd-download-album-art")
@@ -386,6 +408,7 @@ impl Cache {
                     .map_err(Error::Client)
                     .await?
                 {
+                    self.pending_tasks.fetch_sub(1, Ordering::Relaxed);
                     return Ok(bundle.take_texture(thumbnail).map(Some)?);
                 }
                 // 2b. MPD embedded cover, WILL BE SAVED AS FOLDER-LEVEL ART such that all future calls from tracks in the
@@ -396,6 +419,7 @@ impl Cache {
                     .map_err(Error::Client)
                     .await?
                 {
+                    self.pending_tasks.fetch_sub(1, Ordering::Relaxed);
                     return Ok(bundle.take_texture(thumbnail).map(Some)?);
                 }
             }
@@ -404,6 +428,7 @@ impl Cache {
             if let Some(album) = album
                 && let Some(meta) = self.get_album_meta(&album, true, false, None).await?
             {
+                self.pending_tasks.fetch_sub(1, Ordering::Relaxed);
                 return self
                     .external
                     .call(move |_| load_image(&album.folder_uri, None, &meta.image, thumbnail))
