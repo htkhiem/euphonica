@@ -27,7 +27,7 @@ use crate::{
 
 // As soon as a cell comes within this close of the render area, treat it as
 // visible & load album art early to avoid showing loading spinners.
-static WING_DEPTH: f64 = 384.0;
+static WING_DEPTH: f64 = 512.0;
 
 mod imp {
     use super::*;
@@ -69,6 +69,9 @@ mod imp {
         // Use this to block loading images immediately upon construction when hires
         // is set to true (as that would trigger the setter before a viewport is set)
         pub obj_ready: Cell<bool>,
+        // Set to true when the bind-time visibility check was skipped due to 
+        // backpressure.
+        pub deferred: Cell<bool>,
         // Set to true when hires was deferred due to high backlog; triggers an
         // upgrade to hires once the backlog drops below the threshold.
         pub deferred_hires: Cell<bool>,
@@ -409,7 +412,10 @@ impl AlbumCell {
                         let was_visible = imp.should_load_texture.replace(is_visible);
 
                         if is_visible {
-                            if was_visible != is_visible {
+                            // Also go through this if visibility status didn't change, 
+                            // but album art load hasn't been attempted yet.
+                            if was_visible != is_visible || imp.deferred.get() {
+                                imp.deferred.set(false);
                                 if imp.album.upgrade().is_some() {
                                     glib::idle_add_local_once(clone!(
                                         #[weak]
@@ -544,16 +550,26 @@ impl AlbumCell {
     }
 
     pub fn bind(&self, album: &Album) {
-        self.imp().album.set(Some(album));
-        self.imp().deferred_hires.set(false);
-        if self.should_load_texture() {
-            self.update_cover(true);
+        let imp = self.imp();
+        imp.album.set(Some(album));
+        imp.deferred.set(false);
+        imp.deferred_hires.set(false);
+        // Only check this eagerly if backpressure is low
+        let backlog = imp.cache.get().unwrap().backlog();
+        if backlog < *BACKLOG_THRESHOLD {
+            if self.should_load_texture() {
+                self.update_cover(true);
+            }
+        } else {
+            imp.deferred.set(true);
         }
+        
     }
 
     pub fn unbind(&self) {
         self.imp().cover.clear();
         self.imp().album.set(None);
+        self.imp().deferred.set(false);
         self.imp().deferred_hires.set(false);
     }
 

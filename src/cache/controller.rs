@@ -229,11 +229,11 @@ fn load_image(
 // thrashing while quickly scrolling through like a million albums.
 // This cache's keys are the filenames themselves.
 
-// Keeping ~256 textures around doesn't mean there can only be 256 on screen at any time.
+// Keeping ~1024 textures around doesn't mean there can only be 1024 on screen at any time.
 // This cache merely keeps an additional strong ref alive in case a texture goes out of view.
 // As long as one is in view it is held by the widget displaying it.
 static IMAGE_CACHE: Lazy<Mutex<LruCache<String, Texture>>> =
-    Lazy::new(|| Mutex::new(LruCache::new(NonZeroUsize::new(256).unwrap())));
+    Lazy::new(|| Mutex::new(LruCache::new(NonZeroUsize::new(1024).unwrap())));
 
 /// Threshold for deferring hires album art loading. When the pending task count
 /// reaches this value, new album art requests fall back to thumbnails.
