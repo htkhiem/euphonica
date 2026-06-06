@@ -563,7 +563,13 @@ pub fn find_image_by_key(
             r.get::<usize, String>(0)
         });
     match query {
-        Ok(filename) => Ok(Some(filename)),
+        Ok(filename) => {
+            if !filename.is_empty() {
+                Ok(Some(filename))
+            } else {
+                Ok(None)
+            }
+        },
         Err(SqliteError::QueryReturnedNoRows) => Ok(None),
         Err(e) => Err(Error::Db(e)),
     }
