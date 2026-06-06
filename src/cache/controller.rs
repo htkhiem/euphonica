@@ -194,7 +194,7 @@ fn read_texture_from_name(name: &str) -> Result<gdk::Texture> {
 }
 
 #[inline]
-fn load_image(
+fn download_image_from_provider(
     key: &str,
     prefix: Option<&'static str>,
     fallback_images: &[models::ImageMeta],
@@ -371,9 +371,7 @@ impl Cache {
         let folder_key_cached = folder_key_owned.clone();
         match self
             .pool
-            .push_future(
-            move || get_image_internal(&folder_key_cached, None, thumbnail)
-            )
+            .push_future(move || get_image_internal(&folder_key_cached, None, thumbnail))
             .expect("get_cover_internal: cache threadpool error")
             .await
             .expect("get_cover_internal: cache threadpool error")
@@ -417,7 +415,7 @@ impl Cache {
                     .get_embedded_cover(embedded_key_owned.to_owned())
                     .map_err(Error::Client)
                     .await?
-                {   
+                {
                     return Ok(bundle.take_texture(thumbnail).map(Some)?);
                 }
             }
@@ -428,7 +426,14 @@ impl Cache {
             {
                 return self
                     .external
-                    .call(move |_| load_image(&album.folder_uri, None, &meta.image, thumbnail))
+                    .call(move |_| {
+                        download_image_from_provider(
+                            &album.folder_uri,
+                            None,
+                            &meta.image,
+                            thumbnail,
+                        )
+                    })
                     .await;
             }
         }
@@ -450,7 +455,10 @@ impl Cache {
     ) -> Result<Option<Texture>> {
         // Track pending tasks for backpressure-aware hires loading.
         self.pending_tasks.fetch_add(1, Ordering::Relaxed);
-        let res = self.clone().get_cover_internal(folder_key, embedded_key, thumbnail, album).await;
+        let res = self
+            .clone()
+            .get_cover_internal(folder_key, embedded_key, thumbnail, album)
+            .await;
         self.pending_tasks.fetch_sub(1, Ordering::Relaxed);
         res
     }
@@ -750,7 +758,14 @@ impl Cache {
             let artist = artist.to_owned();
             return self
                 .external
-                .call(move |_| load_image(&artist.name, Some("avatar"), &meta.image, thumbnail))
+                .call(move |_| {
+                    download_image_from_provider(
+                        &artist.name,
+                        Some("avatar"),
+                        &meta.image,
+                        thumbnail,
+                    )
+                })
                 .await;
         }
 
@@ -763,8 +778,7 @@ impl Cache {
         is_dynamic_playlist: bool,
         thumbnail: bool,
     ) -> Result<Option<gdk::Texture>> {
-        self
-            .pool
+        self.pool
             .push_future(move || {
                 let prefix = Some(if is_dynamic_playlist {
                     "dynamic_playlist"

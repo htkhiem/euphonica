@@ -1,6 +1,6 @@
 use async_channel::{Receiver, Sender};
 use futures::executor;
-use glib::clone;
+use glib::{ThreadPool, clone};
 use gtk::gio::prelude::*;
 use gtk::{gio, glib};
 use lru::LruCache;
@@ -23,6 +23,7 @@ use std::{cell::RefCell, rc::Rc};
 use uuid::Uuid;
 
 use crate::cache::sqlite;
+use crate::client::connection::ImageHandle;
 use crate::common::DynamicPlaylist;
 use crate::utils::settings_manager;
 use crate::{
@@ -69,6 +70,8 @@ pub struct MpdWrapper {
     // (true) or disconnection request (false).
     fg_handle: thread::JoinHandle<bool>,
     bg_handle: thread::JoinHandle<bool>,
+    // For heavy but parallelisable local tasks.
+    pool: ThreadPool,
     state: ClientState,
     fg_sender: Sender<Task>, // For sending tasks to the interactive client
     bg_sender: Sender<Task>, // For sending tasks to the background client
@@ -102,6 +105,7 @@ impl MpdWrapper {
                     .run()
                     .is_err()
             }),
+            pool: ThreadPool::shared(Some(4)).expect("Unable to start MpdWrapper threadpool"),
             state: ClientState::default(),
             fg_sender,
             bg_sender,
@@ -783,8 +787,35 @@ impl MpdWrapper {
         &self,
         uri: String,
     ) -> ClientResult<Option<utils::RegisteredImageBundle>> {
+        // Leave downloading to the background connection thread, but local operations
+        // (resizing, transcoding, writing to disk) will be done with a threadpool, whose
+        // handle is held by the this thread (the main one).
         let (s, r) = oneshot::channel();
-        self.background(Task::GetEmbeddedCover(uri, s), r).await
+        match self.background(Task::GetEmbeddedCover(uri, s), r).await {
+            Err(e) => Err(e),
+            Ok(None) => Ok(None),
+            Ok(Some(handle)) => {
+                match handle {
+                    ImageHandle::Registered(bundle) => Ok(Some(bundle)),
+                    ImageHandle::New(bytes, key) => {
+                        // process in threadpool
+                        self.pool
+                            .push_future(move || {
+                                Ok(utils::save_and_register_image(
+                                    image::load_from_memory(&bytes)?,
+                                    &key,
+                                    None,
+                                ))
+                            })
+                            .expect("get_embedded_cover: threadpool error")
+                            .await
+                            .expect("get_embedded_cover: threadpool error")
+                            .map_err(ClientError::Image)
+                            .map(Some)
+                    }
+                }
+            }
+        }
     }
 
     pub async fn get_folder_cover(
@@ -792,8 +823,34 @@ impl MpdWrapper {
         example_uri: String,
     ) -> ClientResult<Option<utils::RegisteredImageBundle>> {
         let (s, r) = oneshot::channel();
-        self.background(Task::GetFolderCover(example_uri, s), r)
+        match self
+            .background(Task::GetFolderCover(example_uri, s), r)
             .await
+        {
+            Err(e) => Err(e),
+            Ok(None) => Ok(None),
+            Ok(Some(handle)) => {
+                match handle {
+                    ImageHandle::Registered(bundle) => Ok(Some(bundle)),
+                    ImageHandle::New(bytes, key) => {
+                        // process in threadpool
+                        self.pool
+                            .push_future(move || {
+                                Ok(utils::save_and_register_image(
+                                    image::load_from_memory(&bytes)?,
+                                    &key,
+                                    None,
+                                ))
+                            })
+                            .expect("get_folder_cover: threadpool error")
+                            .await
+                            .expect("get_folder_cover: threadpool error")
+                            .map_err(ClientError::Image)
+                            .map(Some)
+                    }
+                }
+            }
+        }
     }
 
     pub async fn get_albums_by_query<F>(
