@@ -601,7 +601,7 @@ impl LazyInit for AlbumView {
                     }
                     this.imp().initializing.set(false);
                     // Now populate the stickers
-                    let _ = library.init_album_stickers();
+                    let _ = library.init_album_stickers().await;
                 });
             }
         }

@@ -285,6 +285,11 @@ impl Album {
         &self.imp().stickers
     }
 
+    /// Call this after mutating stickers to alert UI widgets
+    pub fn notify_stickers_changed(&self) {
+        self.notify("rating");
+    }
+
     pub fn set_stickers(&self, stickers: Stickers) {
         let _ = &self.imp().stickers.replace(stickers);
     }
