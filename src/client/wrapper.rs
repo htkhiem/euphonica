@@ -900,7 +900,7 @@ impl MpdWrapper {
             let (s, r) = oneshot::channel();
             let mut songs = self
                 .foreground(Task::FindMultiple(queries_windows, Some(vec![
-                    tags::ALBUM, tags::ALBUMARTIST, tags::ALBUMARTISTSORT, tags::ALBUM_MBID
+                    tags::ALBUM, tags::ALBUMARTIST, tags::ALBUMARTISTSORT, tags::ALBUM_MBID, tags::RELEASE_DATE
                 ]), s), r)
                 .await?;
             for i in (0 .. songs.len()) {
