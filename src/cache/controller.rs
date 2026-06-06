@@ -251,10 +251,15 @@ pub static BACKLOG_THRESHOLD: Lazy<usize> = Lazy::new(|| {
 pub struct Cache {
     mpd_client: Rc<MpdWrapper>,
     meta_providers: MetadataChain,
-    // Asyncified container for local operations (no delay between calls).
+    // Asyncified container for local operations (no delay between calls). Serves as a task queue.
+    // Background tasks that shouldn't be parallelised, such as image downloads, should be run there.
+    // This allows us to cleanly avoid duplicate downloads.
     local: Asyncified<()>,
-    // Asyncified container for operations involving API calls (should sleep after each call).
+    // Same as above but for operations involving API calls (should sleep after each call).
     external: Asyncified<()>,
+    // Thread pool for parallelisable operations such as texture read from disk and resizing ops.
+    pool: glib::ThreadPool,
+    // Cache state object for emitting signals.
     state: CacheState,
     // Tracks in-flight get_cover requests for backpressure-aware hires loading.
     pending_tasks: AtomicUsize,
@@ -296,6 +301,8 @@ impl Cache {
                         .await
                 }))
                 .unwrap(),
+            pool: glib::ThreadPool::shared(Some(4))
+                .expect("Unable to start threadpool for cache operations"),
             state: CacheState::default(),
             pending_tasks: AtomicUsize::new(0),
         };
@@ -347,41 +354,37 @@ impl Cache {
         .await
     }
 
-    /// Shared cover lookup. `folder_key` is the URI used for folder-level images,
-    /// `embedded_key` is the URI used for embedded (track-level) images.
-    /// If `album` is provided, it is used for external metadata lookups.
-    async fn get_cover(
+    #[inline]
+    async fn get_cover_internal(
         self: Rc<Self>,
         folder_key: &str,
         embedded_key: &str,
         thumbnail: bool,
         album: Option<AlbumInfo>,
     ) -> Result<Option<Texture>> {
-        // Track pending tasks for backpressure-aware hires loading.
-        self.pending_tasks.fetch_add(1, Ordering::Relaxed);
-
         let mut failed_before = false;
 
         let folder_key_owned = folder_key.to_owned();
         let embedded_key_owned = embedded_key.to_owned();
 
-        // 1. Check if we have it cached locally
+        // 1. Check if we have it cached locally. This is parallelisable so we'll use the threadpool.
         let folder_key_cached = folder_key_owned.clone();
         match self
-            .local
-            .call(move |_| get_image_internal(&folder_key_cached, None, thumbnail))
+            .pool
+            .push_future(
+            move || get_image_internal(&folder_key_cached, None, thumbnail)
+            )
+            .expect("get_cover_internal: cache threadpool error")
             .await
+            .expect("get_cover_internal: cache threadpool error")
         {
-            Ok(Some(tex)) => {
-                self.pending_tasks.fetch_sub(1, Ordering::Relaxed);
-                return Ok(Some(tex))
-            },
+            Ok(Some(tex)) => return Ok(Some(tex)),
             Ok(None) => {}
             Err(Error::PriorFailure) => failed_before = true,
             Err(Error::FileNotFound) => {
-                self.pending_tasks.fetch_sub(1, Ordering::Relaxed);
                 // Retry (DB entry should have been purged by get_image_internal)
-                return Box::pin(self.get_cover(
+                // No need to increment/decrement pending_tasks here.
+                return Box::pin(self.get_cover_internal(
                     &folder_key_owned,
                     &embedded_key_owned,
                     thumbnail,
@@ -389,10 +392,7 @@ impl Cache {
                 ))
                 .await;
             }
-            Err(e) => {
-                self.pending_tasks.fetch_sub(1, Ordering::Relaxed);
-                return Err(e)
-            },
+            Err(e) => return Err(e),
         }
 
         // 2. Nope, fall back to downloading fresh
@@ -408,7 +408,6 @@ impl Cache {
                     .map_err(Error::Client)
                     .await?
                 {
-                    self.pending_tasks.fetch_sub(1, Ordering::Relaxed);
                     return Ok(bundle.take_texture(thumbnail).map(Some)?);
                 }
                 // 2b. MPD embedded cover, WILL BE SAVED AS FOLDER-LEVEL ART such that all future calls from tracks in the
@@ -418,8 +417,7 @@ impl Cache {
                     .get_embedded_cover(embedded_key_owned.to_owned())
                     .map_err(Error::Client)
                     .await?
-                {
-                    self.pending_tasks.fetch_sub(1, Ordering::Relaxed);
+                {   
                     return Ok(bundle.take_texture(thumbnail).map(Some)?);
                 }
             }
@@ -428,7 +426,6 @@ impl Cache {
             if let Some(album) = album
                 && let Some(meta) = self.get_album_meta(&album, true, false, None).await?
             {
-                self.pending_tasks.fetch_sub(1, Ordering::Relaxed);
                 return self
                     .external
                     .call(move |_| load_image(&album.folder_uri, None, &meta.image, thumbnail))
@@ -437,6 +434,25 @@ impl Cache {
         }
 
         Ok(None)
+    }
+
+    /// Shared cover lookup. `folder_key` is the URI used for folder-level images,
+    /// `embedded_key` is the URI used for embedded (track-level) images.
+    /// If `album` is provided, it is used for external metadata lookups.
+    /// Actual implementation is in get_cover_internal. This is a thin RAII wrapper
+    /// to handle incrementing/decrementing self.pending_tasks.
+    async fn get_cover(
+        self: Rc<Self>,
+        folder_key: &str,
+        embedded_key: &str,
+        thumbnail: bool,
+        album: Option<AlbumInfo>,
+    ) -> Result<Option<Texture>> {
+        // Track pending tasks for backpressure-aware hires loading.
+        self.pending_tasks.fetch_add(1, Ordering::Relaxed);
+        let res = self.clone().get_cover_internal(folder_key, embedded_key, thumbnail, album).await;
+        self.pending_tasks.fetch_sub(1, Ordering::Relaxed);
+        res
     }
 
     /// Load the specified image, resize it, load into cache then send a message to frontend.
@@ -708,9 +724,11 @@ impl Cache {
         let name = artist.name.to_owned();
         let mut failed_before = false;
         match self
-            .local
-            .call(move |_| get_image_internal(&name, Some("avatar"), thumbnail))
+            .pool
+            .push_future(move || get_image_internal(&name, Some("avatar"), thumbnail))
+            .expect("get_artist_avatar: threadpool error")
             .await
+            .expect("get_artist_avatar: threadpool error")
         {
             Ok(Some(tex)) => {
                 return Ok(Some(tex));
@@ -745,8 +763,9 @@ impl Cache {
         is_dynamic_playlist: bool,
         thumbnail: bool,
     ) -> Result<Option<gdk::Texture>> {
-        self.local
-            .call(move |_| {
+        self
+            .pool
+            .push_future(move || {
                 let prefix = Some(if is_dynamic_playlist {
                     "dynamic_playlist"
                 } else {
@@ -754,7 +773,9 @@ impl Cache {
                 });
                 get_image_internal(&playlist_name, prefix, thumbnail)
             })
+            .expect("get_playlist_cover: threadpool error")
             .await
+            .expect("get_playlist_cover: threadpool error")
     }
 
     pub async fn insert_dynamic_playlist(

@@ -260,7 +260,7 @@ mod imp {
         pub accent_color: RefCell<Option<RGB>>,
         pub should_populate_visible: Cell<bool>,
 
-        // Single async loop that emits "check-visible" every 500ms to drive
+        // Single async loop that emits "check-visible" periodically to drive
         // visibility checks for all AlbumCell instances
         pub check_visible_loop: RefCell<Option<glib::JoinHandle<()>>>,
 
@@ -358,13 +358,13 @@ mod imp {
         fn constructed(&self) {
             self.parent_constructed();
 
-            // Spawn a single async loop that emits "check-visible" every 500ms.
+            // Spawn a single async loop that emits "check-visible" periodically.
             // All AlbumCell instances connect to this signal for visibility checks,
             // replacing the old per-cell tick callback approach.
             let win = self.obj().clone();
             *self.check_visible_loop.borrow_mut() = Some(glib::spawn_future_local(async move {
                 loop {
-                    glib::timeout_future(Duration::from_millis(500)).await;
+                    glib::timeout_future(Duration::from_millis(50)).await;
                     win.emit_by_name::<()>("check-visible", &[]);
                 }
             }));
