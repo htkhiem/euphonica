@@ -881,34 +881,45 @@ impl MpdWrapper {
                 r,
             )
             .await?;
+        let mut titles_artists = Vec::new();
+        // let mut queries = Vec::new();
+        // Construct queries all at once. Each query fetches one song from one album.
         for (key, tags) in grouped_vals.groups.into_iter() {
-            for tag in tags.iter() {
+            for tag in tags.into_iter() {
+                titles_artists.push((tag, key.clone()));
+            }
+        }
+        // Chunk the queries
+        for ta_chunk in titles_artists.chunks(128) {
+            let queries_windows: Vec<(Query, mpd::search::Window)> = ta_chunk.iter().map(|title_artist| {
                 let mut query = Query::new();
-                query.and(Term::Tag(Cow::Borrowed("album")), tag.to_string());
-                query.and(Term::Tag(Cow::Borrowed("albumartist")), key.to_string());
-                let (s, r) = oneshot::channel();
-                let mut songs = self
-                    .foreground(Task::Find(query, Window::from((0, 1)), s), r)
-                    .await?;
-                if !songs.is_empty() {
-                    if let Some(album_info) = std::mem::take(&mut songs[0]).into_album_info() {
-                        let res: Album = album_info.into();
-                        let (s, r) = oneshot::channel();
-                        // Optionally fetch album stickers
-                        if let Ok(stickers) = self
-                            .foreground(
-                                Task::GetKnownStickers("album", res.get_title().to_owned(), s),
-                                r,
-                            )
-                            .await
-                        {
-                            res.set_stickers(stickers);
-                        }
-                        respond(res);
+                query.and(Term::Tag(Cow::Borrowed("album")), title_artist.0.to_string());
+                query.and(Term::Tag(Cow::Borrowed("albumartist")), title_artist.1.to_string());
+                (query, mpd::search::Window::from((0, 1)))
+            }).collect();
+            let (s, r) = oneshot::channel();
+            let mut songs = dbg!(self
+                .foreground(Task::FindMultiple(queries_windows, Some(vec![
+                    "album", "albumartist", "albumsort", "albumartistsort", "musicbrainz_albumid"
+                ]), s), r)
+                .await?);
+            for i in (0 .. songs.len()) {
+                // Insert our local album & albumartist tags
+                if let Some(album_info) = std::mem::take(&mut songs[i]).into_album_info() {
+                    let res: Album = album_info.into();
+                    let (s, r) = oneshot::channel();
+                    // Optionally fetch album stickers
+                    // TODO: BATCH STICKERS FETCH TOO
+                    if let Ok(stickers) = self
+                        .foreground(
+                            Task::GetKnownStickers("album", res.get_title().to_owned(), s),
+                            r,
+                        )
+                        .await
+                    {
+                        res.set_stickers(stickers);
                     }
-                    // else {
-                    //     println!("No album info found for {tag}");
-                    // }
+                    respond(res);
                 }
             }
         }

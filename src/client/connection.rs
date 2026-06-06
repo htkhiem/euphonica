@@ -333,6 +333,13 @@ pub enum Task {
         Responder<GroupedValues>,
     ),
     Find(Query<'static>, Window, Responder<Vec<SongInfo>>),
+    /// Batched version of Find.
+    FindMultiple(
+        Vec<(Query<'static>, Window)>, 
+        /// Optional list of tagtypes to limit to.
+        Option<Vec<&'static str>>, 
+        Responder<Vec<SongInfo>>
+    ),
     LsInfo(String, Responder<Vec<INodeInfo>>),
     GetPlaylist(
         /// Playlist name
@@ -1053,6 +1060,18 @@ impl Connection {
                         },
                         resp,
                     ),
+                    Task::FindMultiple(queries_windows, tagtypes,resp) => {
+                        self.respond_with_client(
+                        move |c| {
+                            c.find_multiple(
+                                &queries_windows, 
+                                tagtypes.as_deref()
+                            ).map(|mpd_songs| {
+                                mpd_songs.into_iter().map(SongInfo::from).collect()
+                            })
+                        },
+                        resp,
+                    )},
                     Task::LsInfo(path, resp) => self.respond_with_client(
                         |c| {
                             c.lsinfo(&path)
