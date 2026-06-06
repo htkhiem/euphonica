@@ -24,7 +24,7 @@ use uuid::Uuid;
 
 use crate::cache::sqlite;
 use crate::client::connection::ImageHandle;
-use crate::common::DynamicPlaylist;
+use crate::common::{DynamicPlaylist, tags};
 use crate::utils::settings_manager;
 use crate::{
     common::{Album, Artist, INode, Song, SongInfo, Stickers},
@@ -873,9 +873,9 @@ impl MpdWrapper {
         let grouped_vals = self
             .foreground(
                 Task::List(
-                    Term::Tag(Cow::Borrowed("album")),
+                    Term::Tag(tags::ALBUM.into()),
                     query,
-                    Some("albumartist"),
+                    Some(tags::ALBUMARTIST),
                     s,
                 ),
                 r,
@@ -893,33 +893,20 @@ impl MpdWrapper {
         for ta_chunk in titles_artists.chunks(256) {
             let queries_windows: Vec<(Query, mpd::search::Window)> = ta_chunk.iter().map(|title_artist| {
                 let mut query = Query::new();
-                query.and(Term::Tag(Cow::Borrowed("album")), title_artist.0.to_string());
-                query.and(Term::Tag(Cow::Borrowed("albumartist")), title_artist.1.to_string());
+                query.and(Term::Tag(Cow::Borrowed(tags::ALBUM)), title_artist.0.to_string());
+                query.and(Term::Tag(Cow::Borrowed(tags::ALBUMARTIST)), title_artist.1.to_string());
                 (query, mpd::search::Window::from((0, 1)))
             }).collect();
             let (s, r) = oneshot::channel();
-            let mut songs = dbg!(self
+            let mut songs = self
                 .foreground(Task::FindMultiple(queries_windows, Some(vec![
-                    "album", "albumartist", "albumsort", "albumartistsort", "musicbrainz_albumid"
+                    tags::ALBUM, tags::ALBUMARTIST, tags::ALBUMARTISTSORT, tags::ALBUM_MBID
                 ]), s), r)
-                .await?);
+                .await?;
             for i in (0 .. songs.len()) {
                 // Insert our local album & albumartist tags
                 if let Some(album_info) = std::mem::take(&mut songs[i]).into_album_info() {
-                    let res: Album = album_info.into();
-                    // let (s, r) = oneshot::channel();
-                    // // Optionally fetch album stickers
-                    // // TODO: BATCH STICKERS FETCH TOO
-                    // if let Ok(stickers) = self
-                    //     .foreground(
-                    //         Task::GetKnownStickers("album", res.get_title().to_owned(), s),
-                    //         r,
-                    //     )
-                    //     .await
-                    // {
-                    //     res.set_stickers(stickers);
-                    // }
-                    respond(res);
+                    respond(album_info.into());
                 }
             }
         }
@@ -936,12 +923,12 @@ impl MpdWrapper {
             sqlite::get_last_n_albums(settings.uint("n-recent-albums")).expect("Sqlite DB error");
         for tup in recent_albums.into_iter() {
             let mut query = Query::new();
-            query.and(Term::Tag(Cow::Borrowed("album")), tup.0);
+            query.and(Term::Tag(tags::ALBUM.into()), tup.0);
             if let Some(artist) = tup.1 {
-                query.and(Term::Tag(Cow::Borrowed("albumartist")), artist);
+                query.and(Term::Tag(tags::ALBUMARTIST.into()), artist);
             }
             if let Some(mbid) = tup.2 {
-                query.and(Term::Tag(Cow::Borrowed("musicbrainz_albumid")), mbid);
+                query.and(Term::Tag(tags::ALBUM_MBID.into()), mbid);
             }
             self.get_albums_by_query(query, respond).await?;
         }
@@ -1015,9 +1002,14 @@ impl MpdWrapper {
         // Here we'll reuse the artist parsing code in our SongInfo struct and put parsed
         // ArtistInfos in a Set to deduplicate them.
         let tag_type: &'static str = if use_album_artist {
-            "albumartist"
+            tags::ALBUMARTIST
         } else {
-            "artist"
+            tags::ARTIST
+        };
+        let tagtypes_to_load = if use_album_artist {
+            vec![tags::ALBUMARTIST, tags::ALBUMARTISTSORT, tags::ALBUMARTIST_MBID]
+        } else {
+            vec![tags::ARTIST, tags::ARTISTSORT, tags::ARTIST_MBID]
         };
         let mut already_parsed: FxHashSet<String> = FxHashSet::default();
         let (s, r) = oneshot::channel();
@@ -1027,16 +1019,18 @@ impl MpdWrapper {
                 r,
             )
             .await?;
-        // TODO: Limit tags to only what we need locally
-        for mut tag in std::mem::take(&mut grouped_vals.groups[0].1).into_iter() {
-            let mut query = Query::new();
-            query.and(Term::Tag(Cow::Borrowed(tag_type)), std::mem::take(&mut tag));
+        for tag_chunk in std::mem::take(&mut grouped_vals.groups[0].1).chunks(256) {
+            let queries_windows: Vec<(Query, mpd::search::Window)> = tag_chunk.iter().map(|tag| {
+                let mut query = Query::new();
+                query.and(Term::Tag(tag_type.into()), tag.to_owned());
+                (query, mpd::search::Window::from((0, 1)))
+            }).collect();
             let (s, r) = oneshot::channel();
             let mut songs = self
-                .foreground(Task::Find(query, Window::from((0, 1)), s), r)
+                .foreground(Task::FindMultiple(queries_windows, Some(tagtypes_to_load.clone()), s), r)
                 .await?;
-            if !songs.is_empty() {
-                let artists = std::mem::take(&mut songs[0]).into_artist_infos();
+            for i in (0..songs.len()) {
+                let artists = std::mem::take(&mut songs[i]).into_artist_infos();
                 for artist in artists.into_iter() {
                     if already_parsed.insert(artist.get_comp_id().to_owned()) {
                         respond(artist.into());
