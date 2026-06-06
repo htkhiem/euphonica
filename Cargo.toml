@@ -1,6 +1,6 @@
 [package]
 name = "euphonica"
-version = "0.99.4"
+version = "0.99.5"
 edition = "2024"
 
 [dev-dependencies]
@@ -13,8 +13,7 @@ futures = "0.3.30"
 gettext-rs = { version = "0.7", features = ["gettext-system"] }
 image = { version = "0.25.1", features = ["webp"] }
 librsvg = "2.58.1"
-mpd = { git = "https://github.com/htkhiem/rust-mpd.git", rev = "55cb92d0abfd13616769b437586d70e43eda7ed6", features = ["serde"] }
-# mpd = { path = "../rust-mpd", features = ["serde"] }
+mpd = { git = "https://github.com/htkhiem/rust-mpd.git", rev = "e9f5ad589e0eaaeb1d9758cc3a6b5762bb67e4b5", features = ["serde"] }
 once_cell = "1.19.0"
 time = { version = "0.3.47", features = ["alloc", "formatting", "local-offset"] }
 reqwest = { version = "0.12.5", features = ["blocking", "json"] }
