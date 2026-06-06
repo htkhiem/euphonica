@@ -890,7 +890,7 @@ impl MpdWrapper {
             }
         }
         // Chunk the queries
-        for ta_chunk in titles_artists.chunks(128) {
+        for ta_chunk in titles_artists.chunks(256) {
             let queries_windows: Vec<(Query, mpd::search::Window)> = ta_chunk.iter().map(|title_artist| {
                 let mut query = Query::new();
                 query.and(Term::Tag(Cow::Borrowed("album")), title_artist.0.to_string());
@@ -907,18 +907,18 @@ impl MpdWrapper {
                 // Insert our local album & albumartist tags
                 if let Some(album_info) = std::mem::take(&mut songs[i]).into_album_info() {
                     let res: Album = album_info.into();
-                    let (s, r) = oneshot::channel();
-                    // Optionally fetch album stickers
-                    // TODO: BATCH STICKERS FETCH TOO
-                    if let Ok(stickers) = self
-                        .foreground(
-                            Task::GetKnownStickers("album", res.get_title().to_owned(), s),
-                            r,
-                        )
-                        .await
-                    {
-                        res.set_stickers(stickers);
-                    }
+                    // let (s, r) = oneshot::channel();
+                    // // Optionally fetch album stickers
+                    // // TODO: BATCH STICKERS FETCH TOO
+                    // if let Ok(stickers) = self
+                    //     .foreground(
+                    //         Task::GetKnownStickers("album", res.get_title().to_owned(), s),
+                    //         r,
+                    //     )
+                    //     .await
+                    // {
+                    //     res.set_stickers(stickers);
+                    // }
                     respond(res);
                 }
             }
