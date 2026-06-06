@@ -301,8 +301,12 @@ impl Cache {
                         .await
                 }))
                 .unwrap(),
-            pool: glib::ThreadPool::shared(Some(4))
-                .expect("Unable to start threadpool for cache operations"),
+            pool: glib::ThreadPool::shared(Some(
+                settings_manager()
+                    .child("library")
+                    .uint("n-image-threads"),
+            ))
+            .expect("Unable to start threadpool for cache operations"),
             state: CacheState::default(),
             pending_tasks: AtomicUsize::new(0),
         };

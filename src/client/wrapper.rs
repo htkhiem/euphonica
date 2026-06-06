@@ -105,7 +105,12 @@ impl MpdWrapper {
                     .run()
                     .is_err()
             }),
-            pool: ThreadPool::shared(Some(4)).expect("Unable to start MpdWrapper threadpool"),
+            pool: ThreadPool::shared(Some(
+                settings_manager()
+                    .child("library")
+                    .uint("n-image-threads"),
+            ))
+            .expect("Unable to start MpdWrapper threadpool"),
             state: ClientState::default(),
             fg_sender,
             bg_sender,
