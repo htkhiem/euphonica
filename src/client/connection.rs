@@ -576,7 +576,10 @@ impl Connection {
         // should start using the local cached version as soon as possible.
         let hires = sqlite::find_image_by_key(key, None, false).expect("Sqlite DB error");
         let thumb = sqlite::find_image_by_key(key, None, true).expect("Sqlite DB error");
-        if let (Some(hires), Some(thumb)) = (hires, thumb) {
+        // The above might return empty strings verbatim. Normally we wouldn't even reach this if the strings were empty,
+        // but there might be some race conditions when there are multiple distinct album tags in the same folder?
+        if hires.as_ref().is_some_and(|s| !s.is_empty()) && thumb.as_ref().is_some_and(|s| !s.is_empty()) {
+            let (hires, thumb) = (hires.unwrap(), thumb.unwrap());
             let _ = resp.send(Ok(Some(ImageHandle::Registered(
                 utils::RegisteredImageBundle {
                     hires: utils::RegisteredImage {
