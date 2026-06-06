@@ -333,10 +333,14 @@ impl Cache {
         song: &SongInfo,
         thumbnail: bool,
     ) -> Result<Option<Texture>> {
+        // Track pending tasks for backpressure-aware hires loading.
+        self.pending_tasks.fetch_add(1, Ordering::Relaxed);
         let folder_uri = strip_filename_linux(&song.uri).to_owned();
         let album = song.album.as_ref().cloned();
-        self.get_cover(&folder_uri, &song.uri, thumbnail, album)
-            .await
+        let res = self.clone().get_cover_internal(&folder_uri, &song.uri, thumbnail, album)
+            .await;
+        self.pending_tasks.fetch_sub(1, Ordering::Relaxed);
+        res
     }
 
     /// Try to get a cover image for the given album. This prioritises the folder image
@@ -349,15 +353,22 @@ impl Cache {
         album: &AlbumInfo,
         thumbnail: bool,
     ) -> Result<Option<Texture>> {
-        self.get_cover(
+        // Track pending tasks for backpressure-aware hires loading.
+        self.pending_tasks.fetch_add(1, Ordering::Relaxed);
+        let res = self.clone().get_cover_internal(
             &album.folder_uri,
             &album.example_uri,
             thumbnail,
             Some(album.to_owned()),
         )
-        .await
+        .await;
+        self.pending_tasks.fetch_sub(1, Ordering::Relaxed);
+        res
     }
 
+    /// Shared cover lookup. `folder_key` is the URI used for folder-level images,
+    /// `embedded_key` is the URI used for embedded (track-level) images.
+    /// If `album` is provided, it is used for external metadata lookups.
     #[inline]
     async fn get_cover_internal(
         self: Rc<Self>,
@@ -443,28 +454,6 @@ impl Cache {
         }
 
         Ok(None)
-    }
-
-    /// Shared cover lookup. `folder_key` is the URI used for folder-level images,
-    /// `embedded_key` is the URI used for embedded (track-level) images.
-    /// If `album` is provided, it is used for external metadata lookups.
-    /// Actual implementation is in get_cover_internal. This is a thin RAII wrapper
-    /// to handle incrementing/decrementing self.pending_tasks.
-    async fn get_cover(
-        self: Rc<Self>,
-        folder_key: &str,
-        embedded_key: &str,
-        thumbnail: bool,
-        album: Option<AlbumInfo>,
-    ) -> Result<Option<Texture>> {
-        // Track pending tasks for backpressure-aware hires loading.
-        self.pending_tasks.fetch_add(1, Ordering::Relaxed);
-        let res = self
-            .clone()
-            .get_cover_internal(folder_key, embedded_key, thumbnail, album)
-            .await;
-        self.pending_tasks.fetch_sub(1, Ordering::Relaxed);
-        res
     }
 
     /// Load the specified image, resize it, load into cache then send a message to frontend.
