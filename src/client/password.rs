@@ -1,8 +1,61 @@
-use gtk::gio::Cancellable;
+use gtk::{
+    gio::{self, Cancellable},
+    glib::{self, variant::ToVariant},
+};
 use libsecret::*;
 use std::collections::HashMap;
 
 use crate::config::APPLICATION_ID;
+
+pub fn secret_service_available() -> bool {
+    let Ok(bus) = gio::bus_get_sync(gio::BusType::Session, Cancellable::NONE) else {
+        return false;
+    };
+    let reply_type = glib::VariantTy::new("(b)").unwrap();
+    let Ok(reply) = bus.call_sync(
+        Some("org.freedesktop.DBus"),
+        "/org/freedesktop/DBus",
+        "org.freedesktop.DBus",
+        "NameHasOwner",
+        Some(&("org.freedesktop.secrets",).to_variant()),
+        Some(reply_type),
+        gio::DBusCallFlags::NO_AUTO_START,
+        -1,
+        Cancellable::NONE,
+    ) else {
+        return false;
+    };
+
+    reply
+        .get::<(bool,)>()
+        .is_some_and(|(available,)| available)
+}
+
+pub async fn secret_service_available_async() -> bool {
+    let Ok(bus) = gio::bus_get_future(gio::BusType::Session).await else {
+        return false;
+    };
+    let reply_type = glib::VariantTy::new("(b)").unwrap();
+    let Ok(reply) = bus
+        .call_future(
+            Some("org.freedesktop.DBus"),
+            "/org/freedesktop/DBus",
+            "org.freedesktop.DBus",
+            "NameHasOwner",
+            Some(&("org.freedesktop.secrets",).to_variant()),
+            Some(reply_type),
+            gio::DBusCallFlags::NO_AUTO_START,
+            -1,
+        )
+        .await
+    else {
+        return false;
+    };
+
+    reply
+        .get::<(bool,)>()
+        .is_some_and(|(available,)| available)
+}
 
 pub fn get_mpd_password_schema() -> Schema {
     let mut attributes = HashMap::new();
@@ -12,6 +65,10 @@ pub fn get_mpd_password_schema() -> Schema {
 }
 
 pub fn get_mpd_password() -> Result<Option<String>, String> {
+    if !secret_service_available() {
+        return Err(String::from("Default credential store is not available"));
+    }
+
     let schema = get_mpd_password_schema();
     let mut attributes = HashMap::new();
     attributes.insert("type", "mpd");
@@ -29,6 +86,10 @@ pub fn get_mpd_password() -> Result<Option<String>, String> {
 }
 
 pub async fn get_mpd_password_async() -> Result<Option<String>, String> {
+    if !secret_service_available_async().await {
+        return Err(String::from("Default credential store is not available"));
+    }
+
     let schema = get_mpd_password_schema();
     let mut attributes = HashMap::new();
     attributes.insert("type", "mpd");
@@ -46,6 +107,10 @@ pub async fn get_mpd_password_async() -> Result<Option<String>, String> {
 }
 
 pub async fn set_mpd_password(maybe_password: Option<&str>) -> Result<(), String> {
+    if !secret_service_available_async().await {
+        return Err(String::from("Default credential store is not available"));
+    }
+
     let schema = get_mpd_password_schema();
     let mut attributes = HashMap::new();
     attributes.insert("type", "mpd");
