@@ -491,7 +491,7 @@ impl AlbumCell {
                             }
                             Err(e) => {
                                 this.imp().cover.clear();
-                                dbg!(e);
+                                eprintln!("Failed to read cover for album `{}` (URI `{}`):\n{:?}", album.get_title(), album.get_folder_uri(), e);
                             }
                         }
                     }

@@ -202,9 +202,9 @@ fn download_image_from_provider(
 ) -> Result<Option<Texture>> {
     // Always check with our DB first as a prior call might have downloaded the
     // necessary image for us.
-    if let Some(file) = sqlite::find_image_by_key(key, prefix, thumbnail).expect("Sqlite DB error")
-    {
-        read_texture_from_name(&file).map(Some)
+    let maybe_file = sqlite::find_image_by_key(key, prefix, thumbnail).expect("Sqlite DB error");
+    if maybe_file.as_ref().is_some_and(|s| !s.is_empty()) {
+        read_texture_from_name(&maybe_file.unwrap()).map(Some)
     } else {
         match get_best_image(fallback_images) {
             Ok(dyn_img) => {
