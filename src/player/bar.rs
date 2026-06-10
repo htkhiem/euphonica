@@ -259,7 +259,7 @@ impl PlayerBar {
             async move {
                 if let Some(song) = song {
                     this.imp().albumart.show_spinner();
-                    match cache.get_song_cover(song.get_info(), true, true).await {
+                    match cache.get_song_cover(song.get_info(), true).await {
                         Ok(Some(tex)) => this.imp().albumart.show(&tex),
                         Ok(None) => this.imp().albumart.clear(),
                         Err(e) => {

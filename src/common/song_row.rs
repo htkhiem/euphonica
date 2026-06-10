@@ -333,7 +333,7 @@ impl SongRow {
                 if let (Some(cache), Some(song)) = (this.imp().cache.get(), this.song()) {
                     let res = cache
                         .clone()
-                        .get_song_cover(song.get_info(), true, true)
+                        .get_song_cover(song.get_info(), true)
                         .await;
                     // Check again as row might have been bound to a different song
                     // while awaiting

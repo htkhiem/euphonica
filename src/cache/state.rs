@@ -6,11 +6,6 @@ use gtk::{gdk, glib};
 use std::sync::OnceLock;
 
 mod imp {
-    // use glib::{
-    //     ParamSpec,
-    //     ParamSpecBoolean,
-    //     ParamSpecEnum
-    // };
     use super::*;
 
     #[derive(Debug, Default)]
@@ -23,36 +18,6 @@ mod imp {
     }
 
     impl ObjectImpl for CacheState {
-        // fn properties() -> &'static [ParamSpec] {
-        //     static PROPERTIES: Lazy<Vec<ParamSpec>> = Lazy::new(|| {
-        //         vec![
-        //             ParamSpecBoolean::builder("busy").read_only().build(),
-        //             ParamSpecEnum::builder::<ConnectionState>("connection-state").read_only().build()
-        //         ]
-        //     });
-        //     PROPERTIES.as_ref()
-        // }
-
-        // fn property(&self, _id: usize, pspec: &ParamSpec) -> glib::Value {
-        //     let obj = self.obj();
-        //     match pspec.name() {
-        //         "connection-state" => obj.get_connection_state().to_value(),
-        //         "busy" => obj.is_busy().to_value(),
-        //         _ => unimplemented!(),
-        //     }
-        // }
-
-        // fn set_property(&self, _id: usize, value: &glib::Value, pspec: &glib::ParamSpec) {
-        //     let obj = self.obj();
-        //     match pspec.name() {
-        //         "connection-state" => {
-        //             let state = value.get().expect("Error in CacheState::set_property");
-        //             obj.set_connection_state(state);
-        //         },
-        //         _ => unimplemented!()
-        //     }
-        // }
-
         fn signals() -> &'static [Signal] {
             static SIGNALS: OnceLock<Vec<Signal>> = OnceLock::new();
             SIGNALS.get_or_init(|| {

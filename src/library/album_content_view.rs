@@ -804,7 +804,7 @@ impl AlbumContentView {
                     self.show_cache_error("Couldn't clear cover", e);
                 }
             }
-            match cache.get_album_cover(info, false, true).await {
+            match cache.get_album_cover(info, false).await {
                 Ok(Some(tex)) => {
                     self.update_cover(tex);
                 }

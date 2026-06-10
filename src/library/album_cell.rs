@@ -15,10 +15,9 @@ use std::{
 };
 
 use crate::{
-    cache::{
-        Cache, CacheState,
-        placeholders::{EMPTY_ALBUM_STRING, EMPTY_ARTIST_STRING},
-    },
+    window::EuphonicaWindow,
+    cache::{BACKLOG_THRESHOLD, Cache, CacheState},
+    cache::placeholders::{EMPTY_ALBUM_STRING, EMPTY_ARTIST_STRING},
     common::{
         Album, PictureStack, Rating,
         marquee::{Marquee, MarqueeWrapMode},
@@ -28,7 +27,7 @@ use crate::{
 
 // As soon as a cell comes within this close of the render area, treat it as
 // visible & load album art early to avoid showing loading spinners.
-static WING_DEPTH: f64 = 384.0;
+static WING_DEPTH: f64 = 512.0;
 
 mod imp {
     use super::*;
@@ -58,15 +57,24 @@ mod imp {
         pub cover_signal_ids: RefCell<Option<(SignalHandlerId, SignalHandlerId)>>,
         pub cache: OnceCell<Rc<Cache>>,
         pub hires: Cell<bool>,
-        // Stored GridView for visibility checks in bind() and the tick callback.
+        // Stored GridView for visibility checks in bind() and the signal handler.
         pub viewport: OnceCell<WeakRef<gtk::GridView>>,
-        pub tick_callback: RefCell<Option<gtk::TickCallbackId>>,
+        // Weak reference to the window for connecting to the check-visible signal.
+        pub window: WeakRef<EuphonicaWindow>,
+        // Signal handler ID for disconnecting from the window's check-visible signal.
+        pub check_visible_handler: RefCell<Option<SignalHandlerId>>,
         // Tracks whether the cell is currently within the viewport, used
         // to detect visibility transitions (entering/exiting the viewport).
         pub should_load_texture: Cell<bool>,
         // Use this to block loading images immediately upon construction when hires
         // is set to true (as that would trigger the setter before a viewport is set)
         pub obj_ready: Cell<bool>,
+        // Set to true when the bind-time visibility check was skipped due to 
+        // backpressure.
+        pub deferred: Cell<bool>,
+        // Set to true when hires was deferred due to high backlog; triggers an
+        // upgrade to hires once the backlog drops below the threshold.
+        pub deferred_hires: Cell<bool>,
     }
 
     // The central trait for subclassing a GObject
@@ -92,8 +100,8 @@ mod imp {
                 child.unparent();
             }
 
-            if let Some(tick_callback) = self.tick_callback.take() {
-                tick_callback.remove();
+            if let (Some(handler), Some(window)) = (self.check_visible_handler.take(), self.window.upgrade()) {
+                window.disconnect(handler);
             }
 
             if let Some((update_id, clear_id)) = self.cover_signal_ids.take() {
@@ -256,6 +264,7 @@ impl AlbumCell {
         item: &gtk::ListItem,
         cache: Rc<Cache>,
         wrap_mode: Option<MarqueeWrapMode>,
+        window: Option<crate::window::EuphonicaWindow>,
         viewport: Option<gtk::GridView>,
     ) -> Self {
         let res: Self = Object::builder().build();
@@ -384,34 +393,50 @@ impl AlbumCell {
             let weak_vp = WeakRef::new();
             weak_vp.set(Some(&vp));
             let _ = res.imp().viewport.set(weak_vp);
-            let _ = res.imp().tick_callback.replace(Some(res.add_tick_callback(
-                move |this, _frameclock| {
-                    let imp = this.imp();
-                    let is_visible = this.should_load_texture();
-                    let was_visible = imp.should_load_texture.replace(is_visible);
+        }
 
-                    if was_visible != is_visible {
+        // Store weak reference to the window for signal connection.
+        res.imp().window.set(window.as_ref());
+
+        // Connect to the window's check-visible signal for visibility checks.
+        if let Some(window) = window {
+            let handler = window.connect_closure(
+                "check-visible",
+                false,
+                closure_local!(
+                    #[weak(rename_to = this)]
+                    res,
+                    move |_: &EuphonicaWindow| {
+                        let imp = this.imp();
+                        let is_visible = this.should_load_texture();
+                        let was_visible = imp.should_load_texture.replace(is_visible);
+
                         if is_visible {
-                            // println!("AlbumCell is now visible");
-                            if imp.album.upgrade().is_some() {
-                                glib::idle_add_local_once(clone!(
-                                    #[weak]
-                                    this,
-                                    move || {
-                                        this.update_cover();
-                                    }
-                                ));
+                            // Also go through this if visibility status didn't change, 
+                            // but album art load hasn't been attempted yet.
+                            if was_visible != is_visible || imp.deferred.get() {
+                                imp.deferred.set(false);
+                                if imp.album.upgrade().is_some() {
+                                    glib::idle_add_local_once(clone!(
+                                        #[weak]
+                                        this,
+                                        move || {
+                                            this.update_cover(true);
+                                        }
+                                    ));
+                                }
+                            } else if imp.deferred_hires.get() {
+                                this.try_upgrade_hires();
                             }
-                        } else {
-                            // println!("AlbumCell scrolled out of view");
+                        } else if was_visible != is_visible {
                             imp.cover.clear();
                         }
                     }
-
-                    glib::ControlFlow::Continue
-                },
-            )));
+                ),
+            );
+            res.imp().check_visible_handler.replace(Some(handler));
         }
+
         res.imp().obj_ready.set(true);
 
         res
@@ -421,8 +446,24 @@ impl AlbumCell {
         self.imp().album.upgrade()
     }
 
-    fn update_cover(&self) {
-        self.imp().cover.show_spinner();
+  fn update_cover(&self, show_spinner: bool) {
+        let imp = self.imp();
+
+        // If hires is requested, check backlog to decide resolution.
+        if imp.hires.get() {
+            let backlog = imp.cache.get().unwrap().backlog();
+            if backlog >= *BACKLOG_THRESHOLD {
+                // Too many pending tasks; defer hires and load thumbnail instead.
+                imp.deferred_hires.set(true);
+            }
+        } else {
+            imp.deferred_hires.set(false);
+        }
+
+        let thumbnail_for_fetch = !imp.hires.get() || imp.deferred_hires.get();
+        if show_spinner {
+            imp.cover.show_spinner();
+        }
         glib::spawn_future_local(clone!(
             #[weak(rename_to = this)]
             self,
@@ -434,7 +475,7 @@ impl AlbumCell {
                         .get()
                         .unwrap()
                         .clone()
-                        .get_album_cover(album.get_info(), !this.imp().hires.get(), true)
+                        .get_album_cover(album.get_info(), thumbnail_for_fetch)
                         .await;
                     // Check again as cell might have been bound to a different album
                     // while awaiting
@@ -450,16 +491,24 @@ impl AlbumCell {
                             }
                             Err(e) => {
                                 this.imp().cover.clear();
-                                dbg!(e);
+                                eprintln!("Failed to read cover for album `{}` (URI `{}`):\n{:?}", album.get_title(), album.get_folder_uri(), e);
                             }
                         }
                     }
-                    // else {
-                    //     println!("AlbumCell now bound to a different album, ignoring texture");
-                    // }
                 }
             }
         ));
+    }
+
+    fn try_upgrade_hires(&self) {
+        let imp = self.imp();
+        if imp.deferred_hires.get() && self.should_load_texture() {
+            let backlog = imp.cache.get().unwrap().backlog();
+            if backlog < *BACKLOG_THRESHOLD {
+                imp.deferred_hires.set(false);
+                self.update_cover(false);
+            }
+        }
     }
 
     fn should_load_texture(&self) -> bool {
@@ -501,15 +550,27 @@ impl AlbumCell {
     }
 
     pub fn bind(&self, album: &Album) {
-        self.imp().album.set(Some(album));
-        if self.should_load_texture() {
-            self.update_cover();
+        let imp = self.imp();
+        imp.album.set(Some(album));
+        imp.deferred.set(false);
+        imp.deferred_hires.set(false);
+        // Only check this eagerly if backpressure is low
+        let backlog = imp.cache.get().unwrap().backlog();
+        if backlog < *BACKLOG_THRESHOLD {
+            if self.should_load_texture() {
+                self.update_cover(true);
+            }
+        } else {
+            imp.deferred.set(true);
         }
+        
     }
 
     pub fn unbind(&self) {
         self.imp().cover.clear();
         self.imp().album.set(None);
+        self.imp().deferred.set(false);
+        self.imp().deferred_hires.set(false);
     }
 
     pub fn image_size(&self) -> i32 {
@@ -532,8 +593,13 @@ impl AlbumCell {
         if old != new {
             self.imp().cover.set_is_thumbnail(!new);
             self.notify("hires");
-            if self.should_load_texture() {
-                self.update_cover();
+            if new {
+                self.imp().deferred_hires.set(false);
+          if self.should_load_texture() {
+                    self.update_cover(true);
+                }
+            } else {
+                self.imp().deferred_hires.set(false);
             }
         }
     }

@@ -6,7 +6,7 @@ use gtk::{
     glib::{self},
     glib::{Properties, SignalHandlerId, WeakRef, clone, subclass::Signal},
 };
-use std::cell::RefCell;
+use std::cell::{OnceCell, RefCell};
 use std::{cell::Cell, cmp::Ordering, rc::Rc, sync::OnceLock};
 
 use super::{AlbumCell, AlbumContentView, Library};
@@ -73,6 +73,7 @@ mod imp {
         pub collapsed: Cell<bool>,
 
         pub initializing: Cell<bool>,
+        pub window: OnceCell<WeakRef<EuphonicaWindow>>,
     }
 
     #[glib::object_subclass]
@@ -438,7 +439,13 @@ impl AlbumView {
         window: &EuphonicaWindow,
     ) {
         self.imp().library.set(Some(library));
-        self.setup_gridview(cache.clone());
+        let weak = WeakRef::new();
+        weak.set(Some(window));
+        self.imp()
+            .window
+            .set(weak)
+            .expect("AlbumView window already set");
+        self.setup_gridview(cache.clone(), window);
 
         let content_view = self.imp().content_view.get();
         content_view.setup(library, client_state, cache, window);
@@ -468,7 +475,7 @@ impl AlbumView {
         }
     }
 
-    fn setup_gridview(&self, cache: Rc<Cache>) {
+    fn setup_gridview(&self, cache: Rc<Cache>, window: &EuphonicaWindow) {
         let settings = settings_manager().child("ui");
         // Setup search bar
         let album_list = self.imp().library.upgrade().unwrap().albums();
@@ -508,11 +515,13 @@ impl AlbumView {
             cache,
             #[weak]
             grid_view,
+            #[weak]
+            window,
             move |_, list_item| {
                 let item = list_item
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
-                let album_cell = AlbumCell::new(item, cache, None, Some(grid_view));
+                let album_cell = AlbumCell::new(item, cache, None, Some(window.clone()), Some(grid_view));
                 item.set_child(Some(&album_cell));
             }
         ));
@@ -583,6 +592,7 @@ impl LazyInit for AlbumView {
                 let this = self.clone();
                 stack.show_spinner();
                 glib::spawn_future_local(async move {
+                    // Just get basic info first to reduce spinner time
                     let _ = library.init_albums().await;
                     if library.albums().n_items() > 0 {
                         stack.show_content();
@@ -590,6 +600,8 @@ impl LazyInit for AlbumView {
                         stack.show_placeholder();
                     }
                     this.imp().initializing.set(false);
+                    // Now populate the stickers
+                    let _ = library.init_album_stickers().await;
                 });
             }
         }

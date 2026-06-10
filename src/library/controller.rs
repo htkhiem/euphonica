@@ -618,17 +618,40 @@ impl Library {
         Ok(())
     }
 
+    /// Fetch basic info for all albums to display them in a grid.
+    /// Note: this function no longer fetches stickers s.t. we can return the grid to the user earlier.
     pub async fn init_albums(&self) -> ClientResult<()> {
         if !self.imp().albums_initialized.get() {
             self.imp().albums_initialized.set(true);
             let model = self.imp().albums.clone();
             model.remove_all();
-
             self.client()
                 .get_albums_by_query(Query::new(), &mut |album| {
                     model.append(&album);
                 })
                 .await?;
+        }
+        Ok(())
+    }
+
+    /// Fetch known album stickers for those discovered by init_albums.
+    pub async fn init_album_stickers(&self) -> ClientResult<()> {
+        if self.imp().albums_initialized.get() {
+            for album in self.imp().albums.iter::<Album>() {
+                // Right now the only sticker we use is album rating
+                let album = album.unwrap();
+                if let Ok(rating_str) = self.client().get_sticker("album", album.get_title().into(), "rating".into()).await {
+                    {
+                        let mut stickers = album.get_stickers().borrow_mut();
+                        stickers.set_rating(&rating_str);
+                        // End borrow
+                    }
+                    album.notify_stickers_changed();
+                }
+            }
+        }
+        else {
+            eprintln!("WARNING: init_album_stickers called before init_albums. This is a no-op.");
         }
         Ok(())
     }
