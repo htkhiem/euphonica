@@ -80,14 +80,13 @@ mod imp {
                 let (w, h) = (self.obj().width(), self.obj().height());
                 let bounds = graphene::Rect::new(0.0, 0.0, w as f32, h as f32);
                 let (hadj, vadj) = (inner.hadjustment(), inner.vadjustment());
-                let top_left = graphene::Point::new(0.0, 0.0);
-                let top_right = graphene::Point::new(w as f32, 0.0);
-                let bottom_left = graphene::Point::new(0.0, h as f32);
-                snapshot.push_mask(gsk::MaskMode::Alpha);
+                let start_point = graphene::Point::new(0.0, 0.0);
+                let end_point: graphene::Point;
                 // Construct in one pass the gradient for the whole axis. 
                 // This avoid having to stack two gradients.
                 let mut stops = Vec::with_capacity(4);
-                if self.vertical.get() {                    
+                if self.vertical.get() {
+                    end_point = graphene::Point::new(w as f32, 0.0);                    
                     if vadj.value() > 0.0 {
                         // Not at top => fade top out
                         stops.push(
@@ -113,14 +112,15 @@ mod imp {
                             gsk::ColorStop::new(1.0, gdk::RGBA::BLACK.with_alpha(0.0))
                         );
                     }
+                    
 
-                    snapshot.append_linear_gradient(
-                        &bounds,
-                        &top_left,
-                        &bottom_left,
-                        &stops,
-                    );
+                    if !stops.is_empty() {
+                        
+                    }
+
+                    
                 } else {
+                    end_point = graphene::Point::new(0.0, h as f32);
                     if hadj.value() > 0.0 {
                         // Not at top => fade top out
                         stops.push(
@@ -146,19 +146,23 @@ mod imp {
                             gsk::ColorStop::new(1.0, gdk::RGBA::BLACK.with_alpha(0.0))
                         );
                     }
-
+                }
+                if !stops.is_empty() {
+                    snapshot.push_mask(gsk::MaskMode::Alpha);
                     snapshot.append_linear_gradient(
                         &bounds,
-                        &top_left,
-                        &top_right,
+                        &start_point,
+                        &end_point,
                         &stops,
                     );
+                    // Write mask
+                    snapshot.pop();
                 }
-                // Write mask
-                snapshot.pop();
                 self.obj().snapshot_child(inner, snapshot);
-                // Blend
-                snapshot.pop();
+                if !stops.is_empty() {
+                    // Blend
+                    snapshot.pop();
+                }
             }
         }
     }
