@@ -204,48 +204,53 @@
                                       </object>
                                     </property>
                                     <property name="content">
-                                      <object class="GtkScrolledWindow" id="wiki_box">
-                                        <property name="hscrollbar-policy">never</property>
-                                        <property name="vexpand">true</property>
-                                        <property name="child">
-                                          <object class="GtkBox">
-                                            <property name="orientation">1</property>
-                                            <property name="valign">start</property>
-                                            <child>
-                                              <object class="GtkLabel" id="wiki_text">
-                                                <style>
-                                                  <class name="body"/>
-                                                </style>
-                                                <property name="wrap">true</property>
-                                                <property name="justify">fill</property>
-                                              </object>
-                                            </child>
-                                            <child>
-                                              <object class="GtkLinkButton" id="wiki_link">
-                                                <style>
-                                                  <class name="padding-0"/>
-                                                </style>
-                                                <property name="halign">start</property>
+                                      <object class="EuphonicaFadingScrolledWindow" id="wiki_fader">
+                                        <property name="vertical">true</property>
+                                        <property name="inner">
+                                          <object class="GtkScrolledWindow" id="wiki_box">
+                                            <property name="hscrollbar-policy">never</property>
+                                            <property name="vexpand">true</property>
+                                            <property name="child">
+                                              <object class="GtkBox">
+                                                <property name="orientation">1</property>
+                                                <property name="valign">start</property>
                                                 <child>
-                                                  <object class="GtkLabel">
+                                                  <object class="GtkLabel" id="wiki_text">
+                                                    <style>
+                                                      <class name="body"/>
+                                                    </style>
+                                                    <property name="wrap">true</property>
+                                                    <property name="justify">fill</property>
+                                                  </object>
+                                                </child>
+                                                <child>
+                                                  <object class="GtkLinkButton" id="wiki_link">
+                                                    <style>
+                                                      <class name="padding-0"/>
+                                                    </style>
+                                                    <property name="halign">start</property>
+                                                    <child>
+                                                      <object class="GtkLabel">
+                                                        <style>
+                                                          <class name="caption"/>
+                                                        </style>
+                                                        <property name="label" translatable="true">Read more</property>
+                                                      </object>
+                                                    </child>
+                                                  </object>
+                                                </child>
+                                                <child>
+                                                  <object class="GtkLabel" id="wiki_attrib">
+                                                    <property name="wrap">true</property>
+                                                    <property name="halign">start</property>
                                                     <style>
                                                       <class name="caption"/>
+                                                      <class name="dim-label"/>
                                                     </style>
-                                                    <property name="label" translatable="true">Read more</property>
                                                   </object>
                                                 </child>
                                               </object>
-                                            </child>
-                                            <child>
-                                              <object class="GtkLabel" id="wiki_attrib">
-                                                <property name="wrap">true</property>
-                                                <property name="halign">start</property>
-                                                <style>
-                                                  <class name="caption"/>
-                                                  <class name="dim-label"/>
-                                                </style>
-                                              </object>
-                                            </child>
+                                            </property>
                                           </object>
                                         </property>
                                       </object>

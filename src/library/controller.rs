@@ -703,6 +703,7 @@ impl Library {
                     .into_iter()
                     .filter(|s| s.artists.iter().any(|a| a.get_comp_id() == comp_id))
                     .collect();
+                println!("Got {} songs", filtered.len());
                 for song in filtered.iter() {
                     if let Some(album) = song.album.as_ref()
                         && visited_albums.insert(album.get_comp_id().to_owned())

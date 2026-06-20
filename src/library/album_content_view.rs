@@ -22,6 +22,7 @@ use std::{
     rc::Rc,
 };
 use time::{Date, format_description};
+use crate::common::FadingScrolledWindow;
 
 mod imp {
     use super::*;
@@ -48,6 +49,8 @@ mod imp {
         #[template_child]
         pub rating_readout: TemplateChild<gtk::Label>,
 
+        #[template_child]
+        pub wiki_fader: TemplateChild<FadingScrolledWindow>,
         #[template_child]
         pub wiki_text: TemplateChild<gtk::Label>,
         #[template_child]
@@ -765,19 +768,6 @@ impl AlbumContentView {
         // Save binding
         bindings.push(title_binding);
 
-        // Populate artist tags
-        album
-            .get_artists()
-            .iter()
-            .map(|info| {
-                ArtistTag::new(
-                    &Artist::from(info.clone()),
-                    self.imp().cache.get().unwrap().clone(),
-                    &self.imp().window.upgrade().unwrap(),
-                )
-            })
-            .for_each(|tag| artists_box.append(&tag));
-
         let genres = album.get_genres();
         if !genres.is_empty() {
             let genres_stack = self.imp().genres_stack.get();
@@ -850,6 +840,23 @@ impl AlbumContentView {
                     Ok(()) => {
                         if song_list.n_items() > 0 {
                             stack.show_content();
+                            // Only now can we populate the artist tags, as the initial albuminfo
+                            // is stripped of artist MBID for album grid performance
+                            song_list
+                                .item(0)
+                                .unwrap()
+                                .downcast_ref::<Song>()
+                                .unwrap()
+                                .get_artists()
+                                .iter()
+                                .map(|info| {
+                                    ArtistTag::new(
+                                        &Artist::from(info.clone()),
+                                        this.imp().cache.get().unwrap().clone(),
+                                        &this.imp().window.upgrade().unwrap(),
+                                    )
+                                })
+                                .for_each(|tag| artists_box.append(&tag));
                         } else {
                             stack.show_placeholder();
                         }
