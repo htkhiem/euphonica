@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <template class="EuphonicaTag" parent="GtkButton">
+    <!-- The below assumes that a LibAdwaita button is 34px tall. -->
+    <style>
+      <class name="plain-tag"/>
+    </style>
+    <child>
+      <object class="GtkBox">
+        <style>
+          <class name="plain-tag"/>
+        </style>
+        <child>
+          <object class="GtkLabel" id="name">
+            <property name="ellipsize">3</property>
+          </object>
+        </child>
+        <child>
+          <object class="GtkImage" id="remove_icon">
+            <property name="icon-name">cross-small-symbolic</property>
+            <property name="visible">false</property>
+          </object>
+        </child>
+      </object>
+    </child>
+  </template>
+</interface>

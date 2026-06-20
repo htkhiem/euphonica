@@ -4,6 +4,7 @@ pub const ALBUMSORT: &str = "albumsort";
 pub const ALBUMARTIST: &str = "albumartist";
 pub const ARTISTSORT: &str = "artistsort";
 pub const ALBUMARTISTSORT: &str = "albumartistsort";
+pub const GENRE: &str = "genre";
 pub const FORMAT: &str = "format";
 pub const RELEASE_DATE: &str = "originaldate";
 pub const TRACK: &str = "track";

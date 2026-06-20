@@ -4,6 +4,7 @@ mod album_cell;
 mod album_content_view;
 mod album_view;
 mod artist_tag;
+mod tag;
 
 mod artist_cell;
 mod artist_content_view;

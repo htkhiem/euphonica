@@ -5,7 +5,7 @@ use crate::{
     common::{
         Album, Artist, ContentStack, ContentView, ImageStack, Rating, RowAddButtons, Song, SongRow,
     },
-    library::add_to_playlist::AddToPlaylistButton,
+    library::{add_to_playlist::AddToPlaylistButton, tag::Tag},
     utils::{format_secs_as_duration, tokio_runtime},
     window::EuphonicaWindow,
 };
@@ -31,16 +31,18 @@ mod imp {
     #[template(resource = "/io/github/htkhiem/Euphonica/gtk/library/album-content-view.ui")]
     pub struct AlbumContentView {
         #[template_child]
-        pub inner: TemplateChild<ContentView>,
-        #[template_child]
         pub cover: TemplateChild<ImageStack>,
 
         #[template_child]
-        pub infobox_spinner: TemplateChild<gtk::Stack>,
+        pub wiki_stack: TemplateChild<ContentStack>,
         #[template_child]
         pub title: TemplateChild<gtk::Label>,
         #[template_child]
         pub artists_box: TemplateChild<adw::WrapBox>,
+        #[template_child]
+        pub genres_stack: TemplateChild<gtk::Stack>,
+        #[template_child]
+        pub genres_box: TemplateChild<adw::WrapBox>,
         #[template_child]
         pub rating: TemplateChild<Rating>,
         #[template_child]
@@ -78,14 +80,12 @@ mod imp {
         #[template_child]
         pub content_stack: TemplateChild<ContentStack>,
         #[template_child]
-        pub content: TemplateChild<gtk::ListView>,
+        pub content: TemplateChild<gtk::ListBox>,
 
         #[derivative(Default(value = "gio::ListStore::new::<Song>()"))]
         pub song_list: gio::ListStore,
         #[derivative(Default(value = "gtk::MultiSelection::new(Option::<gio::ListStore>::None)"))]
         pub sel_model: gtk::MultiSelection,
-        #[derivative(Default(value = "gio::ListStore::new::<ArtistTag>()"))]
-        pub artist_tags: gio::ListStore,
         pub library: WeakRef<Library>,
         pub album: RefCell<Option<Album>>,
         pub window: WeakRef<EuphonicaWindow>,
@@ -136,8 +136,6 @@ mod imp {
             self.parent_constructed();
 
             self.sel_model.set_model(Some(&self.song_list.clone()));
-            self.content.set_model(Some(&self.sel_model));
-
             // Change button labels depending on selection state
             self.sel_model.connect_selection_changed(clone!(
                 #[weak(rename_to = this)]
@@ -418,32 +416,16 @@ impl AlbumContentView {
         self.imp().album.borrow().as_ref().cloned()
     }
 
-    #[inline]
-    fn hide_wiki(&self) {
-        self.imp().infobox_spinner.set_visible(false);
-        self.imp().wiki_text.set_visible(false);
-        self.imp().wiki_text.set_label("");
-        self.imp().wiki_attrib.set_visible(false);
-        self.imp().wiki_attrib.set_label("");
-        self.imp().wiki_link.set_visible(false);
-        self.imp().wiki_link.set_uri("");
-    }
-
     async fn update_meta(&self, overwrite: bool) {
         if let Some(album) = self.album() {
-            let stack = self.imp().infobox_spinner.get();
             // If the current album is the "untitled" one (i.e. for songs without an album tag),
-            // don't attempt to update metadata.
+            // don't attempt to update metadata. 
             if album.get_title().is_empty() {
-                stack.set_visible(false);
+                self.imp().wiki_stack.show_placeholder();
+                // Additionally block edit
+                // self.imp().wiki_stack.set_sensitive(false);
             } else {
-                stack.set_visible(true);
-                if stack
-                    .visible_child_name()
-                    .is_none_or(|name| name != "spinner")
-                {
-                    stack.set_visible_child_name("spinner");
-                }
+                self.imp().wiki_stack.show_spinner();
                 let cache = self.imp().cache.get().unwrap().clone();
                 let wiki_text = self.imp().wiki_text.get();
                 let wiki_link = self.imp().wiki_link.get();
@@ -456,11 +438,10 @@ impl AlbumContentView {
                         self.imp().window.upgrade().as_ref(),
                     )
                     .await;
-                stack.set_visible_child_name("content");
                 match res {
                     Ok(Some(meta)) => {
                         if let Some(wiki) = meta.wiki {
-                            wiki_text.set_visible(true);
+                            self.imp().wiki_stack.show_content();
                             wiki_text.set_label(&wiki.content);
                             if let Some(url) = wiki.url.as_ref() {
                                 wiki_link.set_visible(true);
@@ -471,18 +452,16 @@ impl AlbumContentView {
                             }
                             wiki_attrib.set_visible(true);
                             wiki_attrib.set_label(&wiki.attribution);
-                            if stack.visible_child_name().unwrap() != "content" {
-                                stack.set_visible_child_name("content");
-                            }
+                            self.imp().wiki_stack.show_content();
                         } else {
-                            self.hide_wiki();
+                            self.imp().wiki_stack.show_placeholder();
                         }
                     }
                     Ok(None) => {
-                        self.hide_wiki();
+                        self.imp().wiki_stack.show_placeholder();
                     }
                     Err(e) => {
-                        self.hide_wiki();
+                        self.imp().wiki_stack.show_placeholder();
                         dbg!(e);
                     }
                 }
@@ -671,108 +650,52 @@ impl AlbumContentView {
             }
         ));
 
-        // Set up factory
-        let factory = SignalListItemFactory::new();
+        // Set up ListBox
+        self.imp().content.bind_model(
+            Some(&self.imp().sel_model),
+            clone!(
+                #[weak]
+                library,
+                #[upgrade_or]
+                SongRow::new(None, None).into(),
+                move |song_obj| {
+                    let song = song_obj.downcast_ref::<Song>().expect("Must be a common::Song");
+                    let row = SongRow::new(None, None);
+                    row.set_index_visible(true);
+                    row.set_index(&song.get_track().to_string());
+                    row.set_thumbnail_visible(false);
 
-        // For now don't show album arts as most of the time songs in the same
-        // album will have the same embedded art anyway.
-        factory.connect_setup(clone!(
-            #[weak]
-            library,
-            #[upgrade_or]
-            (),
-            move |_, list_item| {
-                let item = list_item
-                    .downcast_ref::<ListItem>()
-                    .expect("Needs to be ListItem");
-                let row = SongRow::new(None, None);
-                row.set_index_visible(true);
-                row.set_thumbnail_visible(false);
-                item.property_expression("item")
-                    .chain_property::<Song>("track")
-                    .bind(&row, "index", gtk::Widget::NONE);
+                    row.set_name(&song.get_name());
+                    row.set_first_attrib_icon_name(Some("music-artist-symbolic"));
+                    row.set_first_attrib_text(song.get_artist_tag().as_deref());
 
-                item.property_expression("item")
-                    .chain_property::<Song>("name")
-                    .bind(&row, "name", gtk::Widget::NONE);
+                    row.set_second_attrib_icon_name(Some("hourglass-symbolic"));
+                    row.set_second_attrib_text(Some(&format_secs_as_duration(
+                        song.get_duration() as f64
+                    )));
 
-                row.set_first_attrib_icon_name(Some("music-artist-symbolic"));
-                item.property_expression("item")
-                    .chain_property::<Song>("artist")
-                    .bind(&row, "first-attrib-text", gtk::Widget::NONE);
-
-                row.set_second_attrib_icon_name(Some("hourglass-symbolic"));
-                item.property_expression("item")
-                    .chain_property::<Song>("duration")
-                    .chain_closure::<String>(closure_local!(|_: Option<glib::Object>, dur: u64| {
-                        format_secs_as_duration(dur as f64)
-                    }))
-                    .bind(&row, "second-attrib-text", gtk::Widget::NONE);
-
-                item.property_expression("item")
-                    .chain_property::<Song>("quality-grade")
-                    .bind(&row, "quality-grade", gtk::Widget::NONE);
-                let end_widget = RowAddButtons::new(&library);
-                row.set_end_widget(Some(&end_widget.into()));
-                item.set_child(Some(&row));
-            }
-        ));
-        // Tell factory how to bind `AlbumSongRow` to one of our Album GObjects
-        factory.connect_bind(move |_, list_item| {
-            // Get `Song` from `ListItem` (that is, the data side)
-            let item: Song = list_item
-                .downcast_ref::<ListItem>()
-                .expect("Needs to be ListItem")
-                .item()
-                .and_downcast::<Song>()
-                .expect("The item has to be a common::Song.");
-
-            // Get `SongRow` from `ListItem` (the UI widget)
-            let child: SongRow = list_item
-                .downcast_ref::<ListItem>()
-                .expect("Needs to be ListItem")
-                .child()
-                .and_downcast::<SongRow>()
-                .expect("The child has to be an `SongRow`.");
-
-            child
-                .end_widget()
-                .and_downcast::<RowAddButtons>()
-                .unwrap()
-                .set_song(Some(&item));
-        });
-
-        // When row goes out of sight, unbind from item to allow reuse with another.
-        factory.connect_unbind(move |_, list_item| {
-            // Get `AlbumSongRow` from `ListItem` (the UI widget)
-            let child: SongRow = list_item
-                .downcast_ref::<ListItem>()
-                .expect("Needs to be ListItem")
-                .child()
-                .and_downcast::<SongRow>()
-                .expect("The child has to be an `SongRow`.");
-            child
-                .end_widget()
-                .and_downcast::<RowAddButtons>()
-                .unwrap()
-                .set_song(None);
-        });
-
-        // Set the factory of the list view
-        self.imp().content.set_factory(Some(&factory));
+                    row.set_quality_grade(song.get_quality_grade());
+                    let end_widget = RowAddButtons::new(&library);
+                    end_widget.set_song(Some(song));
+                    row.set_end_widget(Some(&end_widget.into()));
+                    row.into()
+                }
+            ),
+        );
 
         // Setup click action
-        self.imp().content.connect_activate(clone!(
+        self.imp().content.connect_row_activated(clone!(
             #[weak(rename_to = this)]
             self,
-            move |_, position| {
+            move |_, row| {
+                let idx = row.index() as u32;
                 glib::spawn_future_local(clone!(
                     #[weak]
                     this,
                     async move {
                         if let (Some(album), Some(library)) = (this.album(), this.get_library())
                             && let Err(e) = library
-                                .queue_album(album.clone(), true, true, Some(position))
+                                .queue_album(album.clone(), true, true, Some(idx))
                                 .await
                         {
                             dbg!(e);
@@ -823,6 +746,7 @@ impl AlbumContentView {
         self.imp().on_selection_changed();
         let title_label = self.imp().title.get();
         let artists_box = self.imp().artists_box.get();
+        let genres_box = self.imp().genres_box.get();
         let rating = self.imp().rating.get();
         let release_date_label = self.imp().release_date.get();
         let mut bindings = self.imp().bindings.borrow_mut();
@@ -842,7 +766,7 @@ impl AlbumContentView {
         bindings.push(title_binding);
 
         // Populate artist tags
-        let artist_tags = album
+        album
             .get_artists()
             .iter()
             .map(|info| {
@@ -852,10 +776,20 @@ impl AlbumContentView {
                     &self.imp().window.upgrade().unwrap(),
                 )
             })
-            .collect::<Vec<ArtistTag>>();
-        self.imp().artist_tags.extend_from_slice(&artist_tags);
-        for tag in artist_tags {
-            artists_box.append(&tag);
+            .for_each(|tag| artists_box.append(&tag));
+
+        let genres = album.get_genres();
+        if !genres.is_empty() {
+            let genres_stack = self.imp().genres_stack.get();
+            album
+                .get_genres()
+                .iter()
+                .map(|genre| Tag::new(&genre, false, &genres_box))
+                .for_each(|tag| genres_box.append(&tag));
+
+            if genres_stack.visible_child_name().is_some_and(|name| name == "empty") {
+                genres_stack.set_visible_child_name("content");
+            }
         }
 
         let rating_binding = album
@@ -947,11 +881,13 @@ impl AlbumContentView {
             binding.unbind();
         }
 
-        // Clear artists wrapbox. TODO: when adw 1.8 drops as stable please use remove_all() instead.
-        for tag in self.imp().artist_tags.iter::<gtk::Widget>() {
-            self.imp().artists_box.remove(&tag.unwrap());
+        // We're now on libadwaita 1.8 so we can use this
+        self.imp().artists_box.remove_all();
+        self.imp().genres_box.remove_all();
+        let genres_stack = self.imp().genres_stack.get();
+        if genres_stack.visible_child_name().is_some_and(|name| name == "content") {
+            genres_stack.set_visible_child_name("empty");
         }
-        self.imp().artist_tags.remove_all();
 
         if let Some(id) = self.imp().cover_signal_id.take()
             && let Some(cache) = self.imp().cache.get()
@@ -965,10 +901,6 @@ impl AlbumContentView {
         // Unset metadata widgets
         self.imp().song_list.remove_all();
         self.imp().content_stack.show_placeholder();
-        let infobox_spinner = self.imp().infobox_spinner.get();
-        if infobox_spinner.visible_child_name().unwrap() != "spinner" {
-            infobox_spinner.set_visible_child_name("spinner");
-        }
-        infobox_spinner.set_visible(true);
+        self.imp().wiki_stack.show_spinner();
     }
 }
