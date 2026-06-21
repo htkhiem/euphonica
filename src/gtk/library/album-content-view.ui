@@ -152,6 +152,7 @@
                                         </child>
                                         <child>
                                           <object class="GtkButton" id="add_wiki_btn">
+                                            <property name="action-name">album-content-view.edit-wiki</property>
                                             <style>
                                               <class name="circular"/>
                                             </style>
@@ -162,7 +163,6 @@
                                       </object>
                                     </property>
                                     <property name="content">
-
                                       <object class="EuphonicaFadingScrolledWindow" id="wiki_fader">
                                         <property name="vertical">true</property>
                                         <property name="vexpand">true</property>
@@ -219,6 +219,68 @@
                                             </property>
                                           </object>
                                         </property>
+                                      </object>
+                                    </property>
+                                    <property name="edit">
+                                      <object class="GtkBox">
+                                        <property name="orientation">1</property>
+                                        <property name="spacing">6</property>
+                                        <child>
+                                          <object class="GtkFrame">
+                                            <child>
+                                              <object class="GtkScrolledWindow">
+                                              <property name="hexpand">true</property>
+                                              <property name="vexpand">true</property>
+                                              <child>
+                                                <object class="GtkTextView" id="wiki_desc_field">
+                                                  <property name="wrap-mode">2</property>
+                                                </object>
+                                              </child>
+                                            </object>
+                                            </child>
+                                          </object>
+                                        </child>
+                                        <child>
+                                          <object class="GtkBox">
+                                            <property name="orientation">1</property>
+                                            <style>
+                                              <class name="linked"/>
+                                            </style>
+                                            <child>
+                                              <object class="GtkEntry" id="wiki_link_field">
+                                                <property name="placeholder-text" translatable="true">Optional external link</property>
+                                              </object>
+                                            </child>
+                                            <child>
+                                              <object class="GtkEntry" id="wiki_licence_field">
+                                                <property name="placeholder-text" translatable="true">Optional licencing info</property>
+                                              </object>
+                                            </child>
+                                          </object>
+                                        </child>
+                                        <child>
+                                          <object class="GtkCenterBox">
+                                            <property name="start-widget">
+                                              <object class="GtkButton" id="wiki_cancel">
+                                                <style>
+                                                  <class name="destructive-action"/>
+                                                </style>
+                                                <property name="label" translatable="true">Cancel</property>
+                                              </object>
+                                            </property>
+                                            <property name="end-widget">
+                                              <object class="GtkButton" id="wiki_save">
+                                                <style>
+                                                  <class name="suggested-action"/>
+                                                </style>
+                                                <property name="label" translatable="true">Save</property>
+                                              </object>
+                                            </property>
+                                          </object>
+                                        </child>
+
+                                      
+                                        
                                       </object>
                                     </property>
                                   </object>
@@ -732,6 +794,10 @@
       </object>
     </child>
     <menu id="edit_menu_model">
+      <item>
+        <attribute name="label" translatable="true">Edit wiki text</attribute>
+        <attribute name="action">album-content-view.edit-wiki</attribute>
+      </item>
       <item>
         <attribute name="label" translatable="true">Clear rating</attribute>
         <attribute name="action">album-content-view.clear-rating</attribute>

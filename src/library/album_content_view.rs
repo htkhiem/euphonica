@@ -50,6 +50,8 @@ mod imp {
         pub rating_readout: TemplateChild<gtk::Label>,
 
         #[template_child]
+        pub add_wiki_btn: TemplateChild<gtk::Button>,
+        #[template_child]
         pub wiki_fader: TemplateChild<FadingScrolledWindow>,
         #[template_child]
         pub wiki_text: TemplateChild<gtk::Label>,
@@ -57,6 +59,8 @@ mod imp {
         pub wiki_link: TemplateChild<gtk::LinkButton>,
         #[template_child]
         pub wiki_attrib: TemplateChild<gtk::Label>,
+        #[template_child]
+        pub wiki_desc_field: TemplateChild<gtk::TextView>,
 
         #[template_child]
         pub release_date: TemplateChild<gtk::Label>,
@@ -190,6 +194,12 @@ mod imp {
 
             // Edit actions
             let obj = self.obj();
+            let wiki_stack = self.wiki_stack.get();
+            let action_edit_wiki = ActionEntry::builder("edit-wiki")
+                .activate(move |_, _, _| {
+                    wiki_stack.show_edit();
+                })
+                .build();
             let action_clear_rating = ActionEntry::builder("clear-rating")
                 .activate(clone!(
                     #[weak]
@@ -351,6 +361,7 @@ mod imp {
             // Create a new action group and add actions to it
             let actions = SimpleActionGroup::new();
             actions.add_action_entries([
+                action_edit_wiki,
                 action_clear_rating,
                 action_set_album_art,
                 action_refetch_metadata,

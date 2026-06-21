@@ -18,6 +18,9 @@ mod imp {
         // Optional
         pub placeholder_page: WeakRef<gtk::StackPage>,
         pub content_page: WeakRef<gtk::StackPage>,
+
+        // Really really optional
+        pub edit_page: WeakRef<gtk::StackPage>
     }
 
     // The central trait for subclassing a GObject
@@ -58,6 +61,9 @@ mod imp {
                     ParamSpecObject::builder::<gtk::Widget>("content")
                         .construct_only()
                         .build(),
+                    ParamSpecObject::builder::<gtk::Widget>("edit")
+                        .construct_only()
+                        .build(),
                 ]
             });
             PROPERTIES.as_ref()
@@ -73,6 +79,11 @@ mod imp {
                 "content" => {
                     if let Ok(widget) = value.get::<gtk::Widget>() {
                         self.stack.add_named(&widget, Some("content"));
+                    }
+                }
+                "edit" => {
+                    if let Ok(widget) = value.get::<gtk::Widget>() {
+                        self.stack.add_named(&widget, Some("edit"));
                     }
                 }
                 _ => unimplemented!(),
@@ -130,6 +141,17 @@ impl ContentStack {
                 .is_some_and(|name| name != "content")
         {
             stack.set_visible_child_name("content");
+        }
+    }
+
+    pub fn show_edit(&self) {
+        let stack = self.imp().stack.get();
+        if stack.child_by_name("edit").is_some()
+            && stack
+                .visible_child_name()
+                .is_some_and(|name| name != "edit")
+        {
+            stack.set_visible_child_name("edit");
         }
     }
 }
