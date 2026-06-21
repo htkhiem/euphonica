@@ -188,8 +188,8 @@ mod imp {
                 obj.set_accels_for_action("app.stop", &["<Ctrl><Shift>s"]);
                 obj.set_accels_for_action("app.toggle-random", &["<Alt>z"]);
                 obj.set_accels_for_action("app.cycle-flow", &["<Alt>r"]);
-                obj.set_accels_for_action("app.toggle-consume", &["<Shift>r"]);
-                obj.set_accels_for_action("app.cycle-replaygain", &["<Shift>y"]);
+                obj.set_accels_for_action("app.toggle-consume", &["<Alt><Shift>r"]);
+                obj.set_accels_for_action("app.cycle-replaygain", &["<Alt><Shift>y"]);
                 obj.set_accels_for_action("app.cycle-crossfade", &["<Alt>x"]);
                 obj.set_accels_for_action("app.volume-up", &["<Ctrl><Shift>Up"]);
                 obj.set_accels_for_action("app.volume-down", &["<Ctrl><Shift>Down"]);
@@ -618,10 +618,10 @@ impl EuphonicaApplication {
             self.set_accels_for_action("win.view-dynamic-playlists", &["<Ctrl>5"]);
             self.set_accels_for_action("win.view-playlists", &["<Ctrl>6"]);
             self.set_accels_for_action("win.view-queue", &["<Ctrl>7"]);
-            self.set_accels_for_action("queue.scroll-to-playing", &["<Shift>o"]);
+            self.set_accels_for_action("queue.scroll-to-playing", &["<Ctrl><Shift>o"]);  // toggle autoscroll on-off, bad name
             self.set_accels_for_action("queue.stop-and-clear", &["<Alt>c"]);
             self.set_accels_for_action("win.save", &["<Ctrl>s"]);
-            self.set_accels_for_action("queue.jump-to-current", &["<Ctrl>o"]);
+            self.set_accels_for_action("queue.jump-to-current", &["<Ctrl>o"]);  
             self.set_accels_for_action("queue.toggle-autoscroll", &["<Ctrl>u"]);
             self.set_accels_for_action("playlist-editor.undo", &["<Ctrl>z"]);
             self.set_accels_for_action("playlist-editor.redo", &["<Ctrl>y"]);

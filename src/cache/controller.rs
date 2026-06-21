@@ -654,6 +654,14 @@ impl Cache {
         }
     }
 
+    pub fn set_album_meta(
+        &self,
+        album: &AlbumInfo,
+        meta: &models::AlbumMeta,
+    ) -> Result<()> {
+        sqlite::write_album_meta(album, meta).map_err(Error::Sqlite)
+    }
+
     pub async fn get_artist_meta(
         &self,
         artist: &ArtistInfo,
