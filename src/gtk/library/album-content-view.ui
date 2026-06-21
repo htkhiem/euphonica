@@ -221,6 +221,8 @@
                                                     </style>
                                                     <property name="wrap">true</property>
                                                     <property name="justify">fill</property>
+                                                    <property name="halign">left</property>
+                                                    <property name="hexpand">true</property>
                                                   </object>
                                                 </child>
                                                 <child>

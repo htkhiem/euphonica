@@ -86,7 +86,7 @@ mod imp {
                 // This avoid having to stack two gradients.
                 let mut stops = Vec::with_capacity(4);
                 if self.vertical.get() {
-                    end_point = graphene::Point::new(w as f32, 0.0);                    
+                    end_point = graphene::Point::new(0.0, h as f32);
                     if vadj.value() > 0.0 {
                         // Not at top => fade top out
                         stops.push(
@@ -112,15 +112,8 @@ mod imp {
                             gsk::ColorStop::new(1.0, gdk::RGBA::BLACK.with_alpha(0.0))
                         );
                     }
-                    
-
-                    if !stops.is_empty() {
-                        
-                    }
-
-                    
                 } else {
-                    end_point = graphene::Point::new(0.0, h as f32);
+                    end_point = graphene::Point::new(w as f32, 0.0);
                     if hadj.value() > 0.0 {
                         // Not at top => fade top out
                         stops.push(
