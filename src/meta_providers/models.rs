@@ -56,7 +56,7 @@ pub struct ImageMeta {
 }
 
 // Album
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
 #[non_exhaustive]
 pub struct Wiki {
     pub content: String,
@@ -68,7 +68,7 @@ pub struct Wiki {
 
 // Standard (provider-agnostic) metadata structures for use across the app.
 // All providers must return these structs instead of their own formats.
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
 #[non_exhaustive]
 pub struct AlbumMeta {
     pub name: String,

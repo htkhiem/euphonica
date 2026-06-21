@@ -252,8 +252,8 @@
                                               </object>
                                             </child>
                                             <child>
-                                              <object class="GtkEntry" id="wiki_licence_field">
-                                                <property name="placeholder-text" translatable="true">Optional licencing info</property>
+                                              <object class="GtkEntry" id="wiki_attribution_field">
+                                                <property name="placeholder-text" translatable="true">Optional attribution info</property>
                                               </object>
                                             </child>
                                           </object>

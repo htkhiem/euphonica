@@ -1,5 +1,6 @@
 use super::{Library, artist_tag::ArtistTag};
 use crate::common::FadingScrolledWindow;
+use crate::meta_providers::models::Wiki;
 use crate::{
     cache::{Cache, CacheState, Error as CacheError, placeholders::EMPTY_ALBUM_STRING},
     client::{ClientState, state::StickersSupportLevel},
@@ -25,7 +26,9 @@ use std::{
 use time::{Date, format_description};
 
 mod imp {
-    use super::*;
+    use crate::meta_providers::models::AlbumMeta;
+
+use super::*;
 
     #[derive(Debug, CompositeTemplate, Derivative)]
     #[derivative(Default)]
@@ -61,6 +64,14 @@ mod imp {
         pub wiki_attrib: TemplateChild<gtk::Label>,
         #[template_child]
         pub wiki_desc_field: TemplateChild<gtk::TextView>,
+        #[template_child]
+        pub wiki_link_field: TemplateChild<gtk::Entry>,
+        #[template_child]
+        pub wiki_attribution_field: TemplateChild<gtk::Entry>,
+        #[template_child]
+        pub wiki_save: TemplateChild<gtk::Button>,
+        #[template_child]
+        pub wiki_cancel: TemplateChild<gtk::Button>,
 
         #[template_child]
         pub release_date: TemplateChild<gtk::Label>,
@@ -110,6 +121,7 @@ mod imp {
         pub cache: OnceCell<Rc<Cache>>,
         #[derivative(Default(value = "Cell::new(true)"))]
         pub selecting_all: Cell<bool>, // Enables queuing the entire album efficiently
+        pub meta: RefCell<Option<AlbumMeta>>,
     }
 
     #[glib::object_subclass]
@@ -192,13 +204,57 @@ mod imp {
                 .sync_create()
                 .build();
 
+            self.wiki_save.connect_clicked(clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |_| {
+                    if let (Some(cache), Some(album)) = (this.cache.get(), this.album.borrow().as_ref()) {
+                        let mut new_meta = this.meta.take().unwrap_or_default();
+                        let buf = this.wiki_desc_field.buffer();
+                        let mut wiki = new_meta.wiki.clone().unwrap_or_default();
+                        wiki.content = buf.text(&buf.start_iter(), &buf.end_iter(), false).as_str().to_owned();
+                        let maybe_link = this.wiki_link_field.text();
+                        if !maybe_link.is_empty() {
+                            wiki.url = Some(maybe_link.as_str().to_owned());
+                        } else {
+                            wiki.url = None;
+                        }
+                        wiki.attribution = this.wiki_attribution_field.text().as_str().to_owned();
+                        new_meta.wiki = Some(wiki);
+                        // Might want to make this async?
+                        if let Err(e) = cache.set_album_meta(album.get_info(), &new_meta) {
+                            dbg!(e);
+                        }
+                        this.obj().update_wiki(new_meta.wiki.as_ref());
+                    }
+                }
+            ));
+
+            self.wiki_cancel.connect_clicked(clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |_| {
+                    this.wiki_stack.show_content();
+                }
+            ));
+
             // Edit actions
             let obj = self.obj();
             let wiki_stack = self.wiki_stack.get();
             let action_edit_wiki = ActionEntry::builder("edit-wiki")
-                .activate(move |_, _, _| {
-                    wiki_stack.show_edit();
-                })
+                .activate(clone!(
+                    #[weak(rename_to = this)]
+                    self,
+                    move |_, _, _| {
+                        // Initialise with current values
+                        if let Some(wiki) = this.meta.borrow().as_ref().and_then(|meta| meta.wiki.as_ref()) {
+                            this.wiki_desc_field.buffer().set_text(&wiki.content);
+                            this.wiki_link_field.set_text(wiki.url.as_deref().unwrap_or(""));
+                            this.wiki_attribution_field.set_text(&wiki.attribution);
+                        }
+                        wiki_stack.show_edit();
+                    }
+                ))
                 .build();
             let action_clear_rating = ActionEntry::builder("clear-rating")
                 .activate(clone!(
@@ -437,6 +493,28 @@ impl AlbumContentView {
         self.imp().album.borrow().as_ref().cloned()
     }
 
+    pub fn update_wiki(&self, wiki: Option<&Wiki>) {
+        if let Some(wiki) = wiki {
+            let wiki_text = self.imp().wiki_text.get();
+            let wiki_link = self.imp().wiki_link.get();
+            let wiki_attrib = self.imp().wiki_attrib.get();
+            self.imp().wiki_stack.show_content();
+            wiki_text.set_label(&wiki.content);
+            if let Some(url) = wiki.url.as_ref() {
+                wiki_link.set_visible(true);
+                wiki_link.set_uri(url);
+            } else {
+                wiki_link.set_visible(false);
+                wiki_link.set_uri("");
+            }
+            wiki_attrib.set_visible(true);
+            wiki_attrib.set_label(&wiki.attribution);
+            self.imp().wiki_stack.show_content();
+        } else {
+            self.imp().wiki_stack.show_placeholder();
+        }
+    }
+
     async fn update_meta(&self, overwrite: bool) {
         if let Some(album) = self.album() {
             // If the current album is the "untitled" one (i.e. for songs without an album tag),
@@ -450,9 +528,7 @@ impl AlbumContentView {
                 self.imp().wiki_stack.show_spinner();
                 self.imp().tags_stack.show_spinner();
                 let cache = self.imp().cache.get().unwrap().clone();
-                let wiki_text = self.imp().wiki_text.get();
-                let wiki_link = self.imp().wiki_link.get();
-                let wiki_attrib = self.imp().wiki_attrib.get();
+                
                 let tags_box = self.imp().tags_box.get();
                 let res = cache
                     .get_album_meta(
@@ -464,23 +540,9 @@ impl AlbumContentView {
                     .await;
                 match res {
                     Ok(Some(meta)) => {
+                        let _ = self.imp().meta.replace(Some(meta.clone()));
                         // Handle wiki
-                        if let Some(wiki) = meta.wiki {
-                            self.imp().wiki_stack.show_content();
-                            wiki_text.set_label(&wiki.content);
-                            if let Some(url) = wiki.url.as_ref() {
-                                wiki_link.set_visible(true);
-                                wiki_link.set_uri(url);
-                            } else {
-                                wiki_link.set_visible(false);
-                                wiki_link.set_uri("");
-                            }
-                            wiki_attrib.set_visible(true);
-                            wiki_attrib.set_label(&wiki.attribution);
-                            self.imp().wiki_stack.show_content();
-                        } else {
-                            self.imp().wiki_stack.show_placeholder();
-                        }
+                        self.update_wiki(meta.wiki.as_ref());
 
                         // Handle tags
                         if !meta.tags.is_empty() {
