@@ -1,4 +1,5 @@
 use super::{Library, artist_tag::ArtistTag};
+use crate::common::FadingScrolledWindow;
 use crate::{
     cache::{Cache, CacheState, Error as CacheError, placeholders::EMPTY_ALBUM_STRING},
     client::{ClientState, state::StickersSupportLevel},
@@ -22,7 +23,6 @@ use std::{
     rc::Rc,
 };
 use time::{Date, format_description};
-use crate::common::FadingScrolledWindow;
 
 mod imp {
     use super::*;
@@ -64,6 +64,13 @@ mod imp {
         pub track_count: TemplateChild<gtk::Label>,
         #[template_child]
         pub runtime: TemplateChild<gtk::Label>,
+
+        #[template_child]
+        pub tags_stack: TemplateChild<ContentStack>,
+        #[template_child]
+        pub tags_fader: TemplateChild<FadingScrolledWindow>,
+        #[template_child]
+        pub tags_box: TemplateChild<adw::WrapBox>,
 
         #[template_child]
         pub replace_queue: TemplateChild<gtk::Button>,
@@ -422,17 +429,20 @@ impl AlbumContentView {
     async fn update_meta(&self, overwrite: bool) {
         if let Some(album) = self.album() {
             // If the current album is the "untitled" one (i.e. for songs without an album tag),
-            // don't attempt to update metadata. 
+            // don't attempt to update metadata.
             if album.get_title().is_empty() {
                 self.imp().wiki_stack.show_placeholder();
+                self.imp().tags_stack.show_placeholder();
                 // Additionally block edit
                 // self.imp().wiki_stack.set_sensitive(false);
             } else {
                 self.imp().wiki_stack.show_spinner();
+                self.imp().tags_stack.show_spinner();
                 let cache = self.imp().cache.get().unwrap().clone();
                 let wiki_text = self.imp().wiki_text.get();
                 let wiki_link = self.imp().wiki_link.get();
                 let wiki_attrib = self.imp().wiki_attrib.get();
+                let tags_box = self.imp().tags_box.get();
                 let res = cache
                     .get_album_meta(
                         album.get_info(),
@@ -443,6 +453,7 @@ impl AlbumContentView {
                     .await;
                 match res {
                     Ok(Some(meta)) => {
+                        // Handle wiki
                         if let Some(wiki) = meta.wiki {
                             self.imp().wiki_stack.show_content();
                             wiki_text.set_label(&wiki.content);
@@ -458,6 +469,21 @@ impl AlbumContentView {
                             self.imp().wiki_stack.show_content();
                         } else {
                             self.imp().wiki_stack.show_placeholder();
+                        }
+
+                        // Handle tags
+                        if !meta.tags.is_empty() {
+                            let window = self.imp().window.upgrade().unwrap();
+                            meta.tags
+                                .iter()
+                                .map(|tag| {
+                                    Tag::new(&tag.name, tag.url.clone(), true, &tags_box, &window)
+                                })
+                                .for_each(|tag| tags_box.append(&tag));
+
+                            self.imp().tags_stack.show_content();
+                        } else {
+                            self.imp().tags_stack.show_placeholder();
                         }
                     }
                     Ok(None) => {
@@ -662,7 +688,9 @@ impl AlbumContentView {
                 #[upgrade_or]
                 SongRow::new(None, None).into(),
                 move |song_obj| {
-                    let song = song_obj.downcast_ref::<Song>().expect("Must be a common::Song");
+                    let song = song_obj
+                        .downcast_ref::<Song>()
+                        .expect("Must be a common::Song");
                     let row = SongRow::new(None, None);
                     row.set_index_visible(true);
                     row.set_index(&song.get_track().to_string());
@@ -771,13 +799,17 @@ impl AlbumContentView {
         let genres = album.get_genres();
         if !genres.is_empty() {
             let genres_stack = self.imp().genres_stack.get();
+            let window = self.imp().window.upgrade().unwrap();
             album
                 .get_genres()
                 .iter()
-                .map(|genre| Tag::new(&genre, false, &genres_box))
+                .map(|genre| Tag::new(&genre, None, false, &genres_box, &window))
                 .for_each(|tag| genres_box.append(&tag));
 
-            if genres_stack.visible_child_name().is_some_and(|name| name == "empty") {
+            if genres_stack
+                .visible_child_name()
+                .is_some_and(|name| name == "empty")
+            {
                 genres_stack.set_visible_child_name("content");
             }
         }
@@ -891,8 +923,12 @@ impl AlbumContentView {
         // We're now on libadwaita 1.8 so we can use this
         self.imp().artists_box.remove_all();
         self.imp().genres_box.remove_all();
+        self.imp().tags_box.remove_all();
         let genres_stack = self.imp().genres_stack.get();
-        if genres_stack.visible_child_name().is_some_and(|name| name == "content") {
+        if genres_stack
+            .visible_child_name()
+            .is_some_and(|name| name == "content")
+        {
             genres_stack.set_visible_child_name("empty");
         }
 
@@ -908,6 +944,7 @@ impl AlbumContentView {
         // Unset metadata widgets
         self.imp().song_list.remove_all();
         self.imp().content_stack.show_placeholder();
+        self.imp().tags_stack.show_spinner();
         self.imp().wiki_stack.show_spinner();
     }
 }

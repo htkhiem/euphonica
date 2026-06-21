@@ -43,14 +43,13 @@ listview > row {
 }
 
 .plain-tag {
-    border-radius: 9999px;
     padding: 0px;
-    padding-left: 4px;
 }
 
 /* Always pad on the right, even for RTL languages */
-.plain-tag > box > label {
-    padding-right: 6px;
+.plain-tag > label {
+    padding-left: 4px;
+    padding-right: 4px;
 }
 
 .padding-0 {

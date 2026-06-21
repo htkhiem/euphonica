@@ -1,11 +1,12 @@
-use glib::{Object, ParamSpec, ParamSpecString, clone, closure_local, signal::SignalHandlerId};
-use gtk::{CompositeTemplate, gdk, glib, prelude::*, subclass::prelude::*};
-
-use crate::{
-    cache::{Cache, CacheState},
-    common::Artist,
-    window::EuphonicaWindow,
+use gtk::{
+    CompositeTemplate, gio,
+    glib::{self, Object, ParamSpec, ParamSpecString, clone},
+    prelude::*,
+    subclass::prelude::*,
 };
+use std::cell::OnceCell;
+
+use crate::window::EuphonicaWindow;
 
 mod imp {
     use super::*;
@@ -17,7 +18,10 @@ mod imp {
         #[template_child]
         pub name: TemplateChild<gtk::Label>,
         #[template_child]
-        pub remove_icon: TemplateChild<gtk::Image>
+        pub tag_btn: TemplateChild<gtk::Button>,
+        #[template_child]
+        pub remove_btn: TemplateChild<gtk::Button>,
+        pub link: OnceCell<String>,
     }
 
     // The central trait for subclassing a GObject
@@ -26,7 +30,7 @@ mod imp {
         // `NAME` needs to match `class` attribute of template
         const NAME: &'static str = "EuphonicaTag";
         type Type = super::Tag;
-        type ParentType = gtk::Button;
+        type ParentType = gtk::Box;
 
         fn class_init(klass: &mut Self::Class) {
             klass.bind_template();
@@ -68,28 +72,48 @@ mod imp {
 
     impl WidgetImpl for Tag {}
 
-    impl ButtonImpl for Tag {}
+    impl BoxImpl for Tag {}
 }
 
 glib::wrapper! {
     pub struct Tag(ObjectSubclass<imp::Tag>)
-    @extends gtk::Button, gtk::Widget,
-    @implements gtk::Accessible, gtk::Buildable, gtk::ConstraintTarget, gtk::Actionable;
+    @extends gtk::Box, gtk::Widget,
+    @implements gtk::Accessible, gtk::Buildable, gtk::ConstraintTarget, gtk::Orientable;
 }
 
 impl Tag {
-    pub fn new(name: &str, is_removable: bool, wrap_box: &adw::WrapBox) -> Self {
+    pub fn new(
+        name: &str,
+        link: Option<String>,
+        is_removable: bool,
+        wrap_box: &adw::WrapBox,
+        window: &EuphonicaWindow,
+    ) -> Self {
         let res: Self = Object::builder().build();
         res.imp().name.set_label(name);
         if is_removable {
-            res.connect_clicked(clone!(
+            res.imp().remove_btn.connect_clicked(clone!(
                 #[weak]
                 wrap_box,
-                move |this| {
-                    wrap_box.remove(this);
+                #[weak]
+                res,
+                move |_| {
+                    wrap_box.remove(&res);
                 }
             ));
-            res.imp().remove_icon.set_visible(true);
+
+            res.imp().remove_btn.set_visible(true);
+        }
+        if let Some(link) = link {
+            res.imp().tag_btn.set_tooltip_text(Some(&link));
+            res.imp().tag_btn.connect_clicked(clone!(
+                #[weak]
+                window,
+                move |_| {
+                    let launcher = gtk::FileLauncher::new(Some(&gio::File::for_uri(&link)));
+                    launcher.launch(Some(&window), gio::Cancellable::NONE, |_| {});
+                }
+            ));
         }
         res
     }
