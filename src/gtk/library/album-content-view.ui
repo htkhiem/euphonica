@@ -520,8 +520,12 @@
                                             <property name="orientation">1</property>
                                             <property name="spacing">3</property>
                                             <child>
+                                              <object class="EuphonicaNewTag" id="new_tag"/>
+                                            </child>
+                                            <child>
                                               <object class="EuphonicaFadingScrolledWindow" id="tags_fader">
                                                 <property name="vertical">true</property>
+                                                <property name="vexpand">true</property>
                                                 <property name="inner">
                                                   <object class="GtkScrolledWindow" id="tags_scroller">
                                                     <property name="hscrollbar-policy">never</property>
@@ -537,9 +541,6 @@
                                                   </object>
                                                 </property>
                                               </object>
-                                            </child>
-                                            <child>
-                                              <object class="EuphonicaNewTag" id="new_tag"/>
                                             </child>
                                           </object>
                                         </property>

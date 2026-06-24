@@ -82,6 +82,8 @@ mod imp {
         pub runtime: TemplateChild<gtk::Label>,
 
         #[template_child]
+        pub add_first_tag_btn: TemplateChild<gtk::Button>,
+        #[template_child]
         pub tags_stack: TemplateChild<ContentStack>,
         #[template_child]
         pub tags_fader: TemplateChild<FadingScrolledWindow>,
@@ -255,6 +257,12 @@ mod imp {
                     this.obj().add_new_tag(name);
                 }
             ));
+
+            // Simply switch to content view (which has the new-tag widget)
+            let tags_stack = self.tags_stack.get();
+            self.add_first_tag_btn.connect_clicked(move |_| {
+                tags_stack.show_content();
+            });
 
             // Edit actions
             let obj = self.obj();
