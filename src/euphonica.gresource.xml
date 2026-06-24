@@ -20,6 +20,7 @@
     <file preprocess="xml-stripblanks">gtk/library/album-cell.ui</file>
     <file preprocess="xml-stripblanks">gtk/library/artist-tag.ui</file>
     <file preprocess="xml-stripblanks">gtk/library/tag.ui</file>
+    <file preprocess="xml-stripblanks">gtk/library/new-tag.ui</file>
     <file preprocess="xml-stripblanks">gtk/library/album-content-view.ui</file>
     <file preprocess="xml-stripblanks">gtk/library/artist-view.ui</file>
     <file preprocess="xml-stripblanks">gtk/library/artist-cell.ui</file>
@@ -122,5 +123,6 @@
     <file preprocess="xml-stripblanks" alias="arrow-pointing-at-line-down-symbolic.svg">gtk/icons/arrow-pointing-at-line-down-symbolic.svg</file>
     <file preprocess="xml-stripblanks" alias="arrow-pointing-away-from-line-up-symbolic.svg">gtk/icons/arrow-pointing-away-from-line-up-symbolic.svg</file>
     <file preprocess="xml-stripblanks" alias="cross-small-symbolic.svg">gtk/icons/cross-small-symbolic.svg</file>
+    <file preprocess="xml-stripblanks" alias="plus-symbolic.svg">gtk/icons/plus-symbolic.svg</file>
   </gresource>
 </gresources>

@@ -9,7 +9,6 @@
       <object class="GtkButton" id="tag_btn">
         <style>
           <class name="plain-tag"/>
-          <class name="round"/>
         </style>
         <child>
           <object class="GtkBox">

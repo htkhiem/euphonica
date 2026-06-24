@@ -16,8 +16,7 @@
             <setter object="add_to_playlist" property="collapsed">true</setter>
             <setter object="title" property="halign">fill</setter>
             <setter object="title" property="justify">center</setter>
-            <setter object="artists_box" property="halign">center</setter>
-            <setter object="metadata_box" property="halign">center</setter>
+            <setter object="artists_box" property="halign">center</setter>          
             <setter object="artists_box" property="align">0.5</setter>
             <setter object="genres_box" property="orientation">horizontal</setter>
             <setter object="tags_box" property="orientation">horizontal</setter>
@@ -515,25 +514,33 @@
                                           </object>
                                         </property>
                                         <property name="content">
-
-                                          <object class="EuphonicaFadingScrolledWindow" id="tags_fader">
-                                            <property name="vertical">true</property>
+                                          <object class="GtkBox">
                                             <property name="vexpand">true</property>
-                                            <property name="inner">
-                                              <object class="GtkScrolledWindow">
-                                                <property name="hscrollbar-policy">never</property>
-                                                <property name="vexpand">true</property>
-                                                <property name="child">
-                                                  <object class="AdwWrapBox" id="tags_box">
-                                                    <property name="child-spacing">3</property>
-                                                    <property name="line-spacing">3</property>
-                                                    <property name="justify">0</property>
-                                                    <property name="justify-last-line">false</property>
-                                                    <property name="align">0.0</property>
+                                            <property name="hexpand">true</property>
+                                            <property name="orientation">1</property>
+                                            <property name="spacing">3</property>
+                                            <child>
+                                              <object class="EuphonicaFadingScrolledWindow" id="tags_fader">
+                                                <property name="vertical">true</property>
+                                                <property name="inner">
+                                                  <object class="GtkScrolledWindow" id="tags_scroller">
+                                                    <property name="hscrollbar-policy">never</property>
+                                                    <property name="child">
+                                                      <object class="AdwWrapBox" id="tags_box">
+                                                        <property name="child-spacing">3</property>
+                                                        <property name="line-spacing">3</property>
+                                                        <property name="justify">0</property>
+                                                        <property name="justify-last-line">false</property>
+                                                        <property name="align">0.0</property>
+                                                      </object>
+                                                    </property>
                                                   </object>
                                                 </property>
                                               </object>
-                                            </property>
+                                            </child>
+                                            <child>
+                                              <object class="EuphonicaNewTag" id="new_tag"/>
+                                            </child>
                                           </object>
                                         </property>
                                       </object>

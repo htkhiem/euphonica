@@ -1,6 +1,8 @@
+use super::new_tag::NewTag;
 use super::{Library, artist_tag::ArtistTag};
 use crate::common::FadingScrolledWindow;
 use crate::meta_providers::models::Wiki;
+use crate::meta_providers::models::{AlbumMeta, Tag as TagMeta};
 use crate::{
     cache::{Cache, CacheState, Error as CacheError, placeholders::EMPTY_ALBUM_STRING},
     client::{ClientState, state::StickersSupportLevel},
@@ -24,9 +26,9 @@ use std::{
     rc::Rc,
 };
 use time::{Date, format_description};
-use crate::meta_providers::models::{AlbumMeta, Tag as TagMeta};
 
 mod imp {
+
     use super::*;
 
     #[derive(Debug, CompositeTemplate, Derivative)]
@@ -84,7 +86,11 @@ mod imp {
         #[template_child]
         pub tags_fader: TemplateChild<FadingScrolledWindow>,
         #[template_child]
+        pub tags_scroller: TemplateChild<gtk::ScrolledWindow>,
+        #[template_child]
         pub tags_box: TemplateChild<adw::WrapBox>,
+        #[template_child]
+        pub new_tag: TemplateChild<NewTag>,
 
         #[template_child]
         pub replace_queue: TemplateChild<gtk::Button>,
@@ -207,11 +213,16 @@ mod imp {
                 #[weak(rename_to = this)]
                 self,
                 move |_| {
-                    if let (Some(cache), Some(album)) = (this.cache.get(), this.album.borrow().as_ref()) {
+                    if let (Some(cache), Some(album)) =
+                        (this.cache.get(), this.album.borrow().as_ref())
+                    {
                         let mut new_meta = this.meta.take().unwrap_or_default();
                         let buf = this.wiki_desc_field.buffer();
                         let mut wiki = new_meta.wiki.clone().unwrap_or_default();
-                        wiki.content = buf.text(&buf.start_iter(), &buf.end_iter(), false).as_str().to_owned();
+                        wiki.content = buf
+                            .text(&buf.start_iter(), &buf.end_iter(), false)
+                            .as_str()
+                            .to_owned();
                         let maybe_link = this.wiki_link_field.text();
                         if !maybe_link.is_empty() {
                             wiki.url = Some(maybe_link.as_str().to_owned());
@@ -237,6 +248,14 @@ mod imp {
                 }
             ));
 
+            self.new_tag.connect_add(clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |name| {
+                    this.obj().add_new_tag(name);
+                }
+            ));
+
             // Edit actions
             let obj = self.obj();
             let wiki_stack = self.wiki_stack.get();
@@ -246,9 +265,15 @@ mod imp {
                     self,
                     move |_, _, _| {
                         // Initialise with current values
-                        if let Some(wiki) = this.meta.borrow().as_ref().and_then(|meta| meta.wiki.as_ref()) {
+                        if let Some(wiki) = this
+                            .meta
+                            .borrow()
+                            .as_ref()
+                            .and_then(|meta| meta.wiki.as_ref())
+                        {
                             this.wiki_desc_field.buffer().set_text(&wiki.content);
-                            this.wiki_link_field.set_text(wiki.url.as_deref().unwrap_or(""));
+                            this.wiki_link_field
+                                .set_text(wiki.url.as_deref().unwrap_or(""));
                             this.wiki_attribution_field.set_text(&wiki.attribution);
                         }
                         wiki_stack.show_edit();
@@ -492,9 +517,54 @@ impl AlbumContentView {
         self.imp().album.borrow().as_ref().cloned()
     }
 
+    /// Will not add if an existing one with the same name is found.
+    pub fn add_new_tag(&self, name: &str) {
+        let mut found = false;
+        if let Some(tag) = self.imp().tags_box.first_child() {
+            let mut cursor: Tag = tag.downcast::<Tag>().unwrap();
+            loop {
+                if cursor.get_name().as_str() == name {
+                    found = true;
+                    break;
+                }
+                if let Some(next_tag) = cursor.next_sibling().and_downcast::<Tag>() {
+                    cursor = next_tag;
+                } else {
+                    break;
+                }
+            }
+        }
+        if !found {
+            self.imp().tags_box.append(&Tag::new(
+                name,
+                None,
+                None,
+                true,
+                &self.imp().tags_box.get(),
+                &self.imp().window.upgrade().unwrap(),
+                clone!(
+                    #[weak(rename_to = this)]
+                    self,
+                    move |_| {
+                        this.write_tags();
+                    }
+                ),
+            ));
+            self.write_tags();
+            // Scroll to bottom to show new tag
+            let adjustment = self.imp().tags_scroller.vadjustment();
+            let upper = adjustment.upper();
+            let page_size = adjustment.page_size();
+            // Set the adjustment value to the maximum scroll position
+            adjustment.set_value(upper - page_size);
+        }
+    }
+
     /// Update the SQLite entry with the current tag list.
     pub fn write_tags(&self) {
-        if let (Some(cache), Some(album)) = (self.imp().cache.get(), self.imp().album.borrow().as_ref()) {
+        if let (Some(cache), Some(album)) =
+            (self.imp().cache.get(), self.imp().album.borrow().as_ref())
+        {
             let mut new_meta = self.imp().meta.take().unwrap_or_default();
 
             let mut res: Vec<TagMeta> = Vec::new();
@@ -504,7 +574,7 @@ impl AlbumContentView {
                     res.push(TagMeta {
                         url: cursor.get_link().map(|s| s.to_owned()),
                         name: cursor.get_name().as_str().to_owned(),
-                        count: cursor.get_count()
+                        count: cursor.get_count(),
                     });
                     if let Some(next_tag) = cursor.next_sibling().and_downcast::<Tag>() {
                         cursor = next_tag;
@@ -513,7 +583,7 @@ impl AlbumContentView {
                     }
                 }
             }
-            new_meta.tags = dbg!(res);
+            new_meta.tags = res;
             // Might want to make this async?
             if let Err(e) = cache.set_album_meta(album.get_info(), &new_meta) {
                 dbg!(e);
@@ -556,7 +626,7 @@ impl AlbumContentView {
                 self.imp().wiki_stack.show_spinner();
                 self.imp().tags_stack.show_spinner();
                 let cache = self.imp().cache.get().unwrap().clone();
-                
+
                 let tags_box = self.imp().tags_box.get();
                 let res = cache
                     .get_album_meta(
@@ -578,14 +648,22 @@ impl AlbumContentView {
                             meta.tags
                                 .iter()
                                 .map(|tag| {
-                                    Tag::new(&tag.name, tag.url.clone(),  tag.count,true, &tags_box, &window, clone!(
-                                        #[weak(rename_to = this)]
-                                        self,
-                                        move |_| {
-                                            // By now the tag widget has already been removed from the wrapbox
-                                            this.write_tags();
-                                        }
-                                    ))
+                                    Tag::new(
+                                        &tag.name,
+                                        tag.url.clone(),
+                                        tag.count,
+                                        true,
+                                        &tags_box,
+                                        &window,
+                                        clone!(
+                                            #[weak(rename_to = this)]
+                                            self,
+                                            move |_| {
+                                                // By now the tag widget has already been removed from the wrapbox
+                                                this.write_tags();
+                                            }
+                                        ),
+                                    )
                                 })
                                 .for_each(|tag| tags_box.append(&tag));
 
