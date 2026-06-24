@@ -12,8 +12,22 @@
           <class name="round"/>
         </style>
         <child>
-          <object class="GtkLabel" id="name">
-            <property name="ellipsize">3</property>
+          <object class="GtkBox">
+            <property name="spacing">4</property>
+            <child>
+              <object class="GtkLabel" id="name">
+                <property name="ellipsize">3</property>
+              </object>
+            </child>
+            <child>
+              <object class="GtkLabel" id="count">
+                <style>
+                  <class name="caption-heading"/>
+                </style>
+                <property name="visible">false</property>
+                <property name="ellipsize">3</property>
+              </object>
+            </child>
           </object>
         </child>
       </object>

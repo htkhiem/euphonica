@@ -7,21 +7,23 @@ use gtk::{
 use std::cell::OnceCell;
 
 use crate::window::EuphonicaWindow;
+use once_cell::sync::Lazy;
 
 mod imp {
     use super::*;
-    use once_cell::sync::Lazy;
-
+    
     #[derive(Default, CompositeTemplate)]
     #[template(resource = "/io/github/htkhiem/Euphonica/gtk/library/tag.ui")]
     pub struct Tag {
         #[template_child]
         pub name: TemplateChild<gtk::Label>,
         #[template_child]
+        pub count: TemplateChild<gtk::Label>,
+        #[template_child]
         pub tag_btn: TemplateChild<gtk::Button>,
         #[template_child]
         pub remove_btn: TemplateChild<gtk::Button>,
-        pub link: OnceCell<String>,
+        pub link: OnceCell<String>
     }
 
     // The central trait for subclassing a GObject
@@ -82,12 +84,14 @@ glib::wrapper! {
 }
 
 impl Tag {
-    pub fn new(
+    pub fn new<T: Fn(&Self) + 'static>(
         name: &str,
         link: Option<String>,
+        count: Option<i32>,
         is_removable: bool,
         wrap_box: &adw::WrapBox,
         window: &EuphonicaWindow,
+        on_remove: T,
     ) -> Self {
         let res: Self = Object::builder().build();
         res.imp().name.set_label(name);
@@ -99,6 +103,7 @@ impl Tag {
                 res,
                 move |_| {
                     wrap_box.remove(&res);
+                    on_remove(&res);
                 }
             ));
 
@@ -115,6 +120,10 @@ impl Tag {
                 }
             ));
         }
+        if let Some(count) = count {
+            res.imp().count.set_label(&count.to_string());
+            res.imp().count.set_visible(true);
+        }
         res
     }
 
@@ -124,5 +133,13 @@ impl Tag {
 
     pub fn set_name(&self, name: &str) {
         self.imp().name.set_label(name);
+    }
+
+    pub fn get_count(&self) -> Option<i32> {
+        self.imp().count.label().as_str().parse::<i32>().ok()
+    }
+
+    pub fn get_link(&self) -> Option<&str> {
+        self.imp().link.get().map(String::as_str)
     }
 }

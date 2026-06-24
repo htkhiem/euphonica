@@ -24,11 +24,10 @@ use std::{
     rc::Rc,
 };
 use time::{Date, format_description};
+use crate::meta_providers::models::{AlbumMeta, Tag as TagMeta};
 
 mod imp {
-    use crate::meta_providers::models::AlbumMeta;
-
-use super::*;
+    use super::*;
 
     #[derive(Debug, CompositeTemplate, Derivative)]
     #[derivative(Default)]
@@ -493,6 +492,35 @@ impl AlbumContentView {
         self.imp().album.borrow().as_ref().cloned()
     }
 
+    /// Update the SQLite entry with the current tag list.
+    pub fn write_tags(&self) {
+        if let (Some(cache), Some(album)) = (self.imp().cache.get(), self.imp().album.borrow().as_ref()) {
+            let mut new_meta = self.imp().meta.take().unwrap_or_default();
+
+            let mut res: Vec<TagMeta> = Vec::new();
+            if let Some(tag) = self.imp().tags_box.first_child() {
+                let mut cursor: Tag = tag.downcast::<Tag>().unwrap();
+                loop {
+                    res.push(TagMeta {
+                        url: cursor.get_link().map(|s| s.to_owned()),
+                        name: cursor.get_name().as_str().to_owned(),
+                        count: cursor.get_count()
+                    });
+                    if let Some(next_tag) = cursor.next_sibling().and_downcast::<Tag>() {
+                        cursor = next_tag;
+                    } else {
+                        break;
+                    }
+                }
+            }
+            new_meta.tags = dbg!(res);
+            // Might want to make this async?
+            if let Err(e) = cache.set_album_meta(album.get_info(), &new_meta) {
+                dbg!(e);
+            }
+        }
+    }
+
     pub fn update_wiki(&self, wiki: Option<&Wiki>) {
         if let Some(wiki) = wiki {
             let wiki_text = self.imp().wiki_text.get();
@@ -550,7 +578,14 @@ impl AlbumContentView {
                             meta.tags
                                 .iter()
                                 .map(|tag| {
-                                    Tag::new(&tag.name, tag.url.clone(), true, &tags_box, &window)
+                                    Tag::new(&tag.name, tag.url.clone(),  tag.count,true, &tags_box, &window, clone!(
+                                        #[weak(rename_to = this)]
+                                        self,
+                                        move |_| {
+                                            // By now the tag widget has already been removed from the wrapbox
+                                            this.write_tags();
+                                        }
+                                    ))
                                 })
                                 .for_each(|tag| tags_box.append(&tag));
 
@@ -876,7 +911,7 @@ impl AlbumContentView {
             album
                 .get_genres()
                 .iter()
-                .map(|genre| Tag::new(&genre, None, false, &genres_box, &window))
+                .map(|genre| Tag::new(&genre, None, None, false, &genres_box, &window, |_| {}))
                 .for_each(|tag| genres_box.append(&tag));
 
             if genres_stack

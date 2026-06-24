@@ -453,7 +453,6 @@
                                         <property name="name">content</property>
                                         <property name="child">
                                           <object class="AdwWrapBox" id="genres_box">
-                                            <property name="orientation">vertical</property>
                                             <property name="child-spacing">3</property>
                                             <property name="line-spacing">3</property>
                                             <property name="justify">0</property>
@@ -526,7 +525,6 @@
                                                 <property name="vexpand">true</property>
                                                 <property name="child">
                                                   <object class="AdwWrapBox" id="tags_box">
-                                                    <property name="orientation">vertical</property>
                                                     <property name="child-spacing">3</property>
                                                     <property name="line-spacing">3</property>
                                                     <property name="justify">0</property>
