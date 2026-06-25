@@ -1,14 +1,11 @@
-use super::new_tag::NewTag;
-use super::{Library, artist_tag::ArtistTag};
+use super::{tags_section::TagsSection, Library, artist_tag::ArtistTag};
 use crate::common::FadingScrolledWindow;
 use crate::meta_providers::models::Wiki;
-use crate::meta_providers::models::{AlbumMeta, Tag as TagMeta};
+use crate::meta_providers::models::AlbumMeta;
 use crate::{
     cache::{Cache, CacheState, Error as CacheError, placeholders::EMPTY_ALBUM_STRING},
     client::{ClientState, state::StickersSupportLevel},
-    common::{
-        Album, Artist, ContentStack, ContentView, ImageStack, Rating, RowAddButtons, Song, SongRow,
-    },
+    common::{Album, Artist, ContentStack, ImageStack, Rating, RowAddButtons, Song, SongRow},
     library::{add_to_playlist::AddToPlaylistButton, tag::Tag},
     utils::{format_secs_as_duration, tokio_runtime},
     window::EuphonicaWindow,
@@ -19,7 +16,7 @@ use derivative::Derivative;
 use gio::{ActionEntry, Menu, SimpleActionGroup};
 use glib::{Binding, WeakRef, clone, closure_local, signal::SignalHandlerId};
 use gtk::{
-    BitsetIter, CompositeTemplate, ListItem, SignalListItemFactory, gdk, gio, glib, prelude::*,
+    BitsetIter, CompositeTemplate, gdk, gio, glib, prelude::*,
 };
 use std::{
     cell::{Cell, OnceCell, RefCell},
@@ -82,17 +79,7 @@ mod imp {
         pub runtime: TemplateChild<gtk::Label>,
 
         #[template_child]
-        pub add_first_tag_btn: TemplateChild<gtk::Button>,
-        #[template_child]
-        pub tags_stack: TemplateChild<ContentStack>,
-        #[template_child]
-        pub tags_fader: TemplateChild<FadingScrolledWindow>,
-        #[template_child]
-        pub tags_scroller: TemplateChild<gtk::ScrolledWindow>,
-        #[template_child]
-        pub tags_box: TemplateChild<adw::WrapBox>,
-        #[template_child]
-        pub new_tag: TemplateChild<NewTag>,
+        pub tags_widget: TemplateChild<TagsSection>,
 
         #[template_child]
         pub replace_queue: TemplateChild<gtk::Button>,
@@ -250,19 +237,27 @@ mod imp {
                 }
             ));
 
-            self.new_tag.connect_add(clone!(
+            self.tags_widget.set_on_tag_added(clone!(
                 #[weak(rename_to = this)]
                 self,
-                move |name| {
-                    this.obj().add_new_tag(name);
+                move |_, _, _| {
+                    this.obj().write_tags();
                 }
             ));
-
-            // Simply switch to content view (which has the new-tag widget)
-            let tags_stack = self.tags_stack.get();
-            self.add_first_tag_btn.connect_clicked(move |_| {
-                tags_stack.show_content();
-            });
+            self.tags_widget.set_on_tag_removed(clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |_| {
+                    this.obj().write_tags();
+                }
+            ));
+            self.tags_widget.set_on_add_btn_clicked(clone!(
+                #[weak(rename_to = this)]
+                self,
+                move || {
+                    this.obj().write_tags();
+                }
+            ));
 
             // Edit actions
             let obj = self.obj();
@@ -525,73 +520,13 @@ impl AlbumContentView {
         self.imp().album.borrow().as_ref().cloned()
     }
 
-    /// Will not add if an existing one with the same name is found.
-    pub fn add_new_tag(&self, name: &str) {
-        let mut found = false;
-        if let Some(tag) = self.imp().tags_box.first_child() {
-            let mut cursor: Tag = tag.downcast::<Tag>().unwrap();
-            loop {
-                if cursor.get_name().as_str() == name {
-                    found = true;
-                    break;
-                }
-                if let Some(next_tag) = cursor.next_sibling().and_downcast::<Tag>() {
-                    cursor = next_tag;
-                } else {
-                    break;
-                }
-            }
-        }
-        if !found {
-            self.imp().tags_box.append(&Tag::new(
-                name,
-                None,
-                None,
-                true,
-                &self.imp().tags_box.get(),
-                &self.imp().window.upgrade().unwrap(),
-                clone!(
-                    #[weak(rename_to = this)]
-                    self,
-                    move |_| {
-                        this.write_tags();
-                    }
-                ),
-            ));
-            self.write_tags();
-            // Scroll to bottom to show new tag
-            let adjustment = self.imp().tags_scroller.vadjustment();
-            let upper = adjustment.upper();
-            let page_size = adjustment.page_size();
-            // Set the adjustment value to the maximum scroll position
-            adjustment.set_value(upper - page_size);
-        }
-    }
-
     /// Update the SQLite entry with the current tag list.
     pub fn write_tags(&self) {
         if let (Some(cache), Some(album)) =
             (self.imp().cache.get(), self.imp().album.borrow().as_ref())
         {
             let mut new_meta = self.imp().meta.take().unwrap_or_default();
-
-            let mut res: Vec<TagMeta> = Vec::new();
-            if let Some(tag) = self.imp().tags_box.first_child() {
-                let mut cursor: Tag = tag.downcast::<Tag>().unwrap();
-                loop {
-                    res.push(TagMeta {
-                        url: cursor.get_link().map(|s| s.to_owned()),
-                        name: cursor.get_name().as_str().to_owned(),
-                        count: cursor.get_count(),
-                    });
-                    if let Some(next_tag) = cursor.next_sibling().and_downcast::<Tag>() {
-                        cursor = next_tag;
-                    } else {
-                        break;
-                    }
-                }
-            }
-            new_meta.tags = res;
+            new_meta.tags = self.imp().tags_widget.get_tags();
             // Might want to make this async?
             if let Err(e) = cache.set_album_meta(album.get_info(), &new_meta) {
                 dbg!(e);
@@ -627,15 +562,13 @@ impl AlbumContentView {
             // don't attempt to update metadata.
             if album.get_title().is_empty() {
                 self.imp().wiki_stack.show_placeholder();
-                self.imp().tags_stack.show_placeholder();
+                self.imp().tags_widget.remove_all();
                 // Additionally block edit
                 // self.imp().wiki_stack.set_sensitive(false);
             } else {
                 self.imp().wiki_stack.show_spinner();
-                self.imp().tags_stack.show_spinner();
                 let cache = self.imp().cache.get().unwrap().clone();
 
-                let tags_box = self.imp().tags_box.get();
                 let res = cache
                     .get_album_meta(
                         album.get_info(),
@@ -652,32 +585,15 @@ impl AlbumContentView {
 
                         // Handle tags
                         if !meta.tags.is_empty() {
-                            let window = self.imp().window.upgrade().unwrap();
-                            meta.tags
-                                .iter()
-                                .map(|tag| {
-                                    Tag::new(
-                                        &tag.name,
-                                        tag.url.clone(),
-                                        tag.count,
-                                        true,
-                                        &tags_box,
-                                        &window,
-                                        clone!(
-                                            #[weak(rename_to = this)]
-                                            self,
-                                            move |_| {
-                                                // By now the tag widget has already been removed from the wrapbox
-                                                this.write_tags();
-                                            }
-                                        ),
-                                    )
-                                })
-                                .for_each(|tag| tags_box.append(&tag));
-
-                            self.imp().tags_stack.show_content();
+                            for tag in &meta.tags {
+                                self.imp().tags_widget.add_tag(
+                                    &tag.name,
+                                    tag.url.clone(),
+                                    tag.count,
+                                );
+                            }
                         } else {
-                            self.imp().tags_stack.show_placeholder();
+                            self.imp().tags_widget.remove_all();
                         }
                     }
                     Ok(None) => {
@@ -720,6 +636,7 @@ impl AlbumContentView {
             .cache
             .set(cache)
             .expect("AlbumContentView cannot bind to cache");
+        self.imp().tags_widget.set_window(window);
         self.imp().window.set(Some(window));
         self.imp()
             .add_to_playlist
@@ -1117,7 +1034,7 @@ impl AlbumContentView {
         // We're now on libadwaita 1.8 so we can use this
         self.imp().artists_box.remove_all();
         self.imp().genres_box.remove_all();
-        self.imp().tags_box.remove_all();
+        self.imp().tags_widget.remove_all();
         let genres_stack = self.imp().genres_stack.get();
         if genres_stack
             .visible_child_name()
@@ -1138,7 +1055,6 @@ impl AlbumContentView {
         // Unset metadata widgets
         self.imp().song_list.remove_all();
         self.imp().content_stack.show_placeholder();
-        self.imp().tags_stack.show_spinner();
         self.imp().wiki_stack.show_spinner();
     }
 }

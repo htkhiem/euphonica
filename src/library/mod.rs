@@ -5,7 +5,7 @@ mod album_content_view;
 mod album_view;
 mod artist_tag;
 mod tag;
-mod new_tag;
+mod tags_section;
 
 mod artist_cell;
 mod artist_content_view;
@@ -34,6 +34,7 @@ pub use recent_view::RecentView;
 
 use album_cell::AlbumCell;
 pub use album_content_view::AlbumContentView;
+pub use tags_section::TagsSection;
 pub use album_view::AlbumView;
 
 use artist_cell::ArtistCell;
