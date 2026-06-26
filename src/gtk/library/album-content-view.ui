@@ -481,7 +481,9 @@
                                    </object>
                                  </child>
                                  <child>
-                                   <object class="EuphonicaTagsSection" id="tags_widget"/>
+                                   <object class="EuphonicaTagsSection" id="tags_widget">
+                                    <property name="vexpand">true</property>
+                                   </object>
                                  </child>
                                </object>
                              </child>
