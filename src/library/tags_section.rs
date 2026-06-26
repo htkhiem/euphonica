@@ -1,6 +1,6 @@
 use gtk::{
     CompositeTemplate,
-    glib::{self, Object, ParamSpec, ParamSpecString, clone},
+    glib::{self, Object, clone},
     prelude::*,
     subclass::prelude::*,
 };
@@ -33,8 +33,8 @@ mod imp {
         pub tags_box: TemplateChild<adw::WrapBox>,
 
         pub window: OnceCell<EuphonicaWindow>,
-        pub on_tag_added: OnceCell<Box<dyn Fn(&str, Option<String>, Option<i32>) + 'static>>,
-        pub on_tag_removed: OnceCell<Box<dyn Fn(&str) + 'static>>,
+        pub on_tag_added: OnceCell<Box<dyn Fn() + 'static>>,
+        pub on_tag_removed: OnceCell<Box<dyn Fn() + 'static>>,
         pub on_add_btn_clicked: OnceCell<Box<dyn Fn() + 'static>>,
     }
 
@@ -118,8 +118,7 @@ impl TagsSection {
     }
 
     /// Set callback called after a tag is added (from UI entry or `add_tag`).
-    /// Receives (tag_name, link, count).
-    pub fn set_on_tag_added<T: Fn(&str, Option<String>, Option<i32>) + 'static>(&self, cb: T) {
+    pub fn set_on_tag_added<T: Fn() + 'static>(&self, cb: T) {
         self.imp()
             .on_tag_added
             .set(Box::new(cb))
@@ -127,8 +126,7 @@ impl TagsSection {
     }
 
     /// Set callback called after a tag is removed (by clicking the remove button on a Tag widget).
-    /// Receives (tag_name).
-    pub fn set_on_tag_removed<T: Fn(&str) + 'static>(&self, cb: T) {
+    pub fn set_on_tag_removed<T: Fn() + 'static>(&self, cb: T) {
         self.imp()
             .on_tag_removed
             .set(Box::new(cb))
@@ -145,7 +143,7 @@ impl TagsSection {
 
     /// Programmatically add a tag to the list.
     /// Silently skips if a tag with the same name already exists.
-    pub fn add_tag(&self, name: &str, link: Option<String>, count: Option<i32>) {
+    pub fn add_tag(&self, name: &str, link: Option<String>, count: Option<i32>, set_by_user: bool) {
         // Check for duplicates
         if let Some(first) = self.imp().tags_box.first_child() {
             let mut cursor: Tag = first.downcast::<Tag>().unwrap();
@@ -171,12 +169,13 @@ impl TagsSection {
             true,
             &tags_box,
             &window,
+            set_by_user,
             clone!(
                 #[weak(rename_to = this)]
                 self,
                 move |tag: &Tag| {
                     if let Some(cb) = this.imp().on_tag_removed.get() {
-                        cb(tag.get_name().as_str());
+                        cb();
                     }
                 }
             ),
@@ -196,9 +195,10 @@ impl TagsSection {
         // Clear entry
         self.imp().tag_entry.set_text("");
 
-        // Fire on_tag_added callback
-        if let Some(cb) = self.imp().on_tag_added.get() {
-            cb(name, link, count);
+        if set_by_user {
+            if let Some(cb) = self.imp().on_tag_added.get() {
+                cb();
+            }
         }
     }
 
@@ -208,13 +208,17 @@ impl TagsSection {
         if name.is_empty() {
             return;
         }
-        self.add_tag(name.as_str(), None, None);
+        self.add_tag(name.as_str(), None, None, true);
     }
 
     /// Remove all tags from the list.
-    pub fn remove_all(&self) {
+    pub fn remove_all(&self, show_spinner: bool) {
         self.imp().tags_box.remove_all();
-        self.imp().tags_stack.show_placeholder();
+        if show_spinner {
+            self.imp().tags_stack.show_spinner();
+        } else {
+            self.imp().tags_stack.show_placeholder();
+        }
     }
 
     /// Build a list of TagMeta structs from the current tag widgets.
@@ -223,10 +227,12 @@ impl TagsSection {
         if let Some(first) = self.imp().tags_box.first_child() {
             let mut cursor: Tag = first.downcast::<Tag>().unwrap();
             loop {
+                let tag_name = cursor.get_name().as_str().to_owned();
                 result.push(TagMeta {
                     url: cursor.get_link().map(|s| s.to_owned()),
-                    name: cursor.get_name().as_str().to_owned(),
+                    name: tag_name.clone(),
                     count: cursor.get_count(),
+                    set_by_user: cursor.get_set_by_user(),
                 });
                 if let Some(next) = cursor.next_sibling().and_downcast::<Tag>() {
                     cursor = next;
@@ -236,5 +242,13 @@ impl TagsSection {
             }
         }
         result
+    }
+
+    pub fn show_placeholder(&self) {
+        self.imp().tags_stack.show_placeholder();
+    }
+
+    pub fn show_content(&self) {
+        self.imp().tags_stack.show_content();
     }
 }

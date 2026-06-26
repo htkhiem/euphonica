@@ -31,6 +31,7 @@ impl From<Tag> for models::Tag {
             name: mbtag.name,
             count: Some(mbtag.count.unwrap_or(0)),
             url: None,
+            set_by_user: false,
         }
     }
 }

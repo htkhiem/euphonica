@@ -4,7 +4,7 @@ use gtk::{
     prelude::*,
     subclass::prelude::*,
 };
-use std::cell::OnceCell;
+use std::cell::{OnceCell, Cell};
 
 use crate::window::EuphonicaWindow;
 use once_cell::sync::Lazy;
@@ -23,7 +23,8 @@ mod imp {
         pub tag_btn: TemplateChild<gtk::Button>,
         #[template_child]
         pub remove_btn: TemplateChild<gtk::Button>,
-        pub link: OnceCell<String>
+        pub link: OnceCell<String>,
+        pub set_by_user: Cell<bool>,
     }
 
     // The central trait for subclassing a GObject
@@ -91,10 +92,12 @@ impl Tag {
         is_removable: bool,
         wrap_box: &adw::WrapBox,
         window: &EuphonicaWindow,
+        set_by_user: bool,
         on_remove: T,
     ) -> Self {
         let res: Self = Object::builder().build();
         res.imp().name.set_label(name);
+        res.imp().set_by_user.set(set_by_user);
         if is_removable {
             res.imp().remove_btn.connect_clicked(clone!(
                 #[weak]
@@ -141,5 +144,9 @@ impl Tag {
 
     pub fn get_link(&self) -> Option<&str> {
         self.imp().link.get().map(String::as_str)
+    }
+
+    pub fn get_set_by_user(&self) -> bool {
+        self.imp().set_by_user.get()
     }
 }

@@ -14,7 +14,7 @@ use crate::{
         dynamic_playlist::{AutoRefresh, Ordering, Rule},
         inode::INodeInfo,
     },
-    meta_providers::models::{AlbumMeta, ArtistMeta, Lyrics, LyricsParseError},
+    meta_providers::models::{AlbumMeta, ArtistMeta, Lyrics, LyricsParseError, Tag},
     utils::{
         format_datetime_local_tz, get_doc_cache_path, get_image_cache_path, strip_filename_linux,
     },
@@ -36,7 +36,99 @@ static SQLITE_POOL: Lazy<r2d2::Pool<SqliteConnectionManager>> = Lazy::new(|| {
 
         println!("Local metadata DB version: {user_version}");
         match user_version {
+            5 => {
+                break;
+            }
             4 => {
+                let conn = &conn;
+                // Create tag tables
+                conn.execute_batch(
+                    "create table if not exists `album_tags` (
+    `folder_uri` VARCHAR not null,
+    `name` VARCHAR not null,
+    `count` INTEGER null,
+    `link` VARCHAR null,
+    `last_modified` DATETIME not null default CURRENT_TIMESTAMP,
+    `set_by_user` INTEGER not null default 0,
+    primary key(`folder_uri`, `name`)
+);
+create index if not exists `idx_album_tags_folder` on `album_tags` (
+    `folder_uri`
+);
+
+create table if not exists `artist_tags` (
+    `name` VARCHAR not null,
+    `tag_name` VARCHAR not null,
+    `count` INTEGER null,
+    `link` VARCHAR null,
+    `last_modified` DATETIME not null default CURRENT_TIMESTAMP,
+    `set_by_user` INTEGER not null default 0,
+    primary key(`name`, `tag_name`)
+);
+create index if not exists `idx_artist_tags_name` on `artist_tags` (
+    `name`
+);",
+                )
+                .expect("Unable to create tag tables");
+
+                // Extract tags from existing album metadata blobs
+                let albums: Vec<(String, Vec<u8>)> = conn
+                    .prepare("select folder_uri, data from albums")
+                    .unwrap()
+                    .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+                    .unwrap()
+                    .map(|r| r.unwrap())
+                    .collect();
+
+                for (folder_uri, data) in albums {
+                    let mut reader = Cursor::new(data);
+                    if let Ok(meta) = bson::deserialize_from_document::<AlbumMeta>(
+                        bson::Document::from_reader(&mut reader).unwrap_or_default(),
+                    ) {
+                        for tag in meta.tags {
+                            conn.execute(
+                                "insert or ignore into album_tags (folder_uri, name, count, link, set_by_user) values (?1, ?2, ?3, ?4, 0)",
+                                params![
+                                    &folder_uri,
+                                    &tag.name,
+                                    tag.count,
+                                    tag.url.as_deref(),
+                                ],
+                            ).ok();
+                        }
+                    }
+                }
+
+                // Extract tags from existing artist metadata blobs
+                let artists: Vec<(String, Vec<u8>)> = conn
+                    .prepare("select name, data from artists")
+                    .unwrap()
+                    .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+                    .unwrap()
+                    .map(|r| r.unwrap())
+                    .collect();
+
+                for (name, data) in artists {
+                    let mut reader = Cursor::new(data);
+                    if let Ok(meta) = bson::deserialize_from_document::<ArtistMeta>(
+                        bson::Document::from_reader(&mut reader).unwrap_or_default(),
+                    ) {
+                        for tag in meta.tags {
+                            conn.execute(
+                                "insert or ignore into artist_tags (name, tag_name, count, link, set_by_user) values (?1, ?2, ?3, ?4, 0)",
+                                params![
+                                    &name,
+                                    &tag.name,
+                                    tag.count,
+                                    tag.url.as_deref(),
+                                ],
+                            ).ok();
+                        }
+                    }
+                }
+
+                conn.execute_batch("pragma user_version = 5;")
+                    .expect("Unable to set DB version to 5");
                 break;
             }
             3 => {
@@ -269,8 +361,34 @@ create index if not exists `query_results_key` on `query_results` (
     `query_name`
 );
 
+create table if not exists `album_tags` (
+    `folder_uri` VARCHAR not null,
+    `name` VARCHAR not null,
+    `count` INTEGER null,
+    `link` VARCHAR null,
+    `last_modified` DATETIME not null default CURRENT_TIMESTAMP,
+    `set_by_user` INTEGER not null default 0,
+    primary key(`folder_uri`, `name`)
+);
+create index if not exists `idx_album_tags_folder` on `album_tags` (
+    `folder_uri`
+);
+
+create table if not exists `artist_tags` (
+    `name` VARCHAR not null,
+    `tag_name` VARCHAR not null,
+    `count` INTEGER null,
+    `link` VARCHAR null,
+    `last_modified` DATETIME not null default CURRENT_TIMESTAMP,
+    `set_by_user` INTEGER not null default 0,
+    primary key(`name`, `tag_name`)
+);
+create index if not exists `idx_artist_tags_name` on `artist_tags` (
+    `name`
+);
+
 pragma journal_mode=WAL;
-pragma user_version = 4;
+pragma user_version = 5;
 end;
 ",
                         )
@@ -298,6 +416,18 @@ pub enum Error {
     InsufficientKey,
     KeyAlreadyExists,
     Filesystem,
+}
+
+#[derive(Debug, Copy, Clone, Default)]
+pub enum TagsInsertMode {
+    /// Do not remove existing tags
+    #[default]
+    Append,
+    /// Remove all existing tags before writing new ones
+    Delsert,
+    /// Only remove metadata-supplied tags before writing. Useful for refreshing
+    ///  metadata without affecting user-set tags.
+    DelsertMetaSupplied
 }
 
 impl From<SqliteError> for Error {
@@ -474,6 +604,8 @@ pub fn write_album_meta(album: &AlbumInfo, meta: &AlbumMeta) -> Result<(), Error
             ).map_err(Error::DocToBytes)?
         ]
     ).map_err(Error::Db)?;
+    // When populating tag lists with metadata-supplied tags, take care not to remove user-set tags.
+    write_album_tags(&album.folder_uri, &meta.tags, TagsInsertMode::DelsertMetaSupplied)?;
     Ok(())
 }
 
@@ -493,7 +625,117 @@ pub fn write_artist_meta(artist: &ArtistInfo, meta: &ArtistMeta) -> Result<(), E
         ],
     )
     .map_err(Error::Db)?;
+    // When populating tag lists with metadata-supplied tags, take care not to remove user-set tags.
+    write_artist_tags(&artist.name, &meta.tags, TagsInsertMode::DelsertMetaSupplied)?;
     Ok(())
+}
+
+pub fn write_album_tags(folder_uri: &str, tags: &[Tag], mode: TagsInsertMode) -> Result<(), Error> {
+    let mut conn = SQLITE_POOL.get().unwrap();
+    let tx = conn.transaction().map_err(Error::Db)?;
+    match mode {
+        TagsInsertMode::Delsert => {
+            tx.execute("delete from album_tags where folder_uri = ?1", params![folder_uri])
+            .map_err(Error::Db)?;
+        }
+        TagsInsertMode::DelsertMetaSupplied => {
+            tx.execute("delete from album_tags where folder_uri = ?1 and set_by_user = 0", params![folder_uri])
+            .map_err(Error::Db)?;
+        }
+        _ => {}
+    }
+    for tag in tags.iter() {
+        tx.execute(
+            "insert into album_tags (folder_uri, name, count, link, last_modified, set_by_user)
+             values (?1, ?2, ?3, ?4, CURRENT_TIMESTAMP, ?5)",
+            params![
+                folder_uri,
+                &tag.name,
+                tag.count,
+                tag.url.as_deref(),
+                if tag.set_by_user { 1 } else { 0 }
+            ],
+        )
+        .map_err(Error::Db)?;
+    }
+    tx.commit().map_err(Error::Db)?;
+    Ok(())
+}
+
+pub fn write_artist_tags(name: &str, tags: &[Tag], mode: TagsInsertMode) -> Result<(), Error> {
+    let mut conn = SQLITE_POOL.get().unwrap();
+    let tx = conn.transaction().map_err(Error::Db)?;
+    match mode {
+        TagsInsertMode::Delsert => {
+            tx.execute("delete from artist_tags where name = ?1", params![name])
+            .map_err(Error::Db)?;
+        }
+        TagsInsertMode::DelsertMetaSupplied => {
+            tx.execute("delete from artist_tags where name = ?1 and set_by_user = 0", params![name])
+            .map_err(Error::Db)?;
+        }
+        _ => {}
+    }
+    for tag in tags.iter() {
+        tx.execute(
+            "insert into artist_tags (name, tag_name, count, link, last_modified, set_by_user)
+             values (?1, ?2, ?3, ?4, CURRENT_TIMESTAMP, ?5)",
+            params![
+                name,
+                &tag.name,
+                tag.count,
+                tag.url.as_deref(),
+                if tag.set_by_user { 1 } else { 0 }
+            ],
+        )
+        .map_err(Error::Db)?;
+    }
+    tx.commit().map_err(Error::Db)?;
+    Ok(())
+}
+
+pub fn find_album_tags(folder_uri: &str) -> Result<Vec<Tag>, Error> {
+    let conn = SQLITE_POOL.get().unwrap();
+    let mut query = conn
+        .prepare(
+            "select name, count, link, set_by_user from album_tags where folder_uri = ?1",
+        )
+        .unwrap();
+    let tags: Vec<Tag> = query
+        .query_map(params![folder_uri], |row| {
+            Ok(Tag {
+                name: row.get::<usize, String>(0)?,
+                count: row.get::<usize, Option<i32>>(1)?,
+                url: row.get::<usize, Option<String>>(2)?,
+                set_by_user: row.get::<usize, bool>(3)?,
+            })
+        })
+        .map_err(Error::Db)?
+        .map(|r| r.unwrap())
+        .collect();
+    Ok(tags)
+}
+
+pub fn find_artist_tags(name: &str) -> Result<Vec<Tag>, Error> {
+    let conn = SQLITE_POOL.get().unwrap();
+    let mut query = conn
+        .prepare(
+            "select tag_name, count, link, set_by_user from artist_tags where name = ?1",
+        )
+        .unwrap();
+    let tags: Vec<Tag> = query
+        .query_map(params![name], |row| {
+            Ok(Tag {
+                name: row.get::<usize, String>(0)?,
+                count: row.get::<usize, Option<i32>>(1)?,
+                url: row.get::<usize, Option<String>>(2)?,
+                set_by_user: row.get::<usize, bool>(3)?,
+            })
+        })
+        .map_err(Error::Db)?
+        .map(|r| r.unwrap())
+        .collect();
+    Ok(tags)
 }
 
 pub fn find_lyrics(uri: &str) -> Result<Option<Lyrics>, Error> {

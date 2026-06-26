@@ -240,14 +240,14 @@ mod imp {
             self.tags_widget.set_on_tag_added(clone!(
                 #[weak(rename_to = this)]
                 self,
-                move |_, _, _| {
+                move || {
                     this.obj().write_tags();
                 }
             ));
             self.tags_widget.set_on_tag_removed(clone!(
                 #[weak(rename_to = this)]
                 self,
-                move |_| {
+                move || {
                     this.obj().write_tags();
                 }
             ));
@@ -520,15 +520,14 @@ impl AlbumContentView {
         self.imp().album.borrow().as_ref().cloned()
     }
 
-    /// Update the SQLite entry with the current tag list.
+    /// Write the current tag list to the database.
     pub fn write_tags(&self) {
         if let (Some(cache), Some(album)) =
             (self.imp().cache.get(), self.imp().album.borrow().as_ref())
         {
-            let mut new_meta = self.imp().meta.take().unwrap_or_default();
-            new_meta.tags = self.imp().tags_widget.get_tags();
-            // Might want to make this async?
-            if let Err(e) = cache.set_album_meta(album.get_info(), &new_meta) {
+            let tags = self.imp().tags_widget.get_tags();
+            let folder_uri = album.get_info().folder_uri.clone();
+            if let Err(e) = cache.set_album_tags(&folder_uri, &tags) {
                 dbg!(e);
             }
         }
@@ -562,12 +561,12 @@ impl AlbumContentView {
             // don't attempt to update metadata.
             if album.get_title().is_empty() {
                 self.imp().wiki_stack.show_placeholder();
-                self.imp().tags_widget.remove_all();
-                // Additionally block edit
-                // self.imp().wiki_stack.set_sensitive(false);
+                self.imp().tags_widget.remove_all(false);
             } else {
                 self.imp().wiki_stack.show_spinner();
+                self.imp().tags_widget.remove_all(true);
                 let cache = self.imp().cache.get().unwrap().clone();
+                let folder_uri = album.get_info().folder_uri.clone();
 
                 let res = cache
                     .get_album_meta(
@@ -583,24 +582,34 @@ impl AlbumContentView {
                         // Handle wiki
                         self.update_wiki(meta.wiki.as_ref());
 
-                        // Handle tags
-                        if !meta.tags.is_empty() {
-                            for tag in &meta.tags {
-                                self.imp().tags_widget.add_tag(
-                                    &tag.name,
-                                    tag.url.clone(),
-                                    tag.count,
-                                );
+                        // Load tags from DB
+                        let tags = cache.get_album_tags(&folder_uri);
+                        if let Ok(tags) = tags {
+                            if tags.is_empty() {
+                                self.imp().tags_widget.show_placeholder();
+                            } else {
+                                for tag in tags {
+                                    self.imp().tags_widget.add_tag(
+                                        &tag.name,
+                                        tag.url.clone(),
+                                        tag.count,
+                                        tag.set_by_user,
+                                    );
+                                }
                             }
                         } else {
-                            self.imp().tags_widget.remove_all();
+                            
                         }
+
+                        self.imp().wiki_stack.show_content();
                     }
                     Ok(None) => {
                         self.imp().wiki_stack.show_placeholder();
+                        self.imp().tags_widget.show_placeholder();
                     }
                     Err(e) => {
                         self.imp().wiki_stack.show_placeholder();
+                        self.imp().tags_widget.show_placeholder();
                         dbg!(e);
                     }
                 }
@@ -914,7 +923,7 @@ impl AlbumContentView {
             album
                 .get_genres()
                 .iter()
-                .map(|genre| Tag::new(&genre, None, None, false, &genres_box, &window, |_| {}))
+                .map(|genre| Tag::new(&genre, None, None, false, &genres_box, &window, false, |_| {}))
                 .for_each(|tag| genres_box.append(&tag));
 
             if genres_stack
@@ -1034,7 +1043,7 @@ impl AlbumContentView {
         // We're now on libadwaita 1.8 so we can use this
         self.imp().artists_box.remove_all();
         self.imp().genres_box.remove_all();
-        self.imp().tags_widget.remove_all();
+        self.imp().tags_widget.remove_all(true);
         let genres_stack = self.imp().genres_stack.get();
         if genres_stack
             .visible_child_name()
