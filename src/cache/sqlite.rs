@@ -45,12 +45,12 @@ static SQLITE_POOL: Lazy<r2d2::Pool<SqliteConnectionManager>> = Lazy::new(|| {
                 conn.execute_batch(
                     "create table if not exists `album_tags` (
     `folder_uri` VARCHAR not null,
-    `name` VARCHAR not null,
-    `count` INTEGER null,
+    `tag` VARCHAR not null,
+    `count` INTEGER not null default 1,
     `link` VARCHAR null,
     `last_modified` DATETIME not null default CURRENT_TIMESTAMP,
     `set_by_user` INTEGER not null default 0,
-    primary key(`folder_uri`, `name`)
+    primary key(`folder_uri`, `tag`)
 );
 create index if not exists `idx_album_tags_folder` on `album_tags` (
     `folder_uri`
@@ -58,12 +58,12 @@ create index if not exists `idx_album_tags_folder` on `album_tags` (
 
 create table if not exists `artist_tags` (
     `name` VARCHAR not null,
-    `tag_name` VARCHAR not null,
-    `count` INTEGER null,
+    `tag` VARCHAR not null,
+    `count` INTEGER not null default 1,
     `link` VARCHAR null,
     `last_modified` DATETIME not null default CURRENT_TIMESTAMP,
     `set_by_user` INTEGER not null default 0,
-    primary key(`name`, `tag_name`)
+    primary key(`name`, `tag`)
 );
 create index if not exists `idx_artist_tags_name` on `artist_tags` (
     `name`
@@ -87,11 +87,11 @@ create index if not exists `idx_artist_tags_name` on `artist_tags` (
                     ) {
                         for tag in meta.tags {
                             conn.execute(
-                                "insert or ignore into album_tags (folder_uri, name, count, link, set_by_user) values (?1, ?2, ?3, ?4, 0)",
+                                "insert into album_tags (folder_uri, tag, count, link, set_by_user) values (?1, ?2, ?3, ?4, 0)",
                                 params![
                                     &folder_uri,
                                     &tag.name,
-                                    tag.count,
+                                    tag.count.unwrap_or(1),
                                     tag.url.as_deref(),
                                 ],
                             ).ok();
@@ -115,11 +115,11 @@ create index if not exists `idx_artist_tags_name` on `artist_tags` (
                     ) {
                         for tag in meta.tags {
                             conn.execute(
-                                "insert or ignore into artist_tags (name, tag_name, count, link, set_by_user) values (?1, ?2, ?3, ?4, 0)",
+                                "insert into artist_tags (name, tag, count, link, set_by_user) values (?1, ?2, ?3, ?4, 0)",
                                 params![
                                     &name,
                                     &tag.name,
-                                    tag.count,
+                                    tag.count.unwrap_or(1),
                                     tag.url.as_deref(),
                                 ],
                             ).ok();
@@ -363,12 +363,12 @@ create index if not exists `query_results_key` on `query_results` (
 
 create table if not exists `album_tags` (
     `folder_uri` VARCHAR not null,
-    `name` VARCHAR not null,
-    `count` INTEGER null,
+    `tag` VARCHAR not null,
+    `count` INTEGER not null default 1,
     `link` VARCHAR null,
     `last_modified` DATETIME not null default CURRENT_TIMESTAMP,
     `set_by_user` INTEGER not null default 0,
-    primary key(`folder_uri`, `name`)
+    primary key(`folder_uri`, `tag`)
 );
 create index if not exists `idx_album_tags_folder` on `album_tags` (
     `folder_uri`
@@ -376,12 +376,12 @@ create index if not exists `idx_album_tags_folder` on `album_tags` (
 
 create table if not exists `artist_tags` (
     `name` VARCHAR not null,
-    `tag_name` VARCHAR not null,
-    `count` INTEGER null,
+    `tag` VARCHAR not null,
+    `count` INTEGER not null default 1,
     `link` VARCHAR null,
     `last_modified` DATETIME not null default CURRENT_TIMESTAMP,
     `set_by_user` INTEGER not null default 0,
-    primary key(`name`, `tag_name`)
+    primary key(`name`, `tag`)
 );
 create index if not exists `idx_artist_tags_name` on `artist_tags` (
     `name`
@@ -646,12 +646,12 @@ pub fn write_album_tags(folder_uri: &str, tags: &[Tag], mode: TagsInsertMode) ->
     }
     for tag in tags.iter() {
         tx.execute(
-            "insert into album_tags (folder_uri, name, count, link, last_modified, set_by_user)
+            "insert into album_tags (folder_uri, tag, count, link, last_modified, set_by_user)
              values (?1, ?2, ?3, ?4, CURRENT_TIMESTAMP, ?5)",
             params![
                 folder_uri,
                 &tag.name,
-                tag.count,
+                tag.count.unwrap_or(1),
                 tag.url.as_deref(),
                 if tag.set_by_user { 1 } else { 0 }
             ],
@@ -678,12 +678,12 @@ pub fn write_artist_tags(name: &str, tags: &[Tag], mode: TagsInsertMode) -> Resu
     }
     for tag in tags.iter() {
         tx.execute(
-            "insert into artist_tags (name, tag_name, count, link, last_modified, set_by_user)
+            "insert into artist_tags (name, tag, count, link, last_modified, set_by_user)
              values (?1, ?2, ?3, ?4, CURRENT_TIMESTAMP, ?5)",
             params![
                 name,
                 &tag.name,
-                tag.count,
+                tag.count.unwrap_or(1),
                 tag.url.as_deref(),
                 if tag.set_by_user { 1 } else { 0 }
             ],
@@ -698,14 +698,14 @@ pub fn find_album_tags(folder_uri: &str) -> Result<Vec<Tag>, Error> {
     let conn = SQLITE_POOL.get().unwrap();
     let mut query = conn
         .prepare(
-            "select name, count, link, set_by_user from album_tags where folder_uri = ?1",
+            "select tag, count, link, set_by_user from album_tags where folder_uri = ?1",
         )
         .unwrap();
     let tags: Vec<Tag> = query
         .query_map(params![folder_uri], |row| {
             Ok(Tag {
                 name: row.get::<usize, String>(0)?,
-                count: row.get::<usize, Option<i32>>(1)?,
+                count: Some(row.get::<usize, i32>(1)?),
                 url: row.get::<usize, Option<String>>(2)?,
                 set_by_user: row.get::<usize, bool>(3)?,
             })
@@ -720,16 +720,39 @@ pub fn find_artist_tags(name: &str) -> Result<Vec<Tag>, Error> {
     let conn = SQLITE_POOL.get().unwrap();
     let mut query = conn
         .prepare(
-            "select tag_name, count, link, set_by_user from artist_tags where name = ?1",
+            "select tag, count, link, set_by_user from artist_tags where name = ?1",
         )
         .unwrap();
     let tags: Vec<Tag> = query
         .query_map(params![name], |row| {
             Ok(Tag {
                 name: row.get::<usize, String>(0)?,
-                count: row.get::<usize, Option<i32>>(1)?,
+                count: Some(row.get::<usize, i32>(1)?),
                 url: row.get::<usize, Option<String>>(2)?,
                 set_by_user: row.get::<usize, bool>(3)?,
+            })
+        })
+        .map_err(Error::Db)?
+        .map(|r| r.unwrap())
+        .collect();
+    Ok(tags)
+}
+
+/// Get distinct album tags and their counts
+pub async fn distinct_album_tags() -> Result<Vec<Tag>, Error> {
+    let conn = SQLITE_POOL.get().unwrap();
+    let mut query = conn
+        .prepare(
+            "select sum(count) from album_tags group by name",
+        )
+        .unwrap();
+    let tags: Vec<Tag> = query
+        .query_map(params![], |row| {
+            Ok(Tag {
+                name: row.get::<usize, String>(0)?,
+                count: Some(row.get::<usize, i32>(1)?),
+                url: None,
+                set_by_user: false,  // don't care
             })
         })
         .map_err(Error::Db)?

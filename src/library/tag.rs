@@ -125,7 +125,7 @@ impl Tag {
         }
         if let Some(count) = count {
             res.imp().count.set_label(&count.to_string());
-            res.imp().count.set_visible(true);
+            res.imp().count.set_visible(count > 1);
         }
         res
     }

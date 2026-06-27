@@ -21,7 +21,8 @@
             <child>
               <object class="GtkLabel" id="count">
                 <style>
-                  <class name="caption-heading"/>
+                  <class name="caption"/>
+                  <class name="dimmed"/>
                 </style>
                 <property name="visible">false</property>
                 <property name="ellipsize">3</property>
