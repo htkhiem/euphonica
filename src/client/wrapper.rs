@@ -913,6 +913,28 @@ impl MpdWrapper {
         Ok(())
     }
 
+    pub async fn get_distinct_genres<F>(&self, respond: &mut F) -> ClientResult<()>
+    where
+        F: FnMut(&str),
+    {
+        let (s, r) = oneshot::channel();
+        let mut vals = self
+            .foreground(
+                Task::List(
+                    Term::Tag(tags::GENRE.into()),
+                    Query::new(),
+                    None,
+                    s,
+                ),
+                r,
+            )
+            .await?;
+        for genre in std::mem::take(&mut vals.groups[0].1) {
+            respond(genre.as_str());
+        }
+        Ok(())
+    }
+
     pub async fn get_recent_albums<F>(&self, respond: &mut F) -> ClientResult<()>
     where
         F: FnMut(Album),

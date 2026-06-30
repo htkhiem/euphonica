@@ -26,6 +26,7 @@ mod rule_button;
 // Common stuff shared between views
 mod add_to_playlist;
 mod generic_row;
+mod tags_filter;
 
 // The Library controller itself
 mod controller;
@@ -35,6 +36,7 @@ pub use recent_view::RecentView;
 use album_cell::AlbumCell;
 pub use album_content_view::AlbumContentView;
 pub use tags_section::TagsSection;
+pub use tags_filter::TagsFilter;
 pub use album_view::AlbumView;
 
 use artist_cell::ArtistCell;

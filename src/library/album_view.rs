@@ -9,7 +9,7 @@ use gtk::{
 use std::cell::{OnceCell, RefCell};
 use std::{cell::Cell, cmp::Ordering, rc::Rc, sync::OnceLock};
 
-use super::{AlbumCell, AlbumContentView, Library};
+use super::{AlbumCell, AlbumContentView, Library, TagsFilter};
 use crate::{
     cache::Cache,
     client::ClientState,
@@ -45,6 +45,10 @@ mod imp {
         pub rating: TemplateChild<Rating>,
         #[template_child]
         pub rating_mode: TemplateChild<gtk::DropDown>,
+        #[template_child]
+        pub genres_filter: TemplateChild<TagsFilter>,
+        #[template_child]
+        pub tags_filter: TemplateChild<TagsFilter>,
 
         // Content
         #[template_child]
@@ -441,11 +445,19 @@ impl AlbumView {
         self.imp().library.set(Some(library));
         let weak = WeakRef::new();
         weak.set(Some(window));
+
         self.imp()
             .window
             .set(weak)
             .expect("AlbumView window already set");
         self.setup_gridview(cache.clone(), window);
+
+        // Set up genres and tags filters
+        self.imp().genres_filter.setup(
+            &library.genres(),
+            |_| {},
+            window
+        );
 
         let content_view = self.imp().content_view.get();
         content_view.setup(library, client_state, cache, window);
@@ -600,8 +612,11 @@ impl LazyInit for AlbumView {
                         stack.show_placeholder();
                     }
                     this.imp().initializing.set(false);
-                    // Now populate the stickers
-                    let _ = library.init_album_stickers().await;
+                    // Now populate the stickers and genres
+                    let _ = futures::join!(
+                        library.init_album_stickers(),
+                        library.init_genres()
+                    );
                 });
             }
         }

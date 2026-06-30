@@ -1,4 +1,4 @@
-use super::{tags_section::TagsSection, Library, artist_tag::ArtistTag};
+use super::{TagsSection, Library, artist_tag::ArtistTag};
 use crate::common::FadingScrolledWindow;
 use crate::meta_providers::models::Wiki;
 use crate::meta_providers::models::AlbumMeta;

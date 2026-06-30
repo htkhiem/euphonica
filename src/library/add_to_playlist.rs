@@ -154,7 +154,7 @@ mod imp {
                     // term.
                     let term = name_box.text();
                     if !term.is_empty() {
-                        filter.set_search(Some(&name_box.text()));
+                        filter.set_search(Some(&term));
                     } else {
                         filter.set_search(None);
                     }

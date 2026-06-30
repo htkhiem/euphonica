@@ -100,7 +100,7 @@
                         </child>
                         <child>
                           <object class="GtkButton" id="clear_queue">
-                            <property name="icon-name">list-remove-all-symbolic</property>
+                            <property name="icon-name">brush-symbolic</property>
                             <property name="tooltip-text" translatable="true">Clear the queue</property>
                             <property name="sensitive">false</property>
                             <style>
