@@ -678,6 +678,9 @@ impl Library {
                 })
                 .await?;
 
+            dbg!(album_artist_model.n_items());
+
+
             // init the artists list
             let artist_model = self.imp().artists.clone();
             artist_model.remove_all();
@@ -687,6 +690,8 @@ impl Library {
                     artist_model.append(&artist);
                 })
                 .await?;
+
+
 
         }
         Ok(())

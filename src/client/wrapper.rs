@@ -1007,7 +1007,7 @@ impl MpdWrapper {
             tags::ARTIST
         };
         let tagtypes_to_load = if use_album_artist {
-            vec![tags::ALBUMARTIST, tags::ALBUMARTISTSORT, tags::ALBUMARTIST_MBID]
+            vec![tags::ALBUMARTIST, tags::ALBUMARTISTSORT, tags::ALBUMARTIST_MBID, tags::ALBUM]
         } else {
             vec![tags::ARTIST, tags::ARTISTSORT, tags::ARTIST_MBID]
         };
@@ -1030,7 +1030,16 @@ impl MpdWrapper {
                 .foreground(Task::FindMultiple(queries_windows, Some(tagtypes_to_load.clone()), s), r)
                 .await?;
             for i in (0..songs.len()) {
-                let artists = std::mem::take(&mut songs[i]).into_artist_infos();
+                let song = &mut songs[i];
+                // if we're getting album artists we need to long at song.album.artists
+                // instead of just song.artists
+                let artists = if use_album_artist {
+                    song.album.as_ref()
+                        .map(|a| a.artists.clone())
+                        .unwrap_or_default()
+                } else {
+                    std::mem::take(&mut song.artists)
+                };
                 for artist in artists.into_iter() {
                     if already_parsed.insert(artist.get_comp_id().to_owned()) {
                         respond(artist.into());

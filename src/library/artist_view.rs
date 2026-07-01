@@ -333,6 +333,9 @@ impl ArtistView {
                     library.artists()
                 };
                 this.imp().artist_source.set_model(Some(&model));
+                // todo: this makes the pane flash and scroll to the bottom.
+                // the only way to avoid this that I can think of is to return to the
+                // "single list containing artist + album artists", and then filter it
             })
         );
 
