@@ -387,7 +387,12 @@
 		<key name="sort-direction" enum='io.github.htkhiem.Euphonica.sortdir'>
 			<default>'asc'</default>
 			<summary>Artist View sort direction</summary>
-		</key>
+        </key>
+
+        <key name="album-artists-only" type="b">
+            <default>false</default>
+            <summary>Show only album artists</summary>
+        </key>
 	</schema>
 
 	<schema id="io.github.htkhiem.Euphonica.state.folderview" path="/io/github/htkhiem/Euphonica/state/folderview/">

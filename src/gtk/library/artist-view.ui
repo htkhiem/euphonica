@@ -10,7 +10,7 @@
             <child>
               <object class="AdwToolbarView">
                 <child type="top">
-					        <object class="AdwHeaderBar">
+					<object class="AdwHeaderBar">
                     <property name="show-title">false</property>
                     <child type="start">
                       <object class="GtkButton" id="show_sidebar">
@@ -22,6 +22,15 @@
                     <child type="end">
                       <object class="GtkToggleButton" id="search_btn">
                         <property name="icon-name">edit-find-symbolic</property>
+                      </object>
+                    </child>
+                    <child type="end">
+                      <object class="GtkToggleButton" id="album_artist_only_btn">
+                        <property name="icon-name">avatar-default-symbolic</property>
+                        <property name="tooltip-text" translatable="true">Show only album artists</property>
+                        <style>
+                            <class name="flat"/>
+                        </style>
                       </object>
                     </child>
                     <child type="end">
@@ -45,7 +54,7 @@
                           </object>
                         </child>
                       </object>
-                    </child>
+                  </child>
                   </object>
                 </child>
                 <child type="top">
@@ -66,7 +75,7 @@
                       </object>
                     </property>
                     <property name="content">
-                      <object class="GtkScrolledWindow">
+                      <object class="GtkScrolledWindow" id="scrolled_window">
                         <property name="hscrollbar-policy">never</property>
                         <property name="vscrollbar-policy">automatic</property>
                         <property name="propagate-natural-height">true</property>
