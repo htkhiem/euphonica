@@ -47,10 +47,12 @@ mod imp {
         #[template_child]
         pub refresh_cache_stats_btn: TemplateChild<gtk::Button>,
 
-        #[template_child]
-        pub store_lossless_images: TemplateChild<adw::SwitchRow>,
-        #[template_child]
-        pub max_image_resolution: TemplateChild<gtk::Scale>,
+	#[template_child]
+		pub n_image_threads: TemplateChild<adw::SpinRow>,
+		#[template_child]
+		pub store_lossless_images: TemplateChild<adw::SwitchRow>,
+		#[template_child]
+		pub max_image_resolution: TemplateChild<gtk::Scale>,
         #[template_child]
         pub clear_cache_row: TemplateChild<adw::ActionRow>,
         #[template_child]
@@ -142,10 +144,14 @@ impl LibraryPreferences {
             .bind("pause-recent", &imp.pause_recent.get(), "active")
             .build();
 
-        // Image cache settings
-        library_settings
-            .bind("store-lossless-images", &imp.store_lossless_images.get(), "active")
-            .build();
+	// Image processing settings
+		library_settings
+			.bind("n-image-threads", &imp.n_image_threads.get(), "value")
+			.build();
+
+		library_settings
+			.bind("store-lossless-images", &imp.store_lossless_images.get(), "active")
+			.build();
 
         let max_res = imp.max_image_resolution.get();
         library_settings

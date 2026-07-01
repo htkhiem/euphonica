@@ -183,12 +183,27 @@
 						<property name="icon-name">view-refresh-symbolic</property>
 					</object>
 				</property>
-				<child>
-					<object class="AdwSwitchRow" id="store_lossless_images">
-						<property name="title" translatable="true">Store images as lossless</property>
-						<property name="subtitle" translatable="true">WebP supports both lossy and lossless. Lossless files are much larger but may look slightly better. Requires redownloading.</property>
-					</object>
-				</child>
+		<child>
+				<object class="AdwSpinRow" id="n_image_threads">
+					<property name="title" translatable="true">Image processing thread count</property>
+					<property name="subtitle" translatable="true">Number of threads used for parallel image processing (resizing, encoding, decoding). More threads does not always mean better performance. Requires restart to take effect.</property>
+					<property name="adjustment">
+						<object class="GtkAdjustment">
+							<property name="lower">1</property>
+							<property name="upper">24</property>
+							<property name="value">4</property>
+							<property name="page-increment">1</property>
+							<property name="step-increment">1</property>
+						</object>
+					</property>
+				</object>
+			</child>
+			<child>
+				<object class="AdwSwitchRow" id="store_lossless_images">
+					<property name="title" translatable="true">Store images as lossless</property>
+					<property name="subtitle" translatable="true">WebP supports both lossy and lossless. Lossless files are much larger but may look slightly better. Requires redownloading.</property>
+				</object>
+			</child>
 				<child>
 					<object class="AdwActionRow">
 						<property name="title" translatable="true">Maximum resolution</property>

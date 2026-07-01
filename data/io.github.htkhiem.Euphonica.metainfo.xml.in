@@ -79,6 +79,16 @@
   </screenshots>
 
   <releases>
+    <release version="0.99.5-beta" date="2026-05-23">
+      <url type="details">https://github.com/htkhiem/euphonica/releases/tag/v0.99.4-beta</url>
+      <description>
+        <p>Change: Much faster album/artist grid population over remote connections (~20x).</p>
+        <p>Change: Multithreaded album art decoding and resizing (configurable thread count).</p>
+        <p>Change: Reduced overhead of album grid visibility checks, especially for smooth-scrolling devices.</p>
+        <p>Fix: Hot infinite album art fetching loop for certain library layouts.</p>
+        <p>Fix: Lack of Secret Service no longer prevents login when there is no password needed.</p>
+      </description>
+    </release>
     <release version="0.99.4-beta" date="2026-05-23">
       <url type="details">https://github.com/htkhiem/euphonica/releases/tag/v0.99.4-beta</url>
       <description>

@@ -151,6 +151,7 @@ pub fn build_comparator(
 pub enum Error {
     NoExist,
     Mpd(MpdError),
+    Image(image::error::ImageError),
     Internal,
     Socket,
     CredentialStore,
@@ -163,6 +164,15 @@ pub enum Error {
 pub type Result<T> = result::Result<T, Error>;
 
 pub type Responder<T> = OneShotSender<Result<T>>;
+
+/// maybe_download_image can either return a registered image bundle (ready for use)
+/// or, if newly downloaded from MPD, a raw bytes vector for processing. This is so
+/// that we can do said processing in a simple glib threadpool handled from the main
+/// thread & avoid blocking this one.
+pub enum ImageHandle {
+    Registered(utils::RegisteredImageBundle),
+    New(Vec<u8>, String), // bytes and key to register as
+}
 
 /// The successor to BackgroundTask.
 pub enum Task {
@@ -305,7 +315,7 @@ pub enum Task {
         /// URI to song file
         String,
         /// Full paths to high-resolution and low-resolution file, respectively
-        Responder<Option<utils::RegisteredImageBundle>>,
+        Responder<Option<ImageHandle>>,
     ),
     /// Get a song's folder cover (cover.jpg/png/webp in the same folder).
     /// Will try to download from MPD if one isn't already available locally.
@@ -313,7 +323,7 @@ pub enum Task {
         /// URI to folder with trailing slash
         String,
         /// Full paths to high-resolution and low-resolution file, respectively
-        Responder<Option<utils::RegisteredImageBundle>>,
+        Responder<Option<ImageHandle>>,
     ),
     /// Query distinct values of a tag, optionally grouped by another
     List(
@@ -323,6 +333,13 @@ pub enum Task {
         Responder<GroupedValues>,
     ),
     Find(Query<'static>, Window, Responder<Vec<SongInfo>>),
+    /// Batched version of Find.
+    FindMultiple(
+        Vec<(Query<'static>, Window)>, 
+        /// Optional list of tagtypes to limit to.
+        Option<Vec<&'static str>>, 
+        Responder<Vec<SongInfo>>
+    ),
     LsInfo(String, Responder<Vec<INodeInfo>>),
     GetPlaylist(
         /// Playlist name
@@ -541,20 +558,20 @@ impl Connection {
     /// Note to self: no prefix handling here because all images downloaded from MPD are album arts.
     fn maybe_download_image<F>(
         &mut self,
-        example_uri: String,   // Must be a full URI (not the truncated folder_uri) to avoid problems with remote connections
+        example_uri: String, // Must be a full URI (not the truncated folder_uri) to avoid problems with remote connections
         download_func: F,
-        register_key: Option<String>,   // defaults to folder-level URI of the above example_uri
-        resp: Responder<Option<utils::RegisteredImageBundle>>,
+        register_key: Option<String>, // defaults to folder-level URI of the above example_uri
+        resp: Responder<Option<ImageHandle>>,
     ) where
         F: Fn(&mut Client<StreamWrapper>, &String) -> MpdResult<Vec<u8>>,
     {
         // `register_key` overrides the key used for DB lookup and registration.
-        // This lets us store a folder-level key even when the fetch URI is track-level.   
+        // This lets us store a folder-level key even when the fetch URI is track-level.
         // unwrap_or_else to avoid having to run strip_filename_linux when register_key.is_some().
         let key = register_key.as_deref().unwrap_or_else(
             // We still internally truncate to folder-level URI for mapping purposes, e.g. avoiding downloading
             // the same album art more than once when given different URIs within the same folder.
-            || strip_filename_linux(&example_uri)
+            || strip_filename_linux(&example_uri),
         );
 
         // Always check with our DB first, as multiple calls may be spawned
@@ -563,31 +580,28 @@ impl Connection {
         // should start using the local cached version as soon as possible.
         let hires = sqlite::find_image_by_key(key, None, false).expect("Sqlite DB error");
         let thumb = sqlite::find_image_by_key(key, None, true).expect("Sqlite DB error");
-        if let (Some(hires), Some(thumb)) = (hires, thumb) {
-            let _ = resp.send(Ok(Some(utils::RegisteredImageBundle {
-                hires: utils::RegisteredImage {
-                    name: hires,
-                    img: RefCell::new(None),
+        // The above might return empty strings verbatim. Normally we wouldn't even reach this if the strings were empty,
+        // but there might be some race conditions when there are multiple distinct album tags in the same folder?
+        if hires.as_ref().is_some_and(|s| !s.is_empty()) && thumb.as_ref().is_some_and(|s| !s.is_empty()) {
+            let (hires, thumb) = (hires.unwrap(), thumb.unwrap());
+            let _ = resp.send(Ok(Some(ImageHandle::Registered(
+                utils::RegisteredImageBundle {
+                    hires: utils::RegisteredImage {
+                        name: hires,
+                        img: RefCell::new(None),
+                    },
+                    thumb: utils::RegisteredImage {
+                        name: thumb,
+                        img: RefCell::new(None),
+                    },
                 },
-                thumb: utils::RegisteredImage {
-                    name: thumb,
-                    img: RefCell::new(None),
-                },
-            })));
+            ))));
         } else {
             // Not available locally => try to download
             self.respond_with_client(
                 |c| {
                     match download_func(c, &example_uri) {
-                        Ok(bytes) => Ok(Some(utils::save_and_register_image(
-                            image::load_from_memory(&bytes).map_err(|_| {
-                                MpdError::Parse(mpd::error::ParseError::BadValue(
-                                    "unexpected EOF in texture".into(),
-                                ))
-                            })?,
-                            key,
-                            None,
-                        ))),
+                        Ok(bytes) => Ok(Some(ImageHandle::New(bytes, key.to_owned()))),
                         Err(MpdError::Proto(ProtoError::NotPair)) => {
                             // Empty output. Treat as not available.
                             Ok(None)
@@ -1053,6 +1067,18 @@ impl Connection {
                         },
                         resp,
                     ),
+                    Task::FindMultiple(queries_windows, tagtypes,resp) => {
+                        self.respond_with_client(
+                        move |c| {
+                            c.find_multiple(
+                                &queries_windows, 
+                                tagtypes.as_deref()
+                            ).map(|mpd_songs| {
+                                mpd_songs.into_iter().map(SongInfo::from).collect()
+                            })
+                        },
+                        resp,
+                    )},
                     Task::LsInfo(path, resp) => self.respond_with_client(
                         |c| {
                             c.lsinfo(&path)

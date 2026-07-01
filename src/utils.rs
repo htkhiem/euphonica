@@ -270,11 +270,6 @@ pub fn save_and_register_single_image(
         let webp: webp::WebPMemory = encoder.encode(90.0);
         std::fs::write(&path, &*webp).unwrap();
     }
-    
-    
-
-    
-
     sqlite::register_image_key(key, prefix, Some(&name), is_thumb).expect("Sqlite error");
 
     name
