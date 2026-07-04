@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <interface>
-  <template class="EuphonicaArtistTag" parent="GtkButton">
+  <template class="EuphonicaArtistTagButton" parent="GtkButton">
     <!-- The below assumes that a LibAdwaita button is 34px tall. -->
     <style>
       <class name="circular"/>

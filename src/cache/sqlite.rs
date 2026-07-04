@@ -761,6 +761,29 @@ pub async fn distinct_album_tags() -> Result<Vec<Tag>, Error> {
     Ok(tags)
 }
 
+/// Get distinct album tags and their counts
+pub async fn distinct_artist_tags() -> Result<Vec<Tag>, Error> {
+    let conn = SQLITE_POOL.get().unwrap();
+    let mut query = conn
+        .prepare(
+            "select sum(count) from artist_tags group by name",
+        )
+        .unwrap();
+    let tags: Vec<Tag> = query
+        .query_map(params![], |row| {
+            Ok(Tag {
+                name: row.get::<usize, String>(0)?,
+                count: Some(row.get::<usize, i32>(1)?),
+                url: None,
+                set_by_user: false,  // don't care
+            })
+        })
+        .map_err(Error::Db)?
+        .map(|r| r.unwrap())
+        .collect();
+    Ok(tags)
+}
+
 pub fn find_lyrics(uri: &str) -> Result<Option<Lyrics>, Error> {
     let query: Result<LyricsRow, SqliteError>;
     let conn = SQLITE_POOL.get().unwrap();

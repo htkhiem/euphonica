@@ -183,8 +183,8 @@ mod imp {
                 obj.set_accels_for_action("app.toggle-playback", &["<Ctrl>p"]);
                 obj.set_accels_for_action("app.next-song", &["<Shift>greater"]);
                 obj.set_accels_for_action("app.prev-song", &["<Shift>less"]);
-                obj.set_accels_for_action("app.seek-forward", &["<Shift>f"]);
-                obj.set_accels_for_action("app.seek-backward", &["<Shift>b"]);
+                obj.set_accels_for_action("app.seek-forward", &["<Ctrl><Shift>f"]);
+                obj.set_accels_for_action("app.seek-backward", &["<Ctrl><Shift>b"]);
                 obj.set_accels_for_action("app.stop", &["<Ctrl><Shift>s"]);
                 obj.set_accels_for_action("app.toggle-random", &["<Alt>z"]);
                 obj.set_accels_for_action("app.cycle-flow", &["<Alt>r"]);

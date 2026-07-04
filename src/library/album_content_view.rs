@@ -1,4 +1,4 @@
-use super::{TagsSection, Library, artist_tag::ArtistTag};
+use super::{TagsSection, Library, artist_tag_button::ArtistTagButton, Tag};
 use crate::common::FadingScrolledWindow;
 use crate::meta_providers::models::Wiki;
 use crate::meta_providers::models::AlbumMeta;
@@ -534,7 +534,7 @@ impl AlbumContentView {
     }
 
     pub fn update_wiki(&self, wiki: Option<&Wiki>) {
-        if let Some(wiki) = dbg!(wiki) {
+        if let Some(wiki) = wiki {
             let wiki_text = self.imp().wiki_text.get();
             let wiki_link = self.imp().wiki_link.get();
             let wiki_attrib = self.imp().wiki_attrib.get();
@@ -551,7 +551,6 @@ impl AlbumContentView {
             wiki_attrib.set_label(&wiki.attribution);
             self.imp().wiki_stack.show_content();
         } else {
-            println!("Hiding wiki");
             self.imp().wiki_stack.show_placeholder();
         }
     }
@@ -591,10 +590,13 @@ impl AlbumContentView {
                             } else {
                                 for tag in tags {
                                     self.imp().tags_widget.add_tag(
-                                        &tag.name,
-                                        tag.url.clone(),
-                                        tag.count,
-                                        tag.set_by_user,
+                                        &Tag::new(
+                                            tag.name,
+                                            tag.url,
+                                            tag.count,
+                                            true,
+                                            tag.set_by_user
+                                        )
                                     );
                                 }
                             }
@@ -922,7 +924,9 @@ impl AlbumContentView {
             album
                 .get_genres()
                 .iter()
-                .map(|genre| TagButton::new(&genre, None, None, false, &genres_box, &window, false, |_| {}))
+                .map(|genre| TagButton::new(
+                    &Tag::new(genre.clone(), None, None, false, false),
+                    &genres_box, &window, |_| {}))
                 .for_each(|tag| genres_box.append(&tag));
 
             if genres_stack
@@ -1001,7 +1005,7 @@ impl AlbumContentView {
                                 .get_artists()
                                 .iter()
                                 .map(|info| {
-                                    ArtistTag::new(
+                                    ArtistTagButton::new(
                                         &Artist::from(info.clone()),
                                         this.imp().cache.get().unwrap().clone(),
                                         &this.imp().window.upgrade().unwrap(),

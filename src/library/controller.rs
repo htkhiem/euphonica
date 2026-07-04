@@ -2,6 +2,7 @@ use crate::{
     cache::{Cache, sqlite},
     client::{Error as ClientError, MpdWrapper, Result as ClientResult, StickerSetMode},
     common::{Album, Artist, DynamicPlaylist, INode, Song, SongInfo, Stickers, tags},
+    library::Tag,
     player::Player,
     utils::settings_manager,
 };
@@ -39,20 +40,20 @@ mod imp {
         pub dyn_playlists_initialized: Cell<bool>,
         #[derivative(Default(value = "gio::ListStore::new::<Album>()"))]
         pub albums: gio::ListStore,
+        #[derivative(Default(value = "gio::ListStore::new::<Tag>()"))]
+        pub album_tags: gio::ListStore,
         pub albums_initialized: Cell<bool>,
         #[derivative(Default(value = "gio::ListStore::new::<Album>()"))]
         pub recent_albums: gio::ListStore,
-        // #[derivative(Default(value = "gio::ListStore::new::<gtk::StringObject>()"))]
-        // pub album_tags: gio::ListStore,  // Unlike tags, genres aren't editable from UI so we only need to fetch em once
-        // pub album_tags_initialized: Cell<bool>,
         #[derivative(Default(value = "gio::ListStore::new::<Artist>()"))]
         pub artists: gio::ListStore,
-        pub artist_genres: gtk::StringList,
+        #[derivative(Default(value = "gio::ListStore::new::<Tag>()"))]
+        pub artist_tags: gio::ListStore,
         pub artists_initialized: Cell<bool>,
         #[derivative(Default(value = "gio::ListStore::new::<Artist>()"))]
         pub recent_artists: gio::ListStore,
-        #[derivative(Default(value = "gio::ListStore::new::<gtk::StringObject>()"))]
-        pub genres: gio::ListStore,  // Unlike tags, genres aren't editable from UI so we only need to fetch em once
+        #[derivative(Default(value = "gio::ListStore::new::<Tag>()"))]
+        pub genres: gio::ListStore,
         pub genres_initialized: Cell<bool>,
         // Folder view
         // Files and folders
@@ -620,7 +621,11 @@ impl Library {
             for album in self.imp().recent_albums.iter::<Album>() {
                 // Right now the only sticker we use is album rating
                 let album = album.unwrap();
-                if let Ok(rating_str) = self.client().get_sticker("album", album.get_title().into(), "rating".into()).await {
+                if let Ok(rating_str) = self
+                    .client()
+                    .get_sticker("album", album.get_title().into(), "rating".into())
+                    .await
+                {
                     {
                         let mut stickers = album.get_stickers().borrow_mut();
                         stickers.set_rating(&rating_str);
@@ -646,33 +651,33 @@ impl Library {
             self.imp().genres_initialized.set(true);
             let genres = self.imp().genres.clone();
             genres.remove_all();
-            self.client().get_distinct_genres(&mut |split_genres: Vec<String>| {
-                for genre in split_genres {
-                    let obj = gtk::StringObject::new(&genre);
-                    genres.append(&obj);
-                }
-            }).await?;
+            self.client()
+                .get_distinct_genres(&mut |split_genres: Vec<String>| {
+                    for genre in split_genres {
+                        let obj = Tag::new(genre, None, None, false, false);
+                        genres.append(&obj);
+                    }
+                })
+                .await?;
         }
         Ok(())
     }
 
-    // pub async fn init_tags(&self, refresh: bool) -> ClientResult<()> {
-    //     if refresh || !self.imp().tags_initialized.get() {
-    //         self.imp().tags_initialized.set(true);
-    //         let tags = self.imp().tags.clone();
-    //         tags.remove_all();
-    //         sqlite::distinct_album_tags()
-    //         self.client().get_distinct_genres(&mut |split_genres: Vec<String>| {
-    //             for genre in split_genres {
-    //                 let obj = gtk::StringObject::new(&genre);
-    //                 genres.append(&obj);
-    //             }
-    //         }).await?;
-    //     }
-    //     Ok(())
-    // }
+    pub async fn refresh_album_tags(&self) -> ClientResult<()> {
+        let tags = self.imp().album_tags.clone();
+        tags.remove_all();
+        tags.extend_from_slice(
+            &sqlite::distinct_album_tags()
+                .await
+                .map_err(|_| ClientError::Internal)?
+                .into_iter()
+                .map(Tag::from)
+                .collect::<Vec<Tag>>(),
+        );
+        Ok(())
+    }
 
-    /// Fetch basic info for all albums to display them in a grid.
+    /// Fetch basic info for all albums to display them in a grid. Will also fetch tags as stored locally.
     /// Note: this function no longer fetches stickers s.t. we can return the grid to the user earlier.
     pub async fn init_albums(&self) -> ClientResult<()> {
         if !self.imp().albums_initialized.get() {
@@ -694,7 +699,11 @@ impl Library {
             for album in self.imp().albums.iter::<Album>() {
                 // Right now the only sticker we use is album rating
                 let album = album.unwrap();
-                if let Ok(rating_str) = self.client().get_sticker("album", album.get_title().into(), "rating".into()).await {
+                if let Ok(rating_str) = self
+                    .client()
+                    .get_sticker("album", album.get_title().into(), "rating".into())
+                    .await
+                {
                     {
                         let mut stickers = album.get_stickers().borrow_mut();
                         stickers.set_rating(&rating_str);
@@ -703,10 +712,23 @@ impl Library {
                     album.notify_stickers_changed();
                 }
             }
-        }
-        else {
+        } else {
             eprintln!("WARNING: init_album_stickers called before init_albums. This is a no-op.");
         }
+        Ok(())
+    }
+
+    pub async fn refresh_artist_tags(&self) -> ClientResult<()> {
+        let tags = self.imp().artist_tags.clone();
+        tags.remove_all();
+        tags.extend_from_slice(
+            &sqlite::distinct_artist_tags()
+                .await
+                .map_err(|_| ClientError::Internal)?
+                .into_iter()
+                .map(Tag::from)
+                .collect::<Vec<Tag>>(),
+        );
         Ok(())
     }
 

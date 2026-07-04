@@ -6,7 +6,7 @@ use gtk::{
 };
 use std::cell::OnceCell;
 
-use super::tag_button::TagButton;
+use super::{tag_button::TagButton, Tag};
 use crate::common::{ContentStack, FadingScrolledWindow};
 use crate::meta_providers::models::Tag as TagMeta;
 use crate::window::EuphonicaWindow;
@@ -143,12 +143,12 @@ impl TagsSection {
 
     /// Programmatically add a tag to the list.
     /// Silently skips if a tag with the same name already exists.
-    pub fn add_tag(&self, name: &str, link: Option<String>, count: Option<i32>, set_by_user: bool) {
+    pub fn add_tag(&self, data: &Tag) {
         // Check for duplicates
         if let Some(first) = self.imp().tags_box.first_child() {
             let mut cursor: TagButton = first.downcast::<TagButton>().unwrap();
             loop {
-                if cursor.get_name().as_str() == name {
+                if cursor.data().unwrap().name() == data.name() {
                     return; // duplicate, skip
                 }
                 if let Some(next) = cursor.next_sibling().and_downcast::<TagButton>() {
@@ -163,17 +163,13 @@ impl TagsSection {
         let tags_box = self.imp().tags_box.get();
 
         let tag = TagButton::new(
-            name,
-            link.clone(),
-            count,
-            true,
+            data,
             &tags_box,
             &window,
-            set_by_user,
             clone!(
                 #[weak(rename_to = this)]
                 self,
-                move |tag: &TagButton| {
+                move |_| {
                     if let Some(cb) = this.imp().on_tag_removed.get() {
                         cb();
                     }
@@ -195,7 +191,7 @@ impl TagsSection {
         // Clear entry
         self.imp().tag_entry.set_text("");
 
-        if set_by_user {
+        if data.set_by_user() {
             if let Some(cb) = self.imp().on_tag_added.get() {
                 cb();
             }
@@ -208,7 +204,7 @@ impl TagsSection {
         if name.is_empty() {
             return;
         }
-        self.add_tag(name.as_str(), None, None, true);
+        self.add_tag(&Tag::new(name.to_string(), None, Some(1), true, true));
     }
 
     /// Remove all tags from the list.
@@ -227,13 +223,7 @@ impl TagsSection {
         if let Some(first) = self.imp().tags_box.first_child() {
             let mut cursor: TagButton = first.downcast::<TagButton>().unwrap();
             loop {
-                let tag_name = cursor.get_name().as_str().to_owned();
-                result.push(TagMeta {
-                    url: cursor.get_link().map(|s: &str| s.to_owned()),
-                    name: tag_name.clone(),
-                    count: cursor.get_count(),
-                    set_by_user: cursor.get_set_by_user(),
-                });
+                result.push(cursor.data().unwrap().to_meta());
                 if let Some(next) = cursor.next_sibling().and_downcast::<TagButton>() {
                     cursor = next;
                 } else {

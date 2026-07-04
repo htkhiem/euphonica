@@ -7,9 +7,10 @@ use gtk::{
 use quick_xml::escape::escape;
 use rustc_hash::FxHashSet;
 use std::cell::{OnceCell, RefCell};
-use std::rc::Rc;
 
 use crate::window::EuphonicaWindow;
+
+use super::Tag;
 
 mod imp {
     use super::*;
@@ -118,8 +119,8 @@ mod imp {
                             #[upgrade_or]
                             true,
                             move |obj| {
-                                obj.downcast_ref::<gtk::StringObject>()
-                                    .is_some_and(|s| this.selected.borrow().contains(s.string().as_str()))
+                                obj.downcast_ref::<Tag>()
+                                    .is_some_and(|s| this.selected.borrow().contains(s.name()))
                             }
                         ));
                         selected_filter.changed(gtk::FilterChange::MoreStrict);
@@ -164,7 +165,7 @@ impl TagsFilter {
 
     pub fn setup<F: Fn(Vec<String>) + 'static + Clone>(
         &self,
-        model: &gio::ListStore,
+        model: &gio::ListStore,  // of tag::Tag objects
         on_selection_changed: F,
         window: &EuphonicaWindow,
     ) {
@@ -182,12 +183,10 @@ impl TagsFilter {
                 #[upgrade_or]
                 adw::ActionRow::new().into(),
                 move |obj| {
-                    let name = obj
-                        .downcast_ref::<gtk::StringObject>()
-                        .unwrap()
-                        .string()
-                        .as_str()
-                        .to_owned();
+                    let tag = obj
+                        .downcast_ref::<Tag>()
+                        .unwrap();
+                    let name = tag.name().to_owned();
                     let check = gtk::CheckButton::new();
                     {
                         check.set_active(this.imp().selected.borrow().get(&name).is_some());
@@ -205,15 +204,23 @@ impl TagsFilter {
                             };
                         }
                     ));
-                    let row = adw::ActionRow::builder()
+                    let row_builder = adw::ActionRow::builder()
                         .activatable_widget(&check)
                         .use_markup(false)
-                        .title(escape(&name))
                         .title_lines(0)
-                        .build();
+                        .title(escape(&name));
+                        
+                    let count = tag.count();
+                    let row = if count > 1 {
+                        row_builder
+                            // TODO: translatable
+                            .subtitle(&format!("{} occurrences", count))
+                            .build()
+                    } else {
+                        row_builder.build()
+                    };
 
                     row.add_suffix(&check);
-
                     row.into()
                 }
             ),
