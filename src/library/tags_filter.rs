@@ -6,6 +6,7 @@ use gtk::{
     subclass::prelude::*,
 };
 use rustc_hash::FxHashSet;
+use quick_xml::escape::escape;
 use std::cell::{OnceCell, RefCell};
 
 use crate::window::EuphonicaWindow;
@@ -27,7 +28,7 @@ mod imp {
         #[template_child]
         pub search: TemplateChild<gtk::SearchEntry>,
         #[template_child]
-        pub list: TemplateChild<gtk::FlowBox>, // adw::WrapBox doesn't support model binding :(
+        pub list: TemplateChild<gtk::ListBox>, // adw::WrapBox doesn't support model binding :(
         #[template_child]
         pub text_widget: TemplateChild<gtk::Label>,
         #[template_child]
@@ -137,11 +138,7 @@ impl TagsFilter {
                 #[weak(rename_to = this)]
                 self,
                 #[upgrade_or]
-                gtk::ToggleButton::builder()
-                    .halign(gtk::Align::Start)
-                    .valign(gtk::Align::Start)
-                    .css_classes(["toggle-tag"])
-                    .build()
+                adw::ActionRow::new()
                     .into(),
                 move |obj| {
                     let name = obj
@@ -150,20 +147,15 @@ impl TagsFilter {
                         .string()
                         .as_str()
                         .to_owned();
-                    let btn = gtk::ToggleButton::builder()
-                        .halign(gtk::Align::Start)
-                        .valign(gtk::Align::Start)
-                        .label(&name)
-                        .css_classes(["toggle-tag"])
-                        .build();
-                    // Initialise with selected status. This is necessary as these widgets can be destroyed
-                    // as we narrow our searches; when we relax the search they'd come back in a blank state.
+                    let check = gtk::CheckButton::new();
                     {
-                        btn.set_active(this.imp().selected.borrow().get(&name).is_some());
+                        check.set_active(this.imp().selected.borrow().get(&name).is_some());
                     }
-                    btn.connect_toggled(clone!(
+                    check.connect_toggled(clone!(
                         #[weak]
                         this,
+                        #[strong]
+                        name,
                         move |btn| {
                             if btn.is_active() {
                                 this.imp().selected.borrow_mut().insert(name.clone());
@@ -172,7 +164,16 @@ impl TagsFilter {
                             };
                         }
                     ));
-                    btn.into()
+                    let row = adw::ActionRow::builder()
+                        .activatable_widget(&check)
+                        .use_markup(false)
+                        .title(escape(&name))
+                        .title_lines(0)
+                        .build();
+
+                    row.add_suffix(&check);
+
+                    row.into()
                 }
             ),
         );
@@ -210,10 +211,13 @@ impl TagsFilter {
                 let mut idx: i32 = 0;
                 let list = this.imp().list.get();
                 loop {
-                    if let Some(tag) = list.child_at_index(idx) {
+                    if let Some(tag) = list.row_at_index(idx) {
                         tag.child()
                             .unwrap()
-                            .downcast_ref::<gtk::ToggleButton>()
+                            .downcast_ref::<adw::ActionRow>()
+                            .unwrap()
+                            .activatable_widget()
+                            .and_downcast::<gtk::CheckButton>()
                             .unwrap()
                             .set_active(false);
                         idx += 1;
@@ -222,7 +226,7 @@ impl TagsFilter {
                     }
                 }
                 this.imp().count.set_visible(false);
-                this.imp().dialog.close();
+                // this.imp().dialog.close();
                 on_selection_changed(Vec::with_capacity(0));
             }
         ));

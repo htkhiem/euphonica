@@ -1134,14 +1134,14 @@ impl Connection {
                                 .flat_map(|g| g.1.into_iter())
                                 .collect();
 
-                            let mut split_genres: Vec<String> = Vec::new();
+                            let mut seen: FxHashSet<String> = FxHashSet::default();
                             for genre in raw_genres {
                                 for split in crate::common::split_genre_tag(&genre) {
-                                    split_genres.push(split.to_owned());
+                                    seen.insert(split.to_owned());
                                 }
                             }
 
-                            Ok(split_genres)
+                            Ok(seen.into_iter().collect())
                         })();
                         let _ = resp.send(result);
                     }
