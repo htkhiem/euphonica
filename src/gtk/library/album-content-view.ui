@@ -18,8 +18,6 @@
             <setter object="title" property="justify">center</setter>
             <setter object="artists_box" property="halign">center</setter>          
             <setter object="artists_box" property="align">0.5</setter>
-            <setter object="genres_box" property="orientation">horizontal</setter>
-            <setter object="tags_box" property="orientation">horizontal</setter>
           </object>
         </child>
         <property name="child">

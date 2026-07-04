@@ -534,7 +534,7 @@ impl AlbumContentView {
     }
 
     pub fn update_wiki(&self, wiki: Option<&Wiki>) {
-        if let Some(wiki) = wiki {
+        if let Some(wiki) = dbg!(wiki) {
             let wiki_text = self.imp().wiki_text.get();
             let wiki_link = self.imp().wiki_link.get();
             let wiki_attrib = self.imp().wiki_attrib.get();
@@ -551,6 +551,7 @@ impl AlbumContentView {
             wiki_attrib.set_label(&wiki.attribution);
             self.imp().wiki_stack.show_content();
         } else {
+            println!("Hiding wiki");
             self.imp().wiki_stack.show_placeholder();
         }
     }
@@ -598,10 +599,8 @@ impl AlbumContentView {
                                 }
                             }
                         } else {
-                            
+                            self.imp().tags_widget.show_placeholder();
                         }
-
-                        self.imp().wiki_stack.show_content();
                     }
                     Ok(None) => {
                         self.imp().wiki_stack.show_placeholder();
