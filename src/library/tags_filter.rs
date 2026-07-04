@@ -1,8 +1,8 @@
 use adw::prelude::*;
 use gtk::{
     CompositeTemplate,
+    gio,
     glib::{self, Object, Properties, WeakRef, clone},
-    prelude::*,
     subclass::prelude::*,
 };
 use rustc_hash::FxHashSet;
@@ -123,7 +123,7 @@ impl TagsFilter {
 
     pub fn setup<F: Fn(Vec<String>) + 'static + Clone>(
         &self,
-        model: &gtk::StringList,
+        model: &gio::ListStore,
         on_selection_changed: F,
         window: &EuphonicaWindow,
     ) {

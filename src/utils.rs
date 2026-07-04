@@ -470,6 +470,46 @@ pub fn rebuild_artist_delim_exception_automaton() {
     }
 }
 
+fn build_genre_delim_automaton() -> Option<AhoCorasick> {
+    let setting = settings_manager()
+        .child("library")
+        .value("genre-tag-delims");
+    let delims: Vec<&str> = setting.array_iter_str().unwrap().collect();
+    build_aho_corasick_automaton(&delims)
+}
+
+fn build_genre_delim_exceptions_automaton() -> Option<AhoCorasick> {
+    let setting = settings_manager()
+        .child("library")
+        .value("genre-tag-delim-exceptions");
+    let excepts: Vec<&str> = setting.array_iter_str().unwrap().collect();
+    build_aho_corasick_automaton(&excepts)
+}
+
+pub static GENRE_DELIM_AUTOMATON: Lazy<RwLock<Option<AhoCorasick>>> = Lazy::new(|| {
+    let opt_automaton = build_genre_delim_automaton();
+    RwLock::new(opt_automaton)
+});
+
+pub fn rebuild_genre_delim_automaton() {
+    if let Ok(mut automaton) = GENRE_DELIM_AUTOMATON.write() {
+        let new = build_genre_delim_automaton();
+        *automaton = new;
+    }
+}
+
+pub static GENRE_DELIM_EXCEPTION_AUTOMATON: Lazy<RwLock<Option<AhoCorasick>>> = Lazy::new(|| {
+    let opt_automaton = build_genre_delim_exceptions_automaton();
+    RwLock::new(opt_automaton)
+});
+
+pub fn rebuild_genre_delim_exception_automaton() {
+    if let Ok(mut automaton) = GENRE_DELIM_EXCEPTION_AUTOMATON.write() {
+        let new = build_genre_delim_exceptions_automaton();
+        *automaton = new;
+    }
+}
+
 /// There are two guard layers against full fetches.
 /// - This LazyInit trait. All heavy views must implement it. A view's populate() will then be called
 /// by the sidebar upon navigating to that view. If that view is already initialised, populate() must

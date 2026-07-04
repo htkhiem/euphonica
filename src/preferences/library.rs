@@ -30,6 +30,15 @@ mod imp {
         pub artist_excepts_apply: TemplateChild<gtk::Button>,
 
         #[template_child]
+        pub genre_delims: TemplateChild<gtk::TextView>,
+        #[template_child]
+        pub genre_delims_apply: TemplateChild<gtk::Button>,
+        #[template_child]
+        pub genre_excepts: TemplateChild<gtk::TextView>,
+        #[template_child]
+        pub genre_excepts_apply: TemplateChild<gtk::Button>,
+
+        #[template_child]
         pub n_recent_albums: TemplateChild<adw::SpinRow>,
         #[template_child]
         pub n_recent_artists: TemplateChild<adw::SpinRow>,
@@ -268,6 +277,89 @@ impl LibraryPreferences {
                 btn.set_sensitive(false);
                 // Reinitialise the automaton
                 utils::rebuild_artist_delim_exception_automaton();
+            }
+        ));
+
+        // Setup genre section
+        let genre_delims_buf = imp.genre_delims.buffer();
+        let genre_delims_apply = imp.genre_delims_apply.get();
+        genre_delims_buf.set_text(
+            &library_settings
+                .value("genre-tag-delims")
+                .array_iter_str()
+                .unwrap()
+                .collect::<Vec<&str>>()
+                .join("\n"),
+        );
+        genre_delims_buf.connect_changed(clone!(
+            #[weak]
+            genre_delims_apply,
+            move |_| {
+                genre_delims_apply.set_sensitive(true);
+            }
+        ));
+        genre_delims_apply.connect_clicked(clone!(
+            #[weak]
+            library_settings,
+            #[weak]
+            genre_delims_buf,
+            move |btn| {
+                let _ = library_settings.set_value(
+                    "genre-tag-delims",
+                    &genre_delims_buf
+                        .text(
+                            &genre_delims_buf.start_iter(),
+                            &genre_delims_buf.end_iter(),
+                            false,
+                        )
+                        .to_string()
+                        .lines()
+                        .collect::<Vec<&str>>()
+                        .to_variant(),
+                );
+                btn.set_sensitive(false);
+                utils::rebuild_genre_delim_automaton();
+            }
+        ));
+
+        let genre_excepts_buf = imp.genre_excepts.buffer();
+        let genre_excepts_apply = imp.genre_excepts_apply.get();
+        genre_excepts_buf.set_text(
+            &library_settings
+                .value("genre-tag-delim-exceptions")
+                .array_iter_str()
+                .unwrap()
+                .collect::<Vec<&str>>()
+                .join("\n"),
+        );
+        genre_excepts_buf.connect_changed(clone!(
+            #[weak]
+            genre_excepts_apply,
+            move |_| {
+                genre_excepts_apply.set_sensitive(true);
+            }
+        ));
+        genre_excepts_apply.connect_clicked(clone!(
+            #[weak]
+            library_settings,
+            #[weak]
+            genre_excepts_buf,
+            move |btn| {
+                let _ = library_settings.set_value(
+                    "genre-tag-delim-exceptions",
+                    &genre_excepts_buf
+                        .text(
+                            &genre_excepts_buf.start_iter(),
+                            &genre_excepts_buf.end_iter(),
+                            false,
+                        )
+                        .to_string()
+                        .lines()
+                        .collect::<Vec<&str>>()
+                        .to_variant(),
+                );
+                btn.set_sensitive(false);
+                utils::rebuild_genre_delim_exception_automaton();
             }
         ));
     }

@@ -4,6 +4,7 @@ pub mod blend_mode;
 pub mod content_stack;
 pub mod content_view;
 pub mod dynamic_playlist;
+pub mod genre;
 pub mod image_stack;
 pub mod inode;
 pub mod marquee;
@@ -21,6 +22,7 @@ pub mod fading_scrolled_window;
 
 pub use album::{Album, AlbumInfo};
 pub use artist::{Artist, ArtistInfo, artists_to_string, parse_mb_artist_tag};
+pub use genre::split_genre_tag;
 pub use content_stack::ContentStack;
 pub use content_view::ContentView;
 pub use dynamic_playlist::DynamicPlaylist;

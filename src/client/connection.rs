@@ -372,6 +372,9 @@ pub enum Task {
         bool,
         Responder<Vec<SongInfo>>,
     ),
+    /// Get distinct genres from MPD and split them using configured delimiters/exceptions.
+    /// Returns the list of split genre strings.
+    ListGenres(Responder<Vec<String>>),
 }
 
 /// Asynchronous wrapper around an rust-mpd client instance.
@@ -1122,6 +1125,25 @@ impl Connection {
                     // ),
                     Task::ResolveDynamicPlaylist(dp, cache, resp) => {
                         let _ = resp.send(self.resolve_dynamic_playlist_rules(dp, cache));
+                    }
+                    Task::ListGenres(resp) => {
+                        let result = (|| -> Result<Vec<String>> {
+                            let raw_genres: Vec<String> = self.client_then(|c| {
+                                c.list(&Term::Tag(Cow::Borrowed(crate::common::tags::GENRE)), &Query::new(), None)
+                            })?.groups.into_iter()
+                                .flat_map(|g| g.1.into_iter())
+                                .collect();
+
+                            let mut split_genres: Vec<String> = Vec::new();
+                            for genre in raw_genres {
+                                for split in crate::common::split_genre_tag(&genre) {
+                                    split_genres.push(split.to_owned());
+                                }
+                            }
+
+                            Ok(split_genres)
+                        })();
+                        let _ = resp.send(result);
                     }
                 }
             } else if let (Some(sender), Some(client)) =

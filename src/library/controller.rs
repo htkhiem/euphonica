@@ -49,7 +49,8 @@ mod imp {
         #[derivative(Default(value = "gio::ListStore::new::<Artist>()"))]
         pub recent_artists: gio::ListStore,
 
-        pub genres: gtk::StringList,  // Unlike tags, genres aren't editable from UI so we only need to fetch em once
+        #[derivative(Default(value = "gio::ListStore::new::<gtk::StringObject>()"))]
+        pub genres: gio::ListStore,  // Unlike tags, genres aren't editable from UI so we only need to fetch em once
         pub genres_initialized: Cell<bool>,
 
         // Folder view
@@ -437,7 +438,7 @@ impl Library {
     }
 
     /// Get a reference to the list of distinct genres
-    pub fn genres(&self) -> gtk::StringList {
+    pub fn genres(&self) -> gio::ListStore {
         self.imp().genres.clone()
     }
 
@@ -643,8 +644,12 @@ impl Library {
         if !self.imp().genres_initialized.get() {
             self.imp().genres_initialized.set(true);
             let genres = self.imp().genres.clone();
-            self.client().get_distinct_genres(&mut |genre: &str| {
-                genres.append(genre);
+            genres.remove_all();
+            self.client().get_distinct_genres(&mut |split_genres: Vec<String>| {
+                for genre in split_genres {
+                    let obj = gtk::StringObject::new(&genre);
+                    genres.append(&obj);
+                }
             }).await?;
         }
         Ok(())

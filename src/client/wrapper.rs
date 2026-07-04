@@ -915,23 +915,16 @@ impl MpdWrapper {
 
     pub async fn get_distinct_genres<F>(&self, respond: &mut F) -> ClientResult<()>
     where
-        F: FnMut(&str),
+        F: FnMut(Vec<String>),
     {
         let (s, r) = oneshot::channel();
-        let mut vals = self
+        let split_genres: Vec<String> = self
             .foreground(
-                Task::List(
-                    Term::Tag(tags::GENRE.into()),
-                    Query::new(),
-                    None,
-                    s,
-                ),
+                Task::ListGenres(s),
                 r,
             )
             .await?;
-        for genre in std::mem::take(&mut vals.groups[0].1) {
-            respond(genre.as_str());
-        }
+        respond(split_genres);
         Ok(())
     }
 
