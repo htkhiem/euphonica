@@ -1,9 +1,10 @@
 use gtk::{
-    glib::{self, Object, clone},
+    glib::{self, Object, ParamSpec, ParamSpecString},
     prelude::*,
     subclass::prelude::*,
 };
 use std::cell::{OnceCell, Cell};
+use once_cell::sync::Lazy;
 
 use crate::meta_providers::models;
 
@@ -32,7 +33,24 @@ mod imp {
     }
 
     // #[glib::derived_properties]
-    impl ObjectImpl for Tag {}
+    impl ObjectImpl for Tag {
+        fn properties() -> &'static [ParamSpec] {
+            static PROPERTIES: Lazy<Vec<ParamSpec>> = Lazy::new(|| {
+                vec![
+                    ParamSpecString::builder("name").read_only().build(),
+                ]
+            });
+            PROPERTIES.as_ref()
+        }
+
+        fn property(&self, _id: usize, pspec: &ParamSpec) -> glib::Value {
+            let obj = self.obj();
+            match pspec.name() {
+                "name" => obj.name().to_value(),
+                _ => unimplemented!()
+            }
+        }
+    }
 }
 
 glib::wrapper! {

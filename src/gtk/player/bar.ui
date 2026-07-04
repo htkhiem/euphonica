@@ -121,7 +121,6 @@
             <property name="name">micro</property>
             <property name="content">
               <object class="GtkBox">
-                <property name="spacing">6</property>
                 <property name="halign">fill</property>
                 <property name="orientation">1</property>
                 <child>

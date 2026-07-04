@@ -73,9 +73,9 @@ mod imp {
 
             let filter = gtk::StringFilter::builder()
                 .expression(gtk::PropertyExpression::new(
-                    gtk::StringObject::static_type(),
+                    Tag::static_type(),
                     Option::<gtk::PropertyExpression>::None,
-                    "string",
+                    "name",
                 ))
                 .match_mode(gtk::StringFilterMatchMode::Substring)
                 .build();
