@@ -19,6 +19,13 @@
               <property name="title-widget">
                 <object class="GtkSearchEntry" id="search"/>
               </property>
+              <child type="end">
+                <object class="GtkToggleButton" id="toggle_btn">
+                  <property name="icon-name">enabled-feature-symbolic</property>
+                  <property name="valign">center</property>
+                  <property name="tooltip-text" translatable="true">Show only selected</property>
+                </object>
+              </child>
             </object>
           </child>
           <property name="content">
@@ -31,6 +38,7 @@
                   <property name="selection-mode">0</property>
                   <property name="margin-start">6</property>
                   <property name="margin-end">6</property>
+                  <property name="valign">start</property>
                   <style>
                     <class name="boxed-list"/>
                   </style>

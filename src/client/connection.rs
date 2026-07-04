@@ -1140,8 +1140,9 @@ impl Connection {
                                     seen.insert(split.to_owned());
                                 }
                             }
-
-                            Ok(seen.into_iter().collect())
+                            let mut res: Vec<String> = seen.into_iter().collect();
+                            res.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
+                            Ok(res)
                         })();
                         let _ = resp.send(result);
                     }

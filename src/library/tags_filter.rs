@@ -1,13 +1,13 @@
 use adw::prelude::*;
 use gtk::{
-    CompositeTemplate,
-    gio,
+    CompositeTemplate, gio,
     glib::{self, Object, Properties, WeakRef, clone},
     subclass::prelude::*,
 };
-use rustc_hash::FxHashSet;
 use quick_xml::escape::escape;
+use rustc_hash::FxHashSet;
 use std::cell::{OnceCell, RefCell};
+use std::rc::Rc;
 
 use crate::window::EuphonicaWindow;
 
@@ -33,8 +33,11 @@ mod imp {
         pub text_widget: TemplateChild<gtk::Label>,
         #[template_child]
         pub count: TemplateChild<gtk::Label>,
+        #[template_child]
+        pub toggle_btn: TemplateChild<gtk::ToggleButton>,
         pub on_apply: OnceCell<Box<dyn Fn(Vec<String>) + 'static>>,
         pub search_model: OnceCell<gtk::FilterListModel>,
+        pub selected_filter: OnceCell<gtk::FilterListModel>,
         pub selected: RefCell<FxHashSet<String>>,
         #[property(get, set)]
         pub label_text: RefCell<String>, // pub prev_selected: RefCell<Option<FxHashSet<String>>>,  // might want to restore prev selection upon cancel
@@ -99,6 +102,43 @@ mod imp {
                 .set(search_model)
                 .expect("Unable to set search model for genre filter dialog");
 
+            
+            let toggle_btn = self.toggle_btn.get();
+            let selected_filter = gtk::CustomFilter::new(|_| true); // off by default
+            toggle_btn.connect_toggled(clone!(
+                #[weak(rename_to = this)]
+                self,
+                #[weak]
+                selected_filter,
+                move |btn| {
+                    if btn.is_active() {
+                        selected_filter.set_filter_func(clone!(
+                            #[weak]
+                            this,
+                            #[upgrade_or]
+                            true,
+                            move |obj| {
+                                obj.downcast_ref::<gtk::StringObject>()
+                                    .is_some_and(|s| this.selected.borrow().contains(s.string().as_str()))
+                            }
+                        ));
+                        selected_filter.changed(gtk::FilterChange::MoreStrict);
+                    } else {
+                        selected_filter.set_filter_func(|_| true);
+                        selected_filter.changed(gtk::FilterChange::LessStrict);
+                    }
+                }
+            ));
+
+            self.selected_filter
+                .set(
+                    gtk::FilterListModel::builder()
+                        .incremental(true)
+                        .filter(&selected_filter)
+                        .build(),
+                )
+                .expect("Unable to set selected filter");
+
             self.obj()
                 .bind_property("label-text", &self.text_widget.get(), "label")
                 .sync_create()
@@ -131,15 +171,16 @@ impl TagsFilter {
         let _ = self.imp().window.set(Some(window));
         let search_model = self.imp().search_model.get().unwrap();
         search_model.set_model(Some(model));
+        let selected_filter = self.imp().selected_filter.get().unwrap();
+        selected_filter.set_model(Some(search_model));
         let list = self.imp().list.get();
         list.bind_model(
-            Some(search_model),
+            Some(selected_filter),
             clone!(
                 #[weak(rename_to = this)]
                 self,
                 #[upgrade_or]
-                adw::ActionRow::new()
-                    .into(),
+                adw::ActionRow::new().into(),
                 move |obj| {
                     let name = obj
                         .downcast_ref::<gtk::StringObject>()
