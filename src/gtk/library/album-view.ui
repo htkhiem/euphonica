@@ -89,12 +89,12 @@
                               <object class="GtkSeparator"/>
                             </child>
                             <child>
-                              <object class="EuphonicaTagsFilter" id="genres_filter">
+                              <object class="EuphonicaTagsFilter" id="genres_filter_widget">
                                 <property name="label-text" translatable="true">Genres</property>
                               </object>
                             </child>
                             <child>
-                              <object class="EuphonicaTagsFilter" id="tags_filter">
+                              <object class="EuphonicaTagsFilter" id="tags_filter_widget">
                                 <property name="label-text" translatable="true">Tags</property>
                               </object>
                             </child>

@@ -46,9 +46,9 @@ mod imp {
         #[template_child]
         pub rating_mode: TemplateChild<gtk::DropDown>,
         #[template_child]
-        pub genres_filter: TemplateChild<TagsFilter>,
+        pub genres_filter_widget: TemplateChild<TagsFilter>,
         #[template_child]
-        pub tags_filter: TemplateChild<TagsFilter>,
+        pub tags_filter_widget: TemplateChild<TagsFilter>,
 
         // Content
         #[template_child]
@@ -62,6 +62,8 @@ mod imp {
 
         // Search & filter models
         pub search_filter: gtk::CustomFilter,
+        pub genres_filter: gtk::CustomFilter,
+        pub tags_filter: gtk::CustomFilter,
         pub sorter: gtk::CustomSorter,
         // Keep last length to optimise search
         // If search term is now longer, only further filter still-matching
@@ -342,6 +344,10 @@ mod imp {
                 }
             ));
 
+            // Tags and genres filter are set on changes only
+            self.genres_filter.set_filter_func(|_| true);
+            self.tags_filter.set_filter_func(|_| true);
+
             // Connect search entry to filter. Filter will later be put in GtkSearchModel.
             // That GtkSearchModel will listen to the filter's changed signal.
             let search_entry = self.search_entry.get();
@@ -453,9 +459,23 @@ impl AlbumView {
         self.setup_gridview(cache.clone(), window);
 
         // Set up genres and tags filters
-        self.imp().genres_filter.setup(
+        self.imp().genres_filter_widget.setup(
             &library.genres(),
-            |_| {},
+            clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |genres| {
+                    if !genres.is_empty() {
+                        this.imp().genres_filter.set_filter_func(move |obj| {
+                            // TODO: more efficient algo (like set overlap)
+                            let album = obj.downcast_ref::<Album>().unwrap();
+                            genres.iter().any(|genre| album.has_genre(genre))
+                        });
+                    } else {
+                        this.imp().genres_filter.set_filter_func(|_| true);
+                    }
+                }
+            ),
             window
         );
 
@@ -501,14 +521,21 @@ impl AlbumView {
             .sync_create()
             .build();
 
-        // Chain search & sort. Put sort after search to reduce number of sort items.
+        // Chain order: substring search -> genres -> tags
         let search_model = gtk::FilterListModel::new(
             Some(album_list.clone()),
             Some(self.imp().search_filter.clone()),
         );
         search_model.set_incremental(true);
+        let genres_model = gtk::FilterListModel::new(
+            Some(search_model),
+            Some(self.imp().genres_filter.clone())
+        );
+        genres_model.set_incremental(true);
+        // TODO: tags model
+        
         let sort_model =
-            gtk::SortListModel::new(Some(search_model), Some(self.imp().sorter.clone()));
+            gtk::SortListModel::new(Some(genres_model), Some(self.imp().sorter.clone()));
         sort_model.set_incremental(true);
         let sel_model = SingleSelection::new(Some(sort_model));
 

@@ -301,6 +301,18 @@ impl Album {
     pub fn set_stickers(&self, stickers: Stickers) {
         let _ = &self.imp().stickers.replace(stickers);
     }
+
+    /// Checks if the given genre substring is in any of this album's genre strings.
+    /// Genre-less albums always return false.
+    pub fn has_genre(&self, genre_substr: &str) -> bool {
+        let genres = &self.get_info().genres;
+        if genres.is_empty() {
+            false
+        } else {
+            genres.iter().any(|elem| elem.contains(genre_substr))
+        }
+        
+    }
 }
 
 impl Default for Album {

@@ -265,9 +265,6 @@ impl TagsFilter {
                         break;
                     }
                 }
-                this.imp().count.set_visible(false);
-                // this.imp().dialog.close();
-                on_selection_changed(Vec::with_capacity(0));
             }
         ));
     }
