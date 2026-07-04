@@ -13,8 +13,8 @@ mod imp {
     use super::*;
     
     #[derive(Default, CompositeTemplate)]
-    #[template(resource = "/io/github/htkhiem/Euphonica/gtk/library/tag.ui")]
-    pub struct Tag {
+    #[template(resource = "/io/github/htkhiem/Euphonica/gtk/library/tag-button.ui")]
+    pub struct TagButton {
         #[template_child]
         pub name: TemplateChild<gtk::Label>,
         #[template_child]
@@ -29,10 +29,10 @@ mod imp {
 
     // The central trait for subclassing a GObject
     #[glib::object_subclass]
-    impl ObjectSubclass for Tag {
+    impl ObjectSubclass for TagButton {
         // `NAME` needs to match `class` attribute of template
         const NAME: &'static str = "EuphonicaTag";
-        type Type = super::Tag;
+        type Type = super::TagButton;
         type ParentType = gtk::Box;
 
         fn class_init(klass: &mut Self::Class) {
@@ -44,7 +44,7 @@ mod imp {
         }
     }
 
-    impl ObjectImpl for Tag {
+    impl ObjectImpl for TagButton {
         fn properties() -> &'static [ParamSpec] {
             static PROPERTIES: Lazy<Vec<ParamSpec>> =
                 Lazy::new(|| vec![ParamSpecString::builder("name").build()]);
@@ -73,18 +73,18 @@ mod imp {
         }
     }
 
-    impl WidgetImpl for Tag {}
+    impl WidgetImpl for TagButton {}
 
-    impl BoxImpl for Tag {}
+    impl BoxImpl for TagButton {}
 }
 
 glib::wrapper! {
-    pub struct Tag(ObjectSubclass<imp::Tag>)
+    pub struct TagButton(ObjectSubclass<imp::TagButton>)
     @extends gtk::Box, gtk::Widget,
     @implements gtk::Accessible, gtk::Buildable, gtk::ConstraintTarget, gtk::Orientable;
 }
 
-impl Tag {
+impl TagButton {
     pub fn new<T: Fn(&Self) + 'static>(
         name: &str,
         link: Option<String>,

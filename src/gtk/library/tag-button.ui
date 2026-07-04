@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <interface>
-  <template class="EuphonicaTag" parent="GtkBox">
+  <template class="EuphonicaTagButton" parent="GtkBox">
     <!-- The below assumes that a LibAdwaita button is 34px tall. -->
     <style>
       <class name="linked"/>

@@ -6,7 +6,7 @@ use crate::{
     cache::{Cache, CacheState, Error as CacheError, placeholders::EMPTY_ALBUM_STRING},
     client::{ClientState, state::StickersSupportLevel},
     common::{Album, Artist, ContentStack, ImageStack, Rating, RowAddButtons, Song, SongRow},
-    library::{add_to_playlist::AddToPlaylistButton, tag::Tag},
+    library::{add_to_playlist::AddToPlaylistButton, tag_button::TagButton},
     utils::{format_secs_as_duration, tokio_runtime},
     window::EuphonicaWindow,
 };
@@ -922,7 +922,7 @@ impl AlbumContentView {
             album
                 .get_genres()
                 .iter()
-                .map(|genre| Tag::new(&genre, None, None, false, &genres_box, &window, false, |_| {}))
+                .map(|genre| TagButton::new(&genre, None, None, false, &genres_box, &window, false, |_| {}))
                 .for_each(|tag| genres_box.append(&tag));
 
             if genres_stack

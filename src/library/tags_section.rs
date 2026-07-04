@@ -6,7 +6,7 @@ use gtk::{
 };
 use std::cell::OnceCell;
 
-use super::tag::Tag;
+use super::tag_button::TagButton;
 use crate::common::{ContentStack, FadingScrolledWindow};
 use crate::meta_providers::models::Tag as TagMeta;
 use crate::window::EuphonicaWindow;
@@ -146,12 +146,12 @@ impl TagsSection {
     pub fn add_tag(&self, name: &str, link: Option<String>, count: Option<i32>, set_by_user: bool) {
         // Check for duplicates
         if let Some(first) = self.imp().tags_box.first_child() {
-            let mut cursor: Tag = first.downcast::<Tag>().unwrap();
+            let mut cursor: TagButton = first.downcast::<TagButton>().unwrap();
             loop {
                 if cursor.get_name().as_str() == name {
                     return; // duplicate, skip
                 }
-                if let Some(next) = cursor.next_sibling().and_downcast::<Tag>() {
+                if let Some(next) = cursor.next_sibling().and_downcast::<TagButton>() {
                     cursor = next;
                 } else {
                     break;
@@ -162,7 +162,7 @@ impl TagsSection {
         let window = self.imp().window.get().unwrap();
         let tags_box = self.imp().tags_box.get();
 
-        let tag = Tag::new(
+        let tag = TagButton::new(
             name,
             link.clone(),
             count,
@@ -173,7 +173,7 @@ impl TagsSection {
             clone!(
                 #[weak(rename_to = this)]
                 self,
-                move |tag: &Tag| {
+                move |tag: &TagButton| {
                     if let Some(cb) = this.imp().on_tag_removed.get() {
                         cb();
                     }
@@ -225,16 +225,16 @@ impl TagsSection {
     pub fn get_tags(&self) -> Vec<TagMeta> {
         let mut result = Vec::new();
         if let Some(first) = self.imp().tags_box.first_child() {
-            let mut cursor: Tag = first.downcast::<Tag>().unwrap();
+            let mut cursor: TagButton = first.downcast::<TagButton>().unwrap();
             loop {
                 let tag_name = cursor.get_name().as_str().to_owned();
                 result.push(TagMeta {
-                    url: cursor.get_link().map(|s| s.to_owned()),
+                    url: cursor.get_link().map(|s: &str| s.to_owned()),
                     name: tag_name.clone(),
                     count: cursor.get_count(),
                     set_by_user: cursor.get_set_by_user(),
                 });
-                if let Some(next) = cursor.next_sibling().and_downcast::<Tag>() {
+                if let Some(next) = cursor.next_sibling().and_downcast::<TagButton>() {
                     cursor = next;
                 } else {
                     break;

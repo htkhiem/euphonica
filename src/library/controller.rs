@@ -42,17 +42,18 @@ mod imp {
         pub albums_initialized: Cell<bool>,
         #[derivative(Default(value = "gio::ListStore::new::<Album>()"))]
         pub recent_albums: gio::ListStore,
+        // #[derivative(Default(value = "gio::ListStore::new::<gtk::StringObject>()"))]
+        // pub album_tags: gio::ListStore,  // Unlike tags, genres aren't editable from UI so we only need to fetch em once
+        // pub album_tags_initialized: Cell<bool>,
         #[derivative(Default(value = "gio::ListStore::new::<Artist>()"))]
         pub artists: gio::ListStore,
         pub artist_genres: gtk::StringList,
         pub artists_initialized: Cell<bool>,
         #[derivative(Default(value = "gio::ListStore::new::<Artist>()"))]
         pub recent_artists: gio::ListStore,
-
         #[derivative(Default(value = "gio::ListStore::new::<gtk::StringObject>()"))]
         pub genres: gio::ListStore,  // Unlike tags, genres aren't editable from UI so we only need to fetch em once
         pub genres_initialized: Cell<bool>,
-
         // Folder view
         // Files and folders
         pub folder_history: RefCell<Vec<String>>,
@@ -654,6 +655,22 @@ impl Library {
         }
         Ok(())
     }
+
+    // pub async fn init_tags(&self, refresh: bool) -> ClientResult<()> {
+    //     if refresh || !self.imp().tags_initialized.get() {
+    //         self.imp().tags_initialized.set(true);
+    //         let tags = self.imp().tags.clone();
+    //         tags.remove_all();
+    //         sqlite::distinct_album_tags()
+    //         self.client().get_distinct_genres(&mut |split_genres: Vec<String>| {
+    //             for genre in split_genres {
+    //                 let obj = gtk::StringObject::new(&genre);
+    //                 genres.append(&obj);
+    //             }
+    //         }).await?;
+    //     }
+    //     Ok(())
+    // }
 
     /// Fetch basic info for all albums to display them in a grid.
     /// Note: this function no longer fetches stickers s.t. we can return the grid to the user earlier.
