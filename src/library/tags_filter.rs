@@ -253,8 +253,7 @@ impl TagsFilter {
                 let list = this.imp().list.get();
                 loop {
                     if let Some(tag) = list.row_at_index(idx) {
-                        tag.child()
-                            .unwrap()
+                        tag
                             .downcast_ref::<adw::ActionRow>()
                             .unwrap()
                             .activatable_widget()
