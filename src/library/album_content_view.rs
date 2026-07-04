@@ -531,6 +531,11 @@ impl AlbumContentView {
                 dbg!(e);
             }
         }
+        if let Some(library) = self.imp().library.upgrade() {
+            glib::spawn_future_local(async move {
+                let _ = library.refresh_album_tags().await;
+            });
+        }
     }
 
     pub fn update_wiki(&self, wiki: Option<&Wiki>) {

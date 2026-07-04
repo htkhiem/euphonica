@@ -444,6 +444,11 @@ impl Library {
         self.imp().genres.clone()
     }
 
+    /// Get a reference to the list of album tags
+    pub fn album_tags(&self) -> gio::ListStore {
+        self.imp().album_tags.clone()
+    }
+
     /// Get a reference to the local recent albums store
     pub fn recent_albums(&self) -> gio::ListStore {
         self.imp().recent_albums.clone()

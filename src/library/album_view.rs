@@ -11,11 +11,7 @@ use std::{cell::Cell, cmp::Ordering, rc::Rc, sync::OnceLock};
 
 use super::{AlbumCell, AlbumContentView, Library, TagsFilter};
 use crate::{
-    cache::Cache,
-    client::ClientState,
-    common::{Album, ContentStack, Rating},
-    utils::{LazyInit, g_cmp_options, g_cmp_str_options, g_search_substr, settings_manager},
-    window::EuphonicaWindow,
+    cache::{Cache, sqlite}, client::ClientState, common::{Album, ContentStack, Rating}, utils::{LazyInit, g_cmp_options, g_cmp_str_options, g_search_substr, settings_manager}, window::EuphonicaWindow,
 };
 
 mod imp {
@@ -466,13 +462,37 @@ impl AlbumView {
                 self,
                 move |genres| {
                     if !genres.is_empty() {
+                        let genres_list = genres.into_iter().collect::<Vec<String>>();
                         this.imp().genres_filter.set_filter_func(move |obj| {
                             // TODO: more efficient algo (like set overlap)
                             let album = obj.downcast_ref::<Album>().unwrap();
-                            genres.iter().any(|genre| album.has_genre(genre))
+                            genres_list.iter().any(|genre| album.has_genre(genre))
                         });
+                        this.imp().genres_filter.changed(gtk::FilterChange::MoreStrict);
                     } else {
                         this.imp().genres_filter.set_filter_func(|_| true);
+                        this.imp().genres_filter.changed(gtk::FilterChange::LessStrict);
+                    }
+                }
+            ),
+            window
+        );
+
+        self.imp().tags_filter_widget.setup(
+            &library.album_tags(),
+            clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |tags| {
+                    if !tags.is_empty() {
+                        this.imp().tags_filter.set_filter_func(move |obj| {
+                            let album = obj.downcast_ref::<Album>().unwrap();
+                            sqlite::album_has_any_of_tags(album.get_folder_uri(), &tags).unwrap_or(true)
+                        });
+                        this.imp().tags_filter.changed(gtk::FilterChange::MoreStrict);
+                    } else {
+                        this.imp().tags_filter.set_filter_func(|_| true);
+                        this.imp().tags_filter.changed(gtk::FilterChange::LessStrict);
                     }
                 }
             ),
@@ -532,10 +552,14 @@ impl AlbumView {
             Some(self.imp().genres_filter.clone())
         );
         genres_model.set_incremental(true);
-        // TODO: tags model
+        let tags_model = gtk::FilterListModel::new(
+            Some(genres_model),
+            Some(self.imp().tags_filter.clone())
+        );
+        tags_model.set_incremental(true);
         
         let sort_model =
-            gtk::SortListModel::new(Some(genres_model), Some(self.imp().sorter.clone()));
+            gtk::SortListModel::new(Some(tags_model), Some(self.imp().sorter.clone()));
         sort_model.set_incremental(true);
         let sel_model = SingleSelection::new(Some(sort_model));
 
@@ -642,7 +666,8 @@ impl LazyInit for AlbumView {
                     // Now populate the stickers and genres
                     let _ = futures::join!(
                         library.init_album_stickers(),
-                        library.init_genres()
+                        library.init_genres(),
+                        library.refresh_album_tags()
                     );
                 });
             }

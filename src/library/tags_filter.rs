@@ -163,7 +163,7 @@ impl TagsFilter {
         Object::builder().build()
     }
 
-    pub fn setup<F: Fn(Vec<String>) + 'static + Clone>(
+    pub fn setup<F: Fn(FxHashSet<String>) + 'static + Clone>(
         &self,
         model: &gio::ListStore,  // of tag::Tag objects
         on_selection_changed: F,
@@ -236,10 +236,8 @@ impl TagsFilter {
                     .imp()
                     .selected
                     .borrow()
-                    .iter()
-                    .map(|s| s.to_owned())
-                    .collect();
-                let len = this.imp().selected.borrow().len();
+                    .clone();
+                let len = selected.len();
                 let count_label = this.imp().count.get();
                 count_label.set_label(len.to_string().as_str());
                 count_label.set_visible(len > 0);

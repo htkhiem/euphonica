@@ -6,6 +6,7 @@ use std::{io::Cursor, str::FromStr};
 use once_cell::sync::Lazy;
 use r2d2_sqlite::SqliteConnectionManager;
 use rusqlite::{Error as SqliteError, OptionalExtension, Result, Row, params};
+use rustc_hash::FxHashSet;
 use time::OffsetDateTime;
 
 use crate::{
@@ -427,7 +428,7 @@ pub enum TagsInsertMode {
     Delsert,
     /// Only remove metadata-supplied tags before writing. Useful for refreshing
     ///  metadata without affecting user-set tags.
-    DelsertMetaSupplied
+    DelsertMetaSupplied,
 }
 
 impl From<SqliteError> for Error {
@@ -605,7 +606,11 @@ pub fn write_album_meta(album: &AlbumInfo, meta: &AlbumMeta) -> Result<(), Error
         ]
     ).map_err(Error::Db)?;
     // When populating tag lists with metadata-supplied tags, take care not to remove user-set tags.
-    write_album_tags(&album.folder_uri, &meta.tags, TagsInsertMode::DelsertMetaSupplied)?;
+    write_album_tags(
+        &album.folder_uri,
+        &meta.tags,
+        TagsInsertMode::DelsertMetaSupplied,
+    )?;
     Ok(())
 }
 
@@ -626,7 +631,11 @@ pub fn write_artist_meta(artist: &ArtistInfo, meta: &ArtistMeta) -> Result<(), E
     )
     .map_err(Error::Db)?;
     // When populating tag lists with metadata-supplied tags, take care not to remove user-set tags.
-    write_artist_tags(&artist.name, &meta.tags, TagsInsertMode::DelsertMetaSupplied)?;
+    write_artist_tags(
+        &artist.name,
+        &meta.tags,
+        TagsInsertMode::DelsertMetaSupplied,
+    )?;
     Ok(())
 }
 
@@ -635,11 +644,17 @@ pub fn write_album_tags(folder_uri: &str, tags: &[Tag], mode: TagsInsertMode) ->
     let tx = conn.transaction().map_err(Error::Db)?;
     match mode {
         TagsInsertMode::Delsert => {
-            tx.execute("delete from album_tags where folder_uri = ?1", params![folder_uri])
+            tx.execute(
+                "delete from album_tags where folder_uri = ?1",
+                params![folder_uri],
+            )
             .map_err(Error::Db)?;
         }
         TagsInsertMode::DelsertMetaSupplied => {
-            tx.execute("delete from album_tags where folder_uri = ?1 and set_by_user = 0", params![folder_uri])
+            tx.execute(
+                "delete from album_tags where folder_uri = ?1 and set_by_user = 0",
+                params![folder_uri],
+            )
             .map_err(Error::Db)?;
         }
         _ => {}
@@ -668,10 +683,13 @@ pub fn write_artist_tags(name: &str, tags: &[Tag], mode: TagsInsertMode) -> Resu
     match mode {
         TagsInsertMode::Delsert => {
             tx.execute("delete from artist_tags where name = ?1", params![name])
-            .map_err(Error::Db)?;
+                .map_err(Error::Db)?;
         }
         TagsInsertMode::DelsertMetaSupplied => {
-            tx.execute("delete from artist_tags where name = ?1 and set_by_user = 0", params![name])
+            tx.execute(
+                "delete from artist_tags where name = ?1 and set_by_user = 0",
+                params![name],
+            )
             .map_err(Error::Db)?;
         }
         _ => {}
@@ -697,9 +715,7 @@ pub fn write_artist_tags(name: &str, tags: &[Tag], mode: TagsInsertMode) -> Resu
 pub fn find_album_tags(folder_uri: &str) -> Result<Vec<Tag>, Error> {
     let conn = SQLITE_POOL.get().unwrap();
     let mut query = conn
-        .prepare(
-            "select tag, count, link, set_by_user from album_tags where folder_uri = ?1",
-        )
+        .prepare("select tag, \"count\", link, set_by_user from album_tags where folder_uri = ?1")
         .unwrap();
     let tags: Vec<Tag> = query
         .query_map(params![folder_uri], |row| {
@@ -716,12 +732,27 @@ pub fn find_album_tags(folder_uri: &str) -> Result<Vec<Tag>, Error> {
     Ok(tags)
 }
 
+pub fn album_has_any_of_tags(
+    folder_uri: &str,
+    query_tags: &FxHashSet<String>,
+) -> Result<bool, Error> {
+    let conn = SQLITE_POOL.get().unwrap();
+    let mut query = conn
+        .prepare("select tag from album_tags where folder_uri = ?1")
+        .unwrap();
+    Ok(query
+        .query_map(params![folder_uri], |row| Ok(row.get::<usize, String>(0)?))
+        .map_err(Error::Db)?
+        .any(|row| {
+            row.ok()
+                .is_some_and(|tag_name| query_tags.contains(&tag_name))
+        }))
+}
+
 pub fn find_artist_tags(name: &str) -> Result<Vec<Tag>, Error> {
     let conn = SQLITE_POOL.get().unwrap();
     let mut query = conn
-        .prepare(
-            "select tag, count, link, set_by_user from artist_tags where name = ?1",
-        )
+        .prepare("select tag, \"count\", link, set_by_user from artist_tags where name = ?1")
         .unwrap();
     let tags: Vec<Tag> = query
         .query_map(params![name], |row| {
@@ -742,9 +773,7 @@ pub fn find_artist_tags(name: &str) -> Result<Vec<Tag>, Error> {
 pub async fn distinct_album_tags() -> Result<Vec<Tag>, Error> {
     let conn = SQLITE_POOL.get().unwrap();
     let mut query = conn
-        .prepare(
-            "select sum(count) from album_tags group by name",
-        )
+        .prepare("select tag, sum(count) as count from album_tags group by tag order by count desc")
         .unwrap();
     let tags: Vec<Tag> = query
         .query_map(params![], |row| {
@@ -752,7 +781,7 @@ pub async fn distinct_album_tags() -> Result<Vec<Tag>, Error> {
                 name: row.get::<usize, String>(0)?,
                 count: Some(row.get::<usize, i32>(1)?),
                 url: None,
-                set_by_user: false,  // don't care
+                set_by_user: false, // don't care
             })
         })
         .map_err(Error::Db)?
@@ -765,9 +794,7 @@ pub async fn distinct_album_tags() -> Result<Vec<Tag>, Error> {
 pub async fn distinct_artist_tags() -> Result<Vec<Tag>, Error> {
     let conn = SQLITE_POOL.get().unwrap();
     let mut query = conn
-        .prepare(
-            "select sum(count) from artist_tags group by name",
-        )
+        .prepare("select tag, sum(count) as count from artist_tags group by tag order by count desc")
         .unwrap();
     let tags: Vec<Tag> = query
         .query_map(params![], |row| {
@@ -775,7 +802,7 @@ pub async fn distinct_artist_tags() -> Result<Vec<Tag>, Error> {
                 name: row.get::<usize, String>(0)?,
                 count: Some(row.get::<usize, i32>(1)?),
                 url: None,
-                set_by_user: false,  // don't care
+                set_by_user: false, // don't care
             })
         })
         .map_err(Error::Db)?
