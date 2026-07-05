@@ -37,6 +37,8 @@ mod imp {
         pub search_bar: TemplateChild<gtk::SearchBar>,
         #[template_child]
         pub search_entry: TemplateChild<gtk::SearchEntry>,
+        #[template_child]
+        pub album_artist_only_btn: TemplateChild<gtk::ToggleButton>,
 
         // Content
         #[template_child]
@@ -47,10 +49,14 @@ mod imp {
         pub content_page: TemplateChild<adw::NavigationPage>,
         #[template_child]
         pub content_view: TemplateChild<ArtistContentView>,
+        #[template_child]
+        pub scrolled_window: TemplateChild<gtk::ScrolledWindow>,
 
         // Search & filter models
         pub search_filter: gtk::CustomFilter,
         pub sorter: gtk::CustomSorter,
+        // points to album artists or to artists
+        pub artist_source: gtk::FilterListModel,
         // Keep last length to optimise search
         // If search term is now longer, only further filter still-matching
         // items.
@@ -141,6 +147,7 @@ impl ArtistView {
         self.imp().library.set(Some(library));
         self.setup_sort();
         self.setup_search();
+        self.setup_album_artist();
         self.setup_gridview(cache.clone());
 
         let content_view = self.imp().content_view.get();
@@ -292,6 +299,48 @@ impl ArtistView {
         ));
     }
 
+    pub fn setup_album_artist(&self) {
+        // sync the state of the album_artist_only widget to our library state
+        let state = settings_manager().child("state").child("artistview");
+        let album_artist_only_btn = self.imp().album_artist_only_btn.get();
+        let filter_state = state.boolean("album-artists-only");
+        album_artist_only_btn.set_active(filter_state);
+
+        // set up initial state
+        let library = self.imp().library.upgrade().unwrap();
+        self.imp().artist_source.set_model(Some(&
+            if filter_state { 
+                library.album_artists()
+            } else {
+                library.artists()
+            }
+        ));
+
+        album_artist_only_btn.connect_toggled(clone!(
+            #[weak(rename_to = this)]
+            self,
+            move |btn| {
+                // update the ui when clicked
+                let use_album = btn.is_active();
+                let _ =  settings_manager()
+                        .child("state").child("artistview")
+                        .set_boolean("album-artists-only", use_album);
+                // and then update the artist_source model to point to the right ListStore
+                let library = this.imp().library.upgrade().unwrap();
+                let model = if use_album {
+                    library.album_artists()
+                } else {
+                    library.artists()
+                };
+                this.imp().artist_source.set_model(Some(&model));
+                // todo: this makes the pane flash and scroll to the bottom.
+                // the only way to avoid this that I can think of is to return to the
+                // "single list containing artist + album artists", and then filter it
+            })
+        );
+
+    }
+
     pub fn on_artist_clicked(&self, artist: &Artist) {
         // - Upon receiving click signal, get the list item at the indicated activate index.
         // - Extract artist from that list item.
@@ -329,7 +378,7 @@ impl ArtistView {
         // Refresh upon reconnection.
         // User-initiated refreshes will also trigger a reconnection, which will
         // in turn trigger this.
-        let artists = self.imp().library.upgrade().unwrap().artists();
+        let artists = self.imp().artist_source.clone();
 
         // Setup search bar
         let search_bar = self.imp().search_bar.get();
@@ -443,7 +492,9 @@ impl LazyInit for ArtistView {
                 let this = self.clone();
                 stack.show_spinner();
                 glib::spawn_future_local(async move {
-                    let _ = library.init_artists(false).await;
+                    let _ = library.init_artists().await;
+                    // artists is almost surely a superset of albumartists, so it suffices to see if
+                    // we've found artists only
                     if library.artists().n_items() > 0 {
                         stack.show_content();
                     } else {

@@ -49,6 +49,8 @@ mod imp {
         pub artists: gio::ListStore,
         #[derivative(Default(value = "gio::ListStore::new::<Tag>()"))]
         pub artist_tags: gio::ListStore,
+        #[derivative(Default(value = "gio::ListStore::new::<Artist>()"))]
+        pub album_artists: gio::ListStore,
         pub artists_initialized: Cell<bool>,
         #[derivative(Default(value = "gio::ListStore::new::<Artist>()"))]
         pub recent_artists: gio::ListStore,
@@ -463,6 +465,12 @@ impl Library {
         self.imp().artists.clone()
     }
 
+
+    /// Get a reference to the local album artists store
+    pub fn album_artists(&self) -> gio::ListStore {
+        self.imp().album_artists.clone()
+    }
+
     /// Get a reference to the local recent artists store
     pub fn recent_artists(&self) -> gio::ListStore {
         self.imp().recent_artists.clone()
@@ -741,17 +749,35 @@ impl Library {
         Ok(())
     }
 
-    pub async fn init_artists(&self, use_album_artist: bool) -> ClientResult<()> {
+    pub async fn init_artists(&self) -> ClientResult<()> {
         if !self.imp().artists_initialized.get() {
             self.imp().artists_initialized.set(true);
-            let model = self.imp().artists.clone();
-            model.remove_all();
+
+            // init the album artists list
+            let album_artist_model = self.imp().album_artists.clone();
+            album_artist_model.remove_all();
 
             self.client()
-                .get_artists(use_album_artist, &mut |artist| {
-                    model.append(&artist);
+                .get_artists(true, &mut |artist| {
+                    album_artist_model.append(&artist);
                 })
                 .await?;
+
+            dbg!(album_artist_model.n_items());
+
+
+            // init the artists list
+            let artist_model = self.imp().artists.clone();
+            artist_model.remove_all();
+
+            self.client()
+                .get_artists(false, &mut |artist| {
+                    artist_model.append(&artist);
+                })
+                .await?;
+
+
+
         }
         Ok(())
     }
