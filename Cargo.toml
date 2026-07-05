@@ -60,7 +60,7 @@ webp = "0.3.1"
 [dependencies.gtk]
 package = "gtk4"
 version = "0.11"
-features = ["gnome_49"]
+features = ["gnome_50"]
 
 [dependencies.uuid]
 version = "1.9.0"
