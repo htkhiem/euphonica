@@ -2,7 +2,6 @@ use crate::{common::QualityGrade, utils};
 use adw::prelude::*;
 use glib::{Object, ParamSpec, ParamSpecDouble, ParamSpecObject, SignalHandlerId, WeakRef, clone};
 use gtk::{CompositeTemplate, gdk, glib, graphene, gsk, subclass::prelude::*};
-use hsl;
 use once_cell::sync::Lazy;
 use std::cell::{Cell, OnceCell, RefCell};
 
@@ -57,11 +56,10 @@ mod imp {
         fn dispose(&self) {
             // Disconnect player signal handlers to prevent callbacks
             // from running on disposed widgets
-            if let Some(player) = self.player.upgrade() {
-                if let Some(id) = self.state_id.take() {
+            if let Some(player) = self.player.upgrade()
+                && let Some(id) = self.state_id.take() {
                     player.disconnect(id);
                 }
-            }
         }
 
         fn constructed(&self) {
@@ -421,10 +419,7 @@ impl Seekbar {
                     _ => {}
                 };
             } else {
-                match anim.state() {
-                    adw::AnimationState::Playing => anim.pause(),
-                    _ => {}
-                };
+                if anim.state() == adw::AnimationState::Playing { anim.pause() };
             }
         }
     }

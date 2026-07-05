@@ -9,13 +9,9 @@ use gtk::{
 use std::cell::{OnceCell, RefCell};
 use std::{cell::Cell, cmp::Ordering, rc::Rc, sync::OnceLock};
 
-use super::{AlbumCell, AlbumContentView, Library};
+use super::{AlbumCell, AlbumContentView, Library, TagsFilter};
 use crate::{
-    cache::Cache,
-    client::ClientState,
-    common::{Album, ContentStack, Rating},
-    utils::{LazyInit, g_cmp_options, g_cmp_str_options, g_search_substr, settings_manager},
-    window::EuphonicaWindow,
+    cache::{Cache, sqlite}, client::ClientState, common::{Album, ContentStack, Rating}, utils::{LazyInit, g_cmp_options, g_cmp_str_options, g_search_substr, settings_manager}, window::EuphonicaWindow,
 };
 
 mod imp {
@@ -45,6 +41,10 @@ mod imp {
         pub rating: TemplateChild<Rating>,
         #[template_child]
         pub rating_mode: TemplateChild<gtk::DropDown>,
+        #[template_child]
+        pub genres_filter_widget: TemplateChild<TagsFilter>,
+        #[template_child]
+        pub tags_filter_widget: TemplateChild<TagsFilter>,
 
         // Content
         #[template_child]
@@ -58,6 +58,8 @@ mod imp {
 
         // Search & filter models
         pub search_filter: gtk::CustomFilter,
+        pub genres_filter: gtk::CustomFilter,
+        pub tags_filter: gtk::CustomFilter,
         pub sorter: gtk::CustomSorter,
         // Keep last length to optimise search
         // If search term is now longer, only further filter still-matching
@@ -338,6 +340,10 @@ mod imp {
                 }
             ));
 
+            // Tags and genres filter are set on changes only
+            self.genres_filter.set_filter_func(|_| true);
+            self.tags_filter.set_filter_func(|_| true);
+
             // Connect search entry to filter. Filter will later be put in GtkSearchModel.
             // That GtkSearchModel will listen to the filter's changed signal.
             let search_entry = self.search_entry.get();
@@ -441,11 +447,57 @@ impl AlbumView {
         self.imp().library.set(Some(library));
         let weak = WeakRef::new();
         weak.set(Some(window));
+
         self.imp()
             .window
             .set(weak)
             .expect("AlbumView window already set");
         self.setup_gridview(cache.clone(), window);
+
+        // Set up genres and tags filters
+        self.imp().genres_filter_widget.setup(
+            &library.genres(),
+            clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |genres| {
+                    if !genres.is_empty() {
+                        let genres_list = genres.into_iter().collect::<Vec<String>>();
+                        this.imp().genres_filter.set_filter_func(move |obj| {
+                            // TODO: more efficient algo (like set overlap)
+                            let album = obj.downcast_ref::<Album>().unwrap();
+                            genres_list.iter().any(|genre| album.has_genre(genre))
+                        });
+                        this.imp().genres_filter.changed(gtk::FilterChange::MoreStrict);
+                    } else {
+                        this.imp().genres_filter.set_filter_func(|_| true);
+                        this.imp().genres_filter.changed(gtk::FilterChange::LessStrict);
+                    }
+                }
+            ),
+            window
+        );
+
+        self.imp().tags_filter_widget.setup(
+            &library.album_tags(),
+            clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |tags| {
+                    if !tags.is_empty() {
+                        this.imp().tags_filter.set_filter_func(move |obj| {
+                            let album = obj.downcast_ref::<Album>().unwrap();
+                            sqlite::album_has_any_of_tags(album.get_folder_uri(), &tags).unwrap_or(true)
+                        });
+                        this.imp().tags_filter.changed(gtk::FilterChange::MoreStrict);
+                    } else {
+                        this.imp().tags_filter.set_filter_func(|_| true);
+                        this.imp().tags_filter.changed(gtk::FilterChange::LessStrict);
+                    }
+                }
+            ),
+            window
+        );
 
         let content_view = self.imp().content_view.get();
         content_view.setup(library, client_state, cache, window);
@@ -489,14 +541,25 @@ impl AlbumView {
             .sync_create()
             .build();
 
-        // Chain search & sort. Put sort after search to reduce number of sort items.
+        // Chain order: substring search -> genres -> tags
         let search_model = gtk::FilterListModel::new(
             Some(album_list.clone()),
             Some(self.imp().search_filter.clone()),
         );
         search_model.set_incremental(true);
+        let genres_model = gtk::FilterListModel::new(
+            Some(search_model),
+            Some(self.imp().genres_filter.clone())
+        );
+        genres_model.set_incremental(true);
+        let tags_model = gtk::FilterListModel::new(
+            Some(genres_model),
+            Some(self.imp().tags_filter.clone())
+        );
+        tags_model.set_incremental(true);
+        
         let sort_model =
-            gtk::SortListModel::new(Some(search_model), Some(self.imp().sorter.clone()));
+            gtk::SortListModel::new(Some(tags_model), Some(self.imp().sorter.clone()));
         sort_model.set_incremental(true);
         let sel_model = SingleSelection::new(Some(sort_model));
 
@@ -585,8 +648,8 @@ impl AlbumView {
 
 impl LazyInit for AlbumView {
     fn populate(&self) {
-        if let Some(library) = self.imp().library.upgrade() {
-            if !self.imp().initializing.get() {
+        if let Some(library) = self.imp().library.upgrade()
+            && !self.imp().initializing.get() {
                 self.imp().initializing.set(true);
                 let stack = self.imp().stack.get();
                 let this = self.clone();
@@ -600,10 +663,13 @@ impl LazyInit for AlbumView {
                         stack.show_placeholder();
                     }
                     this.imp().initializing.set(false);
-                    // Now populate the stickers
-                    let _ = library.init_album_stickers().await;
+                    // Now populate the stickers and genres
+                    let _ = futures::join!(
+                        library.init_album_stickers(),
+                        library.init_genres(),
+                        library.refresh_album_tags()
+                    );
                 });
             }
-        }
     }
 }

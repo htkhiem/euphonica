@@ -485,8 +485,8 @@ impl ArtistView {
 
 impl LazyInit for ArtistView {
     fn populate(&self) {
-        if let Some(library) = self.imp().library.upgrade() {
-            if !self.imp().initializing.get() {
+        if let Some(library) = self.imp().library.upgrade()
+            && !self.imp().initializing.get() {
                 self.imp().initializing.set(true);
                 let stack = self.imp().stack.get();
                 let this = self.clone();
@@ -503,6 +503,5 @@ impl LazyInit for ArtistView {
                     this.imp().initializing.set(false);
                 });
             }
-        }
     }
 }

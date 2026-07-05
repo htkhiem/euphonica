@@ -97,11 +97,10 @@ mod imp {
             while let Some(child) = self.obj().first_child() {
                 child.unparent();
             }
-            if let Some(id) = self.history_changed_id.take() {
-                if let Some(player) = self.obj().imp().player.upgrade() {
+            if let Some(id) = self.history_changed_id.take()
+                && let Some(player) = self.obj().imp().player.upgrade() {
                     player.disconnect(id);
                 }
-            }
         }
 
         fn constructed(&self) {

@@ -16,8 +16,8 @@ mod imp {
     use once_cell::sync::Lazy;
 
     #[derive(Default, CompositeTemplate)]
-    #[template(resource = "/io/github/htkhiem/Euphonica/gtk/library/artist-tag.ui")]
-    pub struct ArtistTag {
+    #[template(resource = "/io/github/htkhiem/Euphonica/gtk/library/artist-tag-button.ui")]
+    pub struct ArtistTagButton {
         #[template_child]
         pub avatar: TemplateChild<adw::Avatar>, // Use high-resolution version
         #[template_child]
@@ -30,10 +30,10 @@ mod imp {
 
     // The central trait for subclassing a GObject
     #[glib::object_subclass]
-    impl ObjectSubclass for ArtistTag {
+    impl ObjectSubclass for ArtistTagButton {
         // `NAME` needs to match `class` attribute of template
-        const NAME: &'static str = "EuphonicaArtistTag";
-        type Type = super::ArtistTag;
+        const NAME: &'static str = "EuphonicaArtistTagButton";
+        type Type = super::ArtistTagButton;
         type ParentType = gtk::Button;
 
         fn class_init(klass: &mut Self::Class) {
@@ -45,7 +45,7 @@ mod imp {
         }
     }
 
-    impl ObjectImpl for ArtistTag {
+    impl ObjectImpl for ArtistTagButton {
         fn properties() -> &'static [ParamSpec] {
             static PROPERTIES: Lazy<Vec<ParamSpec>> =
                 Lazy::new(|| vec![ParamSpecString::builder("name").build()]);
@@ -82,18 +82,18 @@ mod imp {
         }
     }
 
-    impl WidgetImpl for ArtistTag {}
+    impl WidgetImpl for ArtistTagButton {}
 
-    impl ButtonImpl for ArtistTag {}
+    impl ButtonImpl for ArtistTagButton {}
 }
 
 glib::wrapper! {
-    pub struct ArtistTag(ObjectSubclass<imp::ArtistTag>)
+    pub struct ArtistTagButton(ObjectSubclass<imp::ArtistTagButton>)
     @extends gtk::Button, gtk::Widget,
     @implements gtk::Accessible, gtk::Buildable, gtk::ConstraintTarget, gtk::Actionable;
 }
 
-impl ArtistTag {
+impl ArtistTagButton {
     pub fn new(artist: &Artist, cache: Rc<Cache>, window: &EuphonicaWindow) -> Self {
         let res: Self = Object::builder().build();
         let cache_state = cache.get_cache_state();

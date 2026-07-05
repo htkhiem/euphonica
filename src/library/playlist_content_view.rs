@@ -815,7 +815,7 @@ impl PlaylistContentView {
                         // Adwaita already has a .card class that does that + adds rounded corners and drop shadows too.
                         // Looks nice IMO.
                         drag_widget.add_css_class("card");
-                        let drag_icon = gtk::DragIcon::for_drag(&drag);
+                        let drag_icon = gtk::DragIcon::for_drag(drag);
                         drag_icon.set_child(Some(&drag_widget));
                     }
                 ));
@@ -882,7 +882,7 @@ impl PlaylistContentView {
                     item,
                     #[upgrade_or]
                     false,
-                    move |_, song, x, y| {
+                    move |_, song, _x, y| {
                         row.set_floating(false);
                         if !row.is_floating() {
                             if let Ok(song) = song.get::<Song>() {

@@ -120,6 +120,12 @@
 		<key name="artist-tag-delim-exceptions" type="as">
 			<default>["Simon &amp; Garfunkel", "Above &amp; Beyond"]</default>
 		</key>
+		<key name="genre-tag-delims" type="as">
+			<default>[" / ", ";", "&amp;", ",", "/"]</default>
+		</key>
+		<key name="genre-tag-delim-exceptions" type="as">
+			<default>["R&amp;B", "R&amp;B/Hip-Hop", "Electro&amp;Funk"]</default>
+		</key>
 		<key name="sort-nulls-first" type="b">
 			<default>false</default>
 		</key>
@@ -401,7 +407,7 @@
         </key>
 
         <key name="album-artists-only" type="b">
-            <default>false</default>
+            <default>true</default>
             <summary>Show only album artists</summary>
         </key>
 	</schema>

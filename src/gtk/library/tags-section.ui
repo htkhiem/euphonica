@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <requires lib="gtk" version="4.0"/>
+  <template class="EuphonicaTagsSection" parent="GtkWidget">
+    <child>
+      <object class="GtkBox">
+        <property name="orientation">1</property>
+        <property name="spacing">6</property>
+
+        <child>
+          <object class="EuphonicaContentStack" id="tags_stack">
+            <property name="placeholder">
+              <object class="GtkBox">
+                <property name="spacing">6</property>
+                <property name="orientation">1</property>
+                <property name="valign">center</property>
+                <child>
+                  <object class="GtkLabel">
+                    <property name="label" translatable="true">No tags yet.</property>
+                    <style>
+                      <class name="dimmed"/>
+                    </style>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkButton" id="add_first_tag_btn">
+                    <property name="tooltip-text" translatable="true">Add a tag</property>
+                    <style>
+                      <class name="circular"/>
+                    </style>
+                    <property name="halign">center</property>
+                    <property name="icon-name">list-add-symbolic</property>
+                  </object>
+                </child>
+              </object>
+            </property>
+            <property name="content">
+              <object class="GtkBox">
+                <property name="vexpand">true</property>
+                <property name="hexpand">true</property>
+                <property name="orientation">1</property>
+                <property name="spacing">3</property>
+                <child>
+                  <object class="GtkBox">
+                    <style>
+                      <class name="linked"/>
+                    </style>
+                    <child>
+                      <object class="GtkEntry" id="tag_entry">
+                        <property name="placeholder-text" translatable="true">new tag...</property>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="GtkButton" id="add_tag_btn">
+                        <style>
+                          <class name="plain-tag"/>
+                          <class name="round"/>
+                        </style>
+                        <property name="icon-name">plus-symbolic</property>
+                        <property name="sensitive">false</property>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+                <child>
+                  <object class="EuphonicaFadingScrolledWindow" id="tags_fader">
+                    <property name="vertical">true</property>
+                    <property name="vexpand">true</property>
+                    <property name="inner">
+                      <object class="GtkScrolledWindow" id="tags_scroller">
+                        <property name="hscrollbar-policy">never</property>
+                        <property name="child">
+                          <object class="AdwWrapBox" id="tags_box">
+                            <property name="child-spacing">3</property>
+                            <property name="line-spacing">3</property>
+                            <property name="justify">0</property>
+                            <property name="justify-last-line">false</property>
+                            <property name="align">0.0</property>
+                          </object>
+                        </property>
+                      </object>
+                    </property>
+                  </object>
+                </child>
+              </object>
+            </property>
+          </object>
+        </child>
+      </object>
+    </child>
+  </template>
+</interface>

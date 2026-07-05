@@ -654,6 +654,22 @@ impl Cache {
         }
     }
 
+    pub fn set_album_meta(
+        &self,
+        album: &AlbumInfo,
+        meta: &models::AlbumMeta,
+    ) -> Result<()> {
+        sqlite::write_album_meta(album, meta).map_err(Error::Sqlite)
+    }
+
+    pub fn set_album_tags(&self, folder_uri: &str, tags: &[models::Tag]) -> Result<()> {
+        sqlite::write_album_tags(folder_uri, tags, sqlite::TagsInsertMode::Delsert).map_err(Error::Sqlite)
+    }
+
+    pub fn get_album_tags(&self, folder_uri: &str) -> Result<Vec<models::Tag>> {
+        sqlite::find_album_tags(folder_uri).map_err(Error::Sqlite)
+    }
+
     pub async fn get_artist_meta(
         &self,
         artist: &ArtistInfo,

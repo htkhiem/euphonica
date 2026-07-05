@@ -10,7 +10,7 @@
             <child>
               <object class="AdwToolbarView">
                 <child type="top">
-					<object class="AdwHeaderBar">
+                  <object class="AdwHeaderBar">
                     <property name="show-title">false</property>
                     <child type="start">
                       <object class="GtkButton" id="show_sidebar">
@@ -26,10 +26,10 @@
                     </child>
                     <child type="end">
                       <object class="GtkToggleButton" id="album_artist_only_btn">
-                        <property name="icon-name">avatar-default-symbolic</property>
+                        <property name="icon-name">library-artists-symbolic</property>
                         <property name="tooltip-text" translatable="true">Show only album artists</property>
                         <style>
-                            <class name="flat"/>
+                          <class name="flat"/>
                         </style>
                       </object>
                     </child>
@@ -54,7 +54,7 @@
                           </object>
                         </child>
                       </object>
-                  </child>
+                    </child>
                   </object>
                 </child>
                 <child type="top">
@@ -67,7 +67,7 @@
                     </child>
                   </object>
                 </child>
-				        <property name="content">
+                <property name="content">
                   <object class="EuphonicaContentStack" id="stack">
                     <property name="placeholder">
                       <object class="AdwStatusPage">
@@ -96,8 +96,8 @@
                       </object>
                     </property>
                   </object>
-				        </property>
-			        </object>
+                </property>
+              </object>
             </child>
           </object>
         </child>

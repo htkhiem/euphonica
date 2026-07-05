@@ -2,6 +2,7 @@ use crate::{
     cache::{Cache, sqlite},
     client::{Error as ClientError, MpdWrapper, Result as ClientResult, StickerSetMode},
     common::{Album, Artist, DynamicPlaylist, INode, Song, SongInfo, Stickers, tags},
+    library::Tag,
     player::Player,
     utils::settings_manager,
 };
@@ -39,17 +40,23 @@ mod imp {
         pub dyn_playlists_initialized: Cell<bool>,
         #[derivative(Default(value = "gio::ListStore::new::<Album>()"))]
         pub albums: gio::ListStore,
+        #[derivative(Default(value = "gio::ListStore::new::<Tag>()"))]
+        pub album_tags: gio::ListStore,
         pub albums_initialized: Cell<bool>,
         #[derivative(Default(value = "gio::ListStore::new::<Album>()"))]
         pub recent_albums: gio::ListStore,
         #[derivative(Default(value = "gio::ListStore::new::<Artist>()"))]
         pub artists: gio::ListStore,
+        #[derivative(Default(value = "gio::ListStore::new::<Tag>()"))]
+        pub artist_tags: gio::ListStore,
         #[derivative(Default(value = "gio::ListStore::new::<Artist>()"))]
         pub album_artists: gio::ListStore,
         pub artists_initialized: Cell<bool>,
         #[derivative(Default(value = "gio::ListStore::new::<Artist>()"))]
         pub recent_artists: gio::ListStore,
-
+        #[derivative(Default(value = "gio::ListStore::new::<Tag>()"))]
+        pub genres: gio::ListStore,
+        pub genres_initialized: Cell<bool>,
         // Folder view
         // Files and folders
         pub folder_history: RefCell<Vec<String>>,
@@ -129,10 +136,14 @@ impl Library {
 
     pub fn clear(&self) {
         self.imp().recent_songs.remove_all();
+        self.imp().genres.remove_all();
+        self.imp().genres_initialized.set(false);
         self.imp().albums.remove_all();
+        self.imp().album_tags.remove_all();
         self.imp().albums_initialized.set(false);
         self.imp().recent_albums.remove_all();
         self.imp().artists.remove_all();
+        self.imp().artist_tags.remove_all();
         self.imp().artists_initialized.set(false);
         self.imp().recent_artists.remove_all();
         self.imp().playlists.remove_all();
@@ -434,6 +445,16 @@ impl Library {
         self.imp().albums.clone()
     }
 
+    /// Get a reference to the list of distinct genres
+    pub fn genres(&self) -> gio::ListStore {
+        self.imp().genres.clone()
+    }
+
+    /// Get a reference to the list of album tags
+    pub fn album_tags(&self) -> gio::ListStore {
+        self.imp().album_tags.clone()
+    }
+
     /// Get a reference to the local recent albums store
     pub fn recent_albums(&self) -> gio::ListStore {
         self.imp().recent_albums.clone()
@@ -614,6 +635,22 @@ impl Library {
                     model.append(&album);
                 })
                 .await?;
+            for album in self.imp().recent_albums.iter::<Album>() {
+                // Right now the only sticker we use is album rating
+                let album = album.unwrap();
+                if let Ok(rating_str) = self
+                    .client()
+                    .get_sticker("album", album.get_title().into(), "rating".into())
+                    .await
+                {
+                    {
+                        let mut stickers = album.get_stickers().borrow_mut();
+                        stickers.set_rating(&rating_str);
+                        // End borrow
+                    }
+                    album.notify_stickers_changed();
+                }
+            }
 
             let model = self.imp().recent_artists.clone();
             model.remove_all();
@@ -626,7 +663,38 @@ impl Library {
         Ok(())
     }
 
-    /// Fetch basic info for all albums to display them in a grid.
+    pub async fn init_genres(&self) -> ClientResult<()> {
+        if !self.imp().genres_initialized.get() {
+            self.imp().genres_initialized.set(true);
+            let genres = self.imp().genres.clone();
+            genres.remove_all();
+            self.client()
+                .get_distinct_genres(&mut |split_genres: Vec<String>| {
+                    for genre in split_genres {
+                        let obj = Tag::new(genre, None, None, false, false);
+                        genres.append(&obj);
+                    }
+                })
+                .await?;
+        }
+        Ok(())
+    }
+
+    pub async fn refresh_album_tags(&self) -> ClientResult<()> {
+        let tags = self.imp().album_tags.clone();
+        tags.remove_all();
+        tags.extend_from_slice(
+            &sqlite::distinct_album_tags()
+                .await
+                .map_err(|_| ClientError::Internal)?
+                .into_iter()
+                .map(Tag::from)
+                .collect::<Vec<Tag>>(),
+        );
+        Ok(())
+    }
+
+    /// Fetch basic info for all albums to display them in a grid. Will also fetch tags as stored locally.
     /// Note: this function no longer fetches stickers s.t. we can return the grid to the user earlier.
     pub async fn init_albums(&self) -> ClientResult<()> {
         if !self.imp().albums_initialized.get() {
@@ -648,7 +716,11 @@ impl Library {
             for album in self.imp().albums.iter::<Album>() {
                 // Right now the only sticker we use is album rating
                 let album = album.unwrap();
-                if let Ok(rating_str) = self.client().get_sticker("album", album.get_title().into(), "rating".into()).await {
+                if let Ok(rating_str) = self
+                    .client()
+                    .get_sticker("album", album.get_title().into(), "rating".into())
+                    .await
+                {
                     {
                         let mut stickers = album.get_stickers().borrow_mut();
                         stickers.set_rating(&rating_str);
@@ -657,10 +729,23 @@ impl Library {
                     album.notify_stickers_changed();
                 }
             }
-        }
-        else {
+        } else {
             eprintln!("WARNING: init_album_stickers called before init_albums. This is a no-op.");
         }
+        Ok(())
+    }
+
+    pub async fn refresh_artist_tags(&self) -> ClientResult<()> {
+        let tags = self.imp().artist_tags.clone();
+        tags.remove_all();
+        tags.extend_from_slice(
+            &sqlite::distinct_artist_tags()
+                .await
+                .map_err(|_| ClientError::Internal)?
+                .into_iter()
+                .map(Tag::from)
+                .collect::<Vec<Tag>>(),
+        );
         Ok(())
     }
 
@@ -678,7 +763,7 @@ impl Library {
                 })
                 .await?;
 
-            dbg!(album_artist_model.n_items());
+            album_artist_model.n_items();
 
 
             // init the artists list

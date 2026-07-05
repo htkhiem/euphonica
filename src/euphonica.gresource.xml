@@ -18,7 +18,10 @@
     <file preprocess="xml-stripblanks">gtk/library/recent-view.ui</file>
     <file preprocess="xml-stripblanks">gtk/library/album-view.ui</file>
     <file preprocess="xml-stripblanks">gtk/library/album-cell.ui</file>
-    <file preprocess="xml-stripblanks">gtk/library/artist-tag.ui</file>
+    <file preprocess="xml-stripblanks">gtk/library/artist-tag-button.ui</file>
+    <file preprocess="xml-stripblanks">gtk/library/tag-button.ui</file>
+    <file preprocess="xml-stripblanks">gtk/library/tags-section.ui</file>
+    <file preprocess="xml-stripblanks">gtk/library/tags-filter.ui</file>
     <file preprocess="xml-stripblanks">gtk/library/album-content-view.ui</file>
     <file preprocess="xml-stripblanks">gtk/library/artist-view.ui</file>
     <file preprocess="xml-stripblanks">gtk/library/artist-cell.ui</file>
@@ -54,6 +57,7 @@
     <file alias="albumart-placeholder-thumb.png">gtk/textures/albumart-placeholder-thumb.png</file>
   </gresource>
   <gresource prefix="/io/github/htkhiem/Euphonica/icons/scalable/actions/">
+    <file preprocess="xml-stripblanks" alias="brush-symbolic.svg">gtk/icons/brush-symbolic.svg</file>
     <file preprocess="xml-stripblanks" alias="view-sort-descending-symbolic.svg">gtk/icons/view-sort-descending-symbolic.svg</file>
     <file preprocess="xml-stripblanks" alias="view-sort-ascending-symbolic.svg">gtk/icons/view-sort-ascending-symbolic.svg</file>
     <file preprocess="xml-stripblanks" alias="dock-right-symbolic.svg">gtk/icons/dock-right-symbolic.svg</file>
@@ -89,6 +93,7 @@
     <file preprocess="xml-stripblanks" alias="playlist-repeat-song-symbolic.svg">gtk/icons/playlist-repeat-song-symbolic.svg</file>
     <file preprocess="xml-stripblanks" alias="skip-forward-large-symbolic.svg">gtk/icons/skip-forward-large-symbolic.svg</file>
     <file preprocess="xml-stripblanks" alias="music-artist-symbolic.svg">gtk/icons/music-artist-symbolic.svg</file>
+    <file preprocess="xml-stripblanks" alias="library-artists-symbolic.svg">gtk/icons/library-artists-symbolic.svg</file>
     <file preprocess="xml-stripblanks" alias="library-symbolic.svg">gtk/icons/library-symbolic.svg</file>
     <file preprocess="xml-stripblanks" alias="playlist-symbolic.svg">gtk/icons/playlist-symbolic.svg</file>
     <file preprocess="xml-stripblanks" alias="library-music-symbolic.svg">gtk/icons/library-music-symbolic.svg</file>
@@ -121,5 +126,6 @@
     <file preprocess="xml-stripblanks" alias="arrow-pointing-at-line-down-symbolic.svg">gtk/icons/arrow-pointing-at-line-down-symbolic.svg</file>
     <file preprocess="xml-stripblanks" alias="arrow-pointing-away-from-line-up-symbolic.svg">gtk/icons/arrow-pointing-away-from-line-up-symbolic.svg</file>
     <file preprocess="xml-stripblanks" alias="cross-small-symbolic.svg">gtk/icons/cross-small-symbolic.svg</file>
+    <file preprocess="xml-stripblanks" alias="plus-symbolic.svg">gtk/icons/plus-symbolic.svg</file>
   </gresource>
 </gresources>

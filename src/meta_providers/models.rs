@@ -5,11 +5,13 @@ use serde::{Deserialize, Serialize};
 use crate::common::{AlbumInfo, ArtistInfo};
 
 // Common building blocks that can be shared between different providers
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct Tag {
     pub url: Option<String>,
     pub name: String,
     pub count: Option<i32>,
+    #[serde(default)]
+    pub set_by_user: bool,
 }
 
 pub trait Tagged {
@@ -56,7 +58,7 @@ pub struct ImageMeta {
 }
 
 // Album
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
 #[non_exhaustive]
 pub struct Wiki {
     pub content: String,
@@ -68,7 +70,7 @@ pub struct Wiki {
 
 // Standard (provider-agnostic) metadata structures for use across the app.
 // All providers must return these structs instead of their own formats.
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
 #[non_exhaustive]
 pub struct AlbumMeta {
     pub name: String,
@@ -186,8 +188,6 @@ impl ArtistMeta {
 impl Merge for ArtistMeta {
     /// Add information from another ArtistMeta object.
     /// artist_type receives special treatment: Other and UnrecognizedArtistType are treated like None
-    /// and will be replaced by what the other ArtistMeta object has, unless that other value is also
-    /// one of those two.
     fn merge(
         mut self,
         ArtistMeta {

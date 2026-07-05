@@ -1,4 +1,4 @@
-use super::{DynamicPlaylistView, Library, artist_tag::ArtistTag};
+use super::{DynamicPlaylistView, Library};
 use crate::{
     cache::{Cache, sqlite},
     common::{
@@ -67,8 +67,6 @@ mod imp {
 
         #[derivative(Default(value = "gio::ListStore::new::<Song>()"))]
         pub song_list: gio::ListStore,
-        #[derivative(Default(value = "gio::ListStore::new::<ArtistTag>()"))]
-        pub artist_tags: gio::ListStore,
 
         pub dp: RefCell<Option<DynamicPlaylist>>,
         pub library: WeakRef<Library>,

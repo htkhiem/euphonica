@@ -25,6 +25,7 @@ pub struct AlbumInfo {
     pub artists: Vec<ArtistInfo>, // parse from AlbumArtist tag please, not Artist.
     pub albumartist: Option<String>,
     pub albumartistsort: Option<String>,
+    pub genres: Vec<String>,
     pub cover: Option<Texture>,
     pub release_date: Option<Date>,
     pub quality_grade: QualityGrade,
@@ -38,6 +39,7 @@ impl AlbumInfo {
         albumsort: Option<&str>,
         artist_tag: Option<&str>,
         albumartistsort: Option<&str>,
+        genres: Vec<String>,
         artists: Vec<ArtistInfo>,
         quality_grade: QualityGrade,
     ) -> Self {
@@ -48,6 +50,7 @@ impl AlbumInfo {
             artists,
             albumartist: artist_tag.map(str::to_owned),
             albumartistsort: albumartistsort.map(str::to_owned),
+            genres,
             title: title.to_owned(),
             cover: None,
             release_date: None,
@@ -100,6 +103,7 @@ impl Default for AlbumInfo {
             artists: Vec::with_capacity(0),
             albumartist: None,
             albumartistsort: None,
+            genres: Vec::with_capacity(0),
             cover: None,
             release_date: None,
             quality_grade: QualityGrade::Unknown,
@@ -233,6 +237,10 @@ impl Album {
         &self.get_info().artists
     }
 
+    pub fn get_genres(&self) -> &[String] {
+        &self.get_info().genres
+    }
+
     /// Get albumartist names separated by commas. If the first artist listed is a composer,
     /// the next separator will be a semicolon instead. The quality of this output depends
     /// on whether all delimiters are specified by the user.
@@ -292,6 +300,18 @@ impl Album {
 
     pub fn set_stickers(&self, stickers: Stickers) {
         let _ = &self.imp().stickers.replace(stickers);
+    }
+
+    /// Checks if the given genre substring is in any of this album's genre strings.
+    /// Genre-less albums always return false.
+    pub fn has_genre(&self, genre_substr: &str) -> bool {
+        let genres = &self.get_info().genres;
+        if genres.is_empty() {
+            false
+        } else {
+            genres.iter().any(|elem| elem.contains(genre_substr))
+        }
+        
     }
 }
 

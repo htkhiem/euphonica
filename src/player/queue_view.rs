@@ -423,7 +423,7 @@ impl QueueView {
         let factory = SignalListItemFactory::new();
 
         factory.connect_setup(clone!(
-            #[weak(rename_to = this)]
+            #[weak(rename_to = _this)]
             self,
             #[weak]
             player,
@@ -533,7 +533,7 @@ impl QueueView {
                         // Adwaita already has a .card class that does that + adds rounded corners and drop shadows too.
                         // Looks nice IMO.
                         drag_widget.add_css_class("card");
-                        let drag_icon = gtk::DragIcon::for_drag(&drag);
+                        let drag_icon = gtk::DragIcon::for_drag(drag);
                         drag_icon.set_child(Some(&drag_widget));
                     }
                 ));
@@ -600,7 +600,7 @@ impl QueueView {
                     player,
                     #[upgrade_or]
                     false,
-                    move |_, song, x, y| {
+                    move |_, song, _x, y| {
                         row.set_floating(false);
                         if !row.is_floating() {
                             if let Ok(song) = song.get::<Song>() {
@@ -745,15 +745,13 @@ impl QueueView {
     pub fn scroll_to_playing(&self) {
         if let Some(model) = self.imp().queue.model() {
             let n = model.n_items();
-            if let Some(player) = self.imp().player.upgrade() {
-                if let Some(pos) = player.queue_pos() {
-                    if pos < n {
+            if let Some(player) = self.imp().player.upgrade()
+                && let Some(pos) = player.queue_pos()
+                    && pos < n {
                         self.imp()
                             .queue
                             .scroll_to(pos, gtk::ListScrollFlags::FOCUS, None);
                     }
-                }
-            }
         }
     }
 

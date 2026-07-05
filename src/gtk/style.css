@@ -42,6 +42,16 @@ listview > row {
     padding-right: 6px;
 }
 
+.plain-tag {
+    padding: 0px;
+}
+
+/* Always pad on the right, even for RTL languages */
+.plain-tag > box {
+    padding-left: 4px;
+    padding-right: 4px;
+}
+
 .padding-0 {
     padding: 0px;
 }
@@ -175,4 +185,10 @@ listview > row {
 /* Avoid colouring text within elements with auto-accent applied */
 .fg-auto-accent label {
   color: var(--view-fg-color);
+}
+
+/* 1px down, looks more "aligned" with the baseline of the text to the left. */
+/* Extra 3px padding to the right to look equidistant from right edge and left label. */
+.count-badge {
+  padding: 1px 3px 0px 0px;
 }

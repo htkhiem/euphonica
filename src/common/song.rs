@@ -455,12 +455,15 @@ impl From<mpd::song::Song> for SongInfo {
         } else {
             artists = Vec::with_capacity(0);
         }
+
         let name: String;
         if let Some(title) = song.title {
             name = title;
-        }
-        // Else extract from URI
-        else if let Some(stem) = Path::new(&song.file).file_stem() {
+        } else if let Some(name_field) = song.name {
+            // Used by streams
+            name = name_field;
+        } else if let Some(stem) = Path::new(&song.file).file_stem() {
+            // Extract from URI
             name = String::from(stem.to_str().unwrap());
         } else {
             name = String::from("");
@@ -506,6 +509,7 @@ impl From<mpd::song::Song> for SongInfo {
         let mut artistsorts: Vec<String> = Vec::new();
         let mut albumartist: Option<String> = None;
         let mut albumartistsort: Option<String> = None;
+        let mut genres: Vec<String> = Vec::new();
         let mut album_artist_mbids: Vec<String> = Vec::new();
         let mut album_mbid: Option<String> = None;
         for (tag, val) in song.tags.into_iter() {
@@ -518,6 +522,7 @@ impl From<mpd::song::Song> for SongInfo {
                             None,
                             None,
                             None,
+                            Vec::with_capacity(0),
                             Vec::with_capacity(0),
                             res.quality_grade,
                         ));
@@ -538,6 +543,9 @@ impl From<mpd::song::Song> for SongInfo {
                 }
                 tags::ALBUMARTISTSORT => {
                     albumartistsort.replace(val);
+                }
+                tags::GENRE => {
+                    genres.push(val);
                 }
                 // "date" => res.imp().release_date.replace(Some(val.clone())),
                 tags::FORMAT => {
@@ -616,6 +624,7 @@ impl From<mpd::song::Song> for SongInfo {
             album.albumsort = albumsort;
             album.albumartistsort = albumartistsort;
             album.release_date = res.release_date;
+            album.genres = genres;
             // Assume the albumartist IDs are given in the same order as the albumartist tags
             if let Some(album_artist_str) = albumartist.as_ref() {
                 album.add_artists_from_string(album_artist_str);

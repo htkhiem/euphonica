@@ -3,7 +3,7 @@ use crate::{
     application::EuphonicaApplication, cache::{Cache, sqlite}, client::{
         ClientState, ConnectionState, Error as ClientError, MpdWrapper, Result as ClientResult,
         StickerSetMode,
-    }, common::{QualityGrade, Song, Stickers}, config::APPLICATION_ID, meta_providers::models::Lyrics, player::output::MpdOutput, utils::{
+    }, common::{QualityGrade, Song, Stickers}, config::APPLICATION_ID, meta_providers::models::Lyrics, utils::{
         current_unix_timestamp, get_image_cache_path, prettify_audio_format, settings_manager,
     }
 };

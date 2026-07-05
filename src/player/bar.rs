@@ -16,10 +16,9 @@ use crate::{
     },
     common::{ImageStack, Marquee, Song},
     player::{ratio_center_box::RatioCenterBox, seekbar2::Seekbar},
-    utils::settings_manager,
 };
 
-use super::{MpdOutput, OutputControls, PlaybackControls, PlaybackState, Player, VolumeKnob};
+use super::{OutputControls, PlaybackControls, PlaybackState, Player, VolumeKnob};
 
 mod imp {
     use super::*;
@@ -109,6 +108,34 @@ mod imp {
                 .sync_create()
                 .build();
 
+            // Infobox has to behave a bit differently depending on layout
+            obj.bind_property("layout", &self.infobox_revealer.get(), "transition-type")
+                .transform_to(|_, layout: u32| {
+                    Some(
+                        match layout {
+                            0 => gtk::RevealerTransitionType::SlideUp,
+                            _ => gtk::RevealerTransitionType::SlideRight,
+                        }
+                        .to_value(),
+                    )
+                })
+                .sync_create()
+                .build();
+
+            // In micro layout the playback controls has to take care of its own top margin
+            obj.bind_property("layout", &self.playback_controls.get(), "margin-top")
+                .transform_to(|_, layout: u32| {
+                    Some(
+                        match layout {
+                            0 => 12,
+                            _ => 6
+                        }
+                        .to_value(),
+                    )
+                })
+                .sync_create()
+                .build();
+
             // Hide certain widgets when in compact mode
             obj.bind_property("layout", &self.album.get(), "visible")
                 .transform_to(|_, layout: u32| Some((layout > 1).to_value()))
@@ -140,11 +167,10 @@ mod imp {
         }
 
         fn dispose(&self) {
-            if let Some(player) = self.player.upgrade() {
-                if let Some(id) = self.cover_changed_id.take() {
+            if let Some(player) = self.player.upgrade()
+                && let Some(id) = self.cover_changed_id.take() {
                     player.disconnect(id);
                 }
-            }
         }
     }
 
