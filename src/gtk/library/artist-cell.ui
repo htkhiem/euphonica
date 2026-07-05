@@ -1,15 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <interface>
-	<template class="EuphonicaArtistCell" parent="GtkBox">
+	<template class="EuphonicaArtistCell" parent="GtkWidget">
 		<style>
 			<class name="padding-6"/>
 		</style>
-		<property name="halign">3</property>
-		<property name="valign">1</property>
+		<!-- <property name="halign">3</property>
+		<property name="valign">1</property> -->
 		<property name="margin-top">6</property>
 		<property name="margin-bottom">6</property>
-		<property name="orientation">1</property>
-		<property name="spacing">6</property>
 		<child>
 			<object class="AdwAvatar" id="avatar">
 				<property name="show-initials">true</property>
@@ -17,13 +15,22 @@
 			</object>
 		</child>
 		<child>
-			<object class="GtkLabel" id="name">
-				<property name="ellipsize">3</property>
-				<property name="justify">center</property>
-				<style>
-					<class name="caption-heading"/>
-				</style>
+			<object class="EuphonicaPictureStack" id="cover1">
+				<property name="size">32</property>
 			</object>
+		</child>
+		<child>
+			<object class="EuphonicaPictureStack" id="cover2">
+				<property name="size">32</property>
+			</object>
+		</child>
+		<child>
+			<object class="EuphonicaPictureStack" id="cover3">
+				<property name="size">32</property>
+			</object>
+		</child>
+		<child>
+			<object class="GtkLabel" id="name"></object>
 		</child>
 	</template>
 </interface>

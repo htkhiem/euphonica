@@ -148,7 +148,7 @@ impl ArtistView {
         self.setup_sort();
         self.setup_search();
         self.setup_album_artist();
-        self.setup_gridview(cache.clone());
+        self.setup_gridview(cache.clone(), window);
 
         let content_view = self.imp().content_view.get();
         content_view.setup(library, cache, window);
@@ -373,7 +373,7 @@ impl ArtistView {
         }
     }
 
-    fn setup_gridview(&self, cache: Rc<Cache>) {
+    fn setup_gridview(&self, cache: Rc<Cache>, window: &EuphonicaWindow) {
         let settings = settings_manager().child("ui");
         // Refresh upon reconnection.
         // User-initiated refreshes will also trigger a reconnection, which will
@@ -415,13 +415,18 @@ impl ArtistView {
         factory.connect_setup(clone!(
             #[weak]
             cache,
+            #[weak]
+            grid_view,
+            #[weak]
+            window,
             move |_, list_item| {
                 let item = list_item
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
                 let artist_cell = ArtistCell::new(
                     item, cache,
-                    false, // For ArtistView, don't immediately fetch avatars externally.
+                    Some(window),
+                    Some(grid_view)
                 );
                 item.set_child(Some(&artist_cell));
             }

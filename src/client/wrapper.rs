@@ -947,6 +947,7 @@ impl MpdWrapper {
                             tags::ALBUM,
                             tags::ALBUMARTIST,
                             tags::ALBUMARTISTSORT,
+                            tags::ALBUMARTIST_MBID,
                             tags::ALBUM_MBID,
                             tags::RELEASE_DATE,
                             tags::GENRE,
