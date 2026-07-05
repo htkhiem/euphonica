@@ -12,7 +12,7 @@ use mpd::{
 };
 use mpd::{Query, Status, Term};
 use nohash_hasher::NoHashHasher;
-use rustc_hash::FxHashSet;
+use rustc_hash::{FxHashMap, FxHashSet};
 use time::OffsetDateTime;
 
 use std::borrow::Cow;
@@ -24,7 +24,7 @@ use uuid::Uuid;
 
 use crate::cache::sqlite;
 use crate::client::connection::ImageHandle;
-use crate::common::{DynamicPlaylist, tags};
+use crate::common::{ArtistInfo, DynamicPlaylist, parse_mb_artist_tag, tags};
 use crate::utils::settings_manager;
 use crate::{
     common::{Album, Artist, INode, Song, SongInfo, Stickers},
@@ -37,6 +37,7 @@ use super::state::{ClientState, ConnectionState, StickersSupportLevel};
 use super::{BATCH_SIZE, FETCH_LIMIT, StickerSetMode};
 
 static MAX_RETRIES: u32 = 3;
+static MAX_EXAMPLE_ALBUMS_PER_ALBUMARTIST: usize = 3;
 
 // Thin wrapper around blocking mpd::Clients. It contains two separate client
 // objects connected to the same address, each living on their own std::thread.
@@ -106,9 +107,7 @@ impl MpdWrapper {
                     .is_err()
             }),
             pool: ThreadPool::shared(Some(
-                settings_manager()
-                    .child("library")
-                    .uint("n-image-threads"),
+                settings_manager().child("library").uint("n-image-threads"),
             ))
             .expect("Unable to start MpdWrapper threadpool"),
             state: ClientState::default(),
@@ -500,10 +499,11 @@ impl MpdWrapper {
 
     fn handle_playlist_error<T>(&self, res: ClientResult<T>) -> ClientResult<T> {
         if let Err(ClientError::Mpd(MpdError::Server(e))) = &res
-            && e.detail.contains("disabled") {
-                self.state.set_supports_playlists(false);
-                println!("Playlists are not supported.");
-            }
+            && e.detail.contains("disabled")
+        {
+            self.state.set_supports_playlists(false);
+            println!("Playlists are not supported.");
+        }
         res
     }
 
@@ -857,16 +857,32 @@ impl MpdWrapper {
         }
     }
 
-    pub async fn get_albums_by_query<F>(
+    /// Fetch albums and albumartists together for efficiency.
+    /// This is because fetching albums require albumartists to disambiguate same-named albums from different artists,
+    /// while albumartists require example URIs for display purposes.
+    /// Algorithm:
+    /// 1. Fetch (albumartist tag, album) pairs
+    /// 2. Split the albumartist tags & count how many albums an albumartist has. This allows us to know when to stop
+    ///    waiting for more albums to arrive for a given albumartist (and send that albumartist on its way). Limit to
+    ///    3 example albums per albumartist.
+    /// 3. For each (albumartist tag, album) pair, fetch one song entry to glean information from it. Create the album object
+    ///    as usual, but also extract the albumartists into a hashmap. In case some of the albumartists are already present
+    ///    in the hashmap (due to them being present in another album, just append the album's example URI to their list of
+    ///    example albums.
+    /// 4a. Once an albumartist hits the known number of albums or 3 (whichever comes first), send it off to FAA too.
+    /// 4b. Send each finished album off to the FAL callback.
+    pub async fn get_albums_and_albumartists_by_query<FAL, FAA>(
         &self,
         query: Query<'static>,
-        respond: &mut F,
+        respond_album: &mut FAL,
+        respond_albumartist: &mut FAA,
     ) -> ClientResult<()>
     where
-        F: FnMut(Album),
+        FAL: FnMut(Album),
+        FAA: FnMut(Artist),
     {
         // TODO: batched windowed retrieval
-        // Get list of unique album tags, grouped by albumartist
+        // STEP 1: Get list of unique album tags, grouped by albumartist
         // Will block child thread until info for all albums have been retrieved.
         let (s, r) = oneshot::channel();
         let grouped_vals = self
@@ -881,31 +897,92 @@ impl MpdWrapper {
             )
             .await?;
         let mut titles_artists = Vec::new();
-        // let mut queries = Vec::new();
-        // Construct queries all at once. Each query fetches one song from one album.
+        let mut artist_album_count: FxHashMap<String, usize> = FxHashMap::default();
+
+        // STEP 2: Count available albums per albumartist
+        // Known bug: will conflate artists with the same name, but not a big concern as this is only an optimisation trick.
+        // TODO: stress test & consider asyncified if too slow
         for (key, tags) in grouped_vals.groups.into_iter() {
             for tag in tags.into_iter() {
+                for artist in parse_mb_artist_tag(&key) {
+                    if let Some(count) = artist_album_count.get(artist) {
+                        if *count < MAX_EXAMPLE_ALBUMS_PER_ALBUMARTIST {
+                            let _ = artist_album_count.insert(key.clone(), count + 1);
+                        }
+                    } else {
+                        let _ = artist_album_count.insert(key.clone(), 1);
+                    }
+                }
                 titles_artists.push((tag, key.clone()));
             }
         }
-        // Chunk the queries
+
+        // STEP 3: Fetch song entries.
+        // Construct queries all at once. Each query fetches one song from one album.
+        // Chunk the queries for efficiency.
+        let mut albumartists: FxHashMap<String, ArtistInfo> = FxHashMap::default(); // Maps from artist comp_id (not just name) to artistinfo
+        let mut done_albumartists: FxHashSet<String> = FxHashSet::default();
         for ta_chunk in titles_artists.chunks(256) {
-            let queries_windows: Vec<(Query, mpd::search::Window)> = ta_chunk.iter().map(|title_artist| {
-                let mut query = Query::new();
-                query.and(Term::Tag(Cow::Borrowed(tags::ALBUM)), title_artist.0.to_string());
-                query.and(Term::Tag(Cow::Borrowed(tags::ALBUMARTIST)), title_artist.1.to_string());
-                (query, mpd::search::Window::from((0, 1)))
-            }).collect();
+            let queries_windows: Vec<(Query, mpd::search::Window)> = ta_chunk
+                .iter()
+                .map(|title_artist| {
+                    let mut query = Query::new();
+                    query.and(
+                        Term::Tag(Cow::Borrowed(tags::ALBUM)),
+                        title_artist.0.to_string(),
+                    );
+                    query.and(
+                        Term::Tag(Cow::Borrowed(tags::ALBUMARTIST)),
+                        title_artist.1.to_string(),
+                    );
+                    (query, mpd::search::Window::from((0, 1)))
+                })
+                .collect();
             let (s, r) = oneshot::channel();
             let mut songs = self
-                .foreground(Task::FindMultiple(queries_windows, Some(vec![
-                    tags::ALBUM, tags::ALBUMARTIST, tags::ALBUMARTISTSORT, tags::ALBUM_MBID, tags::RELEASE_DATE, tags::GENRE
-                ]), s), r)
+                .foreground(
+                    Task::FindMultiple(
+                        queries_windows,
+                        Some(vec![
+                            tags::ALBUM,
+                            tags::ALBUMARTIST,
+                            tags::ALBUMARTISTSORT,
+                            tags::ALBUM_MBID,
+                            tags::RELEASE_DATE,
+                            tags::GENRE,
+                        ]),
+                        s,
+                    ),
+                    r,
+                )
                 .await?;
-            for i in 0 .. songs.len()  {
-                // Insert our local album & albumartist tags
+            for i in 0..songs.len() {
                 if let Some(album_info) = std::mem::take(&mut songs[i]).into_album_info() {
-                    respond(album_info.into());
+                    // Handle artist first
+                    let example_uri = &album_info.example_uri;
+                    for artist in album_info.artists.iter() {
+                        let comp_id = artist.get_comp_id();
+                        if !done_albumartists.contains(comp_id) {
+                            if let Some(existing) = albumartists.get_mut(comp_id) {
+                                existing.example_uris.push(example_uri.to_owned());
+                                if &existing.example_uris.len()
+                                    >= artist_album_count.get(&artist.name).unwrap_or(&0)
+                                {
+                                    // Done with this; send off
+                                    done_albumartists.insert(comp_id.to_owned());
+                                    // TODO: optimise away this clone
+                                    respond_albumartist(existing.to_owned().into());
+                                }
+                            } else {
+                                // Haven't seen this artist before => push new
+                                let mut artist = artist.to_owned();
+                                artist.example_uris.push(example_uri.to_owned());
+                                albumartists.insert(comp_id.to_owned(), artist);
+                            }
+                        } // else skip this artist
+                    }
+                    // Now send the album off
+                    respond_album(album_info.into());
                 }
             }
         }
@@ -917,12 +994,7 @@ impl MpdWrapper {
         F: FnMut(Vec<String>),
     {
         let (s, r) = oneshot::channel();
-        let split_genres: Vec<String> = self
-            .foreground(
-                Task::ListGenres(s),
-                r,
-            )
-            .await?;
+        let split_genres: Vec<String> = self.foreground(Task::ListGenres(s), r).await?;
         respond(split_genres);
         Ok(())
     }
@@ -944,7 +1016,8 @@ impl MpdWrapper {
             if let Some(mbid) = tup.2 {
                 query.and(Term::Tag(tags::ALBUM_MBID.into()), mbid);
             }
-            self.get_albums_by_query(query, respond).await?;
+            self.get_albums_and_albumartists_by_query(query, respond, &mut |_| {})
+                .await?;
         }
         Ok(())
     }
@@ -1021,7 +1094,12 @@ impl MpdWrapper {
             tags::ARTIST
         };
         let tagtypes_to_load = if use_album_artist {
-            vec![tags::ALBUMARTIST, tags::ALBUMARTISTSORT, tags::ALBUMARTIST_MBID, tags::ALBUM]
+            vec![
+                tags::ALBUMARTIST,
+                tags::ALBUMARTISTSORT,
+                tags::ALBUMARTIST_MBID,
+                tags::ALBUM,
+            ]
         } else {
             vec![tags::ARTIST, tags::ARTISTSORT, tags::ARTIST_MBID]
         };
@@ -1034,21 +1112,28 @@ impl MpdWrapper {
             )
             .await?;
         for tag_chunk in std::mem::take(&mut grouped_vals.groups[0].1).chunks(256) {
-            let queries_windows: Vec<(Query, mpd::search::Window)> = tag_chunk.iter().map(|tag| {
-                let mut query = Query::new();
-                query.and(Term::Tag(tag_type.into()), tag.to_owned());
-                (query, mpd::search::Window::from((0, 1)))
-            }).collect();
+            let queries_windows: Vec<(Query, mpd::search::Window)> = tag_chunk
+                .iter()
+                .map(|tag| {
+                    let mut query = Query::new();
+                    query.and(Term::Tag(tag_type.into()), tag.to_owned());
+                    (query, mpd::search::Window::from((0, 1)))
+                })
+                .collect();
             let (s, r) = oneshot::channel();
             let mut songs = self
-                .foreground(Task::FindMultiple(queries_windows, Some(tagtypes_to_load.clone()), s), r)
+                .foreground(
+                    Task::FindMultiple(queries_windows, Some(tagtypes_to_load.clone()), s),
+                    r,
+                )
                 .await?;
-            for i in 0..songs.len()  {
+            for i in 0..songs.len() {
                 let song = &mut songs[i];
                 // if we're getting album artists we need to long at song.album.artists
                 // instead of just song.artists
                 let artists = if use_album_artist {
-                    song.album.as_ref()
+                    song.album
+                        .as_ref()
                         .map(|a| a.artists.clone())
                         .unwrap_or_default()
                 } else {

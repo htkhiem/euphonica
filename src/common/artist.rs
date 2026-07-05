@@ -12,6 +12,7 @@ pub struct ArtistInfo {
     pub name: String,
     pub sort_tag: Option<String>,
     pub mbid: Option<String>,
+    pub example_uris: Vec<String>,  // Example song URIs for visualisation purposes. Each should belong to a different album.
     pub is_composer: bool,
 }
 
@@ -21,6 +22,7 @@ impl ArtistInfo {
             name: name.to_owned(),
             sort_tag: sort_tag.map(|s| s.to_owned()),
             mbid: None,
+            example_uris: Vec::with_capacity(0),
             is_composer,
         }
     }
@@ -40,6 +42,7 @@ impl Default for ArtistInfo {
             name: "Untitled Artist".to_owned(),
             sort_tag: None,
             mbid: None,
+            example_uris: Vec::with_capacity(0),
             is_composer: false,
         }
     }
@@ -145,7 +148,8 @@ pub fn artists_to_string(artists: &[ArtistInfo]) -> Option<String> {
 mod imp {
     use super::*;
     use glib::{ParamSpec, ParamSpecString};
-    use once_cell::sync::Lazy;
+    use gtk::glib::ParamSpecObject;
+use once_cell::sync::Lazy;
 
     #[derive(Default, Debug)]
     pub struct Artist {
@@ -172,6 +176,9 @@ mod imp {
                     ParamSpecString::builder("sortable-name")
                         .read_only()
                         .build(),
+                    ParamSpecObject::builder::<glib::BoxedAnyObject>("example-uris")
+                        .read_only()
+                        .build(),
                 ]
             });
             PROPERTIES.as_ref()
@@ -182,6 +189,8 @@ mod imp {
             match pspec.name() {
                 "name" => obj.get_name().to_value(),
                 "sortable-name" => obj.get_sortable_name().to_value(),
+                // TODO: skirt 
+                "example-uris" => glib::BoxedAnyObject::new(self.info.get().map(|info| info.example_uris.clone())).to_value(), 
                 _ => unimplemented!(),
             }
         }

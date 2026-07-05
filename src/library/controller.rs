@@ -42,16 +42,17 @@ mod imp {
         pub albums: gio::ListStore,
         #[derivative(Default(value = "gio::ListStore::new::<Tag>()"))]
         pub album_tags: gio::ListStore,
-        pub albums_initialized: Cell<bool>,
         #[derivative(Default(value = "gio::ListStore::new::<Album>()"))]
         pub recent_albums: gio::ListStore,
+        // AlbumArtists are always initialised along with Albums as fetching one requires the other anyway.
+        #[derivative(Default(value = "gio::ListStore::new::<Artist>()"))]
+        pub albumartists: gio::ListStore,
+        pub albums_and_albumartists_initialized: Cell<bool>,
         #[derivative(Default(value = "gio::ListStore::new::<Artist>()"))]
         pub artists: gio::ListStore,
+        pub artists_initialized: Cell<bool>,
         #[derivative(Default(value = "gio::ListStore::new::<Tag>()"))]
         pub artist_tags: gio::ListStore,
-        #[derivative(Default(value = "gio::ListStore::new::<Artist>()"))]
-        pub album_artists: gio::ListStore,
-        pub artists_initialized: Cell<bool>,
         #[derivative(Default(value = "gio::ListStore::new::<Artist>()"))]
         pub recent_artists: gio::ListStore,
         #[derivative(Default(value = "gio::ListStore::new::<Tag>()"))]
@@ -140,11 +141,12 @@ impl Library {
         self.imp().genres_initialized.set(false);
         self.imp().albums.remove_all();
         self.imp().album_tags.remove_all();
-        self.imp().albums_initialized.set(false);
         self.imp().recent_albums.remove_all();
         self.imp().artists.remove_all();
         self.imp().artist_tags.remove_all();
         self.imp().artists_initialized.set(false);
+        self.imp().albumartists.remove_all();
+        self.imp().albums_and_albumartists_initialized.set(false);
         self.imp().recent_artists.remove_all();
         self.imp().playlists.remove_all();
         self.imp().playlists_initialized.set(false);
@@ -465,10 +467,9 @@ impl Library {
         self.imp().artists.clone()
     }
 
-
     /// Get a reference to the local album artists store
     pub fn album_artists(&self) -> gio::ListStore {
-        self.imp().album_artists.clone()
+        self.imp().albumartists.clone()
     }
 
     /// Get a reference to the local recent artists store
@@ -695,16 +696,25 @@ impl Library {
     }
 
     /// Fetch basic info for all albums to display them in a grid. Will also fetch tags as stored locally.
+    /// During the process we'll also produce albumartists as a side effect.
     /// Note: this function no longer fetches stickers s.t. we can return the grid to the user earlier.
-    pub async fn init_albums(&self) -> ClientResult<()> {
-        if !self.imp().albums_initialized.get() {
-            self.imp().albums_initialized.set(true);
-            let model = self.imp().albums.clone();
-            model.remove_all();
+    pub async fn init_albums_and_albumartists(&self) -> ClientResult<()> {
+        if !self.imp().albums_and_albumartists_initialized.get() {
+            self.imp().albums_and_albumartists_initialized.set(true);
+            let album_model = self.imp().albums.clone();
+            album_model.remove_all();
+            let albumartist_model = self.imp().albumartists.clone();
+            albumartist_model.remove_all();
             self.client()
-                .get_albums_by_query(Query::new(), &mut |album| {
-                    model.append(&album);
-                })
+                .get_albums_and_albumartists_by_query(
+                    Query::new(),
+                    &mut |album| {
+                        album_model.append(&album);
+                    },
+                    &mut |artist| {
+                        albumartist_model.append(&artist);
+                    },
+                )
                 .await?;
         }
         Ok(())
@@ -712,7 +722,7 @@ impl Library {
 
     /// Fetch known album stickers for those discovered by init_albums.
     pub async fn init_album_stickers(&self) -> ClientResult<()> {
-        if self.imp().albums_initialized.get() {
+        if self.imp().albums_and_albumartists_initialized.get() {
             for album in self.imp().albums.iter::<Album>() {
                 // Right now the only sticker we use is album rating
                 let album = album.unwrap();
@@ -749,23 +759,13 @@ impl Library {
         Ok(())
     }
 
+    /// Initialises both artist and albumartist models.
+    /// For albumartists, this function calls init_albums_and_albumartists.
     pub async fn init_artists(&self) -> ClientResult<()> {
+        self.init_albums_and_albumartists().await?;
+        // Initialises the artists list by itself
         if !self.imp().artists_initialized.get() {
             self.imp().artists_initialized.set(true);
-
-            // init the album artists list
-            let album_artist_model = self.imp().album_artists.clone();
-            album_artist_model.remove_all();
-
-            self.client()
-                .get_artists(true, &mut |artist| {
-                    album_artist_model.append(&artist);
-                })
-                .await?;
-
-            album_artist_model.n_items();
-
-
             // init the artists list
             let artist_model = self.imp().artists.clone();
             artist_model.remove_all();
@@ -775,9 +775,6 @@ impl Library {
                     artist_model.append(&artist);
                 })
                 .await?;
-
-
-
         }
         Ok(())
     }

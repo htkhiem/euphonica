@@ -656,7 +656,7 @@ impl LazyInit for AlbumView {
                 stack.show_spinner();
                 glib::spawn_future_local(async move {
                     // Just get basic info first to reduce spinner time
-                    let _ = library.init_albums().await;
+                    let _ = library.init_albums_and_albumartists().await;
                     if library.albums().n_items() > 0 {
                         stack.show_content();
                     } else {

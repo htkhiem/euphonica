@@ -91,6 +91,10 @@ impl AlbumInfo {
     pub fn get_artist_tag(&self) -> Option<&str> {
         self.albumartist.as_deref()
     }
+
+    pub fn get_example_uri(&self) -> &str {
+        &self.example_uri
+    }
 }
 
 impl Default for AlbumInfo {
