@@ -1,5 +1,6 @@
 use super::{TagsSection, Library, artist_tag_button::ArtistTagButton, Tag};
 use crate::common::FadingScrolledWindow;
+use crate::common::split_genre_tag;
 use crate::meta_providers::models::Wiki;
 use crate::meta_providers::models::AlbumMeta;
 use crate::{
@@ -18,6 +19,7 @@ use glib::{Binding, WeakRef, clone, closure_local, signal::SignalHandlerId};
 use gtk::{
     BitsetIter, CompositeTemplate, gdk, gio, glib, prelude::*,
 };
+use rustc_hash::FxHashSet;
 use std::{
     cell::{Cell, OnceCell, RefCell},
     rc::Rc,
@@ -926,8 +928,16 @@ impl AlbumContentView {
         if !genres.is_empty() {
             let genres_stack = self.imp().genres_stack.get();
             let window = self.imp().window.upgrade().unwrap();
-            album
-                .get_genres()
+            let mut seen: FxHashSet<String> = FxHashSet::default();
+            // Albums still contain un-split genres, so we'll need to split manually here.
+            for genre in album.get_genres() {
+                for split in split_genre_tag(&genre) {
+                    seen.insert(split.to_owned());
+                }
+            }
+            let mut res: Vec<String> = seen.into_iter().collect();
+            res.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
+            res
                 .iter()
                 .map(|genre| TagButton::new(
                     &Tag::new(genre.clone(), None, None, false, false),
