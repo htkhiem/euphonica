@@ -455,12 +455,15 @@ impl From<mpd::song::Song> for SongInfo {
         } else {
             artists = Vec::with_capacity(0);
         }
+
         let name: String;
         if let Some(title) = song.title {
             name = title;
-        }
-        // Else extract from URI
-        else if let Some(stem) = Path::new(&song.file).file_stem() {
+        } else if let Some(name_field) = song.name {
+            // Used by streams
+            name = name_field;
+        } else if let Some(stem) = Path::new(&song.file).file_stem() {
+            // Extract from URI
             name = String::from(stem.to_str().unwrap());
         } else {
             name = String::from("");
