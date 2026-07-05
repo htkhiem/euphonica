@@ -93,6 +93,7 @@
     <file preprocess="xml-stripblanks" alias="playlist-repeat-song-symbolic.svg">gtk/icons/playlist-repeat-song-symbolic.svg</file>
     <file preprocess="xml-stripblanks" alias="skip-forward-large-symbolic.svg">gtk/icons/skip-forward-large-symbolic.svg</file>
     <file preprocess="xml-stripblanks" alias="music-artist-symbolic.svg">gtk/icons/music-artist-symbolic.svg</file>
+    <file preprocess="xml-stripblanks" alias="library-artists-symbolic.svg">gtk/icons/library-artists-symbolic.svg</file>
     <file preprocess="xml-stripblanks" alias="library-symbolic.svg">gtk/icons/library-symbolic.svg</file>
     <file preprocess="xml-stripblanks" alias="playlist-symbolic.svg">gtk/icons/playlist-symbolic.svg</file>
     <file preprocess="xml-stripblanks" alias="library-music-symbolic.svg">gtk/icons/library-music-symbolic.svg</file>

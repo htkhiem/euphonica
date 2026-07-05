@@ -16,10 +16,9 @@ use crate::{
     },
     common::{ImageStack, Marquee, Song},
     player::{ratio_center_box::RatioCenterBox, seekbar2::Seekbar},
-    utils::settings_manager,
 };
 
-use super::{MpdOutput, OutputControls, PlaybackControls, PlaybackState, Player, VolumeKnob};
+use super::{OutputControls, PlaybackControls, PlaybackState, Player, VolumeKnob};
 
 mod imp {
     use super::*;
@@ -168,11 +167,10 @@ mod imp {
         }
 
         fn dispose(&self) {
-            if let Some(player) = self.player.upgrade() {
-                if let Some(id) = self.cover_changed_id.take() {
+            if let Some(player) = self.player.upgrade()
+                && let Some(id) = self.cover_changed_id.take() {
                     player.disconnect(id);
                 }
-            }
         }
     }
 

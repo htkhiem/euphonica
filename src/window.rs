@@ -117,7 +117,7 @@ fn get_dominant_color(img: &DynamicImage, is_dark: bool) -> RGB {
             .unwrap()
             .find_swatches(PALETTE_SIZE)
             .iter()
-            .map(|c| c.color().clone())
+            .map(|c| *c.color())
             .collect::<Vec<auto_palette::color::Color<f32>>>();
 
     // First, try to find a color that contrasts with the current UI mode (light color in dark mode, dark color in light mode)
@@ -128,14 +128,14 @@ fn get_dominant_color(img: &DynamicImage, is_dark: bool) -> RGB {
     if dominant.is_none() {
         suboptimal_luminance = true;
         if let Some(saturated) = palette.iter().find(|c| c.to_hsl().s > 0.3) {
-            dominant = Some(saturated.clone());
+            dominant = Some(*saturated);
         } else {
             // If still no suitable color, fall back to the first color in the palette
             dominant = palette.first().cloned();
         }
     }
 
-    let mut dominant = dominant.unwrap();
+    let dominant = dominant.unwrap();
 
     // Convert to HSL for luminance adjustment
     if suboptimal_luminance {
@@ -339,11 +339,10 @@ mod imp {
                     client_state.disconnect(id);
                 }
             }
-            if let Some(id) = self.player_cover_changed_id.take() {
-                if let Some(player) = self.player.upgrade() {
+            if let Some(id) = self.player_cover_changed_id.take()
+                && let Some(player) = self.player.upgrade() {
                     player.disconnect(id);
                 }
-            }
 
             // Cancel the check-visible signal loop
             self.check_visible_loop.take();
@@ -993,7 +992,7 @@ mod imp {
         fn cairo_trace_spectrum_top(
             cr: &cairo::Context,
             band_width: f64,
-            height: f64, // STILL WINDOW HEIGHT
+            _height: f64, // STILL WINDOW HEIGHT
             ys: &[f64],
             use_splines: bool,
         ) {

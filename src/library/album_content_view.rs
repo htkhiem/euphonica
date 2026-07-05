@@ -824,9 +824,9 @@ impl AlbumContentView {
                     row.set_index(&song.get_track().to_string());
                     row.set_thumbnail_visible(false);
 
-                    row.set_name(&song.get_name());
+                    row.set_name(song.get_name());
                     row.set_first_attrib_icon_name(Some("music-artist-symbolic"));
-                    row.set_first_attrib_text(song.get_artist_tag().as_deref());
+                    row.set_first_attrib_text(song.get_artist_tag());
 
                     row.set_second_attrib_icon_name(Some("hourglass-symbolic"));
                     row.set_second_attrib_text(Some(&format_secs_as_duration(
@@ -931,12 +931,12 @@ impl AlbumContentView {
             let mut seen: FxHashSet<String> = FxHashSet::default();
             // Albums still contain un-split genres, so we'll need to split manually here.
             for genre in album.get_genres() {
-                for split in split_genre_tag(&genre) {
+                for split in split_genre_tag(genre) {
                     seen.insert(split.to_owned());
                 }
             }
             let mut res: Vec<String> = seen.into_iter().collect();
-            res.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
+            res.sort_by_key(|a| a.to_lowercase());
             res
                 .iter()
                 .map(|genre| TagButton::new(

@@ -169,7 +169,7 @@ impl TagsFilter {
         on_selection_changed: F,
         window: &EuphonicaWindow,
     ) {
-        let _ = self.imp().window.set(Some(window));
+        self.imp().window.set(Some(window));
         let search_model = self.imp().search_model.get().unwrap();
         search_model.set_model(Some(model));
         let selected_filter = self.imp().selected_filter.get().unwrap();
@@ -214,7 +214,7 @@ impl TagsFilter {
                     let row = if count > 1 {
                         row_builder
                             // TODO: translatable
-                            .subtitle(&format!("{} occurrences", count))
+                            .subtitle(format!("{} occurrences", count))
                             .build()
                     } else {
                         row_builder.build()

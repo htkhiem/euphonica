@@ -1141,7 +1141,7 @@ impl Connection {
                                 }
                             }
                             let mut res: Vec<String> = seen.into_iter().collect();
-                            res.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
+                            res.sort_by_key(|a| a.to_lowercase());
                             Ok(res)
                         })();
                         let _ = resp.send(result);

@@ -7,7 +7,7 @@ use gtk::{
     subclass::prelude::*,
 };
 use std::{
-    cell::{Cell, RefCell},
+    cell::RefCell,
     fs::{self, File},
     io::Write,
     rc::Rc,

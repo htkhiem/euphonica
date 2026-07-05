@@ -499,12 +499,11 @@ impl MpdWrapper {
     }
 
     fn handle_playlist_error<T>(&self, res: ClientResult<T>) -> ClientResult<T> {
-        if let Err(ClientError::Mpd(MpdError::Server(e))) = &res {
-            if e.detail.contains("disabled") {
+        if let Err(ClientError::Mpd(MpdError::Server(e))) = &res
+            && e.detail.contains("disabled") {
                 self.state.set_supports_playlists(false);
                 println!("Playlists are not supported.");
             }
-        }
         res
     }
 
@@ -903,7 +902,7 @@ impl MpdWrapper {
                     tags::ALBUM, tags::ALBUMARTIST, tags::ALBUMARTISTSORT, tags::ALBUM_MBID, tags::RELEASE_DATE, tags::GENRE
                 ]), s), r)
                 .await?;
-            for i in (0 .. songs.len()) {
+            for i in 0 .. songs.len()  {
                 // Insert our local album & albumartist tags
                 if let Some(album_info) = std::mem::take(&mut songs[i]).into_album_info() {
                     respond(album_info.into());
@@ -1044,7 +1043,7 @@ impl MpdWrapper {
             let mut songs = self
                 .foreground(Task::FindMultiple(queries_windows, Some(tagtypes_to_load.clone()), s), r)
                 .await?;
-            for i in (0..songs.len()) {
+            for i in 0..songs.len()  {
                 let song = &mut songs[i];
                 // if we're getting album artists we need to long at song.album.artists
                 // instead of just song.artists

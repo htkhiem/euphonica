@@ -165,7 +165,7 @@ impl TagsSection {
         let tag = TagButton::new(
             data,
             &tags_box,
-            &window,
+            window,
             clone!(
                 #[weak(rename_to = this)]
                 self,
@@ -191,11 +191,10 @@ impl TagsSection {
         // Clear entry
         self.imp().tag_entry.set_text("");
 
-        if data.set_by_user() {
-            if let Some(cb) = self.imp().on_tag_added.get() {
+        if data.set_by_user()
+            && let Some(cb) = self.imp().on_tag_added.get() {
                 cb();
             }
-        }
     }
 
     /// Add a tag from the entry widget's current text.

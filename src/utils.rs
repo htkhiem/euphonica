@@ -6,12 +6,12 @@ use gtk::{
     gio::{self, prelude::*},
     glib,
 };
-use image::{DynamicImage, RgbImage, imageops::FilterType};
+use image::{DynamicImage, imageops::FilterType};
 use mpd::status::AudioFormat;
 use once_cell::sync::Lazy;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
-use std::{cell::RefCell, path::Path};
+use std::cell::RefCell;
 use std::fmt::Write;
 use std::fs::File;
 use std::io::{BufReader, BufWriter};
@@ -26,7 +26,6 @@ use time::error::IndeterminateOffset;
 use time::format_description::{OwnedFormatItem, parse_owned};
 use tokio::runtime::Runtime;
 use uuid::Uuid;
-use webp;
 
 static APP_CACHE_PATH: Lazy<PathBuf> = Lazy::new(|| {
     let mut res = glib::user_cache_dir();
@@ -258,14 +257,14 @@ pub fn save_and_register_single_image(
 ) -> String {
     let mut path = get_image_cache_path();
     let settings = settings_manager().child("library");
-    let name = format!("{}.{}", Uuid::new_v4().simple().to_string(), "webp");
+    let name = format!("{}.{}", Uuid::new_v4().simple(), "webp");
     path.push(&name);
     if settings.boolean("store-lossless-images") {
         // WebP encoder in rust image crate is lossless
         img.save_with_format(&path, image::ImageFormat::WebP)
         .unwrap_or_else(|_| panic!("Couldn't save downloaded image to {:?}", &path));
     } else {
-        let encoder = webp::Encoder::from_image(&img).unwrap();
+        let encoder = webp::Encoder::from_image(img).unwrap();
         // Default to 90% quality (not sure if this should even be user selectable)
         let webp: webp::WebPMemory = encoder.encode(90.0);
         std::fs::write(&path, &*webp).unwrap();

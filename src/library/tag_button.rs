@@ -1,13 +1,12 @@
 use gtk::{
     CompositeTemplate, gio,
-    glib::{self, WeakRef, Object, ParamSpec, ParamSpecString, clone},
+    glib::{self, Object, clone},
     prelude::*,
     subclass::prelude::*,
 };
-use std::cell::{OnceCell, Cell};
+use std::cell::OnceCell;
 
 use crate::window::EuphonicaWindow;
-use once_cell::sync::Lazy;
 use super::Tag;
 
 mod imp {
@@ -66,7 +65,7 @@ impl TagButton {
     ) -> Self {
         let res: Self = Object::builder().build();
         let _ = res.imp().data.set(data.clone());
-        res.imp().name.set_label(&data.name());
+        res.imp().name.set_label(data.name());
         // res.imp().set_by_user.set(&data.set_by_user());
         if data.removable() {
             res.imp().remove_btn.connect_clicked(clone!(

@@ -1,16 +1,13 @@
 use adw::prelude::*;
 use gtk::{
-    CompositeTemplate, gdk,
-    glib::{self, Properties, clone, derived_properties},
+    gdk,
+    glib::{self, Properties, derived_properties},
     graphene, gsk,
-    prelude::*,
     subclass::prelude::*,
 };
 use std::cell::{Cell, RefCell};
 
-use crate::cache::placeholders::{ALBUMART_PLACEHOLDER, ALBUMART_THUMBNAIL_PLACEHOLDER};
 
-use super::ImageState;
 
 fn maybe_play<T: IsA<adw::Animation>>(anim: &T) {
     if anim.state() != adw::AnimationState::Playing {

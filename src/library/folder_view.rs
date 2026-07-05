@@ -552,8 +552,8 @@ impl FolderView {
 
 impl LazyInit for FolderView {
     fn populate(&self) {
-        if let Some(library) = self.imp().library.upgrade() {
-            if !self.imp().initializing.get() {
+        if let Some(library) = self.imp().library.upgrade()
+            && !self.imp().initializing.get() {
                 self.imp().initializing.set(true);
                 let stack = self.imp().stack.get();
                 let this = self.clone();
@@ -568,6 +568,5 @@ impl LazyInit for FolderView {
                     this.imp().initializing.set(false);
                 });
             }
-        }
     }
 }

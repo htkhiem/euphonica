@@ -741,7 +741,7 @@ pub fn album_has_any_of_tags(
         .prepare("select tag from album_tags where folder_uri = ?1")
         .unwrap();
     Ok(query
-        .query_map(params![folder_uri], |row| Ok(row.get::<usize, String>(0)?))
+        .query_map(params![folder_uri], |row| row.get::<usize, String>(0))
         .map_err(Error::Db)?
         .any(|row| {
             row.ok()
