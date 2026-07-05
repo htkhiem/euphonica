@@ -134,10 +134,14 @@ impl Library {
 
     pub fn clear(&self) {
         self.imp().recent_songs.remove_all();
+        self.imp().genres.remove_all();
+        self.imp().genres_initialized.set(false);
         self.imp().albums.remove_all();
+        self.imp().album_tags.remove_all();
         self.imp().albums_initialized.set(false);
         self.imp().recent_albums.remove_all();
         self.imp().artists.remove_all();
+        self.imp().artist_tags.remove_all();
         self.imp().artists_initialized.set(false);
         self.imp().recent_artists.remove_all();
         self.imp().playlists.remove_all();
