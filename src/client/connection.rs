@@ -468,7 +468,7 @@ impl Connection {
                 return Err(dbg!(e));
             }
 
-            match password::get_mpd_password().map_err(|_| Error::CredentialStore) {
+            match password::get_mpd_password() {
                 Ok(Some(password)) => {
                     if let Err(e) = client.login(&password).map_err(Error::Mpd) {
                         return Err(dbg!(e));
@@ -482,7 +482,7 @@ impl Connection {
                     return Err(dbg!(e));
                 }
                 Err(e) => {
-                    return Err(dbg!(e));
+                    return Err(Error::CredentialStore);
                 }
             }
         }
