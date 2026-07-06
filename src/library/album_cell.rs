@@ -19,15 +19,12 @@ use crate::{
     cache::{BACKLOG_THRESHOLD, Cache, CacheState},
     cache::placeholders::{EMPTY_ALBUM_STRING, EMPTY_ARTIST_STRING},
     common::{
+        WING_DEPTH,
         Album, PictureStack, Rating,
         marquee::{Marquee, MarqueeWrapMode},
     },
     utils::settings_manager,
 };
-
-// As soon as a cell comes within this close of the render area, treat it as
-// visible & load album art early to avoid showing loading spinners.
-static WING_DEPTH: f64 = 512.0;
 
 mod imp {
     use super::*;

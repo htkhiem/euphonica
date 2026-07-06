@@ -366,6 +366,27 @@ impl Cache {
         res
     }
 
+    /// Lite version of get_album_cover that only takes an example URI.
+    /// Used by widgets with limited access to album metadata, such as ArtistCells.
+    /// Since it does not take the full album metadata, external fetch is not supported.
+    pub async fn get_album_cover_lite(
+        self: Rc<Self>,
+        example_uri: &str,
+        thumbnail: bool,
+    ) -> Result<Option<Texture>> {
+        // Track pending tasks for backpressure-aware hires loading.
+        self.pending_tasks.fetch_add(1, Ordering::Relaxed);
+        let res = self.clone().get_cover_internal(
+            strip_filename_linux(example_uri),
+            example_uri,
+            thumbnail,
+            None,
+        )
+        .await;
+        self.pending_tasks.fetch_sub(1, Ordering::Relaxed);
+        res
+    }
+
     /// Shared cover lookup. `folder_key` is the URI used for folder-level images,
     /// `embedded_key` is the URI used for embedded (track-level) images.
     /// If `album` is provided, it is used for external metadata lookups.

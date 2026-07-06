@@ -1,36 +1,38 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <interface>
-	<template class="EuphonicaArtistCell" parent="GtkWidget">
+	<template class="EuphonicaArtistCell" parent="GtkBox">
 		<style>
-			<class name="padding-6"/>
+			<class name="padding-18"/>
 		</style>
-		<!-- <property name="halign">3</property>
-		<property name="valign">1</property> -->
-		<property name="margin-top">6</property>
-		<property name="margin-bottom">6</property>
+		<property name="orientation">1</property>
+		<property name="spacing">6</property>
 		<child>
-			<object class="AdwAvatar" id="avatar">
-				<property name="show-initials">true</property>
-				<property name="size">128</property>
+			<object class="GtkOverlay">
+				<child>
+					<object class="EuphonicaCoverFan" id="covers">
+						<property name="width-request">140</property>
+						<property name="height-request">140</property>
+					</object>
+				</child>
+				<child type="overlay">
+					<object class="AdwAvatar" id="avatar">
+						<property name="halign">center</property>
+						<property name="valign">end</property>
+						<property name="show-initials">true</property>
+						<property name="size">96</property>
+					</object>
+				</child>
 			</object>
 		</child>
 		<child>
-			<object class="EuphonicaPictureStack" id="cover1">
-				<property name="size">32</property>
+			<object class="GtkLabel" id="name">
+				<property name="wrap">true</property>
+				<property name="ellipsize">3</property>
+				<property name="lines">2</property>
+				<style>
+					<class name="caption-heading"/>
+				</style>
 			</object>
-		</child>
-		<child>
-			<object class="EuphonicaPictureStack" id="cover2">
-				<property name="size">32</property>
-			</object>
-		</child>
-		<child>
-			<object class="EuphonicaPictureStack" id="cover3">
-				<property name="size">32</property>
-			</object>
-		</child>
-		<child>
-			<object class="GtkLabel" id="name"></object>
 		</child>
 	</template>
 </interface>

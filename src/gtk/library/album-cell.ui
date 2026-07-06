@@ -18,6 +18,7 @@
             <property name="overflow">hidden</property>
             <style>
               <class name="border-radius-6"/>
+              <class name="cover-shadow"/>
             </style>
             <child>
               <object class="EuphonicaPictureStack" id="cover">
