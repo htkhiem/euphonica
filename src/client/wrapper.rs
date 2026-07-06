@@ -919,9 +919,11 @@ impl MpdWrapper {
 
         // STEP 3: Fetch song entries.
         // Construct queries all at once. Each query fetches one song from one album.
-        // Chunk the queries for efficiency.
-        let mut albumartists: FxHashMap<String, ArtistInfo> = FxHashMap::default(); // Maps from artist comp_id (not just name) to artistinfo
+        // Maps from artist comp_id (not just name) to artistinfo
+        let mut albumartists: FxHashMap<String, ArtistInfo> = FxHashMap::default();
+        // Might actually contain comp_ids of artists sent off immediately without ever being pushed into the albumartists hashmap
         let mut done_albumartists: FxHashSet<String> = FxHashSet::default();
+        // Chunk the queries for efficiency.
         for ta_chunk in titles_artists.chunks(256) {
             let queries_windows: Vec<(Query, mpd::search::Window)> = ta_chunk
                 .iter()
@@ -963,7 +965,7 @@ impl MpdWrapper {
                     let example_uri = &album_info.example_uri;
                     for artist in album_info.artists.iter() {
                         let comp_id = artist.get_comp_id();
-                        if !done_albumartists.contains(comp_id) {
+                        if !done_albumartists.contains(comp_id) { 
                             if let Some(existing) = albumartists.get_mut(comp_id) {
                                 existing.example_uris.push(example_uri.to_owned());
                                 if &existing.example_uris.len()
@@ -976,9 +978,20 @@ impl MpdWrapper {
                                 }
                             } else {
                                 // Haven't seen this artist before => push new
+                                // let mut artist = artist.to_owned();
                                 let mut artist = artist.to_owned();
                                 artist.example_uris.push(example_uri.to_owned());
-                                albumartists.insert(comp_id.to_owned(), artist);
+                                // Fast path: just send off if that's enough
+                                if &artist.example_uris.len()
+                                    >= artist_album_count.get(&artist.name).unwrap_or(&0)
+                                {
+                                    // Done with this; send off
+                                    done_albumartists.insert(comp_id.to_owned());
+                                    // TODO: optimise away this clone
+                                    respond_albumartist(artist.into());
+                                } else {
+                                    albumartists.insert(comp_id.to_owned(), artist);
+                                }
                             }
                         } // else skip this artist
                     }

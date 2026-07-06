@@ -140,7 +140,7 @@ mod imp {
             match self.cover_count.get() {
                 0 | 1 => {
                     // Sole art
-                    snapshot.translate(&graphene::Point::new(-edge * (1.0 - 0.85) / 2.0, 0.0));
+                    snapshot.translate(&graphene::Point::new(edge * (1.0 - 0.85) / 2.0, 0.0));
                     obj.snapshot_child(&self.cover1_card.get(), snapshot);
                     // Back to old 0.0
                     // snapshot.translate(&graphene::Point::new(edge * (1.0 - 0.85) / 2.0, 0.0));
