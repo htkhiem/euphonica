@@ -16,7 +16,7 @@ use crate::{
     application::EuphonicaApplication,
     client::{
         ClientState, ConnectionState,
-        password::{get_mpd_password_async, secret_service_available_async, set_mpd_password},
+        password::{get_mpd_password_async, set_mpd_password},
         state::StickersSupportLevel,
     },
     player::{FftStatus, Player},
@@ -394,20 +394,18 @@ impl ClientPreferences {
             .set_text(&conn_settings.uint("mpd-port").to_string());
         let password_field = imp.mpd_password.get();
         glib::spawn_future_local(async move {
-            if secret_service_available_async().await {
-                match get_mpd_password_async().await {
-                    Ok(maybe_password) => {
-                        // At startup the password entry is disabled with a tooltip stating that
-                        // the credential store is not available.
-                        password_field.set_sensitive(true);
-                        password_field.set_tooltip_text(None);
-                        if let Some(password) = maybe_password {
-                            password_field.set_text(&password);
-                        }
+            match get_mpd_password_async().await {
+                Ok(maybe_password) => {
+                    // At startup the password entry is disabled with a tooltip stating that
+                    // the credential store is not available.
+                    password_field.set_sensitive(true);
+                    password_field.set_tooltip_text(None);
+                    if let Some(password) = maybe_password {
+                        password_field.set_text(&password);
                     }
-                    Err(e) => {
-                        println!("{e:?}");
-                    }
+                }
+                Err(e) => {
+                    // println!("{e:?}");
                 }
             }
         });
