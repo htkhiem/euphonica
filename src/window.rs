@@ -1507,7 +1507,7 @@ impl EuphonicaWindow {
                 self.imp().title.set_subtitle("Not connected");
                 self.show_error_dialog(
                     "Authentication Failed",
-                    "The current password lacks the necessary privileges for Euphonica to function.",
+                    "No stored password with sufficient privileges could be found to authenticate with MPD. Please ensure that you have a running secret service, your login keyring is unlocked, and an MPD password with admin privileges have been set.",
                     true
                 );
             }
