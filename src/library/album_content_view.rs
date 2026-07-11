@@ -38,8 +38,6 @@ mod imp {
         pub cover: TemplateChild<ImageStack>,
 
         #[template_child]
-        pub wiki_stack: TemplateChild<ContentStack>,
-        #[template_child]
         pub title: TemplateChild<gtk::Label>,
         #[template_child]
         pub artists_box: TemplateChild<adw::WrapBox>,
@@ -52,6 +50,8 @@ mod imp {
         #[template_child]
         pub rating_readout: TemplateChild<gtk::Label>,
 
+        #[template_child]
+        pub wiki_stack: TemplateChild<ContentStack>,
         #[template_child]
         pub add_wiki_btn: TemplateChild<gtk::Button>,
         #[template_child]

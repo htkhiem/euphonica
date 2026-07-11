@@ -748,6 +748,22 @@ impl Cache {
         }
     }
 
+    pub fn set_artist_meta(
+        &self,
+        artist: &ArtistInfo,
+        meta: &models::ArtistMeta,
+    ) -> Result<()> {
+        sqlite::write_artist_meta(artist, meta).map_err(Error::Sqlite)
+    }
+
+    pub fn set_artist_tags(&self, name: &str, tags: &[models::Tag]) -> Result<()> {
+        sqlite::write_artist_tags(name, tags, sqlite::TagsInsertMode::Delsert).map_err(Error::Sqlite)
+    }
+
+    pub fn get_artist_tags(&self, name: &str) -> Result<Vec<models::Tag>> {
+        sqlite::find_artist_tags(name).map_err(Error::Sqlite)
+    }
+
     /// Try to get an avatar for the given artist.
     /// Returns a gdk::Texture from cache if available.
     /// Failing that, we'll search local storage.

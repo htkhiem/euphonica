@@ -36,8 +36,7 @@ mod imp {
 
     use super::*;
 
-    #[derive(CompositeTemplate, Derivative)]
-    #[derivative(Default)]
+    #[derive(CompositeTemplate, Default)]
     #[template(resource = "/io/github/htkhiem/Euphonica/gtk/library/artist-cell.ui")]
     pub struct ArtistCell {
         #[template_child]

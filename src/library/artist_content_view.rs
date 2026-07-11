@@ -4,54 +4,83 @@ use derivative::Derivative;
 use gio::{ActionEntry, SimpleActionGroup};
 use glib::{Binding, WeakRef, clone, closure_local, signal::SignalHandlerId, subclass::Signal};
 use gtk::{CompositeTemplate, ListItem, SignalListItemFactory, gdk, gio, glib, prelude::*};
+use musicbrainz_rs::entity::artist::ArtistType;
 use std::{
     cell::{Cell, OnceCell, RefCell},
     rc::Rc,
     sync::OnceLock,
 };
+use chrono::Datelike;
 
 use super::{AlbumCell, Library};
 use crate::{
-    cache::{Cache, CacheState, Error as CacheError, placeholders::EMPTY_ARTIST_STRING},
-    common::{Album, Artist, ContentStack, ContentView, RowAddButtons, Song, SongRow},
-    library::add_to_playlist::AddToPlaylistButton,
-    utils::{format_secs_as_duration, settings_manager, tokio_runtime},
-    window::EuphonicaWindow,
+    cache::{Cache, CacheState, Error as CacheError, placeholders::EMPTY_ARTIST_STRING}, common::{Album, Artist, ContentStack, ContentView, RowAddButtons, Song, SongRow}, library::{Tag, add_to_playlist::AddToPlaylistButton}, meta_providers::models::{Wiki, artist_type_to_string}, utils::{self, format_secs_as_duration, settings_manager, tokio_runtime}, window::EuphonicaWindow,
 };
 
 mod imp {
 
-    use super::*;
+    use crate::{common::FadingScrolledWindow, library::TagsSection, meta_providers::models::ArtistMeta};
+
+use super::*;
 
     #[derive(Debug, CompositeTemplate, Derivative)]
     #[derivative(Default)]
     #[template(resource = "/io/github/htkhiem/Euphonica/gtk/library/artist-content-view.ui")]
     pub struct ArtistContentView {
         #[template_child]
-        pub inner: TemplateChild<ContentView>,
-        #[template_child]
         pub avatar: TemplateChild<adw::Avatar>,
         #[template_child]
         pub name: TemplateChild<gtk::Label>,
         #[template_child]
-        pub song_count: TemplateChild<gtk::Label>,
+        pub wiki_line: TemplateChild<adw::WrapBox>,
         #[template_child]
-        pub album_count: TemplateChild<gtk::Label>,
+        pub artist_type: TemplateChild<gtk::Label>,
+        #[template_child]
+        pub years: TemplateChild<gtk::Label>,
+        #[template_child]
+        pub iso_flag: TemplateChild<gtk::Image>,
 
         #[template_child]
-        pub infobox_spinner: TemplateChild<gtk::Stack>,
-
+        pub bio_stack: TemplateChild<ContentStack>,
+        #[template_child]
+        pub add_bio_btn: TemplateChild<gtk::Button>,
+        #[template_child]
+        pub bio_fader: TemplateChild<FadingScrolledWindow>,
         #[template_child]
         pub bio_text: TemplateChild<gtk::Label>,
         #[template_child]
         pub bio_link: TemplateChild<gtk::LinkButton>,
         #[template_child]
         pub bio_attrib: TemplateChild<gtk::Label>,
-        // #[template_child]
-        // pub runtime: TemplateChild<gtk::Label>,
-        //
         #[template_child]
-        pub all_songs_btn: TemplateChild<gtk::ToggleButton>,
+        pub bio_desc_field: TemplateChild<gtk::TextView>,
+        #[template_child]
+        pub bio_link_field: TemplateChild<gtk::Entry>,
+        #[template_child]
+        pub bio_attribution_field: TemplateChild<gtk::Entry>,
+        #[template_child]
+        pub bio_save: TemplateChild<gtk::Button>,
+        #[template_child]
+        pub bio_cancel: TemplateChild<gtk::Button>,
+
+        #[template_child]
+        pub tags_widget: TemplateChild<TagsSection>,
+
+        #[template_child]
+        pub song_count: TemplateChild<gtk::Label>,
+        #[template_child]
+        pub song_unit_in: TemplateChild<gtk::Label>,
+        #[template_child]
+        pub album_count: TemplateChild<gtk::Label>,
+        #[template_child]
+        pub album_unit_over: TemplateChild<gtk::Label>,
+        #[template_child]
+        pub years_active: TemplateChild<gtk::Label>,
+        #[template_child]
+        pub year_unit: TemplateChild<gtk::Label>,
+        
+        // #[template_child]
+        // pub all_songs_btn: TemplateChild<gtk::ToggleButton>,
         #[template_child]
         pub subview_stack: TemplateChild<gtk::Stack>,
 
@@ -97,6 +126,7 @@ mod imp {
         pub cache: OnceCell<Rc<Cache>>,
         #[derivative(Default(value = "Cell::new(true)"))]
         pub selecting_all: Cell<bool>, // Enables queuing all songs from this artist efficiently
+        pub meta: RefCell<Option<ArtistMeta>>,
     }
 
     #[glib::object_subclass]
@@ -136,6 +166,67 @@ mod imp {
 
         fn constructed(&self) {
             self.parent_constructed();
+
+            self.bio_save.connect_clicked(clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |_| {
+                    if let (Some(cache), Some(artist)) =
+                        (this.cache.get(), this.artist.borrow().as_ref())
+                    {
+                        let mut new_meta = this.meta.take().unwrap_or_default();
+                        let buf = this.bio_desc_field.buffer();
+                        let mut bio = new_meta.bio.clone().unwrap_or_default();
+                        bio.content = buf
+                            .text(&buf.start_iter(), &buf.end_iter(), false)
+                            .as_str()
+                            .to_owned();
+                        let maybe_link = this.bio_link_field.text();
+                        if !maybe_link.is_empty() {
+                            bio.url = Some(maybe_link.as_str().to_owned());
+                        } else {
+                            bio.url = None;
+                        }
+                        bio.attribution = this.bio_attribution_field.text().as_str().to_owned();
+                        new_meta.bio = Some(bio);
+                        // Might want to make this async?
+                        if let Err(e) = cache.set_artist_meta(artist.get_info(), &new_meta) {
+                            dbg!(e);
+                        }
+                        this.obj().update_bio(new_meta.bio.as_ref());
+                    }
+                }
+            ));
+
+            self.bio_cancel.connect_clicked(clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |_| {
+                    this.bio_stack.show_content();
+                }
+            ));
+
+            self.tags_widget.set_on_tag_added(clone!(
+                #[weak(rename_to = this)]
+                self,
+                move || {
+                    this.obj().write_tags();
+                }
+            ));
+            self.tags_widget.set_on_tag_removed(clone!(
+                #[weak(rename_to = this)]
+                self,
+                move || {
+                    this.obj().write_tags();
+                }
+            ));
+            self.tags_widget.set_on_add_btn_clicked(clone!(
+                #[weak(rename_to = this)]
+                self,
+                move || {
+                    this.obj().write_tags();
+                }
+            ));
 
             // Set up song subview
             self.song_sel_model.set_model(Some(&self.song_list.clone()));
@@ -187,17 +278,17 @@ mod imp {
                 .build();
 
             // Set up song subview
-            self.all_songs_btn
-                .bind_property("active", &self.subview_stack.get(), "visible-child-name")
-                .transform_to(|_, active| {
-                    if active {
-                        Some("songs")
-                    } else {
-                        Some("albums")
-                    }
-                })
-                .sync_create()
-                .build();
+            // self.all_songs_btn
+            //     .bind_property("active", &self.subview_stack.get(), "visible-child-name")
+            //     .transform_to(|_, active| {
+            //         if active {
+            //             Some("songs")
+            //         } else {
+            //             Some("albums")
+            //         }
+            //     })
+            //     .sync_create()
+            //     .build();
             self.song_list
                 .bind_property("n-items", &self.song_count.get(), "label")
                 .sync_create()
@@ -361,35 +452,64 @@ impl ArtistContentView {
         self.imp().append_queue.set_sensitive(!queuing);
     }
 
-    fn hide_bio(&self) {
-        self.imp().infobox_spinner.set_visible(false);
-        self.imp().bio_text.set_visible(false);
-        self.imp().bio_text.set_label("");
-        self.imp().bio_attrib.set_visible(false);
-        self.imp().bio_attrib.set_label("");
-        self.imp().bio_link.set_visible(false);
-        self.imp().bio_link.set_uri("");
+    /// Write the current tag list to the database.
+    pub fn write_tags(&self) {
+        if let (Some(cache), Some(artist)) =
+            (self.imp().cache.get(), self.imp().artist.borrow().as_ref())
+        {
+            let tags = self.imp().tags_widget.get_tags();
+            let name = artist.get_info().name.clone();
+            if let Err(e) = cache.set_artist_tags(&name, &tags) {
+                dbg!(e);
+            }
+        }
+        if let Some(library) = self.imp().library.upgrade() {
+            glib::spawn_future_local(async move {
+                let _ = library.refresh_artist_tags().await;
+            });
+        }
+    }
+    
+    fn set_show_meta(&self, show: bool) {
+        self.imp().wiki_line.set_visible(show);
+        self.imp().bio_stack.set_visible(show);
     }
 
+    pub fn update_bio(&self, bio: Option<&Wiki>) {
+        if let Some(bio) = bio {
+            let bio_text = self.imp().bio_text.get();
+            let bio_link = self.imp().bio_link.get();
+            let bio_attrib = self.imp().bio_attrib.get();
+            self.imp().bio_stack.show_content();
+            bio_text.set_label(&bio.content);
+            if let Some(url) = bio.url.as_ref() {
+                bio_link.set_visible(true);
+                bio_link.set_uri(url);
+            } else {
+                bio_link.set_visible(false);
+                bio_link.set_uri("");
+            }
+            bio_attrib.set_visible(true);
+            bio_attrib.set_label(&bio.attribution);
+            self.imp().bio_stack.show_content();
+        } else {
+            self.imp().bio_stack.show_placeholder();
+        }
+    }
+
+
     async fn update_meta(&self, overwrite: bool) {
-        if let Some(artist) = self.artist() {
-            let stack = self.imp().infobox_spinner.get();
+        if let Some(artist) = self.artist() {            
             // If the current artist is the "untitled" one (i.e. for songs without an artist tag),
             // don't attempt to update metadata.
             if artist.get_name().is_empty() {
-                stack.set_visible(false);
+                self.set_show_meta(false);
+                self.imp().tags_widget.remove_all(false);
             } else {
-                stack.set_visible(true);
-                if stack
-                    .visible_child_name()
-                    .is_none_or(|name| name != "spinner")
-                {
-                    stack.set_visible_child_name("spinner");
-                }
+                self.set_show_meta(true);
+                self.imp().bio_stack.show_spinner();
+                self.imp().tags_widget.remove_all(true);
                 let cache = self.imp().cache.get().unwrap().clone();
-                let bio_text = self.imp().bio_text.get();
-                let bio_link = self.imp().bio_link.get();
-                let bio_attrib = self.imp().bio_attrib.get();
                 let res = cache
                     .get_artist_meta(
                         artist.get_info(),
@@ -398,34 +518,82 @@ impl ArtistContentView {
                         self.imp().window.upgrade().as_ref(),
                     )
                     .await;
-                stack.set_visible_child_name("content");
-                match res {
+                match dbg!(res) {
                     Ok(Some(meta)) => {
-                        if let Some(bio) = meta.bio {
-                            stack.set_visible(true);
-                            bio_text.set_visible(true);
-                            bio_text.set_label(&bio.content);
-                            if let Some(url) = bio.url.as_ref() {
-                                bio_link.set_visible(true);
-                                bio_link.set_uri(url);
-                            } else {
-                                bio_link.set_visible(false);
-                                bio_link.set_uri("");
+                        let mut should_show_wiki_line = false;
+                        // Populate wiki line
+                        match meta.artist_type {
+                            ArtistType::Person | ArtistType::UnrecognizedArtistType | ArtistType::Other => {
+                                self.imp().artist_type.set_visible(false);
                             }
-                            bio_attrib.set_visible(true);
-                            bio_attrib.set_label(&bio.attribution);
-                            if stack.visible_child_name().unwrap() != "content" {
-                                stack.set_visible_child_name("content");
+                            typ => {
+                                should_show_wiki_line = true;
+                                self.imp().artist_type.set_visible(true);
+                                self.imp().artist_type.set_label(artist_type_to_string(typ));
+                            }
+                        };
+
+                        // Populate begin-end years
+                        if meta.begin_date.is_some() || meta.end_date.is_some() {
+                            should_show_wiki_line = true;
+                            self.imp().years.set_visible(true);
+                            // Always show beginning year (use ? if unknown)
+
+                            let mut s = meta.begin_date.map_or("?".into(), |d| d.year().to_string());
+                            if let Some(end_year) = meta.end_date.map(|d| format!(" - {}", d.year())) {
+                                s.push_str(&end_year);
+                            } else {
+                                s.push_str(" - current");
+                            }
+                            self.imp().years.set_label(&s);
+                        } else {
+                            self.imp().years.set_visible(false);
+                        }
+
+                        // Populate nationality. For this we'll use the new GtkSvg.
+                        if let Some(country) = meta.country.as_deref() {
+                            if let Some(svg) = utils::new_gtksvg_from_datafile(&format!("flags/{}.svg", country.to_lowercase())).await {
+                                should_show_wiki_line = true;
+                                self.imp().iso_flag.set_paintable(Some(&svg));
+                                self.imp().iso_flag.set_visible(true);
+                            } else {
+                                self.imp().iso_flag.set_visible(false);
                             }
                         } else {
-                            self.hide_bio();
+                            self.imp().iso_flag.set_visible(false);
+                        }
+                        self.imp().wiki_line.set_visible(should_show_wiki_line);
+
+                        // Populate bio
+                        self.update_bio(meta.bio.as_ref());
+
+                        // Load tags from DB
+                        let tags = cache.get_artist_tags(artist.get_name());
+                        if let Ok(tags) = tags {
+                            if tags.is_empty() {
+                                self.imp().tags_widget.show_placeholder();
+                            } else {
+                                for tag in tags {
+                                    self.imp().tags_widget.add_tag(
+                                        &Tag::new(
+                                            tag.name,
+                                            tag.url,
+                                            tag.count,
+                                            true,
+                                            tag.set_by_user
+                                        )
+                                    );
+                                }
+                            }
+                        } else {
+                            self.imp().tags_widget.show_placeholder();
                         }
                     }
                     Ok(None) => {
-                        self.hide_bio();
+                        self.set_show_meta(false);
                     }
                     Err(e) => {
-                        self.hide_bio();
+                        self.set_show_meta(false);
                         dbg!(e);
                     }
                 }
@@ -691,6 +859,7 @@ impl ArtistContentView {
             .expect("Could not register artist content view with cache controller");
         self.imp().library.set(Some(library));
         self.imp().window.set(Some(window));
+        self.imp().tags_widget.set_window(window);
 
         self.setup_info_box();
         self.setup_song_subview();
@@ -834,7 +1003,7 @@ impl ArtistContentView {
         self.clear_content();
         self.imp().album_stack.show_placeholder();
         self.imp().song_stack.show_placeholder();
-        self.imp().infobox_spinner.set_visible(true);
+        self.set_show_meta(false);
     }
 
     fn clear_content(&self) {

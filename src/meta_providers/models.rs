@@ -1,4 +1,5 @@
 use chrono::NaiveDate;
+use derivative::Derivative;
 use musicbrainz_rs::entity::artist::ArtistType;
 use serde::{Deserialize, Serialize};
 
@@ -136,7 +137,19 @@ impl HasImage for AlbumMeta {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+/// TODO: translatable
+pub fn artist_type_to_string(typ: ArtistType) -> &'static str {
+    match typ {
+        ArtistType::Character => "Character",
+        ArtistType::Choir => "Choir",
+        ArtistType::Group => "Group",
+        ArtistType::Orchestra => "Orchestra",
+        _ => ""
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Derivative)]
+#[derivative(Default)]
 #[non_exhaustive]
 pub struct ArtistMeta {
     pub name: String,
@@ -150,6 +163,7 @@ pub struct ArtistMeta {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bio: Option<Wiki>,
     // Leave as "Other" if unknown
+    #[derivative(Default(value = "ArtistType::Other"))]
     pub artist_type: ArtistType,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub gender: Option<String>,

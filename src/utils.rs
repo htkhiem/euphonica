@@ -8,6 +8,7 @@ use gtk::{
 };
 use image::{DynamicImage, imageops::FilterType};
 use mpd::status::AudioFormat;
+use musicbrainz_rs::config;
 use once_cell::sync::Lazy;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -410,6 +411,14 @@ pub fn format_datetime_local_tz(utc_dt: OffsetDateTime) -> String {
     let local_dt = get_local_tz_offset().map_or(utc_dt, |offset| utc_dt.to_offset(offset));
 
     local_dt.format(get_locale_format()).unwrap()
+}
+
+pub async fn new_gtksvg_from_datafile(relpath: &str) -> Option<gtk::Svg> {
+    let mut path = PathBuf::new();
+    path.push(crate::PKGDATADIR);
+    path.push(relpath);
+    let file = gio::File::for_path(&path);
+    Some(gtk::Svg::from_bytes(&file.load_bytes_future().await.ok().map(|tup| tup.0)?))
 }
 
 // Build Aho-Corasick automatons only once. In case no delimiter or exception is
