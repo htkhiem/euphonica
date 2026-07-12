@@ -144,6 +144,8 @@ pub fn artist_type_to_string(typ: ArtistType) -> &'static str {
         ArtistType::Choir => "Choir",
         ArtistType::Group => "Group",
         ArtistType::Orchestra => "Orchestra",
+        ArtistType::Person => "Person",
+        ArtistType::Other => "Other",
         _ => ""
     }
 }

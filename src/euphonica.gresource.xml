@@ -128,5 +128,6 @@
     <file preprocess="xml-stripblanks" alias="arrow-pointing-away-from-line-up-symbolic.svg">gtk/icons/arrow-pointing-away-from-line-up-symbolic.svg</file>
     <file preprocess="xml-stripblanks" alias="cross-small-symbolic.svg">gtk/icons/cross-small-symbolic.svg</file>
     <file preprocess="xml-stripblanks" alias="plus-symbolic.svg">gtk/icons/plus-symbolic.svg</file>
+    <file preprocess="xml-stripblanks" alias="copy-symbolic.svg">gtk/icons/copy-symbolic.svg</file>
   </gresource>
 </gresources>

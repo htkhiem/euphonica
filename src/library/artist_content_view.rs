@@ -67,17 +67,15 @@ use super::*;
         pub tags_widget: TemplateChild<TagsSection>,
 
         #[template_child]
-        pub song_count: TemplateChild<gtk::Label>,
+        pub track_count: TemplateChild<gtk::Label>,
         #[template_child]
-        pub song_unit_in: TemplateChild<gtk::Label>,
+        pub release_count: TemplateChild<gtk::Label>,
         #[template_child]
-        pub album_count: TemplateChild<gtk::Label>,
+        pub mbid_row: TemplateChild<gtk::Box>,
         #[template_child]
-        pub album_unit_over: TemplateChild<gtk::Label>,
+        pub mbid: TemplateChild<gtk::LinkButton>,
         #[template_child]
-        pub years_active: TemplateChild<gtk::Label>,
-        #[template_child]
-        pub year_unit: TemplateChild<gtk::Label>,
+        pub copy_mbid: TemplateChild<gtk::Button>,
         
         // #[template_child]
         // pub all_songs_btn: TemplateChild<gtk::ToggleButton>,
@@ -166,6 +164,19 @@ use super::*;
 
         fn constructed(&self) {
             self.parent_constructed();
+
+            self.copy_mbid.connect_clicked(clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |_| {
+                    if let Some(s) = this.mbid.label() {
+                        gdk::Display::default().unwrap().clipboard().set_text(s.as_str());
+                        if let Some(win) = this.window.upgrade() {
+                            win.send_simple_toast("MusicBrainz ID copied to clipboard", 3);
+                        }
+                    }
+                }
+            ));
 
             self.bio_save.connect_clicked(clone!(
                 #[weak(rename_to = this)]
@@ -273,7 +284,7 @@ use super::*;
                 }
             ));
             self.album_list
-                .bind_property("n-items", &self.album_count.get(), "label")
+                .bind_property("n-items", &self.release_count.get(), "label")
                 .sync_create()
                 .build();
 
@@ -290,7 +301,7 @@ use super::*;
             //     .sync_create()
             //     .build();
             self.song_list
-                .bind_property("n-items", &self.song_count.get(), "label")
+                .bind_property("n-items", &self.track_count.get(), "label")
                 .sync_create()
                 .build();
 
@@ -475,6 +486,7 @@ impl ArtistContentView {
         self.imp().bio_stack.set_visible(show);
     }
 
+    #[inline]
     pub fn update_bio(&self, bio: Option<&Wiki>) {
         if let Some(bio) = bio {
             let bio_text = self.imp().bio_text.get();
@@ -521,18 +533,7 @@ impl ArtistContentView {
                 match dbg!(res) {
                     Ok(Some(meta)) => {
                         let mut should_show_wiki_line = false;
-                        // Populate wiki line
-                        match meta.artist_type {
-                            ArtistType::Person | ArtistType::UnrecognizedArtistType | ArtistType::Other => {
-                                self.imp().artist_type.set_visible(false);
-                            }
-                            typ => {
-                                should_show_wiki_line = true;
-                                self.imp().artist_type.set_visible(true);
-                                self.imp().artist_type.set_label(artist_type_to_string(typ));
-                            }
-                        };
-
+                        // Populate wiki line:
                         // Populate begin-end years
                         if meta.begin_date.is_some() || meta.end_date.is_some() {
                             should_show_wiki_line = true;
@@ -563,6 +564,25 @@ impl ArtistContentView {
                             self.imp().iso_flag.set_visible(false);
                         }
                         self.imp().wiki_line.set_visible(should_show_wiki_line);
+
+                        // Populate metadata box
+                        let artist_type_str = artist_type_to_string(meta.artist_type);
+                        self.imp().artist_type.set_label(
+                            if !artist_type_str.is_empty() {
+                                artist_type_str
+                            } else {
+                                // this is a display-centric placeholder so we'll do it at the view level; 
+                                // the common func in models.rs should just return an empty string.
+                                "-" 
+                            }
+                        );
+                        if let Some(mbid) = meta.mbid.as_deref() {
+                            self.imp().mbid_row.set_visible(true);
+                            self.imp().mbid.set_label(mbid);
+                            self.imp().mbid.set_uri(&format!("https://musicbrainz.org/artist/{}", mbid));
+                        } else {
+                            self.imp().mbid_row.set_visible(false);
+                        }
 
                         // Populate bio
                         self.update_bio(meta.bio.as_ref());

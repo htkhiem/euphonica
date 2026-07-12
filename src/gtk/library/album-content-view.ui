@@ -359,7 +359,7 @@
                                     <!-- Track count -->
                                     <property name="start-widget">
                                       <object class="GtkLabel">
-                                        <property name="label" translatable="true">Track count</property>
+                                        <property name="label" translatable="true">Tracks</property>
                                         <property name="halign">start</property>
                                         <property name="wrap">true</property>
                                         <property name="justify">left</property>
