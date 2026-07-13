@@ -342,6 +342,15 @@
 		<key name="auto-accent" type='b'>
 			<default>true</default>
 		</key>
+		<key name="rotate-album-art" type='b'>
+			<default>false</default>
+			<summary>Show the player album art as a rotating disc</summary>
+		</key>
+		<key name="album-art-rotation-speed" type='d'>
+			<range min="0" max="2"/>
+			<default>1.0</default>
+			<summary>Album art rotation speed</summary>
+		</key>
 		<key name="title-wrap-mode" enum='io.github.htkhiem.Euphonica.titlewrapmode'>
 			<default>'ellipsis'</default>
 		</key>

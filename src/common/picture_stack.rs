@@ -122,6 +122,10 @@ impl PictureStack {
         }
     }
 
+    pub fn set_content_fit(&self, content_fit: gtk::ContentFit) {
+        self.imp().picture.set_content_fit(content_fit);
+    }
+
     pub fn clear(&self) {
         self.show_placeholder(self.imp().is_thumbnail.get());
         if self
@@ -132,6 +136,11 @@ impl PictureStack {
         {
             self.imp().stack.set_visible_child_name("picture");
         }
+        self.set_state(ImageState::Empty);
+    }
+
+    pub fn clear_with(&self, paintable: &impl IsA<gdk::Paintable>) {
+        self.show(paintable);
         self.set_state(ImageState::Empty);
     }
 

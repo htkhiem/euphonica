@@ -20,6 +20,12 @@ mod imp {
         #[template_child]
         pub auto_accent: TemplateChild<adw::SwitchRow>,
         #[template_child]
+        pub rotate_album_art: TemplateChild<adw::SwitchRow>,
+        #[template_child]
+        pub album_art_rotation_speed_row: TemplateChild<adw::ActionRow>,
+        #[template_child]
+        pub album_art_rotation_speed: TemplateChild<gtk::Scale>,
+        #[template_child]
         pub use_hires_for_album_cells: TemplateChild<adw::SwitchRow>,
         #[template_child]
         pub title_wrap_mode: TemplateChild<adw::ComboRow>,
@@ -126,6 +132,27 @@ impl UIPreferences {
         let auto_accent = imp.auto_accent.get();
         ui_settings
             .bind("auto-accent", &auto_accent, "active")
+            .build();
+        let rotate_album_art = imp.rotate_album_art.get();
+        ui_settings
+            .bind("rotate-album-art", &rotate_album_art, "active")
+            .build();
+        rotate_album_art
+            .bind_property(
+                "active",
+                &imp.album_art_rotation_speed_row.get(),
+                "sensitive",
+            )
+            .sync_create()
+            .build();
+        let album_art_rotation_speed = imp.album_art_rotation_speed.get();
+        ui_settings
+            .bind(
+                "album-art-rotation-speed",
+                &album_art_rotation_speed.adjustment(),
+                "value",
+            )
+            .set()
             .build();
         let use_hires_for_album_cells = imp.use_hires_for_album_cells.get();
         ui_settings
