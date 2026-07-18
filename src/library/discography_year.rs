@@ -116,12 +116,13 @@ impl DiscographyYear {
             let _ = res.imp().year.set(year);
             res.imp().release_year.set_label(&year.to_string());  
         }
-        for album in albums {
+        for (idx, album) in albums.into_iter().enumerate() {
             res.imp().albums_box.append(
                 &DiscographyAlbum::new(
                     album, cache.clone(), library, window, viewport
                 )
             );
+            res.imp().albums_box.row_at_index(idx as i32).unwrap().set_activatable(false);
         }
 
         res

@@ -12,7 +12,6 @@
             <setter object="multi_layout_view" property="layout-name">narrow</setter>
             <setter object="replace_queue_text" property="visible">false</setter>
             <setter object="add_to_playlist" property="collapsed">true</setter>
-            <setter object="name_box" property="orientation">1</setter>
             <setter object="name" property="halign">center</setter>
             <setter object="avatar" property="halign">center</setter>
             <setter object="avatar" property="size">80</setter>
@@ -656,11 +655,20 @@
                                           </object>
                                         </property>
                                         <property name="content">
-                                          <object class="GtkListBox" id="discography_subview">
-                                            <property name="selection-mode">0</property>
-                                            <style>
-                                              <class name="no-bg"/>
-                                            </style>
+                                          <object class="AdwClamp">
+                                            <property name="margin-top">12</property>
+                                            <property name="margin-start">6</property>
+                                            <property name="margin-end">6</property>
+                                            <property name="maximum-size">1600</property>
+                                            <property name="tightening-threshold">1280</property>
+                                            <child>
+                                              <object class="GtkListBox" id="discography_subview">
+                                                <property name="selection-mode">0</property>
+                                                <style>
+                                                  <class name="no-bg"/>
+                                                </style>
+                                              </object>
+                                            </child>
                                           </object>
                                         </property>
                                       </object>

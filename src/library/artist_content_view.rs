@@ -1092,6 +1092,7 @@ impl ArtistContentView {
                     discography_stack.show_content();
                     let vp = this.imp().scrolled_window.get();
                     let win = this.imp().window.upgrade();
+                    let count_years = albums_by_year.len();
                     for (maybe_year, albums) in albums_by_year.into_iter() {
                         discography.append(&DiscographyYear::new(
                             maybe_year,
@@ -1101,6 +1102,12 @@ impl ArtistContentView {
                             win.as_ref(),
                             Some(&vp),
                         ))
+                    }
+                    // 1 more loop to clear selection highlight (can't do it in the above loop as the insertion position is dictated by sort_func)
+                    for y in 0..count_years {
+                        if let Some(row) = discography.row_at_index(y as i32) {
+                            row.set_activatable(false);
+                        }
                     }
                 } else {
                     discography_stack.show_placeholder();

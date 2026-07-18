@@ -1,125 +1,121 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <interface>
   <template class="EuphonicaDiscographyAlbum" parent="GtkBox">
+    <property name="orientation">1</property>
     <property name="spacing">6</property>
     <child>
-      <object class="AdwClamp" id="title_clamp">
-        <property name="maximum-size">350</property>
-        <property name="tightening-threshold">240</property>
-        <child>
-          <!-- Cover & title -->
-          <object class="GtkBox">
-            <property name="orientation">1</property>
-            <property name="spacing">6</property>
-            <child>
-              <object class="GtkBox">
-                <property name="halign">1</property>
-                <property name="valign">3</property>
-                <property name="overflow">hidden</property>
-                <style>
-                  <class name="border-radius-6" />
-                </style>
-                <child>
-                  <object class="EuphonicaImageStack" id="cover">
-                    <property name="size">160</property>
-                  </object>
-                </child>
-              </object>
-            </child>
-            <child>
-              <object class="GtkLabel" id="title">
-                <property name="halign">start</property>
-                <property name="wrap">true</property>
-                <property name="justify">left</property>
-                <property name="label">Untitled Album</property>
-                <style>
-                  <class name="title-3"/>
-                </style>
-              </object>
-            </child>
-          </object>
-        </child>
+      <object class="GtkLabel" id="title">
+        <property name="halign">start</property>
+        <property name="wrap">true</property>
+        <property name="justify">left</property>
+        <property name="label">Untitled Album</property>
+        <style>
+          <class name="title-4"/>
+        </style>
       </object>
     </child>
 
     <child>
-      <object class="GtkBox">
+      <object class="GtkBox" id="inner">
         <property name="spacing">6</property>
-        <property name="orientation">1</property>
         <child>
           <object class="GtkBox">
-            <property name="spacing">6</property>
-            <!-- Play, queue, add to playlist -->
+            <property name="halign">1</property>
+            <property name="valign">1</property>
+            <property name="overflow">hidden</property>
+            <style>
+              <class name="border-radius-6" />
+            </style>
             <child>
-              <object class="GtkButton" id="replace_queue">
-                <property name="tooltip-text" translatable="true">Replace the queue with this album</property>
-                <style>
-                  <class name="suggested-action"/>
-                </style>
-                <child>
-                  <object class="GtkBox">
-                    <property name="spacing">6</property>
-                    <child>
-                      <object class="GtkLabel">
-                        <property name="label" translatable="true">Play</property>
-                      </object>
-                    </child>
-                    <child>
-                      <object class="GtkImage">
-                        <property name="icon-name">play-symbolic</property>
-                      </object>
-                    </child>
-                  </object>
-                </child>
+              <object class="EuphonicaImageStack" id="cover">
+                <property name="size">160</property>
               </object>
-            </child>
-
-            <child>
-              <object class="GtkButton" id="append_queue">
-                <property name="tooltip-text" translatable="true">Add this album's songs to the end of the queue</property>
-                <child>
-                  <object class="GtkBox">
-                    <property name="spacing">6</property>
-                    <child>
-                      <object class="GtkLabel">
-                        <property name="label" translatable="true">Queue</property>
-                      </object>
-                    </child>
-                    <child>
-                      <object class="GtkImage">
-                        <property name="icon-name">list-add-symbolic</property>
-                      </object>
-                    </child>
-                  </object>
-                </child>
-              </object>
-            </child>
-
-            <child>
-              <object class="EuphonicaAddToPlaylistButton" id="add_to_playlist"/>
             </child>
           </object>
         </child>
+
         <child>
-          <object class="EuphonicaContentStack" id="content_stack">
-            <property name="placeholder">
-              <object class="AdwStatusPage">
-                <property name="title" translatable="true">Empty Album</property>
+          <object class="GtkBox">
+            <property name="spacing">6</property>
+            <property name="orientation">1</property>
+
+            <child>
+              <object class="GtkBox">
+                <property name="spacing">6</property>
+                <!-- Play, queue, add to playlist -->
+                <child>
+                  <object class="GtkButton" id="replace_queue">
+                    <property name="tooltip-text" translatable="true">Replace the queue with this album</property>
+                    <style>
+                      <class name="suggested-action"/>
+                    </style>
+                    <child>
+                      <object class="GtkBox">
+                        <property name="spacing">6</property>
+                        <child>
+                          <object class="GtkImage">
+                            <property name="icon-name">play-symbolic</property>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkLabel">
+                            <property name="label" translatable="true">Play</property>
+                          </object>
+                        </child>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+
+                <child>
+                  <object class="GtkButton" id="append_queue">
+                    <property name="tooltip-text" translatable="true">Add this album's songs to the end of the queue</property>
+                    <child>
+                      <object class="GtkBox">
+                        <property name="spacing">6</property>
+                        <child>
+                          <object class="GtkImage">
+                            <property name="icon-name">list-add-symbolic</property>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkLabel">
+                            <property name="label" translatable="true">Queue</property>
+                          </object>
+                        </child>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+
+                <child>
+                  <object class="EuphonicaAddToPlaylistButton" id="add_to_playlist"/>
+                </child>
               </object>
-            </property>
-            <property name="content">
-              <object class="GtkListBox" id="content">
-                <property name="show-separators">true</property>
-                <style>
-                  <class name="no-bg"/>
-                  <class name="frame"/>
-                  <class name="border-radius-6"/>
-                </style>
+            </child>
+            <child>
+              <object class="EuphonicaContentStack" id="content_stack">
+                <property name="placeholder">
+                  <object class="AdwStatusPage">
+                    <property name="title" translatable="true">Empty Album</property>
+                  </object>
+                </property>
+                <property name="content">
+                  <object class="GtkListBox" id="content">
+                    <property name="show-separators">true</property>
+                    <style>
+                      <class name="no-bg"/>
+                      <class name="frame"/>
+                      <class name="border-radius-6"/>
+                    </style>
+                  </object>
+                </property>
+                <property name="width-request">240</property>
+                <property name="height-request">240</property>
+                <property name="margin-bottom">12</property>
               </object>
-            </property>
-            <property name="width-request">240</property>
-            <property name="height-request">240</property>
-            <property name="margin-bottom">12</property>
+            </child>
+
           </object>
         </child>
       </object>

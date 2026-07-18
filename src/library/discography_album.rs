@@ -24,7 +24,7 @@ mod imp {
     #[template(resource = "/io/github/htkhiem/Euphonica/gtk/library/discography-album.ui")]
     pub struct DiscographyAlbum {
         #[template_child]
-        pub title_clamp: TemplateChild<adw::Clamp>,
+        pub inner: TemplateChild<gtk::Box>,
         #[template_child]
         pub cover: TemplateChild<ImageStack>,
         #[template_child]
@@ -422,15 +422,9 @@ impl DiscographyAlbum {
     pub fn set_narrow(&self, narrow: bool) {
         // Kinda like Adwaita breakpoints but implemented ourselves to reduce nesting.
         if narrow {
-            self.set_orientation(gtk::Orientation::Vertical);
-            // Disable clamping
-            self.imp().title_clamp.set_maximum_size(9999);
-            self.imp().title_clamp.set_tightening_threshold(9999);
+            self.imp().inner.set_orientation(gtk::Orientation::Vertical);
         } else {
-            self.set_orientation(gtk::Orientation::Horizontal);
-            // Title & album art are now shown to the left => can't let them be too wide
-            self.imp().title_clamp.set_maximum_size(350);
-            self.imp().title_clamp.set_tightening_threshold(240);
+            self.imp().inner.set_orientation(gtk::Orientation::Horizontal);
         }
     }
 }
