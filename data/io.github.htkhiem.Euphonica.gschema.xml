@@ -410,6 +410,11 @@
             <default>true</default>
             <summary>Show only album artists</summary>
         </key>
+
+		<key name="collapse-years-on-load" type="b">
+            <default>false</default>
+            <summary>If true, the artist discography section will load with all years initially collapsed.</summary>
+        </key>
 	</schema>
 
 	<schema id="io.github.htkhiem.Euphonica.state.folderview" path="/io/github/htkhiem/Euphonica/state/folderview/">

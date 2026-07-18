@@ -10,7 +10,7 @@
 				</style>
 				<child>
 					<object class="GtkPicture" id="cover1">
-						<property name="content-fit">fill</property>
+						<property name="content-fit">cover</property>
 						<property name="hexpand">true</property>
 						<property name="vexpand">true</property>
 					</object>
@@ -26,7 +26,7 @@
 				</style>
 				<child>
 					<object class="GtkPicture" id="cover2">
-						<property name="content-fit">fill</property>
+						<property name="content-fit">cover</property>
 						<property name="hexpand">true</property>
 						<property name="vexpand">true</property>
 					</object>
@@ -42,7 +42,7 @@
 				</style>
 				<child>
 					<object class="GtkPicture" id="cover3">
-						<property name="content-fit">fill</property>
+						<property name="content-fit">cover</property>
 						<property name="hexpand">true</property>
 						<property name="vexpand">true</property>
 					</object>

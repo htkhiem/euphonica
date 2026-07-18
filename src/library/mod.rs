@@ -11,6 +11,8 @@ mod tags_section;
 mod artist_cell;
 mod artist_content_view;
 mod artist_view;
+mod discography_year;
+mod discography_album;
 
 mod folder_view;
 

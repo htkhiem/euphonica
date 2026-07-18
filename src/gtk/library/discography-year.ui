@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <template class="EuphonicaDiscographyYear" parent="GtkGrid">
+    <child>
+      <object class="GtkImage" id="bullet_point">
+        <property name="icon-name">circle-outline-thick-symbolic</property>
+        <layout>
+          <property name="row">0</property>
+          <property name="column">0</property>
+        </layout>
+      </object>
+    </child>
+    <child>
+      <object class="GtkButton" id="toggle_collapse">        
+        <style>
+          <class name="flat"/>
+        </style>
+        <child>
+          <object class="GtkBox">
+            <property name="spacing">6</property>
+            <child>
+              <object class="GtkLabel" id="release_year">
+                <property name="valign">center</property>
+                <property name="halign">start</property>
+                <property name="label" translatable="true">unknown release year</property>
+                <layout>
+                  <property name="row">0</property>
+                  <property name="column">1</property>
+                </layout>
+              </object>
+            </child>
+            <child>
+              <object class="GtkImage" id="collapse_icon">
+                <property name="icon-name">up-symbolic</property>
+              </object>
+            </child>
+          </object>
+        </child>
+      </object>
+    </child>
+    <child>
+      <!-- The "line": can be zero-height if the content box to its right is collapsed -->
+      <object class="GtkBox">
+        <property name="halign">center</property>
+        <property name="valign">fill</property>
+        <property name="vexpand">true</property>
+        <style>
+          <class name="discography-line"/>
+        </style>
+        <layout>
+          <property name="row">1</property>
+          <property name="column">0</property>
+        </layout>
+      </object>
+    </child>
+    <child>
+      <object class="GtkRevealer" id="revealer">
+        <property name="child">
+          <object class="GtkListBox" id="albums_box">
+          <property name="selection-mode">0</property>
+          <property name="hexpand">true</property>
+          <layout>
+            <property name="row">1</property>
+            <property name="column">1</property>
+          </layout>
+        </object>
+        </property>
+      </object>
+    </child>
+  </template>
+</interface>

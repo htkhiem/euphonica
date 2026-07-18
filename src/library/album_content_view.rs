@@ -420,7 +420,7 @@ mod imp {
                             obj,
                             async move {
                                 if let (_, Some(library)) =
-                                    (obj.imp().album.borrow().as_ref(), obj.get_library())
+                                    (obj.imp().album.borrow().as_ref(), obj.library())
                                 {
                                     obj.set_is_queuing(true);
                                     let store = &obj.imp().song_list;
@@ -533,7 +533,7 @@ impl AlbumContentView {
         }
     }
 
-    fn get_library(&self) -> Option<Library> {
+    fn library(&self) -> Option<Library> {
         self.imp().library.upgrade()
     }
 
@@ -740,7 +740,7 @@ impl AlbumContentView {
                         #[weak]
                         rating,
                         async move {
-                            if let (Some(album), Some(library)) = (this.album(), this.get_library())
+                            if let (Some(album), Some(library)) = (this.album(), this.library())
                             {
                                 let rating_val = rating.value();
                                 let rating_opt = if rating_val > 0 {
@@ -767,7 +767,7 @@ impl AlbumContentView {
                     #[weak]
                     this,
                     async move {
-                        if let (Some(album), Some(library)) = (this.album(), this.get_library()) {
+                        if let (Some(album), Some(library)) = (this.album(), this.library()) {
                             this.set_is_queuing(true);
                             if this.imp().selecting_all.get() {
                                 if let Err(e) =
@@ -806,7 +806,7 @@ impl AlbumContentView {
                     #[weak]
                     this,
                     async move {
-                        if let (Some(album), Some(library)) = (this.album(), this.get_library()) {
+                        if let (Some(album), Some(library)) = (this.album(), this.library()) {
                             this.set_is_queuing(true);
                             if this.imp().selecting_all.get() {
                                 if let Err(e) =
@@ -880,7 +880,7 @@ impl AlbumContentView {
                     #[weak]
                     this,
                     async move {
-                        if let (Some(album), Some(library)) = (this.album(), this.get_library())
+                        if let (Some(album), Some(library)) = (this.album(), this.library())
                             && let Err(e) = library
                                 .queue_album(album.clone(), true, true, Some(idx))
                                 .await
