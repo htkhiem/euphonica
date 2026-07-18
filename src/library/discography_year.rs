@@ -21,8 +21,6 @@ mod imp {
     #[template(resource = "/io/github/htkhiem/Euphonica/gtk/library/discography-year.ui")]
     pub struct DiscographyYear {
         #[template_child]
-        pub cover: TemplateChild<ImageStack>,
-        #[template_child]
         pub release_year: TemplateChild<gtk::Label>,
         #[template_child]
         pub toggle_collapse: TemplateChild<gtk::Button>,
@@ -32,6 +30,8 @@ mod imp {
         pub revealer: TemplateChild<gtk::Revealer>,
         #[template_child]
         pub albums_box: TemplateChild<gtk::ListBox>,
+
+        pub year: OnceCell<i32>
     }
 
     // The central trait for subclassing a GObject
@@ -40,12 +40,10 @@ mod imp {
         // `NAME` needs to match `class` attribute of template
         const NAME: &'static str = "EuphonicaDiscographyYear";
         type Type = super::DiscographyYear;
-        type ParentType = gtk::Widget;
+        type ParentType = gtk::Grid;
 
         fn class_init(klass: &mut Self::Class) {
             Self::bind_template(klass);
-
-            klass.set_layout_manager_type::<gtk::BinLayout>();
             klass.set_accessible_role(gtk::AccessibleRole::Group);
         }
 
@@ -73,7 +71,7 @@ mod imp {
             ).transform_to(|_, is_revealed| {
                 Some(
                     if is_revealed {
-                        "up_symbolic"
+                        "up-symbolic"
                     } else {
                         "down-symbolic"
                     }.to_value()
@@ -82,9 +80,8 @@ mod imp {
 
             revealer.set_reveal_child(
                 !settings_manager()
-                    .child("state")
-                    .child("artistview")
-                    .boolean("collapse-years-on-load"),
+                    .child("ui")
+                    .boolean("collapse-discography-years-on-load"),
             );
 
             self.toggle_collapse.connect_clicked(move |_| {
@@ -94,19 +91,21 @@ mod imp {
     }
 
     impl WidgetImpl for DiscographyYear {}
+
+    impl GridImpl for DiscographyYear {}
 }
 
 // Common row widget for displaying a single song, used across the UI.
 glib::wrapper! {
     pub struct DiscographyYear(ObjectSubclass<imp::DiscographyYear>)
-    @extends gtk::Widget,
-    @implements gtk::Accessible, gtk::Buildable, gtk::ConstraintTarget;
+    @extends gtk::Grid, gtk::Widget,
+    @implements gtk::Accessible, gtk::Buildable, gtk::ConstraintTarget, gtk::Orientable;
 }
 
 impl DiscographyYear {
     pub fn new(
-        year: Option<&str>,  // will default to "unknown release year"
-        albums: Vec<&Album>,
+        year: Option<i32>,  // will default to "unknown release year"
+        albums: Vec<Album>,
         cache: Rc<Cache>,
         library: &Library,
         window: Option<&EuphonicaWindow>,
@@ -114,7 +113,8 @@ impl DiscographyYear {
     ) -> Self {
         let res: Self = Object::builder().build();
         if let Some(year) = year {
-            res.imp().release_year.set_label(year);  
+            let _ = res.imp().year.set(year);
+            res.imp().release_year.set_label(&year.to_string());  
         }
         for album in albums {
             res.imp().albums_box.append(
@@ -125,5 +125,14 @@ impl DiscographyYear {
         }
 
         res
+    }
+
+    pub fn year(&self) -> Option<i32> {
+        // If null, caller should treat as "unknown release year"
+        self.imp().year.get().copied()
+    }
+
+    pub fn albums_box(&self) -> gtk::ListBox {
+        self.imp().albums_box.get()
     }
 }

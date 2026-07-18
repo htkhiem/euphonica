@@ -352,6 +352,10 @@
 			<default>true</default>
 			<summary>Automatically scroll to the currently playing song in the queue</summary>
 		</key>
+		<key name="collapse-discography-years-on-load" type="b">
+            <default>false</default>
+            <summary>If true, the artist discography section will load with all years initially collapsed.</summary>
+        </key>
 	</schema>
 
 	<schema id="io.github.htkhiem.Euphonica.state" path="/io/github/htkhiem/Euphonica/state/">
@@ -409,11 +413,6 @@
         <key name="album-artists-only" type="b">
             <default>true</default>
             <summary>Show only album artists</summary>
-        </key>
-
-		<key name="collapse-years-on-load" type="b">
-            <default>false</default>
-            <summary>If true, the artist discography section will load with all years initially collapsed.</summary>
         </key>
 	</schema>
 

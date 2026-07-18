@@ -1,33 +1,50 @@
 use adw::subclass::prelude::*;
 use ashpd::desktop::file_chooser::SelectedFiles;
 use asyncified::Asyncified;
+use chrono::Datelike;
 use derivative::Derivative;
 use gio::{ActionEntry, SimpleActionGroup};
 use glib::{Binding, WeakRef, clone, closure_local, signal::SignalHandlerId, subclass::Signal};
 use gtk::{CompositeTemplate, ListItem, SignalListItemFactory, gdk, gio, glib, prelude::*};
-use rustc_hash::FxHashSet;
+use rustc_hash::{FxHashMap, FxHashSet};
 use std::{
     cell::{Cell, OnceCell, RefCell},
     rc::Rc,
     sync::OnceLock,
 };
-use chrono::Datelike;
 
 use super::{AlbumCell, Library, tag_button::TagButton};
 use crate::{
-    cache::{Cache, CacheState, Error as CacheError, placeholders::EMPTY_ARTIST_STRING}, common::{Album, Artist, ContentStack, ContentView, RowAddButtons, Song, SongRow, split_genre_tag}, library::{Tag, add_to_playlist::AddToPlaylistButton}, meta_providers::models::{Wiki, artist_type_to_string}, utils::{self, format_secs_as_duration, settings_manager, tokio_runtime}, window::EuphonicaWindow,
+    cache::{Cache, CacheState, Error as CacheError, placeholders::EMPTY_ARTIST_STRING},
+    common::{
+        Album, Artist, ContentStack, ContentView, RowAddButtons, Song, SongRow, split_genre_tag,
+    },
+    library::{Tag, add_to_playlist::AddToPlaylistButton, discography_year::DiscographyYear},
+    meta_providers::models::{Wiki, artist_type_to_string},
+    utils::{self, format_secs_as_duration, settings_manager, tokio_runtime},
+    window::EuphonicaWindow,
 };
 
 mod imp {
 
-    use crate::{common::FadingScrolledWindow, library::TagsSection, meta_providers::models::ArtistMeta};
+    use crate::{
+        common::FadingScrolledWindow,
+        library::{TagsSection, discography_album::DiscographyAlbum},
+        meta_providers::models::ArtistMeta,
+        utils::g_cmp_options,
+    };
 
-use super::*;
+    use super::*;
 
     #[derive(Debug, CompositeTemplate, Derivative)]
     #[derivative(Default)]
     #[template(resource = "/io/github/htkhiem/Euphonica/gtk/library/artist-content-view.ui")]
     pub struct ArtistContentView {
+        #[template_child]
+        pub scrolled_window: TemplateChild<gtk::ScrolledWindow>,
+        #[template_child]
+        pub multi_layout_view: TemplateChild<adw::MultiLayoutView>,
+
         #[template_child]
         pub avatar: TemplateChild<adw::Avatar>,
         #[template_child]
@@ -82,7 +99,7 @@ use super::*;
         pub mbid: TemplateChild<gtk::LinkButton>,
         #[template_child]
         pub copy_mbid: TemplateChild<gtk::Button>,
-        
+
         // #[template_child]
         // pub all_songs_btn: TemplateChild<gtk::ToggleButton>,
         #[template_child]
@@ -114,11 +131,9 @@ use super::*;
 
         // Discography sub-view
         #[template_child]
-        pub album_stack: TemplateChild<ContentStack>,
+        pub discography_stack: TemplateChild<ContentStack>,
         #[template_child]
-        pub album_subview: TemplateChild<gtk::GridView>,
-        #[derivative(Default(value = "gio::ListStore::new::<Album>()"))]
-        pub album_list: gio::ListStore,
+        pub discography_subview: TemplateChild<gtk::ListBox>,
 
         pub library: WeakRef<Library>,
         pub artist: RefCell<Option<Artist>>,
@@ -175,7 +190,10 @@ use super::*;
                 self,
                 move |_| {
                     if let Some(s) = this.mbid.label() {
-                        gdk::Display::default().unwrap().clipboard().set_text(s.as_str());
+                        gdk::Display::default()
+                            .unwrap()
+                            .clipboard()
+                            .set_text(s.as_str());
                         if let Some(win) = this.window.upgrade() {
                             win.send_simple_toast("MusicBrainz ID copied to clipboard", 3);
                         }
@@ -271,28 +289,82 @@ use super::*;
                 }
             ));
 
-            // Set up album subview
-            let album_sel_model = gtk::SingleSelection::new(Some(self.album_list.clone()));
-            self.album_subview.set_model(Some(&album_sel_model));
-            self.album_subview.connect_activate(clone!(
-                #[weak(rename_to = this)]
-                self,
-                move |view, position| {
-                    let model = view.model().expect("The model has to exist.");
-                    let album = model
-                        .item(position)
-                        .and_downcast::<Album>()
-                        .expect("The item has to be a `common::Album`.");
+            // Set up discography subview
+            let discography_subview = self.discography_subview.get();
+            discography_subview.set_sort_func(|row1, row2| {
+                g_cmp_options(
+                    row1.child()
+                        .and_downcast::<DiscographyYear>()
+                        .expect("Has to be a DiscographyYear")
+                        .year()
+                        .as_ref(),
+                    row2.child()
+                        .and_downcast::<DiscographyYear>()
+                        .expect("Has to be a DiscographyYear")
+                        .year()
+                        .as_ref(),
+                    false,
+                    false,
+                )
+            });
+            self.multi_layout_view
+                .connect_layout_name_notify(move |mlv| {
+                    let narrow = mlv
+                        .layout_name()
+                        .map(|name| name.to_string())
+                        .as_deref()
+                        .unwrap_or("")
+                        == "narrow";
+                    let mut i: i32 = 0;
+                    loop {
+                        if let Some(albums_box) = discography_subview
+                            .row_at_index(i)
+                            .map(|r| r.child())
+                            .flatten()
+                            .and_downcast::<DiscographyYear>()
+                            .map(|y| y.albums_box())
+                        {
+                            let mut j: i32 = 0;
+                            loop {
+                                if let Some(album) = albums_box
+                                    .row_at_index(j as i32)
+                                    .map(|r| r.child())
+                                    .flatten()
+                                    .and_downcast::<DiscographyAlbum>()
+                                {
+                                    album.set_narrow(narrow);
+                                    j += 1;
+                                } else {
+                                    break;
+                                }
+                            }
+                            i += 1;
+                        } else {
+                            break;
+                        }
+                    }
+                });
+            // let album_sel_model = gtk::SingleSelection::new(Some(self.album_list.clone()));
+            // self.album_subview.set_model(Some(&album_sel_model));
+            // self.album_subview.connect_activate(clone!(
+            //     #[weak(rename_to = this)]
+            //     self,
+            //     move |view, position| {
+            //         let model = view.model().expect("The model has to exist.");
+            //         let album = model
+            //             .item(position)
+            //             .and_downcast::<Album>()
+            //             .expect("The item has to be a `common::Album`.");
 
-                    this.obj()
-                        .emit_by_name::<()>("album-clicked", &[&album.to_value()]);
-                }
-            ));
+            //         this.obj()
+            //             .emit_by_name::<()>("album-clicked", &[&album.to_value()]);
+            //     }
+            // ));
 
-            self.album_list
-                .bind_property("n-items", &self.release_count.get(), "label")
-                .sync_create()
-                .build();
+            // self.album_list
+            //     .bind_property("n-items", &self.release_count.get(), "label")
+            //     .sync_create()
+            //     .build();
 
             // Set up song subview
             // self.all_songs_btn
@@ -486,7 +558,7 @@ impl ArtistContentView {
             });
         }
     }
-    
+
     fn set_show_meta(&self, show: bool) {
         self.imp().wiki_line.set_visible(show);
         self.imp().bio_stack.set_visible(show);
@@ -515,9 +587,8 @@ impl ArtistContentView {
         }
     }
 
-
     async fn update_meta(&self, overwrite: bool) {
-        if let Some(artist) = self.artist() {            
+        if let Some(artist) = self.artist() {
             // If the current artist is the "untitled" one (i.e. for songs without an artist tag),
             // don't attempt to update metadata.
             if artist.get_name().is_empty() {
@@ -546,8 +617,11 @@ impl ArtistContentView {
                             self.imp().years.set_visible(true);
                             // Always show beginning year (use ? if unknown)
 
-                            let mut s = meta.begin_date.map_or("?".into(), |d| d.year().to_string());
-                            if let Some(end_year) = meta.end_date.map(|d| format!(" - {}", d.year())) {
+                            let mut s =
+                                meta.begin_date.map_or("?".into(), |d| d.year().to_string());
+                            if let Some(end_year) =
+                                meta.end_date.map(|d| format!(" - {}", d.year()))
+                            {
                                 s.push_str(&end_year);
                             } else {
                                 s.push_str(" - current");
@@ -559,7 +633,12 @@ impl ArtistContentView {
 
                         // Populate nationality. For this we'll use the new GtkSvg.
                         if let Some(country) = meta.country.as_deref() {
-                            if let Some(svg) = utils::new_gtksvg_from_datafile(&format!("flags/{}.svg", country.to_lowercase())).await {
+                            if let Some(svg) = utils::new_gtksvg_from_datafile(&format!(
+                                "flags/{}.svg",
+                                country.to_lowercase()
+                            ))
+                            .await
+                            {
                                 should_show_wiki_line = true;
                                 self.imp().iso_flag.set_paintable(Some(&svg));
                                 self.imp().iso_flag.set_visible(true);
@@ -573,19 +652,21 @@ impl ArtistContentView {
 
                         // Populate metadata box
                         let artist_type_str = artist_type_to_string(meta.artist_type);
-                        self.imp().artist_type.set_label(
-                            if !artist_type_str.is_empty() {
+                        self.imp()
+                            .artist_type
+                            .set_label(if !artist_type_str.is_empty() {
                                 artist_type_str
                             } else {
-                                // this is a display-centric placeholder so we'll do it at the view level; 
+                                // this is a display-centric placeholder so we'll do it at the view level;
                                 // the common func in models.rs should just return an empty string.
-                                "-" 
-                            }
-                        );
+                                "-"
+                            });
                         if let Some(mbid) = meta.mbid.as_deref() {
                             self.imp().mbid_row.set_visible(true);
                             self.imp().mbid.set_label(mbid);
-                            self.imp().mbid.set_uri(&format!("https://musicbrainz.org/artist/{}", mbid));
+                            self.imp()
+                                .mbid
+                                .set_uri(&format!("https://musicbrainz.org/artist/{}", mbid));
                         } else {
                             self.imp().mbid_row.set_visible(false);
                         }
@@ -600,15 +681,13 @@ impl ArtistContentView {
                                 self.imp().tags_widget.show_placeholder();
                             } else {
                                 for tag in tags {
-                                    self.imp().tags_widget.add_tag(
-                                        &Tag::new(
-                                            tag.name,
-                                            tag.url,
-                                            tag.count,
-                                            true,
-                                            tag.set_by_user
-                                        )
-                                    );
+                                    self.imp().tags_widget.add_tag(&Tag::new(
+                                        tag.name,
+                                        tag.url,
+                                        tag.count,
+                                        true,
+                                        tag.set_by_user,
+                                    ));
                                 }
                             }
                         } else {
@@ -820,63 +899,63 @@ impl ArtistContentView {
         self.imp().song_subview.set_factory(Some(&factory));
     }
 
-    fn setup_album_subview(&self) {
-        let settings = settings_manager().child("ui");
+    // fn setup_discography_subview(&self) {
+    //     let settings = settings_manager().child("ui");
 
-        // Set up factory
-        let cache = self.imp().cache.get().unwrap();
-        let factory = SignalListItemFactory::new();
-        factory.connect_setup(clone!(
-            #[weak]
-            cache,
-            #[weak(rename_to = this)]
-            self,
-            move |_, list_item| {
-                let item = list_item
-                    .downcast_ref::<ListItem>()
-                    .expect("Needs to be ListItem");
-               // TODO: refactor album cells to use expressions too
-                let album_subview = this.imp().album_subview.get();
-                let window = this.imp().window.upgrade();
-                let album_cell = AlbumCell::new(item, cache, None, window, Some(album_subview));
-                item.set_child(Some(&album_cell));
-            }
-        ));
-        factory.connect_bind(move |_, list_item| {
-            let item: Album = list_item
-                .downcast_ref::<ListItem>()
-                .expect("Needs to be ListItem")
-                .item()
-                .and_downcast::<Album>()
-                .expect("The item has to be a common::Album.");
-            let child: AlbumCell = list_item
-                .downcast_ref::<ListItem>()
-                .expect("Needs to be ListItem")
-                .child()
-                .and_downcast::<AlbumCell>()
-                .expect("The child has to be an `AlbumCell`.");
+    //     // Set up factory
+    //     let cache = self.imp().cache.get().unwrap();
+    //     let factory = SignalListItemFactory::new();
+    //     factory.connect_setup(clone!(
+    //         #[weak]
+    //         cache,
+    //         #[weak(rename_to = this)]
+    //         self,
+    //         move |_, list_item| {
+    //             let item = list_item
+    //                 .downcast_ref::<ListItem>()
+    //                 .expect("Needs to be ListItem");
+    //            // TODO: refactor album cells to use expressions too
+    //             let album_subview = this.imp().album_subview.get();
+    //             let window = this.imp().window.upgrade();
+    //             let album_cell = AlbumCell::new(item, cache, None, window, Some(album_subview));
+    //             item.set_child(Some(&album_cell));
+    //         }
+    //     ));
+    //     factory.connect_bind(move |_, list_item| {
+    //         let item: Album = list_item
+    //             .downcast_ref::<ListItem>()
+    //             .expect("Needs to be ListItem")
+    //             .item()
+    //             .and_downcast::<Album>()
+    //             .expect("The item has to be a common::Album.");
+    //         let child: AlbumCell = list_item
+    //             .downcast_ref::<ListItem>()
+    //             .expect("Needs to be ListItem")
+    //             .child()
+    //             .and_downcast::<AlbumCell>()
+    //             .expect("The child has to be an `AlbumCell`.");
 
-            // Within this binding fn is where the cached artist avatar texture gets used.
-            child.bind(&item);
-        });
+    //         // Within this binding fn is where the cached artist avatar texture gets used.
+    //         child.bind(&item);
+    //     });
 
-        factory.connect_unbind(move |_, list_item| {
-            let child: AlbumCell = list_item
-                .downcast_ref::<ListItem>()
-                .expect("Needs to be ListItem")
-                .child()
-                .and_downcast::<AlbumCell>()
-                .expect("The child has to be an `AlbumCell`.");
-            child.unbind();
-        });
+    //     factory.connect_unbind(move |_, list_item| {
+    //         let child: AlbumCell = list_item
+    //             .downcast_ref::<ListItem>()
+    //             .expect("Needs to be ListItem")
+    //             .child()
+    //             .and_downcast::<AlbumCell>()
+    //             .expect("The child has to be an `AlbumCell`.");
+    //         child.unbind();
+    //     });
 
-        // Set the factory of the grid view
-        let grid_view = self.imp().album_subview.get();
-        grid_view.set_factory(Some(&factory));
-        settings
-            .bind("max-columns", &grid_view, "max-columns")
-            .build();
-    }
+    //     // Set the factory of the grid view
+    //     let grid_view = self.imp().album_subview.get();
+    //     grid_view.set_factory(Some(&factory));
+    //     settings
+    //         .bind("max-columns", &grid_view, "max-columns")
+    //         .build();
+    // }
 
     pub fn setup(&self, library: &Library, cache: Rc<Cache>, window: &EuphonicaWindow) {
         self.imp()
@@ -889,7 +968,7 @@ impl ArtistContentView {
 
         self.setup_info_box();
         self.setup_song_subview();
-        self.setup_album_subview();
+        // self.setup_discography_subview();
 
         self.imp()
             .add_to_playlist
@@ -948,6 +1027,7 @@ impl ArtistContentView {
     pub fn bind(&self, artist: &Artist) {
         self.imp().on_song_selection_changed();
         let info = artist.get_info();
+        self.imp().release_count.set_label("-");
         self.imp().avatar.set_text(Some(&info.name));
 
         let name_label = self.imp().name.get();
@@ -976,31 +1056,54 @@ impl ArtistContentView {
             #[strong]
             artist,
             async move {
-                let album_stack = this.imp().album_stack.get();
+                let discography = this.imp().discography_subview.get();
+                discography.remove_all();
                 let library = this.imp().library.upgrade().unwrap();
-                album_stack.show_spinner();
-                let album_list = this.imp().album_list.clone();
-                album_list.remove_all();
+                let discography_stack = this.imp().discography_stack.get();
+                discography_stack.show_spinner();
                 let song_stack = this.imp().song_stack.get();
                 song_stack.show_spinner();
                 let song_list = this.imp().song_list.clone();
                 song_list.remove_all();
+                let mut albums_by_year: FxHashMap<Option<i32>, Vec<Album>> = FxHashMap::default();
+                // Collect genre strings from albums to pass to the background thread
+                // FIXME: this might still block though
+                let mut album_genres: Vec<Vec<String>> = Vec::new();
                 // Important, MPD-side content first
                 let _ = library
                     .get_artist_content(
                         &artist,
                         |album| {
-                            album_list.append(&album);
+                            // Collect genres first
+                            album_genres.push(album.get_genres().iter().cloned().collect());
+                            let maybe_year = album.get_release_date().map(|d| d.year());
+                            if let Some(year_vec) = albums_by_year.get_mut(&maybe_year) {
+                                year_vec.push(album);
+                            } else {
+                                albums_by_year.insert(maybe_year, vec![album]);
+                            }
                         },
                         |songs| {
                             song_list.extend_from_slice(&songs);
                         },
                     )
                     .await;
-                if album_list.n_items() > 0 {
-                    album_stack.show_content();
+                if albums_by_year.len() > 0 {
+                    discography_stack.show_content();
+                    let vp = this.imp().scrolled_window.get();
+                    let win = this.imp().window.upgrade();
+                    for (maybe_year, albums) in albums_by_year.into_iter() {
+                        discography.append(&DiscographyYear::new(
+                            maybe_year,
+                            albums,
+                            this.imp().cache.get().unwrap().clone(),
+                            &library,
+                            win.as_ref(),
+                            Some(&vp),
+                        ))
+                    }
                 } else {
-                    album_stack.show_placeholder();
+                    discography_stack.show_placeholder();
                 }
                 if song_list.n_items() > 0 {
                     song_stack.show_content();
@@ -1013,20 +1116,8 @@ impl ArtistContentView {
                 let genres_box = this.imp().genres_box.get();
                 let window = this.imp().window.upgrade().unwrap();
 
-                // Collect genre strings from albums to pass to the background thread
-                // FIXME: this might still block though
-                let album_genres: Vec<Vec<String>> = (0..album_list.n_items())
-                    .map(|i| {
-                        let album = album_list.item(i).and_downcast::<Album>().unwrap();
-                        album.get_genres().iter().cloned().collect()
-                    })
-                    .collect();
-
                 let genres: Vec<String> = {
-                    let asyncified = Asyncified::builder()
-                        .channel_size(1)
-                        .build_ok(|| ())
-                        .await;
+                    let asyncified = Asyncified::builder().channel_size(1).build_ok(|| ()).await;
                     asyncified
                         .call(move |_| {
                             let mut seen: FxHashSet<String> = FxHashSet::default();
@@ -1044,13 +1135,16 @@ impl ArtistContentView {
                         .await
                 };
 
-                genres.iter()
-                    .map(|genre| TagButton::new(
-                        &Tag::new(genre.clone(), None, None, false, false),
-                        &genres_box,
-                        &window,
-                        |_| {},
-                    ))
+                genres
+                    .iter()
+                    .map(|genre| {
+                        TagButton::new(
+                            &Tag::new(genre.clone(), None, None, false, false),
+                            &genres_box,
+                            &window,
+                            |_| {},
+                        )
+                    })
                     .for_each(|tag| genres_box.append(&tag));
 
                 if !genres.is_empty()
@@ -1080,7 +1174,7 @@ impl ArtistContentView {
         // Unset metadata widgets
         self.imp().avatar.set_text(None);
         self.clear_content();
-        self.imp().album_stack.show_placeholder();
+        self.imp().discography_stack.show_placeholder();
         self.imp().song_stack.show_placeholder();
         self.imp().genres_box.remove_all();
         let genres_stack = self.imp().genres_stack.get();
@@ -1095,6 +1189,6 @@ impl ArtistContentView {
 
     fn clear_content(&self) {
         self.imp().song_list.remove_all();
-        self.imp().album_list.remove_all();
+        self.imp().discography_subview.remove_all();
     }
 }

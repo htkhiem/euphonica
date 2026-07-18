@@ -1,16 +1,16 @@
 use derivative::Derivative;
-use gtk::{CompositeTemplate, glib, gio, prelude::*, subclass::prelude::*};
-use glib::{
-    Object, SignalHandlerId,
-    WeakRef, clone, closure_local,
-};
+use glib::{Object, SignalHandlerId, WeakRef, clone, closure_local};
+use gtk::{CompositeTemplate, gio, glib, prelude::*, subclass::prelude::*};
 use std::{
     cell::{Cell, OnceCell, RefCell},
     rc::Rc,
 };
 
 use crate::{
-    EuphonicaWindow, cache::{BACKLOG_THRESHOLD, Cache}, common::{Album, ContentStack, ImageStack, RowAddButtons, Song, SongRow, WING_DEPTH}, utils::format_secs_as_duration,
+    EuphonicaWindow,
+    cache::{BACKLOG_THRESHOLD, Cache},
+    common::{Album, ContentStack, ImageStack, RowAddButtons, Song, SongRow, WING_DEPTH},
+    utils::format_secs_as_duration,
 };
 
 use super::{Library, add_to_playlist::AddToPlaylistButton};
@@ -23,6 +23,8 @@ mod imp {
     #[derivative(Default)]
     #[template(resource = "/io/github/htkhiem/Euphonica/gtk/library/discography-album.ui")]
     pub struct DiscographyAlbum {
+        #[template_child]
+        pub title_clamp: TemplateChild<adw::Clamp>,
         #[template_child]
         pub cover: TemplateChild<ImageStack>,
         #[template_child]
@@ -44,7 +46,7 @@ mod imp {
         pub song_list: gio::ListStore,
         pub cache: OnceCell<Rc<Cache>>,
         pub library: WeakRef<Library>,
-        pub album: WeakRef<Album>,
+        pub album: OnceCell<Album>,
         // Stored ref to the ScrolledWindow in artist_content_view for visibility checks.
         pub viewport: WeakRef<gtk::ScrolledWindow>,
         // Weak reference to the window for connecting to the check-visible signal.
@@ -68,13 +70,10 @@ mod imp {
         // `NAME` needs to match `class` attribute of template
         const NAME: &'static str = "EuphonicaDiscographyAlbum";
         type Type = super::DiscographyAlbum;
-        type ParentType = gtk::Widget;
+        type ParentType = gtk::Box;
 
         fn class_init(klass: &mut Self::Class) {
             Self::bind_template(klass);
-
-            klass.set_layout_manager_type::<gtk::BinLayout>();
-            klass.set_accessible_role(gtk::AccessibleRole::Group);
         }
 
         fn instance_init(obj: &glib::subclass::InitializingObject<Self>) {
@@ -93,125 +92,23 @@ mod imp {
         fn constructed(&self) {
             self.parent_constructed();
         }
-        // fn properties() -> &'static [ParamSpec] {
-        //     static PROPERTIES: Lazy<Vec<ParamSpec>> = Lazy::new(|| {
-        //         vec![
-        //             ParamSpecBoolean::builder("playing-indicator-visible").build(),
-        //             ParamSpecBoolean::builder("is-playing").build(),
-        //             ParamSpecBoolean::builder("index-visible").build(),
-        //             ParamSpecString::builder("index").build(),
-        //             ParamSpecBoolean::builder("thumbnail-visible").build(),
-        //             ParamSpecString::builder("name").build(),
-        //             ParamSpecString::builder("quality-grade").build(),
-        //             ParamSpecString::builder("first-attrib-icon-name").build(),
-        //             ParamSpecString::builder("second-attrib-icon-name").build(),
-        //             ParamSpecString::builder("third-attrib-icon-name").build(),
-        //             ParamSpecString::builder("first-attrib-text").build(),
-        //             ParamSpecString::builder("second-attrib-text").build(),
-        //             ParamSpecString::builder("third-attrib-text").build(),
-        //             ParamSpecObject::builder::<gtk::Widget>("end-widget").build(),
-        //         ]
-        //     });
-        //     PROPERTIES.as_ref()
-        // }
-
-        // fn property(&self, _id: usize, pspec: &ParamSpec) -> glib::Value {
-        //     match pspec.name() {
-        //         "playing-indicator-visible" => self.playing_indicator.is_visible().to_value(),
-        //         "is-playing" => self.playing_indicator.is_child_revealed().to_value(),
-        //         "index-visible" => self.thumbnail.is_visible().to_value(),
-        //         "index" => self.index.label().to_value(),
-        //         "thumbnail-visible" => self.thumbnail.is_visible().to_value(),
-        //         "name" => self.name.label().label().to_value(),
-        //         "quality-grade" => self.quality_grade.icon_name().to_value(),
-        //         "first-attrib-icon-name" => self.first_attrib_icon.icon_name().to_value(),
-        //         "second-attrib-icon-name" => self.second_attrib_icon.icon_name().to_value(),
-        //         "third-attrib-icon-name" => self.third_attrib_icon.icon_name().to_value(),
-        //         "first-attrib-text" => self.first_attrib_text.label().to_value(),
-        //         "second-attrib-text" => self.second_attrib_text.label().to_value(),
-        //         "third-attrib-text" => self.third_attrib_text.label().to_value(),
-        //         "end-widget" => self.center_box.end_widget().to_value(),
-        //         _ => unimplemented!(),
-        //     }
-        // }
-
-        // fn set_property(&self, _id: usize, value: &glib::Value, pspec: &ParamSpec) {
-        //     let obj = self.obj();
-        //     match pspec.name() {
-        //         "playing-indicator-visible" => {
-        //             if let Ok(vis) = value.get::<bool>() {
-        //                 self.playing_indicator.set_visible(vis);
-        //             }
-        //         }
-        //         "is-playing" => {
-        //             if let Ok(vis) = value.get::<bool>() {
-        //                 self.playing_indicator.set_reveal_child(vis);
-        //             }
-        //         }
-        //         "index-visible" => {
-        //             if let Ok(vis) = value.get::<bool>() {
-        //                 self.index.set_visible(vis);
-        //             }
-        //         }
-        //         "index" => {
-        //             if let Ok(idx) = value.get::<&str>() {
-        //                 self.index.set_label(idx);
-        //             }
-        //         }
-        //         "thumbnail-visible" => {
-        //             if let Ok(vis) = value.get::<bool>() {
-        //                 self.thumbnail.set_visible(vis);
-        //             }
-        //         }
-        //         "name" => {
-        //             if let Ok(name) = value.get::<&str>() {
-        //                 self.name.label().set_label(name);
-        //             }
-        //         }
-        //         "quality-grade" => {
-        //             let maybe_icon = value.get::<&str>();
-        //             self.quality_grade.set_visible(maybe_icon.is_ok());
-        //             self.quality_grade.set_icon_name(maybe_icon.ok());
-        //         }
-        //         "first-attrib-icon-name" => {
-        //             obj.set_first_attrib_icon_name(value.get::<&str>().ok());
-        //         }
-        //         "second-attrib-icon-name" => {
-        //             obj.set_second_attrib_icon_name(value.get::<&str>().ok());
-        //         }
-        //         "third-attrib-icon-name" => {
-        //             obj.set_third_attrib_icon_name(value.get::<&str>().ok());
-        //         }
-        //         "first-attrib-text" => {
-        //             obj.set_first_attrib_text(value.get::<&str>().ok());
-        //         }
-        //         "second-attrib-text" => {
-        //             obj.set_second_attrib_text(value.get::<&str>().ok());
-        //         }
-        //         "third-attrib-text" => {
-        //             obj.set_third_attrib_text(value.get::<&str>().ok());
-        //         }
-        //         "end-widget" => {
-        //             obj.set_end_widget(value.get::<gtk::Widget>().ok().as_ref());
-        //         }
-        //         _ => unimplemented!(),
-        //     }
-        // }
     }
 
     impl WidgetImpl for DiscographyAlbum {}
+
+    impl BoxImpl for DiscographyAlbum {}
 }
 
 // Common row widget for displaying a single song, used across the UI.
 glib::wrapper! {
     pub struct DiscographyAlbum(ObjectSubclass<imp::DiscographyAlbum>)
-    @extends gtk::Widget,
-    @implements gtk::Accessible, gtk::Buildable, gtk::ConstraintTarget;
+    @extends gtk::Box, gtk::Widget,
+    @implements gtk::Accessible, gtk::Buildable, gtk::ConstraintTarget, gtk::Orientable;
 }
 
 impl DiscographyAlbum {
     pub fn new(
-        album: &Album,
+        album: Album,
         cache: Rc<Cache>,
         library: &Library,
         window: Option<&EuphonicaWindow>,
@@ -220,8 +117,8 @@ impl DiscographyAlbum {
         let res: Self = Object::builder().build();
         let _ = res.imp().cache.set(cache);
         res.imp().library.set(Some(library));
-        res.imp().album.set(Some(album));
         res.imp().title.set_label(album.get_title());
+        let _ = res.imp().album.set(album);
 
         res.imp().replace_queue.connect_clicked(clone!(
             #[weak]
@@ -287,11 +184,11 @@ impl DiscographyAlbum {
                         let was_visible = imp.should_load_texture.replace(is_visible);
 
                         if is_visible {
-                            // Also go through this if visibility status didn't change, 
+                            // Also go through this if visibility status didn't change,
                             // but album art load hasn't been attempted yet.
                             if was_visible != is_visible || imp.deferred.get() {
                                 imp.deferred.set(false);
-                                if imp.album.upgrade().is_some() {
+                                if imp.album.get().is_some() {
                                     glib::idle_add_local_once(clone!(
                                         #[weak]
                                         this,
@@ -351,8 +248,6 @@ impl DiscographyAlbum {
         glib::spawn_future_local(clone!(
             #[weak]
             res,
-            #[strong]
-            album,
             async move {
                 let library = res.imp().library.upgrade().unwrap();
                 // Important, MPD-side content first
@@ -361,7 +256,7 @@ impl DiscographyAlbum {
                 let song_list = res.imp().song_list.clone();
                 song_list.remove_all();
                 match library
-                    .get_album_songs(&album, &mut |songs| {
+                    .get_album_songs(res.imp().album.get().unwrap(), &mut |songs| {
                         song_list.extend_from_slice(&songs);
                     })
                     .await
@@ -387,8 +282,8 @@ impl DiscographyAlbum {
         self.imp().library.upgrade()
     }
 
-    fn album(&self) -> Option<Album> {
-        self.imp().album.upgrade()
+    fn album(&self) -> Option<&Album> {
+        self.imp().album.get()
     }
 
     fn set_is_queuing(&self, queuing: bool) {
@@ -522,5 +417,20 @@ impl DiscographyAlbum {
         self.imp().cover.clear();
         self.imp().deferred.set(false);
         self.imp().deferred_hires.set(false);
+    }
+
+    pub fn set_narrow(&self, narrow: bool) {
+        // Kinda like Adwaita breakpoints but implemented ourselves to reduce nesting.
+        if narrow {
+            self.set_orientation(gtk::Orientation::Vertical);
+            // Disable clamping
+            self.imp().title_clamp.set_maximum_size(9999);
+            self.imp().title_clamp.set_tightening_threshold(9999);
+        } else {
+            self.set_orientation(gtk::Orientation::Horizontal);
+            // Title & album art are now shown to the left => can't let them be too wide
+            self.imp().title_clamp.set_maximum_size(350);
+            self.imp().title_clamp.set_tightening_threshold(240);
+        }
     }
 }
