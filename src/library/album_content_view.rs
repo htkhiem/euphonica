@@ -79,6 +79,12 @@ mod imp {
         pub track_count: TemplateChild<gtk::Label>,
         #[template_child]
         pub runtime: TemplateChild<gtk::Label>,
+        #[template_child]
+        pub mbid_row: TemplateChild<gtk::Box>,
+        #[template_child]
+        pub mbid: TemplateChild<gtk::LinkButton>,
+        #[template_child]
+        pub copy_mbid: TemplateChild<gtk::Button>,
 
         #[template_child]
         pub tags_widget: TemplateChild<TagsSection>,
@@ -156,6 +162,19 @@ mod imp {
 
         fn constructed(&self) {
             self.parent_constructed();
+
+            self.copy_mbid.connect_clicked(clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |_| {
+                    if let Some(s) = this.mbid.label() {
+                        gdk::Display::default().unwrap().clipboard().set_text(s.as_str());
+                        if let Some(win) = this.window.upgrade() {
+                            win.send_simple_toast("MusicBrainz ID copied to clipboard", 3);
+                        }
+                    }
+                }
+            ));
 
             self.sel_model.set_model(Some(&self.song_list.clone()));
             // Change button labels depending on selection state
@@ -588,6 +607,15 @@ impl AlbumContentView {
                         let _ = self.imp().meta.replace(Some(meta.clone()));
                         // Handle wiki
                         self.update_wiki(meta.wiki.as_ref());
+
+                        // Handle MBID
+                        if let Some(mbid) = meta.mbid.as_deref() {
+                            self.imp().mbid_row.set_visible(true);
+                            self.imp().mbid.set_label(mbid);
+                            self.imp().mbid.set_uri(&format!("https://musicbrainz.org/release/{}", mbid));
+                        } else {
+                            self.imp().mbid_row.set_visible(false);
+                        }
 
                         // Load tags from DB
                         let tags = cache.get_album_tags(&folder_uri);

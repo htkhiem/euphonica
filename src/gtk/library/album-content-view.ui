@@ -82,7 +82,7 @@
                                 </style>
                                 <child>
                                   <object class="EuphonicaImageStack" id="cover">
-                                    <property name="size">256</property>
+                                    <property name="size">290</property>
                                   </object>
                                 </child>
                               </object>
@@ -169,7 +169,7 @@
                                             <property name="hscrollbar-policy">never</property>
                                             <property name="propagate-natural-width">true</property>
                                             <property name="propagate-natural-height">false</property>
-                                            <property name="height-request">150</property>
+                                            <property name="height-request">100</property>
                                             <property name="vexpand">true</property>
                                             <property name="child">
                                               <object class="GtkBox">
@@ -409,6 +409,51 @@
                                     </property>
                                   </object>
                                 </child>
+
+                                <child>
+                                  <object class="GtkBox" id="mbid_row">
+                                    <property name="visible">false</property>
+                                    <property name="orientation">1</property>
+                                    <child>
+                                      <object class="GtkLabel">
+                                        <property name="label">MusicBrainz</property>
+                                        <property name="halign">start</property>
+                                        <property name="justify">left</property>
+                                        <style>
+                                          <class name="caption-heading"/>
+                                        </style>
+                                      </object>
+                                    </child>
+                                    <child>
+                                      <object class="GtkCenterBox">
+                                        <property name="start-widget">
+                                          <object class="GtkLinkButton" id="mbid">
+                                            <property name="margin-end">12</property>
+                                            <style>
+                                              <class name="padding-0"/>
+                                            </style>
+                                            <property name="label">-</property>
+                                            <property name="halign">start</property>
+                                            <style>
+                                              <class name="caption"/>
+                                            </style>
+                                          </object>
+                                        </property>
+                                        <property name="end-widget">
+                                          <object class="GtkButton" id="copy_mbid">
+                                            <property name="icon-name">copy-symbolic</property>
+                                            <property name="tooltip-text">Copy MusicBrainz ID</property>
+                                            <style>
+                                              <class name="flat"/>
+                                              <class name="padding-0"/>
+                                              <class name="caption"/>
+                                            </style>
+                                          </object>
+                                        </property>
+                                      </object>
+                                    </child>
+                                  </object>
+                                </child>
                               </object>
                             </child>
 
@@ -497,7 +542,7 @@
                                     <child>
                                       <object class="AdwClamp">
                                         <!-- Exactly the same width as the cover art at the top -->
-                                        <property name="maximum-size">256</property>
+                                        <property name="maximum-size">290</property>
                                         <child>
                                           <object class="GtkBox">
                                             <property name="orientation">1</property>
@@ -548,7 +593,7 @@
                                               <object class="AdwClamp">
                                                 <property name="width-request">160</property>
                                                 <!-- Exactly the same width as the cover art in the first column -->
-                                                <property name="maximum-size">256</property>
+                                                <property name="maximum-size">290</property>
                                                 <child>
                                                   <object class="GtkBox">
                                                     <property name="orientation">1</property>

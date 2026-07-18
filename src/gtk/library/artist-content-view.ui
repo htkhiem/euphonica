@@ -309,7 +309,7 @@
                                             <property name="hscrollbar-policy">never</property>
                                             <property name="propagate-natural-width">true</property>
                                             <property name="propagate-natural-height">false</property>
-                                            <property name="height-request">150</property>
+                                            <property name="height-request">100</property>
                                             <property name="vexpand">true</property>
                                             <property name="child">
                                               <object class="GtkBox">
