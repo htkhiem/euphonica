@@ -1,10 +1,11 @@
 use adw::subclass::prelude::*;
 use ashpd::desktop::file_chooser::SelectedFiles;
+use asyncified::Asyncified;
 use derivative::Derivative;
 use gio::{ActionEntry, SimpleActionGroup};
 use glib::{Binding, WeakRef, clone, closure_local, signal::SignalHandlerId, subclass::Signal};
 use gtk::{CompositeTemplate, ListItem, SignalListItemFactory, gdk, gio, glib, prelude::*};
-use musicbrainz_rs::entity::artist::ArtistType;
+use rustc_hash::FxHashSet;
 use std::{
     cell::{Cell, OnceCell, RefCell},
     rc::Rc,
@@ -12,9 +13,9 @@ use std::{
 };
 use chrono::Datelike;
 
-use super::{AlbumCell, Library};
+use super::{AlbumCell, Library, tag_button::TagButton};
 use crate::{
-    cache::{Cache, CacheState, Error as CacheError, placeholders::EMPTY_ARTIST_STRING}, common::{Album, Artist, ContentStack, ContentView, RowAddButtons, Song, SongRow}, library::{Tag, add_to_playlist::AddToPlaylistButton}, meta_providers::models::{Wiki, artist_type_to_string}, utils::{self, format_secs_as_duration, settings_manager, tokio_runtime}, window::EuphonicaWindow,
+    cache::{Cache, CacheState, Error as CacheError, placeholders::EMPTY_ARTIST_STRING}, common::{Album, Artist, ContentStack, ContentView, RowAddButtons, Song, SongRow, split_genre_tag}, library::{Tag, add_to_playlist::AddToPlaylistButton}, meta_providers::models::{Wiki, artist_type_to_string}, utils::{self, format_secs_as_duration, settings_manager, tokio_runtime}, window::EuphonicaWindow,
 };
 
 mod imp {
@@ -62,6 +63,11 @@ use super::*;
         pub bio_save: TemplateChild<gtk::Button>,
         #[template_child]
         pub bio_cancel: TemplateChild<gtk::Button>,
+
+        #[template_child]
+        pub genres_stack: TemplateChild<gtk::Stack>,
+        #[template_child]
+        pub genres_box: TemplateChild<adw::WrapBox>,
 
         #[template_child]
         pub tags_widget: TemplateChild<TagsSection>,
@@ -283,6 +289,7 @@ use super::*;
                         .emit_by_name::<()>("album-clicked", &[&album.to_value()]);
                 }
             ));
+
             self.album_list
                 .bind_property("n-items", &self.release_count.get(), "label")
                 .sync_create()
@@ -1002,6 +1009,59 @@ impl ArtistContentView {
                     song_stack.show_placeholder();
                 }
 
+                // Populate genres from albums
+                let genres_stack = this.imp().genres_stack.get();
+                let genres_box = this.imp().genres_box.get();
+                let window = this.imp().window.upgrade().unwrap();
+
+                // Collect genre strings from albums to pass to the background thread
+                // FIXME: this might still block though
+                let album_genres: Vec<Vec<String>> = (0..album_list.n_items())
+                    .map(|i| {
+                        let album = album_list.item(i).and_downcast::<Album>().unwrap();
+                        album.get_genres().iter().cloned().collect()
+                    })
+                    .collect();
+
+                let genres: Vec<String> = {
+                    let asyncified = Asyncified::builder()
+                        .channel_size(1)
+                        .build_ok(|| ())
+                        .await;
+                    asyncified
+                        .call(move |_| {
+                            let mut seen: FxHashSet<String> = FxHashSet::default();
+                            for genre_list in album_genres {
+                                for genre in genre_list {
+                                    for split in split_genre_tag(&genre) {
+                                        seen.insert(split.to_owned());
+                                    }
+                                }
+                            }
+                            let mut res: Vec<String> = seen.into_iter().collect();
+                            res.sort_by_key(|a| a.to_lowercase());
+                            res
+                        })
+                        .await
+                };
+
+                genres.iter()
+                    .map(|genre| TagButton::new(
+                        &Tag::new(genre.clone(), None, None, false, false),
+                        &genres_box,
+                        &window,
+                        |_| {},
+                    ))
+                    .for_each(|tag| genres_box.append(&tag));
+
+                if !genres.is_empty()
+                    && genres_stack
+                        .visible_child_name()
+                        .is_some_and(|name| name == "empty")
+                {
+                    genres_stack.set_visible_child_name("content");
+                }
+
                 // The extra fluff later
                 this.schedule_avatar(false).await;
                 this.update_meta(false).await;
@@ -1023,6 +1083,14 @@ impl ArtistContentView {
         self.clear_content();
         self.imp().album_stack.show_placeholder();
         self.imp().song_stack.show_placeholder();
+        self.imp().genres_box.remove_all();
+        let genres_stack = self.imp().genres_stack.get();
+        if genres_stack
+            .visible_child_name()
+            .is_some_and(|name| name == "content")
+        {
+            genres_stack.set_visible_child_name("empty");
+        }
         self.set_show_meta(false);
     }
 
