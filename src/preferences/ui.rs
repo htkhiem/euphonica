@@ -152,7 +152,6 @@ impl UIPreferences {
                 &album_art_rotation_speed.adjustment(),
                 "value",
             )
-            .set()
             .build();
         let use_hires_for_album_cells = imp.use_hires_for_album_cells.get();
         ui_settings

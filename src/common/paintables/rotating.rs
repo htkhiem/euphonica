@@ -1,6 +1,7 @@
 use gtk::{
     gdk::{self, prelude::*, subclass::paintable::*},
-    glib, graphene, gsk,
+    glib::{self, Properties},
+    graphene, gsk,
     prelude::*,
     subclass::prelude::*,
 };
@@ -9,11 +10,15 @@ use std::cell::{Cell, RefCell};
 mod imp {
     use super::*;
 
-    #[derive(Default)]
+    #[derive(Default, Properties)]
+    #[properties(wrapper_type = super::RotatingPaintable)]
     pub struct RotatingPaintable {
         pub paintable: RefCell<Option<gdk::Paintable>>,
         pub rotation: Cell<f64>,
+        #[property(get, set = Self::set_circular)]
         pub circular: Cell<bool>,
+        #[property(get, set)]
+        pub degrees_per_second: Cell<f64>,
     }
 
     #[glib::object_subclass]
@@ -23,11 +28,8 @@ mod imp {
         type Interfaces = (gdk::Paintable,);
     }
 
-    impl ObjectImpl for RotatingPaintable {
-        fn dispose(&self) {
-            self.paintable.borrow_mut().take();
-        }
-    }
+    #[glib::derived_properties]
+    impl ObjectImpl for RotatingPaintable {}
 
     impl PaintableImpl for RotatingPaintable {
         fn current_image(&self) -> gdk::Paintable {
@@ -85,12 +87,6 @@ mod imp {
             let clip = gsk::RoundedRect::from_rect(bounds, diameter as f32 / 2.0);
             snapshot.push_rounded_clip(&clip);
 
-            snapshot.save();
-            let center = graphene::Point::new(width as f32 / 2.0, height as f32 / 2.0);
-            snapshot.translate(&center);
-            snapshot.rotate(self.rotation.get() as f32);
-            snapshot.translate(&graphene::Point::new(-center.x(), -center.y()));
-
             let source_ratio = paintable.intrinsic_aspect_ratio();
             let (paint_width, paint_height) = if source_ratio.is_finite() && source_ratio > 0.0 {
                 if source_ratio >= 1.0 {
@@ -101,9 +97,14 @@ mod imp {
             } else {
                 (diameter, diameter)
             };
+
+            snapshot.save();
+            let center = graphene::Point::new(width as f32 / 2.0, height as f32 / 2.0);
+            snapshot.translate(&center);
+            snapshot.rotate(self.rotation.get() as f32);
             snapshot.translate(&graphene::Point::new(
-                ((width - paint_width) / 2.0) as f32,
-                ((height - paint_height) / 2.0) as f32,
+                (-paint_width / 2.0) as f32,
+                (-paint_height / 2.0) as f32,
             ));
             paintable.snapshot(snapshot, paint_width, paint_height);
 
@@ -113,9 +114,17 @@ mod imp {
     }
 
     impl RotatingPaintable {
+        fn set_circular(&self, circular: bool) {
+            if self.circular.replace(circular) != circular {
+                self.obj().invalidate_size();
+                self.obj().invalidate_contents();
+            }
+        }
+
         fn intrinsic_size(&self, get: impl FnOnce(&gdk::Paintable) -> i32) -> i32 {
             self.paintable.borrow().as_ref().map_or(1, |paintable| {
                 if self.circular.get() {
+                    // A zero width/height means that dimension is unavailable
                     let width = paintable.intrinsic_width();
                     let height = paintable.intrinsic_height();
                     match (width > 0, height > 0) {
@@ -142,30 +151,22 @@ impl RotatingPaintable {
     }
 
     pub fn set_paintable(&self, paintable: Option<&impl IsA<gdk::Paintable>>) {
-        self.imp()
-            .paintable
-            .replace(paintable.map(|paintable| paintable.as_ref().clone()));
+        let paintable = paintable.map(|paintable| paintable.as_ref().clone());
+        if *self.imp().paintable.borrow() == paintable {
+            return;
+        }
+        self.imp().paintable.replace(paintable);
         self.invalidate_size();
         self.invalidate_contents();
     }
 
+    // Don't make property as it changes every frame
     pub fn rotation(&self) -> f64 {
         self.imp().rotation.get()
     }
 
     pub fn set_rotation(&self, rotation: f64) {
         if self.imp().rotation.replace(rotation) != rotation {
-            self.invalidate_contents();
-        }
-    }
-
-    pub fn is_circular(&self) -> bool {
-        self.imp().circular.get()
-    }
-
-    pub fn set_circular(&self, circular: bool) {
-        if self.imp().circular.replace(circular) != circular {
-            self.invalidate_size();
             self.invalidate_contents();
         }
     }

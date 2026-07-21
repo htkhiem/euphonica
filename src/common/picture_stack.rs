@@ -1,15 +1,15 @@
 use gtk::{
     CompositeTemplate,
     gdk::{self},
-    glib::{self, Properties, derived_properties},
+    glib::{self, Properties, clone, derived_properties},
     prelude::*,
     subclass::prelude::*,
 };
-use std::cell::Cell;
+use std::cell::{Cell, OnceCell};
 
 use crate::cache::placeholders::{ALBUMART_PLACEHOLDER, ALBUMART_THUMBNAIL_PLACEHOLDER};
 
-use super::ImageState;
+use super::{ImageState, paintables::RotatingPaintable};
 
 mod imp {
     use super::*;
@@ -23,6 +23,7 @@ mod imp {
         #[template_child]
         pub picture: TemplateChild<gtk::Picture>,
         pub state: Cell<ImageState>,
+        pub wrapper: OnceCell<RotatingPaintable>,
         #[property(get, set)]
         pub size: Cell<i32>,
         #[property(get)]
@@ -103,11 +104,46 @@ impl PictureStack {
 
     #[inline]
     fn show_placeholder(&self, thumb: bool) {
-        self.imp().picture.set_paintable(Some(if thumb {
+        self.display(if thumb {
             &*ALBUMART_THUMBNAIL_PLACEHOLDER
         } else {
             &*ALBUMART_PLACEHOLDER
-        }));
+        });
+    }
+
+    fn display(&self, paintable: &impl IsA<gdk::Paintable>) {
+        if let Some(wrapper) = self.imp().wrapper.get() {
+            wrapper.set_paintable(Some(paintable));
+            self.imp().picture.set_paintable(Some(wrapper));
+        } else {
+            self.imp().picture.set_paintable(Some(paintable));
+        }
+    }
+
+    pub fn install_wrapper(&self, wrapper: &RotatingPaintable) {
+        assert!(
+            self.imp().state.get() == ImageState::Empty,
+            "PictureStack: wrapper must be installed before any content is shown"
+        );
+        self.imp()
+            .wrapper
+            .set(wrapper.clone())
+            .expect("PictureStack: wrapper can only be installed once");
+        self.update_content_fit(wrapper.circular());
+        wrapper.connect_circular_notify(clone!(
+            #[weak(rename_to = this)]
+            self,
+            move |wrapper| this.update_content_fit(wrapper.circular())
+        ));
+        self.show_placeholder(self.imp().is_thumbnail.get());
+    }
+
+    fn update_content_fit(&self, circular: bool) {
+        self.imp().picture.set_content_fit(if circular {
+            gtk::ContentFit::Contain
+        } else {
+            gtk::ContentFit::Cover
+        });
     }
 
     pub fn set_is_thumbnail(&self, new: bool) {
@@ -122,10 +158,6 @@ impl PictureStack {
         }
     }
 
-    pub fn set_content_fit(&self, content_fit: gtk::ContentFit) {
-        self.imp().picture.set_content_fit(content_fit);
-    }
-
     pub fn clear(&self) {
         self.show_placeholder(self.imp().is_thumbnail.get());
         if self
@@ -136,11 +168,6 @@ impl PictureStack {
         {
             self.imp().stack.set_visible_child_name("picture");
         }
-        self.set_state(ImageState::Empty);
-    }
-
-    pub fn clear_with(&self, paintable: &impl IsA<gdk::Paintable>) {
-        self.show(paintable);
         self.set_state(ImageState::Empty);
     }
 
@@ -160,7 +187,7 @@ impl PictureStack {
     }
 
     pub fn show(&self, paintable: &impl IsA<gdk::Paintable>) {
-        self.imp().picture.set_paintable(Some(paintable));
+        self.display(paintable);
         if self
             .imp()
             .stack

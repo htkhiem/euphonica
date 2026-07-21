@@ -587,6 +587,9 @@ mod imp {
                     Signal::builder("history-changed").build(),
                     // For simplicity we'll always use the hires version
                     Signal::builder("cover-changed").build(),
+                    Signal::builder("seeked")
+                        .param_types([f64::static_type()])
+                        .build(),
                     Signal::builder("fft-param-changed")
                         .param_types([
                             String::static_type(),
@@ -1613,9 +1616,10 @@ impl Player {
         old
     }
 
-    /// Seek to current position. Called when the seekbar is released.
     pub async fn send_seek(&self, new_pos: f64) -> ClientResult<()> {
-        self.client()?.seek_current_song(new_pos).await
+        self.client()?.seek_current_song(new_pos).await?;
+        self.emit_by_name::<()>("seeked", &[&new_pos]);
+        Ok(())
     }
 
     /// No cycling (too confusing with the default slide animation)
@@ -1659,14 +1663,13 @@ impl Player {
 
     /// Seek to the timestamp of a lyric line
     pub async fn seek_to_lyric_line(&self, line: i32) -> ClientResult<()> {
-        if let Some(lyrics) = self.imp().lyrics.borrow().as_ref()
-            && lyrics.synced
-            && line >= 0
-            && line < lyrics.lines.len() as i32
-        {
-            self.client()?
-                .seek_current_song(lyrics.lines[line as usize].0 as f64)
-                .await?;
+        // Release the lyrics borrow before seek handlers run.
+        let timestamp = self.imp().lyrics.borrow().as_ref().and_then(|lyrics| {
+            (lyrics.synced && line >= 0 && line < lyrics.lines.len() as i32)
+                .then(|| lyrics.lines[line as usize].0 as f64)
+        });
+        if let Some(timestamp) = timestamp {
+            self.send_seek(timestamp).await?;
         }
         Ok(())
     }
@@ -1719,7 +1722,7 @@ impl Player {
                     backend.name() == "pipewire" && backend.status() != FftStatus::ValidNotReading
                 })
         {
-            
+
             self.maybe_stop_fft_thread().await;
         }
         self.client()?.prev().await

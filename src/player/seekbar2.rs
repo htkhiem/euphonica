@@ -1,9 +1,6 @@
 use crate::{common::QualityGrade, utils};
 use adw::prelude::*;
-use glib::{
-    Object, ParamSpec, ParamSpecDouble, ParamSpecObject, SignalHandlerId, WeakRef, clone,
-    subclass::Signal,
-};
+use glib::{Object, ParamSpec, ParamSpecDouble, ParamSpecObject, SignalHandlerId, WeakRef, clone};
 use gtk::{CompositeTemplate, gdk, glib, graphene, gsk, subclass::prelude::*};
 use once_cell::sync::Lazy;
 use std::cell::{Cell, OnceCell, RefCell};
@@ -119,9 +116,8 @@ mod imp {
                     if this.seekbar_clicked.get() {
                         this.seekbar_clicked.set(false);
                         this.translate_to_adjustment(x, true);
-                        let new_pos = this.adjustment.value();
-                        this.obj().emit_by_name::<()>("seeked", &[&new_pos]);
                         if let Some(player) = this.player.upgrade() {
+                            let new_pos = this.adjustment.value();
                             glib::spawn_future_local(async move {
                                 if let Err(e) = player.send_seek(new_pos).await {
                                     dbg!(e);
@@ -163,17 +159,6 @@ mod imp {
                 ]
             });
             PROPERTIES.as_ref()
-        }
-
-        fn signals() -> &'static [Signal] {
-            static SIGNALS: Lazy<Vec<Signal>> = Lazy::new(|| {
-                vec![
-                    Signal::builder("seeked")
-                        .param_types([f64::static_type()])
-                        .build(),
-                ]
-            });
-            SIGNALS.as_ref()
         }
 
         fn property(&self, _id: usize, pspec: &ParamSpec) -> glib::Value {
