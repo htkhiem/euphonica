@@ -9,8 +9,7 @@
         <child>
           <object class="AdwBreakpoint">
             <condition>max-width: 680px</condition>
-            <setter object="switcher_bar" property="reveal">true</setter>
-            <setter object="header_bar" property="title-widget"/>
+            <setter object="subview_switcher" property="display-mode">1</setter>
             <setter object="multi_layout_view" property="layout-name">narrow</setter>
             <setter object="replace_queue_text" property="visible">false</setter>
             <setter object="add_to_playlist" property="collapsed">true</setter>
@@ -28,9 +27,10 @@
             <child type="top">
               <object class="AdwHeaderBar" id="header_bar">
                 <property name="title-widget">
-                  <object class="AdwViewSwitcher">
+                  <object class="AdwInlineViewSwitcher" id="subview_switcher">
                     <property name="stack">stack</property>
-                    <property name="policy">wide</property>
+                    <property name="can-shrink">true</property>
+                    <property name="display-mode">2</property>
                   </object>
                 </property>
                 <child type="end">
@@ -39,11 +39,6 @@
                     <property name="icon-name">view-more-symbolic</property>
                   </object>
                 </child>
-              </object>
-            </child>
-            <child type="bottom">
-              <object class="AdwViewSwitcherBar" id="switcher_bar">
-                <property name="stack">stack</property>
               </object>
             </child>
             <property name="content">
