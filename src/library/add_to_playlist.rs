@@ -197,9 +197,7 @@ mod imp {
                     // creates one.
                     // As such, as long as we don't pass SaveMode::Replace,
                     // the logic should still be correct.
-                    if let (Some(name), Some(library)) =
-                        (this.get_name(), this.library.upgrade())
-                    {
+                    if let (Some(name), Some(library)) = (this.get_name(), this.library.upgrade()) {
                         let songs = match this.song_source.borrow().as_ref() {
                             Some(SongSource::MultiSelection(sel_model)) => {
                                 // Get songs from a MultiSelection model
@@ -208,7 +206,9 @@ mod imp {
                                 let mut songs: Vec<Song>;
                                 if let Some((iter, first_idx)) = gtk::BitsetIter::init_first(sel) {
                                     songs = Vec::with_capacity(sel.size() as usize);
-                                    songs.push(store.item(first_idx).and_downcast::<Song>().unwrap());
+                                    songs.push(
+                                        store.item(first_idx).and_downcast::<Song>().unwrap(),
+                                    );
                                     iter.for_each(|idx| {
                                         songs.push(store.item(idx).and_downcast::<Song>().unwrap());
                                     });
@@ -230,7 +230,12 @@ mod imp {
                                 if !selected.is_empty() {
                                     songs = Vec::with_capacity(selected.len());
                                     for row in selected {
-                                        songs.push(store.item(row.index() as u32).and_downcast::<Song>().unwrap());
+                                        songs.push(
+                                            store
+                                                .item(row.index() as u32)
+                                                .and_downcast::<Song>()
+                                                .unwrap(),
+                                        );
                                     }
                                 } else {
                                     let n_items = store.n_items();
@@ -244,11 +249,11 @@ mod imp {
                             None => Vec::new(),
                         };
                         if !songs.is_empty() {
-                            let _ = library.add_songs_to_playlist(
-                                name,
-                                &songs,
-                                SaveMode::Append,
-                            );
+                            glib::spawn_future_local(async move {
+                                let _ = library
+                                    .add_songs_to_playlist(name, &songs, SaveMode::Append)
+                                    .await;
+                            });
                         }
                     }
                 }
@@ -363,7 +368,10 @@ impl AddToPlaylistButton {
             .get()
             .unwrap()
             .set_model(Some(&playlists));
-        self.imp().song_source.borrow_mut().replace(SongSource::MultiSelection(song_sel_model.clone()));
+        self.imp()
+            .song_source
+            .borrow_mut()
+            .replace(SongSource::MultiSelection(song_sel_model.clone()));
 
         playlists.connect_items_changed(clone!(
             #[weak(rename_to = this)]
@@ -380,7 +388,12 @@ impl AddToPlaylistButton {
 
     /// Bind the button to a library and a `ListBox` (used by
     /// ListBox-based views like `DiscographyAlbum`).
-    pub fn bind_listbox(&self, library: &Library, content: &gtk::ListBox, song_list: &gio::ListStore) {
+    pub fn bind_listbox(
+        &self,
+        library: &Library,
+        content: &gtk::ListBox,
+        song_list: &gio::ListStore,
+    ) {
         let playlists = library.playlists();
         self.imp().library.set(Some(library));
         self.imp()
@@ -388,7 +401,10 @@ impl AddToPlaylistButton {
             .get()
             .unwrap()
             .set_model(Some(&playlists));
-        self.imp().song_source.borrow_mut().replace(SongSource::ListBox(content.clone(), song_list.clone()));
+        self.imp()
+            .song_source
+            .borrow_mut()
+            .replace(SongSource::ListBox(content.clone(), song_list.clone()));
 
         playlists.connect_items_changed(clone!(
             #[weak(rename_to = this)]
