@@ -83,7 +83,7 @@ mod imp {
             if orientation == gtk::Orientation::Vertical {
                 (for_size.max(1), for_size.max(1), -1, -1)
             } else {
-                (for_size.max(1), for_size.max(1), 0, 0)
+                (for_size.max(1), for_size.max(1), -1, -1)
             }
             
         }

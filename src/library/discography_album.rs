@@ -33,9 +33,17 @@ mod imp {
         #[template_child]
         pub replace_queue: TemplateChild<gtk::Button>,
         #[template_child]
-        pub append_queue: TemplateChild<gtk::Button>,
+        pub replace_queue_text: TemplateChild<gtk::Label>,
+        #[template_child]
+        pub queue_split_button: TemplateChild<adw::SplitButton>,
+        #[template_child]
+        pub queue_split_button_content: TemplateChild<adw::ButtonContent>,
         #[template_child]
         pub add_to_playlist: TemplateChild<AddToPlaylistButton>,
+        #[template_child]
+        pub sel_all: TemplateChild<gtk::Button>,
+        #[template_child]
+        pub sel_none: TemplateChild<gtk::Button>,
 
         #[template_child]
         pub content_stack: TemplateChild<ContentStack>,
@@ -73,7 +81,8 @@ mod imp {
         type ParentType = gtk::Box;
 
         fn class_init(klass: &mut Self::Class) {
-            Self::bind_template(klass);
+            klass.bind_template();
+            klass.set_layout_manager_type::<gtk::BoxLayout>();
         }
 
         fn instance_init(obj: &glib::subclass::InitializingObject<Self>) {
@@ -91,6 +100,32 @@ mod imp {
 
         fn constructed(&self) {
             self.parent_constructed();
+
+            // ListBox native selection: connect to selected-rows-changed signal
+            let content = self.content.get();
+            content.connect_selected_rows_changed(clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |_| {
+                    this.obj().on_selection_changed();
+                }
+            ));
+
+            // Select-all / clear-selection buttons
+            self.sel_all.connect_clicked(clone!(
+                #[weak]
+                content,
+                move |_| {
+                    content.select_all();
+                }
+            ));
+            self.sel_none.connect_clicked(clone!(
+                #[weak]
+                content,
+                move |_| {
+                    content.unselect_all();
+                }
+            ));
         }
     }
 
@@ -120,44 +155,87 @@ impl DiscographyAlbum {
         res.imp().title.set_label(album.get_title());
         let _ = res.imp().album.set(album);
 
+        // Set up AddToPlaylistButton with ListBox row selection.
+        res.imp()
+            .add_to_playlist
+            .bind_listbox(library, &res.imp().content, &res.imp().song_list);
+
+        // Replace queue button (play selected / all)
         res.imp().replace_queue.connect_clicked(clone!(
-            #[weak]
+            #[weak(rename_to = this)]
             res,
             move |_| {
                 glib::spawn_future_local(clone!(
                     #[weak]
-                    res,
+                    this,
                     async move {
-                        if let (Some(album), Some(library)) = (res.album(), res.library()) {
-                            res.set_is_queuing(true);
-                            if let Err(e) =
-                                library.queue_album(album.clone(), true, true, None).await
-                            {
-                                dbg!(e);
+                        if let (Some(album), Some(library)) = (this.album(), this.library()) {
+                            this.set_is_queuing(true);
+                            let content = this.imp().content.get();
+                            let n_sel = content.selected_rows().len();
+                            let total = this.imp().song_list.n_items() as i32;
+                            if n_sel == 0 || n_sel as i32 == total {
+                                // No selection or all selected → queue entire album
+                                if let Err(e) =
+                                    library.queue_album(album.clone(), true, true, None).await
+                                {
+                                    dbg!(e);
+                                }
+                            } else {
+                                // Queue selected songs by row index
+                                let store = &this.imp().song_list;
+                                let mut songs: Vec<Song> = Vec::with_capacity(n_sel as usize);
+                                for row in content.selected_rows() {
+                                    songs.push(
+                                        store.item(row.index() as u32).and_downcast::<Song>().unwrap(),
+                                    );
+                                }
+                                if let Err(e) = library.queue_songs(&songs, true, true).await {
+                                    dbg!(e);
+                                }
                             }
-                            res.set_is_queuing(false);
+                            this.set_is_queuing(false);
                         }
                     }
                 ));
             }
         ));
 
-        res.imp().append_queue.connect_clicked(clone!(
-            #[weak]
+        // Queue split button (queue selected / all)
+        res.imp().queue_split_button.connect_clicked(clone!(
+            #[weak(rename_to = this)]
             res,
+            #[upgrade_or]
+            (),
             move |_| {
                 glib::spawn_future_local(clone!(
                     #[weak]
-                    res,
+                    this,
                     async move {
-                        if let (Some(album), Some(library)) = (res.album(), res.library()) {
-                            res.set_is_queuing(true);
-                            if let Err(e) =
-                                library.queue_album(album.clone(), false, false, None).await
-                            {
-                                dbg!(e);
+                        if let (Some(album), Some(library)) = (this.album(), this.library()) {
+                            this.set_is_queuing(true);
+                            let content = this.imp().content.get();
+                            let n_sel = content.selected_rows().len();
+                            let total = this.imp().song_list.n_items() as i32;
+                            if n_sel == 0 || n_sel as i32 == total {
+                                if let Err(e) =
+                                    library.queue_album(album.clone(), false, false, None).await
+                                {
+                                    dbg!(e);
+                                }
+                            } else {
+                                let store = &this.imp().song_list;
+                                let mut songs: Vec<Song> = Vec::with_capacity(n_sel as usize);
+                                for row in content.selected_rows() {
+                                    songs.push(
+                                        store.item(row.index() as u32).and_downcast::<Song>().unwrap(),
+                                    );
+                                }
+                                if let Err(e) = library.queue_songs(&songs, false, false).await {
+                                    dbg!(e);
+                                }
                             }
-                            res.set_is_queuing(false);
+                            this.set_is_queuing(false);
                         }
                     }
                 ));
@@ -209,7 +287,7 @@ impl DiscographyAlbum {
             res.imp().check_visible_handler.replace(Some(handler));
         }
 
-        // Set up ListBox
+        // Set up ListBox — bind directly to song_list (no MultiSelection needed)
         res.imp().content.bind_model(
             Some(&res.imp().song_list),
             clone!(
@@ -288,7 +366,7 @@ impl DiscographyAlbum {
 
     fn set_is_queuing(&self, queuing: bool) {
         self.imp().replace_queue.set_sensitive(!queuing);
-        self.imp().append_queue.set_sensitive(!queuing);
+        self.imp().queue_split_button.set_sensitive(!queuing);
     }
 
     fn update_cover(&self, show_spinner: bool) {
@@ -417,6 +495,22 @@ impl DiscographyAlbum {
         self.imp().cover.clear();
         self.imp().deferred.set(false);
         self.imp().deferred_hires.set(false);
+    }
+
+    pub fn on_selection_changed(&self) {
+        let content = self.imp().content.get();
+        let n_sel = content.selected_rows().len();
+        let total = self.imp().song_list.n_items() as i32;
+
+        if n_sel == 0 || n_sel as i32 == total {
+            self.imp().replace_queue_text.set_label("Play all");
+            self.imp().queue_split_button_content.set_label("Queue all");
+        } else {
+            self.imp().replace_queue_text
+                .set_label(format!("Play {n_sel}").as_str());
+            self.imp().queue_split_button_content
+                .set_label(format!("Queue {n_sel}").as_str());
+        }
     }
 
     pub fn set_narrow(&self, narrow: bool) {

@@ -36,16 +36,16 @@
 
         <child>
           <object class="GtkBox">
-            <property name="spacing">6</property>
             <property name="orientation">1</property>
-
+            <property name="spacing">6</property>
             <child>
-              <object class="GtkBox">
-                <property name="spacing">6</property>
+              <object class="AdwWrapBox">
+                <property name="child-spacing">6</property>
+                <property name="line-spacing">6</property>
                 <!-- Play, queue, add to playlist -->
                 <child>
                   <object class="GtkButton" id="replace_queue">
-                    <property name="tooltip-text" translatable="true">Replace the queue with this album</property>
+                    <property name="tooltip-text" translatable="true">Replace the queue with the selected songs</property>
                     <style>
                       <class name="suggested-action"/>
                     </style>
@@ -58,8 +58,8 @@
                           </object>
                         </child>
                         <child>
-                          <object class="GtkLabel">
-                            <property name="label" translatable="true">Play</property>
+                          <object class="GtkLabel" id="replace_queue_text">
+                            <property name="label" translatable="true">Play all</property>
                           </object>
                         </child>
                       </object>
@@ -68,21 +68,11 @@
                 </child>
 
                 <child>
-                  <object class="GtkButton" id="append_queue">
-                    <property name="tooltip-text" translatable="true">Add this album's songs to the end of the queue</property>
+                  <object class="AdwSplitButton" id="queue_split_button">
                     <child>
-                      <object class="GtkBox">
-                        <property name="spacing">6</property>
-                        <child>
-                          <object class="GtkImage">
-                            <property name="icon-name">list-add-symbolic</property>
-                          </object>
-                        </child>
-                        <child>
-                          <object class="GtkLabel">
-                            <property name="label" translatable="true">Queue</property>
-                          </object>
-                        </child>
+                      <object class="AdwButtonContent" id="queue_split_button_content">
+                        <property name="icon-name">list-add-symbolic</property>
+                        <property name="label" translatable="true">Queue all</property>
                       </object>
                     </child>
                   </object>
@@ -91,8 +81,26 @@
                 <child>
                   <object class="EuphonicaAddToPlaylistButton" id="add_to_playlist"/>
                 </child>
+
+                <child>
+                  <object class="GtkButton" id="sel_all">
+                    <property name="icon-name">edit-select-all-symbolic</property>
+                    <style>
+                      <class name="flat"/>
+                    </style>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkButton" id="sel_none">
+                    <property name="icon-name">edit-select-none-symbolic</property>
+                    <style>
+                      <class name="flat"/>
+                    </style>
+                  </object>
+                </child>
               </object>
             </child>
+
             <child>
               <object class="EuphonicaContentStack" id="content_stack">
                 <property name="placeholder">
@@ -102,6 +110,8 @@
                 </property>
                 <property name="content">
                   <object class="GtkListBox" id="content">
+                    <property name="selection-mode">3</property>
+                    <property name="activate-on-single-click">false</property>
                     <property name="show-separators">true</property>
                     <style>
                       <class name="no-bg"/>
@@ -120,5 +130,7 @@
         </child>
       </object>
     </child>
+
   </template>
 </interface>
+

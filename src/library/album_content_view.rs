@@ -685,7 +685,7 @@ impl AlbumContentView {
         self.imp().window.set(Some(window));
         self.imp()
             .add_to_playlist
-            .setup(library, &self.imp().sel_model);
+            .bind_model(library, &self.imp().sel_model);
         self.imp().library.set(Some(library));
         self.imp()
             .cover_set_id

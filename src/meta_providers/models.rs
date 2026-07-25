@@ -138,8 +138,8 @@ impl HasImage for AlbumMeta {
 }
 
 /// TODO: translatable
-pub fn artist_type_to_string(typ: ArtistType) -> &'static str {
-    match typ {
+pub fn artist_type_to_string(typ: &ArtistType) -> &'static str {
+    match *typ {
         ArtistType::Character => "Character",
         ArtistType::Choir => "Choir",
         ArtistType::Group => "Group",
@@ -147,6 +147,30 @@ pub fn artist_type_to_string(typ: ArtistType) -> &'static str {
         ArtistType::Person => "Person",
         ArtistType::Other => "Other",
         _ => ""
+    }
+}
+
+pub fn artist_type_to_index(typ: &ArtistType) -> u32 {
+    match *typ {
+        ArtistType::Choir => 0,
+        ArtistType::Orchestra => 1,
+        ArtistType::Person => 2,
+        ArtistType::Group => 3,
+        ArtistType::Character => 4,
+        ArtistType::Other => 5,
+        _ => 6
+    }
+}
+
+pub fn index_to_artist_type(idx: u32) -> ArtistType {
+    match idx {
+        0 => ArtistType::Choir,
+        1 => ArtistType::Orchestra,
+        2 => ArtistType::Person,
+        3 => ArtistType::Group,
+        4 => ArtistType::Character,
+        5 => ArtistType::Other,
+        _ => ArtistType::UnrecognizedArtistType,
     }
 }
 
