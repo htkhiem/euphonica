@@ -1,4 +1,3 @@
-use derivative::Derivative;
 use gtk::{
     CompositeTemplate, gdk,
     glib::{
@@ -11,7 +10,6 @@ use gtk::{
 use once_cell::sync::Lazy;
 use std::{
     cell::{Cell, OnceCell, RefCell},
-    f32::consts::PI,
     rc::Rc,
 };
 
@@ -30,7 +28,7 @@ use crate::{
 // As soon as a cell comes within this close of the render area, treat it as
 // visible & load album art early to avoid showing loading spinners.
 mod imp {
-    use gtk::graphene;
+    
 
     use crate::common::{Artist, CoverFan};
 

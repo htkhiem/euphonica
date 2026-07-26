@@ -1,16 +1,16 @@
 use derivative::Derivative;
-use glib::{Object, SignalHandlerId, WeakRef, clone, closure_local};
-use gtk::{CompositeTemplate, gio, glib, prelude::*, subclass::prelude::*};
+use glib::Object;
+use gtk::{CompositeTemplate, glib, prelude::*, subclass::prelude::*};
 use std::{
-    cell::{Cell, OnceCell, RefCell},
+    cell::OnceCell,
     rc::Rc,
 };
 
 use crate::{
-    EuphonicaWindow, cache::{BACKLOG_THRESHOLD, Cache}, common::{Album, ContentStack, ImageStack, RowAddButtons, Song, SongRow, WING_DEPTH}, library::discography_album::DiscographyAlbum, utils::{format_secs_as_duration, settings_manager},
+    EuphonicaWindow, cache::Cache, common::{Album, Song}, library::discography_album::DiscographyAlbum, utils::settings_manager,
 };
 
-use super::{Library, add_to_playlist::AddToPlaylistButton};
+use super::Library;
 
 // Wrapper around the common row object to implement song thumbnail fetch logic.
 mod imp {
@@ -105,7 +105,7 @@ glib::wrapper! {
 impl DiscographyYear {
     pub fn new(
         year: Option<i32>,  // will default to "unknown release year"
-        albums: Vec<Album>,
+        albums_with_songs: Vec<(Option<Album>, Vec<Song>)>,
         cache: Rc<Cache>,
         library: &Library,
         window: Option<&EuphonicaWindow>,
@@ -116,10 +116,10 @@ impl DiscographyYear {
             let _ = res.imp().year.set(year);
             res.imp().release_year.set_label(&year.to_string());  
         }
-        for (idx, album) in albums.into_iter().enumerate() {
+        for (idx, (maybe_album, songs)) in albums_with_songs.into_iter().enumerate() {
             res.imp().albums_box.append(
                 &DiscographyAlbum::new(
-                    album, cache.clone(), library, window, viewport
+                    maybe_album, &songs, cache.clone(), library, window, viewport
                 )
             );
             res.imp().albums_box.row_at_index(idx as i32).unwrap().set_activatable(false);

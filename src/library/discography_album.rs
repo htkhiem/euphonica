@@ -1,4 +1,5 @@
 use derivative::Derivative;
+use gio::{ActionEntry, Menu, SimpleActionGroup};
 use glib::{Object, SignalHandlerId, WeakRef, clone, closure_local};
 use gtk::{CompositeTemplate, gio, glib, prelude::*, subclass::prelude::*};
 use std::{
@@ -126,6 +127,24 @@ mod imp {
                     content.unselect_all();
                 }
             ));
+
+            // Insert-queue action for the split button menu
+            let obj = self.obj();
+            let action_insert_queue = ActionEntry::builder("insert-queue")
+                .activate(clone!(
+                    #[weak]
+                    obj,
+                    move |_, _, _| {
+                        glib::spawn_future_local(async move {
+                            obj.queue_selected(false, false, true).await;
+                        });
+                    }
+                ))
+                .build();
+            let actions = SimpleActionGroup::new();
+            actions.add_action_entries([action_insert_queue]);
+            self.obj()
+                .insert_action_group("discography-album", Some(&actions));
         }
     }
 
@@ -143,7 +162,8 @@ glib::wrapper! {
 
 impl DiscographyAlbum {
     pub fn new(
-        album: Album,
+        album: Option<Album>, // pass None for untagged songs
+        songs: &[Song],
         cache: Rc<Cache>,
         library: &Library,
         window: Option<&EuphonicaWindow>,
@@ -152,8 +172,21 @@ impl DiscographyAlbum {
         let res: Self = Object::builder().build();
         let _ = res.imp().cache.set(cache);
         res.imp().library.set(Some(library));
-        res.imp().title.set_label(album.get_title());
-        let _ = res.imp().album.set(album);
+        if let Some(album) = album {
+            res.imp().title.set_label(album.get_title());
+            let _ = res.imp().album.set(album);
+        } else {
+            // TODO: translations
+            res.imp().title.set_label("Untagged");
+            res.imp().cover.set_visible(false);
+        }
+
+        res.imp().song_list.extend_from_slice(songs);
+        if !songs.is_empty() {
+            res.imp().content_stack.show_content();
+        } else {
+            res.imp().content_stack.show_placeholder();
+        }
 
         // Set up AddToPlaylistButton with ListBox row selection.
         res.imp()
@@ -165,39 +198,9 @@ impl DiscographyAlbum {
             #[weak(rename_to = this)]
             res,
             move |_| {
-                glib::spawn_future_local(clone!(
-                    #[weak]
-                    this,
-                    async move {
-                        if let (Some(album), Some(library)) = (this.album(), this.library()) {
-                            this.set_is_queuing(true);
-                            let content = this.imp().content.get();
-                            let n_sel = content.selected_rows().len();
-                            let total = this.imp().song_list.n_items() as i32;
-                            if n_sel == 0 || n_sel as i32 == total {
-                                // No selection or all selected → queue entire album
-                                if let Err(e) =
-                                    library.queue_album(album.clone(), true, true, None).await
-                                {
-                                    dbg!(e);
-                                }
-                            } else {
-                                // Queue selected songs by row index
-                                let store = &this.imp().song_list;
-                                let mut songs: Vec<Song> = Vec::with_capacity(n_sel as usize);
-                                for row in content.selected_rows() {
-                                    songs.push(
-                                        store.item(row.index() as u32).and_downcast::<Song>().unwrap(),
-                                    );
-                                }
-                                if let Err(e) = library.queue_songs(&songs, true, true).await {
-                                    dbg!(e);
-                                }
-                            }
-                            this.set_is_queuing(false);
-                        }
-                    }
-                ));
+                glib::spawn_future_local(async move {
+                    this.queue_selected(true, true, false).await;
+                });
             }
         ));
 
@@ -208,37 +211,9 @@ impl DiscographyAlbum {
             #[upgrade_or]
             (),
             move |_| {
-                glib::spawn_future_local(clone!(
-                    #[weak]
-                    this,
-                    async move {
-                        if let (Some(album), Some(library)) = (this.album(), this.library()) {
-                            this.set_is_queuing(true);
-                            let content = this.imp().content.get();
-                            let n_sel = content.selected_rows().len();
-                            let total = this.imp().song_list.n_items() as i32;
-                            if n_sel == 0 || n_sel as i32 == total {
-                                if let Err(e) =
-                                    library.queue_album(album.clone(), false, false, None).await
-                                {
-                                    dbg!(e);
-                                }
-                            } else {
-                                let store = &this.imp().song_list;
-                                let mut songs: Vec<Song> = Vec::with_capacity(n_sel as usize);
-                                for row in content.selected_rows() {
-                                    songs.push(
-                                        store.item(row.index() as u32).and_downcast::<Song>().unwrap(),
-                                    );
-                                }
-                                if let Err(e) = library.queue_songs(&songs, false, false).await {
-                                    dbg!(e);
-                                }
-                            }
-                            this.set_is_queuing(false);
-                        }
-                    }
-                ));
+                glib::spawn_future_local(async move {
+                    this.queue_selected(false, false, false).await;
+                });
             }
         ));
 
@@ -322,37 +297,6 @@ impl DiscographyAlbum {
             ),
         );
 
-        // Now trigger album content loading
-        glib::spawn_future_local(clone!(
-            #[weak]
-            res,
-            async move {
-                let library = res.imp().library.upgrade().unwrap();
-                // Important, MPD-side content first
-                let stack = res.imp().content_stack.get();
-                stack.show_spinner();
-                let song_list = res.imp().song_list.clone();
-                song_list.remove_all();
-                match library
-                    .get_album_songs(res.imp().album.get().unwrap(), &mut |songs| {
-                        song_list.extend_from_slice(&songs);
-                    })
-                    .await
-                {
-                    Ok(()) => {
-                        if song_list.n_items() > 0 {
-                            stack.show_content();
-                        } else {
-                            stack.show_placeholder();
-                        }
-                    }
-                    Err(e) => {
-                        dbg!(e);
-                    }
-                };
-            }
-        ));
-
         res
     }
 
@@ -367,6 +311,64 @@ impl DiscographyAlbum {
     fn set_is_queuing(&self, queuing: bool) {
         self.imp().replace_queue.set_sensitive(!queuing);
         self.imp().queue_split_button.set_sensitive(!queuing);
+    }
+
+    fn selected_songs(&self) -> Vec<Song> {
+        let content = self.imp().content.get();
+        let n_sel = content.selected_rows().len();
+        let store = &self.imp().song_list;
+        let total = store.n_items() as i32;
+
+        let mut songs: Vec<Song> = Vec::with_capacity(total as usize);
+        if n_sel == 0 || n_sel as i32 == total {
+            for idx in 0..total {
+                songs.push(store.item(idx as u32).and_downcast::<Song>().unwrap());
+            }
+        } else {
+            for row in content.selected_rows() {
+                songs.push(
+                    store
+                        .item(row.index() as u32)
+                        .and_downcast::<Song>()
+                        .unwrap(),
+                );
+            }
+        }
+        songs
+    }
+
+    async fn queue_selected(&self, replace: bool, play: bool, next: bool) {
+        if let Some(library) = self.library() {
+            self.set_is_queuing(true);
+            let content = self.imp().content.get();
+            let n_sel = content.selected_rows().len();
+            let store = &self.imp().song_list;
+            let total = store.n_items() as i32;
+            if next {
+                // Handled specially
+                if let Err(e) = library.insert_songs_next(&self.selected_songs()).await {
+                    dbg!(e);
+                }
+            } else if let (true, Some(album)) = (n_sel == 0 || n_sel as i32 == total, self.album())
+            {
+                // If has album & all tracks are selected, use queue_album.
+                if let Err(e) = library
+                    .queue_album(album.clone(), replace, play, None)
+                    .await
+                {
+                    dbg!(e);
+                }
+            } else {
+                // Catch-all: manually queue each song.
+                if let Err(e) = library
+                    .queue_songs(&self.selected_songs(), replace, play)
+                    .await
+                {
+                    dbg!(e);
+                }
+            }
+            self.set_is_queuing(false);
+        }
     }
 
     fn update_cover(&self, show_spinner: bool) {
@@ -505,11 +507,29 @@ impl DiscographyAlbum {
         if n_sel == 0 || n_sel as i32 == total {
             self.imp().replace_queue_text.set_label("Play all");
             self.imp().queue_split_button_content.set_label("Queue all");
+            let queue_split_menu = Menu::new();
+            queue_split_menu.append(
+                Some("Queue all next"),
+                Some("discography-album.insert-queue"),
+            );
+            self.imp()
+                .queue_split_button
+                .set_menu_model(Some(&queue_split_menu));
         } else {
-            self.imp().replace_queue_text
+            self.imp()
+                .replace_queue_text
                 .set_label(format!("Play {n_sel}").as_str());
-            self.imp().queue_split_button_content
+            self.imp()
+                .queue_split_button_content
                 .set_label(format!("Queue {n_sel}").as_str());
+            let queue_split_menu = Menu::new();
+            queue_split_menu.append(
+                Some(format!("Queue {n_sel} next").as_str()),
+                Some("discography-album.insert-queue"),
+            );
+            self.imp()
+                .queue_split_button
+                .set_menu_model(Some(&queue_split_menu));
         }
     }
 
@@ -518,7 +538,9 @@ impl DiscographyAlbum {
         if narrow {
             self.imp().inner.set_orientation(gtk::Orientation::Vertical);
         } else {
-            self.imp().inner.set_orientation(gtk::Orientation::Horizontal);
+            self.imp()
+                .inner
+                .set_orientation(gtk::Orientation::Horizontal);
         }
     }
 }

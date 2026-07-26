@@ -10,9 +10,13 @@ use chrono::Local;
 use derivative::Derivative;
 use glib::subclass::Signal;
 use gtk::{gio, glib, prelude::*};
-use rustc_hash::FxHashSet;
-use std::cell::{Cell, RefCell};
+use itertools::Itertools;
+use rustc_hash::FxHashMap;
 use std::{borrow::Cow, cell::OnceCell, rc::Rc, sync::OnceLock, vec::Vec};
+use std::{
+    cell::{Cell, RefCell},
+    cmp::Ordering,
+};
 
 use glib::{ParamSpec, ParamSpecString, ParamSpecUInt};
 use once_cell::sync::Lazy;
@@ -779,49 +783,187 @@ impl Library {
         Ok(())
     }
 
-    /// Get songs and albums of an artist. This fetches albums that they
-    /// were involved in (i.e., mentioned in an artist tag in at least one song),
-    /// not just those released by them. An additional check is performed locally
-    /// to filter out spurious substring matches.
-    ///
-    /// From v0.99.0 onward, we fetch both songs and albums at the same time as
-    /// it is more efficient to do those together in light of the above check.
-    pub async fn get_artist_content<FA, FS>(
+    /// Get songs and albums of an artist.
+    /// To facilitate both discography and all-tracks subviews efficiently, we share the same song instances
+    /// between them both.
+    /// Albums will also be grouped & sorted by descending release year.
+    /// Return type: (
+    ///   - vector of songs
+    ///   - vector of (
+    ///     - option(year) (can be None for albums/tracks without clear release dates),
+    ///     - (option(album) x songs) in that year.
+    ///   )
+    /// )
+    /// Sort order: release year => album title => track number => URI, nulls always last.
+    /// Examples:
+    /// Songs with both album and release date tags will be sorted by (year, album) (will only sort by year).
+    /// Songs without albums but with years will be stored per year, after album-tagged ones.
+    /// Songs with album tags but no years will be put in albums under year = None.
+    /// Songs with neither album tags nor years will be put dead last & ordered by URI.
+    pub async fn get_artist_content(
         &self,
         artist: &Artist,
-        mut respond_album: FA,
-        mut respond_song: FS,
-    ) -> ClientResult<()>
-    where
-        FA: FnMut(Album),
-        FS: FnMut(Vec<Song>),
-    {
-        let mut song_query = Query::new();
-        song_query.and_with_op(
-            Term::Tag(tags::ARTIST.into()),
-            QueryOperation::Contains,
-            artist.get_name().to_owned(),
-        );
-
+        fetch_by_artist_tag: bool,
+        fetch_by_albumartist_tag: bool,
+    ) -> ClientResult<(
+        Vec<Song>,
+        Vec<(Option<i32>, Vec<(Option<Album>, Vec<Song>)>)>,
+    )> {
         let comp_id = artist.get_info().get_comp_id();
-        let mut visited_albums = FxHashSet::default();
-        self.client()
-            .get_song_infos_by_query(song_query, true, &mut |batch| {
-                let filtered: Vec<SongInfo> = batch
-                    .into_iter()
-                    .filter(|s| s.artists.iter().any(|a| a.get_comp_id() == comp_id))
-                    .collect();
-                for song in filtered.iter() {
-                    if let Some(album) = song.album.as_ref()
-                        && visited_albums.insert(album.get_comp_id().to_owned())
-                    {
-                        respond_album(album.clone().into());
+        let mut songs: FxHashMap<String, SongInfo> = FxHashMap::default();
+
+        if fetch_by_artist_tag {
+            let mut query_artist_tag = Query::new();
+            query_artist_tag.and_with_op(
+                Term::Tag(tags::ARTIST.into()),
+                QueryOperation::Contains,
+                artist.get_name().to_owned(),
+            );
+            self.client()
+                .get_song_infos_by_query(query_artist_tag, true, &mut |batch| {
+                    batch
+                        .into_iter()
+                        .filter(|s| s.artists.iter().any(|a| a.get_comp_id() == comp_id))
+                        .for_each(|si| {
+                            songs.insert(si.uri.clone(), si);
+                        });
+                    // for song in filtered.iter() {
+                    //     if let Some(album) = song.album.as_ref()
+                    //         && visited_albums.insert(album.get_comp_id().to_owned())
+                    //     {
+                    //         respond_album(album.clone().into());
+                    //     }
+                    // }
+                    // respond_song(filtered.into_iter().map(|si| si.into()).collect());
+                })
+                .await?;
+        }
+        if fetch_by_albumartist_tag {
+            let mut query_albumartist_tag = Query::new();
+            query_albumartist_tag.and_with_op(
+                Term::Tag(tags::ALBUMARTIST.into()),
+                QueryOperation::Contains,
+                artist.get_name().to_owned(),
+            );
+            self.client()
+                .get_song_infos_by_query(query_albumartist_tag, true, &mut |batch| {
+                    batch
+                        .into_iter()
+                        .filter(|s| {
+                            s.album.as_ref().is_some_and(|a| {
+                                a.artists.iter().any(|a| a.get_comp_id() == comp_id)
+                            })
+                        })
+                        .for_each(|si| {
+                            songs.insert(si.uri.clone(), si);
+                        });
+                })
+                .await?;
+        }
+        if !fetch_by_artist_tag && !fetch_by_albumartist_tag {
+            eprintln!(
+                "WARNING: both fetch_by_artist_tag and fetch_by_albumartist_tag are false (this is a no-op)"
+            );
+        }
+        if songs.is_empty() {
+            return Ok((Vec::with_capacity(0), Vec::with_capacity(0)));
+        }
+
+        let songs: Vec<Song> = songs
+            .into_iter()
+            .map(|p| p.1)
+            .sorted_by(|s1, s2| {
+                let cmp_date_available = s1.release_date.is_some().cmp(&s2.release_date.is_some());
+                if cmp_date_available != Ordering::Equal {
+                    return cmp_date_available.reverse(); // nulls last
+                }
+
+                if s1.release_date.is_some() {
+                    // Both Some => compare release year first
+                    let cmp_date = s1
+                        .release_date
+                        .unwrap()
+                        .year()
+                        .cmp(&s2.release_date.unwrap().year());
+                    if cmp_date != Ordering::Equal {
+                        return cmp_date.reverse(); // descending year
                     }
                 }
-                respond_song(filtered.into_iter().map(|si| si.into()).collect());
-            })
-            .await?;
 
-        Ok(())
+                // Same release date or both None => check album availability
+                let cmp_album_available = s1.album.is_some().cmp(&s2.album.is_some());
+                if cmp_album_available != Ordering::Equal {
+                    return cmp_album_available.reverse(); // nulls last
+                }
+                if s1.album.is_some() {
+                    // Both has albums
+                    let cmp_album_title = s1
+                        .album
+                        .as_ref()
+                        .map(|a| a.title.as_str())
+                        .cmp(&s2.album.as_ref().map(|a| a.title.as_ref()));
+                    if cmp_album_title != Ordering::Equal {
+                        return cmp_album_title; // ascending title sort
+                    }
+
+                    // Same album => sort by track number.
+                    // Only available if both have the same album tags, else we skip straight to URI.
+                    let cmp_track_num_available = s1.track.is_some().cmp(&s2.track.is_some());
+                    if cmp_track_num_available != Ordering::Equal {
+                        return cmp_track_num_available.reverse(); // nulls last
+                    }
+                    if s1.track.is_some() {
+                        let cmp_track_num = s1.track.unwrap().cmp(&s2.track.unwrap());
+                        if cmp_track_num != Ordering::Equal {
+                            return cmp_track_num; // don't reverse here (ascending sort as usual)
+                        }
+                    }
+                }
+                s1.uri.as_str().cmp(s2.uri.as_str())
+            })
+            .map(Song::from)
+            .collect();
+
+        // At this point we'll have a well-sorted song list to efficiently organise into the return format
+        let mut years: Vec<(Option<i32>, Vec<(Option<Album>, Vec<Song>)>)> = Vec::new();
+        let mut curr_year = songs[0].get_release_date().map(|d| d.year());
+        let mut curr_album_id = songs[0].get_album().map(|a| a.get_comp_id());
+        years.push((
+            curr_year,
+            vec![(
+                songs[0].get_album().map(|a| Album::from(a.clone())),
+                vec![songs[0].clone()],
+            )],
+        ));
+
+        for song in songs.iter().skip(1) {
+            // If different year, append new entry
+            let year = song.get_release_date().map(|d| d.year());
+            let album = song.get_album();
+            if year != curr_year {
+                curr_year = year;
+                curr_album_id = album.map(|a| a.get_comp_id());
+                years.push((
+                    curr_year,
+                    vec![(album.map(|a| Album::from(a.clone())), vec![song.clone()])],
+                ));
+            } else {
+                // Same year
+                let years_len = years.len();
+                let year_vec = &mut years[years_len - 1].1;
+                // Check if different album
+                if album.map(|a| a.get_comp_id()) != curr_album_id {
+                    curr_album_id = album.map(|a| a.get_comp_id());
+                    year_vec.push((album.map(|a| Album::from(a.clone())), vec![song.clone()]));
+                } else {
+                    // Same album too, or equally album-less => just push
+                    let year_vec_len = year_vec.len();
+                    let year_album_vec = &mut year_vec[year_vec_len - 1].1;
+                    year_album_vec.push(song.clone());
+                }
+            }
+        }
+
+        Ok((songs, years))
     }
 }

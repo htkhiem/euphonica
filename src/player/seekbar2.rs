@@ -418,9 +418,7 @@ impl Seekbar {
                     adw::AnimationState::Paused => anim.resume(),
                     _ => {}
                 };
-            } else {
-                if anim.state() == adw::AnimationState::Playing { anim.pause() };
-            }
+            } else if anim.state() == adw::AnimationState::Playing { anim.pause() }
         }
     }
 }

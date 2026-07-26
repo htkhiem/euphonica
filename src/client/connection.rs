@@ -486,7 +486,7 @@ impl Connection {
                     self.retries_left = 0;
                     return Err(dbg!(e));
                 }
-                Err(e) => {
+                Err(_e) => {
                     return Err(Error::CredentialStore);
                 }
             }

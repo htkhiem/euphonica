@@ -1,8 +1,8 @@
-use super::{TagsSection, Library, artist_tag_button::ArtistTagButton, Tag};
+use super::{Library, Tag, TagsSection, artist_tag_button::ArtistTagButton};
 use crate::common::FadingScrolledWindow;
 use crate::common::split_genre_tag;
-use crate::meta_providers::models::Wiki;
 use crate::meta_providers::models::AlbumMeta;
+use crate::meta_providers::models::Wiki;
 use crate::{
     cache::{Cache, CacheState, Error as CacheError, placeholders::EMPTY_ALBUM_STRING},
     client::{ClientState, state::StickersSupportLevel},
@@ -16,9 +16,7 @@ use ashpd::desktop::file_chooser::SelectedFiles;
 use derivative::Derivative;
 use gio::{ActionEntry, Menu, SimpleActionGroup};
 use glib::{Binding, WeakRef, clone, closure_local, signal::SignalHandlerId};
-use gtk::{
-    BitsetIter, CompositeTemplate, gdk, gio, glib, prelude::*,
-};
+use gtk::{BitsetIter, CompositeTemplate, gdk, gio, glib, prelude::*};
 use rustc_hash::FxHashSet;
 use std::{
     cell::{Cell, OnceCell, RefCell},
@@ -168,7 +166,10 @@ mod imp {
                 self,
                 move |_| {
                     if let Some(s) = this.mbid.label() {
-                        gdk::Display::default().unwrap().clipboard().set_text(s.as_str());
+                        gdk::Display::default()
+                            .unwrap()
+                            .clipboard()
+                            .set_text(s.as_str());
                         if let Some(win) = this.window.upgrade() {
                             win.send_simple_toast("MusicBrainz ID copied to clipboard", 3);
                         }
@@ -612,7 +613,9 @@ impl AlbumContentView {
                         if let Some(mbid) = meta.mbid.as_deref() {
                             self.imp().mbid_row.set_visible(true);
                             self.imp().mbid.set_label(mbid);
-                            self.imp().mbid.set_uri(&format!("https://musicbrainz.org/release/{}", mbid));
+                            self.imp()
+                                .mbid
+                                .set_uri(&format!("https://musicbrainz.org/release/{}", mbid));
                         } else {
                             self.imp().mbid_row.set_visible(false);
                         }
@@ -624,15 +627,13 @@ impl AlbumContentView {
                                 self.imp().tags_widget.show_placeholder();
                             } else {
                                 for tag in tags {
-                                    self.imp().tags_widget.add_tag(
-                                        &Tag::new(
-                                            tag.name,
-                                            tag.url,
-                                            tag.count,
-                                            true,
-                                            tag.set_by_user
-                                        )
-                                    );
+                                    self.imp().tags_widget.add_tag(&Tag::new(
+                                        tag.name,
+                                        tag.url,
+                                        tag.count,
+                                        true,
+                                        tag.set_by_user,
+                                    ));
                                 }
                             }
                         } else {
@@ -740,8 +741,7 @@ impl AlbumContentView {
                         #[weak]
                         rating,
                         async move {
-                            if let (Some(album), Some(library)) = (this.album(), this.library())
-                            {
+                            if let (Some(album), Some(library)) = (this.album(), this.library()) {
                                 let rating_val = rating.value();
                                 let rating_opt = if rating_val > 0 {
                                     Some(rating_val)
@@ -965,11 +965,15 @@ impl AlbumContentView {
             }
             let mut res: Vec<String> = seen.into_iter().collect();
             res.sort_by_key(|a| a.to_lowercase());
-            res
-                .iter()
-                .map(|genre| TagButton::new(
-                    &Tag::new(genre.clone(), None, None, false, false),
-                    &genres_box, &window, |_| {}))
+            res.iter()
+                .map(|genre| {
+                    TagButton::new(
+                        &Tag::new(genre.clone(), None, None, false, false),
+                        &genres_box,
+                        &window,
+                        |_| {},
+                    )
+                })
                 .for_each(|tag| genres_box.append(&tag));
 
             if genres_stack

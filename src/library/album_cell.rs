@@ -387,7 +387,7 @@ impl AlbumCell {
 
         // Set up dynamic texture loading if a GridView is available.
         if let Some(vp) = viewport {
-            let _ = res.imp().viewport.set(Some(&vp));
+            res.imp().viewport.set(Some(&vp));
         }
 
         // Store weak reference to the window for signal connection.

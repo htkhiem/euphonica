@@ -1348,6 +1348,7 @@ impl Player {
                     ))
                     .await?;
             } else {
+                eprintln!("update_queue: expecting queue len to be {}", &status.queue_len);
                 self.client()?
                     .get_queue_changes(
                         old_version,
@@ -1380,12 +1381,11 @@ impl Player {
             let mut max_pos: u32 = 0;
             let mut min_pos: u32 = u32::MAX;
             for song_obj in changes.iter() {
-                let song = song_obj.get_info();
-                let this_pos = song.queue_pos.unwrap();
-                if song.queue_pos.unwrap() < min_pos {
+                let this_pos = song_obj.get_queue_pos();
+                if this_pos < min_pos {
                     min_pos = this_pos;
                 }
-                if song.queue_pos.unwrap() > max_pos {
+                if this_pos > max_pos {
                     max_pos = this_pos;
                 }
             }
@@ -1395,23 +1395,19 @@ impl Player {
                 Vec::with_capacity((max_pos - min_pos + 1) as usize);
             let mut change_idx: usize = 0;
             for pos in min_pos..=max_pos {
-                // If this position did not change, then simply use the current GObject.
-                // This only happens within the length of the current queue. Entries past its
-                // length will be included in the changes vec.
-                let this_pos = changes[change_idx].get_info().queue_pos.unwrap();
+                let this_pos = changes[change_idx].get_queue_pos();
+                // eprintln!("Old pos: {}, change_idx = {}, this pos {}, song name {}", pos, change_idx, this_pos, changes[change_idx].get_name());
                 if this_pos != pos {
-                    if let Some(old_song) = queue.item(pos) {
-                        new_segment.push(old_song);
+                    if let Some(old_song) = queue.item(pos).map(|o| o.downcast::<Song>().unwrap()) {
+                        new_segment.push(old_song.upcast());
                     } else {
-                        // Exceeded current queue (new queue is longer)
-                        panic!(
-                            "New queue is longer than current queue, but no corresponding diff info was received"
-                        );
+                        panic!("Inconsistent queue state detected while updating. Please restart the app.");
                     }
                 } else {
                     // This position changed. Push newly received song into it.
                     // TODO: reduce cloning
                     new_segment.push(changes[change_idx].clone().upcast());
+                    // eprintln!("New song pushed");
                     change_idx += 1;
                 }
             }
@@ -1425,6 +1421,8 @@ impl Player {
             } else {
                 queue.extend_from_slice(&new_segment);
             }
+
+            self.update_queue_len();
         }
     }
 
@@ -1799,11 +1797,21 @@ impl Player {
         self.client()?.play_at(song.get_queue_id(), true).await
     }
 
+    fn update_queue_len(&self) {
+        let new_len = self.imp().queue.n_items();
+        let old_len = self.imp().queue_len.replace(new_len);
+        if old_len != new_len {
+            self.notify("queue-len");
+        }
+    }
+
     /// Remove given song from queue.
     pub async fn remove_pos(&self, pos: u32) -> ClientResult<()> {
         self.register_local_queue_changes(1);
         self.queue().remove(pos);
-        self.client()?.delete_at_pos(pos).await
+        self.client()?.delete_at_pos(pos).await;
+        self.update_queue_len();
+        Ok(())
     }
 
     pub async fn swap_dir(&self, pos: u32, direction: SwapDirection) -> ClientResult<()> {

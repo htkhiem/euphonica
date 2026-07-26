@@ -8,7 +8,6 @@ use gtk::{
 };
 use image::{DynamicImage, imageops::FilterType};
 use mpd::status::AudioFormat;
-use musicbrainz_rs::config;
 use once_cell::sync::Lazy;
 use serde::Serialize;
 use serde::de::DeserializeOwned;

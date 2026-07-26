@@ -69,6 +69,7 @@
 
                 <child>
                   <object class="AdwSplitButton" id="queue_split_button">
+                    <property name="menu-model">queue_menu_model</property>
                     <child>
                       <object class="AdwButtonContent" id="queue_split_button_content">
                         <property name="icon-name">list-add-symbolic</property>
@@ -132,6 +133,12 @@
       </object>
     </child>
 
+    <menu id="queue_menu_model">
+      <item>
+        <attribute name="label" translatable="true">Queue all next</attribute>
+        <attribute name="action">discography-album.insert-queue</attribute>
+      </item>
+    </menu>
   </template>
 </interface>
 

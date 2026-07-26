@@ -1,13 +1,13 @@
 use adw::prelude::*;
 use adw::subclass::prelude::*;
 use ashpd::desktop::file_chooser::SelectedFiles;
-use asyncified::Asyncified;
 use chrono::{Datelike, NaiveDate};
 use derivative::Derivative;
 use gio::{ActionEntry, SimpleActionGroup};
 use glib::{Binding, WeakRef, clone, closure_local, signal::SignalHandlerId, subclass::Signal};
-use gtk::{CompositeTemplate, ListItem, SignalListItemFactory, gdk, gio, glib, prelude::*};
-use rustc_hash::{FxHashMap, FxHashSet};
+use gtk::{CompositeTemplate, ListItem, SignalListItemFactory, gdk, gio, glib};
+use itertools::Itertools;
+use rustc_hash::FxHashSet;
 use std::{
     cell::{Cell, OnceCell, RefCell},
     rc::Rc,
@@ -17,9 +17,7 @@ use std::{
 use super::{Library, tag_button::TagButton};
 use crate::{
     cache::{Cache, CacheState, Error as CacheError, placeholders::EMPTY_ARTIST_STRING},
-    common::{
-        Album, Artist, ContentStack, RowAddButtons, Song, SongRow, split_genre_tag,
-    },
+    common::{Album, Artist, ContentStack, RowAddButtons, Song, SongRow},
     library::{Tag, add_to_playlist::AddToPlaylistButton, discography_year::DiscographyYear},
     meta_providers::models::{Wiki, artist_type_to_string},
     utils::{self, format_secs_as_duration, tokio_runtime},
@@ -29,11 +27,14 @@ use crate::{
 mod imp {
 
     use adw::prelude::AdwDialogExt;
-use chrono::NaiveDate;
-use musicbrainz_rs::entity::artist::ArtistType;
+    use chrono::NaiveDate;
+    
 
-use crate::{
-        common::FadingScrolledWindow, library::{TagsSection, discography_album::DiscographyAlbum}, meta_providers::models::{ArtistMeta, artist_type_to_index, index_to_artist_type}, utils::g_cmp_options,
+    use crate::{
+        common::FadingScrolledWindow,
+        library::{TagsSection, discography_album::DiscographyAlbum},
+        meta_providers::models::{ArtistMeta, artist_type_to_index, index_to_artist_type},
+        utils::g_cmp_options,
     };
 
     use super::*;
@@ -63,7 +64,7 @@ use crate::{
         #[template_child]
         pub bio_stack: TemplateChild<ContentStack>,
         #[template_child]
-        pub add_bio_btn: TemplateChild<gtk::Button>,  // now opens the metadata editor dialog
+        pub add_bio_btn: TemplateChild<gtk::Button>, // now opens the metadata editor dialog
         #[template_child]
         pub bio_fader: TemplateChild<FadingScrolledWindow>,
         #[template_child]
@@ -79,13 +80,13 @@ use crate::{
         #[template_child]
         pub begin_field: TemplateChild<adw::EntryRow>,
         #[template_child]
-        pub end_field: TemplateChild<adw::EntryRow>,  // 0 sanity naming
+        pub end_field: TemplateChild<adw::EntryRow>, // 0 sanity naming
         #[template_child]
         pub type_field: TemplateChild<adw::ComboRow>,
         #[template_child]
-        pub country_code_field: TemplateChild<adw::EntryRow>,  // no input validation just yet in case a new country comes up
+        pub country_code_field: TemplateChild<adw::EntryRow>, // no input validation just yet in case a new country comes up
         #[template_child]
-        pub mbid_field: TemplateChild<adw::EntryRow>,  // no input validation just yet in case a new country comes up
+        pub mbid_field: TemplateChild<adw::EntryRow>, // no input validation just yet in case a new country comes up
         #[template_child]
         pub bio_link_field: TemplateChild<adw::EntryRow>,
         #[template_child]
@@ -236,14 +237,16 @@ use crate::{
                         if start_date.is_empty() {
                             new_meta.begin_date = None;
                         } else {
-                            new_meta.begin_date = NaiveDate::parse_from_str(&start_date, "%Y-%m-%d").ok();
+                            new_meta.begin_date =
+                                NaiveDate::parse_from_str(&start_date, "%Y-%m-%d").ok();
                         }
 
                         let end_date = this.end_field.text();
                         if end_date.is_empty() {
                             new_meta.end_date = None;
                         } else {
-                            new_meta.end_date = NaiveDate::parse_from_str(&end_date, "%Y-%m-%d").ok();
+                            new_meta.end_date =
+                                NaiveDate::parse_from_str(&end_date, "%Y-%m-%d").ok();
                         }
 
                         new_meta.artist_type = index_to_artist_type(this.type_field.selected());
@@ -370,15 +373,14 @@ use crate::{
                     false,
                     false,
                 )
-             });
-            self.multi_layout_view
-                .connect_layout_name_notify(clone!(
-                    #[weak(rename_to = this)]
-                    self,
-                    move |_| {
-                        this.update_discography_layout();
-                    }
-                ));
+            });
+            self.multi_layout_view.connect_layout_name_notify(clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |_| {
+                    this.update_discography_layout();
+                }
+            ));
 
             self.song_list
                 .bind_property("n-items", &self.track_count.get(), "label")
@@ -437,21 +439,36 @@ use crate::{
                     move |_, _, _| {
                         let meta = this.meta.borrow().clone().unwrap_or_default();
                         // Init dialog fields with existing values
-                        this.begin_field.set_text(meta.begin_date.map(|d| d.format("%Y-%m-%d").to_string()).as_deref().unwrap_or_default());
-                        this.end_field.set_text(meta.end_date.map(|d| d.format("%Y-%m-%d").to_string()).as_deref().unwrap_or_default());
-                        this.type_field.set_selected(artist_type_to_index(&meta.artist_type));
-                        this.country_code_field.set_text(meta.country.as_deref().unwrap_or_default());
-                        this.mbid_field.set_text(meta.mbid.as_deref().unwrap_or_default());
+                        this.begin_field.set_text(
+                            meta.begin_date
+                                .map(|d| d.format("%Y-%m-%d").to_string())
+                                .as_deref()
+                                .unwrap_or_default(),
+                        );
+                        this.end_field.set_text(
+                            meta.end_date
+                                .map(|d| d.format("%Y-%m-%d").to_string())
+                                .as_deref()
+                                .unwrap_or_default(),
+                        );
+                        this.type_field
+                            .set_selected(artist_type_to_index(&meta.artist_type));
+                        this.country_code_field
+                            .set_text(meta.country.as_deref().unwrap_or_default());
+                        this.mbid_field
+                            .set_text(meta.mbid.as_deref().unwrap_or_default());
                         if let Some(bio) = meta.bio.as_ref() {
                             this.bio_desc_field.buffer().set_text(bio.content.as_ref());
-                            this.bio_link_field.set_text(bio.url.as_deref().unwrap_or_default());
+                            this.bio_link_field
+                                .set_text(bio.url.as_deref().unwrap_or_default());
                             this.bio_attrib_field.set_text(bio.attribution.as_ref());
                         } else {
                             this.bio_desc_field.buffer().set_text("");
                             this.bio_link_field.set_text("");
                             this.bio_attrib_field.set_text("");
                         }
-                        this.edit_metadata_dialog.present(this.window.upgrade().as_ref());
+                        this.edit_metadata_dialog
+                            .present(this.window.upgrade().as_ref());
                     }
                 ))
                 .build();
@@ -502,12 +519,12 @@ use crate::{
                 action_set_avatar,
                 action_clear_avatar,
                 action_refetch_metadata,
-                action_edit_bio
+                action_edit_bio,
             ]);
             self.obj()
                 .insert_action_group("artist-content-view", Some(&actions));
 
-            // Metadata editor 
+            // Metadata editor
             self.begin_field.connect_changed(clone!(
                 #[weak]
                 obj,
@@ -530,7 +547,7 @@ use crate::{
                 vec![
                     Signal::builder("album-clicked")
                         .param_types([Album::static_type()])
-                        .build()
+                        .build(),
                 ]
             })
         }
@@ -558,7 +575,8 @@ use crate::{
         }
 
         pub fn update_discography_layout(&self) {
-            let narrow = self.multi_layout_view
+            let narrow = self
+                .multi_layout_view
                 .layout_name()
                 .map(|name| name.to_string())
                 .as_deref()
@@ -566,19 +584,18 @@ use crate::{
                 == "narrow";
             let mut i: i32 = 0;
             loop {
-                if let Some(albums_box) = self.discography_subview
+                if let Some(albums_box) = self
+                    .discography_subview
                     .row_at_index(i)
-                    .map(|r| r.child())
-                    .flatten()
+                    .and_then(|r| r.child())
                     .and_downcast::<DiscographyYear>()
                     .map(|y| y.albums_box())
                 {
                     let mut j: i32 = 0;
                     loop {
                         if let Some(album) = albums_box
-                            .row_at_index(j as i32)
-                            .map(|r| r.child())
-                            .flatten()
+                            .row_at_index(j)
+                            .and_then(|r| r.child())
                             .and_downcast::<DiscographyAlbum>()
                         {
                             album.set_narrow(narrow);
@@ -632,9 +649,11 @@ impl ArtistContentView {
     fn validate_metadata_entries(&self) {
         // Start and date fields
         let start_field_text = self.imp().begin_field.text();
-        let start_field_valid = start_field_text.is_empty() || NaiveDate::parse_from_str(&start_field_text, "%Y-%m-%d").is_ok();
+        let start_field_valid = start_field_text.is_empty()
+            || NaiveDate::parse_from_str(&start_field_text, "%Y-%m-%d").is_ok();
         let end_field_text = self.imp().end_field.text();
-        let end_field_valid = end_field_text.is_empty() || NaiveDate::parse_from_str(&end_field_text, "%Y-%m-%d").is_ok();
+        let end_field_valid = end_field_text.is_empty()
+            || NaiveDate::parse_from_str(&end_field_text, "%Y-%m-%d").is_ok();
 
         Self::highlight_entry_err(&self.imp().begin_field.get(), !start_field_valid);
         Self::highlight_entry_err(&self.imp().end_field.get(), !end_field_valid);
@@ -1119,115 +1138,94 @@ impl ArtistContentView {
                 song_stack.show_spinner();
                 let song_list = this.imp().song_list.clone();
                 song_list.remove_all();
-                let mut albums_by_year: FxHashMap<Option<i32>, Vec<Album>> = FxHashMap::default();
-                // Collect genre strings from albums to pass to the background thread
-                // FIXME: this might still block though
-                let mut album_genres: Vec<Vec<String>> = Vec::new();
+                // TODO: move off main thread
+                let mut all_genres: FxHashSet<String> = FxHashSet::default();
                 // Important, MPD-side content first
-                dbg!(artist.get_info());
-                let _ = library
-                    .get_artist_content(
-                        &artist,
-                        |album| {
-                            // Collect genres first
-                            album_genres.push(album.get_genres().iter().cloned().collect());
-                            let maybe_year = album.get_release_date().map(|d| d.year());
-                            if let Some(year_vec) = albums_by_year.get_mut(&maybe_year) {
-                                year_vec.push(album);
-                            } else {
-                                albums_by_year.insert(maybe_year, vec![album]);
-                            }
-                        },
-                        |songs| {
-                            song_list.extend_from_slice(&songs);
-                        },
-                    )
-                    .await;
-                if albums_by_year.len() > 0 {
-                    let release_count = albums_by_year.iter().map(|v| v.1.len()).sum::<usize>();
-                    if release_count > 1000 {
-                        this.imp().release_count.set_label(">1000");
-                    } else {
-                        this.imp().release_count.set_label(&release_count.to_string());
-                    }
-                    discography_stack.show_content();
-                    let vp = this.imp().scrolled_window.get();
-                    let win = this.imp().window.upgrade();
-                    let count_years = albums_by_year.len();
-                    for (maybe_year, albums) in albums_by_year.into_iter() {
-                        discography.append(&DiscographyYear::new(
-                            maybe_year,
-                            albums,
-                            this.imp().cache.get().unwrap().clone(),
-                            &library,
-                            win.as_ref(),
-                            Some(&vp),
-                        ))
-                    }
-                    // 1 more loop to clear selection highlight (can't do it in the above loop as the insertion position is dictated by sort_func)
-                    for y in 0..count_years {
-                        if let Some(row) = discography.row_at_index(y as i32) {
-                            row.set_activatable(false);
+                if let Ok((all_songs, albums_by_year)) =
+                    library.get_artist_content(&artist, true, true).await
+                {
+                    // All-songs subview is as simple as this now lol
+                    song_list.extend_from_slice(&all_songs);
+
+                    // Handle discography
+                    if !albums_by_year.is_empty() {
+                        let release_count = albums_by_year.iter().map(|v| v.1.len()).sum::<usize>();
+                        if release_count > 1000 {
+                            this.imp().release_count.set_label(">1000");
+                        } else {
+                            this.imp()
+                                .release_count
+                                .set_label(&release_count.to_string());
                         }
-                    }
-                } else {
-                    discography_stack.show_placeholder();
-                }
-                this.imp().update_discography_layout();
-
-                if song_list.n_items() > 0 {
-                    song_stack.show_content();
-                } else {
-                    song_stack.show_placeholder();
-                }
-
-                // Populate genres from albums
-                let genres_stack = this.imp().genres_stack.get();
-                let genres_box = this.imp().genres_box.get();
-                let window = this.imp().window.upgrade().unwrap();
-
-                let genres: Vec<String> = {
-                    let asyncified = Asyncified::builder().channel_size(1).build_ok(|| ()).await;
-                    asyncified
-                        .call(move |_| {
-                            let mut seen: FxHashSet<String> = FxHashSet::default();
-                            for genre_list in album_genres {
-                                for genre in genre_list {
-                                    for split in split_genre_tag(&genre) {
-                                        seen.insert(split.to_owned());
+                        discography_stack.show_content();
+                        let vp = this.imp().scrolled_window.get();
+                        let win = this.imp().window.upgrade();
+                        let count_years = albums_by_year.len();
+                        // Extract genres first
+                        for (_, maybe_albums) in albums_by_year.iter() {
+                            for (maybe_album, _) in maybe_albums.iter() {
+                                if let Some(genres) = maybe_album.as_ref().map(|a| a.get_genres()) {
+                                    for genre in genres.iter() {
+                                        let _ = all_genres.insert(genre.clone());
                                     }
                                 }
                             }
-                            let mut res: Vec<String> = seen.into_iter().collect();
-                            res.sort_by_key(|a| a.to_lowercase());
-                            res
+                        }
+                        for (maybe_year, maybe_albums) in albums_by_year {
+                            discography.append(&DiscographyYear::new(
+                                maybe_year,
+                                maybe_albums,
+                                this.imp().cache.get().unwrap().clone(),
+                                &library,
+                                win.as_ref(),
+                                Some(&vp),
+                            ))
+                        }
+                        // 1 more loop to clear selection highlight (can't do it in the above loop as the insertion position is dictated by sort_func)
+                        for y in 0..count_years {
+                            if let Some(row) = discography.row_at_index(y as i32) {
+                                row.set_activatable(false);
+                            }
+                        }
+                    } else {
+                        discography_stack.show_placeholder();
+                    }
+                    this.imp().update_discography_layout();
+
+                    if song_list.n_items() > 0 {
+                        song_stack.show_content();
+                    } else {
+                        song_stack.show_placeholder();
+                    }
+
+                    // Populate genres from albums
+                    let genres_stack = this.imp().genres_stack.get();
+                    let genres_box = this.imp().genres_box.get();
+                    let window = this.imp().window.upgrade().unwrap();
+
+                    if !all_genres.is_empty()
+                        && genres_stack
+                            .visible_child_name()
+                            .is_some_and(|name| name == "empty")
+                    {
+                        genres_stack.set_visible_child_name("content");
+                    }
+                    all_genres.into_iter().sorted_by_cached_key(|a| a.to_lowercase()).map(|genre| {
+                            TagButton::new(
+                                &Tag::new(genre.clone(), None, None, false, false),
+                                &genres_box,
+                                &window,
+                                |_| {},
+                            )
                         })
-                        .await
-                };
+                        .for_each(|tag| genres_box.append(&tag));
 
-                genres
-                    .iter()
-                    .map(|genre| {
-                        TagButton::new(
-                            &Tag::new(genre.clone(), None, None, false, false),
-                            &genres_box,
-                            &window,
-                            |_| {},
-                        )
-                    })
-                    .for_each(|tag| genres_box.append(&tag));
-
-                if !genres.is_empty()
-                    && genres_stack
-                        .visible_child_name()
-                        .is_some_and(|name| name == "empty")
-                {
-                    genres_stack.set_visible_child_name("content");
+                    // The extra fluff later
+                    this.schedule_avatar(false).await;
+                    this.update_meta(false).await;
+                } else if let Some(win) = this.imp().window.upgrade() {                    
+                    win.send_simple_toast("Unable to fetch artist content", 3);
                 }
-
-                // The extra fluff later
-                this.schedule_avatar(false).await;
-                this.update_meta(false).await;
             }
         ));
     }

@@ -1,4 +1,5 @@
 use async_channel::{Receiver, Sender};
+use asyncified::Asyncified;
 use futures::executor;
 use glib::{ThreadPool, clone};
 use gtk::gio::prelude::*;
@@ -896,26 +897,34 @@ impl MpdWrapper {
                 r,
             )
             .await?;
-        let mut titles_artists = Vec::new();
-        let mut artist_album_count: FxHashMap<String, usize> = FxHashMap::default();
 
         // STEP 2: Count available albums per albumartist
         // Known bug: will conflate artists with the same name, but not a big concern as this is only an optimisation trick.
-        // TODO: stress test & consider asyncified if too slow
-        for (key, tags) in grouped_vals.groups.into_iter() {
-            for tag in tags.into_iter() {
-                for artist in parse_mb_artist_tag(&key) {
-                    if let Some(count) = artist_album_count.get(artist) {
-                        if *count < MAX_EXAMPLE_ALBUMS_PER_ALBUMARTIST {
-                            let _ = artist_album_count.insert(key.clone(), count + 1);
+        let asyncified = Asyncified::builder().build_ok(|| ()).await;
+        let (titles_artists, artist_album_count) = asyncified
+            .call(move |_| {
+                let mut titles_artists = Vec::new();
+                let mut artist_album_count: FxHashMap<String, usize> = FxHashMap::default();
+                for (key, tags) in grouped_vals.groups.into_iter() {
+                    for tag in tags.into_iter() {
+                        // Only count if tag is not empty. Tag will be empty for tracks without album tags but with albumartist tags.
+                        if !tag.is_empty() {
+                            for artist in parse_mb_artist_tag(&key) {
+                                if let Some(count) = artist_album_count.get(artist) {
+                                    if *count < MAX_EXAMPLE_ALBUMS_PER_ALBUMARTIST {
+                                        let _ = artist_album_count.insert(key.clone(), count + 1);
+                                    }
+                                } else {
+                                    let _ = artist_album_count.insert(key.clone(), 1);
+                                }
+                            }
+                            titles_artists.push((tag, key.clone()));
                         }
-                    } else {
-                        let _ = artist_album_count.insert(key.clone(), 1);
                     }
                 }
-                titles_artists.push((tag, key.clone()));
-            }
-        }
+                (titles_artists, artist_album_count)
+            })
+            .await;
 
         // STEP 3: Fetch song entries.
         // Construct queries all at once. Each query fetches one song from one album.
@@ -965,7 +974,7 @@ impl MpdWrapper {
                     let example_uri = &album_info.example_uri;
                     for artist in album_info.artists.iter() {
                         let comp_id = artist.get_comp_id();
-                        if !done_albumartists.contains(comp_id) { 
+                        if !done_albumartists.contains(comp_id) {
                             if let Some(existing) = albumartists.get_mut(comp_id) {
                                 existing.example_uris.push(example_uri.to_owned());
                                 if &existing.example_uris.len()
