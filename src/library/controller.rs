@@ -827,14 +827,6 @@ impl Library {
                         .for_each(|si| {
                             songs.insert(si.uri.clone(), si);
                         });
-                    // for song in filtered.iter() {
-                    //     if let Some(album) = song.album.as_ref()
-                    //         && visited_albums.insert(album.get_comp_id().to_owned())
-                    //     {
-                    //         respond_album(album.clone().into());
-                    //     }
-                    // }
-                    // respond_song(filtered.into_iter().map(|si| si.into()).collect());
                 })
                 .await?;
         }

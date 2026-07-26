@@ -1,5 +1,5 @@
 use crate::cache::sqlite;
-use crate::common::tags;
+use crate::common::{split_genre_tag, tags};
 use crate::utils::{get_image_cache_path, get_time_ago_desc, strip_filename_linux};
 use core::time::Duration;
 use derivative::Derivative;
@@ -8,6 +8,7 @@ use gtk::prelude::*;
 use gtk::subclass::prelude::*;
 use mpd::status::AudioFormat;
 use mpris_server::{Time, zbus::zvariant::ObjectPath};
+use rustc_hash::FxHashSet;
 use std::cell::Ref;
 use std::{
     cell::{Cell, OnceCell},
@@ -509,7 +510,7 @@ impl From<mpd::song::Song> for SongInfo {
         let mut artistsorts: Vec<String> = Vec::new();
         let mut albumartist: Option<String> = None;
         let mut albumartistsort: Option<String> = None;
-        let mut genres: Vec<String> = Vec::new();
+        let mut genre_tags: Vec<String> = Vec::new();
         let mut album_artist_mbids: Vec<String> = Vec::new();
         let mut album_mbid: Option<String> = None;
         for (tag, val) in song.tags.into_iter() {
@@ -522,7 +523,7 @@ impl From<mpd::song::Song> for SongInfo {
                             None,
                             None,
                             None,
-                            Vec::with_capacity(0),
+                            FxHashSet::default(),
                             Vec::with_capacity(0),
                             res.quality_grade,
                         ));
@@ -545,7 +546,7 @@ impl From<mpd::song::Song> for SongInfo {
                     albumartistsort.replace(val);
                 }
                 tags::GENRE => {
-                    genres.push(val);
+                    genre_tags.push(val);
                 }
                 // "date" => res.imp().release_date.replace(Some(val.clone())),
                 tags::FORMAT => {
@@ -624,7 +625,9 @@ impl From<mpd::song::Song> for SongInfo {
             album.albumsort = albumsort;
             album.albumartistsort = albumartistsort;
             album.release_date = res.release_date;
-            album.genres = genres;
+            if !genre_tags.is_empty() {
+                album.add_genres_from_tags(&genre_tags);
+            }
             // Assume the albumartist IDs are given in the same order as the albumartist tags
             if let Some(album_artist_str) = albumartist.as_ref() {
                 album.add_artists_from_string(album_artist_str);

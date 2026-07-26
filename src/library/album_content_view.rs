@@ -970,16 +970,7 @@ impl AlbumContentView {
         if !genres.is_empty() {
             let genres_stack = self.imp().genres_stack.get();
             let window = self.imp().window.upgrade().unwrap();
-            let mut seen: FxHashSet<String> = FxHashSet::default();
-            // Albums still contain un-split genres, so we'll need to split manually here.
-            for genre in album.get_genres() {
-                for split in split_genre_tag(genre) {
-                    seen.insert(split.to_owned());
-                }
-            }
-            let mut res: Vec<String> = seen.into_iter().collect();
-            res.sort_by_key(|a| a.to_lowercase());
-            res.iter()
+            genres.iter()
                 .map(|genre| {
                     TagButton::new(
                         &Tag::new(genre.clone(), None, None, false, false),

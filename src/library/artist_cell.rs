@@ -280,14 +280,11 @@ impl ArtistCell {
                     let example_uris = &artist.get_info().example_uris;
                     let cover_fan = this.imp().covers.get();
                     cover_fan.set_cover_count(example_uris.len().min(3) as u8);
-                    for (i, uri) in example_uris.iter().enumerate() {
+                    for (i, uri) in example_uris.iter().take(3).enumerate() {
                         match cache.clone().get_album_cover_lite(uri, thumbnail_for_fetch).await {
                             Ok(Some(tex)) => cover_fan.set_cover(i.min(3) as u8, &tex),
                             _ => cover_fan.clear_cover(i.min(3) as u8, thumbnail_for_fetch)
                         };
-                        if i >= 3 {
-                            break;
-                        }
                     }
                 }
             }

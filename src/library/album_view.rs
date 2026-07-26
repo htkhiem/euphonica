@@ -462,11 +462,9 @@ impl AlbumView {
                 self,
                 move |genres| {
                     if !genres.is_empty() {
-                        let genres_list = genres.into_iter().collect::<Vec<String>>();
                         this.imp().genres_filter.set_filter_func(move |obj| {
-                            // TODO: more efficient algo (like set overlap)
                             let album = obj.downcast_ref::<Album>().unwrap();
-                            genres_list.iter().any(|genre| album.has_genre(genre))
+                            !genres.is_disjoint(album.get_genres())
                         });
                         this.imp().genres_filter.changed(gtk::FilterChange::MoreStrict);
                     } else {

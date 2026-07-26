@@ -864,8 +864,8 @@ impl MpdWrapper {
     /// Algorithm:
     /// 1. Fetch (albumartist tag, album) pairs
     /// 2. Split the albumartist tags & count how many albums an albumartist has. This allows us to know when to stop
-    ///    waiting for more albums to arrive for a given albumartist (and send that albumartist on its way). Limit to
-    ///    3 example albums per albumartist.
+    ///    waiting for more albums to arrive for a given albumartist (and send that albumartist on its way). For now
+    ///    since we also need to discover an artist's genres we'll have to parse all their albums.
     /// 3. For each (albumartist tag, album) pair, fetch one song entry to glean information from it. Create the album object
     ///    as usual, but also extract the albumartists into a hashmap. In case some of the albumartists are already present
     ///    in the hashmap (due to them being present in another album, just append the album's example URI to their list of
@@ -911,9 +911,7 @@ impl MpdWrapper {
                         if !tag.is_empty() {
                             for artist in parse_mb_artist_tag(&key) {
                                 if let Some(count) = artist_album_count.get(artist) {
-                                    if *count < MAX_EXAMPLE_ALBUMS_PER_ALBUMARTIST {
-                                        let _ = artist_album_count.insert(key.clone(), count + 1);
-                                    }
+                                    let _ = artist_album_count.insert(key.clone(), count + 1);
                                 } else {
                                     let _ = artist_album_count.insert(key.clone(), 1);
                                 }
@@ -976,7 +974,15 @@ impl MpdWrapper {
                         let comp_id = artist.get_comp_id();
                         if !done_albumartists.contains(comp_id) {
                             if let Some(existing) = albumartists.get_mut(comp_id) {
-                                existing.example_uris.push(example_uri.to_owned());
+                                // Slack off here (we'll not use all of them anyway; alloc only what's needed)
+                                if existing.example_uris.len() < MAX_EXAMPLE_ALBUMS_PER_ALBUMARTIST {
+                                    existing.example_uris.push(example_uri.to_owned());
+                                }
+                                // Note to self: Album genres are parsed by the Song constructor, which runs in a child thread (see MpdClient::foreground).
+                                // However, artist genre parsing requires unioning all those genre sets from their albums. This is currently being done here
+                                // (on the UI thread).
+                                // TODO: move to another thread somehow
+                                existing.insert_genres(&album_info.genres);
                                 if &existing.example_uris.len()
                                     >= artist_album_count.get(&artist.name).unwrap_or(&0)
                                 {
@@ -987,7 +993,6 @@ impl MpdWrapper {
                                 }
                             } else {
                                 // Haven't seen this artist before => push new
-                                // let mut artist = artist.to_owned();
                                 let mut artist = artist.to_owned();
                                 artist.example_uris.push(example_uri.to_owned());
                                 // Fast path: just send off if that's enough

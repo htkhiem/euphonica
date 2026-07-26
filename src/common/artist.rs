@@ -3,6 +3,7 @@ use aho_corasick::Match;
 use gtk::glib;
 use gtk::prelude::*;
 use gtk::subclass::prelude::*;
+use rustc_hash::FxHashSet;
 use std::cell::OnceCell;
 
 /// Artist struct, for use with both Artist and AlbumArtist tags.
@@ -12,6 +13,11 @@ pub struct ArtistInfo {
     pub name: String,
     pub sort_tag: Option<String>,
     pub mbid: Option<String>,
+    /// NOT the "source-of-truth" for genres; only for filtering convenience.
+    /// Genres as a concept are attached to albums. "Artist genres" here usually mean "the genres found in their albums".
+    /// Not guaranteed to be exhaustive. Inclusion of a genre is dependent on the code that generated this artist info,
+    /// and may be random.
+    pub genres: FxHashSet<String>,
     pub example_uris: Vec<String>,  // Example song URIs for visualisation purposes. Each should belong to a different album.
     pub is_composer: bool,
 }
@@ -22,6 +28,7 @@ impl ArtistInfo {
             name: name.to_owned(),
             sort_tag: sort_tag.map(|s| s.to_owned()),
             mbid: None,
+            genres: FxHashSet::default(),
             example_uris: Vec::with_capacity(0),
             is_composer,
         }
@@ -34,6 +41,17 @@ impl ArtistInfo {
     pub fn get_comp_id(&self) -> &str {
         self.mbid.as_deref().unwrap_or(self.name.as_ref())
     }
+
+    /// Add genres as discovered from albums, maintaining uniqueness.
+    /// Useful at page init time when we fetch all the artists.
+    pub fn insert_genres(&mut self, more_genres: &FxHashSet<String>) {
+        for genre in more_genres {
+            // Clone only what's not already in
+            if !self.genres.contains(genre) {
+                let _ = self.genres.insert(genre.clone());
+            }
+        }
+    }
 }
 
 impl Default for ArtistInfo {
@@ -42,6 +60,7 @@ impl Default for ArtistInfo {
             name: "Untitled Artist".to_owned(),
             sort_tag: None,
             mbid: None,
+            genres: FxHashSet::default(),
             example_uris: Vec::with_capacity(0),
             is_composer: false,
         }
@@ -189,7 +208,6 @@ use once_cell::sync::Lazy;
             match pspec.name() {
                 "name" => obj.get_name().to_value(),
                 "sortable-name" => obj.get_sortable_name().to_value(),
-                // TODO: skirt 
                 "example-uris" => glib::BoxedAnyObject::new(self.info.get().map(|info| info.example_uris.clone())).to_value(), 
                 _ => unimplemented!(),
             }

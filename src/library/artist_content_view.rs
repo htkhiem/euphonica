@@ -1138,6 +1138,7 @@ impl ArtistContentView {
                 song_stack.show_spinner();
                 let song_list = this.imp().song_list.clone();
                 song_list.remove_all();
+                // Still have to parse genres again, as the artist object we've received might have been a stub one attached to a song.
                 // TODO: move off main thread
                 let mut all_genres: FxHashSet<String> = FxHashSet::default();
                 // Important, MPD-side content first
@@ -1165,8 +1166,11 @@ impl ArtistContentView {
                         for (_, maybe_albums) in albums_by_year.iter() {
                             for (maybe_album, _) in maybe_albums.iter() {
                                 if let Some(genres) = maybe_album.as_ref().map(|a| a.get_genres()) {
+                                    // Clone only what's not already in all_genres
                                     for genre in genres.iter() {
-                                        let _ = all_genres.insert(genre.clone());
+                                        if !all_genres.contains(genre) {
+                                            let _ = all_genres.insert(genre.clone());
+                                        }
                                     }
                                 }
                             }
@@ -1210,7 +1214,7 @@ impl ArtistContentView {
                     {
                         genres_stack.set_visible_child_name("content");
                     }
-                    all_genres.into_iter().sorted_by_cached_key(|a| a.to_lowercase()).map(|genre| {
+                    all_genres.into_iter().map(|genre| {
                             TagButton::new(
                                 &Tag::new(genre.clone(), None, None, false, false),
                                 &genres_box,
