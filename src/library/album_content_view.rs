@@ -15,11 +15,11 @@ use adw::subclass::prelude::*;
 use ashpd::desktop::file_chooser::SelectedFiles;
 use derivative::Derivative;
 use gio::{ActionEntry, Menu, SimpleActionGroup};
-use glib::{Binding, WeakRef, clone, closure_local, signal::SignalHandlerId};
-use gtk::{BitsetIter, CompositeTemplate, gdk, gio, glib, prelude::*};
+use glib::{Binding, SignalHandlerId, WeakRef, clone, closure_local};
+use gtk::{CompositeTemplate, gdk, gio, glib, prelude::*};
 use rustc_hash::FxHashSet;
 use std::{
-    cell::{Cell, OnceCell, RefCell},
+    cell::{OnceCell, RefCell},
     rc::Rc,
 };
 use time::{Date, format_description};
@@ -109,8 +109,6 @@ mod imp {
 
         #[derivative(Default(value = "gio::ListStore::new::<Song>()"))]
         pub song_list: gio::ListStore,
-        #[derivative(Default(value = "gtk::MultiSelection::new(Option::<gio::ListStore>::None)"))]
-        pub sel_model: gtk::MultiSelection,
         pub library: WeakRef<Library>,
         pub album: RefCell<Option<Album>>,
         pub window: WeakRef<EuphonicaWindow>,
@@ -119,8 +117,6 @@ mod imp {
         pub cover_set_id: RefCell<Option<SignalHandlerId>>,
         pub cover_cleared_id: RefCell<Option<SignalHandlerId>>,
         pub cache: OnceCell<Rc<Cache>>,
-        #[derivative(Default(value = "Cell::new(true)"))]
-        pub selecting_all: Cell<bool>, // Enables queuing the entire album efficiently
         pub meta: RefCell<Option<AlbumMeta>>,
     }
 
@@ -177,27 +173,28 @@ mod imp {
                 }
             ));
 
-            self.sel_model.set_model(Some(&self.song_list.clone()));
             // Change button labels depending on selection state
-            self.sel_model.connect_selection_changed(clone!(
+            let content = self.content.get();
+            content.connect_selected_rows_changed(clone!(
                 #[weak(rename_to = this)]
                 self,
-                move |_, _, _| this.on_selection_changed()
+                move |_| {
+                    this.obj().on_selection_changed();
+                }
             ));
 
-            let sel_model = self.sel_model.clone();
             self.sel_all.connect_clicked(clone!(
                 #[weak]
-                sel_model,
+                content,
                 move |_| {
-                    sel_model.select_all();
+                    content.select_all();
                 }
             ));
             self.sel_none.connect_clicked(clone!(
                 #[weak]
-                sel_model,
+                content,
                 move |_| {
-                    sel_model.unselect_all();
+                    content.unselect_all();
                 }
             ));
 
@@ -416,49 +413,9 @@ mod imp {
                     #[weak]
                     obj,
                     move |_, _, _| {
-                        glib::spawn_future_local(clone!(
-                            #[weak]
-                            obj,
-                            async move {
-                                if let (_, Some(library)) =
-                                    (obj.imp().album.borrow().as_ref(), obj.library())
-                                {
-                                    obj.set_is_queuing(true);
-                                    let store = &obj.imp().song_list;
-                                    if obj.imp().selecting_all.get() {
-                                        let mut songs: Vec<Song> =
-                                            Vec::with_capacity(store.n_items() as usize);
-                                        for i in 0..store.n_items() {
-                                            songs.push(
-                                                store.item(i).and_downcast::<Song>().unwrap(),
-                                            );
-                                        }
-                                        if let Err(e) = library.insert_songs_next(&songs).await {
-                                            dbg!(e);
-                                        }
-                                    } else {
-                                        // Get list of selected songs
-                                        let sel = &obj.imp().sel_model.selection();
-                                        let mut songs: Vec<Song> =
-                                            Vec::with_capacity(sel.size() as usize);
-                                        let (iter, first_idx) =
-                                            BitsetIter::init_first(sel).unwrap();
-                                        songs.push(
-                                            store.item(first_idx).and_downcast::<Song>().unwrap(),
-                                        );
-                                        iter.for_each(|idx| {
-                                            songs.push(
-                                                store.item(idx).and_downcast::<Song>().unwrap(),
-                                            )
-                                        });
-                                        if let Err(e) = library.insert_songs_next(&songs).await {
-                                            dbg!(e);
-                                        }
-                                    }
-                                    obj.set_is_queuing(false);
-                                }
-                            }
-                        ));
+                        glib::spawn_future_local(async move {
+                            obj.queue_selected(false, false, true).await;
+                        });
                     }
                 ))
                 .build();
@@ -479,40 +436,6 @@ mod imp {
     }
 
     impl WidgetImpl for AlbumContentView {}
-
-    impl AlbumContentView {
-        pub fn on_selection_changed(&self) {
-            let sel_model = &self.sel_model;
-            // TODO: this can be slow, might consider redesigning
-            let n_sel = sel_model.selection().size();
-            if n_sel == 0 || (n_sel as u32) == sel_model.model().unwrap().n_items() {
-                self.selecting_all.replace(true);
-                self.replace_queue_text.set_label("Play all");
-                self.queue_split_button_content.set_label("Queue all");
-                let queue_split_menu = Menu::new();
-                queue_split_menu.append(
-                    Some("Queue all next"),
-                    Some("album-content-view.insert-queue"),
-                );
-                self.queue_split_button
-                    .set_menu_model(Some(&queue_split_menu));
-            } else {
-                // TODO: l10n
-                self.selecting_all.replace(false);
-                self.replace_queue_text
-                    .set_label(format!("Play {n_sel}").as_str());
-                self.queue_split_button_content
-                    .set_label(format!("Queue {n_sel}").as_str());
-                let queue_split_menu = Menu::new();
-                queue_split_menu.append(
-                    Some(format!("Queue {n_sel} next").as_str()),
-                    Some("album-content-view.insert-queue"),
-                );
-                self.queue_split_button
-                    .set_menu_model(Some(&queue_split_menu));
-            }
-        }
-    }
 }
 
 glib::wrapper! {
@@ -540,6 +463,98 @@ impl AlbumContentView {
 
     fn album(&self) -> Option<Album> {
         self.imp().album.borrow().as_ref().cloned()
+    }
+
+    pub fn on_selection_changed(&self) {
+        let content = self.imp().content.get();
+        let n_sel = content.selected_rows().len();
+        let total = self.imp().song_list.n_items() as i32;
+
+        if n_sel == 0 || n_sel as i32 == total {
+            self.imp().replace_queue_text.set_label("Play all");
+            self.imp().queue_split_button_content.set_label("Queue all");
+            let queue_split_menu = Menu::new();
+            queue_split_menu.append(
+                Some("Queue all next"),
+                Some("album-content-view.insert-queue"),
+            );
+            self.imp()
+                .queue_split_button
+                .set_menu_model(Some(&queue_split_menu));
+        } else {
+            self.imp()
+                .replace_queue_text
+                .set_label(format!("Play {n_sel}").as_str());
+            self.imp()
+                .queue_split_button_content
+                .set_label(format!("Queue {n_sel}").as_str());
+            let queue_split_menu = Menu::new();
+            queue_split_menu.append(
+                Some(format!("Queue {n_sel} next").as_str()),
+                Some("album-content-view.insert-queue"),
+            );
+            self.imp()
+                .queue_split_button
+                .set_menu_model(Some(&queue_split_menu));
+        }
+    }
+
+    async fn queue_selected(&self, replace: bool, play: bool, next: bool) {
+        if let Some(library) = self.library() {
+            self.set_is_queuing(true);
+            let content = self.imp().content.get();
+            let n_sel = content.selected_rows().len();
+            let store = &self.imp().song_list;
+            let total = store.n_items() as i32;
+            if next {
+                // Handled specially
+                if let Err(e) = library.insert_songs_next(&self.selected_songs()).await {
+                    dbg!(e);
+                }
+            } else if let (true, Some(album)) = (n_sel == 0 || n_sel as i32 == total, self.album())
+            {
+                // If has album & all tracks are selected, use queue_album.
+                if let Err(e) = library
+                    .queue_album(album.clone(), replace, play, None)
+                    .await
+                {
+                    dbg!(e);
+                }
+            } else {
+                // Catch-all: manually queue each song.
+                if let Err(e) = library
+                    .queue_songs(&self.selected_songs(), replace, play)
+                    .await
+                {
+                    dbg!(e);
+                }
+            }
+            self.set_is_queuing(false);
+        }
+    }
+
+    fn selected_songs(&self) -> Vec<Song> {
+        let content = self.imp().content.get();
+        let n_sel = content.selected_rows().len();
+        let store = &self.imp().song_list;
+        let total = store.n_items() as i32;
+
+        let mut songs: Vec<Song> = Vec::with_capacity(total as usize);
+        if n_sel == 0 || n_sel as i32 == total {
+            for idx in 0..total {
+                songs.push(store.item(idx as u32).and_downcast::<Song>().unwrap());
+            }
+        } else {
+            for row in content.selected_rows() {
+                songs.push(
+                    store
+                        .item(row.index() as u32)
+                        .and_downcast::<Song>()
+                        .unwrap(),
+                );
+            }
+        }
+        songs
     }
 
     /// Write the current tag list to the database.
@@ -684,9 +699,10 @@ impl AlbumContentView {
             .expect("AlbumContentView cannot bind to cache");
         self.imp().tags_widget.set_window(window);
         self.imp().window.set(Some(window));
+        // Set up AddToPlaylistButton with ListBox row selection.
         self.imp()
             .add_to_playlist
-            .bind_model(library, &self.imp().sel_model);
+            .bind_listbox(library, &self.imp().content, &self.imp().song_list);
         self.imp().library.set(Some(library));
         self.imp()
             .cover_set_id
@@ -763,36 +779,9 @@ impl AlbumContentView {
             #[weak(rename_to = this)]
             self,
             move |_| {
-                glib::spawn_future_local(clone!(
-                    #[weak]
-                    this,
-                    async move {
-                        if let (Some(album), Some(library)) = (this.album(), this.library()) {
-                            this.set_is_queuing(true);
-                            if this.imp().selecting_all.get() {
-                                if let Err(e) =
-                                    library.queue_album(album.clone(), true, true, None).await
-                                {
-                                    dbg!(e);
-                                }
-                            } else {
-                                let store = &this.imp().song_list;
-                                // Get list of selected songs
-                                let sel = &this.imp().sel_model.selection();
-                                let mut songs: Vec<Song> = Vec::with_capacity(sel.size() as usize);
-                                let (iter, first_idx) = BitsetIter::init_first(sel).unwrap();
-                                songs.push(store.item(first_idx).and_downcast::<Song>().unwrap());
-                                iter.for_each(|idx| {
-                                    songs.push(store.item(idx).and_downcast::<Song>().unwrap())
-                                });
-                                if let Err(e) = library.queue_songs(&songs, true, true).await {
-                                    dbg!(e);
-                                }
-                            }
-                            this.set_is_queuing(false);
-                        }
-                    }
-                ));
+                glib::spawn_future_local(async move {
+                    this.queue_selected(true, true, false).await;
+                });
             }
         ));
 
@@ -802,42 +791,15 @@ impl AlbumContentView {
             #[upgrade_or]
             (),
             move |_| {
-                glib::spawn_future_local(clone!(
-                    #[weak]
-                    this,
-                    async move {
-                        if let (Some(album), Some(library)) = (this.album(), this.library()) {
-                            this.set_is_queuing(true);
-                            if this.imp().selecting_all.get() {
-                                if let Err(e) =
-                                    library.queue_album(album.clone(), false, false, None).await
-                                {
-                                    dbg!(e);
-                                }
-                            } else {
-                                let store = &this.imp().song_list;
-                                // Get list of selected songs
-                                let sel = &this.imp().sel_model.selection();
-                                let mut songs: Vec<Song> = Vec::with_capacity(sel.size() as usize);
-                                let (iter, first_idx) = BitsetIter::init_first(sel).unwrap();
-                                songs.push(store.item(first_idx).and_downcast::<Song>().unwrap());
-                                iter.for_each(|idx| {
-                                    songs.push(store.item(idx).and_downcast::<Song>().unwrap())
-                                });
-                                if let Err(e) = library.queue_songs(&songs, false, false).await {
-                                    dbg!(e);
-                                }
-                            }
-                            this.set_is_queuing(false);
-                        }
-                    }
-                ));
+                glib::spawn_future_local(async move {
+                    this.queue_selected(false, false, false).await;
+                });
             }
         ));
 
-        // Set up ListBox
+        // Set up ListBox — bind directly to song_list (no MultiSelection needed)
         self.imp().content.bind_model(
-            Some(&self.imp().sel_model),
+            Some(&self.imp().song_list),
             clone!(
                 #[weak]
                 library,
@@ -930,7 +892,7 @@ impl AlbumContentView {
     }
 
     pub fn bind(&self, album: &Album) {
-        self.imp().on_selection_changed();
+        self.on_selection_changed();
         let title_label = self.imp().title.get();
         let artists_box = self.imp().artists_box.get();
         let genres_box = self.imp().genres_box.get();
