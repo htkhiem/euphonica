@@ -149,7 +149,7 @@
                                         </child>
                                         <child>
                                           <object class="GtkButton" id="add_wiki_btn">
-                                            <property name="action-name">album-content-view.edit-wiki</property>
+                                            <property name="action-name">album-content-view.edit-metadata</property>
                                             <style>
                                               <class name="circular"/>
                                             </style>
@@ -216,68 +216,6 @@
                                             </property>
                                           </object>
                                         </property>
-                                      </object>
-                                    </property>
-                                    <property name="edit">
-                                      <object class="GtkBox">
-                                        <property name="orientation">1</property>
-                                        <property name="spacing">6</property>
-                                        <child>
-                                          <object class="GtkFrame">
-                                            <child>
-                                              <object class="GtkScrolledWindow">
-                                              <property name="hexpand">true</property>
-                                              <property name="vexpand">true</property>
-                                              <child>
-                                                <object class="GtkTextView" id="wiki_desc_field">
-                                                  <property name="wrap-mode">2</property>
-                                                </object>
-                                              </child>
-                                            </object>
-                                            </child>
-                                          </object>
-                                        </child>
-                                        <child>
-                                          <object class="GtkBox">
-                                            <property name="orientation">1</property>
-                                            <style>
-                                              <class name="linked"/>
-                                            </style>
-                                            <child>
-                                              <object class="GtkEntry" id="wiki_link_field">
-                                                <property name="placeholder-text" translatable="true">Optional external link</property>
-                                              </object>
-                                            </child>
-                                            <child>
-                                              <object class="GtkEntry" id="wiki_attribution_field">
-                                                <property name="placeholder-text" translatable="true">Optional attribution info</property>
-                                              </object>
-                                            </child>
-                                          </object>
-                                        </child>
-                                        <child>
-                                          <object class="GtkCenterBox">
-                                            <property name="start-widget">
-                                              <object class="GtkButton" id="wiki_cancel">
-                                                <style>
-                                                  <class name="destructive-action"/>
-                                                </style>
-                                                <property name="label" translatable="true">Cancel</property>
-                                              </object>
-                                            </property>
-                                            <property name="end-widget">
-                                              <object class="GtkButton" id="wiki_save">
-                                                <style>
-                                                  <class name="suggested-action"/>
-                                                </style>
-                                                <property name="label" translatable="true">Save</property>
-                                              </object>
-                                            </property>
-                                          </object>
-                                        </child>
-
-                                      
-                                        
                                       </object>
                                     </property>
                                   </object>
@@ -780,10 +718,110 @@
         </property>
       </object>
     </child>
+    <object class="AdwDialog" id="edit_metadata_dialog">
+      <!-- Close via either the cancel or save buttons to be explicit in intent -->
+      <property name="can-close">false</property>
+      <property name="title" translatable="true">Edit metadata</property>
+      <child>
+        <object class="AdwToolbarView">
+          <child type="top">
+            <object class="AdwHeaderBar">
+              <property name="show-end-title-buttons">false</property>
+              <property name="show-start-title-buttons">false</property>
+              <child type="start">
+                <object class="GtkButton" id="metadata_cancel">
+                  <property name="label" translatable="true">Cancel</property>
+                </object>
+              </child>
+              <child type="end">
+                <object class="GtkButton" id="metadata_save">
+                  <style>
+                    <class name="suggested-action"/>
+                  </style>
+                  <property name="label" translatable="true">Save</property>
+                </object>
+              </child>
+            </object>
+          </child>
+          <property name="content">
+            <object class="GtkScrolledWindow">
+              <style>
+                <class name="no-bg"/>
+              </style>
+              <property name="propagate-natural-height">true</property>
+              <property name="hscrollbar-policy">never</property>
+              <property name="hexpand">true</property>
+              <child>
+                <object class="GtkBox">
+                  <style>
+                    <class name="padding-12"/>
+                  </style>
+                  <property name="spacing">6</property>
+                  <property name="orientation">1</property>
+                  <child>
+                    <object class="GtkLabel">
+                      <property name="justify">center</property>
+                      <property name="label" translatable="true">Metadata is only stored locally.</property>
+                      <style>
+                        <class name="caption"/>
+                      </style>
+                    </object>
+                  </child>
+                  <child>
+                    <object class="AdwPreferencesGroup">
+                      <property name="title" translatable="true">Basic fields</property>
+                      <child>
+                        <object class="AdwEntryRow" id="mbid_field">
+                          <property name="title" translatable="true">MusicBrainz ID</property>
+                        </object>
+                      </child>
+                    </object>
+                  </child>
+                  <child>
+                    <object class="AdwPreferencesGroup">
+                      <property name="title" translatable="true">Wiki</property>
+                      <child>
+                        <object class="GtkListBoxRow">
+                          <style>
+                            <class name="padding-0"/>
+                          </style>
+                          <property name="overflow">hidden</property>
+                          <child>
+                            <object class="GtkTextView" id="wiki_desc_field">
+                              <style>
+                                <class name="padding-12"/>
+                              </style>
+                              <property name="wrap-mode">2</property>
+                              <property name="height-request">100</property>
+                            </object>
+                          </child>
+                        </object>
+                      </child>
+                      <child>
+                        <object class="AdwEntryRow" id="wiki_link_field">
+                          <property name="title" translatable="true">Optional external link</property>
+                        </object>
+                      </child>
+
+                      <child>
+                        <object class="AdwEntryRow" id="wiki_attrib_field">
+                          <property name="title" translatable="true">Optional attribution info</property>
+                        </object>
+                      </child>
+                    </object>
+                  </child>
+                </object>
+              </child>
+            </object>
+          </property>
+        </object>
+      </child>
+    </object>
+
     <menu id="edit_menu_model">
       <item>
-        <attribute name="label" translatable="true">Edit wiki text</attribute>
-        <attribute name="action">album-content-view.edit-wiki</attribute>
+        <attribute name="label" translatable="true">Edit metadata</attribute>
+        <attribute name="action">album-content-view.edit-metadata</attribute>
       </item>
       <item>
         <attribute name="label" translatable="true">Clear rating</attribute>

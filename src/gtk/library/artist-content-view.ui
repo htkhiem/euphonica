@@ -776,6 +776,8 @@
         <object class="AdwToolbarView">
           <child type="top">
             <object class="AdwHeaderBar">
+              <property name="show-end-title-buttons">false</property>
+              <property name="show-start-title-buttons">false</property>
               <child type="start">
                 <object class="GtkButton" id="metadata_cancel">
                   <property name="label" translatable="true">Cancel</property>
@@ -795,13 +797,15 @@
             <object class="GtkScrolledWindow">
               <style>
                 <class name="no-bg"/>
-                <class name="padding-12"/>
               </style>
               <property name="propagate-natural-height">true</property>
               <property name="hscrollbar-policy">never</property>
               <property name="hexpand">true</property>
               <child>
                 <object class="GtkBox">
+                  <style>
+                    <class name="padding-12"/>
+                  </style>
                   <property name="spacing">6</property>
                   <property name="orientation">1</property>
                   <child>
@@ -814,31 +818,21 @@
                     </object>
                   </child>
                   <child>
-                    <object class="GtkListBox">
-                      <property name="selection-mode">0</property>
-                      <style>
-                        <class name="boxed-list"/>
-                      </style>
+                    <object class="AdwPreferencesGroup">
+                      <property name="title" translatable="true">Basic fields</property>
                       <child>
-                        <object class="GtkBox">
-                          <child>
-                            <object class="AdwEntryRow" id="begin_field">
-                              <property name="title" translatable="yes">Start YYYY-MM-DD</property>
-                              <property name="hexpand">1</property>
-                              <!-- Good for nearly a hundred thousand years -->
-                              <property name="max-width-chars">11</property>
-                            </object>
-                          </child>
-                          <child>
-                            <object class="GtkSeparator"/>
-                          </child>
-                          <child>
-                            <object class="AdwEntryRow" id="end_field">
-                              <property name="title" translatable="yes">End YYYY-MM-DD (optional)</property>
-                              <property name="hexpand">1</property>
-                              <property name="max-width-chars">11</property>
-                            </object>
-                          </child>
+                        <object class="AdwEntryRow" id="begin_field">
+                          <property name="title" translatable="yes">Start YYYY-MM-DD</property>
+                          <property name="hexpand">1</property>
+                          <!-- Good for nearly a hundred thousand years -->
+                          <property name="max-width-chars">11</property>
+                        </object>
+                      </child>
+                      <child>
+                        <object class="AdwEntryRow" id="end_field">
+                          <property name="title" translatable="yes">End YYYY-MM-DD (optional)</property>
+                          <property name="hexpand">1</property>
+                          <property name="max-width-chars">11</property>
                         </object>
                       </child>
 
@@ -875,17 +869,22 @@
                           <property name="title" translatable="true">MusicBrainz ID</property>
                         </object>
                       </child>
-
+                    </object>
+                  </child>
+                  <child>
+                    <object class="AdwPreferencesGroup">
+                      <property name="title" translatable="true">Artist biography</property>
                       <child>
-                        <object class="GtkBox">
-                          <property name="orientation">1</property>
-                          <child>
-                            <object class="AdwActionRow">
-                              <property name="title" translatable="yes">Artist Biography</property>
-                            </object>
-                          </child>
+                        <object class="GtkListBoxRow">
+                          <style>
+                            <class name="padding-0"/>
+                          </style>
+                          <property name="overflow">hidden</property>
                           <child>
                             <object class="GtkTextView" id="bio_desc_field">
+                              <style>
+                                <class name="padding-12"/>
+                              </style>
                               <property name="wrap-mode">2</property>
                               <property name="height-request">100</property>
                             </object>

@@ -12,6 +12,7 @@ use crate::{
     window::EuphonicaWindow,
 };
 use adw::subclass::prelude::*;
+use adw::prelude::AdwDialogExt;
 use ashpd::desktop::file_chooser::SelectedFiles;
 use derivative::Derivative;
 use gio::{ActionEntry, Menu, SimpleActionGroup};
@@ -48,6 +49,7 @@ mod imp {
         #[template_child]
         pub rating_readout: TemplateChild<gtk::Label>,
 
+        // Wiki display (read-only)
         #[template_child]
         pub wiki_stack: TemplateChild<ContentStack>,
         #[template_child]
@@ -60,16 +62,22 @@ mod imp {
         pub wiki_link: TemplateChild<gtk::LinkButton>,
         #[template_child]
         pub wiki_attrib: TemplateChild<gtk::Label>,
+
+        // Metadata editor dialog
+        #[template_child]
+        pub edit_metadata_dialog: TemplateChild<adw::Dialog>,
         #[template_child]
         pub wiki_desc_field: TemplateChild<gtk::TextView>,
         #[template_child]
-        pub wiki_link_field: TemplateChild<gtk::Entry>,
+        pub wiki_link_field: TemplateChild<adw::EntryRow>,
         #[template_child]
-        pub wiki_attribution_field: TemplateChild<gtk::Entry>,
+        pub wiki_attrib_field: TemplateChild<adw::EntryRow>,
         #[template_child]
-        pub wiki_save: TemplateChild<gtk::Button>,
+        pub mbid_field: TemplateChild<adw::EntryRow>,
         #[template_child]
-        pub wiki_cancel: TemplateChild<gtk::Button>,
+        pub metadata_save: TemplateChild<gtk::Button>,
+        #[template_child]
+        pub metadata_cancel: TemplateChild<gtk::Button>,
 
         #[template_child]
         pub release_date: TemplateChild<gtk::Label>,
@@ -217,7 +225,15 @@ mod imp {
                 .sync_create()
                 .build();
 
-            self.wiki_save.connect_clicked(clone!(
+            self.metadata_cancel.connect_clicked(clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |_| {
+                    this.edit_metadata_dialog.get().force_close();
+                }
+            ));
+
+            self.metadata_save.connect_clicked(clone!(
                 #[weak(rename_to = this)]
                 self,
                 move |_| {
@@ -225,6 +241,7 @@ mod imp {
                         (this.cache.get(), this.album.borrow().as_ref())
                     {
                         let mut new_meta = this.meta.take().unwrap_or_default();
+                        // Update wiki
                         let buf = this.wiki_desc_field.buffer();
                         let mut wiki = new_meta.wiki.clone().unwrap_or_default();
                         wiki.content = buf
@@ -237,22 +254,29 @@ mod imp {
                         } else {
                             wiki.url = None;
                         }
-                        wiki.attribution = this.wiki_attribution_field.text().as_str().to_owned();
+                        wiki.attribution = this.wiki_attrib_field.text().as_str().to_owned();
                         new_meta.wiki = Some(wiki);
+                        // Update MBID
+                        let mbid = this.mbid_field.text();
+                        if mbid.is_empty() {
+                            new_meta.mbid = None;
+                        } else {
+                            new_meta.mbid = Some(mbid.to_string());
+                        }
                         // Might want to make this async?
                         if let Err(e) = cache.set_album_meta(album.get_info(), &new_meta) {
                             dbg!(e);
                         }
-                        this.obj().update_wiki(new_meta.wiki.as_ref());
+                        this.edit_metadata_dialog.get().force_close();
+                        // Refresh UI too
+                        glib::spawn_future_local(clone!(
+                            #[weak]
+                            this,
+                            async move {
+                                this.obj().update_meta(false).await;
+                            }
+                        ));
                     }
-                }
-            ));
-
-            self.wiki_cancel.connect_clicked(clone!(
-                #[weak(rename_to = this)]
-                self,
-                move |_| {
-                    this.wiki_stack.show_content();
                 }
             ));
 
@@ -278,27 +302,55 @@ mod imp {
                 }
             ));
 
+            // Add wiki button opens the metadata editor dialog
+            self.add_wiki_btn.connect_clicked(clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |_| {
+                    let meta = this.meta.borrow().clone().unwrap_or_default();
+                    // Initialise wiki fields with current values
+                    if let Some(wiki) = meta.wiki.as_ref() {
+                        this.wiki_desc_field.buffer().set_text(&wiki.content);
+                        this.wiki_link_field
+                            .set_text(wiki.url.as_deref().unwrap_or(""));
+                        this.wiki_attrib_field.set_text(&wiki.attribution);
+                    } else {
+                        this.wiki_desc_field.buffer().set_text("");
+                        this.wiki_link_field.set_text("");
+                        this.wiki_attrib_field.set_text("");
+                    }
+                    // Initialise MBID field
+                    this.mbid_field
+                        .set_text(meta.mbid.as_deref().unwrap_or(""));
+                    this.edit_metadata_dialog.get()
+                        .present(this.window.upgrade().as_ref());
+                }
+            ));
+
             // Edit actions
             let obj = self.obj();
-            let wiki_stack = self.wiki_stack.get();
-            let action_edit_wiki = ActionEntry::builder("edit-wiki")
+            let action_edit_metadata = ActionEntry::builder("edit-metadata")
                 .activate(clone!(
                     #[weak(rename_to = this)]
                     self,
                     move |_, _, _| {
-                        // Initialise with current values
-                        if let Some(wiki) = this
-                            .meta
-                            .borrow()
-                            .as_ref()
-                            .and_then(|meta| meta.wiki.as_ref())
-                        {
+                        let meta = this.meta.borrow().clone().unwrap_or_default();
+                        // Initialise wiki fields with current values
+                        if let Some(wiki) = meta.wiki.as_ref() {
                             this.wiki_desc_field.buffer().set_text(&wiki.content);
                             this.wiki_link_field
                                 .set_text(wiki.url.as_deref().unwrap_or(""));
-                            this.wiki_attribution_field.set_text(&wiki.attribution);
+                            this.wiki_attrib_field.set_text(&wiki.attribution);
+                        } else {
+                            this.wiki_desc_field.buffer().set_text("");
+                            this.wiki_link_field.set_text("");
+                            this.wiki_attrib_field.set_text("");
                         }
-                        wiki_stack.show_edit();
+                        // Initialise MBID field
+                        this.mbid_field
+                            .set_text(meta.mbid.as_deref().unwrap_or(""));
+                        this.edit_metadata_dialog.get()
+                            .present(this.window.upgrade().as_ref());
                     }
                 ))
                 .build();
@@ -423,7 +475,7 @@ mod imp {
             // Create a new action group and add actions to it
             let actions = SimpleActionGroup::new();
             actions.add_action_entries([
-                action_edit_wiki,
+                action_edit_metadata,
                 action_clear_rating,
                 action_set_album_art,
                 action_refetch_metadata,
@@ -1076,6 +1128,6 @@ impl AlbumContentView {
         // Unset metadata widgets
         self.imp().song_list.remove_all();
         self.imp().content_stack.show_placeholder();
-        self.imp().wiki_stack.show_spinner();
+        self.imp().wiki_stack.show_placeholder();
     }
 }
