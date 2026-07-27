@@ -360,6 +360,22 @@ mod imp {
                 .get_only()
                 .build();
 
+            // More robust this way
+            self.queue.connect_notify_local(
+                Some("n-items"),
+                clone!(
+                    #[weak(rename_to = this)]
+                    self,
+                    move |_, _| {
+                        let new_len = this.queue.n_items();
+                        let old_len = this.queue_len.replace(new_len);
+                        if old_len != new_len {
+                            this.obj().notify("queue-len");
+                        }
+                    }
+                )
+            );
+
             self.obj().maybe_start_fft_thread();
         }
 
@@ -1421,8 +1437,6 @@ impl Player {
             } else {
                 queue.extend_from_slice(&new_segment);
             }
-
-            self.update_queue_len();
         }
     }
 
@@ -1728,7 +1742,11 @@ impl Player {
     }
 
     pub async fn clear_queue(&self) -> ClientResult<()> {
-        self.client()?.clear_queue().await
+        self.client()?.clear_queue().await?;
+        // Just to be safe: when queue is already stopped no idle subsystem update will be sent
+        // for us to update the queue.
+        self.imp().queue.remove_all();
+        Ok(())
     }
 
     pub async fn pause(&self) -> ClientResult<()> {
@@ -1797,20 +1815,11 @@ impl Player {
         self.client()?.play_at(song.get_queue_id(), true).await
     }
 
-    fn update_queue_len(&self) {
-        let new_len = self.imp().queue.n_items();
-        let old_len = self.imp().queue_len.replace(new_len);
-        if old_len != new_len {
-            self.notify("queue-len");
-        }
-    }
-
     /// Remove given song from queue.
     pub async fn remove_pos(&self, pos: u32) -> ClientResult<()> {
         self.register_local_queue_changes(1);
         self.queue().remove(pos);
-        self.client()?.delete_at_pos(pos).await;
-        self.update_queue_len();
+        self.client()?.delete_at_pos(pos).await?;
         Ok(())
     }
 
