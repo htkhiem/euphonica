@@ -4,14 +4,35 @@
     <property name="orientation">1</property>
     <property name="spacing">6</property>
     <child>
-      <object class="GtkLabel" id="title">
-        <property name="halign">start</property>
-        <property name="wrap">true</property>
-        <property name="justify">left</property>
-        <property name="label">Untitled Album</property>
+      <object class="GtkButton" id="title_btn">
         <style>
-          <class name="title-4"/>
+          <class name="padding-0"/>
+          <class name="flat"/>
         </style>
+        <property name="halign">start</property>
+        <child>
+          <object class="GtkBox">
+            <property name="spacing">6</property>
+            <child>
+              <object class="GtkLabel" id="title">
+                <property name="halign">start</property>
+                <property name="wrap">true</property>
+                <property name="justify">left</property>
+                <property name="label">Untitled Album</property>
+                <style>
+                  <class name="title-4"/>
+                </style>
+              </object>
+            </child>
+            <child>
+              <!-- Should only display if navigable -->
+              <object class="GtkImage" id="title_arrow">
+                <property name="icon-name">right-symbolic</property>
+                <property name="valign">center</property>
+              </object>
+            </child>
+          </object>
+        </child>
       </object>
     </child>
 

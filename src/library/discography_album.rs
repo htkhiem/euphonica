@@ -29,7 +29,11 @@ mod imp {
         #[template_child]
         pub cover: TemplateChild<ImageStack>,
         #[template_child]
+        pub title_btn: TemplateChild<gtk::Button>,
+        #[template_child]
         pub title: TemplateChild<gtk::Label>,
+        #[template_child]
+        pub title_arrow: TemplateChild<gtk::Image>,
 
         #[template_child]
         pub replace_queue: TemplateChild<gtk::Button>,
@@ -112,6 +116,16 @@ mod imp {
                 }
             ));
 
+            self.title_btn.connect_clicked(clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |_| {
+                    if let (Some(album), Some(win)) = (this.album.get(), this.window.upgrade()) {
+                        win.goto_album(album);
+                    }
+                }
+            ));
+
             // Select-all / clear-selection buttons
             self.sel_all.connect_clicked(clone!(
                 #[weak]
@@ -179,6 +193,8 @@ impl DiscographyAlbum {
             // TODO: translations
             res.imp().title.set_label("Untagged");
             res.imp().cover.set_visible(false);
+            res.imp().title_btn.set_sensitive(false);
+            res.imp().title_arrow.set_visible(false);
         }
 
         res.imp().song_list.extend_from_slice(songs);
