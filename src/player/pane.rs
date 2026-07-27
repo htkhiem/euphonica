@@ -1,13 +1,13 @@
+use adw::prelude::*;
 use ashpd::desktop::file_chooser::{FileFilter, SelectedFiles};
 use glib::{SignalHandlerId, WeakRef, clone, closure_local};
 use gtk::{
     CompositeTemplate,
     glib::{self, Variant},
-    prelude::*,
     subclass::prelude::*,
 };
 use std::{
-    cell::{Cell, RefCell},
+    cell::{OnceCell, RefCell},
     fs::{self, File},
     io::Write,
     rc::Rc,
@@ -93,7 +93,7 @@ mod imp {
 
         pub player: WeakRef<Player>,
         pub albumart_paintable: RotatingPaintable,
-        pub albumart_tick_id: RefCell<Option<gtk::TickCallbackId>>,
+        pub albumart_animation: OnceCell<adw::TimedAnimation>,
         pub current_lyric_line_id: RefCell<Option<SignalHandlerId>>,
         pub cover_changed_id: RefCell<Option<SignalHandlerId>>,
         pub playback_state_id: RefCell<Option<SignalHandlerId>>,
@@ -125,14 +125,33 @@ mod imp {
             let ui_settings = settings_manager().child("ui");
 
             self.albumart.install_wrapper(&self.albumart_paintable);
+            let target = adw::CallbackAnimationTarget::new(clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |rotation| this.albumart_paintable.set_rotation(rotation)
+            ));
+            self.albumart_animation
+                .set(
+                    adw::TimedAnimation::builder()
+                        .widget(self.obj().as_ref())
+                        .target(&target)
+                        .value_from(0.0)
+                        .value_to(360.0)
+                        .duration(20_000)
+                        .repeat_count(0)
+                        .easing(adw::Easing::Linear)
+                        .build(),
+                )
+                .unwrap();
             self.albumart_paintable.connect_circular_notify(clone!(
                 #[weak(rename_to = this)]
                 self,
                 move |paintable| {
                     if paintable.circular() {
                         this.obj().snap_album_art_to_player();
+                    } else {
+                        this.obj().sync_album_art_animation();
                     }
-                    this.obj().sync_album_art_animation();
                 }
             ));
             for property in ["return-to-starting-angle", "degrees-per-second"] {
@@ -144,6 +163,8 @@ mod imp {
                         move |paintable, _| {
                             if paintable.return_to_starting_angle() {
                                 this.obj().snap_album_art_to_player();
+                            } else {
+                                this.obj().restart_album_art_animation(paintable.rotation());
                             }
                         }
                     ),
@@ -225,14 +246,17 @@ mod imp {
                     player.disconnect(id);
                 }
             }
-            if let Some(id) = self.albumart_tick_id.take() {
-                id.remove();
-            }
+            self.albumart_animation.get().unwrap().reset();
         }
     }
 
     // Trait shared by all widgets
-    impl WidgetImpl for PlayerPane {}
+    impl WidgetImpl for PlayerPane {
+        fn map(&self) {
+            self.parent_map();
+            self.obj().sync_album_art_animation();
+        }
+    }
 
     impl BoxImpl for PlayerPane {}
 }
@@ -574,7 +598,6 @@ impl PlayerPane {
                     #[strong]
                     cache,
                     move |p: Player| {
-                        this.imp().albumart_paintable.set_rotation(0.0);
                         this.update_album_art(p.current_song(), cache.clone());
                     }
                 ),
@@ -735,6 +758,7 @@ impl PlayerPane {
                 .and_then(|song| song.get_info().duration.as_ref())
                 .map_or(0.0, |duration| duration.as_secs_f64()),
         );
+        self.restart_album_art_animation(0.0);
         glib::spawn_future_local(clone!(
             #[weak(rename_to = this)]
             self,
@@ -768,7 +792,19 @@ impl PlayerPane {
 
     fn snap_rotation_to_position(&self, position: f64) {
         let paintable = &self.imp().albumart_paintable;
-        paintable.set_rotation((position * paintable.rotation_speed()) % 360.0);
+        self.restart_album_art_animation((position * paintable.rotation_speed()) % 360.0);
+    }
+
+    fn restart_album_art_animation(&self, rotation: f64) {
+        let imp = self.imp();
+        let animation = imp.albumart_animation.get().unwrap();
+        animation.reset();
+        imp.albumart_paintable.set_rotation(rotation);
+        animation.set_value_from(rotation);
+        animation.set_value_to(rotation + 360.0);
+        animation
+            .set_duration((360_000.0 / imp.albumart_paintable.rotation_speed()).round() as u32);
+        self.sync_album_art_animation();
     }
 
     fn sync_album_art_animation(&self) {
@@ -781,33 +817,16 @@ impl PlayerPane {
 
         let should_rotate =
             self.imp().albumart_paintable.circular() && state == PlaybackState::Playing;
-        if !should_rotate {
-            if let Some(id) = self.imp().albumart_tick_id.take() {
-                id.remove();
+        let animation = self.imp().albumart_animation.get().unwrap();
+        if should_rotate {
+            match animation.state() {
+                adw::AnimationState::Idle | adw::AnimationState::Finished => animation.play(),
+                adw::AnimationState::Paused => animation.resume(),
+                _ => {}
             }
-            return;
+        } else if animation.state() == adw::AnimationState::Playing {
+            animation.pause();
         }
-        if self.imp().albumart_tick_id.borrow().is_some() {
-            return;
-        }
-
-        let last_frame_time = Cell::new(glib::monotonic_time());
-        let id = self.add_tick_callback(clone!(
-            #[weak(rename_to = this)]
-            self,
-            #[upgrade_or]
-            glib::ControlFlow::Break,
-            move |_, clock| {
-                let now = clock.frame_time();
-                let elapsed = (now - last_frame_time.replace(now)) as f64 / 1_000_000.0;
-                let paintable = &this.imp().albumart_paintable;
-                paintable.set_rotation(
-                    (paintable.rotation() + elapsed * paintable.rotation_speed()) % 360.0,
-                );
-                glib::ControlFlow::Continue
-            }
-        ));
-        self.imp().albumart_tick_id.replace(Some(id));
     }
 }
 
