@@ -346,6 +346,10 @@
 			<default>false</default>
 			<summary>Show the player album art as a rotating disc</summary>
 		</key>
+		<key name="return-to-starting-angle" type='b'>
+			<default>false</default>
+			<summary>Adjust rotation speed so tracks end at their starting angle</summary>
+		</key>
 		<key name="album-art-rotation-speed" type='d'>
 			<range min="0" max="2"/>
 			<default>1.0</default>

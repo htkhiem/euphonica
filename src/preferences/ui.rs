@@ -22,6 +22,8 @@ mod imp {
         #[template_child]
         pub rotate_album_art: TemplateChild<adw::SwitchRow>,
         #[template_child]
+        pub return_to_starting_angle: TemplateChild<adw::SwitchRow>,
+        #[template_child]
         pub album_art_rotation_speed_row: TemplateChild<adw::ActionRow>,
         #[template_child]
         pub album_art_rotation_speed: TemplateChild<gtk::Scale>,
@@ -136,6 +138,18 @@ impl UIPreferences {
         let rotate_album_art = imp.rotate_album_art.get();
         ui_settings
             .bind("rotate-album-art", &rotate_album_art, "active")
+            .build();
+        let return_to_starting_angle = imp.return_to_starting_angle.get();
+        ui_settings
+            .bind(
+                "return-to-starting-angle",
+                &return_to_starting_angle,
+                "active",
+            )
+            .build();
+        rotate_album_art
+            .bind_property("active", &return_to_starting_angle, "sensitive")
+            .sync_create()
             .build();
         rotate_album_art
             .bind_property(

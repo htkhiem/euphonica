@@ -129,14 +129,26 @@ mod imp {
                 #[weak(rename_to = this)]
                 self,
                 move |paintable| {
-                    if paintable.circular()
-                        && let Some(player) = this.player.upgrade()
-                    {
-                        this.obj().snap_rotation_to_position(player.position());
+                    if paintable.circular() {
+                        this.obj().snap_album_art_to_player();
                     }
                     this.obj().sync_album_art_animation();
                 }
             ));
+            for property in ["return-to-starting-angle", "degrees-per-second"] {
+                self.albumart_paintable.connect_notify_local(
+                    Some(property),
+                    clone!(
+                        #[weak(rename_to = this)]
+                        self,
+                        move |paintable, _| {
+                            if paintable.return_to_starting_angle() {
+                                this.obj().snap_album_art_to_player();
+                            }
+                        }
+                    ),
+                );
+            }
             ui_settings
                 .bind(
                     "album-art-rotation-speed",
@@ -147,6 +159,14 @@ mod imp {
                 .mapping(|v: &Variant, _| {
                     Some(super::rotation_degrees_per_second(v.get::<f64>().unwrap()).to_value())
                 })
+                .build();
+            ui_settings
+                .bind(
+                    "return-to-starting-angle",
+                    &self.albumart_paintable,
+                    "return-to-starting-angle",
+                )
+                .get_only()
                 .build();
             ui_settings
                 .bind("rotate-album-art", &self.albumart_paintable, "circular")
@@ -310,6 +330,7 @@ impl PlayerPane {
                 ),
             )));
         self.bind_state(player, cache, client_state);
+        self.snap_album_art_to_player();
         self.imp().playback_controls.setup(player);
         self.imp().output_controls.setup(player);
         self.imp().seekbar.setup(player);
@@ -709,6 +730,11 @@ impl PlayerPane {
     }
 
     fn update_album_art(&self, song: Option<Song>, cache: Rc<Cache>) {
+        self.imp().albumart_paintable.set_duration(
+            song.as_ref()
+                .and_then(|song| song.get_info().duration.as_ref())
+                .map_or(0.0, |duration| duration.as_secs_f64()),
+        );
         glib::spawn_future_local(clone!(
             #[weak(rename_to = this)]
             self,
@@ -732,9 +758,17 @@ impl PlayerPane {
         ));
     }
 
+    fn snap_album_art_to_player(&self) {
+        if self.imp().albumart_paintable.circular()
+            && let Some(player) = self.imp().player.upgrade()
+        {
+            self.snap_rotation_to_position(player.position());
+        }
+    }
+
     fn snap_rotation_to_position(&self, position: f64) {
         let paintable = &self.imp().albumart_paintable;
-        paintable.set_rotation((position * paintable.degrees_per_second()) % 360.0);
+        paintable.set_rotation((position * paintable.rotation_speed()) % 360.0);
     }
 
     fn sync_album_art_animation(&self) {
@@ -768,7 +802,7 @@ impl PlayerPane {
                 let elapsed = (now - last_frame_time.replace(now)) as f64 / 1_000_000.0;
                 let paintable = &this.imp().albumart_paintable;
                 paintable.set_rotation(
-                    (paintable.rotation() + elapsed * paintable.degrees_per_second()) % 360.0,
+                    (paintable.rotation() + elapsed * paintable.rotation_speed()) % 360.0,
                 );
                 glib::ControlFlow::Continue
             }

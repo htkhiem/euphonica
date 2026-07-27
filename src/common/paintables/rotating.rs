@@ -15,10 +15,13 @@ mod imp {
     pub struct RotatingPaintable {
         pub paintable: RefCell<Option<gdk::Paintable>>,
         pub rotation: Cell<f64>,
+        pub duration: Cell<f64>,
         #[property(get, set = Self::set_circular)]
         pub circular: Cell<bool>,
         #[property(get, set)]
         pub degrees_per_second: Cell<f64>,
+        #[property(get, set)]
+        pub return_to_starting_angle: Cell<bool>,
     }
 
     #[glib::object_subclass]
@@ -158,6 +161,21 @@ impl RotatingPaintable {
         self.imp().paintable.replace(paintable);
         self.invalidate_size();
         self.invalidate_contents();
+    }
+
+    pub fn set_duration(&self, duration: f64) {
+        self.imp().duration.set(duration);
+    }
+
+    pub fn rotation_speed(&self) -> f64 {
+        let speed = self.degrees_per_second();
+        let duration = self.imp().duration.get();
+        if self.return_to_starting_angle() && duration > 0.0 {
+            let rotations = (duration * speed / 360.0).round().max(1.0);
+            rotations * 360.0 / duration
+        } else {
+            speed
+        }
     }
 
     // Don't make property as it changes every frame
