@@ -492,6 +492,11 @@ impl From<mpd::song::Song> for SongInfo {
             let _ = res.queue_pos.replace(place.pos);
         }
 
+        // The various date tags. Release date will be picked from the first 
+        // available in the listed order.
+        let mut original_date: Option<Date> = None;
+        let mut date: Option<Date> = None;
+
         // Search tags vector for additional fields we can use.
         // Again we're using iter() here to avoid cloning everything.
         // Limitation: MPD cannot parse DSD song format UNTIL PLAYED.
@@ -565,8 +570,11 @@ impl From<mpd::song::Song> for SongInfo {
                         }
                     }
                 }
-                tags::RELEASE_DATE => {
-                    res.release_date = parse_date(val.as_ref());
+                tags::ORIGINAL_DATE => {
+                    original_date = parse_date(val.as_ref());
+                }
+                tags::DATE => {
+                    date = parse_date(val.as_ref());
                 }
                 tags::TRACK => {
                     if let Ok(idx) = val.parse::<i64>() {
@@ -606,6 +614,9 @@ impl From<mpd::song::Song> for SongInfo {
                 _ => {}
             }
         }
+
+        // Coalesce release date
+        res.release_date = original_date.or(date);
 
         // Assume the artist IDs and artistsort tags are given in the same order as the artist tags
         for (idx, id) in artist_mbids.drain(..).enumerate() {
