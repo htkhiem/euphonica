@@ -38,6 +38,8 @@ mod imp {
     #[template(resource = "/io/github/htkhiem/Euphonica/gtk/library/artist-cell.ui")]
     pub struct ArtistCell {
         #[template_child]
+        pub layout_switcher: TemplateChild<adw::MultiLayoutView>,
+        #[template_child]
         pub avatar: TemplateChild<adw::Avatar>,
         #[template_child]
         pub covers: TemplateChild<CoverFan>,
@@ -242,6 +244,16 @@ impl ArtistCell {
         imp.covers.clear_cover(2, thumb);
     }
 
+    #[inline]
+    fn set_cover_count(&self, count: u8) {
+        self.imp().covers.set_cover_count(count);
+        if count > 0 {
+            self.imp().layout_switcher.set_layout_name("covers");
+        } else {
+            self.imp().layout_switcher.set_layout_name("avatar-only");
+        }
+    }
+
     /// Unlike AlbumCell, ArtistCells might get quite complex so spinners aren't feasible
     fn update_textures(&self) {
         let imp = self.imp();
@@ -279,7 +291,7 @@ impl ArtistCell {
 
                     let example_uris = &artist.get_info().example_uris;
                     let cover_fan = this.imp().covers.get();
-                    cover_fan.set_cover_count(example_uris.len().min(3) as u8);
+                    this.set_cover_count(example_uris.len().min(3) as u8);
                     for (i, uri) in example_uris.iter().take(3).enumerate() {
                         match cache.clone().get_album_cover_lite(uri, thumbnail_for_fetch).await {
                             Ok(Some(tex)) => cover_fan.set_cover(i.min(3) as u8, &tex),
