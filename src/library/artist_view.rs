@@ -7,6 +7,7 @@ use std::{cell::Cell, cmp::Ordering, rc::Rc, sync::OnceLock};
 use glib::{Properties, SignalHandlerId, WeakRef, clone, subclass::Signal};
 
 use super::{ArtistCell, ArtistContentView, Library, TagsFilter};
+use crate::utils::SearchableView;
 use crate::{
     cache::{Cache, sqlite},
     common::{Artist, ContentStack},
@@ -438,6 +439,7 @@ impl ArtistView {
         search_btn
             .bind_property("active", &search_bar, "search-mode-enabled")
             .sync_create()
+            .bidirectional()
             .build();
 
         // Chain order: search -> genres -> tags -> sort
@@ -572,5 +574,11 @@ impl LazyInit for ArtistView {
                     );
                 });
             }
+    }
+}
+
+impl SearchableView for ArtistView {
+    fn trigger_search(&self) {
+        self.imp().search_bar.set_search_mode(true);
     }
 }

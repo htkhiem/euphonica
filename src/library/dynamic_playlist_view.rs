@@ -16,12 +16,7 @@ use std::{
 
 use super::{DynamicPlaylistContentView, Library};
 use crate::{
-    cache::{Cache, sqlite},
-    client::{ClientState, ConnectionState, Result as ClientResult},
-    common::{ContentStack, DynamicPlaylist, INode},
-    library::{DynamicPlaylistEditorView, playlist_row::PlaylistRow},
-    utils::{self, g_cmp_str_options, settings_manager},
-    window::EuphonicaWindow,
+    cache::{Cache, sqlite}, client::{ClientState, ConnectionState, Result as ClientResult}, common::{ContentStack, DynamicPlaylist, INode}, library::{DynamicPlaylistEditorView, playlist_row::PlaylistRow}, utils::{self, SearchableView, g_cmp_str_options, settings_manager}, window::EuphonicaWindow,
 };
 
 // DynamicPlaylist view implementation
@@ -638,6 +633,7 @@ impl DynamicPlaylistView {
         search_btn
             .bind_property("active", &search_bar, "search-mode-enabled")
             .sync_create()
+            .bidirectional()
             .build();
 
         // Chain search & sort. Put sort after search to reduce number of sort items.
@@ -717,5 +713,11 @@ impl DynamicPlaylistView {
                     .and_downcast::<DynamicPlaylistEditorView>()
             })
             .flatten()
+    }
+}
+
+impl SearchableView for DynamicPlaylistView {
+    fn trigger_search(&self) {
+        self.imp().search_bar.set_search_mode(true);
     }
 }

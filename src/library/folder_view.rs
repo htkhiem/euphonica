@@ -1,8 +1,6 @@
 use super::{Library, generic_row::GenericRow};
 use crate::{
-    cache::Cache,
-    common::{ContentStack, INode, INodeType},
-    utils::{LazyInit, g_cmp_str_options, settings_manager},
+    cache::Cache, common::{ContentStack, INode, INodeType}, utils::{LazyInit, SearchableView, g_cmp_str_options, settings_manager},
 };
 use adw::prelude::*;
 use adw::subclass::prelude::*;
@@ -500,6 +498,7 @@ impl FolderView {
         search_btn
             .bind_property("active", &search_bar, "search-mode-enabled")
             .sync_create()
+            .bidirectional()
             .build();
 
         // Chain search & sort. Put sort after search to reduce number of sort items.
@@ -568,5 +567,11 @@ impl LazyInit for FolderView {
                     this.imp().initializing.set(false);
                 });
             }
+    }
+}
+
+impl SearchableView for FolderView {
+    fn trigger_search(&self) {
+        self.imp().search_bar.set_search_mode(true);
     }
 }

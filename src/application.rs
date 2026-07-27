@@ -618,6 +618,7 @@ impl EuphonicaApplication {
             self.set_accels_for_action("win.view-dynamic-playlists", &["<Ctrl>5"]);
             self.set_accels_for_action("win.view-playlists", &["<Ctrl>6"]);
             self.set_accels_for_action("win.view-queue", &["<Ctrl>7"]);
+            self.set_accels_for_action("win.search-current-view", &["<Ctrl>f"]);
             self.set_accels_for_action("queue.scroll-to-playing", &["<Ctrl><Shift>o"]);  // toggle autoscroll on-off, bad name
             self.set_accels_for_action("queue.stop-and-clear", &["<Alt>c"]);
             self.set_accels_for_action("win.save", &["<Ctrl>s"]);

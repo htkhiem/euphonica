@@ -517,14 +517,14 @@ pub fn rebuild_genre_delim_exception_automaton() {
     }
 }
 
-/// There are two guard layers against full fetches.
-/// - This LazyInit trait. All heavy views must implement it. A view's populate() will then be called
-/// by the sidebar upon navigating to that view. If that view is already initialised, populate() must
-/// be a noop(). TODO: enforce noop at sidebar level instead.
-/// - Additional checks at the controller level, to prevent new windows (after surfacing from background)
-/// from mistakenly reinitialising already-fetched models.
+/// Trait for views whose content loading might be deferred on startup.
 pub trait LazyInit {
     fn populate(&self);
+}
+
+/// Trait for views that have some form of searching that can be triggered with a common keyboard shortcut.
+pub trait SearchableView {
+    fn trigger_search(&self);
 }
 
 /// Exports any type that implements Serialize to a JSON file.

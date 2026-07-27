@@ -18,12 +18,7 @@ use std::{
 use super::PlayerPane;
 
 use crate::{
-    cache::Cache,
-    client::{ClientState, Error as ClientError},
-    common::{ContentStack, RowEditButtons, Song, SongRow},
-    player::controller::SwapDirection,
-    utils::{LazyInit, g_search_substr, settings_manager},
-    window::EuphonicaWindow,
+    cache::Cache, client::{ClientState, Error as ClientError}, common::{ContentStack, RowEditButtons, Song, SongRow}, player::controller::SwapDirection, utils::{LazyInit, SearchableView, g_search_substr, settings_manager}, window::EuphonicaWindow,
 };
 
 use super::Player;
@@ -407,6 +402,7 @@ impl QueueView {
         search_btn
             .bind_property("active", &search_bar, "search-mode-enabled")
             .sync_create()
+            .bidirectional()
             .build();
 
         // Chain filter
@@ -1033,5 +1029,11 @@ impl LazyInit for QueueView {
                 self.update_stack(player.queue());
             }
         }
+    }
+}
+
+impl SearchableView for QueueView {
+    fn trigger_search(&self) {
+        self.imp().search_bar.set_search_mode(true);
     }
 }

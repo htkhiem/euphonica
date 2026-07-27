@@ -11,7 +11,7 @@ use std::{cell::Cell, cmp::Ordering, rc::Rc, sync::OnceLock};
 
 use super::{AlbumCell, AlbumContentView, Library, TagsFilter};
 use crate::{
-    cache::{Cache, sqlite}, client::ClientState, common::{Album, ContentStack, Rating}, utils::{LazyInit, g_cmp_options, g_cmp_str_options, g_search_substr, settings_manager}, window::EuphonicaWindow,
+    cache::{Cache, sqlite}, client::ClientState, common::{Album, ContentStack, Rating}, utils::{LazyInit, SearchableView, g_cmp_options, g_cmp_str_options, g_search_substr, settings_manager}, window::EuphonicaWindow,
 };
 
 mod imp {
@@ -536,6 +536,7 @@ impl AlbumView {
         let search_btn = self.imp().search_btn.get();
         search_btn
             .bind_property("active", &search_bar, "search-mode-enabled")
+            .bidirectional()
             .sync_create()
             .build();
 
@@ -669,5 +670,11 @@ impl LazyInit for AlbumView {
                     );
                 });
             }
+    }
+}
+
+impl SearchableView for AlbumView {
+    fn trigger_search(&self) {
+        self.imp().search_bar.set_search_mode(true);
     }
 }
