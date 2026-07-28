@@ -16,12 +16,7 @@ use std::{
 
 use super::{Library, tag_button::TagButton};
 use crate::{
-    cache::{Cache, CacheState, Error as CacheError, placeholders::EMPTY_ARTIST_STRING},
-    common::{Album, Artist, ContentStack, RowAddButtons, Song, SongRow},
-    library::{Tag, add_to_playlist::AddToPlaylistButton, discography_year::DiscographyYear},
-    meta_providers::models::{Wiki, artist_type_to_string},
-    utils::{self, format_secs_as_duration, tokio_runtime},
-    window::EuphonicaWindow,
+    cache::{Cache, CacheState, Error as CacheError, placeholders::EMPTY_ARTIST_STRING}, common::{Album, Artist, ContentStack, RowAddButtons, Song, SongRow}, library::{Tag, add_to_playlist::AddToPlaylistButton, discography_year::DiscographyYear}, meta_providers::models::{Wiki, artist_type_to_string}, utils::{self, format_secs_as_duration, settings_manager, tokio_runtime}, window::EuphonicaWindow,
 };
 
 mod imp {
@@ -43,6 +38,8 @@ mod imp {
     #[derivative(Default)]
     #[template(resource = "/io/github/htkhiem/Euphonica/gtk/library/artist-content-view.ui")]
     pub struct ArtistContentView {
+        #[template_child]
+        pub stack: TemplateChild<adw::ViewStack>,
         #[template_child]
         pub scrolled_window: TemplateChild<gtk::ScrolledWindow>,
         #[template_child]
@@ -1098,6 +1095,17 @@ impl ArtistContentView {
     }
 
     pub fn bind(&self, artist: &Artist) {
+        let stack = self.imp().stack.get();
+        // Decide which view to show first
+        if settings_manager().child("ui").boolean("artist-show-all-songs") {
+            if stack.visible_child_name().is_some_and(|v| &v != "songs") {
+                stack.set_visible_child_name("songs");
+            }
+        } else {
+            if stack.visible_child_name().is_some_and(|v| &v != "discography") {
+                stack.set_visible_child_name("discography");
+            }
+        }
         self.imp().on_song_selection_changed();
         let info = artist.get_info();
         self.imp().release_count.set_label("-");
