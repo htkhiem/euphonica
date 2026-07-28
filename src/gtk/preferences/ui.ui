@@ -53,8 +53,8 @@
         </child>
         <child>
           <object class="AdwComboRow" id="title_wrap_mode">
-            <property name="title" translatable="true">Title wrap mode</property>
-            <property name="subtitle" translatable="true">How to display long titles.</property>
+            <property name="title" translatable="true">Album title wrap mode</property>
+            <property name="subtitle" translatable="true">How to display long titles. Applicable to album grids.</property>
             <property name="model">
               <object class="GtkStringList">
                 <items>
@@ -94,6 +94,12 @@
           <object class="AdwSwitchRow" id="artist_collapse_discography_albums">
             <property name="title" translatable="true">Collapse discography albums upon entry</property>
             <property name="subtitle" translatable="true">If true, will show all albums with their contents initially collapsed.</property>
+          </object>
+        </child>
+        <child>
+          <object class="AdwSwitchRow" id="artist_sort_discography_years_asc">
+            <property name="title" translatable="true">Sort years in ascending order</property>
+            <property name="subtitle" translatable="true">Show earlier releases first. Requires relaunch.</property>
           </object>
         </child>
       </object>

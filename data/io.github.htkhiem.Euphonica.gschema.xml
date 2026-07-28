@@ -364,7 +364,7 @@
             <default>false</default>
             <summary>If true, the artist discography section will load with all album contents initially collapsed.</summary>
         </key>
-		<key name="artist-sort-discography-years-ascending" type="b">
+		<key name="artist-sort-discography-years-asc" type="b">
             <default>false</default>
             <summary>Show the earliest years first.</summary>
         </key>

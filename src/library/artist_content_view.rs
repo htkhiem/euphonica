@@ -354,23 +354,8 @@ mod imp {
             ));
 
             // Set up discography subview
-            let discography_subview = self.discography_subview.get();
-            discography_subview.set_sort_func(|row1, row2| {
-                g_cmp_options(
-                    row1.child()
-                        .and_downcast::<DiscographyYear>()
-                        .expect("Has to be a DiscographyYear")
-                        .year()
-                        .as_ref(),
-                    row2.child()
-                        .and_downcast::<DiscographyYear>()
-                        .expect("Has to be a DiscographyYear")
-                        .year()
-                        .as_ref(),
-                    false,
-                    false,
-                )
-            });
+            self.update_discography_sort_func();   // no matter what I did connect_changed() didn't fire so this will require a reboot...
+            
             self.multi_layout_view.connect_layout_name_notify(clone!(
                 #[weak(rename_to = this)]
                 self,
@@ -606,6 +591,26 @@ mod imp {
                     break;
                 }
             }
+        }
+
+        pub fn update_discography_sort_func(&self) {
+            let asc = settings_manager().child("ui").boolean("artist-sort-discography-years-asc");
+            self.discography_subview.set_sort_func(move |row1, row2| {
+                g_cmp_options(
+                    row1.child()
+                        .and_downcast::<DiscographyYear>()
+                        .expect("Has to be a DiscographyYear")
+                        .year()
+                        .as_ref(),
+                    row2.child()
+                        .and_downcast::<DiscographyYear>()
+                        .expect("Has to be a DiscographyYear")
+                        .year()
+                        .as_ref(),
+                    false,
+                    asc,
+                )
+            });
         }
     }
 }

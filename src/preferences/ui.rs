@@ -45,6 +45,8 @@ mod imp {
         pub artist_collapse_discography_years: TemplateChild<adw::SwitchRow>,
         #[template_child]
         pub artist_collapse_discography_albums: TemplateChild<adw::SwitchRow>,
+        #[template_child]
+        pub artist_sort_discography_years_asc: TemplateChild<adw::SwitchRow>,
 
         #[template_child]
         pub use_visualizer: TemplateChild<adw::ExpanderRow>,
@@ -175,6 +177,13 @@ impl UIPreferences {
             .bind(
                 "artist-collapse-discography-albums-on-load",
                 &imp.artist_collapse_discography_albums.get(),
+                "active",
+            )
+            .build();
+        ui_settings
+            .bind(
+                "artist-sort-discography-years-asc",
+                &imp.artist_sort_discography_years_asc.get(),
                 "active",
             )
             .build();
