@@ -27,7 +27,10 @@
             <child>
               <!-- Should only display if navigable -->
               <object class="GtkImage" id="title_arrow">
-                <property name="icon-name">right-symbolic</property>
+                <style>
+                  <class name="dimmed"/>
+                </style>
+                <property name="icon-name">info-outline-symbolic</property>
                 <property name="valign">center</property>
               </object>
             </child>

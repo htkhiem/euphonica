@@ -132,5 +132,6 @@
     <file preprocess="xml-stripblanks" alias="plus-symbolic.svg">gtk/icons/plus-symbolic.svg</file>
     <file preprocess="xml-stripblanks" alias="copy-symbolic.svg">gtk/icons/copy-symbolic.svg</file>
     <file preprocess="xml-stripblanks" alias="circle-outline-thick-symbolic.svg">gtk/icons/circle-outline-thick-symbolic.svg</file>
+    <file preprocess="xml-stripblanks" alias="info-outline-symbolic.svg">gtk/icons/info-outline-symbolic.svg</file>
   </gresource>
 </gresources>

@@ -714,17 +714,13 @@ impl Library {
             album_model.remove_all();
             let albumartist_model = self.imp().albumartists.clone();
             albumartist_model.remove_all();
-            self.client()
+            let (albums, artists) = self.client()
                 .get_albums_and_albumartists_by_query(
-                    Query::new(),
-                    &mut |album| {
-                        album_model.append(&album);
-                    },
-                    &mut |artist| {
-                        albumartist_model.append(&artist);
-                    },
+                    Query::new()
                 )
                 .await?;
+            album_model.extend_from_slice(&albums);
+            albumartist_model.extend_from_slice(&artists);
         }
         Ok(())
     }

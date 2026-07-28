@@ -4,6 +4,7 @@ use futures::executor;
 use glib::{ThreadPool, clone};
 use gtk::gio::prelude::*;
 use gtk::{gio, glib};
+use itertools::Itertools;
 use lru::LruCache;
 use mpd::search::{Operation as QueryOperation, Window};
 use mpd::{
@@ -25,7 +26,7 @@ use uuid::Uuid;
 
 use crate::cache::sqlite;
 use crate::client::connection::ImageHandle;
-use crate::common::{ArtistInfo, DynamicPlaylist, parse_mb_artist_tag, tags};
+use crate::common::{AlbumInfo, ArtistInfo, DynamicPlaylist, parse_mb_artist_tag, tags};
 use crate::utils::settings_manager;
 use crate::{
     common::{Album, Artist, INode, Song, SongInfo, Stickers},
@@ -863,28 +864,18 @@ impl MpdWrapper {
     /// while albumartists require example URIs for display purposes.
     /// Algorithm:
     /// 1. Fetch (albumartist tag, album) pairs
-    /// 2. Split the albumartist tags & count how many albums an albumartist has. This allows us to know when to stop
-    ///    waiting for more albums to arrive for a given albumartist (and send that albumartist on its way). For now
-    ///    since we also need to discover an artist's genres we'll have to parse all their albums.
-    /// 3. For each (albumartist tag, album) pair, fetch one song entry to glean information from it. Create the album object
+    /// 2. For each (albumartist tag, album) pair, fetch one song entry to glean information from it. Create the album object
     ///    as usual, but also extract the albumartists into a hashmap. In case some of the albumartists are already present
     ///    in the hashmap (due to them being present in another album, just append the album's example URI to their list of
     ///    example albums.
-    /// 4a. Once an albumartist hits the known number of albums or 3 (whichever comes first), send it off to FAA too.
-    /// 4b. Send each finished album off to the FAL callback.
-    pub async fn get_albums_and_albumartists_by_query<FAL, FAA>(
+    pub async fn get_albums_and_albumartists_by_query(
         &self,
         query: Query<'static>,
-        respond_album: &mut FAL,
-        respond_albumartist: &mut FAA,
-    ) -> ClientResult<()>
-    where
-        FAL: FnMut(Album),
-        FAA: FnMut(Artist),
-    {
+    ) -> ClientResult<(Vec<Album>, Vec<Artist>)> {
         // TODO: batched windowed retrieval
-        // STEP 1: Get list of unique album tags, grouped by albumartist
-        // Will block child thread until info for all albums have been retrieved.
+        // Most of the below logic are asyncified to avoid blocking the main UI thread.
+        let asyncified = Asyncified::builder().build_ok(|| ()).await;
+
         let (s, r) = oneshot::channel();
         let grouped_vals = self
             .foreground(
@@ -898,124 +889,107 @@ impl MpdWrapper {
             )
             .await?;
 
-        // STEP 2: Count available albums per albumartist
-        // Known bug: will conflate artists with the same name, but not a big concern as this is only an optimisation trick.
-        let asyncified = Asyncified::builder().build_ok(|| ()).await;
-        let (titles_artists, artist_album_count) = asyncified
+        let (album_count, chunked_queries_windows): (usize, Vec<Vec<(Query, Window)>>) = asyncified
             .call(move |_| {
-                let mut titles_artists = Vec::new();
-                let mut artist_album_count: FxHashMap<String, usize> = FxHashMap::default();
+                let mut all_queries_windows = Vec::new();
                 for (key, tags) in grouped_vals.groups.into_iter() {
+                    all_queries_windows.reserve(tags.len());
                     for tag in tags.into_iter() {
-                        // Only count if tag is not empty. Tag will be empty for tracks without album tags but with albumartist tags.
+                        // Only care if tag is not empty
                         if !tag.is_empty() {
-                            for artist in parse_mb_artist_tag(&key) {
-                                if let Some(count) = artist_album_count.get(artist) {
-                                    let _ = artist_album_count.insert(key.clone(), count + 1);
-                                } else {
-                                    let _ = artist_album_count.insert(key.clone(), 1);
-                                }
-                            }
-                            titles_artists.push((tag, key.clone()));
+                            let mut query = Query::new();
+                            query.and(Term::Tag(Cow::Borrowed(tags::ALBUM)), tag);
+                            query.and(Term::Tag(Cow::Borrowed(tags::ALBUMARTIST)), key.clone());
+                            all_queries_windows.push((query, mpd::search::Window::from((0, 1))));
                         }
                     }
                 }
-                (titles_artists, artist_album_count)
+                // Chunk the queries to avoid timing out on slow servers. The below messy code actually
+                // gives owned chunks without cloning.
+                (
+                    all_queries_windows.len(),
+                    all_queries_windows
+                        .into_iter()
+                        .chunks(256)
+                        .into_iter()
+                        .map(|chunk| chunk.collect())
+                        .collect(),
+                )
             })
             .await;
 
-        // STEP 3: Fetch song entries.
-        // Construct queries all at once. Each query fetches one song from one album.
-        // Maps from artist comp_id (not just name) to artistinfo
-        let mut albumartists: FxHashMap<String, ArtistInfo> = FxHashMap::default();
-        // Might actually contain comp_ids of artists sent off immediately without ever being pushed into the albumartists hashmap
-        let mut done_albumartists: FxHashSet<String> = FxHashSet::default();
-        // Chunk the queries for efficiency.
-        for ta_chunk in titles_artists.chunks(256) {
-            let queries_windows: Vec<(Query, mpd::search::Window)> = ta_chunk
-                .iter()
-                .map(|title_artist| {
-                    let mut query = Query::new();
-                    query.and(
-                        Term::Tag(Cow::Borrowed(tags::ALBUM)),
-                        title_artist.0.to_string(),
-                    );
-                    query.and(
-                        Term::Tag(Cow::Borrowed(tags::ALBUMARTIST)),
-                        title_artist.1.to_string(),
-                    );
-                    (query, mpd::search::Window::from((0, 1)))
-                })
-                .collect();
+        // Now we can fetch song entries chunk by chunk.
+        let mut songs: Vec<SongInfo> = Vec::with_capacity(album_count);
+        for chunk in chunked_queries_windows {
             let (s, r) = oneshot::channel();
-            let mut songs = self
-                .foreground(
-                    Task::FindMultiple(
-                        queries_windows,
-                        Some(vec![
-                            tags::ALBUM,
-                            tags::ALBUMARTIST,
-                            tags::ALBUMARTISTSORT,
-                            tags::ALBUMARTIST_MBID,
-                            tags::ALBUM_MBID,
-                            tags::ORIGINAL_DATE,
-                            tags::DATE,
-                            tags::GENRE,
-                        ]),
-                        s,
-                    ),
-                    r,
-                )
-                .await?;
-            for i in 0..songs.len() {
-                if let Some(album_info) = std::mem::take(&mut songs[i]).into_album_info() {
-                    // Handle artist first
-                    let example_uri = &album_info.example_uri;
-                    for artist in album_info.artists.iter() {
-                        let comp_id = artist.get_comp_id();
-                        if !done_albumartists.contains(comp_id) {
-                            if let Some(existing) = albumartists.get_mut(comp_id) {
-                                // Slack off here (we'll not use all of them anyway; alloc only what's needed)
-                                if existing.example_uris.len() < MAX_EXAMPLE_ALBUMS_PER_ALBUMARTIST {
-                                    existing.example_uris.push(example_uri.to_owned());
-                                }
-                                // Note to self: Album genres are parsed by the Song constructor, which runs in a child thread (see MpdClient::foreground).
-                                // However, artist genre parsing requires unioning all those genre sets from their albums. This is currently being done here
-                                // (on the UI thread).
-                                // TODO: move to another thread somehow
-                                existing.insert_genres(&album_info.genres);
-                                if &existing.example_uris.len()
-                                    >= artist_album_count.get(&artist.name).unwrap_or(&0)
-                                {
-                                    // Done with this; send off
-                                    done_albumartists.insert(comp_id.to_owned());
-                                    // TODO: optimise away this clone
-                                    respond_albumartist(existing.to_owned().into());
-                                }
-                            } else {
-                                // Haven't seen this artist before => push new
-                                let mut artist = artist.to_owned();
-                                artist.example_uris.push(example_uri.to_owned());
-                                // Fast path: just send off if that's enough
-                                if &artist.example_uris.len()
-                                    >= artist_album_count.get(&artist.name).unwrap_or(&0)
-                                {
-                                    // Done with this; send off
-                                    done_albumartists.insert(comp_id.to_owned());
-                                    // TODO: optimise away this clone
-                                    respond_albumartist(artist.into());
-                                } else {
-                                    albumartists.insert(comp_id.to_owned(), artist);
-                                }
-                            }
-                        } // else skip this artist
-                    }
-                    // Now send the album off
-                    respond_album(album_info.into());
-                }
-            }
+            songs.append(
+                &mut self
+                    .foreground(
+                        Task::FindMultiple(
+                            chunk,
+                            Some(vec![
+                                tags::ALBUM,
+                                tags::ALBUMARTIST,
+                                tags::ALBUMARTISTSORT,
+                                tags::ALBUMARTIST_MBID,
+                                tags::ALBUM_MBID,
+                                tags::ORIGINAL_DATE,
+                                tags::DATE,
+                                tags::GENRE,
+                            ]),
+                            s,
+                        ),
+                        r,
+                    )
+                    .await?,
+            );
         }
-        Ok(())
+
+        // Yet more off thread work
+        let (album_infos, artist_infos) = asyncified
+            .call(move |_| {
+                let mut albumartists: FxHashMap<String, ArtistInfo> = FxHashMap::default();
+                let mut albums: Vec<AlbumInfo> = Vec::with_capacity(album_count);
+
+                for i in 0..songs.len() {
+                    if let Some(album_info) = std::mem::take(&mut songs[i]).into_album_info() {
+                        // Handle artist first
+                        let example_uri = &album_info.example_uri;
+                        for artist in album_info.artists.iter() {
+                            let comp_id = artist.get_comp_id();
+                            let existing =
+                                albumartists.entry(comp_id.to_string()).or_insert_with(|| {
+                                    // Haven't seen this artist before => push new
+                                    artist.to_owned()
+                                });
+
+                            // Note to self: Album genres are parsed by the Song constructor, which runs in a child thread (see MpdClient::foreground).
+                            // However, artist genre parsing requires unioning all those genre sets from their albums. This is currently being done here
+                            // (on the UI thread).
+                            // TODO: move to another thread somehow
+                            existing.insert_genres(&album_info.genres);
+                            // Slack off here (we'll not use all of them anyway; alloc only what's needed)
+                            if existing.example_uris.len() < MAX_EXAMPLE_ALBUMS_PER_ALBUMARTIST {
+                                existing.example_uris.push(example_uri.to_owned());
+                            }
+                        }
+                        albums.push(album_info);
+                    }
+                }
+
+                (
+                    albums,
+                    albumartists
+                        .into_iter()
+                        .map(|p| p.1)
+                        .collect::<Vec<ArtistInfo>>(),
+                )
+            })
+            .await;
+        Ok((
+            album_infos.into_iter().map(Album::from).collect(),
+            artist_infos.into_iter().map(Artist::from).collect(),
+        ))
     }
 
     pub async fn get_distinct_genres<F>(&self, respond: &mut F) -> ClientResult<()>
@@ -1045,8 +1019,12 @@ impl MpdWrapper {
             if let Some(mbid) = tup.2 {
                 query.and(Term::Tag(tags::ALBUM_MBID.into()), mbid);
             }
-            self.get_albums_and_albumartists_by_query(query, respond, &mut |_| {})
+            let (albums, _) = self.get_albums_and_albumartists_by_query(query)
                 .await?;
+
+            for album in albums {
+                respond(album)
+            }
         }
         Ok(())
     }
