@@ -168,11 +168,18 @@ impl RotatingPaintable {
     }
 
     pub fn rotation_speed(&self) -> f64 {
+        self.rotation_speed_from(0.0, 0.0)
+    }
+
+    pub fn rotation_speed_from(&self, rotation: f64, position: f64) -> f64 {
         let speed = self.degrees_per_second();
-        let duration = self.imp().duration.get();
-        if self.return_to_starting_angle() && duration > 0.0 {
-            let rotations = (duration * speed / 360.0).round().max(1.0);
-            rotations * 360.0 / duration
+        let remaining = self.imp().duration.get() - position;
+        if self.return_to_starting_angle() && remaining > 0.0 {
+            let rotation = rotation.rem_euclid(360.0);
+            let rotations = ((remaining * speed + rotation) / 360.0)
+                .round()
+                .max(1.0);
+            (rotations * 360.0 - rotation) / remaining
         } else {
             speed
         }

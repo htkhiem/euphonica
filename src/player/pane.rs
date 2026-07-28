@@ -95,7 +95,9 @@ mod imp {
         pub albumart_paintable: RotatingPaintable,
         pub albumart_animation: OnceCell<adw::TimedAnimation>,
         pub current_lyric_line_id: RefCell<Option<SignalHandlerId>>,
+        pub lyrics_loading_id: RefCell<Option<SignalHandlerId>>,
         pub cover_changed_id: RefCell<Option<SignalHandlerId>>,
+        pub song_changed_id: RefCell<Option<SignalHandlerId>>,
         pub playback_state_id: RefCell<Option<SignalHandlerId>>,
         pub seeked_id: RefCell<Option<SignalHandlerId>>,
     }
@@ -164,7 +166,10 @@ mod imp {
                             if paintable.return_to_starting_angle() {
                                 this.obj().snap_album_art_to_player();
                             } else {
-                                this.obj().restart_album_art_animation(paintable.rotation());
+                                this.obj().restart_album_art_animation(
+                                    paintable.rotation(),
+                                    paintable.rotation_speed(),
+                                );
                             }
                         }
                     ),
@@ -236,7 +241,13 @@ mod imp {
                 if let Some(id) = self.current_lyric_line_id.take() {
                     player.disconnect(id);
                 }
+                if let Some(id) = self.lyrics_loading_id.take() {
+                    player.disconnect(id);
+                }
                 if let Some(id) = self.cover_changed_id.take() {
+                    player.disconnect(id);
+                }
+                if let Some(id) = self.song_changed_id.take() {
                     player.disconnect(id);
                 }
                 if let Some(id) = self.playback_state_id.take() {
@@ -254,7 +265,7 @@ mod imp {
     impl WidgetImpl for PlayerPane {
         fn map(&self) {
             self.parent_map();
-            self.obj().sync_album_art_animation();
+            self.obj().snap_album_art_to_player();
         }
     }
 
@@ -280,9 +291,10 @@ impl PlayerPane {
 
     pub fn update_lyrics_availability(&self, player: &Player) {
         let has_lyrics = player.n_lyric_lines() > 0;
-        self.imp()
-            .lyrics_window
-            .set_visible(has_lyrics && self.imp().show_lyrics.is_active());
+        // Keep the lyrics area visible while loading so the album art does not resize between tracks
+        self.imp().lyrics_window.set_visible(
+            (has_lyrics || player.lyrics_loading()) && self.imp().show_lyrics.is_active(),
+        );
         self.imp().export_lyrics.set_sensitive(has_lyrics);
         self.imp().clear_lyrics.set_sensitive(has_lyrics);
     }
@@ -326,6 +338,30 @@ impl PlayerPane {
     pub fn setup(&self, player: &Player, cache: Rc<Cache>, client_state: &ClientState) {
         self.imp().player.set(Some(player));
         self.imp()
+            .song_changed_id
+            .replace(Some(player.connect_closure(
+                "song-changed",
+                false,
+                closure_local!(
+                    #[weak(rename_to = this)]
+                    self,
+                    move |player: Player, album_changed: bool, automatic_transition: bool| {
+                        this.sync_album_art_animation_for_song(
+                            player.current_song(),
+                            player.position(),
+                            album_changed,
+                            automatic_transition,
+                        );
+                    }
+                ),
+            )));
+        self.sync_album_art_animation_for_song(
+            player.current_song(),
+            player.position(),
+            true,
+            true,
+        );
+        self.imp()
             .playback_state_id
             .replace(Some(player.connect_notify_local(
                 Some("playback-state"),
@@ -354,7 +390,6 @@ impl PlayerPane {
                 ),
             )));
         self.bind_state(player, cache, client_state);
-        self.snap_album_art_to_player();
         self.imp().playback_controls.setup(player);
         self.imp().output_controls.setup(player);
         self.imp().seekbar.setup(player);
@@ -528,6 +563,16 @@ impl PlayerPane {
                 }
             ),
         );
+        self.imp()
+            .lyrics_loading_id
+            .replace(Some(player.connect_notify_local(
+                Some("lyrics-loading"),
+                clone!(
+                    #[weak(rename_to = this)]
+                    self,
+                    move |player, _| this.update_lyrics_availability(player)
+                ),
+            )));
 
         // Synced lyrics handling:
         // - Upon loading new lyrics, player controller sets new lyrics object,
@@ -753,12 +798,6 @@ impl PlayerPane {
     }
 
     fn update_album_art(&self, song: Option<Song>, cache: Rc<Cache>) {
-        self.imp().albumart_paintable.set_duration(
-            song.as_ref()
-                .and_then(|song| song.get_info().duration.as_ref())
-                .map_or(0.0, |duration| duration.as_secs_f64()),
-        );
-        self.restart_album_art_animation(0.0);
         glib::spawn_future_local(clone!(
             #[weak(rename_to = this)]
             self,
@@ -782,6 +821,38 @@ impl PlayerPane {
         ));
     }
 
+    fn sync_album_art_animation_for_song(
+        &self,
+        song: Option<Song>,
+        position: f64,
+        album_changed: bool,
+        automatic_transition: bool,
+    ) {
+        let imp = self.imp();
+        imp.albumart_paintable.set_duration(
+            song.as_ref()
+                .and_then(|song| song.get_info().duration.as_ref())
+                .map_or(0.0, |duration| duration.as_secs_f64()),
+        );
+        if !album_changed && automatic_transition {
+            // MPD may advance before GTK updates the disc for the final time, so keep the last
+            // visible angle to avoid a noticeable jump when the same artwork continues
+            let rotation = imp.albumart_paintable.rotation().rem_euclid(360.0);
+            let speed = imp
+                .albumart_paintable
+                .rotation_speed_from(rotation, position);
+            self.restart_album_art_animation(rotation, speed);
+        } else if !automatic_transition && song.is_some() {
+            // Reset the artwork angle on manual song changes
+            let speed = imp.albumart_paintable.rotation_speed_from(0.0, position);
+            self.restart_album_art_animation(0.0, speed);
+        } else if song.is_some() {
+            self.snap_rotation_to_position(position);
+        } else {
+            self.restart_album_art_animation(0.0, imp.albumart_paintable.rotation_speed());
+        }
+    }
+
     fn snap_album_art_to_player(&self) {
         if self.imp().albumart_paintable.circular()
             && let Some(player) = self.imp().player.upgrade()
@@ -792,18 +863,20 @@ impl PlayerPane {
 
     fn snap_rotation_to_position(&self, position: f64) {
         let paintable = &self.imp().albumart_paintable;
-        self.restart_album_art_animation((position * paintable.rotation_speed()) % 360.0);
+        let speed = paintable.rotation_speed();
+        self.restart_album_art_animation((position * speed) % 360.0, speed);
     }
 
-    fn restart_album_art_animation(&self, rotation: f64) {
+    fn restart_album_art_animation(&self, rotation: f64, speed: f64) {
         let imp = self.imp();
         let animation = imp.albumart_animation.get().unwrap();
-        animation.reset();
-        imp.albumart_paintable.set_rotation(rotation);
+        if animation.state() == adw::AnimationState::Playing {
+            animation.pause();
+        }
         animation.set_value_from(rotation);
         animation.set_value_to(rotation + 360.0);
-        animation
-            .set_duration((360_000.0 / imp.albumart_paintable.rotation_speed()).round() as u32);
+        animation.set_duration((360_000.0 / speed).round() as u32);
+        animation.reset();
         self.sync_album_art_animation();
     }
 

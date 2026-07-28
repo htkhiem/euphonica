@@ -27,6 +27,7 @@ use std::{
     path::PathBuf,
     rc::Rc,
     sync::{Arc, Mutex, OnceLock},
+    time::{Duration, Instant},
     vec::Vec,
 };
 
@@ -34,6 +35,8 @@ use super::fft_backends::{
     FifoFftBackend, PipeWireFftBackend,
     backend::{FftBackendExt, FftStatus},
 };
+
+const STATUS_POLL_INTERVAL: Duration = Duration::from_secs(1);
 
 #[derive(Clone, Copy, Debug, glib::Enum, PartialEq, Default)]
 #[enum_type(name = "EuphonicaPlaybackState")]
@@ -177,10 +180,13 @@ mod imp {
     pub struct Player {
         pub state: Cell<PlaybackState>,
         pub position: Cell<f64>,
+        pub position_sampled_at: Cell<Instant>,
+        pub position_sampled_while_playing: Cell<bool>,
         pub queue_initialized: Cell<bool>,
         pub queue: gio::ListStore,
         pub lyric_lines: gtk::StringList, // Line by line for display. May be empty.
         pub lyrics: RefCell<Option<Lyrics>>,
+        pub lyrics_loading: Cell<bool>,
         pub queue_len: Cell<u32>,
         pub current_song: RefCell<Option<Song>>,
         pub current_lyric_line: Cell<u32>,
@@ -255,8 +261,11 @@ mod imp {
             Self {
                 state: Cell::new(PlaybackState::Stopped),
                 position: Cell::new(0.0),
+                position_sampled_at: Cell::new(Instant::now()),
+                position_sampled_while_playing: Cell::new(false),
                 lyric_lines: gtk::StringList::new(&[]),
                 lyrics: RefCell::new(None),
+                lyrics_loading: Cell::new(false),
                 random: Cell::new(false),
                 consume: Cell::new(false),
                 supports_playlists: Cell::new(false),
@@ -410,6 +419,9 @@ mod imp {
                     ParamSpecUInt::builder("current-lyric-line")
                         .read_only()
                         .build(),
+                    ParamSpecBoolean::builder("lyrics-loading")
+                        .read_only()
+                        .build(),
                     ParamSpecString::builder("title").read_only().build(),
                     ParamSpecString::builder("artist").read_only().build(),
                     ParamSpecString::builder("album").read_only().build(),
@@ -449,6 +461,7 @@ mod imp {
                 "replaygain" => get_replaygain_icon_name(self.replaygain.get()).to_value(),
                 "position" => obj.position().to_value(),
                 "current-lyric-line" => self.current_lyric_line.get().to_value(),
+                "lyrics-loading" => self.lyrics_loading.get().to_value(),
                 // These are proxies for Song properties
                 "title" => obj.title().to_value(),
                 "artist" => obj.artist().to_value(),
@@ -587,6 +600,9 @@ mod imp {
                     Signal::builder("history-changed").build(),
                     // For simplicity we'll always use the hires version
                     Signal::builder("cover-changed").build(),
+                    Signal::builder("song-changed")
+                        .param_types([bool::static_type(), bool::static_type()])
+                        .build(),
                     Signal::builder("seeked")
                         .param_types([f64::static_type()])
                         .build(),
@@ -921,7 +937,25 @@ impl Player {
         } else {
             status = mpd::Status::default();
         }
+        let status_time = Instant::now();
+        let was_playing = self.imp().position_sampled_while_playing.get();
+        let automatic_transition = was_playing
+            && self.current_song().is_some_and(|song| {
+                song.get_info().duration.as_ref().is_some_and(|duration| {
+                    self.position()
+                        + status_time
+                            .saturating_duration_since(self.imp().position_sampled_at.get())
+                            .as_secs_f64()
+                        + status
+                            .crossfade
+                            .map_or(0.0, |crossfade| crossfade.as_secs_f64())
+                        // Allow one polling interval because the last sampled position may precede the song change
+                        + STATUS_POLL_INTERVAL.as_secs_f64()
+                        >= duration.as_secs_f64()
+                })
+            });
         let mut mpris_changes: Vec<Property> = Vec::new();
+        let mut song_change = None;
         match status.state {
             State::Play => {
                 let new_state = PlaybackState::Playing;
@@ -1114,6 +1148,7 @@ impl Player {
 
                         // Get new lyrics
                         // First remove all current lines
+                        self.set_lyrics_loading(true);
                         self.imp()
                             .lyric_lines
                             .splice(0, self.imp().lyric_lines.n_items(), &[]);
@@ -1128,27 +1163,29 @@ impl Player {
                             new_song,
                             async move {
                                 println!("Fetching new lyrics...");
-                                match this
+                                let result = this
                                     .imp()
                                     .cache
                                     .get()
                                     .unwrap()
                                     .get_lyrics(new_song.get_info(), true, None)
-                                    .await
-                                {
+                                    .await;
+                                if !this.current_song().is_some_and(|song| {
+                                    song.get_info().get_comp_id()
+                                        == new_song.get_info().get_comp_id()
+                                }) {
+                                    return;
+                                }
+                                match result {
                                     Ok(Some(lyrics)) => {
-                                        if this.current_song().is_some_and(|s| {
-                                            s.get_info().get_comp_id()
-                                                == new_song.get_info().get_comp_id()
-                                        }) {
-                                            this.update_lyrics(lyrics);
-                                        }
+                                        this.update_lyrics(lyrics);
                                     }
                                     Ok(None) => {}
                                     Err(e) => {
                                         dbg!(e);
                                     }
                                 }
+                                this.set_lyrics_loading(false);
                             }
                         ));
 
@@ -1156,6 +1193,17 @@ impl Player {
                         if self.imp().mpris_enabled.get() {
                             mpris_changes.push(Property::Metadata(new_song.get_mpris_metadata()));
                         }
+
+                        let album_changed = self
+                            .imp()
+                            .current_song
+                            .borrow()
+                            .as_ref()
+                            .and_then(Song::get_album)
+                            .zip(new_song.get_album())
+                            .is_none_or(|(current, new)| {
+                                current.get_comp_id() != new.get_comp_id()
+                            });
 
                         // We're now ready to update the UI elements
                         self.imp().current_song.replace(Some(new_song));
@@ -1167,9 +1215,7 @@ impl Player {
                         self.notify("quality-grade");
                         self.notify("format-desc");
                         self.notify("album");
-                        self.notify("queue-id");
-                        // Update album art
-                        self.emit_by_name::<()>("cover-changed", &[]);
+                        song_change = Some((album_changed, automatic_transition));
                     }
                     Ok(None) => {
                         eprintln!(
@@ -1231,14 +1277,14 @@ impl Player {
         if status.song.is_none() || status.state == State::Stop {
             // No song is playing. Update state accordingly.
             if let Some(_) = self.imp().current_song.take() {
+                self.set_lyrics_loading(false);
                 self.imp().saved_to_history.set(false);
                 self.notify("title");
                 self.notify("artist");
                 self.notify("album");
                 self.notify("rating");
                 self.notify("duration");
-                self.notify("queue-id");
-                self.emit_by_name::<()>("cover-changed", &[]);
+                song_change = Some((true, automatic_transition));
                 // Update MPRIS side
                 if self.imp().mpris_enabled.get() {
                     mpris_changes.push(Property::Metadata(
@@ -1248,10 +1294,22 @@ impl Player {
             }
         }
 
-        if let Some(new_position_dur) = status.elapsed {
-            let new = new_position_dur.as_secs_f64();
-            let old = self.set_position(new);
-            if new != old && self.imp().mpris_enabled.get() {
+        let position = status.elapsed.map(|position| position.as_secs_f64());
+        let old_position = self.set_position(position.unwrap_or_default());
+        self.imp().position_sampled_at.set(status_time);
+        self.imp()
+            .position_sampled_while_playing
+            .set(status.state == State::Play);
+        if let Some((album_changed, automatic_transition)) = song_change {
+            self.notify("queue-id");
+            self.emit_by_name::<()>("song-changed", &[&album_changed, &automatic_transition]);
+            if album_changed {
+                self.emit_by_name::<()>("cover-changed", &[]);
+            }
+        }
+
+        if let Some(new) = position {
+            if new != old_position && self.imp().mpris_enabled.get() {
                 self.seek_mpris(new).await;
             }
             // If using PipeWire visualiser and auto-restart is enabled, stop the thread
@@ -1272,8 +1330,6 @@ impl Player {
             {
                 self.maybe_stop_fft_thread().await; // FIXME: we can't block while running in an async loop
             }
-        } else {
-            self.set_position(0.0);
         }
         if let Some(lyrics) = self.imp().lyrics.borrow().as_ref() {
             let new_idx = lyrics.get_line_at_timestamp(self.imp().position.get() as f32) as u32;
@@ -1329,6 +1385,16 @@ impl Player {
 
     pub fn n_lyric_lines(&self) -> u32 {
         self.imp().lyric_lines.n_items()
+    }
+
+    pub fn lyrics_loading(&self) -> bool {
+        self.imp().lyrics_loading.get()
+    }
+
+    fn set_lyrics_loading(&self, loading: bool) {
+        if self.imp().lyrics_loading.replace(loading) != loading {
+            self.notify("lyrics-loading");
+        }
     }
 
     pub fn register_local_queue_changes(&self, n_changes: u32) {
@@ -1907,7 +1973,7 @@ impl Player {
                     {
                         dbg!(e);
                     }
-                    glib::timeout_future_seconds(1).await;
+                    glib::timeout_future(STATUS_POLL_INTERVAL).await;
                 }
             });
             self.imp().poller_handle.replace(Some(poller_handle));
