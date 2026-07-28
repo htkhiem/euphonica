@@ -77,6 +77,29 @@
     </child>
     <child>
       <object class="AdwPreferencesGroup">
+        <property name="title" translatable="true">Artist Content View</property>
+        <child>
+          <object class="AdwSwitchRow" id="artist_show_all_songs">
+            <property name="title" translatable="true">Show All Songs upon entry</property>
+            <property name="subtitle" translatable="true">Instead of Discography.</property>
+          </object>
+        </child>
+        <child>
+          <object class="AdwSwitchRow" id="artist_collapse_discography_years">
+            <property name="title" translatable="true">Collapse discography years upon entry</property>
+            <property name="subtitle" translatable="true">If true, will initialise view with all years collapsed for quick navigation.</property>
+          </object>
+        </child>
+        <child>
+          <object class="AdwSwitchRow" id="artist_collapse_discography_albums">
+            <property name="title" translatable="true">Collapse discography albums upon entry</property>
+            <property name="subtitle" translatable="true">If true, will show all albums with their contents initially collapsed.</property>
+          </object>
+        </child>
+      </object>
+    </child>
+    <child>
+      <object class="AdwPreferencesGroup">
         <property name="title" translatable="true">Background</property>
         <child>
 			    <object class="AdwExpanderRow" id="use_album_art_as_bg">

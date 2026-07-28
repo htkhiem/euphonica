@@ -120,35 +120,48 @@
                     </style>
                   </object>
                 </child>
+                <child>
+                  <object class="GtkButton" id="collapse_content_btn">
+                    <style>
+                      <class name="flat"/>
+                    </style>
+                    <property name="icon-name">up-symbolic</property>
+                    <property name="tooltip-text" translatable="true">Collapse album content</property>
+                  </object>
+                </child>
               </object>
             </child>
 
             <child>
-              <object class="EuphonicaContentStack" id="content_stack">
-                <property name="placeholder">
-                  <object class="AdwStatusPage">
-                    <property name="title" translatable="true">Empty Album</property>
+              <object class="GtkRevealer" id="content_revealer">
+                <property name="transition-type">5</property>
+                <property name="child">
+                  <object class="EuphonicaContentStack" id="content_stack">
+                    <property name="placeholder">
+                      <object class="AdwStatusPage">
+                        <property name="title" translatable="true">Empty Album</property>
+                      </object>
+                    </property>
+                    <property name="content">
+                      <object class="GtkListBox" id="content">
+                        <property name="selection-mode">3</property>
+                        <property name="activate-on-single-click">false</property>
+                        <property name="show-separators">true</property>
+                        <property name="valign">start</property>
+                        <style>
+                          <class name="no-bg"/>
+                          <class name="frame"/>
+                          <class name="border-radius-6"/>
+                        </style>
+                      </object>
+                    </property>
+                    <property name="width-request">240</property>
+                    <property name="height-request">240</property>
+                    <property name="margin-bottom">12</property>
                   </object>
                 </property>
-                <property name="content">
-                  <object class="GtkListBox" id="content">
-                    <property name="selection-mode">3</property>
-                    <property name="activate-on-single-click">false</property>
-                    <property name="show-separators">true</property>
-                    <property name="valign">start</property>
-                    <style>
-                      <class name="no-bg"/>
-                      <class name="frame"/>
-                      <class name="border-radius-6"/>
-                    </style>
-                  </object>
-                </property>
-                <property name="width-request">240</property>
-                <property name="height-request">240</property>
-                <property name="margin-bottom">12</property>
               </object>
             </child>
-
           </object>
         </child>
       </object>

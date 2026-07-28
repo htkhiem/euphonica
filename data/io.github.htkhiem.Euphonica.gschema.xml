@@ -352,9 +352,21 @@
 			<default>true</default>
 			<summary>Automatically scroll to the currently playing song in the queue</summary>
 		</key>
-		<key name="collapse-discography-years-on-load" type="b">
+		<key name="artist-show-all-songs" type="b">
+            <default>false</default>
+            <summary>If true, artist content view opens in All Songs tab.</summary>
+        </key>
+		<key name="artist-collapse-discography-years-on-load" type="b">
             <default>false</default>
             <summary>If true, the artist discography section will load with all years initially collapsed.</summary>
+        </key>
+		<key name="artist-collapse-discography-albums-on-load" type="b">
+            <default>false</default>
+            <summary>If true, the artist discography section will load with all album contents initially collapsed.</summary>
+        </key>
+		<key name="artist-sort-discography-years-ascending" type="b">
+            <default>false</default>
+            <summary>Show the earliest years first.</summary>
         </key>
 	</schema>
 

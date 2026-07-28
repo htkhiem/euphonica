@@ -18,6 +18,8 @@ use super::{Library, add_to_playlist::AddToPlaylistButton};
 
 // Wrapper around the common row object to implement song thumbnail fetch logic.
 mod imp {
+    use crate::utils::settings_manager;
+
     use super::*;
 
     #[derive(Derivative, CompositeTemplate)]
@@ -34,6 +36,8 @@ mod imp {
         pub title: TemplateChild<gtk::Label>,
         #[template_child]
         pub title_arrow: TemplateChild<gtk::Image>,
+        #[template_child]
+        pub collapse_content_btn: TemplateChild<gtk::Button>,
 
         #[template_child]
         pub replace_queue: TemplateChild<gtk::Button>,
@@ -50,6 +54,8 @@ mod imp {
         #[template_child]
         pub sel_none: TemplateChild<gtk::Button>,
 
+        #[template_child]
+        pub content_revealer: TemplateChild<gtk::Revealer>,
         #[template_child]
         pub content_stack: TemplateChild<ContentStack>,
         #[template_child]
@@ -159,6 +165,37 @@ mod imp {
             actions.add_action_entries([action_insert_queue]);
             self.obj()
                 .insert_action_group("discography-album", Some(&actions));
+
+            self.content_revealer.set_reveal_child(
+                !settings_manager()
+                    .child("ui")
+                    .boolean("artist-collapse-discography-albums-on-load"),
+            );
+
+            let revealer = self.content_revealer.get();
+            revealer
+                .bind_property(
+                    "reveal-child",
+                    &self.collapse_content_btn.get(),
+                    "icon-name",
+                )
+                .transform_to(|_, is_revealed: bool| {
+                    Some(
+                        if is_revealed {
+                            "down-symbolic"
+                        } else {
+                            "up-symbolic"
+                        }
+                        .to_value(),
+                    )
+                })
+                .bidirectional()
+                .sync_create()
+                .build();
+
+            self.collapse_content_btn.connect_clicked(move |_| {
+                revealer.set_reveal_child(!revealer.is_child_revealed());
+            });
         }
     }
 

@@ -37,7 +37,7 @@
             </child>
             <child>
               <object class="GtkImage" id="collapse_icon">
-                <property name="icon-name">up-symbolic</property>
+                <property name="icon-name">down-symbolic</property>
               </object>
             </child>
           </object>

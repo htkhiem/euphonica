@@ -81,7 +81,7 @@ mod imp {
             revealer.set_reveal_child(
                 !settings_manager()
                     .child("ui")
-                    .boolean("collapse-discography-years-on-load"),
+                    .boolean("artist-collapse-discography-years-on-load"),
             );
 
             self.toggle_collapse.connect_clicked(move |_| {
