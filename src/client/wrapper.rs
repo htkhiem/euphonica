@@ -26,7 +26,7 @@ use uuid::Uuid;
 
 use crate::cache::sqlite;
 use crate::client::connection::ImageHandle;
-use crate::common::{AlbumInfo, ArtistInfo, DynamicPlaylist, parse_mb_artist_tag, tags};
+use crate::common::{AlbumInfo, ArtistInfo, DynamicPlaylist, tags};
 use crate::utils::settings_manager;
 use crate::{
     common::{Album, Artist, INode, Song, SongInfo, Stickers},
@@ -71,8 +71,8 @@ static MAX_EXAMPLE_ALBUMS_PER_ALBUMARTIST: usize = 3;
 pub struct MpdWrapper {
     // Handles return bool to indicate whether the threads stopped due to an error
     // (true) or disconnection request (false).
-    fg_handle: thread::JoinHandle<bool>,
-    bg_handle: thread::JoinHandle<bool>,
+    _fg_handle: thread::JoinHandle<bool>,
+    _bg_handle: thread::JoinHandle<bool>,
     // For heavy but parallelisable local tasks.
     pool: ThreadPool,
     state: ClientState,
@@ -98,12 +98,12 @@ impl MpdWrapper {
             0
         };
         let wrapper = Rc::new(Self {
-            fg_handle: thread::spawn(move || {
+            _fg_handle: thread::spawn(move || {
                 Connection::new(fg_receiver, wake_channel, None, max_retries)
                     .run()
                     .is_err()
             }),
-            bg_handle: thread::spawn(move || {
+            _bg_handle: thread::spawn(move || {
                 Connection::new(bg_receiver, wake_channel_bg, Some(idle_sender), max_retries)
                     .run()
                     .is_err()

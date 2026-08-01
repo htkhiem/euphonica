@@ -1,6 +1,5 @@
 use super::{Library, Tag, TagsSection, artist_tag_button::ArtistTagButton};
 use crate::common::FadingScrolledWindow;
-use crate::common::split_genre_tag;
 use crate::meta_providers::models::AlbumMeta;
 use crate::meta_providers::models::Wiki;
 use crate::{
@@ -18,7 +17,6 @@ use derivative::Derivative;
 use gio::{ActionEntry, Menu, SimpleActionGroup};
 use glib::{Binding, SignalHandlerId, WeakRef, clone, closure_local};
 use gtk::{CompositeTemplate, gdk, gio, glib, prelude::*};
-use rustc_hash::FxHashSet;
 use std::{
     cell::{OnceCell, RefCell},
     rc::Rc,
@@ -999,7 +997,7 @@ impl AlbumContentView {
         let release_date_binding = album
             .bind_property("release_date", &release_date_label, "label")
             .transform_to(|_, boxed_date: glib::BoxedAnyObject| {
-                let format = format_description::parse("[year]-[month]-[day]")
+                let format = format_description::parse_borrowed::<3>("[year]-[month]-[day]")
                     .ok()
                     .unwrap();
                 if let Some(release_date) = boxed_date.borrow::<Option<Date>>().as_ref() {

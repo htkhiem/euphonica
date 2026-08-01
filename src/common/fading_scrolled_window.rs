@@ -8,13 +8,6 @@ use gtk::{
 use std::cell::{Cell, RefCell};
 
 
-
-fn maybe_play<T: IsA<adw::Animation>>(anim: &T) {
-    if anim.state() != adw::AnimationState::Playing {
-        anim.play();
-    }
-}
-
 // Maximum fade width, relative to fade axis. Actual width depends on how close the scroll is to that end.
 static FADE_WIDTH: f32 = 0.2;
 

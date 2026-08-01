@@ -651,13 +651,13 @@ impl EuphonicaApplication {
                 // The 'do nothing' option
             }
             1 => {
-                glib::MainContext::default().block_on(player.pause());
+                let _ = glib::MainContext::default().block_on(player.pause());
             }
             2 => {
-                glib::MainContext::default().block_on(player.stop());
+                let _ = glib::MainContext::default().block_on(player.stop());
             }
             3 => {
-                glib::MainContext::default().block_on(player.clear_queue());
+                let _ = glib::MainContext::default().block_on(player.clear_queue());
             }
             _ => unimplemented!(),
         }
@@ -682,7 +682,7 @@ impl EuphonicaApplication {
     pub async fn refresh(&self) -> ClientResult<()> {
         self.get_client().connect().await?;
         self.get_library().clear();
-        self.get_player().clear();
+        self.get_player().clear()?;
         Ok(())
     }
 

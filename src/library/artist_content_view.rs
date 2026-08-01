@@ -6,7 +6,6 @@ use derivative::Derivative;
 use gio::{ActionEntry, SimpleActionGroup};
 use glib::{Binding, WeakRef, clone, closure_local, signal::SignalHandlerId, subclass::Signal};
 use gtk::{CompositeTemplate, ListItem, SignalListItemFactory, gdk, gio, glib};
-use itertools::Itertools;
 use rustc_hash::FxHashSet;
 use std::{
     cell::{Cell, OnceCell, RefCell},

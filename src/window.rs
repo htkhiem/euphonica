@@ -1089,8 +1089,8 @@ mod imp {
                     color.blue() as f64,
                     top_opacity / 2.0,
                 );
-                cr.set_source(&gradient);
-                cr.fill();
+                let _ = cr.set_source(&gradient);
+                let _ = cr.fill();
             }
 
             // Optional stroke
@@ -1107,7 +1107,7 @@ mod imp {
                     color.blue() as f64,
                     self.visualizer_top_opacity.get(),
                 );
-                cr.stroke();
+                let _ = cr.stroke();
             }
         }
 

@@ -1,5 +1,5 @@
 use crate::cache::sqlite;
-use crate::common::{split_genre_tag, tags};
+use crate::common::tags;
 use crate::utils::{get_image_cache_path, get_time_ago_desc, strip_filename_linux};
 use core::time::Duration;
 use derivative::Derivative;
