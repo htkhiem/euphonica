@@ -1,10 +1,5 @@
 use crate::{
-    cache::{Cache, sqlite},
-    client::{Error as ClientError, MpdWrapper, Result as ClientResult, StickerSetMode},
-    common::{Album, Artist, DynamicPlaylist, INode, Song, SongInfo, Stickers, tags},
-    library::Tag,
-    player::Player,
-    utils::settings_manager,
+    cache::{Cache, sqlite}, client::{Error as ClientError, MpdWrapper, Result as ClientResult, StickerSetMode, state::StickersSupportLevel}, common::{Album, Artist, DynamicPlaylist, INode, Song, SongInfo, Stickers, tags}, library::Tag, player::Player, utils::settings_manager,
 };
 use chrono::Local;
 use derivative::Derivative;
@@ -958,5 +953,12 @@ impl Library {
         }
 
         Ok((songs, years))
+    }
+
+    /// Whether the currently-connected client supports metadata backup in some form.
+    /// Right now we only support MPD. Metadata backup in MPD is done via the stickers DB, which is an optional feature
+    /// and non-track stickers are only supported from MPD 0.24 onwards.
+    pub fn metadata_backup_available(&self) -> bool {
+        self.client().get_client_state().stickers_support_level() >= StickersSupportLevel::All
     }
 }

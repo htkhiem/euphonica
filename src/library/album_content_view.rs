@@ -347,7 +347,9 @@ mod imp {
                         #[weak]
                         this,
                         async move {
-                            if let Err(CacheError::AlreadyExists) = this.obj().backup_meta(false).await {
+                            if let Err(CacheError::AlreadyExists) =
+                                this.obj().backup_meta(false).await
+                            {
                                 // TODO: show popup asking if user wants to overwrite
                                 eprintln!("ONLINE IS NEWER");
                             }
@@ -761,7 +763,12 @@ impl AlbumContentView {
                             let btn_stack = self.imp().backup_meta_stack.get();
                             if !matches!(src, MetaSource::Mpd) {
                                 // Should back up to MPD
-                                btn_stack.set_visible(true);
+                                btn_stack.set_visible(
+                                    self.imp()
+                                        .library
+                                        .upgrade()
+                                        .map_or(false, |lib| lib.metadata_backup_available()),
+                                );
                                 if btn_stack
                                     .visible_child_name()
                                     .is_some_and(|n| &n != "button")
