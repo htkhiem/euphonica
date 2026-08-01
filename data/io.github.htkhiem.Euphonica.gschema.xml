@@ -173,6 +173,11 @@
 			<summary>Number of threads for image processing operations</summary>
 			<description>Controls the number of threads used for parallel image processing (resizing, encoding, decoding). More threads does not always mean better performance. Requires restart to take effect.</description>
 		</key>
+
+		<key name="backup-metadata" type="b">
+			<default>true</default>
+			<summary>Attempt to back up album and artist metadata docs to MPD's sticker DB</summary>
+		</key>
 	</schema>
 
 	<schema id="io.github.htkhiem.Euphonica.metaprovider" path="/io/github/htkhiem/Euphonica/metaprovider/">

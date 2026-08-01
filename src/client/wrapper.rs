@@ -15,6 +15,7 @@ use mpd::{
 use mpd::{Query, Status, Term};
 use nohash_hasher::NoHashHasher;
 use rustc_hash::{FxHashMap, FxHashSet};
+use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
 use std::borrow::Cow;
@@ -27,6 +28,7 @@ use uuid::Uuid;
 use crate::cache::sqlite;
 use crate::client::connection::ImageHandle;
 use crate::common::{AlbumInfo, ArtistInfo, DynamicPlaylist, tags};
+use crate::meta_providers::models::AlbumMeta;
 use crate::utils::settings_manager;
 use crate::{
     common::{Album, Artist, INode, Song, SongInfo, Stickers},
@@ -316,7 +318,7 @@ impl MpdWrapper {
         // return an error but as long as that error isn't an "unknown command" one, the sticker DB
         // is enabled.
         if let Err(ClientError::Mpd(MpdError::Server(e))) = self
-            .get_known_stickers("song", String::from("euphonica_sticker_test"))
+            .get_common_stickers("song", String::from("euphonica_sticker_test"))
             .await
             && e.code == MpdErrorCode::UnknownCmd
         {
@@ -432,7 +434,9 @@ impl MpdWrapper {
         }
     }
 
-    pub async fn get_known_stickers(
+    /// Fetch stickers commonly used by other MPD clients, such as myMPD.
+    /// This does NOT fetch Euphonica-specific stickers, such as album and artist metadata.
+    pub async fn get_common_stickers(
         &self,
         typ: &'static str,
         uri: String,
@@ -683,7 +687,7 @@ impl MpdWrapper {
             if fetch_stickers {
                 // Error handling is already performed for us
                 if let Ok(stickers) = self
-                    .get_known_stickers("song", res.get_uri().to_owned())
+                    .get_common_stickers("song", res.get_uri().to_owned())
                     .await
                 {
                     res.set_stickers(stickers);
@@ -1019,8 +1023,7 @@ impl MpdWrapper {
             if let Some(mbid) = tup.2 {
                 query.and(Term::Tag(tags::ALBUM_MBID.into()), mbid);
             }
-            let (albums, _) = self.get_albums_and_albumartists_by_query(query)
-                .await?;
+            let (albums, _) = self.get_albums_and_albumartists_by_query(query).await?;
 
             for album in albums {
                 respond(album)
@@ -1273,7 +1276,7 @@ impl MpdWrapper {
             if fetch_stickers {
                 // Error handling is already performed for us
                 let maybe_stickers = self
-                    .get_known_stickers("song", song.uri.to_owned())
+                    .get_common_stickers("song", song.uri.to_owned())
                     .await
                     .ok();
                 Ok(Some((song, maybe_stickers)))
@@ -1394,6 +1397,97 @@ impl MpdWrapper {
         let (s, r) = oneshot::channel();
         self.background(Task::AddMultiple(uris, s), r).await
     }
+
+    fn get_full_key(base: &'static str, suffix: Option<&str>) -> Cow<'static, str> {
+        if let Some(suffix) = suffix {
+            format!("{}:{}", base, suffix).into()
+        } else {
+            base.into()
+        }
+    }
+
+    /// Get metadata document as backed up to MPD's sticker database. Metadata strings must be in JSON.
+    /// Key suffixes allow storing multiple metadata entries per tag. This allows storing and fetching
+    /// individual artists' metadata into/from the same multi-artist tag on MPD side.
+    pub async fn get_meta<T: for<'a> Deserialize<'a>>(
+        &self,
+        typ: &'static str,
+        key_suffix: Option<&str>,
+        uri: String,
+    ) -> ClientResult<Option<T>> {
+        match self.get_sticker(typ, uri, Self::get_full_key(Stickers::META_DOC, key_suffix)).await {
+            Ok(json) => Ok(Some(
+                serde_json::from_str(&json).map_err(|_| ClientError::Parse)?,
+            )),
+            Err(e) => {
+                if matches!(e, ClientError::InsufficientStickersSupportLevel) {
+                    Err(e)
+                } else {
+                    Ok(None)
+                }
+            }
+        }
+    }
+
+    /// Sync metadata document to MPD's sticker database. Other Euphonica clients connected to the same
+    /// server will be able to reuse this metadata document.
+    pub async fn set_meta<T: Serialize>(
+        &self,
+        typ: &'static str,
+        uri: String,
+        key_suffix: Option<&str>,
+        meta: &T,
+        last_modified: OffsetDateTime,
+    ) -> ClientResult<()> {
+        self.set_sticker(
+            typ,
+            uri.clone(),
+            Self::get_full_key(Stickers::META_DOC, key_suffix),
+            serde_json::to_string(meta)
+                .map_err(|_| ClientError::Parse)?
+                .into(),
+            StickerSetMode::Set,
+        )
+        .await?;
+        self.set_sticker(
+            typ,
+            uri,
+            Self::get_full_key(Stickers::META_LAST_MODIFIED, key_suffix),
+            last_modified.unix_timestamp().to_string().into(),
+            StickerSetMode::Set,
+        )
+        .await
+    }
+
+    /// Get the last-modified time of the backed-up metadata doc. If no metadata had been backed up,
+    /// this returns None.
+    pub async fn get_meta_last_modified(
+        &self,
+        typ: &'static str,
+        key_suffix: Option<&str>,
+        uri: String,
+    ) -> ClientResult<Option<OffsetDateTime>> {
+        match self.get_sticker(typ, uri, Self::get_full_key(Stickers::META_DOC, key_suffix)).await {
+            Ok(unix_ts) => Ok(Some(
+                OffsetDateTime::from_unix_timestamp(
+                    unix_ts.parse::<i64>().map_err(|_| ClientError::Parse)?,
+                )
+                .map_err(|_| ClientError::Parse)?,
+            )),
+            Err(e) => {
+                if matches!(e, ClientError::InsufficientStickersSupportLevel) {
+                    Err(e)
+                } else {
+                    Ok(None)
+                }
+            }
+        }
+    }
+
+    // pub async fn delete_meta(&self, typ: &'static str, key_suffix: Option<&str>, uri: String) -> ClientResult<()> {
+    //     self.delete_sticker(typ, uri.clone(), Self::get_full_key(Stickers::META_DOC, key_suffix)).await?;
+    //     self.delete_sticker(typ, uri, Self::get_full_key(Stickers::META_LAST_MODIFIED, key_suffix)).await
+    // }
 }
 
 impl Drop for MpdWrapper {

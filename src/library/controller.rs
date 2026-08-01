@@ -267,7 +267,7 @@ impl Library {
                 .set_sticker(
                     tags::ALBUM,
                     album.get_title().to_owned(),
-                    Stickers::RATING_KEY.into(),
+                    Stickers::RATING.into(),
                     score.to_string().into(),
                     StickerSetMode::Set,
                 )
@@ -277,7 +277,7 @@ impl Library {
                 .delete_sticker(
                     tags::ALBUM,
                     album.get_title().to_owned(),
-                    Stickers::RATING_KEY.into(),
+                    Stickers::RATING.into(),
                 )
                 .await
         }

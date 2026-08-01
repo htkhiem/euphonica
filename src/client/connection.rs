@@ -159,6 +159,7 @@ pub enum Error {
     NotConnected,
     InsufficientStickersSupportLevel, // any better name for this? not a native speaker
     PlaylistNotEnabled,
+    Parse
 }
 
 pub type Result<T> = result::Result<T, Error>;
@@ -788,7 +789,7 @@ impl Connection {
         for clause in sticker_clauses.into_iter() {
             let mut set = FxHashSet::default();
             match clause.1.as_str() {
-                Stickers::LAST_PLAYED_KEY | Stickers::LAST_SKIPPED_KEY => {
+                Stickers::LAST_PLAYED | Stickers::LAST_SKIPPED => {
                     // Special case: treat RHS as relative to current time
                     for uri in self.get_uris_by_sticker(
                         clause.0,

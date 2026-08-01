@@ -35,38 +35,46 @@ pub struct Stickers {
 }
 
 impl Stickers {
-    pub const RATING_KEY: &'static str = "rating";
-    pub const LIKE_KEY: &'static str = "like";
-    pub const ELAPSED_KEY: &'static str = "elapsed";
-    pub const LAST_PLAYED_KEY: &'static str = "lastPlayed";
-    pub const LAST_SKIPPED_KEY: &'static str = "lastSkipped";
-    pub const PLAY_COUNT_KEY: &'static str = "playCount";
-    pub const SKIP_COUNT_KEY: &'static str = "skipCount";
+    // myMPD-compatible stickers
+    pub const RATING: &'static str = "rating";
+    pub const LIKE: &'static str = "like";
+    pub const ELAPSED: &'static str = "elapsed";
+    pub const LAST_PLAYED: &'static str = "lastPlayed";
+    pub const LAST_SKIPPED: &'static str = "lastSkipped";
+    pub const PLAY_COUNT: &'static str = "playCount";
+    pub const SKIP_COUNT: &'static str = "skipCount";
+
+    // Reserved for Euphonica-specific features (prefixed with our names to avoid collisions).
+    // Not part of the "common" set as its value is complex and probably too specific to our app.
+    // Open an issue if you think these may be of use for other clients too (and would like the
+    // name prefix dropped, for example).
+    pub const META_DOC: &'static str = "euphonica:meta:doc";
+    pub const META_LAST_MODIFIED: &'static str = "euphonica:meta:lastModified";
 
     pub fn from_mpd_kv(kvs: Vec<(String, String)>) -> Self {
         let mut res = Self::default();
         for kv in kvs.iter() {
             let val = kv.1.as_str();
             match kv.0.as_str() {
-                Self::RATING_KEY => {
+                Self::RATING => {
                     res.set_rating(val);
                 }
-                Self::LIKE_KEY => {
+                Self::LIKE => {
                     res.set_like(val);
                 }
-                Self::ELAPSED_KEY => {
+                Self::ELAPSED => {
                     res.set_elapsed(val);
                 }
-                Self::LAST_PLAYED_KEY => {
+                Self::LAST_PLAYED => {
                     res.set_last_played(val);
                 }
-                Self::LAST_SKIPPED_KEY => {
+                Self::LAST_SKIPPED => {
                     res.set_last_skipped(val);
                 }
-                Self::PLAY_COUNT_KEY => {
+                Self::PLAY_COUNT => {
                     res.set_play_count(val);
                 }
-                Self::SKIP_COUNT_KEY => {
+                Self::SKIP_COUNT => {
                     res.set_skip_count(val);
                 }
                 _ => {}

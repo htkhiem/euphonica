@@ -1059,7 +1059,7 @@ impl Player {
                             .set_sticker(
                                 "song",
                                 prev_uri.clone(),
-                                Stickers::SKIP_COUNT_KEY.into(),
+                                Stickers::SKIP_COUNT.into(),
                                 "1".into(),
                                 StickerSetMode::Inc,
                             )
@@ -1070,7 +1070,7 @@ impl Player {
                             .set_sticker(
                                 "song",
                                 prev_uri,
-                                Stickers::LAST_SKIPPED_KEY.into(),
+                                Stickers::LAST_SKIPPED.into(),
                                 current_unix_timestamp().to_string().into(),
                                 StickerSetMode::Set,
                             )
@@ -1091,7 +1091,7 @@ impl Player {
                             .set_sticker(
                                 "song",
                                 new_song.get_uri().to_owned(),
-                                Stickers::LAST_PLAYED_KEY.into(),
+                                Stickers::LAST_PLAYED.into(),
                                 current_unix_timestamp().to_string().into(),
                                 StickerSetMode::Set,
                             )
@@ -1208,7 +1208,7 @@ impl Player {
                                 .set_sticker(
                                     "song",
                                     curr_song.get_uri().to_owned(),
-                                    Stickers::PLAY_COUNT_KEY.into(),
+                                    Stickers::PLAY_COUNT.into(),
                                     "1".into(),
                                     StickerSetMode::Inc,
                                 )
@@ -1966,14 +1966,14 @@ impl Player {
                 .set_sticker(
                     "song",
                     uri,
-                    Stickers::RATING_KEY.into(),
+                    Stickers::RATING.into(),
                     score.to_string().into(),
                     StickerSetMode::Set,
                 )
                 .await?;
         } else {
             self.client()?
-                .delete_sticker("song", uri, Stickers::RATING_KEY.into())
+                .delete_sticker("song", uri, Stickers::RATING.into())
                 .await?;
         }
         self.notify("rating");
