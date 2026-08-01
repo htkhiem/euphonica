@@ -278,6 +278,7 @@ impl HasImage for ArtistMeta {
     }
 }
 
+#[derive(Debug)]
 pub enum MetaSource {
     Local,
     Mpd,

@@ -1,7 +1,7 @@
 use super::{Library, Tag, TagsSection, artist_tag_button::ArtistTagButton};
 use crate::common::FadingScrolledWindow;
 use crate::meta_providers::models::AlbumMeta;
-use crate::meta_providers::models::Wiki;
+use crate::meta_providers::models::MetaSource;
 use crate::{
     cache::{Cache, CacheState, Error as CacheError, placeholders::EMPTY_ALBUM_STRING},
     client::{ClientState, state::StickersSupportLevel},
@@ -10,18 +10,19 @@ use crate::{
     utils::{format_secs_as_duration, tokio_runtime},
     window::EuphonicaWindow,
 };
-use adw::subclass::prelude::*;
 use adw::prelude::AdwDialogExt;
+use adw::subclass::prelude::*;
 use ashpd::desktop::file_chooser::SelectedFiles;
 use derivative::Derivative;
 use gio::{ActionEntry, Menu, SimpleActionGroup};
 use glib::{Binding, SignalHandlerId, WeakRef, clone, closure_local};
+use gtk::glib::property::PropertyGet;
 use gtk::{CompositeTemplate, gdk, gio, glib, prelude::*};
 use std::{
     cell::{OnceCell, RefCell},
     rc::Rc,
 };
-use time::{Date, format_description};
+use time::{Date, OffsetDateTime, format_description};
 
 mod imp {
 
@@ -34,6 +35,10 @@ mod imp {
         #[template_child]
         pub cover: TemplateChild<ImageStack>,
 
+        #[template_child]
+        pub backup_meta_stack: TemplateChild<gtk::Stack>,
+        #[template_child]
+        pub backup_meta_btn: TemplateChild<gtk::Button>,
         #[template_child]
         pub title: TemplateChild<gtk::Label>,
         #[template_child]
@@ -124,6 +129,9 @@ mod imp {
         pub cover_cleared_id: RefCell<Option<SignalHandlerId>>,
         pub cache: OnceCell<Rc<Cache>>,
         pub meta: RefCell<Option<AlbumMeta>>,
+        // For sync conflict resolution
+        pub old_last_modified: RefCell<Option<OffsetDateTime>>,
+        pub new_last_modified: RefCell<Option<OffsetDateTime>>, // pub backup_handle: RefCell<Option<glib::JoinHandle<()>>>,
     }
 
     #[glib::object_subclass]
@@ -262,8 +270,14 @@ mod imp {
                             new_meta.mbid = Some(mbid.to_string());
                         }
                         // Might want to make this async?
-                        if let Err(e) = cache.set_album_meta(album.get_info(), &new_meta) {
-                            dbg!(e);
+                        match cache.set_album_meta(album.get_info(), &new_meta) {
+                            Ok(ts) => {
+                                let _ = this.new_last_modified.replace(Some(ts));
+                                // TODO: auto sync
+                            }
+                            Err(e) => {
+                                dbg!(e);
+                            }
                         }
                         this.edit_metadata_dialog.get().force_close();
                         // Refresh UI too
@@ -318,10 +332,27 @@ mod imp {
                         this.wiki_attrib_field.set_text("");
                     }
                     // Initialise MBID field
-                    this.mbid_field
-                        .set_text(meta.mbid.as_deref().unwrap_or(""));
-                    this.edit_metadata_dialog.get()
+                    this.mbid_field.set_text(meta.mbid.as_deref().unwrap_or(""));
+                    this.edit_metadata_dialog
+                        .get()
                         .present(this.window.upgrade().as_ref());
+                }
+            ));
+
+            self.backup_meta_btn.connect_clicked(clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |_| {
+                    glib::spawn_future_local(clone!(
+                        #[weak]
+                        this,
+                        async move {
+                            if let Err(CacheError::AlreadyExists) = this.obj().backup_meta(false).await {
+                                // TODO: show popup asking if user wants to overwrite
+                                eprintln!("ONLINE IS NEWER");
+                            }
+                        }
+                    ));
                 }
             ));
 
@@ -345,9 +376,9 @@ mod imp {
                             this.wiki_attrib_field.set_text("");
                         }
                         // Initialise MBID field
-                        this.mbid_field
-                            .set_text(meta.mbid.as_deref().unwrap_or(""));
-                        this.edit_metadata_dialog.get()
+                        this.mbid_field.set_text(meta.mbid.as_deref().unwrap_or(""));
+                        this.edit_metadata_dialog
+                            .get()
                             .present(this.window.upgrade().as_ref());
                     }
                 ))
@@ -625,25 +656,54 @@ impl AlbumContentView {
         }
     }
 
-    pub fn update_wiki(&self, wiki: Option<&Wiki>) {
-        if let Some(wiki) = wiki {
-            let wiki_text = self.imp().wiki_text.get();
-            let wiki_link = self.imp().wiki_link.get();
-            let wiki_attrib = self.imp().wiki_attrib.get();
-            self.imp().wiki_stack.show_content();
-            wiki_text.set_label(&wiki.content);
-            if let Some(url) = wiki.url.as_ref() {
-                wiki_link.set_visible(true);
-                wiki_link.set_uri(url);
-            } else {
-                wiki_link.set_visible(false);
-                wiki_link.set_uri("");
+    async fn backup_meta(&self, overwrite: bool) -> Result<(), CacheError> {
+        let meta;
+        let old_last_modified;
+        let new_last_modified;
+        let album;
+        {
+            meta = self.imp().meta.borrow().clone(); // only this is costly, the rest are pretty lightweight
+            old_last_modified = self.imp().old_last_modified.borrow().clone();
+            new_last_modified = self.imp().new_last_modified.borrow().clone();
+            album = self.imp().album.borrow().clone();
+        }
+        if let (
+            Some(cache),
+            Some(meta),
+            Some(old_last_modified),
+            Some(new_last_modified),
+            Some(album),
+        ) = (
+            self.imp().cache.get(),
+            meta,
+            old_last_modified,
+            new_last_modified,
+            album,
+        ) {
+            let stack = self.imp().backup_meta_stack.get();
+            if stack.visible_child_name().is_some_and(|n| &n != "spinner") {
+                stack.set_visible_child_name("spinner");
             }
-            wiki_attrib.set_visible(true);
-            wiki_attrib.set_label(&wiki.attribution);
-            self.imp().wiki_stack.show_content();
+
+            let res = cache
+                .backup_album_meta(
+                    album.get_info(),
+                    &meta,
+                    old_last_modified,
+                    overwrite,
+                    new_last_modified,
+                )
+                .await;
+
+            if res.is_ok() {
+                stack.set_visible(false);
+            } else if stack.visible_child_name().is_some_and(|n| &n != "button") {
+                stack.set_visible_child_name("button");
+            }
+
+            res
         } else {
-            self.imp().wiki_stack.show_placeholder();
+            Ok(())
         }
     }
 
@@ -669,10 +729,49 @@ impl AlbumContentView {
                     )
                     .await;
                 match res {
-                    Ok(Some(meta)) => {
+                    Ok(Some((meta, last_modified, src))) => {
                         let _ = self.imp().meta.replace(Some(meta.clone()));
                         // Handle wiki
-                        self.update_wiki(meta.wiki.as_ref());
+                        {
+                            let this = &self;
+                            let wiki = meta.wiki.as_ref();
+                            if let Some(wiki) = wiki {
+                                let wiki_text = this.imp().wiki_text.get();
+                                let wiki_link = this.imp().wiki_link.get();
+                                let wiki_attrib = this.imp().wiki_attrib.get();
+                                this.imp().wiki_stack.show_content();
+                                wiki_text.set_label(&wiki.content);
+                                if let Some(url) = wiki.url.as_ref() {
+                                    wiki_link.set_visible(true);
+                                    wiki_link.set_uri(url);
+                                } else {
+                                    wiki_link.set_visible(false);
+                                    wiki_link.set_uri("");
+                                }
+                                wiki_attrib.set_visible(true);
+                                wiki_attrib.set_label(&wiki.attribution);
+                                this.imp().wiki_stack.show_content();
+                            } else {
+                                this.imp().wiki_stack.show_placeholder();
+                            }
+
+                            // Metadata sync
+                            let _ = self.imp().old_last_modified.replace(Some(last_modified));
+                            let _ = self.imp().new_last_modified.replace(Some(last_modified));
+                            let btn_stack = self.imp().backup_meta_stack.get();
+                            if !matches!(src, MetaSource::Mpd) {
+                                // Should back up to MPD
+                                btn_stack.set_visible(true);
+                                if btn_stack
+                                    .visible_child_name()
+                                    .is_some_and(|n| &n != "button")
+                                {
+                                    btn_stack.set_visible_child_name("button");
+                                }
+                            } else {
+                                btn_stack.set_visible(false);
+                            }
+                        };
 
                         // Handle MBID
                         if let Some(mbid) = meta.mbid.as_deref() {
@@ -750,9 +849,11 @@ impl AlbumContentView {
         self.imp().tags_widget.set_window(window);
         self.imp().window.set(Some(window));
         // Set up AddToPlaylistButton with ListBox row selection.
-        self.imp()
-            .add_to_playlist
-            .bind_listbox(library, &self.imp().content, &self.imp().song_list);
+        self.imp().add_to_playlist.bind_listbox(
+            library,
+            &self.imp().content,
+            &self.imp().song_list,
+        );
         self.imp().library.set(Some(library));
         self.imp()
             .cover_set_id
@@ -968,7 +1069,8 @@ impl AlbumContentView {
         if !genres.is_empty() {
             let genres_stack = self.imp().genres_stack.get();
             let window = self.imp().window.upgrade().unwrap();
-            genres.iter()
+            genres
+                .iter()
                 .map(|genre| {
                     TagButton::new(
                         &Tag::new(genre.clone(), None, None, false, false),
@@ -1118,5 +1220,6 @@ impl AlbumContentView {
         self.imp().song_list.remove_all();
         self.imp().content_stack.show_placeholder();
         self.imp().wiki_stack.show_placeholder();
+        let _ = self.imp().old_last_modified.take();
     }
 }

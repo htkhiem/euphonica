@@ -635,7 +635,7 @@ impl Cache {
     async fn get_local_album_meta(
         &self,
         album: &AlbumInfo,
-    ) -> Result<Option<(models::AlbumMeta, models::MetaSource)>> {
+    ) -> Result<Option<(models::AlbumMeta, OffsetDateTime, models::MetaSource)>> {
         let title = album.title.to_owned();
         let mbid = album.mbid.clone();
         let artist = album.get_artist_tag().map(String::from);
@@ -659,12 +659,13 @@ impl Cache {
         if local_ts.is_none() && mpd_ts.is_none() {
             Ok(None)
         } else {
-            match mpd_ts.cmp(&local_ts) {
+            match local_ts.cmp(&mpd_ts) {
                 cmp::Ordering::Greater => {
+                    // 2a
                     let title = album.title.to_owned();
                     let mbid = album.mbid.clone();
                     let artist = album.get_artist_tag().map(String::from);
-                    // 2a
+                    
                     self.pool
                         .push_future(move || {
                             sqlite::get_album_meta(&title, mbid.as_deref(), artist.as_deref())
@@ -672,7 +673,7 @@ impl Cache {
                         .expect("get_local_album_meta: threadpool error")
                         .await
                         .expect("get_local_album_meta: threadpool error")
-                        .map(|om| om.map(|m| (m, models::MetaSource::Local)))
+                        .map(|om| om.map(|m| (m, local_ts.unwrap(), models::MetaSource::Local)))
                         .map_err(Error::Sqlite)
                 }
                 cmp::Ordering::Less => {
@@ -705,7 +706,7 @@ impl Cache {
                             dbg!(e);
                         }
                     }
-                    Ok(from_mpd.map(|m| (m, models::MetaSource::Mpd)))
+                    Ok(from_mpd.map(|m| (m, mpd_ts.unwrap(), models::MetaSource::Mpd)))
                 }
                 cmp::Ordering::Equal => {
                     // 2c
@@ -720,7 +721,7 @@ impl Cache {
                         .await
                         .expect("get_local_album_meta: threadpool error")
                         // Use MetaSource::Mpd to make it look like it's already backed up to MPD (well, it is)
-                        .map(|om| om.map(|m| (m, models::MetaSource::Mpd)))
+                        .map(|om| om.map(|m| (m, local_ts.unwrap(), models::MetaSource::Mpd)))
                         .map_err(Error::Sqlite)
                 }
             }
@@ -733,7 +734,7 @@ impl Cache {
         external: bool,  // allow external fetching
         overwrite: bool, // overwrite existing with external if any (will also skip the exists check)
         window: Option<&EuphonicaWindow>,
-    ) -> Result<Option<(models::AlbumMeta, models::MetaSource)>> {
+    ) -> Result<Option<(models::AlbumMeta, OffsetDateTime, models::MetaSource)>> {
         if !(overwrite && external)
             && let Ok(Some(local_res)) = self.get_local_album_meta(album).await
         {
@@ -749,8 +750,8 @@ impl Cache {
                 .get_album_meta(album.clone(), None, window)
                 .await
             {
-                sqlite::write_album_meta(album, &meta, None).map_err(Error::Sqlite)?;
-                Ok(Some((meta, models::MetaSource::External)))
+                let ts = sqlite::write_album_meta(album, &meta, None).map_err(Error::Sqlite)?;
+                Ok(Some((meta, ts, models::MetaSource::External)))
             } else {
                 // Push an empty AlbumMeta to block further calls for this album.
                 println!(
@@ -805,9 +806,8 @@ impl Cache {
             .map_err(Error::Client)
     }
 
-    pub fn set_album_meta(&self, album: &AlbumInfo, meta: &models::AlbumMeta) -> Result<()> {
-        sqlite::write_album_meta(album, meta, None).map_err(Error::Sqlite)?;
-        Ok(())
+    pub fn set_album_meta(&self, album: &AlbumInfo, meta: &models::AlbumMeta) -> Result<OffsetDateTime> {
+        sqlite::write_album_meta(album, meta, None).map_err(Error::Sqlite)
     }
 
     pub fn set_album_tags(&self, folder_uri: &str, tags: &[models::Tag]) -> Result<()> {

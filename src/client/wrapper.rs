@@ -1467,13 +1467,14 @@ impl MpdWrapper {
         key_suffix: Option<&str>,
         uri: String,
     ) -> ClientResult<Option<OffsetDateTime>> {
-        match self.get_sticker(typ, uri, Self::get_full_key(Stickers::META_DOC, key_suffix)).await {
-            Ok(unix_ts) => Ok(Some(
+        match self.get_sticker(typ, uri, Self::get_full_key(Stickers::META_LAST_MODIFIED, key_suffix)).await {
+            Ok(unix_ts) => {
+                Ok(Some(
                 OffsetDateTime::from_unix_timestamp(
                     unix_ts.parse::<i64>().map_err(|_| ClientError::Parse)?,
                 )
                 .map_err(|_| ClientError::Parse)?,
-            )),
+            ))},
             Err(e) => {
                 if matches!(e, ClientError::InsufficientStickersSupportLevel) {
                     Err(e)
