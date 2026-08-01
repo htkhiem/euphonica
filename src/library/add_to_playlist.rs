@@ -4,7 +4,7 @@ use gtk::{
     prelude::*,
     subclass::prelude::*,
 };
-use std::cell::{Cell, OnceCell};
+use std::cell::{Cell, OnceCell, RefCell};
 
 use crate::{
     common::{INode, Song},
@@ -13,6 +13,18 @@ use crate::{
 use mpd::SaveMode;
 
 use super::Library;
+
+/// Source of selected songs for the "Add to playlist" button.
+/// ListBox path uses native row selection; ListView path uses a
+/// MultiSelection model.
+pub enum SongSource {
+    /// Used by ListView/GridView-based views (AlbumContentView, ArtistContentView).
+    MultiSelection(gtk::MultiSelection),
+    /// Used by ListBox-based views (DiscographyAlbum).
+    /// Contains both the ListBox (for row selection) and the backing ListStore
+    /// (for index-based song retrieval).
+    ListBox(gtk::ListBox, gio::ListStore),
+}
 
 // Common implementation of an "Add to playlist" menu button.
 // It allows adding to an existing playlist, or creating a new
@@ -48,7 +60,9 @@ mod imp {
         pub search_model: OnceCell<gtk::FilterListModel>,
         pub sel_model: OnceCell<gtk::SingleSelection>, // For playlists
         pub library: WeakRef<Library>,
-        pub song_sel_model: WeakRef<gtk::MultiSelection>,
+        /// Source of selected songs — either a MultiSelection (ListView/GridView)
+        /// or a ListBox (ListBox-based views like DiscographyAlbum).
+        pub song_source: RefCell<Option<SongSource>>,
         #[property(get, set)]
         pub collapsed: Cell<bool>,
     }
@@ -183,33 +197,64 @@ mod imp {
                     // creates one.
                     // As such, as long as we don't pass SaveMode::Replace,
                     // the logic should still be correct.
-                    if let (Some(name), Some(song_sel_model)) =
-                        (this.get_name(), this.song_sel_model.upgrade())
-                    {
-                        // Get songs
-                        let sel = &song_sel_model.selection();
-                        let store = &song_sel_model.model().unwrap();
-                        let mut songs: Vec<Song>;
-                        if let Some((iter, first_idx)) = gtk::BitsetIter::init_first(sel) {
-                            songs = Vec::with_capacity(sel.size() as usize);
-                            songs.push(store.item(first_idx).and_downcast::<Song>().unwrap());
-                            iter.for_each(|idx| {
-                                songs.push(store.item(idx).and_downcast::<Song>().unwrap())
-                            });
-                        } else {
-                            let model = song_sel_model.model().unwrap();
-                            let n_items = model.n_items();
-                            songs = Vec::with_capacity(n_items as usize);
-                            // Default to pushing all songs, skipping selection model bitset
-                            for idx in 0..model.n_items() {
-                                songs.push(model.item(idx).and_downcast::<Song>().unwrap());
+                    if let (Some(name), Some(library)) = (this.get_name(), this.library.upgrade()) {
+                        let songs = match this.song_source.borrow().as_ref() {
+                            Some(SongSource::MultiSelection(sel_model)) => {
+                                // Get songs from a MultiSelection model
+                                let sel = &sel_model.selection();
+                                let store = &sel_model.model().unwrap();
+                                let mut songs: Vec<Song>;
+                                if let Some((iter, first_idx)) = gtk::BitsetIter::init_first(sel) {
+                                    songs = Vec::with_capacity(sel.size() as usize);
+                                    songs.push(
+                                        store.item(first_idx).and_downcast::<Song>().unwrap(),
+                                    );
+                                    iter.for_each(|idx| {
+                                        songs.push(store.item(idx).and_downcast::<Song>().unwrap());
+                                    });
+                                } else {
+                                    let model = sel_model.model().unwrap();
+                                    let n_items = model.n_items();
+                                    songs = Vec::with_capacity(n_items as usize);
+                                    // Default to pushing all songs, skipping selection model bitset
+                                    for idx in 0..model.n_items() {
+                                        songs.push(model.item(idx).and_downcast::<Song>().unwrap());
+                                    }
+                                }
+                                songs
                             }
+                            Some(SongSource::ListBox(content, store)) => {
+                                // Get songs from ListBox native row selection
+                                let mut songs: Vec<Song>;
+                                let selected = content.selected_rows();
+                                if !selected.is_empty() {
+                                    songs = Vec::with_capacity(selected.len());
+                                    for row in selected {
+                                        songs.push(
+                                            store
+                                                .item(row.index() as u32)
+                                                .and_downcast::<Song>()
+                                                .unwrap(),
+                                        );
+                                    }
+                                } else {
+                                    let n_items = store.n_items();
+                                    songs = Vec::with_capacity(n_items as usize);
+                                    for idx in 0..n_items {
+                                        songs.push(store.item(idx).and_downcast::<Song>().unwrap());
+                                    }
+                                }
+                                songs
+                            }
+                            None => Vec::new(),
+                        };
+                        if !songs.is_empty() {
+                            glib::spawn_future_local(async move {
+                                let _ = library
+                                    .add_songs_to_playlist(name, &songs, SaveMode::Append)
+                                    .await;
+                            });
                         }
-                        let _ = this.library.upgrade().unwrap().add_songs_to_playlist(
-                            name,
-                            &songs,
-                            SaveMode::Append,
-                        );
                     }
                 }
             ));
@@ -312,7 +357,10 @@ impl AddToPlaylistButton {
         glib::Object::new()
     }
 
-    pub fn setup(&self, library: &Library, song_sel_model: &gtk::MultiSelection) {
+    /// Bind the button to a library and a `MultiSelection` model (used by
+    /// ListView/GridView-based views like `AlbumContentView` and
+    /// `ArtistContentView`).
+    pub fn bind_model(&self, library: &Library, song_sel_model: &gtk::MultiSelection) {
         let playlists = library.playlists();
         self.imp().library.set(Some(library));
         self.imp()
@@ -320,7 +368,43 @@ impl AddToPlaylistButton {
             .get()
             .unwrap()
             .set_model(Some(&playlists));
-        self.imp().song_sel_model.set(Some(song_sel_model));
+        self.imp()
+            .song_source
+            .borrow_mut()
+            .replace(SongSource::MultiSelection(song_sel_model.clone()));
+
+        playlists.connect_items_changed(clone!(
+            #[weak(rename_to = this)]
+            self,
+            move |_, _, _, _| {
+                // Clear selection when playlist model changes.
+                // This is to ensure we never land in a state in which
+                // the selected item no longer exists after updating
+                // the model.
+                this.imp().on_changed(true);
+            }
+        ));
+    }
+
+    /// Bind the button to a library and a `ListBox` (used by
+    /// ListBox-based views like `DiscographyAlbum`).
+    pub fn bind_listbox(
+        &self,
+        library: &Library,
+        content: &gtk::ListBox,
+        song_list: &gio::ListStore,
+    ) {
+        let playlists = library.playlists();
+        self.imp().library.set(Some(library));
+        self.imp()
+            .search_model
+            .get()
+            .unwrap()
+            .set_model(Some(&playlists));
+        self.imp()
+            .song_source
+            .borrow_mut()
+            .replace(SongSource::ListBox(content.clone(), song_list.clone()));
 
         playlists.connect_items_changed(clone!(
             #[weak(rename_to = this)]

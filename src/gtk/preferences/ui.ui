@@ -53,8 +53,8 @@
         </child>
         <child>
           <object class="AdwComboRow" id="title_wrap_mode">
-            <property name="title" translatable="true">Title wrap mode</property>
-            <property name="subtitle" translatable="true">How to display long titles.</property>
+            <property name="title" translatable="true">Album title wrap mode</property>
+            <property name="subtitle" translatable="true">How to display long titles. Applicable to album grids.</property>
             <property name="model">
               <object class="GtkStringList">
                 <items>
@@ -71,6 +71,35 @@
           <object class="AdwSwitchRow" id="auto_scroll_to_playing">
             <property name="title" translatable="true">Auto-scroll to currently playing</property>
             <property name="subtitle" translatable="true">Automatically scroll the queue to highlight the currently playing song.</property>
+          </object>
+        </child>
+      </object>
+    </child>
+    <child>
+      <object class="AdwPreferencesGroup">
+        <property name="title" translatable="true">Artist Content View</property>
+        <child>
+          <object class="AdwSwitchRow" id="artist_show_all_songs">
+            <property name="title" translatable="true">Show All Songs upon entry</property>
+            <property name="subtitle" translatable="true">Instead of Discography.</property>
+          </object>
+        </child>
+        <child>
+          <object class="AdwSwitchRow" id="artist_collapse_discography_years">
+            <property name="title" translatable="true">Collapse discography years upon entry</property>
+            <property name="subtitle" translatable="true">If true, will initialise view with all years collapsed for quick navigation.</property>
+          </object>
+        </child>
+        <child>
+          <object class="AdwSwitchRow" id="artist_collapse_discography_albums">
+            <property name="title" translatable="true">Collapse discography albums upon entry</property>
+            <property name="subtitle" translatable="true">If true, will show all albums with their contents initially collapsed.</property>
+          </object>
+        </child>
+        <child>
+          <object class="AdwSwitchRow" id="artist_sort_discography_years_asc">
+            <property name="title" translatable="true">Sort years in ascending order</property>
+            <property name="subtitle" translatable="true">Show earlier releases first. Requires relaunch.</property>
           </object>
         </child>
       </object>

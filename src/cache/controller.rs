@@ -366,6 +366,27 @@ impl Cache {
         res
     }
 
+    /// Lite version of get_album_cover that only takes an example URI.
+    /// Used by widgets with limited access to album metadata, such as ArtistCells.
+    /// Since it does not take the full album metadata, external fetch is not supported.
+    pub async fn get_album_cover_lite(
+        self: Rc<Self>,
+        example_uri: &str,
+        thumbnail: bool,
+    ) -> Result<Option<Texture>> {
+        // Track pending tasks for backpressure-aware hires loading.
+        self.pending_tasks.fetch_add(1, Ordering::Relaxed);
+        let res = self.clone().get_cover_internal(
+            strip_filename_linux(example_uri),
+            example_uri,
+            thumbnail,
+            None,
+        )
+        .await;
+        self.pending_tasks.fetch_sub(1, Ordering::Relaxed);
+        res
+    }
+
     /// Shared cover lookup. `folder_key` is the URI used for folder-level images,
     /// `embedded_key` is the URI used for embedded (track-level) images.
     /// If `album` is provided, it is used for external metadata lookups.
@@ -725,6 +746,22 @@ impl Cache {
         } else {
             Ok(None)
         }
+    }
+
+    pub fn set_artist_meta(
+        &self,
+        artist: &ArtistInfo,
+        meta: &models::ArtistMeta,
+    ) -> Result<()> {
+        sqlite::write_artist_meta(artist, meta).map_err(Error::Sqlite)
+    }
+
+    pub fn set_artist_tags(&self, name: &str, tags: &[models::Tag]) -> Result<()> {
+        sqlite::write_artist_tags(name, tags, sqlite::TagsInsertMode::Delsert).map_err(Error::Sqlite)
+    }
+
+    pub fn get_artist_tags(&self, name: &str) -> Result<Vec<models::Tag>> {
+        sqlite::find_artist_tags(name).map_err(Error::Sqlite)
     }
 
     /// Try to get an avatar for the given artist.

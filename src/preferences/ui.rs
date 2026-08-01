@@ -40,6 +40,15 @@ mod imp {
         pub vol_knob_sensitivity: TemplateChild<adw::SpinRow>,
 
         #[template_child]
+        pub artist_show_all_songs: TemplateChild<adw::SwitchRow>,
+        #[template_child]
+        pub artist_collapse_discography_years: TemplateChild<adw::SwitchRow>,
+        #[template_child]
+        pub artist_collapse_discography_albums: TemplateChild<adw::SwitchRow>,
+        #[template_child]
+        pub artist_sort_discography_years_asc: TemplateChild<adw::SwitchRow>,
+
+        #[template_child]
         pub use_visualizer: TemplateChild<adw::ExpanderRow>,
         #[template_child]
         pub visualizer_use_cairo: TemplateChild<adw::SwitchRow>,
@@ -149,6 +158,34 @@ impl UIPreferences {
         let auto_scroll_to_playing = imp.auto_scroll_to_playing.get();
         ui_settings
             .bind("auto-scroll-to-playing", &auto_scroll_to_playing, "active")
+            .build();
+        ui_settings
+            .bind(
+                "artist-show-all-songs",
+                &imp.artist_show_all_songs.get(),
+                "active",
+            )
+            .build();
+        ui_settings
+            .bind(
+                "artist-collapse-discography-years-on-load",
+                &imp.artist_collapse_discography_years.get(),
+                "active",
+            )
+            .build();
+        ui_settings
+            .bind(
+                "artist-collapse-discography-albums-on-load",
+                &imp.artist_collapse_discography_albums.get(),
+                "active",
+            )
+            .build();
+        ui_settings
+            .bind(
+                "artist-sort-discography-years-asc",
+                &imp.artist_sort_discography_years_asc.get(),
+                "active",
+            )
             .build();
         let use_album_art_as_bg = imp.use_album_art_as_bg.get();
         let bg_blur_radius = imp.bg_blur_radius.get();

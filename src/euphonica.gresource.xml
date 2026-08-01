@@ -13,6 +13,7 @@
     <file preprocess="xml-stripblanks">gtk/content-stack.ui</file>
     <file preprocess="xml-stripblanks">gtk/image-stack.ui</file>
     <file preprocess="xml-stripblanks">gtk/picture-stack.ui</file>
+    <file preprocess="xml-stripblanks">gtk/cover-fan.ui</file>
     <file preprocess="xml-stripblanks">gtk/theme-selector.ui</file>
     <file preprocess="xml-stripblanks">gtk/content-view.ui</file>
     <file preprocess="xml-stripblanks">gtk/library/recent-view.ui</file>
@@ -26,6 +27,8 @@
     <file preprocess="xml-stripblanks">gtk/library/artist-view.ui</file>
     <file preprocess="xml-stripblanks">gtk/library/artist-cell.ui</file>
     <file preprocess="xml-stripblanks">gtk/library/artist-content-view.ui</file>
+    <file preprocess="xml-stripblanks">gtk/library/discography-year.ui</file>
+    <file preprocess="xml-stripblanks">gtk/library/discography-album.ui</file>
     <file preprocess="xml-stripblanks">gtk/library/folder-view.ui</file>
     <file preprocess="xml-stripblanks">gtk/library/generic-row.ui</file>
     <file preprocess="xml-stripblanks">gtk/library/dynamic-playlist-view.ui</file>
@@ -127,5 +130,8 @@
     <file preprocess="xml-stripblanks" alias="arrow-pointing-away-from-line-up-symbolic.svg">gtk/icons/arrow-pointing-away-from-line-up-symbolic.svg</file>
     <file preprocess="xml-stripblanks" alias="cross-small-symbolic.svg">gtk/icons/cross-small-symbolic.svg</file>
     <file preprocess="xml-stripblanks" alias="plus-symbolic.svg">gtk/icons/plus-symbolic.svg</file>
+    <file preprocess="xml-stripblanks" alias="copy-symbolic.svg">gtk/icons/copy-symbolic.svg</file>
+    <file preprocess="xml-stripblanks" alias="circle-outline-thick-symbolic.svg">gtk/icons/circle-outline-thick-symbolic.svg</file>
+    <file preprocess="xml-stripblanks" alias="info-outline-symbolic.svg">gtk/icons/info-outline-symbolic.svg</file>
   </gresource>
 </gresources>

@@ -11,7 +11,7 @@ use std::{cell::Cell, cmp::Ordering, rc::Rc, sync::OnceLock};
 
 use super::{AlbumCell, AlbumContentView, Library, TagsFilter};
 use crate::{
-    cache::{Cache, sqlite}, client::ClientState, common::{Album, ContentStack, Rating}, utils::{LazyInit, g_cmp_options, g_cmp_str_options, g_search_substr, settings_manager}, window::EuphonicaWindow,
+    cache::{Cache, sqlite}, client::ClientState, common::{Album, ContentStack, Rating}, utils::{LazyInit, SearchableView, g_cmp_options, g_cmp_str_options, g_search_substr, settings_manager}, window::EuphonicaWindow,
 };
 
 mod imp {
@@ -462,11 +462,9 @@ impl AlbumView {
                 self,
                 move |genres| {
                     if !genres.is_empty() {
-                        let genres_list = genres.into_iter().collect::<Vec<String>>();
                         this.imp().genres_filter.set_filter_func(move |obj| {
-                            // TODO: more efficient algo (like set overlap)
                             let album = obj.downcast_ref::<Album>().unwrap();
-                            genres_list.iter().any(|genre| album.has_genre(genre))
+                            !genres.is_disjoint(album.get_genres())
                         });
                         this.imp().genres_filter.changed(gtk::FilterChange::MoreStrict);
                     } else {
@@ -538,6 +536,7 @@ impl AlbumView {
         let search_btn = self.imp().search_btn.get();
         search_btn
             .bind_property("active", &search_bar, "search-mode-enabled")
+            .bidirectional()
             .sync_create()
             .build();
 
@@ -656,7 +655,7 @@ impl LazyInit for AlbumView {
                 stack.show_spinner();
                 glib::spawn_future_local(async move {
                     // Just get basic info first to reduce spinner time
-                    let _ = library.init_albums().await;
+                    let _ = library.init_albums_and_albumartists().await;
                     if library.albums().n_items() > 0 {
                         stack.show_content();
                     } else {
@@ -671,5 +670,11 @@ impl LazyInit for AlbumView {
                     );
                 });
             }
+    }
+}
+
+impl SearchableView for AlbumView {
+    fn trigger_search(&self) {
+        self.imp().search_bar.set_search_mode(true);
     }
 }

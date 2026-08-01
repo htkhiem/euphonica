@@ -34,3 +34,4 @@ test('Validate schema file',
      args: ['--strict', '--dry-run', meson.current_source_dir()])
 
 subdir('icons')
+subdir('flags')

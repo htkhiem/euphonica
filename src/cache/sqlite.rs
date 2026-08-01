@@ -769,6 +769,23 @@ pub fn find_artist_tags(name: &str) -> Result<Vec<Tag>, Error> {
     Ok(tags)
 }
 
+pub fn artist_has_any_of_tags(
+    name: &str,
+    query_tags: &FxHashSet<String>,
+) -> Result<bool, Error> {
+    let conn = SQLITE_POOL.get().unwrap();
+    let mut query = conn
+        .prepare("select tag from artist_tags where name = ?1")
+        .unwrap();
+    Ok(query
+        .query_map(params![name], |row| row.get::<usize, String>(0))
+        .map_err(Error::Db)?
+        .any(|row| {
+            row.ok()
+                .is_some_and(|tag_name| query_tags.contains(&tag_name))
+        }))
+}
+
 /// Get distinct album tags and their counts
 pub async fn distinct_album_tags() -> Result<Vec<Tag>, Error> {
     let conn = SQLITE_POOL.get().unwrap();

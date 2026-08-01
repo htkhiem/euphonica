@@ -2,9 +2,11 @@ use gtk::gdk::Texture;
 use gtk::glib;
 use gtk::prelude::*;
 use gtk::subclass::prelude::*;
+use rustc_hash::FxHashSet;
 use std::cell::{OnceCell, RefCell};
 use time::Date;
 
+use crate::common::split_genre_tag;
 use crate::utils::strip_filename_linux;
 
 use super::{ArtistInfo, QualityGrade, SongInfo, Stickers, artists_to_string, parse_mb_artist_tag};
@@ -25,7 +27,7 @@ pub struct AlbumInfo {
     pub artists: Vec<ArtistInfo>, // parse from AlbumArtist tag please, not Artist.
     pub albumartist: Option<String>,
     pub albumartistsort: Option<String>,
-    pub genres: Vec<String>,
+    pub genres: FxHashSet<String>,
     pub cover: Option<Texture>,
     pub release_date: Option<Date>,
     pub quality_grade: QualityGrade,
@@ -39,7 +41,7 @@ impl AlbumInfo {
         albumsort: Option<&str>,
         artist_tag: Option<&str>,
         albumartistsort: Option<&str>,
-        genres: Vec<String>,
+        genres: FxHashSet<String>,
         artists: Vec<ArtistInfo>,
         quality_grade: QualityGrade,
     ) -> Self {
@@ -91,6 +93,19 @@ impl AlbumInfo {
     pub fn get_artist_tag(&self) -> Option<&str> {
         self.albumartist.as_deref()
     }
+
+    pub fn add_genres_from_tags(&mut self, tags: &[String]) {
+        // This can get heavy so be sure to run on another thread.
+        for genre_tag in tags {
+            for genre in split_genre_tag(&genre_tag) {
+                let _ = self.genres.insert(genre.to_owned());
+            }
+        }
+    }
+
+    pub fn get_example_uri(&self) -> &str {
+        &self.example_uri
+    }
 }
 
 impl Default for AlbumInfo {
@@ -103,7 +118,7 @@ impl Default for AlbumInfo {
             artists: Vec::with_capacity(0),
             albumartist: None,
             albumartistsort: None,
-            genres: Vec::with_capacity(0),
+            genres: FxHashSet::default(),
             cover: None,
             release_date: None,
             quality_grade: QualityGrade::Unknown,
@@ -237,7 +252,7 @@ impl Album {
         &self.get_info().artists
     }
 
-    pub fn get_genres(&self) -> &[String] {
+    pub fn get_genres(&self) -> &FxHashSet<String> {
         &self.get_info().genres
     }
 
@@ -305,13 +320,7 @@ impl Album {
     /// Checks if the given genre substring is in any of this album's genre strings.
     /// Genre-less albums always return false.
     pub fn has_genre(&self, genre_substr: &str) -> bool {
-        let genres = &self.get_info().genres;
-        if genres.is_empty() {
-            false
-        } else {
-            genres.iter().any(|elem| elem.contains(genre_substr))
-        }
-        
+        self.get_genres().contains(genre_substr)        
     }
 }
 

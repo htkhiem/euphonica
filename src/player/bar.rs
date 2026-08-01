@@ -128,7 +128,7 @@ mod imp {
                     Some(
                         match layout {
                             0 => 12,
-                            _ => 6
+                            _ => 0
                         }
                         .to_value(),
                     )

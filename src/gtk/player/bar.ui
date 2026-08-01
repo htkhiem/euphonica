@@ -35,7 +35,6 @@
             <property name="child">
               <object class="GtkButton" id="goto_pane">
                 <style>
-                  <class name="padding-12"/>
                   <class name="border-radius-0"/>
                   <class name="flat"/>
                 </style>
@@ -44,11 +43,13 @@
                 <child>
 
                   <object class="GtkBox">
-                    <property name="spacing">6</property>
+                    <property name="spacing">12</property>
                     <property name="hexpand">true</property>
                     <child>
                       <object class="GtkBox">
                         <property name="overflow">hidden</property>
+                        <property name="halign">start</property>
+                        <property name="valign">center</property>
                         <style>
                           <class name="border-radius-6" />
                         </style>
@@ -63,7 +64,6 @@
                       <object class="GtkBox" id="info_box">
                         <property name="valign">center</property>
                         <property name="orientation">1</property>
-                        <property name="spacing">6</property>
                         <child>
                           <object class="EuphonicaMarquee" id="song_name">
                             <property name="should-run">true</property>
@@ -113,7 +113,9 @@
         </child>
 
         <child type="playback-controls">
-          <object class="EuphonicaPlaybackControls" id="playback_controls"/>
+          <object class="EuphonicaPlaybackControls" id="playback_controls">
+            <property name="valign">center</property>
+          </object>
         </child>
 
         <child>

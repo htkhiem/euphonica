@@ -19,15 +19,12 @@ use crate::{
     cache::{BACKLOG_THRESHOLD, Cache, CacheState},
     cache::placeholders::{EMPTY_ALBUM_STRING, EMPTY_ARTIST_STRING},
     common::{
+        WING_DEPTH,
         Album, PictureStack, Rating,
         marquee::{Marquee, MarqueeWrapMode},
     },
     utils::settings_manager,
 };
-
-// As soon as a cell comes within this close of the render area, treat it as
-// visible & load album art early to avoid showing loading spinners.
-static WING_DEPTH: f64 = 512.0;
 
 mod imp {
     use super::*;
@@ -58,7 +55,7 @@ mod imp {
         pub cache: OnceCell<Rc<Cache>>,
         pub hires: Cell<bool>,
         // Stored GridView for visibility checks in bind() and the signal handler.
-        pub viewport: OnceCell<WeakRef<gtk::GridView>>,
+        pub viewport: WeakRef<gtk::GridView>,
         // Weak reference to the window for connecting to the check-visible signal.
         pub window: WeakRef<EuphonicaWindow>,
         // Signal handler ID for disconnecting from the window's check-visible signal.
@@ -390,9 +387,7 @@ impl AlbumCell {
 
         // Set up dynamic texture loading if a GridView is available.
         if let Some(vp) = viewport {
-            let weak_vp = WeakRef::new();
-            weak_vp.set(Some(&vp));
-            let _ = res.imp().viewport.set(weak_vp);
+            res.imp().viewport.set(Some(&vp));
         }
 
         // Store weak reference to the window for signal connection.
@@ -517,7 +512,7 @@ impl AlbumCell {
         }
         // The road to this whole mess lies undocumented in the GTK source code.
         // Nice use of my 2 evenings.
-        match self.imp().viewport.get().and_then(|w| w.upgrade()) {
+        match self.imp().viewport.upgrade() {
             Some(vp) => {
                 if let Some(bounds) = self.compute_bounds(&vp) {
                     let cell_x = bounds.x() as f64;

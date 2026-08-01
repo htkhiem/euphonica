@@ -410,20 +410,26 @@ impl RecentView {
         let factory = SignalListItemFactory::new();
         let adj = self.imp().artist_row.hadjustment().unwrap();
 
+        // Set the factory of the list view
+        let artist_row = self.imp().artist_row.get();
+
         // Create an empty `ArtistCell` during setup
         factory.connect_setup(clone!(
             #[weak]
             cache,
             #[weak]
             adj,
+            #[weak]
+            artist_row,
+            #[weak]
+            window,
             move |_, list_item| {
                 let item = list_item
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
                 let artist_cell = ArtistCell::new(
                     item, cache,
-                    // Only displaying at most 30 artists, so we can be the one to fetch externally
-                    true,
+                    Some(window), Some(artist_row)
                 );
                 item.set_child(Some(&artist_cell));
                 adj.set_value(0.0);
@@ -464,8 +470,7 @@ impl RecentView {
             child.unbind();
         });
 
-        // Set the factory of the list view
-        self.imp().artist_row.set_factory(Some(&factory));
+        artist_row.set_factory(Some(&factory));
 
         // Setup click action
         self.imp().artist_row.connect_activate(clone!(

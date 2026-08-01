@@ -10,6 +10,7 @@ pub mod inode;
 pub mod marquee;
 pub mod paintables;
 pub mod picture_stack;
+pub mod cover_fan;
 pub mod rating;
 pub mod row_add_buttons;
 pub mod row_edit_buttons;
@@ -30,6 +31,7 @@ pub use image_stack::ImageStack;
 pub use inode::{INode, INodeType};
 pub use marquee::Marquee;
 pub use picture_stack::PictureStack;
+pub use cover_fan::CoverFan;
 pub use rating::Rating;
 pub use row_add_buttons::RowAddButtons;
 pub use row_edit_buttons::RowEditButtons;
@@ -46,3 +48,8 @@ pub enum ImageState {
     Spinner,
     Image,
 }
+
+// For use with GridViews.
+// As soon as a cell comes within this close of the render area, treat it as
+// visible & load album art early to avoid showing loading spinners.
+pub static WING_DEPTH: f64 = 384.0;

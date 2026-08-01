@@ -6,9 +6,10 @@ use std::{cell::Cell, cmp::Ordering, rc::Rc, sync::OnceLock};
 
 use glib::{Properties, SignalHandlerId, WeakRef, clone, subclass::Signal};
 
-use super::{ArtistCell, ArtistContentView, Library};
+use super::{ArtistCell, ArtistContentView, Library, TagsFilter};
+use crate::utils::SearchableView;
 use crate::{
-    cache::Cache,
+    cache::{Cache, sqlite},
     common::{Artist, ContentStack},
     utils::{LazyInit, g_cmp_str_options, g_search_substr, settings_manager},
     window::EuphonicaWindow,
@@ -39,6 +40,10 @@ mod imp {
         pub search_entry: TemplateChild<gtk::SearchEntry>,
         #[template_child]
         pub album_artist_only_btn: TemplateChild<gtk::ToggleButton>,
+        #[template_child]
+        pub genres_filter_widget: TemplateChild<TagsFilter>,
+        #[template_child]
+        pub tags_filter_widget: TemplateChild<TagsFilter>,
 
         // Content
         #[template_child]
@@ -54,6 +59,8 @@ mod imp {
 
         // Search & filter models
         pub search_filter: gtk::CustomFilter,
+        pub genres_filter: gtk::CustomFilter,
+        pub tags_filter: gtk::CustomFilter,
         pub sorter: gtk::CustomSorter,
         // points to album artists or to artists
         pub artist_source: gtk::FilterListModel,
@@ -148,7 +155,50 @@ impl ArtistView {
         self.setup_sort();
         self.setup_search();
         self.setup_album_artist();
-        self.setup_gridview(cache.clone());
+        self.setup_gridview(cache.clone(), window);
+
+        // Set up genres and tags filters
+        self.imp().genres_filter_widget.setup(
+            &library.genres(),
+            clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |genres| {
+                    if !genres.is_empty() {
+                        this.imp().genres_filter.set_filter_func(move |obj| {
+                            let artist = obj.downcast_ref::<Artist>().unwrap();
+                            !artist.get_info().genres.is_disjoint(&genres)
+                        });
+                        this.imp().genres_filter.changed(gtk::FilterChange::MoreStrict);
+                    } else {
+                        this.imp().genres_filter.set_filter_func(|_| true);
+                        this.imp().genres_filter.changed(gtk::FilterChange::LessStrict);
+                    }
+                }
+            ),
+            window
+        );
+
+        self.imp().tags_filter_widget.setup(
+            &library.artist_tags(),
+            clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |tags| {
+                    if !tags.is_empty() {
+                        this.imp().tags_filter.set_filter_func(move |obj| {
+                            let artist = obj.downcast_ref::<Artist>().unwrap();
+                            sqlite::artist_has_any_of_tags(artist.get_name(), &tags).unwrap_or(true)
+                        });
+                        this.imp().tags_filter.changed(gtk::FilterChange::MoreStrict);
+                    } else {
+                        this.imp().tags_filter.set_filter_func(|_| true);
+                        this.imp().tags_filter.changed(gtk::FilterChange::LessStrict);
+                    }
+                }
+            ),
+            window
+        );
 
         let content_view = self.imp().content_view.get();
         content_view.setup(library, cache, window);
@@ -373,7 +423,7 @@ impl ArtistView {
         }
     }
 
-    fn setup_gridview(&self, cache: Rc<Cache>) {
+    fn setup_gridview(&self, cache: Rc<Cache>, window: &EuphonicaWindow) {
         let settings = settings_manager().child("ui");
         // Refresh upon reconnection.
         // User-initiated refreshes will also trigger a reconnection, which will
@@ -389,16 +439,27 @@ impl ArtistView {
         search_btn
             .bind_property("active", &search_bar, "search-mode-enabled")
             .sync_create()
+            .bidirectional()
             .build();
 
-        // Chain search & sort. Put sort after search to reduce number of sort items.
+        // Chain order: search -> genres -> tags -> sort
         let search_model = gtk::FilterListModel::new(
             Some(artists.clone()),
             Some(self.imp().search_filter.clone()),
         );
         search_model.set_incremental(true);
+        let genres_model = gtk::FilterListModel::new(
+            Some(search_model),
+            Some(self.imp().genres_filter.clone()),
+        );
+        genres_model.set_incremental(true);
+        let tags_model = gtk::FilterListModel::new(
+            Some(genres_model),
+            Some(self.imp().tags_filter.clone()),
+        );
+        tags_model.set_incremental(true);
         let sort_model =
-            gtk::SortListModel::new(Some(search_model), Some(self.imp().sorter.clone()));
+            gtk::SortListModel::new(Some(tags_model), Some(self.imp().sorter.clone()));
         sort_model.set_incremental(true);
         let sel_model = SingleSelection::new(Some(sort_model));
 
@@ -415,13 +476,18 @@ impl ArtistView {
         factory.connect_setup(clone!(
             #[weak]
             cache,
+            #[weak]
+            grid_view,
+            #[weak]
+            window,
             move |_, list_item| {
                 let item = list_item
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
                 let artist_cell = ArtistCell::new(
                     item, cache,
-                    false, // For ArtistView, don't immediately fetch avatars externally.
+                    Some(window),
+                    Some(grid_view)
                 );
                 item.set_child(Some(&artist_cell));
             }
@@ -501,7 +567,18 @@ impl LazyInit for ArtistView {
                         stack.show_placeholder();
                     }
                     this.imp().initializing.set(false);
+                    // Populate genres and tags for filtering
+                    let _ = futures::join!(
+                        library.init_genres(),
+                        library.refresh_artist_tags()
+                    );
                 });
             }
+    }
+}
+
+impl SearchableView for ArtistView {
+    fn trigger_search(&self) {
+        self.imp().search_bar.set_search_mode(true);
     }
 }

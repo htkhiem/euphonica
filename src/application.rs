@@ -618,6 +618,7 @@ impl EuphonicaApplication {
             self.set_accels_for_action("win.view-dynamic-playlists", &["<Ctrl>5"]);
             self.set_accels_for_action("win.view-playlists", &["<Ctrl>6"]);
             self.set_accels_for_action("win.view-queue", &["<Ctrl>7"]);
+            self.set_accels_for_action("win.search-current-view", &["<Ctrl>f"]);
             self.set_accels_for_action("queue.scroll-to-playing", &["<Ctrl><Shift>o"]);  // toggle autoscroll on-off, bad name
             self.set_accels_for_action("queue.stop-and-clear", &["<Alt>c"]);
             self.set_accels_for_action("win.save", &["<Ctrl>s"]);
@@ -650,13 +651,13 @@ impl EuphonicaApplication {
                 // The 'do nothing' option
             }
             1 => {
-                glib::MainContext::default().block_on(player.pause());
+                let _ = glib::MainContext::default().block_on(player.pause());
             }
             2 => {
-                glib::MainContext::default().block_on(player.stop());
+                let _ = glib::MainContext::default().block_on(player.stop());
             }
             3 => {
-                glib::MainContext::default().block_on(player.clear_queue());
+                let _ = glib::MainContext::default().block_on(player.clear_queue());
             }
             _ => unimplemented!(),
         }
@@ -681,7 +682,7 @@ impl EuphonicaApplication {
     pub async fn refresh(&self) -> ClientResult<()> {
         self.get_client().connect().await?;
         self.get_library().clear();
-        self.get_player().clear();
+        self.get_player().clear()?;
         Ok(())
     }
 

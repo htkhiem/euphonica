@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+	<template class="EuphonicaCoverFan" parent="GtkWidget">
+		<child>
+			<object class="GtkBox" id="cover1_card">
+				<property name="overflow">hidden</property>
+				<style>
+					<class name="border-radius-6"/>
+					<class name="cover-shadow"/>
+				</style>
+				<child>
+					<object class="GtkPicture" id="cover1">
+						<property name="content-fit">cover</property>
+						<property name="hexpand">true</property>
+						<property name="vexpand">true</property>
+					</object>
+				</child>
+			</object>
+		</child>
+		<child>
+			<object class="GtkBox" id="cover2_card">
+				<property name="overflow">hidden</property>
+				<style>
+					<class name="border-radius-6"/>
+					<class name="cover-shadow"/>
+				</style>
+				<child>
+					<object class="GtkPicture" id="cover2">
+						<property name="content-fit">cover</property>
+						<property name="hexpand">true</property>
+						<property name="vexpand">true</property>
+					</object>
+				</child>
+			</object>
+		</child>
+		<child>
+			<object class="GtkBox" id="cover3_card">
+				<property name="overflow">hidden</property>
+				<style>
+					<class name="border-radius-6"/>
+					<class name="cover-shadow"/>
+				</style>
+				<child>
+					<object class="GtkPicture" id="cover3">
+						<property name="content-fit">cover</property>
+						<property name="hexpand">true</property>
+						<property name="vexpand">true</property>
+					</object>
+				</child>
+			</object>
+		</child>
+	</template>
+</interface>

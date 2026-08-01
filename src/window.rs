@@ -19,16 +19,10 @@
  */
 
 use crate::{
-    application::EuphonicaApplication,
-    client::{ClientState, ConnectionState, Result as ClientResult},
-    common::{Album, Artist, INode, ThemeSelector, paintables::FadePaintable},
-    library::{
+    application::EuphonicaApplication, client::{ClientState, ConnectionState, Result as ClientResult}, common::{Album, Artist, INode, ThemeSelector, paintables::FadePaintable}, library::{
         AlbumView, ArtistContentView, ArtistView, DynamicPlaylistEditorView, DynamicPlaylistView,
         FolderView, PlaylistView, RecentView,
-    },
-    player::{Player, PlayerBar, QueueView},
-    sidebar::Sidebar,
-    utils::{self, LazyInit, settings_manager},
+    }, player::{Player, PlayerBar, QueueView}, sidebar::Sidebar, utils::{self, LazyInit, SearchableView, settings_manager},
 };
 use adw::{ColorScheme, StyleManager, prelude::*, subclass::prelude::*};
 use auto_palette::{ImageData, Palette, color::RGB};
@@ -304,9 +298,7 @@ mod imp {
     impl ObjectImpl for EuphonicaWindow {
         fn signals() -> &'static [glib::subclass::Signal] {
             static SIGNALS: OnceLock<Vec<Signal>> = OnceLock::new();
-            SIGNALS.get_or_init(|| {
-                vec![Signal::builder("check-visible").build()]
-            })
+            SIGNALS.get_or_init(|| vec![Signal::builder("check-visible").build()])
         }
 
         fn dispose(&self) {
@@ -340,9 +332,10 @@ mod imp {
                 }
             }
             if let Some(id) = self.player_cover_changed_id.take()
-                && let Some(player) = self.player.upgrade() {
-                    player.disconnect(id);
-                }
+                && let Some(player) = self.player.upgrade()
+            {
+                player.disconnect(id);
+            }
 
             // Cancel the check-visible signal loop
             self.check_visible_loop.take();
@@ -773,8 +766,22 @@ mod imp {
                         }
                         false => {
                             // Existing GSK‑node implementation
-                            self.draw_spectrum(snapshot, width32, surface_height, &data.0, scale, &fg);
-                            self.draw_spectrum(snapshot, width32, surface_height, &data.1, scale, &fg);
+                            self.draw_spectrum(
+                                snapshot,
+                                width32,
+                                surface_height,
+                                &data.0,
+                                scale,
+                                &fg,
+                            );
+                            self.draw_spectrum(
+                                snapshot,
+                                width32,
+                                surface_height,
+                                &data.1,
+                                scale,
+                                &fg,
+                            );
                         }
                     }
                 }
@@ -1082,8 +1089,8 @@ mod imp {
                     color.blue() as f64,
                     top_opacity / 2.0,
                 );
-                cr.set_source(&gradient);
-                cr.fill();
+                let _ = cr.set_source(&gradient);
+                let _ = cr.fill();
             }
 
             // Optional stroke
@@ -1100,7 +1107,7 @@ mod imp {
                     color.blue() as f64,
                     self.visualizer_top_opacity.get(),
                 );
-                cr.stroke();
+                let _ = cr.stroke();
             }
         }
 
@@ -1561,6 +1568,35 @@ impl EuphonicaWindow {
         }
     }
 
+    pub fn maybe_trigger_search_mode(&self) {
+        let imp = self.imp();
+        if imp.should_populate_visible.get()
+            && let Some(visible_child_name) = imp.stack.visible_child_name()
+        {
+            match visible_child_name.as_str() {
+                "albums" => {
+                    imp.album_view.trigger_search();
+                }
+                "artists" => {
+                    imp.artist_view.trigger_search();
+                }
+                "folders" => {
+                    imp.folder_view.trigger_search();
+                }
+                "playlists" => {
+                    imp.playlist_view.trigger_search();
+                }
+                "dynamic_playlists" => {
+                    imp.dyn_playlist_view.trigger_search();
+                }
+                "queue" => {
+                    imp.queue_view.trigger_search();
+                }
+                _ => {}
+            }
+        }
+    }
+
     pub fn show_dialog(&self, heading: &str, body: &str) {
         let diag = adw::AlertDialog::builder()
             .heading(heading)
@@ -1770,6 +1806,9 @@ impl EuphonicaWindow {
         let view_queue_action = gio::ActionEntry::builder("view-queue")
             .activate(move |this: &Self, _, _| this.switch_to_view("queue"))
             .build();
+        let search_current_view_action = gio::ActionEntry::builder("search-current-view")
+            .activate(move |this: &Self, _, _| this.maybe_trigger_search_mode())
+            .build();
         // Universal "save" action. Exact behaviour depends on current view.
         let save_action = gio::ActionEntry::builder("save")
             .activate(clone!(
@@ -1796,7 +1835,8 @@ impl EuphonicaWindow {
             view_dyn_playlists_action,
             view_playlists_action,
             view_queue_action,
-            save_action
+            save_action,
+            search_current_view_action
         ]);
 
         // To skip having to deal with widget focus we'll define all the actions at the app level.
@@ -1829,7 +1869,6 @@ impl EuphonicaWindow {
                 }
             ))
             .build();
-
 
         let queue_jump_to_current_action = gio::ActionEntry::builder("jump-to-current")
             .activate(clone!(

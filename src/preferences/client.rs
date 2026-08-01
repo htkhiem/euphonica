@@ -404,7 +404,7 @@ impl ClientPreferences {
                         password_field.set_text(&password);
                     }
                 }
-                Err(e) => {
+                Err(_e) => {
                     // println!("{e:?}");
                 }
             }

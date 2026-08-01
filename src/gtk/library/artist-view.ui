@@ -60,9 +60,31 @@
                 <child type="top">
                   <object class="GtkSearchBar" id="search_bar">
                     <child>
-                      <object class="GtkSearchEntry" id="search_entry">
-                        <property name="search-delay">150</property>
-                        <property name="width-request">100</property>
+                      <object class="GtkScrolledWindow">
+                        <property name="has-frame">false</property>
+                        <property name="propagate-natural-width">true</property>
+                        <property name="vscrollbar-policy">2</property>
+                        <child>
+                          <object class="GtkBox">
+                            <property name="spacing">6</property>
+                            <child>
+                              <object class="GtkSearchEntry" id="search_entry">
+                                <property name="search-delay">150</property>
+                                <property name="width-request">100</property>
+                              </object>
+                            </child>
+                            <child>
+                              <object class="EuphonicaTagsFilter" id="genres_filter_widget">
+                                <property name="label-text" translatable="true">Genres</property>
+                              </object>
+                            </child>
+                            <child>
+                              <object class="EuphonicaTagsFilter" id="tags_filter_widget">
+                                <property name="label-text" translatable="true">Tags</property>
+                              </object>
+                            </child>
+                          </object>
+                        </child>
                       </object>
                     </child>
                   </object>

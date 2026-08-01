@@ -2,24 +2,66 @@
 <interface>
 	<template class="EuphonicaArtistCell" parent="GtkBox">
 		<style>
-			<class name="padding-6"/>
+			<class name="padding-18"/>
 		</style>
-		<property name="halign">3</property>
-		<property name="valign">1</property>
-		<property name="margin-top">6</property>
-		<property name="margin-bottom">6</property>
 		<property name="orientation">1</property>
 		<property name="spacing">6</property>
+		<!-- Default to this for speed -->
 		<child>
-			<object class="AdwAvatar" id="avatar">
-				<property name="show-initials">true</property>
-				<property name="size">128</property>
+			<object class="AdwMultiLayoutView" id="layout_switcher">
+				<child type="covers">
+					<object class="EuphonicaCoverFan" id="covers">
+						<property name="width-request">140</property>
+						<property name="height-request">140</property>
+					</object>
+				</child>
+				<child type="avatar">
+					<object class="AdwAvatar" id="avatar">
+						<property name="halign">center</property>
+						<property name="valign">end</property>
+						<property name="show-initials">true</property>
+						<property name="size">96</property>
+					</object>
+				</child>
+
+				<child>
+					<object class="AdwLayout">
+						<property name="name">avatar-only</property>
+						<child>
+							<object class="AdwLayoutSlot">
+								<property name="id">avatar</property>
+							</object>
+						</child>
+					</object>
+				</child>
+
+				<child>
+					<object class="AdwLayout">
+						<property name="name">covers</property>
+						<child>
+							<object class="GtkOverlay">
+								<child>
+									<object class="AdwLayoutSlot">
+										<property name="id">covers</property>
+									</object>
+								</child>
+								<child type="overlay">
+									<object class="AdwLayoutSlot">
+										<property name="id">avatar</property>
+									</object>
+								</child>
+							</object>				
+						</child>
+					</object>
+				</child>
 			</object>
-		</child>
+		</child>	
+		
 		<child>
 			<object class="GtkLabel" id="name">
+				<property name="wrap">true</property>
 				<property name="ellipsize">3</property>
-				<property name="justify">center</property>
+				<property name="lines">2</property>
 				<style>
 					<class name="caption-heading"/>
 				</style>

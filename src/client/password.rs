@@ -1,5 +1,5 @@
 use gtk::{
-    gio::{self, Cancellable},
+    gio::Cancellable,
     glib::Error as GError
 };
 use libsecret::*;

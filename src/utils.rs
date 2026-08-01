@@ -412,6 +412,14 @@ pub fn format_datetime_local_tz(utc_dt: OffsetDateTime) -> String {
     local_dt.format(get_locale_format()).unwrap()
 }
 
+pub async fn new_gtksvg_from_datafile(relpath: &str) -> Option<gtk::Svg> {
+    let mut path = PathBuf::new();
+    path.push(crate::PKGDATADIR);
+    path.push(relpath);
+    let file = gio::File::for_path(&path);
+    Some(gtk::Svg::from_bytes(&file.load_bytes_future().await.ok().map(|tup| tup.0)?))
+}
+
 // Build Aho-Corasick automatons only once. In case no delimiter or exception is
 // specified, no automaton will be returned. Caller code should take that as a signal
 // to skip parsing and use the tags as-is.
@@ -509,14 +517,14 @@ pub fn rebuild_genre_delim_exception_automaton() {
     }
 }
 
-/// There are two guard layers against full fetches.
-/// - This LazyInit trait. All heavy views must implement it. A view's populate() will then be called
-/// by the sidebar upon navigating to that view. If that view is already initialised, populate() must
-/// be a noop(). TODO: enforce noop at sidebar level instead.
-/// - Additional checks at the controller level, to prevent new windows (after surfacing from background)
-/// from mistakenly reinitialising already-fetched models.
+/// Trait for views whose content loading might be deferred on startup.
 pub trait LazyInit {
     fn populate(&self);
+}
+
+/// Trait for views that have some form of searching that can be triggered with a common keyboard shortcut.
+pub trait SearchableView {
+    fn trigger_search(&self);
 }
 
 /// Exports any type that implements Serialize to a JSON file.

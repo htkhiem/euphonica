@@ -17,6 +17,10 @@ listview > row {
   border-radius: 6px;
 }
 
+.padding-18 {
+  padding: 18px;
+}
+
 .padding-12 {
   padding: 12px;
 }
@@ -191,4 +195,13 @@ listview > row {
 /* Extra 3px padding to the right to look equidistant from right edge and left label. */
 .count-badge {
   padding: 1px 3px 0px 0px;
+}
+
+.cover-shadow {
+  box-shadow: 0px 2px 6px var(--headerbar-shade-color);
+}
+
+.discography-line {
+	border-radius: 999px;
+	background: var(--accent-color);
 }
