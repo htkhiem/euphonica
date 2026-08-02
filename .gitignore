@@ -4,3 +4,4 @@
 target/
 build/
 src/config.rs
+data/gschemas.compiled
