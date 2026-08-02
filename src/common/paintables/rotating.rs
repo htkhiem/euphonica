@@ -101,7 +101,6 @@ mod imp {
                 (diameter, diameter)
             };
 
-            snapshot.save();
             let center = graphene::Point::new(width as f32 / 2.0, height as f32 / 2.0);
             snapshot.translate(&center);
             snapshot.rotate(self.rotation.get() as f32);
@@ -111,7 +110,6 @@ mod imp {
             ));
             paintable.snapshot(snapshot, paint_width, paint_height);
 
-            snapshot.restore();
             snapshot.pop();
         }
     }
