@@ -90,16 +90,15 @@ mod imp {
             let clip = gsk::RoundedRect::from_rect(bounds, diameter as f32 / 2.0);
             snapshot.push_rounded_clip(&clip);
 
-            let source_ratio = paintable.intrinsic_aspect_ratio();
-            let (paint_width, paint_height) = if source_ratio.is_finite() && source_ratio > 0.0 {
-                if source_ratio >= 1.0 {
-                    (diameter * source_ratio, diameter)
-                } else {
-                    (diameter, diameter / source_ratio)
-                }
-            } else {
-                (diameter, diameter)
+            // Scale the shorter side to fill the disc. The circular clip crops any overflow.
+            let source_ratio = match paintable.intrinsic_aspect_ratio() {
+                ratio if ratio.is_finite() && ratio > 0.0 => ratio,
+                _ => 1.0,
             };
+            let (paint_width, paint_height) = (
+                diameter * source_ratio.max(1.0),
+                diameter / source_ratio.min(1.0),
+            );
 
             let center = graphene::Point::new(width as f32 / 2.0, height as f32 / 2.0);
             snapshot.translate(&center);
@@ -126,14 +125,11 @@ mod imp {
             self.paintable.borrow().as_ref().map_or(1, |paintable| {
                 if self.circular.get() {
                     // A zero width/height means that dimension is unavailable
-                    let width = paintable.intrinsic_width();
-                    let height = paintable.intrinsic_height();
-                    match (width > 0, height > 0) {
-                        (true, true) => width.min(height),
-                        (true, false) => width,
-                        (false, true) => height,
-                        (false, false) => 1,
-                    }
+                    [paintable.intrinsic_width(), paintable.intrinsic_height()]
+                        .into_iter()
+                        .filter(|dimension| *dimension > 0)
+                        .min()
+                        .unwrap_or(1)
                 } else {
                     get(paintable)
                 }
@@ -174,9 +170,7 @@ impl RotatingPaintable {
         let remaining = self.imp().duration.get() - position;
         if self.return_to_starting_angle() && remaining > 0.0 {
             let rotation = rotation.rem_euclid(360.0);
-            let rotations = ((remaining * speed + rotation) / 360.0)
-                .round()
-                .max(1.0);
+            let rotations = ((remaining * speed + rotation) / 360.0).round().max(1.0);
             (rotations * 360.0 - rotation) / remaining
         } else {
             speed
