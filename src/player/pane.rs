@@ -870,9 +870,6 @@ impl PlayerPane {
     fn restart_album_art_animation(&self, rotation: f64, speed: f64) {
         let imp = self.imp();
         let animation = imp.albumart_animation.get().unwrap();
-        if animation.state() == adw::AnimationState::Playing {
-            animation.pause();
-        }
         animation.set_value_from(rotation);
         animation.set_value_to(rotation + 360.0);
         animation.set_duration((360_000.0 / speed).round() as u32);
@@ -881,25 +878,9 @@ impl PlayerPane {
     }
 
     fn sync_album_art_animation(&self) {
-        let state = self
-            .imp()
-            .player
-            .upgrade()
-            .map(|player| player.state())
-            .unwrap_or(PlaybackState::Stopped);
-
-        let should_rotate =
-            self.imp().albumart_paintable.circular() && state == PlaybackState::Playing;
-        let animation = self.imp().albumart_animation.get().unwrap();
-        if should_rotate {
-            match animation.state() {
-                adw::AnimationState::Idle | adw::AnimationState::Finished => animation.play(),
-                adw::AnimationState::Paused => animation.resume(),
-                _ => {}
-            }
-        } else if animation.state() == adw::AnimationState::Playing {
-            animation.pause();
-        }
+        let should_rotate = self.imp().albumart_paintable.circular()
+            && super::player_is_playing(&self.imp().player);
+        super::sync_animation(self.imp().albumart_animation.get().unwrap(), should_rotate);
     }
 }
 

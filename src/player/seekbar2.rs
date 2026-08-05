@@ -6,7 +6,6 @@ use once_cell::sync::Lazy;
 use std::cell::{Cell, OnceCell, RefCell};
 
 use super::Player;
-use crate::player::PlaybackState;
 
 mod imp {
     use super::*;
@@ -406,19 +405,7 @@ impl Seekbar {
 
     pub fn animate(&self) {
         if let Some(anim) = self.imp().wave_anim.get() {
-            let state = self
-                .imp()
-                .player
-                .upgrade()
-                .map(|p| p.state())
-                .unwrap_or(PlaybackState::Stopped);
-            if state == PlaybackState::Playing {
-                match anim.state() {
-                    adw::AnimationState::Finished | adw::AnimationState::Idle => anim.play(),
-                    adw::AnimationState::Paused => anim.resume(),
-                    _ => {}
-                };
-            } else if anim.state() == adw::AnimationState::Playing { anim.pause() }
+            super::sync_animation(anim, super::player_is_playing(&self.imp().player));
         }
     }
 }
