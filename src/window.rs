@@ -272,6 +272,7 @@ mod imp {
         pub client_state_idle_id: RefCell<Option<SignalHandlerId>>,
         pub client_state_conn_state_id: RefCell<Option<SignalHandlerId>>,
         pub player_cover_changed_id: RefCell<Option<SignalHandlerId>>,
+        pub player_title_changed_id: RefCell<Option<SignalHandlerId>>,
         pub client_state_pct_fg_id: RefCell<Option<SignalHandlerId>>,
         pub client_state_pct_bg_id: RefCell<Option<SignalHandlerId>>,
         pub client_state_n_fg_id: RefCell<Option<SignalHandlerId>>,
@@ -332,6 +333,11 @@ mod imp {
                 }
             }
             if let Some(id) = self.player_cover_changed_id.take()
+                && let Some(player) = self.player.upgrade()
+            {
+                player.disconnect(id);
+            }
+            if let Some(id) = self.player_title_changed_id.take()
                 && let Some(player) = self.player.upgrade()
             {
                 player.disconnect(id);
@@ -1366,6 +1372,19 @@ impl EuphonicaWindow {
                     }
                 ),
             )));
+        win.update_window_title(player);
+        win.imp()
+            .player_title_changed_id
+            .replace(Some(player.connect_notify_local(
+                Some("title"),
+                clone!(
+                    #[weak(rename_to = this)]
+                    win,
+                    move |player, _| {
+                        this.update_window_title(player);
+                    }
+                ),
+            )));
         win.imp().player.set(Some(player));
 
         win.imp().stack.connect_visible_child_name_notify(clone!(
@@ -1443,6 +1462,15 @@ impl EuphonicaWindow {
     pub fn send_simple_toast(&self, title: &str, timeout: u32) {
         let toast = adw::Toast::builder().title(title).timeout(timeout).build();
         self.imp().toast_overlay.add_toast(toast);
+    }
+
+    fn update_window_title(&self, player: &Player) {
+        let title = match (player.title(), player.artist()) {
+            (Some(title), Some(artist)) => format!("{title} – {artist}"),
+            (Some(title), None) => title,
+            (None, _) => "Euphonica".to_owned(),
+        };
+        self.set_title(Some(&title));
     }
 
     fn show_error_dialog(&self, heading: &str, body: &str, suggest_open_preferences: bool) {
