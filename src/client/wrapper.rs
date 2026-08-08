@@ -1,5 +1,7 @@
 use async_channel::{Receiver, Sender};
 use asyncified::Asyncified;
+use base64::Engine as _;
+use base64::engine::general_purpose::STANDARD as BASE64;
 use futures::executor;
 use glib::{ThreadPool, clone};
 use gtk::gio::prelude::*;
@@ -20,6 +22,7 @@ use time::OffsetDateTime;
 
 use std::borrow::Cow;
 use std::hash::BuildHasherDefault;
+use std::io::Cursor;
 use std::num::NonZero;
 use std::thread;
 use std::{cell::RefCell, rc::Rc};
@@ -28,7 +31,6 @@ use uuid::Uuid;
 use crate::cache::sqlite;
 use crate::client::connection::ImageHandle;
 use crate::common::{AlbumInfo, ArtistInfo, DynamicPlaylist, tags};
-use crate::meta_providers::models::AlbumMeta;
 use crate::utils::settings_manager;
 use crate::{
     common::{Album, Artist, INode, Song, SongInfo, Stickers},
@@ -42,6 +44,7 @@ use super::{BATCH_SIZE, FETCH_LIMIT, StickerSetMode};
 
 static MAX_RETRIES: u32 = 3;
 static MAX_EXAMPLE_ALBUMS_PER_ALBUMARTIST: usize = 3;
+static META_STICKER_PAGE_SIZE: usize = 2048;
 
 // Thin wrapper around blocking mpd::Clients. It contains two separate client
 // objects connected to the same address, each living on their own std::thread.
@@ -434,7 +437,8 @@ impl MpdWrapper {
         }
     }
 
-    /// Fetch stickers commonly used by other MPD clients, such as myMPD.
+    /// Fetch stickers commonly used by other MPD clients, such as myMPD, and parse them into
+    /// a Stickers object.
     /// This does NOT fetch Euphonica-specific stickers, such as album and artist metadata.
     pub async fn get_common_stickers(
         &self,
@@ -449,7 +453,7 @@ impl MpdWrapper {
         if self.state.stickers_support_level() >= min_lvl {
             let (s, r) = oneshot::channel();
             self.handle_sticker_error(
-                self.foreground(Task::GetKnownStickers(typ, uri, s), r)
+                self.foreground(Task::GetCommonStickers(typ, uri, s), r)
                     .await,
             )
         } else {
@@ -481,6 +485,30 @@ impl MpdWrapper {
         }
     }
 
+    /// Fetch all stickers for a given type/uri and return them as a HashMap.
+    /// Used internally to read paged metadata documents.
+    async fn get_stickers(
+        &self,
+        typ: &'static str,
+        uri: &str,
+        names: Vec<Cow<'static, str>>,
+    ) -> ClientResult<Vec<(String, String)>> {
+        let min_lvl = if typ == "song" {
+            StickersSupportLevel::SongsOnly
+        } else {
+            StickersSupportLevel::All
+        };
+        if self.state.stickers_support_level() >= min_lvl {
+            let (s, r) = oneshot::channel();
+            self.handle_sticker_error(
+                self.foreground(Task::GetStickers(typ, uri.to_string(), names, s), r)
+                    .await,
+            )
+        } else {
+            Err(ClientError::InsufficientStickersSupportLevel)
+        }
+    }
+
     pub async fn delete_sticker(
         &self,
         typ: &'static str,
@@ -496,6 +524,30 @@ impl MpdWrapper {
             let (s, r) = oneshot::channel();
             self.handle_sticker_error(
                 self.foreground(Task::DeleteSticker(typ, uri, name, s), r)
+                    .await,
+            )
+        } else {
+            Err(ClientError::InsufficientStickersSupportLevel)
+        }
+    }
+
+    /// Atomically set multiple stickers for a given object. All pairs are written in a single
+    /// MPD command list, ensuring atomicity — either all succeed or none do.
+    pub async fn set_stickers(
+        &self,
+        typ: &'static str,
+        uri: String,
+        names_values: Vec<(Cow<'static, str>, Cow<'static, str>)>,
+    ) -> ClientResult<()> {
+        let min_lvl = if typ == "song" {
+            StickersSupportLevel::SongsOnly
+        } else {
+            StickersSupportLevel::All
+        };
+        if self.state.stickers_support_level() >= min_lvl {
+            let (s, r) = oneshot::channel();
+            self.handle_sticker_error(
+                self.foreground(Task::SetStickers(typ, uri, names_values, s), r)
                     .await,
             )
         } else {
@@ -1398,6 +1450,7 @@ impl MpdWrapper {
         self.background(Task::AddMultiple(uris, s), r).await
     }
 
+    #[inline]
     fn get_full_key(base: &'static str, suffix: Option<&str>) -> Cow<'static, str> {
         if let Some(suffix) = suffix {
             format!("{}:{}", base, suffix).into()
@@ -1406,31 +1459,78 @@ impl MpdWrapper {
         }
     }
 
-    /// Get metadata document as backed up to MPD's sticker database. Metadata strings must be in JSON.
-    /// Key suffixes allow storing multiple metadata entries per tag. This allows storing and fetching
-    /// individual artists' metadata into/from the same multi-artist tag on MPD side.
+    #[inline]
+    fn get_full_key_paged(
+        base: &'static str,
+        suffix: Option<&str>,
+        page: usize,
+    ) -> Cow<'static, str> {
+        if let Some(suffix) = suffix {
+            format!("{}:{}:{}", base, suffix, page).into()
+        } else {
+            format!("{}:{}", base, page).into()
+        }
+    }
+
+    #[inline]
+    fn generate_metadata_page_sticker_names(
+        key_suffix: Option<&str>,
+        page_count: usize,
+    ) -> Vec<Cow<'static, str>> {
+        dbg!(
+            (0..page_count)
+                .map(|p| { Self::get_full_key_paged(Stickers::META_DOC, key_suffix, p) })
+                .collect()
+        )
+    }
+
+    /// Get metadata document as backed up to MPD's sticker database. Metadata is stored as
+    /// BSON serialized to a base64 string, split across multiple sticker keys if it exceeds
+    /// 2048 characters per sticker. Key suffixes allow storing multiple metadata entries per tag.
+    /// This allows storing and fetching individual artists' metadata into/from the same
+    /// multi-artist tag on MPD side.
     pub async fn get_meta<T: for<'a> Deserialize<'a>>(
         &self,
         typ: &'static str,
         key_suffix: Option<&str>,
         uri: String,
     ) -> ClientResult<Option<T>> {
-        match self.get_sticker(typ, uri, Self::get_full_key(Stickers::META_DOC, key_suffix)).await {
-            Ok(json) => Ok(Some(
-                serde_json::from_str(&json).map_err(|_| ClientError::Parse)?,
-            )),
-            Err(e) => {
-                if matches!(e, ClientError::InsufficientStickersSupportLevel) {
-                    Err(e)
-                } else {
-                    Ok(None)
-                }
-            }
+        // First, fetch only the page count to know how many pages exist
+        let page_count_key: String =
+            Self::get_full_key(Stickers::META_PAGE_COUNT, key_suffix).into_owned();
+        let page_count = self
+            .get_sticker(typ, uri.clone(), page_count_key.into())
+            .await?
+            .parse::<usize>()
+            .map_err(|_| ClientError::Parse)?;
+
+        // Generate names for the pages
+        let pages = self
+            .get_stickers(
+                typ,
+                &uri,
+                Self::generate_metadata_page_sticker_names(key_suffix, page_count),
+            )
+            .await?;
+
+        let mut combined: Vec<u8> = Vec::new();
+        for (_, page) in pages {
+            combined.extend_from_slice(&BASE64.decode(&page).map_err(|_| ClientError::Parse)?);
         }
+
+        let doc = bson::Document::from_reader(&mut Cursor::new(&combined))
+            .map_err(|_| ClientError::Parse)?;
+        let meta = bson::deserialize_from_document::<T>(doc).map_err(|_| ClientError::Parse)?;
+        Ok(Some(meta))
     }
 
     /// Sync metadata document to MPD's sticker database. Other Euphonica clients connected to the same
     /// server will be able to reuse this metadata document.
+    /// Uses atomic command list to write both the document and last-modified stickers together,
+    /// preventing partial syncs that would leave a document with a stale or missing timestamp.
+    /// Metadata is serialized to BSON then base64-encoded. If the base64 string exceeds 2048
+    /// characters, it is split across multiple sticker keys (euphonica:meta:doc:<suffix>:N).
+    /// A pageCount sticker tracks the number of pages for reconstruction.
     pub async fn set_meta<T: Serialize>(
         &self,
         typ: &'static str,
@@ -1439,24 +1539,42 @@ impl MpdWrapper {
         meta: &T,
         last_modified: OffsetDateTime,
     ) -> ClientResult<()> {
-        self.set_sticker(
-            typ,
-            uri.clone(),
-            Self::get_full_key(Stickers::META_DOC, key_suffix),
-            serde_json::to_string(meta)
-                .map_err(|_| ClientError::Parse)?
-                .into(),
-            StickerSetMode::Set,
-        )
-        .await?;
-        self.set_sticker(
-            typ,
-            uri,
+        // TODO: Handle this in another thread to avoid blocking UI
+        let b64 = bson::serialize_to_document(meta)
+            .and_then(|res| bson::serialize_to_vec(&res))
+            .and_then(|res| Ok(BASE64.encode(&res)))
+            .map_err(|_| ClientError::Parse)?;
+
+        // Split into 2048-char pages
+        // This works because b64 is all ASCII
+        let pages = b64.as_bytes().chunks(META_STICKER_PAGE_SIZE).into_iter();
+
+        let mut names_values: Vec<(Cow<'static, str>, Cow<'static, str>)> = Vec::new(); // meta pages, plus page count and last-modified
+        let mut page_count: usize = 0;
+        for (idx, page) in pages.enumerate() {
+            names_values.push((
+                Self::get_full_key_paged(Stickers::META_DOC, key_suffix, idx),
+                std::str::from_utf8(page)
+                    .map_err(|_| ClientError::Parse)?
+                    .to_owned()
+                    .into(),
+            ));
+            page_count += 1;
+        }
+
+        // Write page count
+        names_values.push((
+            Self::get_full_key(Stickers::META_PAGE_COUNT, key_suffix),
+            page_count.to_string().into(),
+        ));
+
+        // Write last-modified
+        names_values.push((
             Self::get_full_key(Stickers::META_LAST_MODIFIED, key_suffix),
             last_modified.unix_timestamp_nanos().to_string().into(),
-            StickerSetMode::Set,
-        )
-        .await
+        ));
+
+        self.set_stickers(typ, uri, names_values).await
     }
 
     /// Get the last-modified time of the backed-up metadata doc. If no metadata had been backed up,
@@ -1467,14 +1585,20 @@ impl MpdWrapper {
         key_suffix: Option<&str>,
         uri: String,
     ) -> ClientResult<Option<OffsetDateTime>> {
-        match self.get_sticker(typ, uri, Self::get_full_key(Stickers::META_LAST_MODIFIED, key_suffix)).await {
-            Ok(unix_ts) => {
-                Ok(Some(
+        match self
+            .get_sticker(
+                typ,
+                uri,
+                Self::get_full_key(Stickers::META_LAST_MODIFIED, key_suffix),
+            )
+            .await
+        {
+            Ok(unix_ts) => Ok(Some(
                 OffsetDateTime::from_unix_timestamp_nanos(
                     unix_ts.parse::<i128>().map_err(|_| ClientError::Parse)?,
                 )
                 .map_err(|_| ClientError::Parse)?,
-            ))},
+            )),
             Err(e) => {
                 if matches!(e, ClientError::InsufficientStickersSupportLevel) {
                     Err(e)

@@ -211,12 +211,21 @@ pub enum Task {
         Cow<'static, str>,
         Responder<String>,
     ),
-    GetKnownStickers(
+    GetCommonStickers(
         /// Type
         &'static str,
         /// URI
         String,
         Responder<Stickers>,
+    ),
+    GetStickers(
+        /// Type
+        &'static str,
+        /// URI
+        String,
+        /// Sticker names to fetch (empty = fetch all)
+        Vec<Cow<'static, str>>,
+        Responder<Vec<(String, String)>>,
     ),
     SetSticker(
         /// Type
@@ -229,6 +238,15 @@ pub enum Task {
         Cow<'static, str>,
         /// Set mode (overwrite, increment, decrement)
         StickerSetMode,
+        Responder<()>,
+    ),
+    SetStickers(
+        /// Type
+        &'static str,
+        /// URI
+        String,
+        /// (name, value) pairs to set atomically
+        Vec<(Cow<'static, str>, Cow<'static, str>)>,
         Responder<()>,
     ),
     DeleteSticker(
@@ -919,10 +937,19 @@ impl Connection {
                     Task::GetSticker(typ, uri, name, resp) => {
                         self.respond_with_client(|c| c.sticker(typ, &uri, &name), resp)
                     }
-                    Task::GetKnownStickers(typ, uri, resp) => self.respond_with_client(
-                        |c| c.stickers(typ, &uri).map(Stickers::from_mpd_kv),
-                        resp,
-                    ),
+                    Task::GetCommonStickers(typ, uri, resp) => {
+                        self.respond_with_client(
+                            |c| c.get_stickers(typ, &uri, Stickers::COMMON_NAMES).map(Stickers::from_mpd_kv),
+                            resp,
+                        )
+                    }
+                    Task::GetStickers(typ, uri, names, resp) => {
+                        let name_refs: Vec<&str> = names.iter().map(|s| s.as_ref()).collect();
+                        self.respond_with_client(
+                            |c| c.get_stickers(typ, &uri, &name_refs),
+                            resp,
+                        )
+                    }
                     Task::SetSticker(typ, uri, name, val, mode, resp) => self.respond_with_client(
                         |c| match mode {
                             StickerSetMode::Inc => c.inc_sticker(typ, &uri, &name, &val),
@@ -931,6 +958,16 @@ impl Connection {
                         },
                         resp,
                     ),
+                    Task::SetStickers(typ, uri, names_values, resp) => {
+                        let pairs: Vec<(&str, &str)> = names_values
+                            .iter()
+                            .map(|(name, val)| (name.as_ref(), val.as_ref()))
+                            .collect();
+                        self.respond_with_client(
+                            |c| c.set_stickers(typ, &uri, &pairs),
+                            resp,
+                        )
+                    }
                     Task::DeleteSticker(typ, uri, name, resp) => {
                         self.respond_with_client(|c| c.delete_sticker(typ, &uri, &name), resp)
                     }

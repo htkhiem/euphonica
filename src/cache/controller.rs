@@ -642,7 +642,7 @@ impl Cache {
 
         let (mpd_ts, local_ts) = futures::join!(
             self.mpd_client
-                .get_meta_last_modified("album", None, album.title.to_string()),
+                .get_meta_last_modified("album", Some(album.get_comp_id()), album.title.to_string()),
             // For reads we'll use threadpool instead of the queued asyncified (concurrent reads are okay)
             self.pool
                 .push_future(move || {
@@ -650,10 +650,10 @@ impl Cache {
                 })
                 .expect("get_local_album_meta: threadpool error")
         );
-        let mpd_ts = mpd_ts.ok().flatten();
-        let local_ts = local_ts
+        let mpd_ts = dbg!(mpd_ts.ok().flatten());
+        let local_ts = dbg!(local_ts
             .expect("get_local_album_meta: threadpool error")
-            .map_err(Error::Sqlite)?;
+            .map_err(Error::Sqlite)?);
 
         // Handle case when both are None first; afterwards at least one side will be non-None and we can compare them directly.
         if local_ts.is_none() && mpd_ts.is_none() {
@@ -680,7 +680,7 @@ impl Cache {
                     // 2b
                     let from_mpd = self
                         .mpd_client
-                        .get_meta::<AlbumMeta>("album", None, album.title.to_string())
+                        .get_meta::<AlbumMeta>("album", Some(album.get_comp_id()), album.title.to_string())
                         .await
                         .map_err(Error::Client)?;
 
@@ -800,7 +800,7 @@ impl Cache {
             .set_meta::<AlbumMeta>(
                 "album",
                 album.title.to_string(),
-                None,
+                Some(album.get_comp_id()),
                 meta,
                 new_last_modified,
             )
