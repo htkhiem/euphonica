@@ -44,6 +44,12 @@
           </object>
         </child>
         <child>
+          <object class="AdwSwitchRow" id="mpd_backup_meta_as_stickers">
+            <property name="title" translatable="true">Backup metadata as stickers</property>
+            <property name="subtitle" translatable="true">Metadata such as album wiki and artist bio can be uploaded to your MPD server's stickers DB and can be fetched by your other Euphonica instances. Does nothing if stickers DB is not available.</property>
+          </object>
+        </child>
+        <child>
           <object class="AdwExpanderRow" id="mpd_status">
             <style>
               <class name="property"/>

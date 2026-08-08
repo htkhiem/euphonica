@@ -90,6 +90,10 @@
 		<key name="mpd-download-album-art" type="b">
 			<default>true</default>
 		</key>
+		<key name="mpd-backup-metadata" type="b">
+			<default>true</default>
+			<summary>Attempt to back up album and artist metadata docs to MPD's sticker DB</summary>
+		</key>
 
 		<key name="mpd-visualizer-pcm-source" enum='io.github.htkhiem.Euphonica.pcmsource'>
 			<default>'pipewire'</default>
@@ -172,11 +176,6 @@
 			<default>4</default>
 			<summary>Number of threads for image processing operations</summary>
 			<description>Controls the number of threads used for parallel image processing (resizing, encoding, decoding). More threads does not always mean better performance. Requires restart to take effect.</description>
-		</key>
-
-		<key name="backup-metadata" type="b">
-			<default>true</default>
-			<summary>Attempt to back up album and artist metadata docs to MPD's sticker DB</summary>
 		</key>
 	</schema>
 

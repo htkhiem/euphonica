@@ -116,6 +116,8 @@ mod imp {
         pub reconnect: TemplateChild<adw::ButtonRow>,
         #[template_child]
         pub mpd_download_album_art: TemplateChild<adw::SwitchRow>,
+        #[template_child]
+        pub mpd_backup_meta_as_stickers: TemplateChild<adw::SwitchRow>,
 
         // Visualiser data source
         #[template_child]
@@ -526,6 +528,11 @@ impl ClientPreferences {
         let mpd_download_album_art = imp.mpd_download_album_art.get();
         conn_settings
             .bind("mpd-download-album-art", &mpd_download_album_art, "active")
+            .build();
+
+        let mpd_backup_meta_as_stickers = imp.mpd_backup_meta_as_stickers.get();
+        conn_settings
+            .bind("mpd-backup-metadata", &mpd_backup_meta_as_stickers, "active")
             .build();
 
         // Visualiser

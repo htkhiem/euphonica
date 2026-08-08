@@ -1453,7 +1453,7 @@ impl MpdWrapper {
             typ,
             uri,
             Self::get_full_key(Stickers::META_LAST_MODIFIED, key_suffix),
-            last_modified.unix_timestamp().to_string().into(),
+            last_modified.unix_timestamp_nanos().to_string().into(),
             StickerSetMode::Set,
         )
         .await
@@ -1470,8 +1470,8 @@ impl MpdWrapper {
         match self.get_sticker(typ, uri, Self::get_full_key(Stickers::META_LAST_MODIFIED, key_suffix)).await {
             Ok(unix_ts) => {
                 Ok(Some(
-                OffsetDateTime::from_unix_timestamp(
-                    unix_ts.parse::<i64>().map_err(|_| ClientError::Parse)?,
+                OffsetDateTime::from_unix_timestamp_nanos(
+                    unix_ts.parse::<i128>().map_err(|_| ClientError::Parse)?,
                 )
                 .map_err(|_| ClientError::Parse)?,
             ))},

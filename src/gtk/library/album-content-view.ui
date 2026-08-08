@@ -846,6 +846,17 @@
       </child>
     </object>
 
+    <object class="AdwAlertDialog" id="overwrite_backup_dialog">
+			<property name="heading" translatable="yes">Overwrite newer backup?</property>
+			<property name="body" translatable="yes">A newer backup of this album's metadata exists. Would you like to overwrite it with this version?</property>
+			<property name="default-response">cancel</property>
+			<property name="close-response">cancel</property>
+			<responses>
+				<response id="cancel" translatable="yes">_Cancel</response>
+				<response id="overwrite" translatable="yes" appearance="destructive">_Overwrite</response>
+			</responses>
+		</object>
+
     <menu id="edit_menu_model">
       <item>
         <attribute name="label" translatable="true">Edit metadata</attribute>

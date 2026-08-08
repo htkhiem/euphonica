@@ -2,6 +2,7 @@ use super::{Library, Tag, TagsSection, artist_tag_button::ArtistTagButton};
 use crate::common::FadingScrolledWindow;
 use crate::meta_providers::models::AlbumMeta;
 use crate::meta_providers::models::MetaSource;
+use crate::utils::settings_manager;
 use crate::{
     cache::{Cache, CacheState, Error as CacheError, placeholders::EMPTY_ALBUM_STRING},
     client::{ClientState, state::StickersSupportLevel},
@@ -11,12 +12,12 @@ use crate::{
     window::EuphonicaWindow,
 };
 use adw::prelude::AdwDialogExt;
+use adw::prelude::*;
 use adw::subclass::prelude::*;
 use ashpd::desktop::file_chooser::SelectedFiles;
 use derivative::Derivative;
 use gio::{ActionEntry, Menu, SimpleActionGroup};
 use glib::{Binding, SignalHandlerId, WeakRef, clone, closure_local};
-use gtk::glib::property::PropertyGet;
 use gtk::{CompositeTemplate, gdk, gio, glib, prelude::*};
 use std::{
     cell::{OnceCell, RefCell},
@@ -117,6 +118,9 @@ mod imp {
         pub content_stack: TemplateChild<ContentStack>,
         #[template_child]
         pub content: TemplateChild<gtk::ListBox>,
+
+        #[template_child]
+        pub overwrite_backup_dialog: TemplateChild<adw::AlertDialog>,
 
         #[derivative(Default(value = "gio::ListStore::new::<Song>()"))]
         pub song_list: gio::ListStore,
@@ -272,22 +276,30 @@ mod imp {
                         // Might want to make this async?
                         match cache.set_album_meta(album.get_info(), &new_meta) {
                             Ok(ts) => {
-                                let _ = this.new_last_modified.replace(Some(ts));
-                                // TODO: auto sync
+                                let _ = this.meta.replace(Some(new_meta));
+                                let _ = this.new_last_modified.replace(Some(dbg!(ts)));
+                                if this.obj().maybe_show_backup_metadata_btn(true)
+                                    && settings_manager()
+                                        .child("client")
+                                        .boolean("mpd-backup-metadata")
+                                {
+                                    // Refresh UI & optionally auto sync
+                                    glib::spawn_future_local(clone!(
+                                        #[weak]
+                                        this,
+                                        async move {
+                                            this.obj().backup_meta().await;
+                                            this.obj().update_meta(false).await;
+                                        }
+                                    ));
+                                }
                             }
                             Err(e) => {
                                 dbg!(e);
+                                this.obj().maybe_show_backup_metadata_btn(false);
                             }
                         }
                         this.edit_metadata_dialog.get().force_close();
-                        // Refresh UI too
-                        glib::spawn_future_local(clone!(
-                            #[weak]
-                            this,
-                            async move {
-                                this.obj().update_meta(false).await;
-                            }
-                        ));
                     }
                 }
             ));
@@ -347,12 +359,7 @@ mod imp {
                         #[weak]
                         this,
                         async move {
-                            if let Err(CacheError::AlreadyExists) =
-                                this.obj().backup_meta(false).await
-                            {
-                                // TODO: show popup asking if user wants to overwrite
-                                eprintln!("ONLINE IS NEWER");
-                            }
+                            this.obj().backup_meta().await;
                         }
                     ));
                 }
@@ -658,7 +665,7 @@ impl AlbumContentView {
         }
     }
 
-    async fn backup_meta(&self, overwrite: bool) -> Result<(), CacheError> {
+    async fn backup_meta_internal(&self, overwrite: bool) -> Result<(), CacheError> {
         let meta;
         let old_last_modified;
         let new_last_modified;
@@ -691,14 +698,17 @@ impl AlbumContentView {
                 .backup_album_meta(
                     album.get_info(),
                     &meta,
-                    old_last_modified,
+                    dbg!(old_last_modified),
                     overwrite,
-                    new_last_modified,
+                    dbg!(new_last_modified),
                 )
                 .await;
 
             if res.is_ok() {
                 stack.set_visible(false);
+                self.imp()
+                    .old_last_modified
+                    .replace(Some(new_last_modified));
             } else if stack.visible_child_name().is_some_and(|n| &n != "button") {
                 stack.set_visible_child_name("button");
             }
@@ -706,6 +716,41 @@ impl AlbumContentView {
             res
         } else {
             Ok(())
+        }
+    }
+
+    async fn backup_meta(&self) {
+        if let Err(CacheError::AlreadyExists) = self.backup_meta_internal(false).await {
+            let dialog = self.imp().overwrite_backup_dialog.get();
+            if dialog.choose_future(Some(self)).await == "overwrite" {
+                if let Err(e) = self.backup_meta_internal(true).await {
+                    dbg!(e);
+                }
+            }
+        }
+    }
+
+    // Returns metadata backup availability flag (but false if visible = false).
+    // Used to determine whether we should attempt auto sync.
+    fn maybe_show_backup_metadata_btn(&self, visible: bool) -> bool {
+        let btn_stack = self.imp().backup_meta_stack.get();
+        if visible {
+            let available = self
+                .imp()
+                .library
+                .upgrade()
+                .map_or(false, |lib| lib.metadata_backup_available());
+            btn_stack.set_visible(available);
+            if btn_stack
+                .visible_child_name()
+                .is_some_and(|n| &n != "button")
+            {
+                btn_stack.set_visible_child_name("button");
+            }
+            available
+        } else {
+            btn_stack.set_visible(false);
+            false
         }
     }
 
@@ -760,24 +805,7 @@ impl AlbumContentView {
                             // Metadata sync
                             let _ = self.imp().old_last_modified.replace(Some(last_modified));
                             let _ = self.imp().new_last_modified.replace(Some(last_modified));
-                            let btn_stack = self.imp().backup_meta_stack.get();
-                            if !matches!(src, MetaSource::Mpd) {
-                                // Should back up to MPD
-                                btn_stack.set_visible(
-                                    self.imp()
-                                        .library
-                                        .upgrade()
-                                        .map_or(false, |lib| lib.metadata_backup_available()),
-                                );
-                                if btn_stack
-                                    .visible_child_name()
-                                    .is_some_and(|n| &n != "button")
-                                {
-                                    btn_stack.set_visible_child_name("button");
-                                }
-                            } else {
-                                btn_stack.set_visible(false);
-                            }
+                            self.maybe_show_backup_metadata_btn(!matches!(src, MetaSource::Mpd));
                         };
 
                         // Handle MBID

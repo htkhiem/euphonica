@@ -685,6 +685,7 @@ impl Cache {
                         .map_err(Error::Client)?;
 
                     if let Some(meta) = from_mpd.as_ref() {
+                        let uri = album.folder_uri.to_owned();
                         let title = album.title.to_owned();
                         let mbid = album.mbid.clone();
                         let artist = album.get_artist_tag().map(String::from);
@@ -694,6 +695,7 @@ impl Cache {
                             .local
                             .call(move |_| {
                                 let mut info = AlbumInfo::default();
+                                info.folder_uri = uri;
                                 info.title = title;
                                 info.albumartist = artist;
                                 info.mbid = mbid;
