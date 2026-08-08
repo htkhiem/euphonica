@@ -44,7 +44,9 @@ use super::{BATCH_SIZE, FETCH_LIMIT, StickerSetMode};
 
 static MAX_RETRIES: u32 = 3;
 static MAX_EXAMPLE_ALBUMS_PER_ALBUMARTIST: usize = 3;
-static META_STICKER_PAGE_SIZE: usize = 2048;
+// About as large as one sticker can contain without a "connection reset by peer".
+// Also, even the most minimal metadata doc is already ~2300 base64 chars.
+static META_STICKER_PAGE_SIZE: usize = 4096;
 
 // Thin wrapper around blocking mpd::Clients. It contains two separate client
 // objects connected to the same address, each living on their own std::thread.
@@ -531,8 +533,32 @@ impl MpdWrapper {
         }
     }
 
+    /// Atomically delete multiple stickers for a given type/uri. All names are deleted in a
+    /// single MPD command list, ensuring atomicity — either all succeed or none do.
+    pub async fn delete_stickers(
+        &self,
+        typ: &'static str,
+        uri: String,
+        names: Vec<Cow<'static, str>>,
+    ) -> ClientResult<()> {
+        let min_lvl = if typ == "song" {
+            StickersSupportLevel::SongsOnly
+        } else {
+            StickersSupportLevel::All
+        };
+        if self.state.stickers_support_level() >= min_lvl {
+            let (s, r) = oneshot::channel();
+            self.handle_sticker_error(
+                self.foreground(Task::DeleteStickers(typ, uri, names, s), r)
+                    .await,
+            )
+        } else {
+            Err(ClientError::InsufficientStickersSupportLevel)
+        }
+    }
+
     /// Atomically set multiple stickers for a given object. All pairs are written in a single
-    /// MPD command list, ensuring atomicity — either all succeed or none do.
+    /// MPD command list. SHOULD make it atomic (dunno, need to check with MPD source).
     pub async fn set_stickers(
         &self,
         typ: &'static str,
@@ -1472,16 +1498,21 @@ impl MpdWrapper {
         }
     }
 
-    #[inline]
-    fn generate_metadata_page_sticker_names(
+    /// Generate sticker names for the metadata document pages (0..page_count).
+    /// Also includes the page count and last-modified stickers.
+    fn generate_all_meta_sticker_names(
         key_suffix: Option<&str>,
         page_count: usize,
     ) -> Vec<Cow<'static, str>> {
-        dbg!(
-            (0..page_count)
-                .map(|p| { Self::get_full_key_paged(Stickers::META_DOC, key_suffix, p) })
-                .collect()
-        )
+        (0..page_count)
+            .map(|p| Self::get_full_key_paged(Stickers::META_DOC, key_suffix, p))
+            .chain(std::iter::once(
+                Self::get_full_key(Stickers::META_PAGE_COUNT, key_suffix),
+            ))
+            .chain(std::iter::once(
+                Self::get_full_key(Stickers::META_LAST_MODIFIED, key_suffix),
+            ))
+            .collect()
     }
 
     /// Get metadata document as backed up to MPD's sticker database. Metadata is stored as
@@ -1504,12 +1535,15 @@ impl MpdWrapper {
             .parse::<usize>()
             .map_err(|_| ClientError::Parse)?;
 
-        // Generate names for the pages
+        // Generate names for the pages only
+        let page_names: Vec<Cow<'static, str>> = (0..page_count)
+            .map(|p| Self::get_full_key_paged(Stickers::META_DOC, key_suffix, p))
+            .collect();
         let pages = self
             .get_stickers(
                 typ,
                 &uri,
-                Self::generate_metadata_page_sticker_names(key_suffix, page_count),
+                page_names,
             )
             .await?;
 
@@ -1531,6 +1565,7 @@ impl MpdWrapper {
     /// Metadata is serialized to BSON then base64-encoded. If the base64 string exceeds 2048
     /// characters, it is split across multiple sticker keys (euphonica:meta:doc:<suffix>:N).
     /// A pageCount sticker tracks the number of pages for reconstruction.
+    /// After writing, any excess pages from a previous larger metadata document are cleaned up.
     pub async fn set_meta<T: Serialize>(
         &self,
         typ: &'static str,
@@ -1550,7 +1585,7 @@ impl MpdWrapper {
         let pages = b64.as_bytes().chunks(META_STICKER_PAGE_SIZE).into_iter();
 
         let mut names_values: Vec<(Cow<'static, str>, Cow<'static, str>)> = Vec::new(); // meta pages, plus page count and last-modified
-        let mut page_count: usize = 0;
+        let mut new_page_count: usize = 0;
         for (idx, page) in pages.enumerate() {
             names_values.push((
                 Self::get_full_key_paged(Stickers::META_DOC, key_suffix, idx),
@@ -1559,13 +1594,13 @@ impl MpdWrapper {
                     .to_owned()
                     .into(),
             ));
-            page_count += 1;
+            new_page_count += 1;
         }
 
         // Write page count
         names_values.push((
             Self::get_full_key(Stickers::META_PAGE_COUNT, key_suffix),
-            page_count.to_string().into(),
+            new_page_count.to_string().into(),
         ));
 
         // Write last-modified
@@ -1574,7 +1609,36 @@ impl MpdWrapper {
             last_modified.unix_timestamp_nanos().to_string().into(),
         ));
 
-        self.set_stickers(typ, uri, names_values).await
+        // Clean up excess pages from a previous larger metadata document.
+        // Read the old page count BEFORE the write so we don't compare against the new value.
+        // Cleanup itself runs AFTER the write so that if it fails we don't lose data.
+        let uri_for_cleanup = uri.clone();
+        let old_page_count = self
+            .get_sticker(
+                typ,
+                uri_for_cleanup,
+                Self::get_full_key(Stickers::META_PAGE_COUNT, key_suffix),
+            )
+            .await
+            .ok()
+            .and_then(|s| s.parse::<usize>().ok());
+
+        // Perform the atomic write
+        self.set_stickers(typ, uri.clone(), names_values).await?;
+
+        if let Some(old_page_count) = old_page_count {
+            if old_page_count > new_page_count {
+                let excess_pages = old_page_count - new_page_count;
+                let excess_start = new_page_count;
+                let names: Vec<Cow<'static, str>> = (excess_start..excess_start + excess_pages)
+                    .map(|p| Self::get_full_key_paged(Stickers::META_DOC, key_suffix, p))
+                    .collect();
+                // Ignore errors during cleanup (shouldn't affect metadata coherence).
+                let _ = self.delete_stickers(typ, uri.clone(), names).await;
+            }
+        }
+
+        Ok(())
     }
 
     /// Get the last-modified time of the backed-up metadata doc. If no metadata had been backed up,
@@ -1609,10 +1673,33 @@ impl MpdWrapper {
         }
     }
 
-    // pub async fn delete_meta(&self, typ: &'static str, key_suffix: Option<&str>, uri: String) -> ClientResult<()> {
-    //     self.delete_sticker(typ, uri.clone(), Self::get_full_key(Stickers::META_DOC, key_suffix)).await?;
-    //     self.delete_sticker(typ, uri, Self::get_full_key(Stickers::META_LAST_MODIFIED, key_suffix)).await
-    // }
+    /// Clear all metadata stickers for a given type/uri/key_suffix.
+    /// Reads the current page count, then atomically deletes all document pages,
+    /// the page count sticker, and the last-modified sticker.
+    pub async fn clear_meta(
+        &self,
+        typ: &'static str,
+        key_suffix: Option<&str>,
+        uri: String,
+    ) -> ClientResult<()> {
+        // Read the current page count to know how many pages to delete
+        let page_count_key: String =
+            Self::get_full_key(Stickers::META_PAGE_COUNT, key_suffix).into_owned();
+        let page_count = self
+            .get_sticker(typ, uri.clone(), page_count_key.into())
+            .await?;
+        let page_count = page_count.parse::<usize>().map_err(|_| ClientError::Parse)?;
+
+        if page_count == 0 {
+            return Ok(());
+        }
+
+        // Generate all sticker names: doc pages + page count + last-modified
+        let names = Self::generate_all_meta_sticker_names(key_suffix, page_count);
+
+        // Atomically delete all of them
+        self.delete_stickers(typ, uri, names).await
+    }
 }
 
 impl Drop for MpdWrapper {

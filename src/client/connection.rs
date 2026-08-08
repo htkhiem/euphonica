@@ -258,6 +258,15 @@ pub enum Task {
         Cow<'static, str>,
         Responder<()>,
     ),
+    DeleteStickers(
+        /// Type
+        &'static str,
+        /// URI
+        String,
+        /// Sticker names to delete
+        Vec<Cow<'static, str>>,
+        Responder<()>,
+    ),
     // FindStickerOp(
     //     /// Type
     //     &'static str,
@@ -970,6 +979,13 @@ impl Connection {
                     }
                     Task::DeleteSticker(typ, uri, name, resp) => {
                         self.respond_with_client(|c| c.delete_sticker(typ, &uri, &name), resp)
+                    }
+                    Task::DeleteStickers(typ, uri, names, resp) => {
+                        let name_refs: Vec<&str> = names.iter().map(|s| s.as_ref()).collect();
+                        self.respond_with_client(
+                            |c| c.delete_stickers(typ, &uri, &name_refs),
+                            resp,
+                        )
                     }
                     // Task::FindStickerOp(typ, base_uri, name, op, value, window, resp) => self
                     //     .respond_with_client(
