@@ -1,11 +1,17 @@
 extern crate mpd;
 use crate::{
-    application::EuphonicaApplication, cache::{Cache, sqlite}, client::{
+    application::EuphonicaApplication,
+    cache::{Cache, sqlite},
+    client::{
         ClientState, ConnectionState, Error as ClientError, MpdWrapper, Result as ClientResult,
         StickerSetMode,
-    }, common::{QualityGrade, Song, Stickers}, config::APPLICATION_ID, meta_providers::models::Lyrics, utils::{
+    },
+    common::{QualityGrade, Song, Stickers},
+    config::APPLICATION_ID,
+    meta_providers::models::Lyrics,
+    utils::{
         current_unix_timestamp, get_image_cache_path, prettify_audio_format, settings_manager,
-    }
+    },
 };
 use async_lock::OnceCell as AsyncOnceCell;
 use mpris_server::{
@@ -19,7 +25,8 @@ use adw::subclass::prelude::*;
 use glib::{BoxedAnyObject, clone, closure_local, subclass::Signal};
 use gtk::{gio, glib, prelude::*};
 use mpd::{
-    Output, ReplayGain, SaveMode, Subsystem, status::{AudioFormat, State}
+    Output, ReplayGain, SaveMode, Subsystem,
+    status::{AudioFormat, State},
 };
 use std::{
     cell::{Cell, OnceCell, RefCell},
@@ -186,7 +193,7 @@ mod imp {
         pub queue: gio::ListStore,
         pub lyric_lines: gtk::StringList, // Line by line for display. May be empty.
         pub lyrics: RefCell<Option<Lyrics>>,
-        pub lyrics_loading: Cell<bool>,
+        pub lyrics_handle: RefCell<Option<glib::JoinHandle<()>>>,
         pub queue_len: Cell<u32>,
         pub current_song: RefCell<Option<Song>>,
         pub current_lyric_line: Cell<u32>,
@@ -265,7 +272,7 @@ mod imp {
                 position_sampled_while_playing: Cell::new(false),
                 lyric_lines: gtk::StringList::new(&[]),
                 lyrics: RefCell::new(None),
-                lyrics_loading: Cell::new(false),
+                lyrics_handle: RefCell::default(),
                 random: Cell::new(false),
                 consume: Cell::new(false),
                 supports_playlists: Cell::new(false),
@@ -419,9 +426,6 @@ mod imp {
                     ParamSpecUInt::builder("current-lyric-line")
                         .read_only()
                         .build(),
-                    ParamSpecBoolean::builder("lyrics-loading")
-                        .read_only()
-                        .build(),
                     ParamSpecString::builder("title").read_only().build(),
                     ParamSpecString::builder("artist").read_only().build(),
                     ParamSpecString::builder("album").read_only().build(),
@@ -461,7 +465,6 @@ mod imp {
                 "replaygain" => get_replaygain_icon_name(self.replaygain.get()).to_value(),
                 "position" => obj.position().to_value(),
                 "current-lyric-line" => self.current_lyric_line.get().to_value(),
-                "lyrics-loading" => self.lyrics_loading.get().to_value(),
                 // These are proxies for Song properties
                 "title" => obj.title().to_value(),
                 "artist" => obj.artist().to_value(),
@@ -1146,17 +1149,8 @@ impl Player {
                             self.maybe_start_fft_thread();
                         }
 
-                        // Get new lyrics
-                        // First remove all current lines
-                        self.set_lyrics_loading(true);
-                        self.imp()
-                            .lyric_lines
-                            .splice(0, self.imp().lyric_lines.n_items(), &[]);
-                        let _ = self.imp().lyrics.take();
-
-                        // Fetch new lyrics in another future (don't await using this function as it will sleep after the request).
-                        // We'll have to check which song is playing again by the time we come back with the lyrics.
-                        glib::spawn_future_local(clone!(
+                        self.abort_lyrics_fetch();
+                        let lyrics_handle = glib::spawn_future_local(clone!(
                             #[weak(rename_to = this)]
                             self,
                             #[strong]
@@ -1177,17 +1171,16 @@ impl Player {
                                     return;
                                 }
                                 match result {
-                                    Ok(Some(lyrics)) => {
-                                        this.update_lyrics(lyrics);
-                                    }
-                                    Ok(None) => {}
+                                    Ok(lyrics) => this.update_lyrics(lyrics),
                                     Err(e) => {
                                         dbg!(e);
+                                        // Prevent highlighting and seeking with timestamps from the previous song.
+                                        this.update_lyrics(None);
                                     }
                                 }
-                                this.set_lyrics_loading(false);
                             }
                         ));
+                        self.imp().lyrics_handle.replace(Some(lyrics_handle));
 
                         // Update MPRIS side
                         if self.imp().mpris_enabled.get() {
@@ -1277,7 +1270,6 @@ impl Player {
         if status.song.is_none() || status.state == State::Stop {
             // No song is playing. Update state accordingly.
             if let Some(_) = self.imp().current_song.take() {
-                self.set_lyrics_loading(false);
                 self.imp().saved_to_history.set(false);
                 self.notify("title");
                 self.notify("artist");
@@ -1361,12 +1353,21 @@ impl Player {
         Ok(())
     }
 
-    pub fn update_lyrics(&self, lyrics: Lyrics) {
+    fn abort_lyrics_fetch(&self) {
+        if let Some(handle) = self.imp().lyrics_handle.take() {
+            handle.abort();
+        }
+    }
+
+    pub fn update_lyrics(&self, lyrics: Option<Lyrics>) {
         self.imp().current_lyric_line.set(0);
+        let lines = lyrics
+            .as_ref()
+            .map_or_else(Vec::new, Lyrics::to_plain_lines);
         self.imp()
             .lyric_lines
-            .splice(0, 0, &lyrics.to_plain_lines());
-        self.imp().lyrics.replace(Some(lyrics));
+            .splice(0, self.imp().lyric_lines.n_items(), &lines);
+        self.imp().lyrics.replace(lyrics);
         self.notify("current-lyric-line");
     }
 
@@ -1385,16 +1386,6 @@ impl Player {
 
     pub fn n_lyric_lines(&self) -> u32 {
         self.imp().lyric_lines.n_items()
-    }
-
-    pub fn lyrics_loading(&self) -> bool {
-        self.imp().lyrics_loading.get()
-    }
-
-    fn set_lyrics_loading(&self, loading: bool) {
-        if self.imp().lyrics_loading.replace(loading) != loading {
-            self.notify("lyrics-loading");
-        }
     }
 
     pub fn register_local_queue_changes(&self, n_changes: u32) {
@@ -1788,7 +1779,6 @@ impl Player {
                     backend.name() == "pipewire" && backend.status() != FftStatus::ValidNotReading
                 })
         {
-
             self.maybe_stop_fft_thread().await;
         }
         self.client()?.prev().await
@@ -2002,7 +1992,8 @@ impl Player {
         {
             sqlite::write_lyrics(curr_song.get_info(), Some(&lyrics))
                 .expect("Unable to import lyrics into SQLite DB");
-            self.update_lyrics(lyrics);
+            self.abort_lyrics_fetch();
+            self.update_lyrics(Some(lyrics));
         }
     }
 
@@ -2010,10 +2001,8 @@ impl Player {
         if let Some(curr_song) = self.current_song() {
             sqlite::write_lyrics(curr_song.get_info(), None)
                 .expect("Unable to clear lyrics from DB");
-            self.imp()
-                .lyric_lines
-                .splice(0, self.imp().lyric_lines.n_items(), &[]);
-            let _ = self.imp().lyrics.take();
+            self.abort_lyrics_fetch();
+            self.update_lyrics(None);
         }
     }
 

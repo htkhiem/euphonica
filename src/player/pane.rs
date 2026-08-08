@@ -95,7 +95,6 @@ mod imp {
         pub albumart_paintable: RotatingPaintable,
         pub albumart_animation: OnceCell<adw::TimedAnimation>,
         pub current_lyric_line_id: RefCell<Option<SignalHandlerId>>,
-        pub lyrics_loading_id: RefCell<Option<SignalHandlerId>>,
         pub cover_changed_id: RefCell<Option<SignalHandlerId>>,
         pub song_changed_id: RefCell<Option<SignalHandlerId>>,
         pub playback_state_id: RefCell<Option<SignalHandlerId>>,
@@ -241,9 +240,6 @@ mod imp {
                 if let Some(id) = self.current_lyric_line_id.take() {
                     player.disconnect(id);
                 }
-                if let Some(id) = self.lyrics_loading_id.take() {
-                    player.disconnect(id);
-                }
                 if let Some(id) = self.cover_changed_id.take() {
                     player.disconnect(id);
                 }
@@ -291,10 +287,9 @@ impl PlayerPane {
 
     pub fn update_lyrics_availability(&self, player: &Player) {
         let has_lyrics = player.n_lyric_lines() > 0;
-        // Keep the lyrics area visible while loading so the album art does not resize between tracks
-        self.imp().lyrics_window.set_visible(
-            (has_lyrics || player.lyrics_loading()) && self.imp().show_lyrics.is_active(),
-        );
+        self.imp()
+            .lyrics_window
+            .set_visible(has_lyrics && self.imp().show_lyrics.is_active());
         self.imp().export_lyrics.set_sensitive(has_lyrics);
         self.imp().clear_lyrics.set_sensitive(has_lyrics);
     }
@@ -563,17 +558,6 @@ impl PlayerPane {
                 }
             ),
         );
-        self.imp()
-            .lyrics_loading_id
-            .replace(Some(player.connect_notify_local(
-                Some("lyrics-loading"),
-                clone!(
-                    #[weak(rename_to = this)]
-                    self,
-                    move |player, _| this.update_lyrics_availability(player)
-                ),
-            )));
-
         // Synced lyrics handling:
         // - Upon loading new lyrics, player controller sets new lyrics object,
         // clears out lyric_lines and repopulates it with new lyrics.
