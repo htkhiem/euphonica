@@ -20,11 +20,9 @@ mod imp {
         #[template_child]
         pub auto_accent: TemplateChild<adw::SwitchRow>,
         #[template_child]
-        pub rotate_album_art: TemplateChild<adw::SwitchRow>,
+        pub rotate_album_art: TemplateChild<adw::ExpanderRow>,
         #[template_child]
         pub return_to_starting_angle: TemplateChild<adw::SwitchRow>,
-        #[template_child]
-        pub album_art_rotation_speed_row: TemplateChild<adw::ActionRow>,
         #[template_child]
         pub album_art_rotation_speed: TemplateChild<gtk::Scale>,
         #[template_child]
@@ -135,35 +133,24 @@ impl UIPreferences {
         ui_settings
             .bind("auto-accent", &auto_accent, "active")
             .build();
-        let rotate_album_art = imp.rotate_album_art.get();
         ui_settings
-            .bind("rotate-album-art", &rotate_album_art, "active")
+            .bind(
+                "rotate-album-art",
+                &imp.rotate_album_art.get(),
+                "enable-expansion",
+            )
             .build();
-        let return_to_starting_angle = imp.return_to_starting_angle.get();
         ui_settings
             .bind(
                 "return-to-starting-angle",
-                &return_to_starting_angle,
+                &imp.return_to_starting_angle.get(),
                 "active",
             )
             .build();
-        rotate_album_art
-            .bind_property("active", &return_to_starting_angle, "sensitive")
-            .sync_create()
-            .build();
-        rotate_album_art
-            .bind_property(
-                "active",
-                &imp.album_art_rotation_speed_row.get(),
-                "sensitive",
-            )
-            .sync_create()
-            .build();
-        let album_art_rotation_speed = imp.album_art_rotation_speed.get();
         ui_settings
             .bind(
                 "album-art-rotation-speed",
-                &album_art_rotation_speed.adjustment(),
+                &imp.album_art_rotation_speed.get().adjustment(),
                 "value",
             )
             .build();
