@@ -288,7 +288,7 @@ mod imp {
                                         #[weak]
                                         this,
                                         async move {
-                                            this.obj().backup_meta().await;
+                                            this.obj().backup_meta(false).await;
                                             this.obj().update_meta(false).await;
                                         }
                                     ));
@@ -359,7 +359,7 @@ mod imp {
                         #[weak]
                         this,
                         async move {
-                            this.obj().backup_meta().await;
+                            this.obj().backup_meta(false).await;
                         }
                     ));
                 }
@@ -719,12 +719,24 @@ impl AlbumContentView {
         }
     }
 
-    async fn backup_meta(&self) {
-        if let Err(CacheError::AlreadyExists) = self.backup_meta_internal(false).await {
-            let dialog = self.imp().overwrite_backup_dialog.get();
-            if dialog.choose_future(Some(self)).await == "overwrite" {
-                if let Err(e) = self.backup_meta_internal(true).await {
-                    dbg!(e);
+    async fn backup_meta(&self, silent: bool) {
+        match self.backup_meta_internal(false).await {
+            Ok(_) => {}
+            Err(CacheError::AlreadyExists) => {
+                if !silent {
+                    let dialog = self.imp().overwrite_backup_dialog.get();
+                    if dialog.choose_future(Some(self)).await == "overwrite" {
+                        if let Err(e) = self.backup_meta_internal(true).await {
+                            dbg!(e);
+                        }
+                    }
+                } else if let Some(win) = self.imp().window.upgrade() {
+                    win.send_simple_toast("Couldn't back up metadata: MPD side is newer", 3);
+                }
+            }
+            Err(e) => {
+                if let Some(win) = self.imp().window.upgrade() {
+                    win.send_simple_toast("Couldn't back up metadata: MPD side is newer", 3);
                 }
             }
         }
@@ -805,7 +817,15 @@ impl AlbumContentView {
                             // Metadata sync
                             let _ = self.imp().old_last_modified.replace(Some(last_modified));
                             let _ = self.imp().new_last_modified.replace(Some(last_modified));
-                            self.maybe_show_backup_metadata_btn(!matches!(src, MetaSource::Mpd));
+                            let should_backup = self
+                                .maybe_show_backup_metadata_btn(!matches!(src, MetaSource::Mpd));
+                            if should_backup
+                                && settings_manager()
+                                    .child("client")
+                                    .boolean("mpd-backup-metadata")
+                            {
+                                self.backup_meta(true).await;
+                            }
                         };
 
                         // Handle MBID
