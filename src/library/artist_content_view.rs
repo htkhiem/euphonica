@@ -15,7 +15,7 @@ use std::{
 
 use super::{Library, tag_button::TagButton};
 use crate::{
-    cache::{Cache, CacheState, Error as CacheError, placeholders::EMPTY_ARTIST_STRING}, common::{Album, Artist, ContentStack, RowAddButtons, Song, SongRow}, library::{Tag, add_to_playlist::AddToPlaylistButton, discography_year::DiscographyYear}, meta_providers::models::{MetaSource, Wiki, artist_type_to_string}, utils::{self, format_secs_as_duration, settings_manager, tokio_runtime}, window::EuphonicaWindow,
+    cache::{Cache, CacheState, Error as CacheError, placeholders::EMPTY_ARTIST_STRING}, common::{Album, Artist, ContentStack, RowAddButtons, Song, SongRow}, library::{Tag, add_to_playlist::AddToPlaylistButton, discography_year::DiscographyYear}, meta_providers::models::{MetaSource, Wiki, artist_type_to_string}, utils::{self, format_datetime_local_tz, format_secs_as_duration, settings_manager, tokio_runtime}, window::EuphonicaWindow,
 };
 
 mod imp {
@@ -70,6 +70,9 @@ mod imp {
         pub bio_link: TemplateChild<gtk::LinkButton>,
         #[template_child]
         pub bio_attrib: TemplateChild<gtk::Label>,
+
+        #[template_child]
+        pub meta_last_updated: TemplateChild<gtk::Label>,
 
         // Edit dialog
         #[template_child]
@@ -747,6 +750,7 @@ impl ArtistContentView {
             if artist.get_name().is_empty() {
                 self.set_show_meta(false);
                 self.imp().tags_widget.remove_all(false);
+                self.imp().meta_last_updated.set_visible(false);
             } else {
                 self.set_show_meta(true);
                 self.imp().bio_stack.show_spinner();
@@ -847,6 +851,10 @@ impl ArtistContentView {
                             self.imp().tags_widget.show_placeholder();
                         }
 
+                        // Show last-modified
+                        self.imp().meta_last_updated.set_visible(true);
+                        self.imp().meta_last_updated.set_label(&format!("Last updated {}", format_datetime_local_tz(last_modified)));
+
                         let _ = self.imp().meta.replace(Some(meta.clone()));
                         // Metadata sync
                         let _ = self.imp().old_last_modified.replace(Some(last_modified));
@@ -863,10 +871,12 @@ impl ArtistContentView {
                     }
                     Ok(None) => {
                         self.set_show_meta(false);
+                        self.imp().meta_last_updated.set_visible(false);
                         let _ = self.imp().meta.take();
                     }
                     Err(e) => {
                         self.set_show_meta(false);
+                        self.imp().meta_last_updated.set_visible(false);
                         let _ = self.imp().meta.take();
                         dbg!(e);
                     }

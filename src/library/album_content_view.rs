@@ -2,6 +2,7 @@ use super::{Library, Tag, TagsSection, artist_tag_button::ArtistTagButton};
 use crate::common::FadingScrolledWindow;
 use crate::meta_providers::models::AlbumMeta;
 use crate::meta_providers::models::MetaSource;
+use crate::utils::format_datetime_local_tz;
 use crate::utils::settings_manager;
 use crate::{
     cache::{Cache, CacheState, Error as CacheError, placeholders::EMPTY_ALBUM_STRING},
@@ -66,6 +67,9 @@ mod imp {
         pub wiki_link: TemplateChild<gtk::LinkButton>,
         #[template_child]
         pub wiki_attrib: TemplateChild<gtk::Label>,
+
+        #[template_child]
+        pub meta_last_updated: TemplateChild<gtk::Label>,
 
         // Metadata editor dialog
         #[template_child]
@@ -773,6 +777,7 @@ impl AlbumContentView {
             if album.get_title().is_empty() {
                 self.imp().wiki_stack.show_placeholder();
                 self.imp().tags_widget.remove_all(false);
+                self.imp().meta_last_updated.set_visible(false);
             } else {
                 self.imp().wiki_stack.show_spinner();
                 self.imp().tags_widget.remove_all(true);
@@ -858,14 +863,20 @@ impl AlbumContentView {
                         } else {
                             self.imp().tags_widget.show_placeholder();
                         }
+
+                        // Show last-modified
+                        self.imp().meta_last_updated.set_visible(true);
+                        self.imp().meta_last_updated.set_label(&format!("Last updated {}", format_datetime_local_tz(last_modified)));
                     }
                     Ok(None) => {
                         self.imp().wiki_stack.show_placeholder();
                         self.imp().tags_widget.show_placeholder();
+                        self.imp().meta_last_updated.set_visible(false);
                     }
                     Err(e) => {
                         self.imp().wiki_stack.show_placeholder();
                         self.imp().tags_widget.show_placeholder();
+                        self.imp().meta_last_updated.set_visible(false);
                         dbg!(e);
                     }
                 }

@@ -18,6 +18,7 @@
             <setter object="title" property="justify">center</setter>
             <setter object="artists_box" property="halign">center</setter>
             <setter object="artists_box" property="align">0.5</setter>
+            <setter object="meta_last_updated" property="halign">center</setter>
           </object>
         </child>
         <property name="child">
@@ -497,6 +498,16 @@
                               </object>
                             </child>
 
+                            <child type="meta-last-updated">
+                              <object class="GtkLabel" id="meta_last_updated">
+                                <style>
+                                  <class name="dimmed"/>
+                                  <class name="caption"/>
+                                </style>
+                                <property name="halign">end</property>
+                              </object>
+                            </child>
+
                             <child>
                               <object class="AdwLayout">
                                 <property name="name">wide</property>
@@ -545,44 +556,55 @@
 
                                         <child>
                                           <object class="GtkBox">
-                                            <property name="spacing">12</property>
-
-                                            <!-- Actual second column: just the wiki -->
+                                            <property name="orientation">1</property>
                                             <child>
-                                              <object class="AdwLayoutSlot">
-                                                <property name="id">wiki-box</property>
-                                              </object>
-                                            </child>
+                                              <object class="GtkBox">
+                                                <property name="spacing">12</property>
 
-                                            <!-- Third column: genres & tags -->
-                                            <child>
-                                              <object class="AdwClamp">
-                                                <property name="width-request">160</property>
-                                                <!-- Exactly the same width as the cover art in the first column -->
-                                                <property name="maximum-size">290</property>
+                                                <!-- Actual second column: just the wiki -->
                                                 <child>
-                                                  <object class="GtkBox">
-                                                    <property name="orientation">1</property>
-                                                    <property name="spacing">6</property>
+                                                  <object class="AdwLayoutSlot">
+                                                    <property name="id">wiki-box</property>
+                                                  </object>
+                                                </child>
+
+                                                <!-- Third column: genres & tags -->
+                                                <child>
+                                                  <object class="AdwClamp">
+                                                    <property name="width-request">160</property>
+                                                    <!-- Exactly the same width as the cover art in the first column -->
+                                                    <property name="maximum-size">290</property>
                                                     <child>
-                                                      <object class="AdwLayoutSlot">
-                                                        <property name="id">genres-box</property>
-                                                      </object>
-                                                    </child>
-                                                    <child>
-                                                      <object class="GtkSeparator">
-                                                        <style>
-                                                          <class name="spacer"/>
-                                                        </style>
-                                                      </object>
-                                                    </child>
-                                                    <child>
-                                                      <object class="AdwLayoutSlot">
-                                                        <property name="id">tags-box</property>
+                                                      <object class="GtkBox">
+                                                        <property name="orientation">1</property>
+                                                        <property name="spacing">6</property>
+                                                        <child>
+                                                          <object class="AdwLayoutSlot">
+                                                            <property name="id">genres-box</property>
+                                                          </object>
+                                                        </child>
+                                                        <child>
+                                                          <object class="GtkSeparator">
+                                                            <style>
+                                                              <class name="spacer"/>
+                                                            </style>
+                                                          </object>
+                                                        </child>
+                                                        <child>
+                                                          <object class="AdwLayoutSlot">
+                                                            <property name="id">tags-box</property>
+                                                          </object>
+                                                        </child>
                                                       </object>
                                                     </child>
                                                   </object>
                                                 </child>
+                                              </object>
+                                            </child>
+
+                                            <child>
+                                              <object class="AdwLayoutSlot">
+                                                <property name="id">meta-last-updated</property>
                                               </object>
                                             </child>
                                           </object>
@@ -629,6 +651,11 @@
                                     <child>
                                       <object class="AdwLayoutSlot">
                                         <property name="id">tags-box</property>
+                                      </object>
+                                    </child>
+                                    <child>
+                                      <object class="AdwLayoutSlot">
+                                        <property name="id">meta-last-updated</property>
                                       </object>
                                     </child>
                                   </object>
@@ -847,15 +874,15 @@
     </object>
 
     <object class="AdwAlertDialog" id="overwrite_backup_dialog">
-			<property name="heading" translatable="yes">Overwrite newer backup?</property>
-			<property name="body" translatable="yes">A newer backup of this album's metadata exists. Would you like to overwrite it with this version?</property>
-			<property name="default-response">cancel</property>
-			<property name="close-response">cancel</property>
-			<responses>
-				<response id="cancel" translatable="yes">_Cancel</response>
-				<response id="overwrite" translatable="yes" appearance="destructive">_Overwrite</response>
-			</responses>
-		</object>
+      <property name="heading" translatable="yes">Overwrite newer backup?</property>
+      <property name="body" translatable="yes">A newer backup of this album's metadata exists. Would you like to overwrite it with this version?</property>
+      <property name="default-response">cancel</property>
+      <property name="close-response">cancel</property>
+      <responses>
+        <response id="cancel" translatable="yes">_Cancel</response>
+        <response id="overwrite" translatable="yes" appearance="destructive">_Overwrite</response>
+      </responses>
+    </object>
 
     <menu id="edit_menu_model">
       <item>
