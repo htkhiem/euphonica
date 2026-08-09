@@ -267,20 +267,16 @@ pub enum Task {
         Vec<Cow<'static, str>>,
         Responder<()>,
     ),
-    // FindStickerOp(
-    //     /// Type
-    //     &'static str,
-    //     /// Base URI
-    //     String,
-    //     /// Name (LHS)
-    //     Cow<'static, str>,
-    //     /// Operator
-    //     &'static str,
-    //     /// Value (RHS)
-    //     Cow<'static, str>,
-    //     Window,
-    //     Responder<Vec<String>>,
-    // ),
+    FindSticker(
+        /// Type (e.g. "album")
+        &'static str,
+        /// URI (empty string = all URIs)
+        String,
+        /// Sticker name (e.g. "rating")
+        Cow<'static, str>,
+        Window,
+        Responder<Vec<(String, String)>>,
+    ),
     GetPlaylists(Responder<Vec<INodeInfo>>),
     LoadPlaylist(String, Responder<()>),
     SaveQueueAsPlaylist(
@@ -987,11 +983,11 @@ impl Connection {
                             resp,
                         )
                     }
-                    // Task::FindStickerOp(typ, base_uri, name, op, value, window, resp) => self
-                    //     .respond_with_client(
-                    //         |c| c.find_sticker_op(typ, &base_uri, &name, op, &value, window),
-                    //         resp,
-                    //     ),
+                    Task::FindSticker(typ, uri, name, window, resp) => self
+                        .respond_with_client(
+                            |c| c.find_sticker(typ, &uri, &name, window),
+                            resp,
+                        ),
                     Task::GetPlaylists(resp) => self.respond_with_client(
                         |c| {
                             c.playlists().map(|playlists| {

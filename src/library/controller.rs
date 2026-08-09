@@ -710,9 +710,9 @@ impl Library {
         Ok(())
     }
 
-    /// Fetch basic info for all albums to display them in a grid. Will also fetch tags as stored locally.
+    /// Fetch basic info for all albums to display them in a grid. Will also fetch tags as stored locally
+    /// and album rating stickers. 
     /// During the process we'll also produce albumartists as a side effect.
-    /// Note: this function no longer fetches stickers s.t. we can return the grid to the user earlier.
     pub async fn init_albums_and_albumartists(&self) -> ClientResult<()> {
         if !self.imp().albums_and_albumartists_initialized.get() {
             self.imp().albums_and_albumartists_initialized.set(true);
@@ -726,31 +726,6 @@ impl Library {
                 .await?;
             album_model.extend_from_slice(&albums);
             albumartist_model.extend_from_slice(&artists);
-        }
-        Ok(())
-    }
-
-    /// Fetch known album stickers for those discovered by init_albums.
-    pub async fn init_album_stickers(&self) -> ClientResult<()> {
-        if self.imp().albums_and_albumartists_initialized.get() {
-            for album in self.imp().albums.iter::<Album>() {
-                // Right now the only sticker we use is album rating
-                let album = album.unwrap();
-                if let Ok(rating_str) = self
-                    .client()
-                    .get_sticker("album", album.get_title().into(), "rating".into())
-                    .await
-                {
-                    {
-                        let mut stickers = album.get_stickers().borrow_mut();
-                        stickers.set_rating(&rating_str);
-                        // End borrow
-                    }
-                    album.notify_stickers_changed();
-                }
-            }
-        } else {
-            eprintln!("WARNING: init_album_stickers called before init_albums. This is a no-op.");
         }
         Ok(())
     }

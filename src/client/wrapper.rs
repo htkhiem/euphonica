@@ -1027,11 +1027,25 @@ impl MpdWrapper {
             );
         }
 
+        // Then fetch album ratings. FIXME: same-name albums get the same rating right now...
+        let mut ratings_map: FxHashMap<String, String> = FxHashMap::default();
+        self.find_sticker(
+            "album",
+            String::new(), // empty URI = search all albums
+            Stickers::RATING.into(),
+            &mut |stickers: Vec<(String, String)>| {
+                for (name, value) in stickers {
+                    ratings_map.insert(name, value);
+                }
+            },
+        )
+        .await?;
+
         // Yet more off thread work
-        let (album_infos, artist_infos) = asyncified
+        let (album_infos_and_ratings, artist_infos) = asyncified
             .call(move |_| {
                 let mut albumartists: FxHashMap<String, ArtistInfo> = FxHashMap::default();
-                let mut albums: Vec<AlbumInfo> = Vec::with_capacity(album_count);
+                let mut album_infos_and_ratings: Vec<(AlbumInfo, Option<String>)> = Vec::with_capacity(album_count);
 
                 for i in 0..songs.len() {
                     if let Some(album_info) = std::mem::take(&mut songs[i]).into_album_info() {
@@ -1052,12 +1066,16 @@ impl MpdWrapper {
                                 existing.example_uris.push(example_uri.to_owned());
                             }
                         }
-                        albums.push(album_info);
+                        let rating = ratings_map.get(&album_info.title).map(|s| s.to_owned());
+                        album_infos_and_ratings.push((
+                            album_info,
+                            rating
+                        ));
                     }
                 }
 
                 (
-                    albums,
+                    album_infos_and_ratings,
                     albumartists
                         .into_iter()
                         .map(|p| p.1)
@@ -1066,7 +1084,13 @@ impl MpdWrapper {
             })
             .await;
         Ok((
-            album_infos.into_iter().map(Album::from).collect(),
+            album_infos_and_ratings.into_iter().map(|(i, r)| {
+                let res = Album::from(i);
+                if let Some(rating) = r {
+                    res.get_stickers().borrow_mut().set_rating(&rating);
+                }
+                res
+            }).collect(),
             artist_infos.into_iter().map(Artist::from).collect(),
         ))
     }
@@ -1199,7 +1223,8 @@ impl MpdWrapper {
             Vec<FxHashSet<String>>,
         ) = asyncified
             .call(move |_| {
-                let mut all_queries_windows: Vec<(Query, mpd::search::Window)> = Vec::with_capacity(grouped_vals.groups.len());
+                let mut all_queries_windows: Vec<(Query, mpd::search::Window)> =
+                    Vec::with_capacity(grouped_vals.groups.len());
                 // Same order as the upcoming songs, so there's no need to use a hash table
                 let mut genres = Vec::with_capacity(grouped_vals.groups.len());
                 for (artist_tag, genre_tags) in grouped_vals.groups.into_iter() {
@@ -1416,6 +1441,45 @@ impl MpdWrapper {
             }
         }
         Ok(res)
+    }
+
+    /// Find all stickers of a given name for a path (recursive URI, or leave empty for other types).
+    /// Returns a list of (name, value) pairs. Uses batched windowed retrieval
+    /// to avoid overwhelming the server.
+    pub async fn find_sticker<F>(
+        &self,
+        typ: &'static str,
+        uri: String,
+        name: Cow<'static, str>,
+        respond: &mut F,
+    ) -> ClientResult<()>
+    where
+        F: FnMut(Vec<(String, String)>),
+    {
+        let mut curr_len: usize = 0;
+        let mut more: bool = true;
+        while more && (curr_len) < FETCH_LIMIT {
+            let (s, r) = oneshot::channel();
+            let stickers = self
+                .background(
+                    Task::FindSticker(
+                        typ,
+                        uri.clone(),
+                        name.clone(),
+                        Window::from((curr_len as u32, (curr_len + BATCH_SIZE) as u32)),
+                        s,
+                    ),
+                    r,
+                )
+                .await?;
+            if !stickers.is_empty() {
+                respond(stickers);
+                curr_len += BATCH_SIZE;
+            } else {
+                more = false;
+            }
+        }
+        Ok(())
     }
 
     pub async fn find_add(&self, query: Query<'static>) -> ClientResult<()> {
