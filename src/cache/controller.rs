@@ -37,7 +37,7 @@ use crate::{
 };
 use crate::{
     common::{DynamicPlaylist, SongInfo},
-    meta_providers::models::{ArtistMeta, Lyrics},
+    meta_providers::models::Lyrics,
     utils::strip_filename_linux,
 };
 

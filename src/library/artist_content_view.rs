@@ -12,7 +12,6 @@ use std::{
     rc::Rc,
     sync::OnceLock,
 };
-use time::OffsetDateTime;
 
 use super::{Library, tag_button::TagButton};
 use crate::{
@@ -29,7 +28,7 @@ mod imp {
     use crate::{
         common::FadingScrolledWindow,
         library::{TagsSection, discography_album::DiscographyAlbum},
-        meta_providers::models::{ArtistMeta, MetaSource, artist_type_to_index, index_to_artist_type},
+        meta_providers::models::{ArtistMeta, artist_type_to_index, index_to_artist_type},
         utils::g_cmp_options,
     };
 

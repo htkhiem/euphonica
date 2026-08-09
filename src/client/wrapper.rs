@@ -1180,7 +1180,7 @@ impl MpdWrapper {
         let tagtypes_to_load = [tags::ARTIST, tags::ARTISTSORT, tags::ARTIST_MBID];
 
         let (s, r) = oneshot::channel();
-        let mut grouped_vals = self
+        let grouped_vals = self
             .foreground(
                 Task::List(
                     Term::Tag(tags::GENRE.into()),

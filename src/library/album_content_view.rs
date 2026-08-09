@@ -18,7 +18,7 @@ use ashpd::desktop::file_chooser::SelectedFiles;
 use derivative::Derivative;
 use gio::{ActionEntry, Menu, SimpleActionGroup};
 use glib::{Binding, SignalHandlerId, WeakRef, clone, closure_local};
-use gtk::{CompositeTemplate, gdk, gio, glib, prelude::*};
+use gtk::{CompositeTemplate, gdk, gio, glib};
 use std::{
     cell::{OnceCell, RefCell},
     rc::Rc,
@@ -734,7 +734,7 @@ impl AlbumContentView {
                     win.send_simple_toast("Couldn't back up metadata: MPD side is newer", 3);
                 }
             }
-            Err(e) => {
+            Err(_e) => {
                 if let Some(win) = self.imp().window.upgrade() {
                     win.send_simple_toast("Couldn't back up metadata: MPD side is newer", 3);
                 }
