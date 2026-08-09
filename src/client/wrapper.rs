@@ -1606,60 +1606,36 @@ impl MpdWrapper {
     }
 
     #[inline]
-    fn get_full_key(base: &'static str, suffix: Option<&str>) -> Cow<'static, str> {
-        if let Some(suffix) = suffix {
-            format!("{}:{}", base, suffix).into()
-        } else {
-            base.into()
-        }
-    }
-
-    #[inline]
-    fn get_full_key_paged(
-        base: &'static str,
-        suffix: Option<&str>,
-        page: usize,
-    ) -> Cow<'static, str> {
-        if let Some(suffix) = suffix {
-            format!("{}:{}:{}", base, suffix, page).into()
-        } else {
-            format!("{}:{}", base, page).into()
-        }
+    fn get_full_key_paged(base: &'static str, page: usize) -> Cow<'static, str> {
+        format!("{}:{}", base, page).into()
     }
 
     /// Generate sticker names for the metadata document pages (0..page_count).
     /// Also includes the page count and last-modified stickers.
-    fn generate_all_meta_sticker_names(
-        key_suffix: Option<&str>,
-        page_count: usize,
-    ) -> Vec<Cow<'static, str>> {
+    fn generate_all_meta_sticker_names(page_count: usize) -> Vec<Cow<'static, str>> {
         (0..page_count)
-            .map(|p| Self::get_full_key_paged(Stickers::META_DOC, key_suffix, p))
-            .chain(std::iter::once(Self::get_full_key(
-                Stickers::META_PAGE_COUNT,
-                key_suffix,
-            )))
-            .chain(std::iter::once(Self::get_full_key(
-                Stickers::META_LAST_MODIFIED,
-                key_suffix,
-            )))
+            .map(|p| Self::get_full_key_paged(Stickers::META_DOC, p))
+            .chain(std::iter::once({
+                let base = Stickers::META_PAGE_COUNT;
+                base.into()
+            }))
+            .chain(std::iter::once({
+                let base = Stickers::META_LAST_MODIFIED;
+                base.into()
+            }))
             .collect()
     }
 
     /// Get metadata document as backed up to MPD's sticker database. Metadata is stored as
     /// BSON serialized to a base64 string, split across multiple sticker keys if it exceeds
-    /// 2048 characters per sticker. Key suffixes allow storing multiple metadata entries per tag.
-    /// This allows storing and fetching individual artists' metadata into/from the same
-    /// multi-artist tag on MPD side.
+    /// 2048 characters per sticker.
     pub async fn get_meta<T: for<'a> Deserialize<'a>>(
         &self,
         typ: &'static str,
-        key_suffix: Option<&str>,
         uri: String,
     ) -> ClientResult<Option<T>> {
         // First, fetch only the page count to know how many pages exist
-        let page_count_key: String =
-            Self::get_full_key(Stickers::META_PAGE_COUNT, key_suffix).into_owned();
+        let page_count_key: String = Stickers::META_PAGE_COUNT.to_string();
         let page_count = self
             .get_sticker(typ, uri.clone(), page_count_key.into())
             .await?
@@ -1668,7 +1644,7 @@ impl MpdWrapper {
 
         // Generate names for the pages only
         let page_names: Vec<Cow<'static, str>> = (0..page_count)
-            .map(|p| Self::get_full_key_paged(Stickers::META_DOC, key_suffix, p))
+            .map(|p| Self::get_full_key_paged(Stickers::META_DOC, p))
             .collect();
         let pages = self.get_stickers(typ, &uri, page_names).await?;
 
@@ -1688,14 +1664,13 @@ impl MpdWrapper {
     /// Uses atomic command list to write both the document and last-modified stickers together,
     /// preventing partial syncs that would leave a document with a stale or missing timestamp.
     /// Metadata is serialized to BSON then base64-encoded. If the base64 string exceeds 2048
-    /// characters, it is split across multiple sticker keys (euphonica:meta:doc:<suffix>:N).
+    /// characters, it is split across multiple sticker keys (euphonica:meta:doc:N).
     /// A pageCount sticker tracks the number of pages for reconstruction.
     /// After writing, any excess pages from a previous larger metadata document are cleaned up.
     pub async fn set_meta<T: Serialize>(
         &self,
         typ: &'static str,
         uri: String,
-        key_suffix: Option<&str>,
         meta: &T,
         last_modified: OffsetDateTime,
     ) -> ClientResult<()> {
@@ -1713,7 +1688,7 @@ impl MpdWrapper {
         let mut new_page_count: usize = 0;
         for (idx, page) in pages.enumerate() {
             names_values.push((
-                Self::get_full_key_paged(Stickers::META_DOC, key_suffix, idx),
+                Self::get_full_key_paged(Stickers::META_DOC, idx),
                 std::str::from_utf8(page)
                     .map_err(|_| ClientError::Parse)?
                     .to_owned()
@@ -1724,13 +1699,19 @@ impl MpdWrapper {
 
         // Write page count
         names_values.push((
-            Self::get_full_key(Stickers::META_PAGE_COUNT, key_suffix),
+            {
+                let base = Stickers::META_PAGE_COUNT;
+                base.into()
+            },
             new_page_count.to_string().into(),
         ));
 
         // Write last-modified
         names_values.push((
-            Self::get_full_key(Stickers::META_LAST_MODIFIED, key_suffix),
+            {
+                let base = Stickers::META_LAST_MODIFIED;
+                base.into()
+            },
             last_modified.unix_timestamp_nanos().to_string().into(),
         ));
 
@@ -1742,7 +1723,10 @@ impl MpdWrapper {
             .get_sticker(
                 typ,
                 uri_for_cleanup,
-                Self::get_full_key(Stickers::META_PAGE_COUNT, key_suffix),
+                {
+                    let base = Stickers::META_PAGE_COUNT;
+                    base.into()
+                },
             )
             .await
             .ok()
@@ -1756,7 +1740,7 @@ impl MpdWrapper {
                 let excess_pages = old_page_count - new_page_count;
                 let excess_start = new_page_count;
                 let names: Vec<Cow<'static, str>> = (excess_start..excess_start + excess_pages)
-                    .map(|p| Self::get_full_key_paged(Stickers::META_DOC, key_suffix, p))
+                    .map(|p| Self::get_full_key_paged(Stickers::META_DOC, p))
                     .collect();
                 // Ignore errors during cleanup (shouldn't affect metadata coherence).
                 let _ = self.delete_stickers(typ, uri.clone(), names).await;
@@ -1771,14 +1755,16 @@ impl MpdWrapper {
     pub async fn get_meta_last_modified(
         &self,
         typ: &'static str,
-        key_suffix: Option<&str>,
         uri: String,
     ) -> ClientResult<Option<OffsetDateTime>> {
         match self
             .get_sticker(
                 typ,
                 uri,
-                Self::get_full_key(Stickers::META_LAST_MODIFIED, key_suffix),
+                {
+                    let base = Stickers::META_LAST_MODIFIED;
+                    base.into()
+                },
             )
             .await
         {
@@ -1798,18 +1784,16 @@ impl MpdWrapper {
         }
     }
 
-    /// Clear all metadata stickers for a given type/uri/key_suffix.
+    /// Clear all metadata stickers for a given type/uri.
     /// Reads the current page count, then atomically deletes all document pages,
     /// the page count sticker, and the last-modified sticker.
     pub async fn clear_meta(
         &self,
         typ: &'static str,
-        key_suffix: Option<&str>,
         uri: String,
     ) -> ClientResult<()> {
         // Read the current page count to know how many pages to delete
-        let page_count_key: String =
-            Self::get_full_key(Stickers::META_PAGE_COUNT, key_suffix).into_owned();
+        let page_count_key: String = Stickers::META_PAGE_COUNT.to_owned();
         let page_count = self
             .get_sticker(typ, uri.clone(), page_count_key.into())
             .await?;
@@ -1822,7 +1806,7 @@ impl MpdWrapper {
         }
 
         // Generate all sticker names: doc pages + page count + last-modified
-        let names = Self::generate_all_meta_sticker_names(key_suffix, page_count);
+        let names = Self::generate_all_meta_sticker_names(page_count);
 
         // Atomically delete all of them
         self.delete_stickers(typ, uri, names).await

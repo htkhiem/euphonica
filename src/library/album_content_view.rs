@@ -702,9 +702,9 @@ impl AlbumContentView {
                 .backup_album_meta(
                     album.get_info(),
                     &meta,
-                    dbg!(old_last_modified),
+                    old_last_modified,
                     overwrite,
-                    dbg!(new_last_modified),
+                    new_last_modified,
                 )
                 .await;
 
@@ -738,9 +738,9 @@ impl AlbumContentView {
                     win.send_simple_toast("Couldn't back up metadata: MPD side is newer", 3);
                 }
             }
-            Err(_e) => {
+            Err(e) => {
                 if let Some(win) = self.imp().window.upgrade() {
-                    win.send_simple_toast("Couldn't back up metadata: MPD side is newer", 3);
+                    win.send_simple_toast(&format!("Couldn't back up metadata: {}", e.message()), 3);
                 }
             }
         }

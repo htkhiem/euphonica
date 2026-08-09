@@ -639,10 +639,11 @@ impl Cache {
         let title = album.title.to_owned();
         let mbid = album.mbid.clone();
         let artist = album.get_artist_tag().map(String::from);
+        let filter_expr = album.get_filter_expression();
 
         let (mpd_ts, local_ts) = futures::join!(
             self.mpd_client
-                .get_meta_last_modified("album", Some(album.get_comp_id()), album.title.to_string()),
+                .get_meta_last_modified("filter", filter_expr.clone()),
             // For reads we'll use threadpool instead of the queued asyncified (concurrent reads are okay)
             self.pool
                 .push_future(move || {
@@ -680,7 +681,7 @@ impl Cache {
                     // 2b
                     let from_mpd = self
                         .mpd_client
-                        .get_meta::<AlbumMeta>("album", Some(album.get_comp_id()), album.title.to_string())
+                        .get_meta::<AlbumMeta>("filter", filter_expr)
                         .await
                         .map_err(Error::Client)?;
 
@@ -769,7 +770,8 @@ impl Cache {
         }
     }
 
-    /// Back up metadata document to MPD sticker store.
+    /// Back up album metadata document to MPD sticker store.
+    /// Uses `typ="filter"` with the album's filter expression as URI.
     /// We use two timestamps to resolve sync conflicts:
     /// - old_last_modified: the last-modified timestamp BEFORE local edits. This is compared against what's currently in the sticker DB.
     ///   Using the pre-edit timestamp facilitates detecting that we're attempting to push an edited version of an outdated copy as backup,
@@ -785,9 +787,11 @@ impl Cache {
         overwrite_newer: bool,
         new_last_modified: OffsetDateTime,
     ) -> Result<()> {
+        let filter_expr = album.get_filter_expression();
+
         if self
             .mpd_client
-            .get_meta_last_modified("album", None, album.title.to_string())
+            .get_meta_last_modified("filter", filter_expr.clone())
             .await
             .is_ok_and(|maybe_mpdlm| {
                 maybe_mpdlm.is_some_and(|mpd_last_modified| mpd_last_modified > old_last_modified)
@@ -798,9 +802,8 @@ impl Cache {
         }
         self.mpd_client
             .set_meta::<AlbumMeta>(
-                "album",
-                album.title.to_string(),
-                Some(album.get_comp_id()),
+                "filter",
+                filter_expr,
                 meta,
                 new_last_modified,
             )
@@ -884,7 +887,7 @@ impl Cache {
 
         if self
             .mpd_client
-            .get_meta_last_modified("filter", None, filter_expr.clone())
+            .get_meta_last_modified("filter", filter_expr.clone())
             .await
             .is_ok_and(|maybe_mpdlm| {
                 maybe_mpdlm.is_some_and(|mpd_last_modified| mpd_last_modified > old_last_modified)
@@ -897,7 +900,6 @@ impl Cache {
             .set_meta::<models::ArtistMeta>(
                 "filter",
                 filter_expr,
-                None,
                 meta,
                 new_last_modified,
             )
@@ -917,7 +919,7 @@ impl Cache {
 
         let (mpd_ts, local_ts) = futures::join!(
             self.mpd_client
-                .get_meta_last_modified("filter", None, filter_expr),
+                .get_meta_last_modified("filter", filter_expr.clone()),
             self.pool
                 .push_future(move || {
                     sqlite::get_artist_meta_last_modified(&name, mbid.as_deref())
@@ -952,7 +954,7 @@ impl Cache {
                     let filter_expr = artist.get_filter_expression();
                     let from_mpd = self
                         .mpd_client
-                        .get_meta::<models::ArtistMeta>("filter", None, filter_expr)
+                        .get_meta::<models::ArtistMeta>("filter", filter_expr)
                         .await
                         .map_err(Error::Client)?;
 
