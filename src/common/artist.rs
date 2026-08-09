@@ -79,7 +79,7 @@ impl ArtistInfo {
                 self.name.to_owned(),
             );
         }
-        dbg!(mpd_args_to_string(&q))
+        mpd_args_to_string(&q)
     }
 
     /// Add genres as discovered from albums, maintaining uniqueness.

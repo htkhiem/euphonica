@@ -666,17 +666,19 @@ pub fn write_album_meta(album: &AlbumInfo, meta: &AlbumMeta, last_modified: Opti
     Ok(last_modified)
 }
 
-pub fn write_artist_meta(artist: &ArtistInfo, meta: &ArtistMeta) -> Result<(), Error> {
+pub fn write_artist_meta(artist: &ArtistInfo, meta: &ArtistMeta) -> Result<OffsetDateTime, Error> {
     let conn = SQLITE_POOL.get().unwrap();
+    let ts = OffsetDateTime::now_utc();
     conn.execute(
         "insert into artists (name, mbid, last_modified, data)
-        values (?1,?2,CURRENT_TIMESTAMP,?3)
-        ON CONFLICT(mbid) DO UPDATE SET name=?1, data=?3, last_modified=CURRENT_TIMESTAMP
-        ON CONFLICT(name) DO UPDATE SET mbid=?2, data=?3, last_modified=CURRENT_TIMESTAMP
+        values (?1,?2,?3,?4)
+        ON CONFLICT(mbid) DO UPDATE SET name=?1, data=?4, last_modified=?3
+        ON CONFLICT(name) DO UPDATE SET mbid=?2, data=?4, last_modified=?3
         ",
         params![
             &artist.name,
             &artist.mbid,
+            ts.format(&time::format_description::well_known::Rfc3339).map_err(|_| Error::Filesystem)?,
             bson::serialize_to_vec(&bson::serialize_to_document(meta).map_err(Error::ObjectToDoc)?)
                 .map_err(Error::DocToBytes)?
         ],
@@ -688,7 +690,7 @@ pub fn write_artist_meta(artist: &ArtistInfo, meta: &ArtistMeta) -> Result<(), E
         &meta.tags,
         TagsInsertMode::DelsertMetaSupplied,
     )?;
-    Ok(())
+    Ok(ts)
 }
 
 pub fn write_album_tags(folder_uri: &str, tags: &[Tag], mode: TagsInsertMode) -> Result<(), Error> {

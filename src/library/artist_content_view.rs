@@ -12,22 +12,24 @@ use std::{
     rc::Rc,
     sync::OnceLock,
 };
+use time::OffsetDateTime;
 
 use super::{Library, tag_button::TagButton};
 use crate::{
-    cache::{Cache, CacheState, Error as CacheError, placeholders::EMPTY_ARTIST_STRING}, common::{Album, Artist, ContentStack, RowAddButtons, Song, SongRow}, library::{Tag, add_to_playlist::AddToPlaylistButton, discography_year::DiscographyYear}, meta_providers::models::{Wiki, artist_type_to_string}, utils::{self, format_secs_as_duration, settings_manager, tokio_runtime}, window::EuphonicaWindow,
+    cache::{Cache, CacheState, Error as CacheError, placeholders::EMPTY_ARTIST_STRING}, common::{Album, Artist, ContentStack, RowAddButtons, Song, SongRow}, library::{Tag, add_to_playlist::AddToPlaylistButton, discography_year::DiscographyYear}, meta_providers::models::{MetaSource, Wiki, artist_type_to_string}, utils::{self, format_secs_as_duration, settings_manager, tokio_runtime}, window::EuphonicaWindow,
 };
 
 mod imp {
 
     use adw::prelude::AdwDialogExt;
     use chrono::NaiveDate;
+    use time::OffsetDateTime;
     
 
     use crate::{
         common::FadingScrolledWindow,
         library::{TagsSection, discography_album::DiscographyAlbum},
-        meta_providers::models::{ArtistMeta, artist_type_to_index, index_to_artist_type},
+        meta_providers::models::{ArtistMeta, MetaSource, artist_type_to_index, index_to_artist_type},
         utils::g_cmp_options,
     };
 
@@ -157,6 +159,15 @@ mod imp {
         #[derivative(Default(value = "Cell::new(true)"))]
         pub selecting_all: Cell<bool>, // Enables queuing all songs from this artist efficiently
         pub meta: RefCell<Option<ArtistMeta>>,
+        // For sync conflict resolution
+        #[template_child]
+        pub backup_meta_stack: TemplateChild<gtk::Stack>,
+        #[template_child]
+        pub backup_meta_btn: TemplateChild<gtk::Button>,
+        #[template_child]
+        pub overwrite_backup_dialog: TemplateChild<adw::AlertDialog>,
+        pub old_last_modified: RefCell<Option<OffsetDateTime>>,
+        pub new_last_modified: RefCell<Option<OffsetDateTime>>,
     }
 
     #[glib::object_subclass]
@@ -349,6 +360,21 @@ mod imp {
                 song_sel_model,
                 move |_| {
                     song_sel_model.unselect_all();
+                }
+            ));
+
+            // Backup metadata button
+            self.backup_meta_btn.connect_clicked(clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |_| {
+                    glib::spawn_future_local(clone!(
+                        #[weak]
+                        this,
+                        async move {
+                            this.obj().backup_meta(false).await;
+                        }
+                    ));
                 }
             ));
 
@@ -629,7 +655,7 @@ impl Default for ArtistContentView {
 impl ArtistContentView {
     fn show_cache_error(&self, prefix: &str, err: CacheError) {
         if let Some(win) = self.imp().window.upgrade() {
-            win.send_simple_toast(&format!("{}: {}", prefix, dbg!(err).message()), 3);
+            win.send_simple_toast(&format!("{}: {}", prefix, err.message()), 3);
         }
     }
 
@@ -736,7 +762,7 @@ impl ArtistContentView {
                     )
                     .await;
                 match res {
-                    Ok(Some(meta)) => {
+                    Ok(Some((meta, last_modified, src))) => {
                         let mut should_show_wiki_line = false;
                         // Populate wiki line:
                         // Populate begin-end years
@@ -822,7 +848,19 @@ impl ArtistContentView {
                             self.imp().tags_widget.show_placeholder();
                         }
 
-                        let _ = self.imp().meta.replace(Some(meta));
+                        let _ = self.imp().meta.replace(Some(meta.clone()));
+                        // Metadata sync
+                        let _ = self.imp().old_last_modified.replace(Some(last_modified));
+                        let _ = self.imp().new_last_modified.replace(Some(last_modified));
+                        let should_backup = self
+                            .maybe_show_backup_metadata_btn(!matches!(src, MetaSource::Mpd));
+                        if should_backup
+                            && settings_manager()
+                                .child("client")
+                                .boolean("mpd-backup-metadata")
+                        {
+                            self.backup_meta(true).await;
+                        }
                     }
                     Ok(None) => {
                         self.set_show_meta(false);
@@ -835,6 +873,107 @@ impl ArtistContentView {
                     }
                 }
             }
+        }
+    }
+
+    async fn backup_meta_internal(&self, overwrite: bool) -> Result<(), CacheError> {
+        let meta;
+        let old_last_modified;
+        let new_last_modified;
+        let artist;
+        {
+            meta = self.imp().meta.borrow().clone(); // only this is costly, the rest are pretty lightweight
+            old_last_modified = self.imp().old_last_modified.borrow().clone();
+            new_last_modified = self.imp().new_last_modified.borrow().clone();
+            artist = self.imp().artist.borrow().as_ref().cloned();
+        }
+        if let (
+            Some(cache),
+            Some(meta),
+            Some(old_last_modified),
+            Some(new_last_modified),
+            Some(artist),
+        ) = (
+            self.imp().cache.get(),
+            meta,
+            old_last_modified,
+            new_last_modified,
+            artist,
+        ) {
+            let stack = self.imp().backup_meta_stack.get();
+            if stack.visible_child_name().is_some_and(|n| &n != "spinner") {
+                stack.set_visible_child_name("spinner");
+            }
+
+            let res = cache
+                .backup_artist_meta(
+                    artist.get_info(),
+                    &meta,
+                    old_last_modified,
+                    overwrite,
+                    new_last_modified,
+                )
+                .await;
+
+            if res.is_ok() {
+                stack.set_visible(false);
+                self.imp()
+                    .old_last_modified
+                    .replace(Some(new_last_modified));
+            } else if stack.visible_child_name().is_some_and(|n| &n != "button") {
+                stack.set_visible_child_name("button");
+            }
+
+            res
+        } else {
+            Ok(())
+        }
+    }
+
+    async fn backup_meta(&self, silent: bool) {
+        match self.backup_meta_internal(false).await {
+            Ok(_) => {}
+            Err(CacheError::AlreadyExists) => {
+                if !silent {
+                    let dialog = self.imp().overwrite_backup_dialog.get();
+                    if dialog.choose_future(Some(self)).await == "overwrite" {
+                        if let Err(e) = self.backup_meta_internal(true).await {
+                            dbg!(e);
+                        }
+                    }
+                } else if let Some(win) = self.imp().window.upgrade() {
+                    win.send_simple_toast("Couldn't back up metadata: MPD side is newer", 3);
+                }
+            }
+            Err(e) => {
+                if let Some(win) = self.imp().window.upgrade() {
+                    win.send_simple_toast(&format!("Couldn't back up metadata: {}", e.message()), 3);
+                }
+            }
+        }
+    }
+
+    // Returns metadata backup availability flag (but false if visible = false).
+    // Used to determine whether we should attempt auto sync.
+    fn maybe_show_backup_metadata_btn(&self, visible: bool) -> bool {
+        let btn_stack = self.imp().backup_meta_stack.get();
+        if visible {
+            let available = self
+                .imp()
+                .library
+                .upgrade()
+                .map_or(false, |lib| lib.metadata_backup_available());
+            btn_stack.set_visible(available);
+            if btn_stack
+                .visible_child_name()
+                .is_some_and(|n| &n != "button")
+            {
+                btn_stack.set_visible_child_name("button");
+            }
+            available
+        } else {
+            btn_stack.set_visible(false);
+            false
         }
     }
 

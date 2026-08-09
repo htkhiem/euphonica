@@ -650,10 +650,10 @@ impl Cache {
                 })
                 .expect("get_local_album_meta: threadpool error")
         );
-        let mpd_ts = dbg!(mpd_ts.ok().flatten());
-        let local_ts = dbg!(local_ts
+        let mpd_ts = mpd_ts.ok().flatten();
+        let local_ts = local_ts
             .expect("get_local_album_meta: threadpool error")
-            .map_err(Error::Sqlite)?);
+            .map_err(Error::Sqlite)?;
 
         // Handle case when both are None first; afterwards at least one side will be non-None and we can compare them directly.
         if local_ts.is_none() && mpd_ts.is_none() {
@@ -821,48 +821,39 @@ impl Cache {
         sqlite::find_album_tags(folder_uri).map_err(Error::Sqlite)
     }
 
+    /// Get the latest artist meta from local sources (with MPD/external fallback).
+    /// Step 1: get both local and MPD-side last-updated timestamps via `get_local_artist_meta`.
+    /// Step 2:
+    ///   2a: if local is newer or MPD side is not available, return local version. Call site should show a sync button.
+    ///   2b: if MPD is newer or local side is not available, return with MetaSource::Mpd. Call site needs not do anything.
+    ///   2c: if both are available and equal (in sync), return with MetaSource::Mpd so call site checks won't ask user to sync.
+    /// Step 3: if no local/MPD copy and `external` is true, fetch from external providers.
     pub async fn get_artist_meta(
         &self,
         artist: &ArtistInfo,
         external: bool,
         overwrite: bool,
         window: Option<&EuphonicaWindow>,
-    ) -> Result<Option<ArtistMeta>> {
-        if !(overwrite && external) {
-            // Check whether we have this album cached
-            let name = artist.name.to_owned();
-            let mbid = artist.mbid.clone();
-
-            let local = self
-                .local
-                .call(move |_| sqlite::get_artist_meta(&name, mbid.as_deref()))
-                .await
-                .map_err(Error::Sqlite)?;
-
-            if local.is_some() {
-                return Ok(local);
-            }
+    ) -> Result<Option<(models::ArtistMeta, OffsetDateTime, models::MetaSource)>> {
+        if !(overwrite && external)
+            && let Ok(Some(local_res)) = self.get_local_artist_meta(artist).await
+        {
+            return Ok(Some(local_res));
         }
 
         if external && artist.mbid.is_some() {
-            let mbid = artist.mbid.clone();
-            let name = artist.name.to_owned();
             if !overwrite
-                && let Some(existing) = self
-                    .local
-                    .call(move |_| sqlite::get_artist_meta(&name, mbid.as_deref()))
-                    .await
-                    .map_err(Error::Sqlite)?
+                && let Ok(Some(local_res)) = self.get_local_artist_meta(artist).await
             {
-                return Ok(Some(existing));
+                return Ok(Some(local_res));
             }
-            let res = self
+            if let Some(meta) = self
                 .meta_providers
                 .get_artist_meta(artist.clone(), None, window)
-                .await;
-            if let Some(meta) = res {
-                sqlite::write_artist_meta(artist, &meta).map_err(Error::Sqlite)?;
-                Ok(Some(meta))
+                .await
+            {
+                let ts = sqlite::write_artist_meta(artist, &meta).map_err(Error::Sqlite)?;
+                Ok(Some((meta, ts, models::MetaSource::External)))
             } else {
                 // Push an empty ArtistMeta to block further calls for this artist.
                 println!(
@@ -878,7 +869,128 @@ impl Cache {
         }
     }
 
-    pub fn set_artist_meta(&self, artist: &ArtistInfo, meta: &models::ArtistMeta) -> Result<()> {
+    /// Back up artist metadata document to MPD sticker store.
+    /// Uses `typ="filter"` with the artist's filter expression as URI.
+    /// See `backup_album_meta` for conflict resolution details.
+    pub async fn backup_artist_meta(
+        &self,
+        artist: &ArtistInfo,
+        meta: &models::ArtistMeta,
+        old_last_modified: OffsetDateTime,
+        overwrite_newer: bool,
+        new_last_modified: OffsetDateTime,
+    ) -> Result<()> {
+        let filter_expr = artist.get_filter_expression();
+
+        if self
+            .mpd_client
+            .get_meta_last_modified("filter", None, filter_expr.clone())
+            .await
+            .is_ok_and(|maybe_mpdlm| {
+                maybe_mpdlm.is_some_and(|mpd_last_modified| mpd_last_modified > old_last_modified)
+            })
+            && !overwrite_newer
+        {
+            return Err(Error::AlreadyExists);
+        }
+        self.mpd_client
+            .set_meta::<models::ArtistMeta>(
+                "filter",
+                filter_expr,
+                None,
+                meta,
+                new_last_modified,
+            )
+            .await
+            .map_err(Error::Client)
+    }
+
+    /// Get the latest artist meta from local sources with 3-way timestamp comparison.
+    /// Mirrors `get_local_album_meta` but uses `typ="filter"` and filter expression as URI.
+    async fn get_local_artist_meta(
+        &self,
+        artist: &ArtistInfo,
+    ) -> Result<Option<(models::ArtistMeta, OffsetDateTime, models::MetaSource)>> {
+        let name = artist.name.to_owned();
+        let mbid = artist.mbid.clone();
+        let filter_expr = artist.get_filter_expression();
+
+        let (mpd_ts, local_ts) = futures::join!(
+            self.mpd_client
+                .get_meta_last_modified("filter", None, filter_expr),
+            self.pool
+                .push_future(move || {
+                    sqlite::get_artist_meta_last_modified(&name, mbid.as_deref())
+                })
+                .expect("get_local_artist_meta: threadpool error")
+        );
+        let mpd_ts = mpd_ts.ok().flatten();
+        let local_ts = local_ts
+            .expect("get_local_artist_meta: threadpool error")
+            .map_err(Error::Sqlite)?;
+
+        // Handle case when both are None first; afterwards at least one side will be non-None and we can compare them directly.
+        if local_ts.is_none() && mpd_ts.is_none() {
+            Ok(None)
+        } else {
+            match local_ts.cmp(&mpd_ts) {
+                cmp::Ordering::Greater => {
+                    let name = artist.name.to_owned();
+                    let mbid = artist.mbid.clone();
+                    self.pool
+                        .push_future(move || {
+                            sqlite::get_artist_meta(&name, mbid.as_deref())
+                        })
+                        .expect("get_local_artist_meta: threadpool error")
+                        .await
+                        .expect("get_local_artist_meta: threadpool error")
+                        .map(|om| om.map(|m| (m, local_ts.unwrap(), models::MetaSource::Local)))
+                        .map_err(Error::Sqlite)
+                }
+                cmp::Ordering::Less => {
+                    // MPD newer => pull from MPD, save to SQLite, return MetaSource::Mpd
+                    let filter_expr = artist.get_filter_expression();
+                    let from_mpd = self
+                        .mpd_client
+                        .get_meta::<models::ArtistMeta>("filter", None, filter_expr)
+                        .await
+                        .map_err(Error::Client)?;
+
+                    if let Some(meta) = from_mpd.as_ref() {
+                        let to_local = meta.clone();
+                        let artist = artist.to_owned();
+                        if let Err(e) = self
+                            .local
+                            .call(move |_| {
+                                sqlite::write_artist_meta(&artist, &to_local)
+                            })
+                            .await
+                        {
+                            dbg!(e);
+                        }
+                    }
+                    Ok(from_mpd.map(|m| (m, mpd_ts.unwrap(), models::MetaSource::Mpd)))
+                }
+                cmp::Ordering::Equal => {
+                    // In sync
+                    let name = artist.name.to_owned();
+                    let mbid = artist.mbid.clone();
+                    self.pool
+                        .push_future(move || {
+                            sqlite::get_artist_meta(&name, mbid.as_deref())
+                        })
+                        .expect("get_local_artist_meta: threadpool error")
+                        .await
+                        .expect("get_local_artist_meta: threadpool error")
+                        // Use MetaSource::Mpd to make it look like it's already backed up to MPD (well, it is)
+                        .map(|om| om.map(|m| (m, local_ts.unwrap(), models::MetaSource::Mpd)))
+                        .map_err(Error::Sqlite)
+                }
+            }
+        }
+    }
+
+    pub fn set_artist_meta(&self, artist: &ArtistInfo, meta: &models::ArtistMeta) -> Result<OffsetDateTime> {
         sqlite::write_artist_meta(artist, meta).map_err(Error::Sqlite)
     }
 
@@ -926,7 +1038,7 @@ impl Cache {
         // Failing the above, ask external providers
         if external
             && !failed_before
-            && let Some(meta) = self.get_artist_meta(artist, true, false, None).await?
+            && let Some((meta, _, _)) = self.get_artist_meta(artist, true, false, None).await?
         {
             let artist = artist.to_owned();
             return self

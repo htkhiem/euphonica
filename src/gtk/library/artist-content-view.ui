@@ -291,6 +291,34 @@
                                               </object>
                                             </child>
                                             <child>
+                                              <object class="GtkStack" id="backup_meta_stack">
+                                                <child>
+                                                  <object class="GtkStackPage">
+                                                    <property name="name">button</property>
+                                                    <property name="child">
+                                                      <object class="GtkButton" id="backup_meta_btn">
+                                                        <style>
+                                                          <class name="flat"/>
+                                                        </style>
+                                                        <property name="icon-name">exclamation-mark-symbolic</property>
+                                                        <property name="tooltip-text" translatable="true">Metadata not yet backed up to MPD. Click to back up.</property>
+                                                      </object>
+                                                    </property>
+                                                  </object>
+                                                </child>
+                                                <child>
+                                                  <object class="GtkStackPage">
+                                                    <property name="name">spinner</property>
+                                                    <property name="child">
+                                                      <object class="AdwSpinner">
+                                                        <property name="tooltip-text" translatable="true">Backing up metadata to MPD</property>
+                                                      </object>
+                                                    </property>
+                                                  </object>
+                                                </child>
+                                              </object>
+                                            </child>
+                                            <child>
                                               <object class="EuphonicaContentStack" id="bio_stack">
                                                 <property name="placeholder">
                                                   <object class="GtkBox">
@@ -939,5 +967,16 @@
         <attribute name="action">artist-content-view.insert-queue</attribute>
       </item>
     </menu>
+
+    <object class="AdwAlertDialog" id="overwrite_backup_dialog">
+      <property name="heading" translatable="yes">Overwrite newer backup?</property>
+      <property name="body" translatable="yes">A newer backup of this artist's metadata exists. Would you like to overwrite it with this version?</property>
+      <property name="default-response">cancel</property>
+      <property name="close-response">cancel</property>
+      <responses>
+        <response id="cancel" translatable="yes">_Cancel</response>
+        <response id="overwrite" translatable="yes" appearance="destructive">_Overwrite</response>
+      </responses>
+    </object>
   </template>
 </interface>
