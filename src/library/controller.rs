@@ -265,12 +265,13 @@ impl Library {
     }
 
     pub async fn rate_album(&self, album: &Album, score: Option<i8>) -> ClientResult<()> {
+        let filter_expr = album.get_info().get_filter_expression();
         if let Some(score) = score {
             self.client()
                 .set_sticker(
-                    tags::ALBUM,
-                    album.get_title().to_owned(),
-                    Stickers::RATING.into(),
+                    "filter",
+                    filter_expr,
+                    Stickers::ALBUM_RATING.into(),
                     score.to_string().into(),
                     StickerSetMode::Set,
                 )
@@ -278,9 +279,9 @@ impl Library {
         } else {
             self.client()
                 .delete_sticker(
-                    tags::ALBUM,
-                    album.get_title().to_owned(),
-                    Stickers::RATING.into(),
+                    "filter",
+                    filter_expr,
+                    Stickers::ALBUM_RATING.into(),
                 )
                 .await
         }
@@ -648,25 +649,6 @@ impl Library {
                     model.append(&album);
                 })
                 .await?;
-            for album in self.imp().recent_albums.iter::<Album>() {
-                // Right now the only sticker we use is album rating
-                if let Ok(album) = album {
-                    if let Ok(rating_str) = self
-                        .client()
-                        .get_sticker("album", album.get_title().into(), "rating".into())
-                        .await
-                    {
-                        {
-                            let mut stickers = album.get_stickers().borrow_mut();
-                            stickers.set_rating(&rating_str);
-                            // End borrow
-                        }
-                        album.notify_stickers_changed();
-                    }
-                } else {
-                    break;
-                }
-            }
 
             let model = self.imp().recent_artists.clone();
             model.remove_all();
@@ -722,7 +704,7 @@ impl Library {
             albumartist_model.remove_all();
             let (albums, artists) = self
                 .client()
-                .get_albums_and_albumartists_by_query(Query::new())
+                .get_albums_and_albumartists_by_query(Query::new(), true)
                 .await?;
             album_model.extend_from_slice(&albums);
             albumartist_model.extend_from_slice(&artists);

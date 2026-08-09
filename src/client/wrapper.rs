@@ -953,6 +953,7 @@ impl MpdWrapper {
     pub async fn get_albums_and_albumartists_by_query(
         &self,
         query: Query<'static>,
+        fetch_stickers: bool
     ) -> ClientResult<(Vec<Album>, Vec<Artist>)> {
         // TODO: batched windowed retrieval
         // Most of the below logic are asyncified to avoid blocking the main UI thread.
@@ -1027,19 +1028,37 @@ impl MpdWrapper {
             );
         }
 
-        // Then fetch album ratings. FIXME: same-name albums get the same rating right now...
+        // Then fetch album ratings.
+        // New scheme: "albumRating" sticker attached to filter expression URIs (unique per album).
+        // Legacy fallback: "rating" sticker attached to album name (collides for same-named albums).
         let mut ratings_map: FxHashMap<String, String> = FxHashMap::default();
-        self.find_sticker(
-            "album",
-            String::new(), // empty URI = search all albums
-            Stickers::RATING.into(),
-            &mut |stickers: Vec<(String, String)>| {
-                for (name, value) in stickers {
-                    ratings_map.insert(name, value);
-                }
-            },
-        )
-        .await?;
+        let mut legacy_ratings_map: FxHashMap<String, String> = FxHashMap::default();
+        if fetch_stickers {
+            // 1) Fetch new-style ratings (filter-based).
+            self.find_sticker(
+                "filter",
+                String::new(), // empty URI = search all filter expressions
+                Stickers::ALBUM_RATING.into(),
+                &mut |stickers: Vec<(String, String)>| {
+                    for (filter_expr, value) in stickers {
+                        ratings_map.insert(filter_expr.to_lowercase(), value);
+                    }
+                },
+            )
+            .await?;
+            // 2) Legacy fallback: fill in ratings for albums that have no new-style rating.
+            self.find_sticker(
+                "album",
+                String::new(), // empty URI = search all albums
+                Stickers::RATING.into(),
+                &mut |stickers: Vec<(String, String)>| {
+                    for (name, value) in stickers {
+                        legacy_ratings_map.insert(name, value);
+                    }
+                },
+            )
+            .await?;
+        }
 
         // Yet more off thread work
         let (album_infos_and_ratings, artist_infos) = asyncified
@@ -1066,7 +1085,18 @@ impl MpdWrapper {
                                 existing.example_uris.push(example_uri.to_owned());
                             }
                         }
-                        let rating = ratings_map.get(&album_info.title).map(|s| s.to_owned());
+                        let rating;
+                        if fetch_stickers {
+                            // Prefer new-style filter-based rating; fall back to legacy title-based rating.
+                            // Force case-insensitive comparison for now as MPD mangles the expression string (all terms become uppercase there).
+                            let filter_expr = album_info.get_filter_expression().to_lowercase();
+                            rating = ratings_map
+                                .get(&filter_expr)
+                                .cloned()
+                                .or_else(|| legacy_ratings_map.get(&album_info.title).cloned());
+                        } else {
+                            rating = None;
+                        }
                         album_infos_and_ratings.push((
                             album_info,
                             rating
@@ -1122,7 +1152,7 @@ impl MpdWrapper {
             if let Some(mbid) = tup.2 {
                 query.and(Term::Tag(tags::ALBUM_MBID.into()), mbid);
             }
-            let (albums, _) = self.get_albums_and_albumartists_by_query(query).await?;
+            let (albums, _) = self.get_albums_and_albumartists_by_query(query, false).await?;
 
             for album in albums {
                 respond(album)

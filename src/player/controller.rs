@@ -1364,7 +1364,6 @@ impl Player {
                     ))
                     .await?;
             } else {
-                eprintln!("update_queue: expecting queue len to be {}", &status.queue_len);
                 self.client()?
                     .get_queue_changes(
                         old_version,

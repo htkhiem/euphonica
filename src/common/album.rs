@@ -2,11 +2,15 @@ use gtk::gdk::Texture;
 use gtk::glib;
 use gtk::prelude::*;
 use gtk::subclass::prelude::*;
+use mpd::Query;
+use mpd::Term;
 use rustc_hash::FxHashSet;
 use std::cell::{OnceCell, RefCell};
 use time::Date;
 
 use crate::common::split_genre_tag;
+use crate::common::tags;
+use crate::utils::mpd_args_to_string;
 use crate::utils::strip_filename_linux;
 
 use super::{ArtistInfo, QualityGrade, SongInfo, Stickers, artists_to_string, parse_mb_artist_tag};
@@ -67,6 +71,25 @@ impl AlbumInfo {
     /// back to their folder URI.
     pub fn get_comp_id(&self) -> &str {
         self.mbid.as_deref().unwrap_or(self.folder_uri.as_ref())
+    }
+
+    /// Get MPD filter expression to find all songs by this album.
+    /// Main use is as this album's identifier within MPD's stickers DB.
+    /// This avoids the issue of all same-named albums receiving the same stickers.
+    pub fn get_filter_expression(&self) -> String {
+        let mut q = Query::new();
+        if let Some(mbid) = self.mbid.as_deref() {
+            q.and(
+                Term::Tag(tags::ALBUM_MBID.into()),
+                mbid.to_owned(),
+            );
+        } else {
+            q.and(
+                Term::Base,
+                self.folder_uri.to_owned(),
+            );
+        }
+        mpd_args_to_string(&q)
     }
 
     /// Add artists from more artist tags, separated from existing ones by simple commas.
