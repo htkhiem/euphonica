@@ -30,7 +30,7 @@ use uuid::Uuid;
 
 use crate::cache::sqlite;
 use crate::client::connection::ImageHandle;
-use crate::common::{AlbumInfo, ArtistInfo, DynamicPlaylist, tags};
+use crate::common::{AlbumInfo, ArtistInfo, DynamicPlaylist, split_genre_tag, tags};
 use crate::utils::settings_manager;
 use crate::{
     common::{Album, Artist, INode, Song, SongInfo, Stickers},
@@ -1045,11 +1045,8 @@ impl MpdWrapper {
                                     artist.to_owned()
                                 });
 
-                            // Note to self: Album genres are parsed by the Song constructor, which runs in a child thread (see MpdClient::foreground).
-                            // However, artist genre parsing requires unioning all those genre sets from their albums. This is currently being done here
-                            // (on the UI thread).
-                            // TODO: move to another thread somehow
                             existing.insert_genres(&album_info.genres);
+
                             // Slack off here (we'll not use all of them anyway; alloc only what's needed)
                             if existing.example_uris.len() < MAX_EXAMPLE_ALBUMS_PER_ALBUMARTIST {
                                 existing.example_uris.push(example_uri.to_owned());
@@ -1168,73 +1165,111 @@ impl MpdWrapper {
         .await
     }
 
-    pub async fn get_artists<F>(&self, use_album_artist: bool, respond: &mut F) -> ClientResult<()>
-    where
-        F: FnMut(Artist),
-    {
-        // Fetching artists is a bit more involved: artist tags usually contain multiple artists.
-        // For the same reason, one artist can appear in multiple tags.
-        // Here we'll reuse the artist parsing code in our SongInfo struct and put parsed
-        // ArtistInfos in a Set to deduplicate them.
-        let tag_type: &'static str = if use_album_artist {
-            tags::ALBUMARTIST
-        } else {
-            tags::ARTIST
-        };
-        let tagtypes_to_load = if use_album_artist {
-            vec![
-                tags::ALBUMARTIST,
-                tags::ALBUMARTISTSORT,
-                tags::ALBUMARTIST_MBID,
-                tags::ALBUM,
-            ]
-        } else {
-            vec![tags::ARTIST, tags::ARTISTSORT, tags::ARTIST_MBID]
-        };
-        let mut already_parsed: FxHashSet<String> = FxHashSet::default();
+    /// Fetch artists by artist tag. Will NOT fetch by albumartist (functionality already moved to get_albums_and_albumartists_by_query).
+    /// This is more complicated than it sounds: we have to extract individual artists from multi-artist tags AND also assign genres to them,
+    /// which themselves are also in composite (multi-genre) tags.
+    /// 1. For each unique Artist tag (which can contain multiple artists), fetch all unique Genre tags (each can contain multiple genres).
+    ///    The same unique multi-artist tag may be present in different songs which in turn may contain different sets of genres.
+    ///    Split & deduplicate all genres for each artist tag.
+    /// 2. For each unique Artist tag, fetch exactly ONE song with that tag so we can extract artistsort and MBID. This should be batched.
+    /// 3. For each of the above songs (each associated with one of the unique artist tags), split into individual artists, enriching
+    ///    existing artist object instances instead if already discovered from previous tags, then union with genres associated with this
+    ///    song/artist tag (resolved in step 1).
+    /// All of the above should be kept off the main thread as much as possible.
+    pub async fn get_artists(&self) -> ClientResult<Vec<Artist>> {
+        let tagtypes_to_load = [tags::ARTIST, tags::ARTISTSORT, tags::ARTIST_MBID];
+
         let (s, r) = oneshot::channel();
         let mut grouped_vals = self
             .foreground(
-                Task::List(Term::Tag(Cow::Borrowed(tag_type)), Query::new(), None, s),
+                Task::List(
+                    Term::Tag(tags::GENRE.into()),
+                    Query::new(),
+                    Some(tags::ARTIST),
+                    s,
+                ),
                 r,
             )
             .await?;
-        for tag_chunk in std::mem::take(&mut grouped_vals.groups[0].1).chunks(256) {
-            let queries_windows: Vec<(Query, mpd::search::Window)> = tag_chunk
-                .iter()
-                .map(|tag| {
+
+        let asyncified = Asyncified::builder().build_ok(|| ()).await;
+        let (artist_tag_count, chunked_queries_windows, genres): (
+            usize,
+            Vec<Vec<(Query, Window)>>,
+            Vec<FxHashSet<String>>,
+        ) = asyncified
+            .call(move |_| {
+                let mut all_queries_windows: Vec<(Query, mpd::search::Window)> = Vec::with_capacity(grouped_vals.groups.len());
+                // Same order as the upcoming songs, so there's no need to use a hash table
+                let mut genres = Vec::with_capacity(grouped_vals.groups.len());
+                for (artist_tag, genre_tags) in grouped_vals.groups.into_iter() {
                     let mut query = Query::new();
-                    query.and(Term::Tag(tag_type.into()), tag.to_owned());
-                    (query, mpd::search::Window::from((0, 1)))
-                })
-                .collect();
-            let (s, r) = oneshot::channel();
-            let mut songs = self
-                .foreground(
-                    Task::FindMultiple(queries_windows, Some(tagtypes_to_load.clone()), s),
-                    r,
+                    query.and(Term::Tag(tags::ARTIST.into()), artist_tag.to_owned());
+                    all_queries_windows.push((query, mpd::search::Window::from((0, 1))));
+                    let mut genre_set = FxHashSet::default();
+                    for genre_tag in genre_tags {
+                        for genre in split_genre_tag(&genre_tag) {
+                            let _ = genre_set.insert(genre.to_owned());
+                        }
+                    }
+                    genres.push(genre_set);
+                }
+                // Chunk the queries to avoid timing out on slow servers. The below messy code actually
+                // gives owned chunks without cloning.
+                (
+                    all_queries_windows.len(),
+                    all_queries_windows
+                        .into_iter()
+                        .chunks(256)
+                        .into_iter()
+                        .map(|chunk| chunk.collect())
+                        .collect(),
+                    genres,
                 )
-                .await?;
-            for i in 0..songs.len() {
-                let song = &mut songs[i];
-                // if we're getting album artists we need to long at song.album.artists
-                // instead of just song.artists
-                let artists = if use_album_artist {
-                    song.album
-                        .as_ref()
-                        .map(|a| a.artists.clone())
-                        .unwrap_or_default()
-                } else {
-                    std::mem::take(&mut song.artists)
-                };
-                for artist in artists.into_iter() {
-                    if already_parsed.insert(artist.get_comp_id().to_owned()) {
-                        respond(artist.into());
+            })
+            .await;
+
+        // Now we can fetch song entries chunk by chunk, then zip with genres.
+        // THIS WILL BREAK if the number of returned songs is different from the length of the genres vec.
+        // The above should never happen, since the tags used to look for songs were derived from the songs
+        // in the first place, meaning each search should never return empty-handed.
+        let mut songs: Vec<SongInfo> = Vec::with_capacity(artist_tag_count);
+        for chunk in chunked_queries_windows {
+            let (s, r) = oneshot::channel();
+            songs.append(
+                &mut self
+                    .foreground(
+                        Task::FindMultiple(chunk, Some(tagtypes_to_load.into()), s),
+                        r,
+                    )
+                    .await?,
+            );
+        }
+
+        // Yet more off thread work
+        Ok(asyncified
+            .call(move |_| {
+                let mut res: FxHashMap<String, ArtistInfo> = FxHashMap::default();
+                for (song, genres) in songs.into_iter().zip(genres) {
+                    // Here we're fetching song.artists instead of song.album.artists
+                    for artist in song.artists {
+                        let existing =
+                            res.entry(artist.get_comp_id().to_string())
+                                .or_insert_with(|| {
+                                    // Haven't seen this artist before => push new
+                                    artist
+                                });
+                        existing.insert_genres(&genres);
                     }
                 }
-            }
-        }
-        Ok(())
+                res.into_iter()
+                    .map(|(_, info)| info)
+                    .collect::<Vec<ArtistInfo>>()
+            })
+            .await
+            .into_iter()
+            .map(Artist::from)
+            .collect::<Vec<Artist>>())
     }
 
     pub async fn get_recent_artists<F>(&self, respond: &F) -> ClientResult<()>
@@ -1506,12 +1541,14 @@ impl MpdWrapper {
     ) -> Vec<Cow<'static, str>> {
         (0..page_count)
             .map(|p| Self::get_full_key_paged(Stickers::META_DOC, key_suffix, p))
-            .chain(std::iter::once(
-                Self::get_full_key(Stickers::META_PAGE_COUNT, key_suffix),
-            ))
-            .chain(std::iter::once(
-                Self::get_full_key(Stickers::META_LAST_MODIFIED, key_suffix),
-            ))
+            .chain(std::iter::once(Self::get_full_key(
+                Stickers::META_PAGE_COUNT,
+                key_suffix,
+            )))
+            .chain(std::iter::once(Self::get_full_key(
+                Stickers::META_LAST_MODIFIED,
+                key_suffix,
+            )))
             .collect()
     }
 
@@ -1539,13 +1576,7 @@ impl MpdWrapper {
         let page_names: Vec<Cow<'static, str>> = (0..page_count)
             .map(|p| Self::get_full_key_paged(Stickers::META_DOC, key_suffix, p))
             .collect();
-        let pages = self
-            .get_stickers(
-                typ,
-                &uri,
-                page_names,
-            )
-            .await?;
+        let pages = self.get_stickers(typ, &uri, page_names).await?;
 
         let mut combined: Vec<u8> = Vec::new();
         for (_, page) in pages {
@@ -1688,7 +1719,9 @@ impl MpdWrapper {
         let page_count = self
             .get_sticker(typ, uri.clone(), page_count_key.into())
             .await?;
-        let page_count = page_count.parse::<usize>().map_err(|_| ClientError::Parse)?;
+        let page_count = page_count
+            .parse::<usize>()
+            .map_err(|_| ClientError::Parse)?;
 
         if page_count == 0 {
             return Ok(());

@@ -12,7 +12,7 @@ chrono = "0.4.38"
 futures = "0.3.30"
 gettext-rs = { version = "0.7", features = ["gettext-system"] }
 image = { version = "0.25.1", features = ["webp"] }
-mpd = { git = "https://github.com/htkhiem/rust-mpd.git", rev = "8d671c767f1f4ba2f2127dc7e2284a13e3af197b", features = ["serde"] }
+mpd = { git = "https://github.com/htkhiem/rust-mpd.git", rev = "d9c514eec7f568e949798eb95e759eb1dedf9907", features = ["serde"] }
 once_cell = "1.19.0"
 time = { version = "0.3.47", features = ["alloc", "formatting", "local-offset"] }
 reqwest = { version = "0.12.5", features = ["blocking", "json"] }

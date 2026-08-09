@@ -451,7 +451,7 @@ impl From<mpd::song::Song> for SongInfo {
             // TODO: Find a way to detect classical works
             artists = parse_mb_artist_tag(artist_str)
                 .iter()
-                .map(|s| ArtistInfo::new(s, None, false))
+                .map(|s| ArtistInfo::new(s, None, false, false))
                 .collect();
         } else {
             artists = Vec::with_capacity(0);

@@ -1,8 +1,12 @@
+use crate::common::tags;
+use crate::utils::mpd_args_to_string;
 use crate::utils::{ARTIST_DELIM_AUTOMATON, ARTIST_DELIM_EXCEPTION_AUTOMATON};
 use aho_corasick::Match;
 use gtk::glib;
 use gtk::prelude::*;
 use gtk::subclass::prelude::*;
+use mpd::search::Operation;
+use mpd::{Query, Term};
 use rustc_hash::FxHashSet;
 use std::cell::OnceCell;
 
@@ -18,12 +22,18 @@ pub struct ArtistInfo {
     /// Not guaranteed to be exhaustive. Inclusion of a genre is dependent on the code that generated this artist info,
     /// and may be random.
     pub genres: FxHashSet<String>,
-    pub example_uris: Vec<String>,  // Example song URIs for visualisation purposes. Each should belong to a different album.
+    pub example_uris: Vec<String>, // Example song URIs for visualisation purposes. Each should belong to a different album.
     pub is_composer: bool,
+    pub is_albumartist: bool,
 }
 
 impl ArtistInfo {
-    pub fn new(name: &str, sort_tag: Option<&str>, is_composer: bool) -> Self {
+    pub fn new(
+        name: &str,
+        sort_tag: Option<&str>,
+        is_composer: bool,
+        is_albumartist: bool,
+    ) -> Self {
         Self {
             name: name.to_owned(),
             sort_tag: sort_tag.map(|s| s.to_owned()),
@@ -31,6 +41,7 @@ impl ArtistInfo {
             genres: FxHashSet::default(),
             example_uris: Vec::with_capacity(0),
             is_composer,
+            is_albumartist,
         }
     }
 
@@ -40,6 +51,35 @@ impl ArtistInfo {
     /// back to their readable name.
     pub fn get_comp_id(&self) -> &str {
         self.mbid.as_deref().unwrap_or(self.name.as_ref())
+    }
+
+    /// Get MPD filter expression to find all songs by this artist.
+    /// Main use is as this artist's identifier within MPD's stickers DB.
+    /// Yes, you can attach stickers to filter expressions. Totally
+    /// not spaghetti code.
+    pub fn get_filter_expression(&self) -> String {
+        let mut q = Query::new();
+        if let Some(mbid) = self.mbid.as_deref() {
+            q.and(
+                Term::Tag(if self.is_albumartist {
+                    tags::ALBUMARTIST_MBID.into()
+                } else {
+                    tags::ARTIST_MBID.into()
+                }),
+                mbid.to_owned(),
+            );
+        } else {
+            q.and_with_op(
+                Term::Tag(if self.is_albumartist {
+                    tags::ALBUMARTIST.into()
+                } else {
+                    tags::ARTIST.into()
+                }),
+                Operation::Contains,
+                self.name.to_owned(),
+            );
+        }
+        dbg!(mpd_args_to_string(&q))
     }
 
     /// Add genres as discovered from albums, maintaining uniqueness.
@@ -63,6 +103,7 @@ impl Default for ArtistInfo {
             genres: FxHashSet::default(),
             example_uris: Vec::with_capacity(0),
             is_composer: false,
+            is_albumartist: false,
         }
     }
 }
@@ -168,7 +209,7 @@ mod imp {
     use super::*;
     use glib::{ParamSpec, ParamSpecString};
     use gtk::glib::ParamSpecObject;
-use once_cell::sync::Lazy;
+    use once_cell::sync::Lazy;
 
     #[derive(Default, Debug)]
     pub struct Artist {
@@ -208,7 +249,10 @@ use once_cell::sync::Lazy;
             match pspec.name() {
                 "name" => obj.get_name().to_value(),
                 "sortable-name" => obj.get_sortable_name().to_value(),
-                "example-uris" => glib::BoxedAnyObject::new(self.info.get().map(|info| info.example_uris.clone())).to_value(), 
+                "example-uris" => {
+                    glib::BoxedAnyObject::new(self.info.get().map(|info| info.example_uris.clone()))
+                        .to_value()
+                }
                 _ => unimplemented!(),
             }
         }

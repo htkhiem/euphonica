@@ -1,5 +1,13 @@
 use crate::{
-    cache::{Cache, sqlite}, client::{Error as ClientError, MpdWrapper, Result as ClientResult, StickerSetMode, state::StickersSupportLevel}, common::{Album, Artist, DynamicPlaylist, INode, Song, SongInfo, Stickers, tags}, library::Tag, player::Player, utils::settings_manager,
+    cache::{Cache, sqlite},
+    client::{
+        Error as ClientError, MpdWrapper, Result as ClientResult, StickerSetMode,
+        state::StickersSupportLevel,
+    },
+    common::{Album, Artist, DynamicPlaylist, INode, Song, SongInfo, Stickers, tags},
+    library::Tag,
+    player::Player,
+    utils::settings_manager,
 };
 use chrono::Local;
 use derivative::Derivative;
@@ -712,10 +720,9 @@ impl Library {
             album_model.remove_all();
             let albumartist_model = self.imp().albumartists.clone();
             albumartist_model.remove_all();
-            let (albums, artists) = self.client()
-                .get_albums_and_albumartists_by_query(
-                    Query::new()
-                )
+            let (albums, artists) = self
+                .client()
+                .get_albums_and_albumartists_by_query(Query::new())
                 .await?;
             album_model.extend_from_slice(&albums);
             albumartist_model.extend_from_slice(&artists);
@@ -772,12 +779,12 @@ impl Library {
             // init the artists list
             let artist_model = self.imp().artists.clone();
             artist_model.remove_all();
-
-            self.client()
-                .get_artists(false, &mut |artist| {
-                    artist_model.append(&artist);
-                })
-                .await?;
+            artist_model.extend_from_slice(
+                &self
+                    .client()
+                    .get_artists()
+                    .await?,
+            );
         }
         Ok(())
     }

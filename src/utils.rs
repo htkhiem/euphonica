@@ -605,3 +605,15 @@ pub fn get_time_ago_desc(past_ts: i64) -> String {
         "just now".to_string()
     }
 }
+
+
+/// Serialise MPD argument types into string in their MPD protocol (sans escaping).
+pub fn mpd_args_to_string<T: mpd::ToArguments>(args: T) -> String {
+    let mut output = Vec::<String>::new();
+    args.to_arguments::<_, ()>(&mut |arg| {
+            output.push(arg.to_string());
+            Ok(())
+        })
+        .unwrap();
+    output.join(" ")
+}

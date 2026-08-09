@@ -80,7 +80,7 @@ impl AlbumInfo {
 
         let mut new_artists: Vec<ArtistInfo> = parse_mb_artist_tag(tag)
             .iter()
-            .map(|s| ArtistInfo::new(s, None, false))
+            .map(|s| ArtistInfo::new(s, None, false, true))
             .collect();
 
         self.artists.append(&mut new_artists);
