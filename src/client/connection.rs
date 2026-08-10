@@ -15,7 +15,7 @@ use resolve_path::PathResolveExt;
 use rustc_hash::FxHashSet;
 use std::{
     borrow::Cow, cell::RefCell, cmp::Ordering as StdOrdering, net::TcpStream, ops::Range,
-    os::unix::net::UnixStream, result,
+    os::{linux::net::SocketAddrExt, unix::net::{SocketAddr, UnixStream}}, result,
 };
 
 use crate::{
@@ -434,7 +434,14 @@ impl Connection {
             let path = settings.string("mpd-unix-socket");
             let path = path.as_str();
             eprintln!("Connecting to local socket {}", &path);
-            if let Ok(resolved) = path.try_resolve() {
+            if path.starts_with("@") {
+                path.get(1..)
+                    .ok_or(Error::NoExist)
+                    .and_then(|n| SocketAddr::from_abstract_name(n).map_err(|_| Error::NoExist))
+                    .and_then(|a| UnixStream::connect_addr(&a).map_err(|_| Error::Socket))
+                    .map(|s| StreamWrapper::new_unix(s))
+                    .and_then(|s| mpd::Client::new(s).map_err(Error::Mpd))?
+            } else if let Ok(resolved) = path.try_resolve() {
                 mpd::Client::new(StreamWrapper::new_unix(
                     UnixStream::connect(resolved).map_err(|_| Error::Socket)?,
                 ))
