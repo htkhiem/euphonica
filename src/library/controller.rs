@@ -278,11 +278,7 @@ impl Library {
                 .await
         } else {
             self.client()
-                .delete_sticker(
-                    "filter",
-                    filter_expr,
-                    Stickers::ALBUM_RATING.into(),
-                )
+                .delete_sticker("filter", filter_expr, Stickers::ALBUM_RATING.into())
                 .await
         }
     }
@@ -644,19 +640,11 @@ impl Library {
 
             let model = self.imp().recent_albums.clone();
             model.remove_all();
-            self.client()
-                .get_recent_albums(&mut |album| {
-                    model.append(&album);
-                })
-                .await?;
+            model.extend_from_slice(&self.client().get_recent_albums().await?);
 
             let model = self.imp().recent_artists.clone();
             model.remove_all();
-            self.client()
-                .get_recent_artists(&|artist| {
-                    model.append(&artist);
-                })
-                .await?;
+            model.extend_from_slice(&self.client().get_recent_artists().await?);
         }
         Ok(())
     }
@@ -693,7 +681,7 @@ impl Library {
     }
 
     /// Fetch basic info for all albums to display them in a grid. Will also fetch tags as stored locally
-    /// and album rating stickers. 
+    /// and album rating stickers.
     /// During the process we'll also produce albumartists as a side effect.
     pub async fn init_albums_and_albumartists(&self) -> ClientResult<()> {
         if !self.imp().albums_and_albumartists_initialized.get() {
@@ -736,12 +724,7 @@ impl Library {
             // init the artists list
             let artist_model = self.imp().artists.clone();
             artist_model.remove_all();
-            artist_model.extend_from_slice(
-                &self
-                    .client()
-                    .get_artists()
-                    .await?,
-            );
+            artist_model.extend_from_slice(&self.client().get_artists().await?);
         }
         Ok(())
     }

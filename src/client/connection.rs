@@ -520,8 +520,14 @@ impl Connection {
         let version = client.version;
         self.client.replace(client);
 
-        // Reset retry counter upon successful connection.
-        self.retries_left = self.max_retries;
+        // Do NOT reset retry counter here.
+        // Malformed commands may cause connection-closed-by-peer issues,
+        // after which a reconnection will always succeed due to there being
+        // no actual network issue.
+        // The auto retry loop will then attempt that command again, resulting
+        // in an infinite loop.
+        // As such, the retry counter shall only be reset after any successful
+        // command, not instantly after a successful reconnection.
 
         Ok(version)
     }
@@ -549,6 +555,8 @@ impl Connection {
                 }) {
                 Ok(res) => {
                     final_res = Ok(res);
+                    // Reset counter here instead of fn connect() (see note in old spot)
+                    self.retries_left = self.max_retries;
                     break;
                 }
                 Err(e) => match e {

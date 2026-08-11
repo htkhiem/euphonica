@@ -953,7 +953,7 @@ impl MpdWrapper {
     pub async fn get_albums_and_albumartists_by_query(
         &self,
         query: Query<'static>,
-        fetch_stickers: bool
+        fetch_stickers: bool,
     ) -> ClientResult<(Vec<Album>, Vec<Artist>)> {
         // TODO: batched windowed retrieval
         // Most of the below logic are asyncified to avoid blocking the main UI thread.
@@ -983,7 +983,7 @@ impl MpdWrapper {
                             let mut query = Query::new();
                             query.and(Term::Tag(Cow::Borrowed(tags::ALBUM)), tag);
                             query.and(Term::Tag(Cow::Borrowed(tags::ALBUMARTIST)), key.clone());
-                            all_queries_windows.push((query, mpd::search::Window::from((0, 1))));
+                            all_queries_windows.push((query, Window::from((0, 1))));
                         }
                     }
                 }
@@ -1064,7 +1064,8 @@ impl MpdWrapper {
         let (album_infos_and_ratings, artist_infos) = asyncified
             .call(move |_| {
                 let mut albumartists: FxHashMap<String, ArtistInfo> = FxHashMap::default();
-                let mut album_infos_and_ratings: Vec<(AlbumInfo, Option<String>)> = Vec::with_capacity(album_count);
+                let mut album_infos_and_ratings: Vec<(AlbumInfo, Option<String>)> =
+                    Vec::with_capacity(album_count);
 
                 for i in 0..songs.len() {
                     if let Some(album_info) = std::mem::take(&mut songs[i]).into_album_info() {
@@ -1097,10 +1098,7 @@ impl MpdWrapper {
                         } else {
                             rating = None;
                         }
-                        album_infos_and_ratings.push((
-                            album_info,
-                            rating
-                        ));
+                        album_infos_and_ratings.push((album_info, rating));
                     }
                 }
 
@@ -1114,13 +1112,16 @@ impl MpdWrapper {
             })
             .await;
         Ok((
-            album_infos_and_ratings.into_iter().map(|(i, r)| {
-                let res = Album::from(i);
-                if let Some(rating) = r {
-                    res.get_stickers().borrow_mut().set_rating(&rating);
-                }
-                res
-            }).collect(),
+            album_infos_and_ratings
+                .into_iter()
+                .map(|(i, r)| {
+                    let res = Album::from(i);
+                    if let Some(rating) = r {
+                        res.get_stickers().borrow_mut().set_rating(&rating);
+                    }
+                    res
+                })
+                .collect(),
             artist_infos.into_iter().map(Artist::from).collect(),
         ))
     }
@@ -1135,30 +1136,48 @@ impl MpdWrapper {
         Ok(())
     }
 
-    pub async fn get_recent_albums<F>(&self, respond: &mut F) -> ClientResult<()>
-    where
-        F: FnMut(Album),
-    {
+    pub async fn get_recent_albums(&self) -> ClientResult<Vec<Album>> {
         let settings = utils::settings_manager().child("library");
-        // TODO: async this
-        let recent_albums =
-            sqlite::get_last_n_albums(settings.uint("n-recent-albums")).expect("Sqlite DB error");
-        for tup in recent_albums.into_iter() {
-            let mut query = Query::new();
-            query.and(Term::Tag(tags::ALBUM.into()), tup.0);
-            if let Some(artist) = tup.1 {
-                query.and(Term::Tag(tags::ALBUMARTIST.into()), artist);
-            }
-            if let Some(mbid) = tup.2 {
-                query.and(Term::Tag(tags::ALBUM_MBID.into()), mbid);
-            }
-            let (albums, _) = self.get_albums_and_albumartists_by_query(query, false).await?;
+        let n = settings.uint("n-recent-albums");
 
-            for album in albums {
-                respond(album)
-            }
-        }
-        Ok(())
+        // Build queries off-thread from SQLite results
+        let asyncified = Asyncified::builder().build_ok(|| ()).await;
+        let queries_windows: Vec<(Query, Window)> = asyncified
+            .call(move |_| {
+                let recent_albums = sqlite::get_last_n_albums(n).expect("Sqlite DB error");
+                recent_albums
+                    .into_iter()
+                    .map(|(album, artist, mbid)| {
+                        let mut query = Query::new();
+                        query.and(Term::Tag(tags::ALBUM.into()), album);
+                        if let Some(a) = artist {
+                            query.and(Term::Tag(tags::ALBUMARTIST.into()), a);
+                        }
+                        if let Some(m) = mbid {
+                            query.and(Term::Tag(tags::ALBUM_MBID.into()), m);
+                        }
+                        (query, Window::from((0, 1)))
+                    })
+                    .collect()
+            })
+            .await;
+
+        let (s, r) = oneshot::channel();
+        Ok(self
+            .foreground(
+                Task::FindMultiple(
+                    queries_windows,
+                    Some(vec![tags::ALBUM, tags::ALBUMARTIST, tags::ALBUM_MBID]),
+                    s,
+                ),
+                r,
+            )
+            .await?
+            .into_iter()
+            .map(|si| si.into_album_info())
+            .filter(|maybe_info| maybe_info.is_some())
+            .map(|maybe_info| maybe_info.unwrap().into())
+            .collect())
     }
 
     /// Alternative to get_songs_by_query that does not wrap SongInfos in GObjects for efficiency
@@ -1327,42 +1346,68 @@ impl MpdWrapper {
             .collect::<Vec<Artist>>())
     }
 
-    pub async fn get_recent_artists<F>(&self, respond: &F) -> ClientResult<()>
-    where
-        F: Fn(Artist),
-    {
-        let mut already_parsed: FxHashSet<String> = FxHashSet::default();
+    pub async fn get_recent_artists(&self) -> ClientResult<Vec<Artist>> {
         let settings = utils::settings_manager().child("library");
         let n = settings.uint("n-recent-artists");
-        let recent_names = sqlite::get_last_n_artists(n).expect("Sqlite DB error");
-        let mut recent_names_set: FxHashSet<String> = FxHashSet::default();
-        for name in recent_names.iter() {
-            recent_names_set.insert(name.clone());
-        }
-        for name in recent_names.into_iter() {
-            let mut query = Query::new();
-            query.and_with_op(
-                Term::Tag(Cow::Borrowed("artist")),
-                QueryOperation::Contains,
-                name,
-            );
-            let (s, r) = oneshot::channel();
-            let mut songs = self
-                .foreground(Task::Find(query, Window::from((0, 1)), s), r)
-                .await?;
-            if !songs.is_empty() {
-                let artists = std::mem::take(&mut songs[0]).into_artist_infos();
-                for artist in artists.into_iter() {
-                    if recent_names_set.contains(&artist.name)
-                        && already_parsed.insert(artist.get_comp_id().to_owned())
-                    {
-                        respond(artist.into());
+
+        // Build queries off-thread from SQLite results
+        let asyncified = Asyncified::builder().build_ok(|| ()).await;
+        let (queries_windows, recent_names_set): (Vec<(Query, Window)>, FxHashSet<String>) =
+            asyncified
+                .call(move |_| {
+                    let recent_names = sqlite::get_last_n_artists(n).expect("Sqlite DB error");
+                    let recent_names_set: FxHashSet<String> =
+                        recent_names.iter().cloned().collect();
+                    let queries_windows: Vec<(Query, Window)> = recent_names
+                        .into_iter()
+                        .map(|name| {
+                            let mut query = Query::new();
+                            query.and_with_op(
+                                Term::Tag(Cow::Borrowed("artist")),
+                                QueryOperation::Contains,
+                                name,
+                            );
+                            (query, Window::from((0, 1)))
+                        })
+                        .collect();
+                    (queries_windows, recent_names_set)
+                })
+                .await;
+
+        let (s, r) = oneshot::channel();
+        let songs = self
+            .foreground(
+                Task::FindMultiple(
+                    queries_windows,
+                    Some(vec![tags::ARTIST, tags::ARTIST_MBID]),
+                    s,
+                ),
+                r,
+            )
+            .await?;
+
+        // Deduplicate artists by comp_id, filtering to only those whose names
+        // appear in the recent names set.
+        Ok(asyncified
+            .call(move |_| {
+                let mut res = Vec::with_capacity(recent_names_set.len());
+                let mut already_parsed: FxHashSet<String> = FxHashSet::default();
+                for song in songs {
+                    let artists = song.into_artist_infos();
+                    for artist in artists.into_iter() {
+                        if recent_names_set.contains(&artist.name)
+                            && already_parsed.insert(artist.get_comp_id().to_owned())
+                        {
+                            res.push(artist)
+                        }
                     }
                 }
-            }
-        }
-
-        Ok(())
+                res
+            })
+            .await
+            .into_iter()
+            .map(Artist::from)
+            .collect())
     }
 
     pub async fn lsinfo(&self, path: String) -> ClientResult<Vec<INode>> {
@@ -1457,20 +1502,47 @@ impl MpdWrapper {
     }
 
     pub async fn get_recent_songs(&self, n: u32) -> ClientResult<Vec<Song>> {
-        let to_fetch: Vec<(String, OffsetDateTime)> =
-            sqlite::get_last_n_songs(n).expect("Sqlite DB error");
-        let mut res: Vec<Song> = Vec::with_capacity(n as usize);
-        for tup in to_fetch.into_iter() {
-            if let Some(mut song) = self
-                .get_song_by_uri(tup.0, false)
-                .await
-                .map(|opt| opt.map(|pair| pair.0))?
-            {
-                song.last_played = Some(tup.1);
-                res.push(song.into())
-            }
-        }
-        Ok(res)
+        let asyncified = Asyncified::builder().build_ok(|| ()).await;
+        let (queries_windows, ts): (Vec<(Query, Window)>, Vec<OffsetDateTime>) = asyncified
+            .call(move |_| {
+                let resp = sqlite::get_last_n_songs(n).expect("Sqlite DB error");
+                let ts = resp.iter().map(|(_, ts)| ts.to_owned()).collect();
+                (
+                    resp.into_iter()
+                        .map(|(uri, ts)| {
+                            let mut q = Query::new();
+                            q.and(Term::File, uri);
+                            (q, Window::from((0, 1)))
+                        })
+                        .collect(),
+                    ts,
+                )
+            })
+            .await;
+
+        let (s, r) = oneshot::channel();
+        self.foreground(
+            Task::FindMultiple(
+                queries_windows,
+                Some(vec![
+                    tags::ALBUM,
+                    tags::ARTIST,
+                    tags::ALBUM_MBID,
+                    tags::ALBUMARTIST, // Needed for cover art fetch :)
+                    tags::ORIGINAL_DATE,
+                ]),
+                s,
+            ),
+            r,
+        )
+        .await?
+        .into_iter()
+        .zip(ts)
+        .map(|(mut si, ts)| {
+            si.last_played = Some(ts);
+            Ok(si.into())
+        })
+        .collect()
     }
 
     /// Find all stickers of a given name for a path (recursive URI, or leave empty for other types).
@@ -1720,14 +1792,10 @@ impl MpdWrapper {
         // Cleanup itself runs AFTER the write so that if it fails we don't lose data.
         let uri_for_cleanup = uri.clone();
         let old_page_count = self
-            .get_sticker(
-                typ,
-                uri_for_cleanup,
-                {
-                    let base = Stickers::META_PAGE_COUNT;
-                    base.into()
-                },
-            )
+            .get_sticker(typ, uri_for_cleanup, {
+                let base = Stickers::META_PAGE_COUNT;
+                base.into()
+            })
             .await
             .ok()
             .and_then(|s| s.parse::<usize>().ok());
@@ -1758,14 +1826,10 @@ impl MpdWrapper {
         uri: String,
     ) -> ClientResult<Option<OffsetDateTime>> {
         match self
-            .get_sticker(
-                typ,
-                uri,
-                {
-                    let base = Stickers::META_LAST_MODIFIED;
-                    base.into()
-                },
-            )
+            .get_sticker(typ, uri, {
+                let base = Stickers::META_LAST_MODIFIED;
+                base.into()
+            })
             .await
         {
             Ok(unix_ts) => Ok(Some(
@@ -1787,11 +1851,7 @@ impl MpdWrapper {
     /// Clear all metadata stickers for a given type/uri.
     /// Reads the current page count, then atomically deletes all document pages,
     /// the page count sticker, and the last-modified sticker.
-    pub async fn clear_meta(
-        &self,
-        typ: &'static str,
-        uri: String,
-    ) -> ClientResult<()> {
+    pub async fn clear_meta(&self, typ: &'static str, uri: String) -> ClientResult<()> {
         // Read the current page count to know how many pages to delete
         let page_count_key: String = Stickers::META_PAGE_COUNT.to_owned();
         let page_count = self
