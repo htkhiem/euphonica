@@ -7,7 +7,7 @@ use gtk::{
     subclass::prelude::*,
 };
 use std::{
-    cell::{OnceCell, RefCell},
+    cell::{Cell, OnceCell, RefCell},
     fs::{self, File},
     io::Write,
     rc::Rc,
@@ -94,6 +94,8 @@ mod imp {
         pub player: WeakRef<Player>,
         pub albumart_paintable: RotatingPaintable,
         pub albumart_animation: OnceCell<adw::TimedAnimation>,
+        pub albumart_rotation_offset: Cell<f64>,
+        pub albumart_rotation_speed: Cell<f64>,
         pub current_lyric_line_id: RefCell<Option<SignalHandlerId>>,
         pub cover_changed_id: RefCell<Option<SignalHandlerId>>,
         pub song_changed_id: RefCell<Option<SignalHandlerId>>,
@@ -147,13 +149,7 @@ mod imp {
             self.albumart_paintable.connect_circular_notify(clone!(
                 #[weak(rename_to = this)]
                 self,
-                move |paintable| {
-                    if paintable.circular() {
-                        this.obj().snap_album_art_to_player();
-                    } else {
-                        this.obj().sync_album_art_animation();
-                    }
-                }
+                move |_| this.obj().resync_album_art_rotation()
             ));
             for property in ["return-to-starting-angle", "degrees-per-second"] {
                 self.albumart_paintable.connect_notify_local(
@@ -161,14 +157,9 @@ mod imp {
                     clone!(
                         #[weak(rename_to = this)]
                         self,
-                        move |paintable, _| {
-                            if paintable.return_to_starting_angle() {
-                                this.obj().snap_album_art_to_player();
-                            } else {
-                                this.obj().restart_album_art_animation(
-                                    paintable.rotation(),
-                                    paintable.rotation_speed(),
-                                );
+                        move |_, _| {
+                            if let Some(player) = this.player.upgrade() {
+                                this.obj().rebase_album_art_rotation(player.position());
                             }
                         }
                     ),
@@ -197,6 +188,9 @@ mod imp {
                 .bind("rotate-album-art", &self.albumart_paintable, "circular")
                 .get_only()
                 .build();
+            // The settings bindings above must run before reading degrees-per-second.
+            self.albumart_rotation_speed
+                .set(self.albumart_paintable.rotation_speed());
             let knob = self.vol_knob.get();
             ui_settings
                 .bind("vol-knob-unit", &knob, "use-dbfs")
@@ -261,7 +255,7 @@ mod imp {
     impl WidgetImpl for PlayerPane {
         fn map(&self) {
             self.parent_map();
-            self.obj().snap_album_art_to_player();
+            self.obj().resync_album_art_rotation();
         }
     }
 
@@ -340,11 +334,11 @@ impl PlayerPane {
                 closure_local!(
                     #[weak(rename_to = this)]
                     self,
-                    move |player: Player, album_changed: bool, automatic_transition: bool| {
+                    move |player: Player, cover_changed: bool, automatic_transition: bool| {
                         this.sync_album_art_animation_for_song(
                             player.current_song(),
                             player.position(),
-                            album_changed,
+                            cover_changed,
                             automatic_transition,
                         );
                     }
@@ -368,22 +362,19 @@ impl PlayerPane {
                     }
                 ),
             )));
-        self.sync_album_art_animation();
-        self.imp()
-            .seeked_id
-            .replace(Some(player.connect_closure(
-                "seeked",
-                false,
-                closure_local!(
-                    #[weak(rename_to = this)]
-                    self,
-                    move |_: Player, position: f64| {
-                        if this.imp().albumart_paintable.circular() {
-                            this.snap_rotation_to_position(position);
-                        }
+        self.imp().seeked_id.replace(Some(player.connect_closure(
+            "seeked",
+            false,
+            closure_local!(
+                #[weak(rename_to = this)]
+                self,
+                move |_: Player, position: f64| {
+                    if this.imp().albumart_paintable.circular() {
+                        this.resync_album_art_rotation_to(position);
                     }
-                ),
-            )));
+                }
+            ),
+        )));
         self.bind_state(player, cache, client_state);
         self.imp().playback_controls.setup(player);
         self.imp().output_controls.setup(player);
@@ -809,46 +800,67 @@ impl PlayerPane {
         &self,
         song: Option<Song>,
         position: f64,
-        album_changed: bool,
+        cover_changed: bool,
         automatic_transition: bool,
     ) {
-        let imp = self.imp();
-        imp.albumart_paintable.set_duration(
-            song.as_ref()
-                .and_then(|song| song.get_info().duration.as_ref())
+        self.imp().albumart_paintable.set_duration(
+            song.and_then(|song| song.get_info().duration)
                 .map_or(0.0, |duration| duration.as_secs_f64()),
         );
-        if !album_changed && automatic_transition {
-            // MPD may advance before GTK updates the disc for the final time, so keep the last
-            // visible angle to avoid a noticeable jump when the same artwork continues
-            let rotation = imp.albumart_paintable.rotation().rem_euclid(360.0);
-            let speed = imp
-                .albumart_paintable
-                .rotation_speed_from(rotation, position);
-            self.restart_album_art_animation(rotation, speed);
-        } else if !automatic_transition && song.is_some() {
-            // Reset the artwork angle on manual song changes
-            let speed = imp.albumart_paintable.rotation_speed_from(0.0, position);
-            self.restart_album_art_animation(0.0, speed);
-        } else if song.is_some() {
-            self.snap_rotation_to_position(position);
+        if !cover_changed && automatic_transition {
+            // MPD may change tracks before GTK draws the disc's final frame. Keep the current
+            // angle to avoid a visible jump when the cover stays the same.
+            self.rebase_album_art_rotation(position);
         } else {
-            self.restart_album_art_animation(0.0, imp.albumart_paintable.rotation_speed());
+            // Ignore subsecond playback progress so new artwork starts upright.
+            self.reset_album_art_rotation(position.floor());
         }
     }
 
-    fn snap_album_art_to_player(&self) {
+    fn album_art_rotation_at(&self, position: f64) -> f64 {
+        let imp = self.imp();
+        (imp.albumart_rotation_offset.get() + position * imp.albumart_rotation_speed.get())
+            .rem_euclid(360.0)
+    }
+
+    /// Sets the angle at a playback position and records the offset later updates work from.
+    fn anchor_album_art_rotation(&self, rotation: f64, position: f64, speed: f64) {
+        let imp = self.imp();
+        imp.albumart_rotation_speed.set(speed);
+        imp.albumart_rotation_offset
+            .set(rotation - position * speed);
+        self.restart_album_art_animation(rotation, speed);
+    }
+
+    /// Starts the track upright, turning a whole number of times over its length.
+    fn reset_album_art_rotation(&self, position: f64) {
+        let speed = self.imp().albumart_paintable.rotation_speed();
+        self.anchor_album_art_rotation((position * speed).rem_euclid(360.0), position, speed);
+    }
+
+    /// Keeps the visible angle and adjusts speed so the track still ends upright.
+    fn rebase_album_art_rotation(&self, position: f64) {
+        let paintable = &self.imp().albumart_paintable;
+        let rotation = paintable.rotation().rem_euclid(360.0);
+        let speed = paintable.rotation_speed_from(rotation, position);
+        self.anchor_album_art_rotation(rotation, position, speed);
+    }
+
+    fn resync_album_art_rotation_to(&self, position: f64) {
+        self.restart_album_art_animation(
+            self.album_art_rotation_at(position),
+            self.imp().albumart_rotation_speed.get(),
+        );
+    }
+
+    fn resync_album_art_rotation(&self) {
         if self.imp().albumart_paintable.circular()
             && let Some(player) = self.imp().player.upgrade()
         {
-            self.snap_rotation_to_position(player.position());
+            self.resync_album_art_rotation_to(player.position());
+        } else {
+            self.sync_album_art_animation();
         }
-    }
-
-    fn snap_rotation_to_position(&self, position: f64) {
-        let paintable = &self.imp().albumart_paintable;
-        let speed = paintable.rotation_speed();
-        self.restart_album_art_animation((position * speed) % 360.0, speed);
     }
 
     fn restart_album_art_animation(&self, rotation: f64, speed: f64) {

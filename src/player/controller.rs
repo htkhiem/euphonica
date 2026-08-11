@@ -189,6 +189,7 @@ mod imp {
         pub position: Cell<f64>,
         pub position_sampled_at: Cell<Instant>,
         pub position_sampled_while_playing: Cell<bool>,
+        pub expected_next_song_id: Cell<Option<u32>>,
         pub queue_initialized: Cell<bool>,
         pub queue: gio::ListStore,
         pub lyric_lines: gtk::StringList, // Line by line for display. May be empty.
@@ -270,6 +271,7 @@ mod imp {
                 position: Cell::new(0.0),
                 position_sampled_at: Cell::new(Instant::now()),
                 position_sampled_while_playing: Cell::new(false),
+                expected_next_song_id: Cell::new(None),
                 lyric_lines: gtk::StringList::new(&[]),
                 lyrics: RefCell::new(None),
                 lyrics_handle: RefCell::default(),
@@ -603,6 +605,8 @@ mod imp {
                     Signal::builder("history-changed").build(),
                     // For simplicity we'll always use the hires version
                     Signal::builder("cover-changed").build(),
+                    // Params: whether the cover changed, and whether this was an automatic
+                    // transition to the next song rather than the user changing the song manually.
                     Signal::builder("song-changed")
                         .param_types([bool::static_type(), bool::static_type()])
                         .build(),
@@ -930,6 +934,23 @@ impl Player {
     // Signals will be sent for properties whose values have changed, even though
     // we will be receiving updates for many properties at once.
 
+    /// Whether the previous song had reached its end by `at`, allowing for crossfade
+    /// and a status update arriving one poll late.
+    fn previous_song_ran_out(&self, at: Instant, crossfade: Option<Duration>) -> bool {
+        self.imp()
+            .current_song
+            .borrow()
+            .as_ref()
+            .and_then(|song| song.get_info().duration)
+            .is_some_and(|duration| {
+                Duration::from_secs_f64(self.position())
+                    + at.saturating_duration_since(self.imp().position_sampled_at.get())
+                    + crossfade.unwrap_or_default()
+                    + STATUS_POLL_INTERVAL
+                    >= duration
+            })
+    }
+
     /// Main update function. MPD's protocol has a single "status" commands
     /// that returns everything at once. This update function will take what's
     /// relevant and update the GObject properties accordingly.
@@ -941,24 +962,13 @@ impl Player {
             status = mpd::Status::default();
         }
         let status_time = Instant::now();
-        let was_playing = self.imp().position_sampled_while_playing.get();
-        let automatic_transition = was_playing
-            && self.current_song().is_some_and(|song| {
-                song.get_info().duration.as_ref().is_some_and(|duration| {
-                    self.position()
-                        + status_time
-                            .saturating_duration_since(self.imp().position_sampled_at.get())
-                            .as_secs_f64()
-                        + status
-                            .crossfade
-                            .map_or(0.0, |crossfade| crossfade.as_secs_f64())
-                        // Allow one polling interval because the last sampled position may precede the song change
-                        + STATUS_POLL_INTERVAL.as_secs_f64()
-                        >= duration.as_secs_f64()
-                })
-            });
+        let expected_next_song_id = self
+            .imp()
+            .expected_next_song_id
+            .replace(status.nextsong.map(|place| place.id.0));
         let mut mpris_changes: Vec<Property> = Vec::new();
-        let mut song_change = None;
+        let mut cover_changed = None;
+        let mut automatic_transition = false;
         match status.state {
             State::Play => {
                 let new_state = PlaybackState::Playing;
@@ -1187,16 +1197,17 @@ impl Player {
                             mpris_changes.push(Property::Metadata(new_song.get_mpris_metadata()));
                         }
 
-                        let album_changed = self
-                            .imp()
-                            .current_song
-                            .borrow()
-                            .as_ref()
-                            .and_then(Song::get_album)
-                            .zip(new_song.get_album())
-                            .is_none_or(|(current, new)| {
-                                current.get_comp_id() != new.get_comp_id()
-                            });
+                        // Covers are cached per folder, so matching album IDs do not guarantee
+                        // matching cover art.
+                        cover_changed = Some(self.imp().current_song.borrow().as_ref().is_none_or(
+                            |current| current.get_folder_uri() != new_song.get_folder_uri(),
+                        ));
+
+                        // MPD's next song can also be selected manually. The previous song must
+                        // have run out to confirm an automatic transition.
+                        automatic_transition = self.imp().position_sampled_while_playing.get()
+                            && expected_next_song_id == Some(new_queue_place.id.0)
+                            && self.previous_song_ran_out(status_time, status.crossfade);
 
                         // We're now ready to update the UI elements
                         self.imp().current_song.replace(Some(new_song));
@@ -1208,7 +1219,6 @@ impl Player {
                         self.notify("quality-grade");
                         self.notify("format-desc");
                         self.notify("album");
-                        song_change = Some((album_changed, automatic_transition));
                     }
                     Ok(None) => {
                         eprintln!(
@@ -1276,7 +1286,7 @@ impl Player {
                 self.notify("album");
                 self.notify("rating");
                 self.notify("duration");
-                song_change = Some((true, automatic_transition));
+                cover_changed = Some(true);
                 // Update MPRIS side
                 if self.imp().mpris_enabled.get() {
                     mpris_changes.push(Property::Metadata(
@@ -1292,10 +1302,10 @@ impl Player {
         self.imp()
             .position_sampled_while_playing
             .set(status.state == State::Play);
-        if let Some((album_changed, automatic_transition)) = song_change {
+        if let Some(cover_changed) = cover_changed {
             self.notify("queue-id");
-            self.emit_by_name::<()>("song-changed", &[&album_changed, &automatic_transition]);
-            if album_changed {
+            self.emit_by_name::<()>("song-changed", &[&cover_changed, &automatic_transition]);
+            if cover_changed {
                 self.emit_by_name::<()>("cover-changed", &[]);
             }
         }
