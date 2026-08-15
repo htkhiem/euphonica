@@ -290,6 +290,7 @@ impl PlayerPane {
 
     pub fn update_lyrics_state(&self, player: &Player) {
         let lyrics_box = self.imp().lyrics_box.get();
+        let lyrics_window = self.imp().lyrics_window.get();
         let n_lyric_lines = player.n_lyric_lines();
         if player.lyrics_are_synced() && self.imp().use_synced_lyrics.is_active() {
             let curr_line_idx = player.current_lyric_line();
@@ -300,19 +301,22 @@ impl PlayerPane {
                     label.set_opacity(if i == curr_line_idx { 1.0 } else { 0.2 });
                 }
             }
-            // Actually focus on several (currently 1) lines after the
-            // current one, such that the next lines are visible too.
-            // TODO: Figure out exactly how many lines ahead to focus
-            // on, based on lyrics box height, such that the current line
-            // is vertically centered.
-            let focus_line = if curr_line_idx == 0 {
-                0
-            } else {
-                (curr_line_idx + 1).min(n_lyric_lines - 1)
+            let v_adjust = lyrics_window.vadjustment();
+            if let Some(row) = lyrics_box.row_at_index(curr_line_idx as i32) {
+                let bounds = row.compute_bounds(&lyrics_box).unwrap();
+
+                // Calculate the target scroll position to center the row.
+                // Specifically, we centre the imaginary "page" within the adjustment at the row.
+                // Even more specifically cuz my future self is always dumber than right now: align
+                // the vertical midpoints of the page and the row.
+                let page_size = v_adjust.page_size() as f32;
+                let row_height = bounds.height();
+                let row_top_left = bounds.top_left();
+                let row_midpoint = row_top_left.y() + row_height / 2.0;
+                let page_top = row_midpoint - page_size / 2.0; // < 0 or > bottom is fine, GtkAdjustments will just clamp to top/bottom
+
+                v_adjust.set_value(page_top as f64);
             };
-            if let Some(row) = lyrics_box.row_at_index(focus_line as i32) {
-                row.grab_focus();
-            }
         } else {
             for i in 0..n_lyric_lines {
                 if let Some(row) = lyrics_box.row_at_index(i as i32)
