@@ -101,7 +101,7 @@ impl AlbumInfo {
                 self.date_tag.as_deref().unwrap_or(""),
             );
         }
-        dbg!(mpd_args_to_string(&q))
+        mpd_args_to_string(&q)
     }
 
     /// Add artists from more artist tags, separated from existing ones by simple commas.
