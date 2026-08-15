@@ -1109,19 +1109,22 @@ impl Cache {
         &self,
         song: &SongInfo,
         external: bool,
+        overwrite: bool,   // only effective when external == true
         window: Option<&EuphonicaWindow>,
     ) -> Result<Option<Lyrics>> {
         let uri = song.uri.to_owned();
-        match self.local.call(move |_| sqlite::find_lyrics(&uri)).await {
-            Ok(Some(lyrics)) => {
-                return Ok(Some(lyrics));
-            }
-            Ok(None) => {
-                // Nothing found (haven't tried) => allow function to continue
-            }
-            Err(e) => {
-                // Includes the "do not retry case". Caller of get_lyrics() should display a "re-fetch" button.
-                return Err(Error::Sqlite(e));
+        if !overwrite & !external {
+            match self.local.call(move |_| sqlite::find_lyrics(&uri)).await {
+                Ok(Some(lyrics)) => {
+                    return Ok(Some(lyrics));
+                }
+                Ok(None) => {
+                    // Nothing found (haven't tried) => allow function to continue
+                }
+                Err(e) => {
+                    // Includes the "do not retry case". Caller of get_lyrics() should display a "re-fetch" button.
+                    return Err(Error::Sqlite(e));
+                }
             }
         }
 
