@@ -135,6 +135,7 @@ mod imp {
         pub cover_signal_id: RefCell<Option<SignalHandlerId>>,
         pub cover_set_id: RefCell<Option<SignalHandlerId>>,
         pub cover_cleared_id: RefCell<Option<SignalHandlerId>>,
+        pub update_meta_handle: RefCell<Option<glib::JoinHandle<()>>>,
         pub cache: OnceCell<Rc<Cache>>,
         pub meta: RefCell<Option<AlbumMeta>>,
         // For sync conflict resolution
@@ -293,9 +294,9 @@ mod imp {
                                         this,
                                         async move {
                                             this.obj().backup_meta(false).await;
-                                            this.obj().update_meta(false).await;
                                         }
                                     ));
+                                    this.obj().update_meta_guarded(false);
                                 }
                             }
                             Err(e) => {
@@ -494,10 +495,10 @@ mod imp {
                             #[weak]
                             obj,
                             async move {
-                                obj.update_meta(true).await;
                                 obj.schedule_cover(true).await;
                             }
                         ));
+                        obj.update_meta_guarded(false);
                     }
                 ))
                 .build();
@@ -740,7 +741,10 @@ impl AlbumContentView {
             }
             Err(e) => {
                 if let Some(win) = self.imp().window.upgrade() {
-                    win.send_simple_toast(&format!("Couldn't back up metadata: {}", e.message()), 3);
+                    win.send_simple_toast(
+                        &format!("Couldn't back up metadata: {}", e.message()),
+                        3,
+                    );
                 }
             }
         }
@@ -770,6 +774,24 @@ impl AlbumContentView {
         }
     }
 
+    /// Wraps around update_meta, ensuring no concurrent requests (else latecomer requests will override current metadata)
+    fn update_meta_guarded(&self, overwrite: bool) {
+        if let Some(handle) = self.imp().update_meta_handle.take() {
+            handle.abort();
+        }
+        let _ = self
+            .imp()
+            .update_meta_handle
+            .replace(Some(glib::spawn_future_local(clone!(
+                #[weak(rename_to = this)]
+                self,
+                async move {
+                    this.update_meta(overwrite).await;
+                }
+            ))));
+    }
+
+    #[inline]
     async fn update_meta(&self, overwrite: bool) {
         if let Some(album) = self.album() {
             // If the current album is the "untitled" one (i.e. for songs without an album tag),
@@ -866,7 +888,10 @@ impl AlbumContentView {
 
                         // Show last-modified
                         self.imp().meta_last_updated.set_visible(true);
-                        self.imp().meta_last_updated.set_label(&format!("Last updated {}", format_datetime_local_tz(last_modified)));
+                        self.imp().meta_last_updated.set_label(&format!(
+                            "Last updated {}",
+                            format_datetime_local_tz(last_modified)
+                        ));
                     }
                     Ok(None) => {
                         self.imp().wiki_stack.show_placeholder();
@@ -1251,12 +1276,17 @@ impl AlbumContentView {
                 ));
                 // The extra fluff later
                 this.schedule_cover(false).await;
-                this.update_meta(false).await;
+                // Runs in its own async closure
+                this.update_meta_guarded(false);
             }
         ));
     }
 
     pub fn unbind(&self) {
+        if let Some(handle) = self.imp().update_meta_handle.take() {
+            handle.abort();
+        }
+        
         for binding in self.imp().bindings.take().into_iter() {
             binding.unbind();
         }
