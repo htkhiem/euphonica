@@ -1509,7 +1509,7 @@ impl MpdWrapper {
                 let ts = resp.iter().map(|(_, ts)| ts.to_owned()).collect();
                 (
                     resp.into_iter()
-                        .map(|(uri, ts)| {
+                        .map(|(uri, _ts)| {
                             let mut q = Query::new();
                             q.and(Term::File, uri);
                             (q, Window::from((0, 1)))

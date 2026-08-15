@@ -1363,6 +1363,7 @@ impl Player {
         Ok(())
     }
 
+    #[inline]
     fn abort_lyrics_fetch(&self) {
         if let Some(handle) = self.imp().lyrics_handle.take() {
             handle.abort();
