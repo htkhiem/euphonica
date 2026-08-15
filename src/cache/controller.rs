@@ -666,7 +666,7 @@ impl Cache {
                     let title = album.title.to_owned();
                     let mbid = album.mbid.clone();
                     let artist = album.get_artist_tag().map(String::from);
-                    
+
                     self.pool
                         .push_future(move || {
                             sqlite::get_album_meta(&title, mbid.as_deref(), artist.as_deref())
@@ -801,17 +801,16 @@ impl Cache {
             return Err(Error::AlreadyExists);
         }
         self.mpd_client
-            .set_meta::<AlbumMeta>(
-                "filter",
-                filter_expr,
-                meta,
-                new_last_modified,
-            )
+            .set_meta::<AlbumMeta>("filter", filter_expr, meta, new_last_modified)
             .await
             .map_err(Error::Client)
     }
 
-    pub fn set_album_meta(&self, album: &AlbumInfo, meta: &models::AlbumMeta) -> Result<OffsetDateTime> {
+    pub fn set_album_meta(
+        &self,
+        album: &AlbumInfo,
+        meta: &models::AlbumMeta,
+    ) -> Result<OffsetDateTime> {
         sqlite::write_album_meta(album, meta, None).map_err(Error::Sqlite)
     }
 
@@ -845,9 +844,7 @@ impl Cache {
         }
 
         if external && artist.mbid.is_some() {
-            if !overwrite
-                && let Ok(Some(local_res)) = self.get_local_artist_meta(artist).await
-            {
+            if !overwrite && let Ok(Some(local_res)) = self.get_local_artist_meta(artist).await {
                 return Ok(Some(local_res));
             }
             if let Some(meta) = self
@@ -897,12 +894,7 @@ impl Cache {
             return Err(Error::AlreadyExists);
         }
         self.mpd_client
-            .set_meta::<models::ArtistMeta>(
-                "filter",
-                filter_expr,
-                meta,
-                new_last_modified,
-            )
+            .set_meta::<models::ArtistMeta>("filter", filter_expr, meta, new_last_modified)
             .await
             .map_err(Error::Client)
     }
@@ -940,9 +932,7 @@ impl Cache {
                     let name = artist.name.to_owned();
                     let mbid = artist.mbid.clone();
                     self.pool
-                        .push_future(move || {
-                            sqlite::get_artist_meta(&name, mbid.as_deref())
-                        })
+                        .push_future(move || sqlite::get_artist_meta(&name, mbid.as_deref()))
                         .expect("get_local_artist_meta: threadpool error")
                         .await
                         .expect("get_local_artist_meta: threadpool error")
@@ -963,9 +953,7 @@ impl Cache {
                         let artist = artist.to_owned();
                         if let Err(e) = self
                             .local
-                            .call(move |_| {
-                                sqlite::write_artist_meta(&artist, &to_local)
-                            })
+                            .call(move |_| sqlite::write_artist_meta(&artist, &to_local))
                             .await
                         {
                             dbg!(e);
@@ -978,9 +966,7 @@ impl Cache {
                     let name = artist.name.to_owned();
                     let mbid = artist.mbid.clone();
                     self.pool
-                        .push_future(move || {
-                            sqlite::get_artist_meta(&name, mbid.as_deref())
-                        })
+                        .push_future(move || sqlite::get_artist_meta(&name, mbid.as_deref()))
                         .expect("get_local_artist_meta: threadpool error")
                         .await
                         .expect("get_local_artist_meta: threadpool error")
@@ -992,7 +978,11 @@ impl Cache {
         }
     }
 
-    pub fn set_artist_meta(&self, artist: &ArtistInfo, meta: &models::ArtistMeta) -> Result<OffsetDateTime> {
+    pub fn set_artist_meta(
+        &self,
+        artist: &ArtistInfo,
+        meta: &models::ArtistMeta,
+    ) -> Result<OffsetDateTime> {
         sqlite::write_artist_meta(artist, meta).map_err(Error::Sqlite)
     }
 
@@ -1120,17 +1110,22 @@ impl Cache {
         window: Option<&EuphonicaWindow>,
     ) -> Result<Option<Lyrics>> {
         let uri = song.uri.to_owned();
-        let local = self
-            .local
-            .call(move |_| sqlite::find_lyrics(&uri))
-            .await
-            .map_err(Error::Sqlite)?;
-        if local.is_some() {
-            return Ok(local);
+        match self.local.call(move |_| sqlite::find_lyrics(&uri)).await {
+            Ok(Some(lyrics)) => {
+                return Ok(Some(lyrics));
+            }
+            Ok(None) => {
+                // Nothing found (haven't tried) => allow function to continue
+            }
+            Err(e) => {
+                // Includes the "do not retry case". Caller of get_lyrics() should display a "re-fetch" button.
+                return Err(Error::Sqlite(e));
+            }
         }
 
         if external {
             let song = song.to_owned();
+            println!("Fetching new lyrics...");
             let res = self.meta_providers.get_lyrics(song.clone(), window).await;
             sqlite::write_lyrics(&song, res.as_ref()).map_err(Error::Sqlite)?;
             Ok(res)

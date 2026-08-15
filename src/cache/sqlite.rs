@@ -417,6 +417,7 @@ pub enum Error {
     InsufficientKey,
     KeyAlreadyExists,
     Filesystem,
+    DoNotRetry  // Empty placeholder found, don't do it again
 }
 
 #[derive(Debug, Copy, Clone, Default)]
@@ -894,7 +895,7 @@ pub fn find_lyrics(uri: &str) -> Result<Option<Lyrics>, Error> {
                 let res = row.try_into().map_err(|_| Error::DocToObject)?;
                 Ok(Some(res))
             } else {
-                Ok(None)
+                Err(Error::DoNotRetry)
             }
         }
         Err(SqliteError::QueryReturnedNoRows) => Ok(None),
