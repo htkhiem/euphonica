@@ -157,6 +157,16 @@
             </object>
           </child>
           <child>
+            <object class="GtkButton" id="refetch_lyrics">
+              <property name="label" translate="true">Search for lyrics</property>
+              <property name="visible">false</property>
+              <property name="hexpand">true</property>
+              <style>
+                <class name="suggested-action"/>
+              </style>
+            </object>
+          </child>
+          <child>
             <object class="GtkBox">
               <property name="spacing">6</property>
               <child>

@@ -1166,7 +1166,6 @@ impl Player {
                             #[strong]
                             new_song,
                             async move {
-                                println!("Fetching new lyrics...");
                                 let result = this
                                     .imp()
                                     .cache
