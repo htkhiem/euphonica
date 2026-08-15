@@ -30,6 +30,42 @@
           </object>
         </child>
         <child>
+          <object class="AdwExpanderRow" id="rotate_album_art">
+            <property name="title" translatable="true">Rotate album art</property>
+            <property name="subtitle" translatable="true">Show the player album art as a rotating disc while music is playing.</property>
+            <property name="show-enable-switch">true</property>
+            <child>
+              <object class="AdwSwitchRow" id="return_to_starting_angle">
+                <property name="title" translatable="true">Return to starting angle</property>
+                <property name="subtitle" translatable="true">Slightly adjust the rotation speed so each track ends at the angle it started.</property>
+              </object>
+            </child>
+            <child>
+              <object class="AdwActionRow">
+                <property name="title" translatable="true">Rotation speed</property>
+                <child>
+                  <object class="GtkScale" id="album_art_rotation_speed">
+                    <property name="draw-value">false</property>
+                    <property name="width-request">200</property>
+                    <marks>
+                      <mark value="0" position="3" translatable="true">Slow</mark>
+                      <mark value="1" position="3" translatable="true">Medium</mark>
+                      <mark value="2" position="3" translatable="true">Fast</mark>
+                    </marks>
+                    <property name="adjustment">
+                      <object class="GtkAdjustment">
+                        <property name="lower">0</property>
+                        <property name="upper">2</property>
+                        <property name="value">1</property>
+                      </object>
+                    </property>
+                  </object>
+                </child>
+              </object>
+            </child>
+          </object>
+        </child>
+        <child>
           <object class="AdwSpinRow" id="recent_playlists_count">
             <property name="title" translatable="true">Number of recent playlists to show</property>
             <property name="subtitle" translatable="true">Sorted by last-modified time, latest first.</property>

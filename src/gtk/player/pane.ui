@@ -195,6 +195,9 @@
     </child>
     <child>
       <object class="EuphonicaPictureStack" id="albumart">
+        <style>
+          <class name="sidebar-shade"/>
+        </style>
         <property name="hexpand">true</property>
       </object>
     </child>
@@ -202,11 +205,20 @@
       <object class="GtkRevealer" id="seekbar_revealer">
         <property name="transition-type">slide-up</property>
         <child>
-          <object class="EuphonicaSeekbar2" id="seekbar">
+          <object class="GtkBox">
             <property name="hexpand">true</property>
-            <style>
-              <class name="sidebar-shade"/>
-            </style>
+            <property name="orientation">1</property>
+            <child>
+              <object class="GtkSeparator"/>
+            </child>
+            <child>
+              <object class="EuphonicaSeekbar2" id="seekbar">
+                <property name="hexpand">true</property>
+                <style>
+                  <class name="sidebar-shade"/>
+                </style>
+              </object>
+            </child>
           </object>
         </child>
       </object>
