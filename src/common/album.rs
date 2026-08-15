@@ -34,6 +34,7 @@ pub struct AlbumInfo {
     pub genres: FxHashSet<String>,
     pub cover: Option<Texture>,
     pub release_date: Option<Date>,
+    pub date_tag: Option<String>,
     pub quality_grade: QualityGrade,
     pub mbid: Option<String>,
 }
@@ -60,6 +61,7 @@ impl AlbumInfo {
             title: title.to_owned(),
             cover: None,
             release_date: None,
+            date_tag: None,
             quality_grade,
             mbid: None,
         }
@@ -76,6 +78,8 @@ impl AlbumInfo {
     /// Get MPD filter expression to find all songs by this album.
     /// Main use is as this album's identifier within MPD's stickers DB.
     /// This avoids the issue of all same-named albums receiving the same stickers.
+    /// Fallback is AlbumArtist + Album + Date, as is the case with myMPD.
+    /// See https://github.com/jcorporation/mpd-stickers/discussions/10.
     pub fn get_filter_expression(&self) -> String {
         let mut q = Query::new();
         if let Some(mbid) = self.mbid.as_deref() {
@@ -85,11 +89,19 @@ impl AlbumInfo {
             );
         } else {
             q.and(
-                Term::Base,
-                self.folder_uri.to_owned(),
+                Term::Tag(tags::ALBUMARTIST.into()),
+                self.albumartist.as_deref().unwrap_or(""),
+            );
+            q.and(
+                Term::Tag(tags::ALBUM.into()),
+                &self.title,
+            );
+            q.and(
+                Term::Tag(tags::DATE.into()),
+                self.date_tag.as_deref().unwrap_or(""),
             );
         }
-        mpd_args_to_string(&q)
+        dbg!(mpd_args_to_string(&q))
     }
 
     /// Add artists from more artist tags, separated from existing ones by simple commas.
@@ -144,6 +156,7 @@ impl Default for AlbumInfo {
             genres: FxHashSet::default(),
             cover: None,
             release_date: None,
+            date_tag: None,
             quality_grade: QualityGrade::Unknown,
             mbid: None,
         }

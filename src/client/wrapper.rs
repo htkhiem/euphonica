@@ -1038,7 +1038,7 @@ impl MpdWrapper {
             self.find_sticker(
                 "filter",
                 String::new(), // empty URI = search all filter expressions
-                Stickers::ALBUM_RATING.into(),
+                Stickers::RATING.into(),
                 &mut |stickers: Vec<(String, String)>| {
                     for (filter_expr, value) in stickers {
                         ratings_map.insert(filter_expr.to_lowercase(), value);

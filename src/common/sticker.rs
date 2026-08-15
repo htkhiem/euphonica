@@ -61,10 +61,6 @@ impl Stickers {
     pub const META_DOC: &'static str = "euphonica:meta:doc";
     pub const META_LAST_MODIFIED: &'static str = "euphonica:meta:lastModified";
     pub const META_PAGE_COUNT: &'static str = "euphonica:meta:pageCount";  // starts from 0
-    // Euphonica-specific album rating sticker (attached to filter expression, not album name).
-    // Distinct from the common "rating" to avoid collisions with artist ratings or future
-    // entity-type-specific rating schemes.
-    pub const ALBUM_RATING: &'static str = "albumRating";
 
     pub fn from_mpd_kv(kvs: Vec<(String, String)>) -> Self {
         let mut res = Self::default();

@@ -271,14 +271,14 @@ impl Library {
                 .set_sticker(
                     "filter",
                     filter_expr,
-                    Stickers::ALBUM_RATING.into(),
+                    Stickers::RATING.into(),
                     score.to_string().into(),
                     StickerSetMode::Set,
                 )
                 .await
         } else {
             self.client()
-                .delete_sticker("filter", filter_expr, Stickers::ALBUM_RATING.into())
+                .delete_sticker("filter", filter_expr, Stickers::RATING.into())
                 .await
         }
     }
