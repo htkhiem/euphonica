@@ -907,24 +907,16 @@ pub fn write_lyrics(song: &SongInfo, lyrics: Option<&Lyrics>) -> Result<(), Erro
     let tx = conn.transaction().map_err(Error::Db)?;
     tx.execute("delete from songs where uri = ?1", params![&song.uri])
         .map_err(Error::Db)?;
-    if let Some(lyrics) = lyrics {
-        tx.execute(
-            "insert into songs (uri, lyrics, synced, last_modified) values (?1,?2,?3,?4)",
-            params![
-                &song.uri,
-                &lyrics.to_string(),
-                lyrics.synced,
-                OffsetDateTime::now_utc()
-            ],
-        )
-        .map_err(Error::Db)?;
-    } else {
-        tx.execute(
-            "insert into songs (uri, lyrics, synced, last_modified) values (?1,?2,?3,?4)",
-            params![&song.uri, "", false, OffsetDateTime::now_utc()],
-        )
-        .map_err(Error::Db)?;
-    }
+    tx.execute(
+        "insert into songs (uri, lyrics, synced, last_modified) values (?1,?2,?3,?4)",
+        params![
+            &song.uri,
+            &lyrics.map_or(String::from(""), |ly| ly.to_string()),
+            lyrics.map_or(false, |ly| ly.synced),
+            OffsetDateTime::now_utc()
+        ],
+    )
+    .map_err(Error::Db)?;
     tx.commit().map_err(Error::Db)?;
     Ok(())
 }
