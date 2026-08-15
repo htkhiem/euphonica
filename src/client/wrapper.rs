@@ -1,5 +1,7 @@
 use async_channel::{Receiver, Sender};
 use asyncified::Asyncified;
+use base64::Engine as _;
+use base64::engine::general_purpose::STANDARD as BASE64;
 use futures::executor;
 use glib::{ThreadPool, clone};
 use gtk::gio::prelude::*;
@@ -15,10 +17,12 @@ use mpd::{
 use mpd::{Query, Status, Term};
 use nohash_hasher::NoHashHasher;
 use rustc_hash::{FxHashMap, FxHashSet};
+use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
 use std::borrow::Cow;
 use std::hash::BuildHasherDefault;
+use std::io::Cursor;
 use std::num::NonZero;
 use std::thread;
 use std::{cell::RefCell, rc::Rc};
@@ -26,7 +30,7 @@ use uuid::Uuid;
 
 use crate::cache::sqlite;
 use crate::client::connection::ImageHandle;
-use crate::common::{AlbumInfo, ArtistInfo, DynamicPlaylist, tags};
+use crate::common::{AlbumInfo, ArtistInfo, DynamicPlaylist, split_genre_tag, tags};
 use crate::utils::settings_manager;
 use crate::{
     common::{Album, Artist, INode, Song, SongInfo, Stickers},
@@ -40,6 +44,9 @@ use super::{BATCH_SIZE, FETCH_LIMIT, StickerSetMode};
 
 static MAX_RETRIES: u32 = 3;
 static MAX_EXAMPLE_ALBUMS_PER_ALBUMARTIST: usize = 3;
+// About as large as one sticker can contain without a "connection reset by peer".
+// Also, even the most minimal metadata doc is already ~2300 base64 chars.
+static META_STICKER_PAGE_SIZE: usize = 4096;
 
 // Thin wrapper around blocking mpd::Clients. It contains two separate client
 // objects connected to the same address, each living on their own std::thread.
@@ -316,7 +323,7 @@ impl MpdWrapper {
         // return an error but as long as that error isn't an "unknown command" one, the sticker DB
         // is enabled.
         if let Err(ClientError::Mpd(MpdError::Server(e))) = self
-            .get_known_stickers("song", String::from("euphonica_sticker_test"))
+            .get_common_stickers("song", String::from("euphonica_sticker_test"))
             .await
             && e.code == MpdErrorCode::UnknownCmd
         {
@@ -432,7 +439,10 @@ impl MpdWrapper {
         }
     }
 
-    pub async fn get_known_stickers(
+    /// Fetch stickers commonly used by other MPD clients, such as myMPD, and parse them into
+    /// a Stickers object.
+    /// This does NOT fetch Euphonica-specific stickers, such as album and artist metadata.
+    pub async fn get_common_stickers(
         &self,
         typ: &'static str,
         uri: String,
@@ -445,7 +455,7 @@ impl MpdWrapper {
         if self.state.stickers_support_level() >= min_lvl {
             let (s, r) = oneshot::channel();
             self.handle_sticker_error(
-                self.foreground(Task::GetKnownStickers(typ, uri, s), r)
+                self.foreground(Task::GetCommonStickers(typ, uri, s), r)
                     .await,
             )
         } else {
@@ -477,6 +487,30 @@ impl MpdWrapper {
         }
     }
 
+    /// Fetch all stickers for a given type/uri and return them as a HashMap.
+    /// Used internally to read paged metadata documents.
+    async fn get_stickers(
+        &self,
+        typ: &'static str,
+        uri: &str,
+        names: Vec<Cow<'static, str>>,
+    ) -> ClientResult<Vec<(String, String)>> {
+        let min_lvl = if typ == "song" {
+            StickersSupportLevel::SongsOnly
+        } else {
+            StickersSupportLevel::All
+        };
+        if self.state.stickers_support_level() >= min_lvl {
+            let (s, r) = oneshot::channel();
+            self.handle_sticker_error(
+                self.foreground(Task::GetStickers(typ, uri.to_string(), names, s), r)
+                    .await,
+            )
+        } else {
+            Err(ClientError::InsufficientStickersSupportLevel)
+        }
+    }
+
     pub async fn delete_sticker(
         &self,
         typ: &'static str,
@@ -492,6 +526,54 @@ impl MpdWrapper {
             let (s, r) = oneshot::channel();
             self.handle_sticker_error(
                 self.foreground(Task::DeleteSticker(typ, uri, name, s), r)
+                    .await,
+            )
+        } else {
+            Err(ClientError::InsufficientStickersSupportLevel)
+        }
+    }
+
+    /// Atomically delete multiple stickers for a given type/uri. All names are deleted in a
+    /// single MPD command list, ensuring atomicity — either all succeed or none do.
+    pub async fn delete_stickers(
+        &self,
+        typ: &'static str,
+        uri: String,
+        names: Vec<Cow<'static, str>>,
+    ) -> ClientResult<()> {
+        let min_lvl = if typ == "song" {
+            StickersSupportLevel::SongsOnly
+        } else {
+            StickersSupportLevel::All
+        };
+        if self.state.stickers_support_level() >= min_lvl {
+            let (s, r) = oneshot::channel();
+            self.handle_sticker_error(
+                self.foreground(Task::DeleteStickers(typ, uri, names, s), r)
+                    .await,
+            )
+        } else {
+            Err(ClientError::InsufficientStickersSupportLevel)
+        }
+    }
+
+    /// Atomically set multiple stickers for a given object. All pairs are written in a single
+    /// MPD command list. SHOULD make it atomic (dunno, need to check with MPD source).
+    pub async fn set_stickers(
+        &self,
+        typ: &'static str,
+        uri: String,
+        names_values: Vec<(Cow<'static, str>, Cow<'static, str>)>,
+    ) -> ClientResult<()> {
+        let min_lvl = if typ == "song" {
+            StickersSupportLevel::SongsOnly
+        } else {
+            StickersSupportLevel::All
+        };
+        if self.state.stickers_support_level() >= min_lvl {
+            let (s, r) = oneshot::channel();
+            self.handle_sticker_error(
+                self.foreground(Task::SetStickers(typ, uri, names_values, s), r)
                     .await,
             )
         } else {
@@ -683,7 +765,7 @@ impl MpdWrapper {
             if fetch_stickers {
                 // Error handling is already performed for us
                 if let Ok(stickers) = self
-                    .get_known_stickers("song", res.get_uri().to_owned())
+                    .get_common_stickers("song", res.get_uri().to_owned())
                     .await
                 {
                     res.set_stickers(stickers);
@@ -871,6 +953,7 @@ impl MpdWrapper {
     pub async fn get_albums_and_albumartists_by_query(
         &self,
         query: Query<'static>,
+        fetch_stickers: bool,
     ) -> ClientResult<(Vec<Album>, Vec<Artist>)> {
         // TODO: batched windowed retrieval
         // Most of the below logic are asyncified to avoid blocking the main UI thread.
@@ -900,7 +983,7 @@ impl MpdWrapper {
                             let mut query = Query::new();
                             query.and(Term::Tag(Cow::Borrowed(tags::ALBUM)), tag);
                             query.and(Term::Tag(Cow::Borrowed(tags::ALBUMARTIST)), key.clone());
-                            all_queries_windows.push((query, mpd::search::Window::from((0, 1))));
+                            all_queries_windows.push((query, Window::from((0, 1))));
                         }
                     }
                 }
@@ -945,11 +1028,44 @@ impl MpdWrapper {
             );
         }
 
+        // Then fetch album ratings.
+        // New scheme: "albumRating" sticker attached to filter expression URIs (unique per album).
+        // Legacy fallback: "rating" sticker attached to album name (collides for same-named albums).
+        let mut ratings_map: FxHashMap<String, String> = FxHashMap::default();
+        let mut legacy_ratings_map: FxHashMap<String, String> = FxHashMap::default();
+        if fetch_stickers {
+            // 1) Fetch new-style ratings (filter-based).
+            self.find_sticker(
+                "filter",
+                String::new(), // empty URI = search all filter expressions
+                Stickers::RATING.into(),
+                &mut |stickers: Vec<(String, String)>| {
+                    for (filter_expr, value) in stickers {
+                        ratings_map.insert(filter_expr.to_lowercase(), value);
+                    }
+                },
+            )
+            .await?;
+            // 2) Legacy fallback: fill in ratings for albums that have no new-style rating.
+            self.find_sticker(
+                "album",
+                String::new(), // empty URI = search all albums
+                Stickers::RATING.into(),
+                &mut |stickers: Vec<(String, String)>| {
+                    for (name, value) in stickers {
+                        legacy_ratings_map.insert(name, value);
+                    }
+                },
+            )
+            .await?;
+        }
+
         // Yet more off thread work
-        let (album_infos, artist_infos) = asyncified
+        let (album_infos_and_ratings, artist_infos) = asyncified
             .call(move |_| {
                 let mut albumartists: FxHashMap<String, ArtistInfo> = FxHashMap::default();
-                let mut albums: Vec<AlbumInfo> = Vec::with_capacity(album_count);
+                let mut album_infos_and_ratings: Vec<(AlbumInfo, Option<String>)> =
+                    Vec::with_capacity(album_count);
 
                 for i in 0..songs.len() {
                     if let Some(album_info) = std::mem::take(&mut songs[i]).into_album_info() {
@@ -963,22 +1079,31 @@ impl MpdWrapper {
                                     artist.to_owned()
                                 });
 
-                            // Note to self: Album genres are parsed by the Song constructor, which runs in a child thread (see MpdClient::foreground).
-                            // However, artist genre parsing requires unioning all those genre sets from their albums. This is currently being done here
-                            // (on the UI thread).
-                            // TODO: move to another thread somehow
                             existing.insert_genres(&album_info.genres);
+
                             // Slack off here (we'll not use all of them anyway; alloc only what's needed)
                             if existing.example_uris.len() < MAX_EXAMPLE_ALBUMS_PER_ALBUMARTIST {
                                 existing.example_uris.push(example_uri.to_owned());
                             }
                         }
-                        albums.push(album_info);
+                        let rating;
+                        if fetch_stickers {
+                            // Prefer new-style filter-based rating; fall back to legacy title-based rating.
+                            // Force case-insensitive comparison for now as MPD mangles the expression string (all terms become uppercase there).
+                            let filter_expr = album_info.get_filter_expression().to_lowercase();
+                            rating = ratings_map
+                                .get(&filter_expr)
+                                .cloned()
+                                .or_else(|| legacy_ratings_map.get(&album_info.title).cloned());
+                        } else {
+                            rating = None;
+                        }
+                        album_infos_and_ratings.push((album_info, rating));
                     }
                 }
 
                 (
-                    albums,
+                    album_infos_and_ratings,
                     albumartists
                         .into_iter()
                         .map(|p| p.1)
@@ -987,7 +1112,16 @@ impl MpdWrapper {
             })
             .await;
         Ok((
-            album_infos.into_iter().map(Album::from).collect(),
+            album_infos_and_ratings
+                .into_iter()
+                .map(|(i, r)| {
+                    let res = Album::from(i);
+                    if let Some(rating) = r {
+                        res.get_stickers().borrow_mut().set_rating(&rating);
+                    }
+                    res
+                })
+                .collect(),
             artist_infos.into_iter().map(Artist::from).collect(),
         ))
     }
@@ -1002,31 +1136,48 @@ impl MpdWrapper {
         Ok(())
     }
 
-    pub async fn get_recent_albums<F>(&self, respond: &mut F) -> ClientResult<()>
-    where
-        F: FnMut(Album),
-    {
+    pub async fn get_recent_albums(&self) -> ClientResult<Vec<Album>> {
         let settings = utils::settings_manager().child("library");
-        // TODO: async this
-        let recent_albums =
-            sqlite::get_last_n_albums(settings.uint("n-recent-albums")).expect("Sqlite DB error");
-        for tup in recent_albums.into_iter() {
-            let mut query = Query::new();
-            query.and(Term::Tag(tags::ALBUM.into()), tup.0);
-            if let Some(artist) = tup.1 {
-                query.and(Term::Tag(tags::ALBUMARTIST.into()), artist);
-            }
-            if let Some(mbid) = tup.2 {
-                query.and(Term::Tag(tags::ALBUM_MBID.into()), mbid);
-            }
-            let (albums, _) = self.get_albums_and_albumartists_by_query(query)
-                .await?;
+        let n = settings.uint("n-recent-albums");
 
-            for album in albums {
-                respond(album)
-            }
-        }
-        Ok(())
+        // Build queries off-thread from SQLite results
+        let asyncified = Asyncified::builder().build_ok(|| ()).await;
+        let queries_windows: Vec<(Query, Window)> = asyncified
+            .call(move |_| {
+                let recent_albums = sqlite::get_last_n_albums(n).expect("Sqlite DB error");
+                recent_albums
+                    .into_iter()
+                    .map(|(album, artist, mbid)| {
+                        let mut query = Query::new();
+                        query.and(Term::Tag(tags::ALBUM.into()), album);
+                        if let Some(a) = artist {
+                            query.and(Term::Tag(tags::ALBUMARTIST.into()), a);
+                        }
+                        if let Some(m) = mbid {
+                            query.and(Term::Tag(tags::ALBUM_MBID.into()), m);
+                        }
+                        (query, Window::from((0, 1)))
+                    })
+                    .collect()
+            })
+            .await;
+
+        let (s, r) = oneshot::channel();
+        Ok(self
+            .foreground(
+                Task::FindMultiple(
+                    queries_windows,
+                    Some(vec![tags::ALBUM, tags::ALBUMARTIST, tags::ALBUM_MBID]),
+                    s,
+                ),
+                r,
+            )
+            .await?
+            .into_iter()
+            .map(|si| si.into_album_info())
+            .filter(|maybe_info| maybe_info.is_some())
+            .map(|maybe_info| maybe_info.unwrap().into())
+            .collect())
     }
 
     /// Alternative to get_songs_by_query that does not wrap SongInfos in GObjects for efficiency
@@ -1087,111 +1238,176 @@ impl MpdWrapper {
         .await
     }
 
-    pub async fn get_artists<F>(&self, use_album_artist: bool, respond: &mut F) -> ClientResult<()>
-    where
-        F: FnMut(Artist),
-    {
-        // Fetching artists is a bit more involved: artist tags usually contain multiple artists.
-        // For the same reason, one artist can appear in multiple tags.
-        // Here we'll reuse the artist parsing code in our SongInfo struct and put parsed
-        // ArtistInfos in a Set to deduplicate them.
-        let tag_type: &'static str = if use_album_artist {
-            tags::ALBUMARTIST
-        } else {
-            tags::ARTIST
-        };
-        let tagtypes_to_load = if use_album_artist {
-            vec![
-                tags::ALBUMARTIST,
-                tags::ALBUMARTISTSORT,
-                tags::ALBUMARTIST_MBID,
-                tags::ALBUM,
-            ]
-        } else {
-            vec![tags::ARTIST, tags::ARTISTSORT, tags::ARTIST_MBID]
-        };
-        let mut already_parsed: FxHashSet<String> = FxHashSet::default();
+    /// Fetch artists by artist tag. Will NOT fetch by albumartist (functionality already moved to get_albums_and_albumartists_by_query).
+    /// This is more complicated than it sounds: we have to extract individual artists from multi-artist tags AND also assign genres to them,
+    /// which themselves are also in composite (multi-genre) tags.
+    /// 1. For each unique Artist tag (which can contain multiple artists), fetch all unique Genre tags (each can contain multiple genres).
+    ///    The same unique multi-artist tag may be present in different songs which in turn may contain different sets of genres.
+    ///    Split & deduplicate all genres for each artist tag.
+    /// 2. For each unique Artist tag, fetch exactly ONE song with that tag so we can extract artistsort and MBID. This should be batched.
+    /// 3. For each of the above songs (each associated with one of the unique artist tags), split into individual artists, enriching
+    ///    existing artist object instances instead if already discovered from previous tags, then union with genres associated with this
+    ///    song/artist tag (resolved in step 1).
+    /// All of the above should be kept off the main thread as much as possible.
+    pub async fn get_artists(&self) -> ClientResult<Vec<Artist>> {
+        let tagtypes_to_load = [tags::ARTIST, tags::ARTISTSORT, tags::ARTIST_MBID];
+
         let (s, r) = oneshot::channel();
-        let mut grouped_vals = self
+        let grouped_vals = self
             .foreground(
-                Task::List(Term::Tag(Cow::Borrowed(tag_type)), Query::new(), None, s),
+                Task::List(
+                    Term::Tag(tags::GENRE.into()),
+                    Query::new(),
+                    Some(tags::ARTIST),
+                    s,
+                ),
                 r,
             )
             .await?;
-        for tag_chunk in std::mem::take(&mut grouped_vals.groups[0].1).chunks(256) {
-            let queries_windows: Vec<(Query, mpd::search::Window)> = tag_chunk
-                .iter()
-                .map(|tag| {
+
+        let asyncified = Asyncified::builder().build_ok(|| ()).await;
+        let (artist_tag_count, chunked_queries_windows, genres): (
+            usize,
+            Vec<Vec<(Query, Window)>>,
+            Vec<FxHashSet<String>>,
+        ) = asyncified
+            .call(move |_| {
+                let mut all_queries_windows: Vec<(Query, mpd::search::Window)> =
+                    Vec::with_capacity(grouped_vals.groups.len());
+                // Same order as the upcoming songs, so there's no need to use a hash table
+                let mut genres = Vec::with_capacity(grouped_vals.groups.len());
+                for (artist_tag, genre_tags) in grouped_vals.groups.into_iter() {
                     let mut query = Query::new();
-                    query.and(Term::Tag(tag_type.into()), tag.to_owned());
-                    (query, mpd::search::Window::from((0, 1)))
-                })
-                .collect();
-            let (s, r) = oneshot::channel();
-            let mut songs = self
-                .foreground(
-                    Task::FindMultiple(queries_windows, Some(tagtypes_to_load.clone()), s),
-                    r,
+                    query.and(Term::Tag(tags::ARTIST.into()), artist_tag.to_owned());
+                    all_queries_windows.push((query, mpd::search::Window::from((0, 1))));
+                    let mut genre_set = FxHashSet::default();
+                    for genre_tag in genre_tags {
+                        for genre in split_genre_tag(&genre_tag) {
+                            let _ = genre_set.insert(genre.to_owned());
+                        }
+                    }
+                    genres.push(genre_set);
+                }
+                // Chunk the queries to avoid timing out on slow servers. The below messy code actually
+                // gives owned chunks without cloning.
+                (
+                    all_queries_windows.len(),
+                    all_queries_windows
+                        .into_iter()
+                        .chunks(256)
+                        .into_iter()
+                        .map(|chunk| chunk.collect())
+                        .collect(),
+                    genres,
                 )
-                .await?;
-            for i in 0..songs.len() {
-                let song = &mut songs[i];
-                // if we're getting album artists we need to long at song.album.artists
-                // instead of just song.artists
-                let artists = if use_album_artist {
-                    song.album
-                        .as_ref()
-                        .map(|a| a.artists.clone())
-                        .unwrap_or_default()
-                } else {
-                    std::mem::take(&mut song.artists)
-                };
-                for artist in artists.into_iter() {
-                    if already_parsed.insert(artist.get_comp_id().to_owned()) {
-                        respond(artist.into());
+            })
+            .await;
+
+        // Now we can fetch song entries chunk by chunk, then zip with genres.
+        // THIS WILL BREAK if the number of returned songs is different from the length of the genres vec.
+        // The above should never happen, since the tags used to look for songs were derived from the songs
+        // in the first place, meaning each search should never return empty-handed.
+        let mut songs: Vec<SongInfo> = Vec::with_capacity(artist_tag_count);
+        for chunk in chunked_queries_windows {
+            let (s, r) = oneshot::channel();
+            songs.append(
+                &mut self
+                    .foreground(
+                        Task::FindMultiple(chunk, Some(tagtypes_to_load.into()), s),
+                        r,
+                    )
+                    .await?,
+            );
+        }
+
+        // Yet more off thread work
+        Ok(asyncified
+            .call(move |_| {
+                let mut res: FxHashMap<String, ArtistInfo> = FxHashMap::default();
+                for (song, genres) in songs.into_iter().zip(genres) {
+                    // Here we're fetching song.artists instead of song.album.artists
+                    for artist in song.artists {
+                        let existing =
+                            res.entry(artist.get_comp_id().to_string())
+                                .or_insert_with(|| {
+                                    // Haven't seen this artist before => push new
+                                    artist
+                                });
+                        existing.insert_genres(&genres);
                     }
                 }
-            }
-        }
-        Ok(())
+                res.into_iter()
+                    .map(|(_, info)| info)
+                    .collect::<Vec<ArtistInfo>>()
+            })
+            .await
+            .into_iter()
+            .map(Artist::from)
+            .collect::<Vec<Artist>>())
     }
 
-    pub async fn get_recent_artists<F>(&self, respond: &F) -> ClientResult<()>
-    where
-        F: Fn(Artist),
-    {
-        let mut already_parsed: FxHashSet<String> = FxHashSet::default();
+    pub async fn get_recent_artists(&self) -> ClientResult<Vec<Artist>> {
         let settings = utils::settings_manager().child("library");
         let n = settings.uint("n-recent-artists");
-        let recent_names = sqlite::get_last_n_artists(n).expect("Sqlite DB error");
-        let mut recent_names_set: FxHashSet<String> = FxHashSet::default();
-        for name in recent_names.iter() {
-            recent_names_set.insert(name.clone());
-        }
-        for name in recent_names.into_iter() {
-            let mut query = Query::new();
-            query.and_with_op(
-                Term::Tag(Cow::Borrowed("artist")),
-                QueryOperation::Contains,
-                name,
-            );
-            let (s, r) = oneshot::channel();
-            let mut songs = self
-                .foreground(Task::Find(query, Window::from((0, 1)), s), r)
-                .await?;
-            if !songs.is_empty() {
-                let artists = std::mem::take(&mut songs[0]).into_artist_infos();
-                for artist in artists.into_iter() {
-                    if recent_names_set.contains(&artist.name)
-                        && already_parsed.insert(artist.get_comp_id().to_owned())
-                    {
-                        respond(artist.into());
+
+        // Build queries off-thread from SQLite results
+        let asyncified = Asyncified::builder().build_ok(|| ()).await;
+        let (queries_windows, recent_names_set): (Vec<(Query, Window)>, FxHashSet<String>) =
+            asyncified
+                .call(move |_| {
+                    let recent_names = sqlite::get_last_n_artists(n).expect("Sqlite DB error");
+                    let recent_names_set: FxHashSet<String> =
+                        recent_names.iter().cloned().collect();
+                    let queries_windows: Vec<(Query, Window)> = recent_names
+                        .into_iter()
+                        .map(|name| {
+                            let mut query = Query::new();
+                            query.and_with_op(
+                                Term::Tag(Cow::Borrowed("artist")),
+                                QueryOperation::Contains,
+                                name,
+                            );
+                            (query, Window::from((0, 1)))
+                        })
+                        .collect();
+                    (queries_windows, recent_names_set)
+                })
+                .await;
+
+        let (s, r) = oneshot::channel();
+        let songs = self
+            .foreground(
+                Task::FindMultiple(
+                    queries_windows,
+                    Some(vec![tags::ARTIST, tags::ARTIST_MBID]),
+                    s,
+                ),
+                r,
+            )
+            .await?;
+
+        // Deduplicate artists by comp_id, filtering to only those whose names
+        // appear in the recent names set.
+        Ok(asyncified
+            .call(move |_| {
+                let mut res = Vec::with_capacity(recent_names_set.len());
+                let mut already_parsed: FxHashSet<String> = FxHashSet::default();
+                for song in songs {
+                    let artists = song.into_artist_infos();
+                    for artist in artists.into_iter() {
+                        if recent_names_set.contains(&artist.name)
+                            && already_parsed.insert(artist.get_comp_id().to_owned())
+                        {
+                            res.push(artist)
+                        }
                     }
                 }
-            }
-        }
-
-        Ok(())
+                res
+            })
+            .await
+            .into_iter()
+            .map(Artist::from)
+            .collect())
     }
 
     pub async fn lsinfo(&self, path: String) -> ClientResult<Vec<INode>> {
@@ -1273,7 +1489,7 @@ impl MpdWrapper {
             if fetch_stickers {
                 // Error handling is already performed for us
                 let maybe_stickers = self
-                    .get_known_stickers("song", song.uri.to_owned())
+                    .get_common_stickers("song", song.uri.to_owned())
                     .await
                     .ok();
                 Ok(Some((song, maybe_stickers)))
@@ -1286,20 +1502,86 @@ impl MpdWrapper {
     }
 
     pub async fn get_recent_songs(&self, n: u32) -> ClientResult<Vec<Song>> {
-        let to_fetch: Vec<(String, OffsetDateTime)> =
-            sqlite::get_last_n_songs(n).expect("Sqlite DB error");
-        let mut res: Vec<Song> = Vec::with_capacity(n as usize);
-        for tup in to_fetch.into_iter() {
-            if let Some(mut song) = self
-                .get_song_by_uri(tup.0, false)
-                .await
-                .map(|opt| opt.map(|pair| pair.0))?
-            {
-                song.last_played = Some(tup.1);
-                res.push(song.into())
+        let asyncified = Asyncified::builder().build_ok(|| ()).await;
+        let (queries_windows, ts): (Vec<(Query, Window)>, Vec<OffsetDateTime>) = asyncified
+            .call(move |_| {
+                let resp = sqlite::get_last_n_songs(n).expect("Sqlite DB error");
+                let ts = resp.iter().map(|(_, ts)| ts.to_owned()).collect();
+                (
+                    resp.into_iter()
+                        .map(|(uri, _ts)| {
+                            let mut q = Query::new();
+                            q.and(Term::File, uri);
+                            (q, Window::from((0, 1)))
+                        })
+                        .collect(),
+                    ts,
+                )
+            })
+            .await;
+
+        let (s, r) = oneshot::channel();
+        self.foreground(
+            Task::FindMultiple(
+                queries_windows,
+                Some(vec![
+                    tags::ALBUM,
+                    tags::ARTIST,
+                    tags::ALBUM_MBID,
+                    tags::ALBUMARTIST, // Needed for cover art fetch :)
+                    tags::ORIGINAL_DATE,
+                ]),
+                s,
+            ),
+            r,
+        )
+        .await?
+        .into_iter()
+        .zip(ts)
+        .map(|(mut si, ts)| {
+            si.last_played = Some(ts);
+            Ok(si.into())
+        })
+        .collect()
+    }
+
+    /// Find all stickers of a given name for a path (recursive URI, or leave empty for other types).
+    /// Returns a list of (name, value) pairs. Uses batched windowed retrieval
+    /// to avoid overwhelming the server.
+    pub async fn find_sticker<F>(
+        &self,
+        typ: &'static str,
+        uri: String,
+        name: Cow<'static, str>,
+        respond: &mut F,
+    ) -> ClientResult<()>
+    where
+        F: FnMut(Vec<(String, String)>),
+    {
+        let mut curr_len: usize = 0;
+        let mut more: bool = true;
+        while more && (curr_len) < FETCH_LIMIT {
+            let (s, r) = oneshot::channel();
+            let stickers = self
+                .background(
+                    Task::FindSticker(
+                        typ,
+                        uri.clone(),
+                        name.clone(),
+                        Window::from((curr_len as u32, (curr_len + BATCH_SIZE) as u32)),
+                        s,
+                    ),
+                    r,
+                )
+                .await?;
+            if !stickers.is_empty() {
+                respond(stickers);
+                curr_len += BATCH_SIZE;
+            } else {
+                more = false;
             }
         }
-        Ok(res)
+        Ok(())
     }
 
     pub async fn find_add(&self, query: Query<'static>) -> ClientResult<()> {
@@ -1393,6 +1675,201 @@ impl MpdWrapper {
         .map_err(|_| ClientError::Internal)?;
         let (s, r) = oneshot::channel();
         self.background(Task::AddMultiple(uris, s), r).await
+    }
+
+    #[inline]
+    fn get_full_key_paged(base: &'static str, page: usize) -> Cow<'static, str> {
+        format!("{}:{}", base, page).into()
+    }
+
+    /// Generate sticker names for the metadata document pages (0..page_count).
+    /// Also includes the page count and last-modified stickers.
+    fn generate_all_meta_sticker_names(page_count: usize) -> Vec<Cow<'static, str>> {
+        (0..page_count)
+            .map(|p| Self::get_full_key_paged(Stickers::META_DOC, p))
+            .chain(std::iter::once({
+                let base = Stickers::META_PAGE_COUNT;
+                base.into()
+            }))
+            .chain(std::iter::once({
+                let base = Stickers::META_LAST_MODIFIED;
+                base.into()
+            }))
+            .collect()
+    }
+
+    /// Get metadata document as backed up to MPD's sticker database. Metadata is stored as
+    /// BSON serialized to a base64 string, split across multiple sticker keys if it exceeds
+    /// 2048 characters per sticker.
+    pub async fn get_meta<T: for<'a> Deserialize<'a>>(
+        &self,
+        typ: &'static str,
+        uri: String,
+    ) -> ClientResult<Option<T>> {
+        // First, fetch only the page count to know how many pages exist
+        let page_count_key: String = Stickers::META_PAGE_COUNT.to_string();
+        let page_count = self
+            .get_sticker(typ, uri.clone(), page_count_key.into())
+            .await?
+            .parse::<usize>()
+            .map_err(|_| ClientError::Parse)?;
+
+        // Generate names for the pages only
+        let page_names: Vec<Cow<'static, str>> = (0..page_count)
+            .map(|p| Self::get_full_key_paged(Stickers::META_DOC, p))
+            .collect();
+        let pages = self.get_stickers(typ, &uri, page_names).await?;
+
+        let mut combined: Vec<u8> = Vec::new();
+        for (_, page) in pages {
+            combined.extend_from_slice(&BASE64.decode(&page).map_err(|_| ClientError::Parse)?);
+        }
+
+        let doc = bson::Document::from_reader(&mut Cursor::new(&combined))
+            .map_err(|_| ClientError::Parse)?;
+        let meta = bson::deserialize_from_document::<T>(doc).map_err(|_| ClientError::Parse)?;
+        Ok(Some(meta))
+    }
+
+    /// Sync metadata document to MPD's sticker database. Other Euphonica clients connected to the same
+    /// server will be able to reuse this metadata document.
+    /// Uses atomic command list to write both the document and last-modified stickers together,
+    /// preventing partial syncs that would leave a document with a stale or missing timestamp.
+    /// Metadata is serialized to BSON then base64-encoded. If the base64 string exceeds 2048
+    /// characters, it is split across multiple sticker keys (euphonica:meta:doc:N).
+    /// A pageCount sticker tracks the number of pages for reconstruction.
+    /// After writing, any excess pages from a previous larger metadata document are cleaned up.
+    pub async fn set_meta<T: Serialize>(
+        &self,
+        typ: &'static str,
+        uri: String,
+        meta: &T,
+        last_modified: OffsetDateTime,
+    ) -> ClientResult<()> {
+        // TODO: Handle this in another thread to avoid blocking UI
+        let b64 = bson::serialize_to_document(meta)
+            .and_then(|res| bson::serialize_to_vec(&res))
+            .and_then(|res| Ok(BASE64.encode(&res)))
+            .map_err(|_| ClientError::Parse)?;
+
+        // Split into 2048-char pages
+        // This works because b64 is all ASCII
+        let pages = b64.as_bytes().chunks(META_STICKER_PAGE_SIZE).into_iter();
+
+        let mut names_values: Vec<(Cow<'static, str>, Cow<'static, str>)> = Vec::new(); // meta pages, plus page count and last-modified
+        let mut new_page_count: usize = 0;
+        for (idx, page) in pages.enumerate() {
+            names_values.push((
+                Self::get_full_key_paged(Stickers::META_DOC, idx),
+                std::str::from_utf8(page)
+                    .map_err(|_| ClientError::Parse)?
+                    .to_owned()
+                    .into(),
+            ));
+            new_page_count += 1;
+        }
+
+        // Write page count
+        names_values.push((
+            {
+                let base = Stickers::META_PAGE_COUNT;
+                base.into()
+            },
+            new_page_count.to_string().into(),
+        ));
+
+        // Write last-modified
+        names_values.push((
+            {
+                let base = Stickers::META_LAST_MODIFIED;
+                base.into()
+            },
+            last_modified.unix_timestamp_nanos().to_string().into(),
+        ));
+
+        // Clean up excess pages from a previous larger metadata document.
+        // Read the old page count BEFORE the write so we don't compare against the new value.
+        // Cleanup itself runs AFTER the write so that if it fails we don't lose data.
+        let uri_for_cleanup = uri.clone();
+        let old_page_count = self
+            .get_sticker(typ, uri_for_cleanup, {
+                let base = Stickers::META_PAGE_COUNT;
+                base.into()
+            })
+            .await
+            .ok()
+            .and_then(|s| s.parse::<usize>().ok());
+
+        // Perform the atomic write
+        self.set_stickers(typ, uri.clone(), names_values).await?;
+
+        if let Some(old_page_count) = old_page_count {
+            if old_page_count > new_page_count {
+                let excess_pages = old_page_count - new_page_count;
+                let excess_start = new_page_count;
+                let names: Vec<Cow<'static, str>> = (excess_start..excess_start + excess_pages)
+                    .map(|p| Self::get_full_key_paged(Stickers::META_DOC, p))
+                    .collect();
+                // Ignore errors during cleanup (shouldn't affect metadata coherence).
+                let _ = self.delete_stickers(typ, uri.clone(), names).await;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Get the last-modified time of the backed-up metadata doc. If no metadata had been backed up,
+    /// this returns None.
+    pub async fn get_meta_last_modified(
+        &self,
+        typ: &'static str,
+        uri: String,
+    ) -> ClientResult<Option<OffsetDateTime>> {
+        match self
+            .get_sticker(typ, uri, {
+                let base = Stickers::META_LAST_MODIFIED;
+                base.into()
+            })
+            .await
+        {
+            Ok(unix_ts) => Ok(Some(
+                OffsetDateTime::from_unix_timestamp_nanos(
+                    unix_ts.parse::<i128>().map_err(|_| ClientError::Parse)?,
+                )
+                .map_err(|_| ClientError::Parse)?,
+            )),
+            Err(e) => {
+                if matches!(e, ClientError::InsufficientStickersSupportLevel) {
+                    Err(e)
+                } else {
+                    Ok(None)
+                }
+            }
+        }
+    }
+
+    /// Clear all metadata stickers for a given type/uri.
+    /// Reads the current page count, then atomically deletes all document pages,
+    /// the page count sticker, and the last-modified sticker.
+    pub async fn clear_meta(&self, typ: &'static str, uri: String) -> ClientResult<()> {
+        // Read the current page count to know how many pages to delete
+        let page_count_key: String = Stickers::META_PAGE_COUNT.to_owned();
+        let page_count = self
+            .get_sticker(typ, uri.clone(), page_count_key.into())
+            .await?;
+        let page_count = page_count
+            .parse::<usize>()
+            .map_err(|_| ClientError::Parse)?;
+
+        if page_count == 0 {
+            return Ok(());
+        }
+
+        // Generate all sticker names: doc pages + page count + last-modified
+        let names = Self::generate_all_meta_sticker_names(page_count);
+
+        // Atomically delete all of them
+        self.delete_stickers(typ, uri, names).await
     }
 }
 

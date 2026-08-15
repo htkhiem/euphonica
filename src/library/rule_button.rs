@@ -359,15 +359,15 @@ impl RuleButton {
             Rule::Sticker(obj_type, key, sop, text) => {
                 rule_type.set_selected(match obj_type {
                     StickerObjectType::Album => match key.as_str() {
-                        Stickers::RATING_KEY => 1,
+                        Stickers::RATING => 1,
                         _ => unimplemented!(),
                     },
                     StickerObjectType::Song => match key.as_str() {
-                        Stickers::RATING_KEY => 0,
-                        Stickers::LAST_PLAYED_KEY => 4,
-                        Stickers::PLAY_COUNT_KEY => 5,
-                        Stickers::LAST_SKIPPED_KEY => 6,
-                        Stickers::SKIP_COUNT_KEY => 7,
+                        Stickers::RATING => 0,
+                        Stickers::LAST_PLAYED => 4,
+                        Stickers::PLAY_COUNT => 5,
+                        Stickers::LAST_SKIPPED => 6,
+                        Stickers::SKIP_COUNT => 7,
                         _ => unimplemented!(),
                     },
                     _ => unimplemented!(),
@@ -375,7 +375,7 @@ impl RuleButton {
                 res.imp().on_rule_type_changed();
                 // We use either LHS or RHS depending on the rule type (to sound natural)
                 match key.as_str() {
-                    Stickers::LAST_PLAYED_KEY | Stickers::LAST_SKIPPED_KEY => {
+                    Stickers::LAST_PLAYED | Stickers::LAST_SKIPPED => {
                         // Right now there's no way to remember which unit was selected,
                         // so if day count is divisible by 7, use "weeks".
                         let days = text.parse::<u64>().unwrap() / 86400;
@@ -387,7 +387,7 @@ impl RuleButton {
                             op.set_selected(0);
                         }
                     }
-                    Stickers::RATING_KEY => {
+                    Stickers::RATING => {
                         op.set_selected(sop.numeric_model_index().unwrap());
                         imp.rhs
                             .set_text(&format!("{:.1}", text.parse::<f32>().unwrap() / 2.0));
@@ -456,7 +456,7 @@ impl RuleButton {
                     );
                     Some(self.get_numeric_sticker_rule(
                         StickerObjectType::Song,
-                        Stickers::RATING_KEY,
+                        Stickers::RATING,
                         internal_val,
                     ))
                 }
@@ -467,7 +467,7 @@ impl RuleButton {
                     );
                     Some(self.get_numeric_sticker_rule(
                         StickerObjectType::Album,
-                        Stickers::RATING_KEY,
+                        Stickers::RATING,
                         internal_val,
                     ))
                 }
@@ -503,7 +503,7 @@ impl RuleButton {
                     let secs = mul * self.imp().lhs.text().parse::<i64>().unwrap();
                     Some(Rule::Sticker(
                         StickerObjectType::Song,
-                        Stickers::LAST_PLAYED_KEY.to_string(),
+                        Stickers::LAST_PLAYED.to_string(),
                         StickerOperation::IntGreaterThan,
                         secs.to_string(),
                     ))
@@ -519,7 +519,7 @@ impl RuleButton {
                     let secs = mul * self.imp().lhs.text().parse::<i64>().unwrap();
                     Some(Rule::Sticker(
                         StickerObjectType::Song,
-                        Stickers::LAST_SKIPPED_KEY.to_string(),
+                        Stickers::LAST_SKIPPED.to_string(),
                         StickerOperation::IntGreaterThan,
                         secs.to_string(),
                     ))
@@ -531,7 +531,7 @@ impl RuleButton {
                     );
                     Some(self.get_numeric_sticker_rule(
                         StickerObjectType::Song,
-                        Stickers::PLAY_COUNT_KEY,
+                        Stickers::PLAY_COUNT,
                         internal_val,
                     ))
                 }
@@ -542,7 +542,7 @@ impl RuleButton {
                     );
                     Some(self.get_numeric_sticker_rule(
                         StickerObjectType::Song,
-                        Stickers::SKIP_COUNT_KEY,
+                        Stickers::SKIP_COUNT,
                         internal_val,
                     ))
                 }

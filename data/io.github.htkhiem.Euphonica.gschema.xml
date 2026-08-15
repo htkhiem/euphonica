@@ -90,6 +90,10 @@
 		<key name="mpd-download-album-art" type="b">
 			<default>true</default>
 		</key>
+		<key name="mpd-backup-metadata" type="b">
+			<default>true</default>
+			<summary>Attempt to back up album and artist metadata docs to MPD's sticker DB</summary>
+		</key>
 
 		<key name="mpd-visualizer-pcm-source" enum='io.github.htkhiem.Euphonica.pcmsource'>
 			<default>'pipewire'</default>

@@ -278,6 +278,13 @@ impl HasImage for ArtistMeta {
     }
 }
 
+#[derive(Debug)]
+pub enum MetaSource {
+    Local,
+    Mpd,
+    External
+}
+
 pub struct Lyrics {
     pub lines: Vec<(f32, String)>, // timestamp (in seconds) and corresponding line. If not synced, set timestamp to 0.
     pub synced: bool,

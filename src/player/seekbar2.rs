@@ -1,4 +1,4 @@
-use crate::{common::QualityGrade, utils};
+use crate::{common::QualityGrade, player::PlaybackState, utils::{self, sync_animation}};
 use adw::prelude::*;
 use glib::{Object, ParamSpec, ParamSpecDouble, ParamSpecObject, SignalHandlerId, WeakRef, clone};
 use gtk::{CompositeTemplate, gdk, glib, graphene, gsk, subclass::prelude::*};
@@ -56,9 +56,10 @@ mod imp {
             // Disconnect player signal handlers to prevent callbacks
             // from running on disposed widgets
             if let Some(player) = self.player.upgrade()
-                && let Some(id) = self.state_id.take() {
-                    player.disconnect(id);
-                }
+                && let Some(id) = self.state_id.take()
+            {
+                player.disconnect(id);
+            }
         }
 
         fn constructed(&self) {
@@ -405,7 +406,13 @@ impl Seekbar {
 
     pub fn animate(&self) {
         if let Some(anim) = self.imp().wave_anim.get() {
-            super::sync_animation(anim, super::player_is_playing(&self.imp().player));
+            sync_animation(
+                anim,
+                self.imp()
+                    .player
+                    .upgrade()
+                    .is_some_and(|player| player.state() == PlaybackState::Playing),
+            );
         }
     }
 }

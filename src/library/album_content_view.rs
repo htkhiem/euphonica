@@ -1,7 +1,9 @@
 use super::{Library, Tag, TagsSection, artist_tag_button::ArtistTagButton};
 use crate::common::FadingScrolledWindow;
 use crate::meta_providers::models::AlbumMeta;
-use crate::meta_providers::models::Wiki;
+use crate::meta_providers::models::MetaSource;
+use crate::utils::format_datetime_local_tz;
+use crate::utils::settings_manager;
 use crate::{
     cache::{Cache, CacheState, Error as CacheError, placeholders::EMPTY_ALBUM_STRING},
     client::{ClientState, state::StickersSupportLevel},
@@ -10,18 +12,19 @@ use crate::{
     utils::{format_secs_as_duration, tokio_runtime},
     window::EuphonicaWindow,
 };
-use adw::subclass::prelude::*;
 use adw::prelude::AdwDialogExt;
+use adw::prelude::*;
+use adw::subclass::prelude::*;
 use ashpd::desktop::file_chooser::SelectedFiles;
 use derivative::Derivative;
 use gio::{ActionEntry, Menu, SimpleActionGroup};
 use glib::{Binding, SignalHandlerId, WeakRef, clone, closure_local};
-use gtk::{CompositeTemplate, gdk, gio, glib, prelude::*};
+use gtk::{CompositeTemplate, gdk, gio, glib};
 use std::{
     cell::{OnceCell, RefCell},
     rc::Rc,
 };
-use time::{Date, format_description};
+use time::{Date, OffsetDateTime, format_description};
 
 mod imp {
 
@@ -34,6 +37,10 @@ mod imp {
         #[template_child]
         pub cover: TemplateChild<ImageStack>,
 
+        #[template_child]
+        pub backup_meta_stack: TemplateChild<gtk::Stack>,
+        #[template_child]
+        pub backup_meta_btn: TemplateChild<gtk::Button>,
         #[template_child]
         pub title: TemplateChild<gtk::Label>,
         #[template_child]
@@ -60,6 +67,9 @@ mod imp {
         pub wiki_link: TemplateChild<gtk::LinkButton>,
         #[template_child]
         pub wiki_attrib: TemplateChild<gtk::Label>,
+
+        #[template_child]
+        pub meta_last_updated: TemplateChild<gtk::Label>,
 
         // Metadata editor dialog
         #[template_child]
@@ -113,6 +123,9 @@ mod imp {
         #[template_child]
         pub content: TemplateChild<gtk::ListBox>,
 
+        #[template_child]
+        pub overwrite_backup_dialog: TemplateChild<adw::AlertDialog>,
+
         #[derivative(Default(value = "gio::ListStore::new::<Song>()"))]
         pub song_list: gio::ListStore,
         pub library: WeakRef<Library>,
@@ -124,6 +137,9 @@ mod imp {
         pub cover_cleared_id: RefCell<Option<SignalHandlerId>>,
         pub cache: OnceCell<Rc<Cache>>,
         pub meta: RefCell<Option<AlbumMeta>>,
+        // For sync conflict resolution
+        pub old_last_modified: RefCell<Option<OffsetDateTime>>,
+        pub new_last_modified: RefCell<Option<OffsetDateTime>>, // pub backup_handle: RefCell<Option<glib::JoinHandle<()>>>,
     }
 
     #[glib::object_subclass]
@@ -262,18 +278,32 @@ mod imp {
                             new_meta.mbid = Some(mbid.to_string());
                         }
                         // Might want to make this async?
-                        if let Err(e) = cache.set_album_meta(album.get_info(), &new_meta) {
-                            dbg!(e);
+                        match cache.set_album_meta(album.get_info(), &new_meta) {
+                            Ok(ts) => {
+                                let _ = this.meta.replace(Some(new_meta));
+                                let _ = this.new_last_modified.replace(Some(dbg!(ts)));
+                                if this.obj().maybe_show_backup_metadata_btn(true)
+                                    && settings_manager()
+                                        .child("client")
+                                        .boolean("mpd-backup-metadata")
+                                {
+                                    // Refresh UI & optionally auto sync
+                                    glib::spawn_future_local(clone!(
+                                        #[weak]
+                                        this,
+                                        async move {
+                                            this.obj().backup_meta(false).await;
+                                            this.obj().update_meta(false).await;
+                                        }
+                                    ));
+                                }
+                            }
+                            Err(e) => {
+                                dbg!(e);
+                                this.obj().maybe_show_backup_metadata_btn(false);
+                            }
                         }
                         this.edit_metadata_dialog.get().force_close();
-                        // Refresh UI too
-                        glib::spawn_future_local(clone!(
-                            #[weak]
-                            this,
-                            async move {
-                                this.obj().update_meta(false).await;
-                            }
-                        ));
                     }
                 }
             ));
@@ -318,10 +348,24 @@ mod imp {
                         this.wiki_attrib_field.set_text("");
                     }
                     // Initialise MBID field
-                    this.mbid_field
-                        .set_text(meta.mbid.as_deref().unwrap_or(""));
-                    this.edit_metadata_dialog.get()
+                    this.mbid_field.set_text(meta.mbid.as_deref().unwrap_or(""));
+                    this.edit_metadata_dialog
+                        .get()
                         .present(this.window.upgrade().as_ref());
+                }
+            ));
+
+            self.backup_meta_btn.connect_clicked(clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |_| {
+                    glib::spawn_future_local(clone!(
+                        #[weak]
+                        this,
+                        async move {
+                            this.obj().backup_meta(false).await;
+                        }
+                    ));
                 }
             ));
 
@@ -345,9 +389,9 @@ mod imp {
                             this.wiki_attrib_field.set_text("");
                         }
                         // Initialise MBID field
-                        this.mbid_field
-                            .set_text(meta.mbid.as_deref().unwrap_or(""));
-                        this.edit_metadata_dialog.get()
+                        this.mbid_field.set_text(meta.mbid.as_deref().unwrap_or(""));
+                        this.edit_metadata_dialog
+                            .get()
                             .present(this.window.upgrade().as_ref());
                     }
                 ))
@@ -625,25 +669,104 @@ impl AlbumContentView {
         }
     }
 
-    pub fn update_wiki(&self, wiki: Option<&Wiki>) {
-        if let Some(wiki) = wiki {
-            let wiki_text = self.imp().wiki_text.get();
-            let wiki_link = self.imp().wiki_link.get();
-            let wiki_attrib = self.imp().wiki_attrib.get();
-            self.imp().wiki_stack.show_content();
-            wiki_text.set_label(&wiki.content);
-            if let Some(url) = wiki.url.as_ref() {
-                wiki_link.set_visible(true);
-                wiki_link.set_uri(url);
-            } else {
-                wiki_link.set_visible(false);
-                wiki_link.set_uri("");
+    async fn backup_meta_internal(&self, overwrite: bool) -> Result<(), CacheError> {
+        let meta;
+        let old_last_modified;
+        let new_last_modified;
+        let album;
+        {
+            meta = self.imp().meta.borrow().clone(); // only this is costly, the rest are pretty lightweight
+            old_last_modified = self.imp().old_last_modified.borrow().clone();
+            new_last_modified = self.imp().new_last_modified.borrow().clone();
+            album = self.imp().album.borrow().clone();
+        }
+        if let (
+            Some(cache),
+            Some(meta),
+            Some(old_last_modified),
+            Some(new_last_modified),
+            Some(album),
+        ) = (
+            self.imp().cache.get(),
+            meta,
+            old_last_modified,
+            new_last_modified,
+            album,
+        ) {
+            let stack = self.imp().backup_meta_stack.get();
+            if stack.visible_child_name().is_some_and(|n| &n != "spinner") {
+                stack.set_visible_child_name("spinner");
             }
-            wiki_attrib.set_visible(true);
-            wiki_attrib.set_label(&wiki.attribution);
-            self.imp().wiki_stack.show_content();
+
+            let res = cache
+                .backup_album_meta(
+                    album.get_info(),
+                    &meta,
+                    old_last_modified,
+                    overwrite,
+                    new_last_modified,
+                )
+                .await;
+
+            if res.is_ok() {
+                stack.set_visible(false);
+                self.imp()
+                    .old_last_modified
+                    .replace(Some(new_last_modified));
+            } else if stack.visible_child_name().is_some_and(|n| &n != "button") {
+                stack.set_visible_child_name("button");
+            }
+
+            res
         } else {
-            self.imp().wiki_stack.show_placeholder();
+            Ok(())
+        }
+    }
+
+    async fn backup_meta(&self, silent: bool) {
+        match self.backup_meta_internal(false).await {
+            Ok(_) => {}
+            Err(CacheError::AlreadyExists) => {
+                if !silent {
+                    let dialog = self.imp().overwrite_backup_dialog.get();
+                    if dialog.choose_future(Some(self)).await == "overwrite" {
+                        if let Err(e) = self.backup_meta_internal(true).await {
+                            dbg!(e);
+                        }
+                    }
+                } else if let Some(win) = self.imp().window.upgrade() {
+                    win.send_simple_toast("Couldn't back up metadata: MPD side is newer", 3);
+                }
+            }
+            Err(e) => {
+                if let Some(win) = self.imp().window.upgrade() {
+                    win.send_simple_toast(&format!("Couldn't back up metadata: {}", e.message()), 3);
+                }
+            }
+        }
+    }
+
+    // Returns metadata backup availability flag (but false if visible = false).
+    // Used to determine whether we should attempt auto sync.
+    fn maybe_show_backup_metadata_btn(&self, visible: bool) -> bool {
+        let btn_stack = self.imp().backup_meta_stack.get();
+        if visible {
+            let available = self
+                .imp()
+                .library
+                .upgrade()
+                .map_or(false, |lib| lib.metadata_backup_available());
+            btn_stack.set_visible(available);
+            if btn_stack
+                .visible_child_name()
+                .is_some_and(|n| &n != "button")
+            {
+                btn_stack.set_visible_child_name("button");
+            }
+            available
+        } else {
+            btn_stack.set_visible(false);
+            false
         }
     }
 
@@ -654,6 +777,7 @@ impl AlbumContentView {
             if album.get_title().is_empty() {
                 self.imp().wiki_stack.show_placeholder();
                 self.imp().tags_widget.remove_all(false);
+                self.imp().meta_last_updated.set_visible(false);
             } else {
                 self.imp().wiki_stack.show_spinner();
                 self.imp().tags_widget.remove_all(true);
@@ -669,10 +793,45 @@ impl AlbumContentView {
                     )
                     .await;
                 match res {
-                    Ok(Some(meta)) => {
+                    Ok(Some((meta, last_modified, src))) => {
                         let _ = self.imp().meta.replace(Some(meta.clone()));
                         // Handle wiki
-                        self.update_wiki(meta.wiki.as_ref());
+                        {
+                            let this = &self;
+                            let wiki = meta.wiki.as_ref();
+                            if let Some(wiki) = wiki {
+                                let wiki_text = this.imp().wiki_text.get();
+                                let wiki_link = this.imp().wiki_link.get();
+                                let wiki_attrib = this.imp().wiki_attrib.get();
+                                this.imp().wiki_stack.show_content();
+                                wiki_text.set_label(&wiki.content);
+                                if let Some(url) = wiki.url.as_ref() {
+                                    wiki_link.set_visible(true);
+                                    wiki_link.set_uri(url);
+                                } else {
+                                    wiki_link.set_visible(false);
+                                    wiki_link.set_uri("");
+                                }
+                                wiki_attrib.set_visible(true);
+                                wiki_attrib.set_label(&wiki.attribution);
+                                this.imp().wiki_stack.show_content();
+                            } else {
+                                this.imp().wiki_stack.show_placeholder();
+                            }
+
+                            // Metadata sync
+                            let _ = self.imp().old_last_modified.replace(Some(last_modified));
+                            let _ = self.imp().new_last_modified.replace(Some(last_modified));
+                            let should_backup = self
+                                .maybe_show_backup_metadata_btn(!matches!(src, MetaSource::Mpd));
+                            if should_backup
+                                && settings_manager()
+                                    .child("client")
+                                    .boolean("mpd-backup-metadata")
+                            {
+                                self.backup_meta(true).await;
+                            }
+                        };
 
                         // Handle MBID
                         if let Some(mbid) = meta.mbid.as_deref() {
@@ -704,14 +863,20 @@ impl AlbumContentView {
                         } else {
                             self.imp().tags_widget.show_placeholder();
                         }
+
+                        // Show last-modified
+                        self.imp().meta_last_updated.set_visible(true);
+                        self.imp().meta_last_updated.set_label(&format!("Last updated {}", format_datetime_local_tz(last_modified)));
                     }
                     Ok(None) => {
                         self.imp().wiki_stack.show_placeholder();
                         self.imp().tags_widget.show_placeholder();
+                        self.imp().meta_last_updated.set_visible(false);
                     }
                     Err(e) => {
                         self.imp().wiki_stack.show_placeholder();
                         self.imp().tags_widget.show_placeholder();
+                        self.imp().meta_last_updated.set_visible(false);
                         dbg!(e);
                     }
                 }
@@ -750,9 +915,11 @@ impl AlbumContentView {
         self.imp().tags_widget.set_window(window);
         self.imp().window.set(Some(window));
         // Set up AddToPlaylistButton with ListBox row selection.
-        self.imp()
-            .add_to_playlist
-            .bind_listbox(library, &self.imp().content, &self.imp().song_list);
+        self.imp().add_to_playlist.bind_listbox(
+            library,
+            &self.imp().content,
+            &self.imp().song_list,
+        );
         self.imp().library.set(Some(library));
         self.imp()
             .cover_set_id
@@ -968,7 +1135,8 @@ impl AlbumContentView {
         if !genres.is_empty() {
             let genres_stack = self.imp().genres_stack.get();
             let window = self.imp().window.upgrade().unwrap();
-            genres.iter()
+            genres
+                .iter()
                 .map(|genre| {
                     TagButton::new(
                         &Tag::new(genre.clone(), None, None, false, false),
@@ -1118,5 +1286,6 @@ impl AlbumContentView {
         self.imp().song_list.remove_all();
         self.imp().content_stack.show_placeholder();
         self.imp().wiki_stack.show_placeholder();
+        let _ = self.imp().old_last_modified.take();
     }
 }

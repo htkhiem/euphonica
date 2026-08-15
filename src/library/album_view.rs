@@ -664,7 +664,6 @@ impl LazyInit for AlbumView {
                     this.imp().initializing.set(false);
                     // Now populate the stickers and genres
                     let _ = futures::join!(
-                        library.init_album_stickers(),
                         library.init_genres(),
                         library.refresh_album_tags()
                     );

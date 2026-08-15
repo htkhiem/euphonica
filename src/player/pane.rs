@@ -21,7 +21,7 @@ use crate::{
     client::{ClientState, state::StickersSupportLevel},
     common::{PictureStack, Rating, Song, paintables::RotatingPaintable},
     player::seekbar2::Seekbar,
-    utils::{self, settings_manager},
+    utils::{self, settings_manager, sync_animation},
 };
 
 use super::{MpdOutput, OutputControls, PlaybackControls, PlaybackState, Player, VolumeKnob};
@@ -875,8 +875,12 @@ impl PlayerPane {
 
     fn sync_album_art_animation(&self) {
         let should_rotate = self.imp().albumart_paintable.circular()
-            && super::player_is_playing(&self.imp().player);
-        super::sync_animation(self.imp().albumart_animation.get().unwrap(), should_rotate);
+            && self
+                .imp()
+                .player
+                .upgrade()
+                .is_some_and(|player| player.state() == PlaybackState::Playing);
+        sync_animation(self.imp().albumart_animation.get().unwrap(), should_rotate);
     }
 }
 

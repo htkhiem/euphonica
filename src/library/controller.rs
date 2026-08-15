@@ -1,6 +1,9 @@
 use crate::{
     cache::{Cache, sqlite},
-    client::{Error as ClientError, MpdWrapper, Result as ClientResult, StickerSetMode},
+    client::{
+        Error as ClientError, MpdWrapper, Result as ClientResult, StickerSetMode,
+        state::StickersSupportLevel,
+    },
     common::{Album, Artist, DynamicPlaylist, INode, Song, SongInfo, Stickers, tags},
     library::Tag,
     player::Player,
@@ -262,23 +265,20 @@ impl Library {
     }
 
     pub async fn rate_album(&self, album: &Album, score: Option<i8>) -> ClientResult<()> {
+        let filter_expr = album.get_info().get_filter_expression();
         if let Some(score) = score {
             self.client()
                 .set_sticker(
-                    tags::ALBUM,
-                    album.get_title().to_owned(),
-                    Stickers::RATING_KEY.into(),
+                    "filter",
+                    filter_expr,
+                    Stickers::RATING.into(),
                     score.to_string().into(),
                     StickerSetMode::Set,
                 )
                 .await
         } else {
             self.client()
-                .delete_sticker(
-                    tags::ALBUM,
-                    album.get_title().to_owned(),
-                    Stickers::RATING_KEY.into(),
-                )
+                .delete_sticker("filter", filter_expr, Stickers::RATING.into())
                 .await
         }
     }
@@ -640,35 +640,11 @@ impl Library {
 
             let model = self.imp().recent_albums.clone();
             model.remove_all();
-            self.client()
-                .get_recent_albums(&mut |album| {
-                    model.append(&album);
-                })
-                .await?;
-            for album in self.imp().recent_albums.iter::<Album>() {
-                // Right now the only sticker we use is album rating
-                let album = album.unwrap();
-                if let Ok(rating_str) = self
-                    .client()
-                    .get_sticker("album", album.get_title().into(), "rating".into())
-                    .await
-                {
-                    {
-                        let mut stickers = album.get_stickers().borrow_mut();
-                        stickers.set_rating(&rating_str);
-                        // End borrow
-                    }
-                    album.notify_stickers_changed();
-                }
-            }
+            model.extend_from_slice(&self.client().get_recent_albums().await?);
 
             let model = self.imp().recent_artists.clone();
             model.remove_all();
-            self.client()
-                .get_recent_artists(&|artist| {
-                    model.append(&artist);
-                })
-                .await?;
+            model.extend_from_slice(&self.client().get_recent_artists().await?);
         }
         Ok(())
     }
@@ -704,9 +680,9 @@ impl Library {
         Ok(())
     }
 
-    /// Fetch basic info for all albums to display them in a grid. Will also fetch tags as stored locally.
+    /// Fetch basic info for all albums to display them in a grid. Will also fetch tags as stored locally
+    /// and album rating stickers.
     /// During the process we'll also produce albumartists as a side effect.
-    /// Note: this function no longer fetches stickers s.t. we can return the grid to the user earlier.
     pub async fn init_albums_and_albumartists(&self) -> ClientResult<()> {
         if !self.imp().albums_and_albumartists_initialized.get() {
             self.imp().albums_and_albumartists_initialized.set(true);
@@ -714,38 +690,12 @@ impl Library {
             album_model.remove_all();
             let albumartist_model = self.imp().albumartists.clone();
             albumartist_model.remove_all();
-            let (albums, artists) = self.client()
-                .get_albums_and_albumartists_by_query(
-                    Query::new()
-                )
+            let (albums, artists) = self
+                .client()
+                .get_albums_and_albumartists_by_query(Query::new(), true)
                 .await?;
             album_model.extend_from_slice(&albums);
             albumartist_model.extend_from_slice(&artists);
-        }
-        Ok(())
-    }
-
-    /// Fetch known album stickers for those discovered by init_albums.
-    pub async fn init_album_stickers(&self) -> ClientResult<()> {
-        if self.imp().albums_and_albumartists_initialized.get() {
-            for album in self.imp().albums.iter::<Album>() {
-                // Right now the only sticker we use is album rating
-                let album = album.unwrap();
-                if let Ok(rating_str) = self
-                    .client()
-                    .get_sticker("album", album.get_title().into(), "rating".into())
-                    .await
-                {
-                    {
-                        let mut stickers = album.get_stickers().borrow_mut();
-                        stickers.set_rating(&rating_str);
-                        // End borrow
-                    }
-                    album.notify_stickers_changed();
-                }
-            }
-        } else {
-            eprintln!("WARNING: init_album_stickers called before init_albums. This is a no-op.");
         }
         Ok(())
     }
@@ -774,12 +724,7 @@ impl Library {
             // init the artists list
             let artist_model = self.imp().artists.clone();
             artist_model.remove_all();
-
-            self.client()
-                .get_artists(false, &mut |artist| {
-                    artist_model.append(&artist);
-                })
-                .await?;
+            artist_model.extend_from_slice(&self.client().get_artists().await?);
         }
         Ok(())
     }
@@ -958,5 +903,12 @@ impl Library {
         }
 
         Ok((songs, years))
+    }
+
+    /// Whether the currently-connected client supports metadata backup in some form.
+    /// Right now we only support MPD. Metadata backup in MPD is done via the stickers DB, which is an optional feature
+    /// and non-track stickers are only supported from MPD 0.24 onwards.
+    pub fn metadata_backup_available(&self) -> bool {
+        self.client().get_client_state().stickers_support_level() >= StickersSupportLevel::All
     }
 }

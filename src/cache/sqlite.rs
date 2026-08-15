@@ -531,7 +531,34 @@ impl TryFrom<&Row<'_>> for LyricsRow {
     }
 }
 
-pub fn find_album_meta(
+pub fn get_album_meta_last_modified(
+    title: &str,
+    mbid: Option<&str>,
+    artist: Option<&str>,
+) -> Result<Option<OffsetDateTime>, Error> {
+    let query: Result<OffsetDateTime, SqliteError>;
+    let conn = SQLITE_POOL.get().unwrap();
+    if let Some(mbid) = mbid {
+        query = conn
+            .prepare("select last_modified from albums where mbid = ?1")
+            .unwrap()
+            .query_row(params![mbid], |r| r.get(0));
+    } else if let (title, Some(artist)) = (title, artist) {
+        query = conn
+            .prepare("select last_modified from albums where title = ?1 and artist = ?2")
+            .unwrap()
+            .query_row(params![title, artist], |r| r.get(0));
+    } else {
+        return Ok(None);
+    }
+    match query {
+        Ok(dt) => Ok(Some(dt)),
+        Err(SqliteError::QueryReturnedNoRows) => Ok(None),
+        Err(e) => Err(Error::Db(e)),
+    }
+}
+
+pub fn get_album_meta(
     title: &str,
     mbid: Option<&str>,
     artist: Option<&str>,
@@ -561,7 +588,7 @@ pub fn find_album_meta(
     }
 }
 
-pub fn find_artist_meta(name: &str, mbid: Option<&str>) -> Result<Option<ArtistMeta>, Error> {
+pub fn get_artist_meta(name: &str, mbid: Option<&str>) -> Result<Option<ArtistMeta>, Error> {
     let query: Result<ArtistMetaRow, SqliteError>;
     let conn = SQLITE_POOL.get().unwrap();
     if let Some(mbid) = mbid {
@@ -585,19 +612,44 @@ pub fn find_artist_meta(name: &str, mbid: Option<&str>) -> Result<Option<ArtistM
     }
 }
 
-pub fn write_album_meta(album: &AlbumInfo, meta: &AlbumMeta) -> Result<(), Error> {
+pub fn get_artist_meta_last_modified(name: &str, mbid: Option<&str>) -> Result<Option<OffsetDateTime>, Error> {
+    let query: Result<OffsetDateTime, SqliteError>;
     let conn = SQLITE_POOL.get().unwrap();
+    if let Some(mbid) = mbid {
+        query = conn
+            .prepare("select last_modified from artists where mbid = ?1")
+            .unwrap()
+            .query_row(params![mbid], |r| r.get(0));
+    } else {
+        query = conn
+            .prepare("select last_modified from artists where name = ?1")
+            .unwrap()
+            .query_row(params![name], |r| r.get(0));
+    }
+    match query {
+        Ok(dt) => {
+            Ok(Some(dt))
+        }
+        Err(SqliteError::QueryReturnedNoRows) => Ok(None),
+        Err(e) => Err(Error::Db(e)),
+    }
+}
+
+pub fn write_album_meta(album: &AlbumInfo, meta: &AlbumMeta, last_modified: Option<OffsetDateTime>) -> Result<OffsetDateTime, Error> {
+    let conn = SQLITE_POOL.get().unwrap();
+    let last_modified = last_modified.unwrap_or(OffsetDateTime::now_utc());  // sqlite CURRENT_TIMESTAMP also defaults to UTC
     conn.execute(
         "insert into albums (folder_uri, mbid, title, artist, last_modified, data)
-        values (?1,?2,?3,?4,CURRENT_TIMESTAMP,?5)
-        ON CONFLICT(mbid) DO UPDATE SET title=?3, artist=?4, data=?5, last_modified=CURRENT_TIMESTAMP
-        ON CONFLICT(title, artist) DO UPDATE SET mbid=?2, data=?5, last_modified=CURRENT_TIMESTAMP
+        values (?1,?2,?3,?4,?5,?6)
+        ON CONFLICT(mbid) DO UPDATE SET title=?3, artist=?4, data=?6, last_modified=?5
+        ON CONFLICT(title, artist) DO UPDATE SET mbid=?2, data=?6, last_modified=?5
         ",
         params![
             &album.folder_uri,
             &album.mbid,
             &album.title,
             &album.get_artist_tag(),
+            last_modified,
             bson::serialize_to_vec(
                 &bson
                     ::serialize_to_document(meta)
@@ -611,20 +663,22 @@ pub fn write_album_meta(album: &AlbumInfo, meta: &AlbumMeta) -> Result<(), Error
         &meta.tags,
         TagsInsertMode::DelsertMetaSupplied,
     )?;
-    Ok(())
+    Ok(last_modified)
 }
 
-pub fn write_artist_meta(artist: &ArtistInfo, meta: &ArtistMeta) -> Result<(), Error> {
+pub fn write_artist_meta(artist: &ArtistInfo, meta: &ArtistMeta) -> Result<OffsetDateTime, Error> {
     let conn = SQLITE_POOL.get().unwrap();
+    let ts = OffsetDateTime::now_utc();
     conn.execute(
         "insert into artists (name, mbid, last_modified, data)
-        values (?1,?2,CURRENT_TIMESTAMP,?3)
-        ON CONFLICT(mbid) DO UPDATE SET name=?1, data=?3, last_modified=CURRENT_TIMESTAMP
-        ON CONFLICT(name) DO UPDATE SET mbid=?2, data=?3, last_modified=CURRENT_TIMESTAMP
+        values (?1,?2,?3,?4)
+        ON CONFLICT(mbid) DO UPDATE SET name=?1, data=?4, last_modified=?3
+        ON CONFLICT(name) DO UPDATE SET mbid=?2, data=?4, last_modified=?3
         ",
         params![
             &artist.name,
             &artist.mbid,
+            ts.format(&time::format_description::well_known::Rfc3339).map_err(|_| Error::Filesystem)?,
             bson::serialize_to_vec(&bson::serialize_to_document(meta).map_err(Error::ObjectToDoc)?)
                 .map_err(Error::DocToBytes)?
         ],
@@ -636,7 +690,7 @@ pub fn write_artist_meta(artist: &ArtistInfo, meta: &ArtistMeta) -> Result<(), E
         &meta.tags,
         TagsInsertMode::DelsertMetaSupplied,
     )?;
-    Ok(())
+    Ok(ts)
 }
 
 pub fn write_album_tags(folder_uri: &str, tags: &[Tag], mode: TagsInsertMode) -> Result<(), Error> {
@@ -769,10 +823,7 @@ pub fn find_artist_tags(name: &str) -> Result<Vec<Tag>, Error> {
     Ok(tags)
 }
 
-pub fn artist_has_any_of_tags(
-    name: &str,
-    query_tags: &FxHashSet<String>,
-) -> Result<bool, Error> {
+pub fn artist_has_any_of_tags(name: &str, query_tags: &FxHashSet<String>) -> Result<bool, Error> {
     let conn = SQLITE_POOL.get().unwrap();
     let mut query = conn
         .prepare("select tag from artist_tags where name = ?1")
@@ -811,7 +862,9 @@ pub async fn distinct_album_tags() -> Result<Vec<Tag>, Error> {
 pub async fn distinct_artist_tags() -> Result<Vec<Tag>, Error> {
     let conn = SQLITE_POOL.get().unwrap();
     let mut query = conn
-        .prepare("select tag, sum(count) as count from artist_tags group by tag order by count desc")
+        .prepare(
+            "select tag, sum(count) as count from artist_tags group by tag order by count desc",
+        )
         .unwrap();
     let tags: Vec<Tag> = query
         .query_map(params![], |row| {
@@ -854,24 +907,16 @@ pub fn write_lyrics(song: &SongInfo, lyrics: Option<&Lyrics>) -> Result<(), Erro
     let tx = conn.transaction().map_err(Error::Db)?;
     tx.execute("delete from songs where uri = ?1", params![&song.uri])
         .map_err(Error::Db)?;
-    if let Some(lyrics) = lyrics {
-        tx.execute(
-            "insert into songs (uri, lyrics, synced, last_modified) values (?1,?2,?3,?4)",
-            params![
-                &song.uri,
-                &lyrics.to_string(),
-                lyrics.synced,
-                OffsetDateTime::now_utc()
-            ],
-        )
-        .map_err(Error::Db)?;
-    } else {
-        tx.execute(
-            "insert into songs (uri, lyrics, synced, last_modified) values (?1,?2,?3,?4)",
-            params![&song.uri, "", false, OffsetDateTime::now_utc()],
-        )
-        .map_err(Error::Db)?;
-    }
+    tx.execute(
+        "insert into songs (uri, lyrics, synced, last_modified) values (?1,?2,?3,?4)",
+        params![
+            &song.uri,
+            &lyrics.map_or(String::from(""), |ly| ly.to_string()),
+            lyrics.map_or(false, |ly| ly.synced),
+            OffsetDateTime::now_utc()
+        ],
+    )
+    .map_err(Error::Db)?;
     tx.commit().map_err(Error::Db)?;
     Ok(())
 }

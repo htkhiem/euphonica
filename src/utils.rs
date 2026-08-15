@@ -26,6 +26,7 @@ use time::error::IndeterminateOffset;
 use time::format_description::{OwnedFormatItem, parse_owned};
 use tokio::runtime::Runtime;
 use uuid::Uuid;
+use adw::prelude::*;
 
 static APP_CACHE_PATH: Lazy<PathBuf> = Lazy::new(|| {
     let mut res = glib::user_cache_dir();
@@ -603,5 +604,29 @@ pub fn get_time_ago_desc(past_ts: i64) -> String {
         format!("{mins}m ago")
     } else {
         "just now".to_string()
+    }
+}
+
+
+/// Serialise MPD argument types into string in their MPD protocol (sans escaping).
+pub fn mpd_args_to_string<T: mpd::ToArguments>(args: T) -> String {
+    let mut output = Vec::<String>::new();
+    args.to_arguments::<_, ()>(&mut |arg| {
+            output.push(arg.to_string());
+            Ok(())
+        })
+        .unwrap();
+    output.join(" ")
+}
+
+pub fn sync_animation(animation: &adw::TimedAnimation, should_run: bool) {
+    if should_run {
+        match animation.state() {
+            adw::AnimationState::Idle | adw::AnimationState::Finished => animation.play(),
+            adw::AnimationState::Paused => animation.resume(),
+            _ => {}
+        }
+    } else if animation.state() == adw::AnimationState::Playing {
+        animation.pause();
     }
 }

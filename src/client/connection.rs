@@ -159,6 +159,7 @@ pub enum Error {
     NotConnected,
     InsufficientStickersSupportLevel, // any better name for this? not a native speaker
     PlaylistNotEnabled,
+    Parse
 }
 
 pub type Result<T> = result::Result<T, Error>;
@@ -210,12 +211,21 @@ pub enum Task {
         Cow<'static, str>,
         Responder<String>,
     ),
-    GetKnownStickers(
+    GetCommonStickers(
         /// Type
         &'static str,
         /// URI
         String,
         Responder<Stickers>,
+    ),
+    GetStickers(
+        /// Type
+        &'static str,
+        /// URI
+        String,
+        /// Sticker names to fetch (empty = fetch all)
+        Vec<Cow<'static, str>>,
+        Responder<Vec<(String, String)>>,
     ),
     SetSticker(
         /// Type
@@ -230,6 +240,15 @@ pub enum Task {
         StickerSetMode,
         Responder<()>,
     ),
+    SetStickers(
+        /// Type
+        &'static str,
+        /// URI
+        String,
+        /// (name, value) pairs to set atomically
+        Vec<(Cow<'static, str>, Cow<'static, str>)>,
+        Responder<()>,
+    ),
     DeleteSticker(
         /// Type
         &'static str,
@@ -239,20 +258,25 @@ pub enum Task {
         Cow<'static, str>,
         Responder<()>,
     ),
-    // FindStickerOp(
-    //     /// Type
-    //     &'static str,
-    //     /// Base URI
-    //     String,
-    //     /// Name (LHS)
-    //     Cow<'static, str>,
-    //     /// Operator
-    //     &'static str,
-    //     /// Value (RHS)
-    //     Cow<'static, str>,
-    //     Window,
-    //     Responder<Vec<String>>,
-    // ),
+    DeleteStickers(
+        /// Type
+        &'static str,
+        /// URI
+        String,
+        /// Sticker names to delete
+        Vec<Cow<'static, str>>,
+        Responder<()>,
+    ),
+    FindSticker(
+        /// Type (e.g. "album")
+        &'static str,
+        /// URI (empty string = all URIs)
+        String,
+        /// Sticker name (e.g. "rating")
+        Cow<'static, str>,
+        Window,
+        Responder<Vec<(String, String)>>,
+    ),
     GetPlaylists(Responder<Vec<INodeInfo>>),
     LoadPlaylist(String, Responder<()>),
     SaveQueueAsPlaylist(
@@ -496,8 +520,14 @@ impl Connection {
         let version = client.version;
         self.client.replace(client);
 
-        // Reset retry counter upon successful connection.
-        self.retries_left = self.max_retries;
+        // Do NOT reset retry counter here.
+        // Malformed commands may cause connection-closed-by-peer issues,
+        // after which a reconnection will always succeed due to there being
+        // no actual network issue.
+        // The auto retry loop will then attempt that command again, resulting
+        // in an infinite loop.
+        // As such, the retry counter shall only be reset after any successful
+        // command, not instantly after a successful reconnection.
 
         Ok(version)
     }
@@ -525,6 +555,8 @@ impl Connection {
                 }) {
                 Ok(res) => {
                     final_res = Ok(res);
+                    // Reset counter here instead of fn connect() (see note in old spot)
+                    self.retries_left = self.max_retries;
                     break;
                 }
                 Err(e) => match e {
@@ -788,7 +820,7 @@ impl Connection {
         for clause in sticker_clauses.into_iter() {
             let mut set = FxHashSet::default();
             match clause.1.as_str() {
-                Stickers::LAST_PLAYED_KEY | Stickers::LAST_SKIPPED_KEY => {
+                Stickers::LAST_PLAYED | Stickers::LAST_SKIPPED => {
                     // Special case: treat RHS as relative to current time
                     for uri in self.get_uris_by_sticker(
                         clause.0,
@@ -918,10 +950,19 @@ impl Connection {
                     Task::GetSticker(typ, uri, name, resp) => {
                         self.respond_with_client(|c| c.sticker(typ, &uri, &name), resp)
                     }
-                    Task::GetKnownStickers(typ, uri, resp) => self.respond_with_client(
-                        |c| c.stickers(typ, &uri).map(Stickers::from_mpd_kv),
-                        resp,
-                    ),
+                    Task::GetCommonStickers(typ, uri, resp) => {
+                        self.respond_with_client(
+                            |c| c.get_stickers(typ, &uri, Stickers::COMMON_NAMES).map(Stickers::from_mpd_kv),
+                            resp,
+                        )
+                    }
+                    Task::GetStickers(typ, uri, names, resp) => {
+                        let name_refs: Vec<&str> = names.iter().map(|s| s.as_ref()).collect();
+                        self.respond_with_client(
+                            |c| c.get_stickers(typ, &uri, &name_refs),
+                            resp,
+                        )
+                    }
                     Task::SetSticker(typ, uri, name, val, mode, resp) => self.respond_with_client(
                         |c| match mode {
                             StickerSetMode::Inc => c.inc_sticker(typ, &uri, &name, &val),
@@ -930,14 +971,31 @@ impl Connection {
                         },
                         resp,
                     ),
+                    Task::SetStickers(typ, uri, names_values, resp) => {
+                        let pairs: Vec<(&str, &str)> = names_values
+                            .iter()
+                            .map(|(name, val)| (name.as_ref(), val.as_ref()))
+                            .collect();
+                        self.respond_with_client(
+                            |c| c.set_stickers(typ, &uri, &pairs),
+                            resp,
+                        )
+                    }
                     Task::DeleteSticker(typ, uri, name, resp) => {
                         self.respond_with_client(|c| c.delete_sticker(typ, &uri, &name), resp)
                     }
-                    // Task::FindStickerOp(typ, base_uri, name, op, value, window, resp) => self
-                    //     .respond_with_client(
-                    //         |c| c.find_sticker_op(typ, &base_uri, &name, op, &value, window),
-                    //         resp,
-                    //     ),
+                    Task::DeleteStickers(typ, uri, names, resp) => {
+                        let name_refs: Vec<&str> = names.iter().map(|s| s.as_ref()).collect();
+                        self.respond_with_client(
+                            |c| c.delete_stickers(typ, &uri, &name_refs),
+                            resp,
+                        )
+                    }
+                    Task::FindSticker(typ, uri, name, window, resp) => self
+                        .respond_with_client(
+                            |c| c.find_sticker(typ, &uri, &name, window),
+                            resp,
+                        ),
                     Task::GetPlaylists(resp) => self.respond_with_client(
                         |c| {
                             c.playlists().map(|playlists| {

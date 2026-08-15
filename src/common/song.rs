@@ -451,7 +451,7 @@ impl From<mpd::song::Song> for SongInfo {
             // TODO: Find a way to detect classical works
             artists = parse_mb_artist_tag(artist_str)
                 .iter()
-                .map(|s| ArtistInfo::new(s, None, false))
+                .map(|s| ArtistInfo::new(s, None, false, false))
                 .collect();
         } else {
             artists = Vec::with_capacity(0);
@@ -496,6 +496,7 @@ impl From<mpd::song::Song> for SongInfo {
         // available in the listed order.
         let mut original_date: Option<Date> = None;
         let mut date: Option<Date> = None;
+        let mut date_tag: Option<String> = None;
 
         // Search tags vector for additional fields we can use.
         // Again we're using iter() here to avoid cloning everything.
@@ -575,6 +576,7 @@ impl From<mpd::song::Song> for SongInfo {
                 }
                 tags::DATE => {
                     date = parse_date(val.as_ref());
+                    date_tag = Some(val);
                 }
                 tags::TRACK => {
                     if let Ok(idx) = val.parse::<i64>() {
@@ -636,6 +638,7 @@ impl From<mpd::song::Song> for SongInfo {
             album.albumsort = albumsort;
             album.albumartistsort = albumartistsort;
             album.release_date = res.release_date;
+            album.date_tag = date_tag;
             if !genre_tags.is_empty() {
                 album.add_genres_from_tags(&genre_tags);
             }
