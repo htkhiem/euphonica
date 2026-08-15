@@ -59,9 +59,9 @@
 		
 		<child>
 			<object class="GtkLabel" id="name">
-				<property name="wrap">true</property>
+				<property name="wrap">false</property>
 				<property name="ellipsize">3</property>
-				<property name="lines">2</property>
+				<property name="lines">1</property>
 				<style>
 					<class name="caption-heading"/>
 				</style>
