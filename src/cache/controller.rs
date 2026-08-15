@@ -702,7 +702,7 @@ impl Cache {
                                 info.mbid = mbid;
                                 // Use mpd_ts such that future comparisons between this local copy and the MPD sticker version
                                 // will be exactly equal (2c).
-                                sqlite::write_album_meta(&info, &to_local, mpd_ts)
+                                sqlite::write_album_meta(&info, &to_local, mpd_ts, true)
                             })
                             .await
                         {
@@ -753,7 +753,7 @@ impl Cache {
                 .get_album_meta(album.clone(), None, window)
                 .await
             {
-                let ts = sqlite::write_album_meta(album, &meta, None).map_err(Error::Sqlite)?;
+                let ts = sqlite::write_album_meta(album, &meta, None, true).map_err(Error::Sqlite)?;
                 Ok(Some((meta, ts, models::MetaSource::External)))
             } else {
                 // Push an empty AlbumMeta to block further calls for this album.
@@ -761,7 +761,7 @@ impl Cache {
                     "No album meta could be found for {}. Pushing empty document...",
                     &album.folder_uri
                 );
-                sqlite::write_album_meta(album, &models::AlbumMeta::from_key(album), None)
+                sqlite::write_album_meta(album, &models::AlbumMeta::from_key(album), None, false)
                     .map_err(Error::Sqlite)?;
                 Ok(None)
             }
@@ -810,8 +810,9 @@ impl Cache {
         &self,
         album: &AlbumInfo,
         meta: &models::AlbumMeta,
+        update_tags: bool
     ) -> Result<OffsetDateTime> {
-        sqlite::write_album_meta(album, meta, None).map_err(Error::Sqlite)
+        sqlite::write_album_meta(album, meta, None, update_tags).map_err(Error::Sqlite)
     }
 
     pub fn set_album_tags(&self, folder_uri: &str, tags: &[models::Tag]) -> Result<()> {
@@ -852,7 +853,7 @@ impl Cache {
                 .get_artist_meta(artist.clone(), None, window)
                 .await
             {
-                let ts = sqlite::write_artist_meta(artist, &meta).map_err(Error::Sqlite)?;
+                let ts = sqlite::write_artist_meta(artist, &meta, true).map_err(Error::Sqlite)?;
                 Ok(Some((meta, ts, models::MetaSource::External)))
             } else {
                 // Push an empty ArtistMeta to block further calls for this artist.
@@ -860,7 +861,7 @@ impl Cache {
                     "No artist meta could be found for {}. Pushing empty document...",
                     &artist.name
                 );
-                sqlite::write_artist_meta(artist, &models::ArtistMeta::from_key(artist))
+                sqlite::write_artist_meta(artist, &models::ArtistMeta::from_key(artist), false)
                     .map_err(Error::Sqlite)?;
                 Ok(None)
             }
@@ -953,7 +954,7 @@ impl Cache {
                         let artist = artist.to_owned();
                         if let Err(e) = self
                             .local
-                            .call(move |_| sqlite::write_artist_meta(&artist, &to_local))
+                            .call(move |_| sqlite::write_artist_meta(&artist, &to_local, true))
                             .await
                         {
                             dbg!(e);
@@ -982,8 +983,9 @@ impl Cache {
         &self,
         artist: &ArtistInfo,
         meta: &models::ArtistMeta,
+        update_tags: bool
     ) -> Result<OffsetDateTime> {
-        sqlite::write_artist_meta(artist, meta).map_err(Error::Sqlite)
+        sqlite::write_artist_meta(artist, meta, update_tags).map_err(Error::Sqlite)
     }
 
     pub fn set_artist_tags(&self, name: &str, tags: &[models::Tag]) -> Result<()> {

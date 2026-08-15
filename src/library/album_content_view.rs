@@ -279,7 +279,7 @@ mod imp {
                             new_meta.mbid = Some(mbid.to_string());
                         }
                         // Might want to make this async?
-                        match cache.set_album_meta(album.get_info(), &new_meta) {
+                        match cache.set_album_meta(album.get_info(), &new_meta, false) {
                             Ok(ts) => {
                                 let _ = this.meta.replace(Some(new_meta));
                                 let _ = this.new_last_modified.replace(Some(dbg!(ts)));

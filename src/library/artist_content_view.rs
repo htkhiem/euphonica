@@ -292,7 +292,7 @@ mod imp {
                         new_meta.bio = Some(bio);
 
                         // Might want to make this async?
-                        if let Err(e) = cache.set_artist_meta(artist.get_info(), &new_meta) {
+                        if let Err(e) = cache.set_artist_meta(artist.get_info(), &new_meta, false) {
                             dbg!(e);
                         }
 

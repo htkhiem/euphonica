@@ -158,7 +158,7 @@
           </child>
           <child>
             <object class="GtkButton" id="refetch_lyrics">
-              <property name="label" translate="true">Search for lyrics</property>
+              <property name="label" translatable="true">Search for lyrics</property>
               <property name="visible">false</property>
               <property name="hexpand">true</property>
               <style>

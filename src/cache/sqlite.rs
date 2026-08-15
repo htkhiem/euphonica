@@ -636,7 +636,7 @@ pub fn get_artist_meta_last_modified(name: &str, mbid: Option<&str>) -> Result<O
     }
 }
 
-pub fn write_album_meta(album: &AlbumInfo, meta: &AlbumMeta, last_modified: Option<OffsetDateTime>) -> Result<OffsetDateTime, Error> {
+pub fn write_album_meta(album: &AlbumInfo, meta: &AlbumMeta, last_modified: Option<OffsetDateTime>, update_tags: bool) -> Result<OffsetDateTime, Error> {
     let conn = SQLITE_POOL.get().unwrap();
     let last_modified = last_modified.unwrap_or(OffsetDateTime::now_utc());  // sqlite CURRENT_TIMESTAMP also defaults to UTC
     conn.execute(
@@ -659,15 +659,19 @@ pub fn write_album_meta(album: &AlbumInfo, meta: &AlbumMeta, last_modified: Opti
         ]
     ).map_err(Error::Db)?;
     // When populating tag lists with metadata-supplied tags, take care not to remove user-set tags.
-    write_album_tags(
-        &album.folder_uri,
-        &meta.tags,
-        TagsInsertMode::DelsertMetaSupplied,
-    )?;
+    // Also, when saving user edits to the doc, don't overwrite the tags table.
+    if update_tags {
+        write_album_tags(
+            &album.folder_uri,
+            &meta.tags,
+            TagsInsertMode::DelsertMetaSupplied,
+        )?;
+    }
+    
     Ok(last_modified)
 }
 
-pub fn write_artist_meta(artist: &ArtistInfo, meta: &ArtistMeta) -> Result<OffsetDateTime, Error> {
+pub fn write_artist_meta(artist: &ArtistInfo, meta: &ArtistMeta, update_tags: bool) -> Result<OffsetDateTime, Error> {
     let conn = SQLITE_POOL.get().unwrap();
     let ts = OffsetDateTime::now_utc();
     conn.execute(
@@ -686,11 +690,13 @@ pub fn write_artist_meta(artist: &ArtistInfo, meta: &ArtistMeta) -> Result<Offse
     )
     .map_err(Error::Db)?;
     // When populating tag lists with metadata-supplied tags, take care not to remove user-set tags.
-    write_artist_tags(
-        &artist.name,
-        &meta.tags,
-        TagsInsertMode::DelsertMetaSupplied,
-    )?;
+    if update_tags {
+        write_artist_tags(
+            &artist.name,
+            &meta.tags,
+            TagsInsertMode::DelsertMetaSupplied,
+        )?;
+    }
     Ok(ts)
 }
 
