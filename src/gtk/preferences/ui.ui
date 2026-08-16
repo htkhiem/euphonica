@@ -9,6 +9,26 @@
       <object class="AdwPreferencesGroup">
         <property name="title" translatable="true">General</property>
         <child>
+          <object class="AdwComboRow" id="startup_view">
+            <property name="title" translatable="true">On startup, show</property>
+            <property name="model">
+              <object class="GtkStringList">
+                <items>
+                  <item translatable="true">Last-opened view</item>
+                  <item translatable="true">Recents</item>
+                  <item translatable="true">Albums</item>
+                  <item translatable="true">Artists</item>
+                  <item translatable="true">Folders</item>
+                  <item translatable="true">Playlists</item>
+                  <item translatable="true">Dynamic Playlists</item>
+                  <item translatable="true">Queue</item>
+                </items>
+              </object>
+            </property>
+            <property name="selected">1</property>
+          </object>
+        </child>
+        <child>
           <object class="AdwSpinRow" id="max_columns">
             <property name="title" translatable="true">Maximum number of grid columns</property>
             <property name="subtitle" translatable="true">Higher settings will impact performance.</property>

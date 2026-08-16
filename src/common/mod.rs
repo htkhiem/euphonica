@@ -27,6 +27,7 @@ pub use genre::split_genre_tag;
 pub use content_stack::ContentStack;
 pub use content_view::ContentView;
 pub use dynamic_playlist::DynamicPlaylist;
+use gtk::glib;
 pub use image_stack::ImageStack;
 pub use inode::{INode, INodeType};
 pub use marquee::Marquee;
@@ -51,3 +52,83 @@ pub enum ImageState {
 
 // For use with GridViews.
 pub static TEXTURE_LOAD_DELAY_MS: core::time::Duration = core::time::Duration::from_millis(50);
+
+#[derive(Default, Clone, Copy, Debug, glib::Enum, glib::Variant, Eq, PartialEq)]
+#[enum_type(name = "EuphonicaView")]
+pub enum View {
+    #[default]
+    Recents,
+    Albums,
+    Artists,
+    Folders,
+    Playlists,
+    DynamicPlaylists,
+    Queue,
+    Last  // special value, not a view
+}
+
+impl TryFrom<&str> for View {
+    type Error = ();
+    /// For mapping from GSettings
+    fn try_from(s: &str) -> Result<Self, Self::Error> {
+        match s {
+            "recent" => Ok(Self::Recents),
+            "albums" => Ok(Self::Albums),
+            "artists" => Ok(Self::Artists),
+            "folders" => Ok(Self::Folders),
+            "playlists" => Ok(Self::Playlists),
+            "dyn-playlists" => Ok(Self::DynamicPlaylists),
+            "queue" => Ok(Self::Queue),
+            "last" => Ok(Self::Last),
+            _ => Err(()),
+        }
+    }
+}
+
+impl TryFrom<u32> for View {
+    type Error = ();
+    /// For mapping from UI selection
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        match value {
+            1 => Ok(Self::Recents),
+            2 => Ok(Self::Albums),
+            3 => Ok(Self::Artists),
+            4 => Ok(Self::Folders),
+            5 => Ok(Self::Playlists),
+            6 => Ok(Self::DynamicPlaylists),
+            7 => Ok(Self::Queue),
+            0 => Ok(Self::Last),
+            _ => Err(()),
+        }
+    }
+}
+
+impl View {
+    /// For setting into GSettings
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Recents => "recents",
+            Self::Albums => "albums",
+            Self::Artists => "artists",
+            Self::Folders => "folders",
+            Self::Playlists => "playlists",
+            Self::DynamicPlaylists => "dyn-playlists",
+            Self::Queue => "queue",
+            Self::Last => "last"
+        }
+    }
+
+    /// For mapping to UI menu selection
+    pub fn as_idx(&self) -> u32 {
+        match self {
+            Self::Recents => 1,
+            Self::Albums => 2,
+            Self::Artists => 3,
+            Self::Folders => 4,
+            Self::Playlists => 5,
+            Self::DynamicPlaylists => 6,
+            Self::Queue => 7,
+            Self::Last => 0
+        }
+    }
+}

@@ -19,10 +19,16 @@
  */
 
 use crate::{
-    application::EuphonicaApplication, client::{ClientState, ConnectionState, Result as ClientResult}, common::{Album, Artist, INode, ThemeSelector, paintables::FadePaintable}, library::{
+    application::EuphonicaApplication,
+    client::{ClientState, ConnectionState, Result as ClientResult},
+    common::{Album, Artist, INode, ThemeSelector, View, paintables::FadePaintable},
+    library::{
         AlbumView, ArtistContentView, ArtistView, DynamicPlaylistEditorView, DynamicPlaylistView,
         FolderView, PlaylistView, RecentView,
-    }, player::{Player, PlayerBar, QueueView}, sidebar::Sidebar, utils::{self, LazyInit, SearchableView, settings_manager},
+    },
+    player::{Player, PlayerBar, QueueView},
+    sidebar::Sidebar,
+    utils::{self, LazyInit, SearchableView, settings_manager},
 };
 use adw::{ColorScheme, StyleManager, prelude::*, subclass::prelude::*};
 use auto_palette::{ImageData, Palette, color::RGB};
@@ -159,6 +165,8 @@ pub enum WindowMessage {
 }
 
 mod imp {
+    use crate::common::View;
+
     use super::*;
 
     #[derive(Debug, Default, Properties, gtk::CompositeTemplate)]
@@ -1591,7 +1599,7 @@ impl EuphonicaWindow {
                 "playlists" => {
                     imp.playlist_view.trigger_search();
                 }
-                "dynamic_playlists" => {
+                "dyn-playlists" => {
                     imp.dyn_playlist_view.trigger_search();
                 }
                 "queue" => {
@@ -1643,7 +1651,7 @@ impl EuphonicaWindow {
 
             imp.dyn_playlist_view
                 .search_bar()
-                .set_key_capture_widget((curr_child == "dynamic_playlists").then_some(self));
+                .set_key_capture_widget((curr_child == "dyn-playlists").then_some(self));
 
             imp.playlist_view
                 .search_bar()
@@ -1706,7 +1714,7 @@ impl EuphonicaWindow {
     }
 
     fn maybe_get_dyn_playlist_editor(&self) -> Option<DynamicPlaylistEditorView> {
-        self.is_in_view("dynamic_playlists")
+        self.is_in_view("dyn-playlists")
             .then(|| self.imp().dyn_playlist_view.maybe_get_editor())
             .flatten()
     }
@@ -1803,7 +1811,7 @@ impl EuphonicaWindow {
             .activate(move |this: &Self, _, _| this.switch_to_view("folders"))
             .build();
         let view_dyn_playlists_action = gio::ActionEntry::builder("view-dynamic-playlists")
-            .activate(move |this: &Self, _, _| this.switch_to_view("dynamic_playlists"))
+            .activate(move |this: &Self, _, _| this.switch_to_view("dyn-playlists"))
             .build();
         let view_playlists_action = gio::ActionEntry::builder("view-playlists")
             .activate(move |this: &Self, _, _| this.switch_to_view("playlists"))
@@ -1841,7 +1849,7 @@ impl EuphonicaWindow {
             view_playlists_action,
             view_queue_action,
             save_action,
-            search_current_view_action
+            search_current_view_action,
         ]);
 
         // To skip having to deal with widget focus we'll define all the actions at the app level.
@@ -2064,19 +2072,26 @@ impl EuphonicaWindow {
         self.update_background_css_classes();
     }
 
+    pub fn save_state(&self) {
+        let size = self.default_size();
+        let width = size.0;
+        let height = size.1;
+        let settings = utils::settings_manager();
+        let state = settings.child("state");
+        state
+            .set_int("last-window-width", width)
+            .expect("Unable to store last-window-width");
+        state
+            .set_int("last-window-height", height)
+            .expect("Unable to stop last-window-height");
+        if let Some(visible_child_name) = self.imp().stack.visible_child_name() {
+            let _ = state.set_enum("last-view", View::try_from(visible_child_name.as_str()).unwrap().as_idx() as i32);
+        }
+    }
+
     fn setup_signals(&self) {
         self.connect_close_request(move |window| {
-            let size = window.default_size();
-            let width = size.0;
-            let height = size.1;
-            let settings = utils::settings_manager();
-            let state = settings.child("state");
-            state
-                .set_int("last-window-width", width)
-                .expect("Unable to store last-window-width");
-            state
-                .set_int("last-window-height", height)
-                .expect("Unable to stop last-window-height");
+            window.save_state();
 
             // Stop everything
             // Tick callback for resizing detection

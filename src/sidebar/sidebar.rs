@@ -4,7 +4,7 @@ use gtk::{CompositeTemplate, glib, prelude::*};
 use std::cell::Cell;
 
 use crate::{
-    application::EuphonicaApplication, client::state::StickersSupportLevel, common::INode, utils,
+    application::EuphonicaApplication, client::state::StickersSupportLevel, common::{INode, View}, utils,
     window::EuphonicaWindow,
 };
 
@@ -111,13 +111,12 @@ impl Sidebar {
 
     pub fn setup(&self, win: &EuphonicaWindow, app: &EuphonicaApplication) {
         let settings = utils::settings_manager().child("ui");
+        
         let stack = win.get_stack();
         let split_view = win.get_split_view();
         let player = app.get_player();
         let library = app.get_library();
         let client_state = app.get_client().get_client_state();
-        // Set default view. TODO: remember last view
-        stack.set_visible_child_name("recent");
         stack
             .bind_property("visible-child-name", self, "showing-queue-view")
             .transform_to(|_, name: String| Some(name == "queue"))
@@ -286,7 +285,7 @@ impl Sidebar {
             move |btn| {
                 if btn.is_active() {
                     dyn_playlist_view.pop();
-                    stack.set_visible_child_name("dynamic_playlists");
+                    stack.set_visible_child_name("dyn-playlists");
                 }
             }
         ));
@@ -323,9 +322,9 @@ impl Sidebar {
                                 dyn_playlist_view.on_playlist_clicked(&playlist);
                                 if stack
                                     .visible_child_name()
-                                    .is_none_or(|name| name.as_str() != "dynamic_playlists")
+                                    .is_none_or(|name| name.as_str() != "dyn-playlists")
                                 {
-                                    stack.set_visible_child_name("dynamic_playlists");
+                                    stack.set_visible_child_name("dyn-playlists");
                                 }
                                 split_view.set_show_sidebar(!split_view.is_collapsed());
                             }
@@ -426,6 +425,16 @@ impl Sidebar {
             .transform_to(|_, size: u32| Some(size.to_string()))
             .sync_create()
             .build();
+        // Set startup view.
+        // If playlists or dynamic playlists were selected as startup view or was the last
+        // view but are now not available, that view will still be displayed at first but will
+        // be empty & can't be navigated back to once moved away.
+        let state = utils::settings_manager().child("state");
+        let mut view_to_show = View::try_from(state.enum_("startup-view") as u32).expect("Invalid startup-view setting value");
+        if matches!(view_to_show, View::Last) {
+            view_to_show = View::try_from(state.enum_("last-view") as u32).expect("Invalid last-view setting value");
+        }
+        self.set_view(view_to_show.as_str());
     }
 
     pub fn set_view(&self, view_name: &str) {
@@ -434,7 +443,7 @@ impl Sidebar {
             "artists" => self.imp().artists_btn.set_active(true),
             "folders" => self.imp().folders_btn.set_active(true),
             "playlists" => self.imp().playlists_btn.set_active(true),
-            "dynamic_playlists" => self.imp().dyn_playlists_btn.set_active(true),
+            "dyn-playlists" => self.imp().dyn_playlists_btn.set_active(true),
             "recent" => self.imp().recent_btn.set_active(true),
             "queue" => self.imp().queue_btn.set_active(true),
             _ => {
