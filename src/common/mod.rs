@@ -107,7 +107,7 @@ impl View {
     /// For setting into GSettings
     pub fn as_str(&self) -> &'static str {
         match self {
-            Self::Recents => "recents",
+            Self::Recents => "recent",
             Self::Albums => "albums",
             Self::Artists => "artists",
             Self::Folders => "folders",
