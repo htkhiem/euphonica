@@ -25,9 +25,10 @@
     <p>**Features**</p>
     <ul>
       <li>Supports most MPD features, from queue reordering and ReplayGain to output control, crossfade and MixRamp.</li>
+      <li>Genre &amp; tag filtering, plus in-app tag editing.</li>
       <li>Client-side dynamic playlists: both query and sticker filter rules, multiple ordering clauses, fetch-first limits, scheduled refreshes, all via an intuitive editor UI.</li>
       <li>Fetch album arts, artist avatars and (synced) song lyrics from external sources (currently supporting Last.fm, MusicBrainz and LRCLIB).</li>
-      <li>Configurable multi-artist tag splitting.</li>
+      <li>Configurable multi-artist and multi-genre tag splitting.</li>
       <li>Stay in control while in the background via MPRIS &amp; XDG Background Portal.</li>
       <li>Customisable spectrum visualiser (FIFO or system PipeWire).</li>
       <li>Live bitrate readout + audio quality indicators (lossy, lossless, hi-res, DSD).</li>
@@ -48,28 +49,41 @@
 
   <keywords>
     <keyword translate="no">MPD</keyword>
+    <keyword translate="no">music</keyword>
+    <keyword translate="no">player</keyword>
+    <keyword translate="no">libadwaita</keyword>
+    <keyword translate="no">rust</keyword>
+    <keyword translate="no">mpc</keyword>
   </keywords>
 
   <launchable type="desktop-id">io.github.htkhiem.Euphonica.desktop</launchable>
   <screenshots>
     <screenshot type="default">
-      <image>https://i.ibb.co/Csv0cYvg/album-view.png</image>
+      <image>https://i.ibb.co/Mx4qJCHd/album-view.png</image>
       <caption>Album View</caption>
     </screenshot>
     <screenshot>
-      <image>https://i.ibb.co/TDCRLp6K/album-content-view.png</image>
+      <image>https://i.ibb.co/dsXMHBzw/artist-view.png</image>
+      <caption>Artist View</caption>
+    </screenshot>
+    <screenshot>
+      <image>https://i.ibb.co/4RjyNWQ5/album-content-view.png</image>
       <caption>Album Content View</caption>
+    </screenshot>
+    <screenshot>
+      <image>https://i.ibb.co/KxBYq8nj/artist-content-view.png</image>
+      <caption>Artist Content View</caption>
     </screenshot>
     <screenshot>
       <image>https://i.ibb.co/TxBSwm9K/dyn-playlist-editor.png</image>
       <caption>Dynamic Playlist Editor</caption>
     </screenshot>
     <screenshot>
-      <image>https://i.ibb.co/5X8nyncm/mini-ui.png</image>
+      <image>https://i.ibb.co/KchZ5Tck/mini-ui.webp</image>
       <caption>UI at different sizes</caption>
     </screenshot>
     <screenshot>
-      <image>https://i.ibb.co/v6TQPwL2/queue-view.png</image>
+      <image>https://i.ibb.co/jkL7bcYb/queue-view.png</image>
       <caption>Queue View</caption>
     </screenshot>
     <screenshot>
@@ -79,8 +93,38 @@
   </screenshots>
 
   <releases>
-    <release version="0.99.5-beta" date="2026-05-23">
-      <url type="details">https://github.com/htkhiem/euphonica/releases/tag/v0.99.4-beta</url>
+    <release version="0.99.5-beta" date="2026-08-16">
+      <url type="details">https://github.com/htkhiem/euphonica/releases/tag/v0.99.6-beta</url>
+      <description>
+        <p>New: artist view now shows album covers too and is limited to albumartists by default.</p>
+        <p>New: redesigned album and artist content views with metadata editing functionality.</p>
+        <p>New: metadata are now automatically backed up to MPD as special stickers.</p>
+        <p>New: Player Pane album art now spins :). Some pretty elaborate logic ensures that the disc comes around to the top at the end of each track.</p>
+        <p>New: album and artist by genre and tags. Tags in particular can be edited in-app.</p>
+        <p>New: artist discography view replaces simple album grid in artist content view.</p>
+        <p>New: now supports connecting to MPD via a named Unix socket (prefix with an '@' symbol).</p>
+        <p>New: lyrics re-fetch button.</p>
+        <p>New: start in any view you like or restore last-opened view.</p>
+        <p>New: radio stream names are now displayed correctly.</p>
+        <p>Change: lazy image load and eager unload are now signals-based, way faster and also more correct.</p>
+        <p>Change: album cells now use raw albumartist tags and can fall back to raw artist tags too.</p>
+        <p>Change: desktop-facing window title now displays track - artist (looks better in GNOME Overview).</p>
+        <p>Fix: current lyric line centering now works cleanly and no longer yoinks focus from text entries. Also helps type-anywhere-to-search work more consistently.</p>
+        <p>Fix: no longer reconnecting endlessly upon malformed commands crashing connection.</p>
+        <p>Fix: earlier artist bio and album wikis leaking to subsequent albums and artists sometimes.</p>
+        <p>Fix: task count and spinner at top left not going away after tasks have ended.</p>
+        <p>Fix: lyric-less tracks (instrumental, symphonies, etc) no longer fetch lyrics after first try. Manually cleared lyrics won't be fetched again.</p>
+        <p>Fix: various queue-not-updating issues when using the Queue N Next feature.</p>
+        <p>Fix: various spacing issues in the bottom bar in different layouts.</p>
+        <p>Fix: album ratings not being populated.</p>
+        <p>Fix: Clear Queue not updating local queue state when playback mode is Stopped.</p>
+        <p>Fix: sidebar queue length sometimes not updating.</p>
+        <p>Fix: album content view multi-selection not working (regression since v0.99.5).</p>
+        <p>Fix: navigating to an Artist Content View from an Album Content View doesn't load albums.</p>
+      </description>
+    </release>
+    <release version="0.99.5-beta" date="2026-06-20">
+      <url type="details">https://github.com/htkhiem/euphonica/releases/tag/v0.99.5-beta</url>
       <description>
         <p>Change: Much faster album/artist grid population over remote connections (~20x).</p>
         <p>Change: Multithreaded album art decoding and resizing (configurable thread count).</p>
