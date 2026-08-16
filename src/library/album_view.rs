@@ -318,7 +318,7 @@ mod imp {
                             // Match either album title or AlbumArtist (not artist tag)
                             g_search_substr(Some(album.get_title()), &search_term, case_sensitive)
                                 || g_search_substr(
-                                    album.get_artist_str().as_deref(),
+                                    album.get_artist_tag(),
                                     &search_term,
                                     case_sensitive,
                                 )
@@ -330,7 +330,7 @@ mod imp {
                         2 => {
                             // Match only AlbumArtist (albums without such tag will never match)
                             g_search_substr(
-                                album.get_artist_str().as_deref(),
+                                album.get_artist_tag(),
                                 &search_term,
                                 case_sensitive,
                             )

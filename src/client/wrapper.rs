@@ -1049,11 +1049,12 @@ impl MpdWrapper {
                             chunk,
                             Some(vec![
                                 tags::ALBUM,
+                                tags::ARTIST,  // as fallback
                                 tags::ALBUMARTIST,
                                 tags::ALBUMARTISTSORT,
                                 tags::ALBUMARTIST_MBID,
                                 tags::ALBUM_MBID,
-                                tags::ORIGINAL_DATE,
+                                tags::ORIGINAL_DATE,  // as fallback
                                 tags::DATE,
                                 tags::GENRE,
                             ]),

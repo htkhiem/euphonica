@@ -286,11 +286,7 @@ impl AlbumCell {
             .chain_property::<Album>("artist")
             .chain_closure::<String>(closure_local!(
                 |_: Option<glib::Object>, artist: Option<&str>| {
-                    String::from(if artist.is_none_or(|a| a.is_empty()) {
-                        *EMPTY_ARTIST_STRING
-                    } else {
-                        artist.unwrap()
-                    })
+                    artist.map(|s| s.to_owned()).unwrap_or(String::from(*EMPTY_ARTIST_STRING))
                 }
             ))
             .bind(&res, "artist", gtk::Widget::NONE);

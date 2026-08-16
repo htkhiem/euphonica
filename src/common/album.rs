@@ -231,7 +231,7 @@ mod imp {
                 "uri" => obj.get_folder_uri().to_value(),
                 "title" => obj.get_title().to_value(),
                 "sortable-title" => obj.get_sortable_title().to_value(),
-                "artist" => obj.get_artist_str().to_value(),
+                "artist" => obj.get_artist_tag().to_value(),
                 "rating" => obj.get_rating().unwrap_or(-1).to_value(),
                 "release-date" => glib::BoxedAnyObject::new(obj.get_release_date()).to_value(),
                 "quality-grade" => obj.get_quality_grade().to_icon_name().to_value(),
@@ -290,13 +290,6 @@ impl Album {
 
     pub fn get_genres(&self) -> &FxHashSet<String> {
         &self.get_info().genres
-    }
-
-    /// Get albumartist names separated by commas. If the first artist listed is a composer,
-    /// the next separator will be a semicolon instead. The quality of this output depends
-    /// on whether all delimiters are specified by the user.
-    pub fn get_artist_str(&self) -> Option<String> {
-        artists_to_string(&self.get_info().artists)
     }
 
     /// Get the original albumartist tag before any parsing.
