@@ -419,17 +419,12 @@ impl RecentView {
             cache,
             #[weak]
             adj,
-            #[weak]
-            artist_row,
-            #[weak]
-            window,
             move |_, list_item| {
                 let item = list_item
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
                 let artist_cell = ArtistCell::new(
-                    item, cache,
-                    Some(window), Some(artist_row)
+                    item, cache
                 );
                 item.set_child(Some(&artist_cell));
                 adj.set_value(0.0);

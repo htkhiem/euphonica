@@ -50,6 +50,6 @@ pub enum ImageState {
 }
 
 // For use with GridViews.
-// As soon as a cell comes within this close of the render area, treat it as
-// visible & load album art early to avoid showing loading spinners.
-pub static WING_DEPTH: f64 = 384.0;
+pub static WING_DEPTH: f64 = 128.0;
+pub static FIRST_ATTEMPT_INTERVAL_MS: core::time::Duration = core::time::Duration::from_millis(50);
+pub static RE_ATTEMPT_INTERVAL_MS: core::time::Duration = core::time::Duration::from_millis(250);

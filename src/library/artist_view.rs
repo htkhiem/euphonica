@@ -423,7 +423,7 @@ impl ArtistView {
         }
     }
 
-    fn setup_gridview(&self, cache: Rc<Cache>, window: &EuphonicaWindow) {
+    fn setup_gridview(&self, cache: Rc<Cache>, _window: &EuphonicaWindow) {
         let settings = settings_manager().child("ui");
         // Refresh upon reconnection.
         // User-initiated refreshes will also trigger a reconnection, which will
@@ -476,18 +476,12 @@ impl ArtistView {
         factory.connect_setup(clone!(
             #[weak]
             cache,
-            #[weak]
-            grid_view,
-            #[weak]
-            window,
             move |_, list_item| {
                 let item = list_item
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
                 let artist_cell = ArtistCell::new(
-                    item, cache,
-                    Some(window),
-                    Some(grid_view)
+                    item, cache
                 );
                 item.set_child(Some(&artist_cell));
             }

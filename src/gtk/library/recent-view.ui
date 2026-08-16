@@ -202,7 +202,7 @@
                                           <object class="GtkStackPage">
                                             <property name="name">content</property>
                                             <property name="child">
-                                              <object class="GtkScrolledWindow">
+                                              <object class="GtkScrolledWindow" id="artist_window">
                                                 <property name="hscrollbar-policy">automatic</property>
                                                 <property name="vscrollbar-policy">never</property>
                                                 <property name="propagate-natural-width">true</property>

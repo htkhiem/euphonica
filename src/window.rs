@@ -362,7 +362,7 @@ mod imp {
             let win = self.obj().clone();
             *self.check_visible_loop.borrow_mut() = Some(glib::spawn_future_local(async move {
                 loop {
-                    glib::timeout_future(Duration::from_millis(50)).await;
+                    glib::timeout_future(Duration::from_millis(1000)).await;
                     win.emit_by_name::<()>("check-visible", &[]);
                 }
             }));

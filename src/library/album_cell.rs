@@ -5,6 +5,7 @@ use gtk::{
         self, Object, ParamSpec, ParamSpecBoolean, ParamSpecChar, ParamSpecInt, ParamSpecString,
         WeakRef, clone, closure_local, signal::SignalHandlerId,
     },
+    graphene,
     prelude::*,
     subclass::prelude::*,
 };
@@ -15,15 +16,13 @@ use std::{
 };
 
 use crate::{
-    window::EuphonicaWindow,
-    cache::{BACKLOG_THRESHOLD, Cache, CacheState},
-    cache::placeholders::{EMPTY_ALBUM_STRING, EMPTY_ARTIST_STRING},
+    cache::{BACKLOG_THRESHOLD, Cache, CacheState, placeholders::{EMPTY_ALBUM_STRING, EMPTY_ARTIST_STRING}},
     common::{
-        WING_DEPTH,
-        Album, PictureStack, Rating,
+        Album, PictureStack, Rating, WING_DEPTH,
         marquee::{Marquee, MarqueeWrapMode},
     },
-    utils::settings_manager,
+    utils::{rect_centered_at_zero, settings_manager},
+    window::EuphonicaWindow,
 };
 
 mod imp {
@@ -66,7 +65,7 @@ mod imp {
         // Use this to block loading images immediately upon construction when hires
         // is set to true (as that would trigger the setter before a viewport is set)
         pub obj_ready: Cell<bool>,
-        // Set to true when the bind-time visibility check was skipped due to 
+        // Set to true when the bind-time visibility check was skipped due to
         // backpressure.
         pub deferred: Cell<bool>,
         // Set to true when hires was deferred due to high backlog; triggers an
@@ -97,7 +96,9 @@ mod imp {
                 child.unparent();
             }
 
-            if let (Some(handler), Some(window)) = (self.check_visible_handler.take(), self.window.upgrade()) {
+            if let (Some(handler), Some(window)) =
+                (self.check_visible_handler.take(), self.window.upgrade())
+            {
                 window.disconnect(handler);
             }
 
@@ -407,7 +408,7 @@ impl AlbumCell {
                         let was_visible = imp.should_load_texture.replace(is_visible);
 
                         if is_visible {
-                            // Also go through this if visibility status didn't change, 
+                            // Also go through this if visibility status didn't change,
                             // but album art load hasn't been attempted yet.
                             if was_visible != is_visible || imp.deferred.get() {
                                 imp.deferred.set(false);
@@ -441,7 +442,7 @@ impl AlbumCell {
         self.imp().album.upgrade()
     }
 
-  fn update_cover(&self, show_spinner: bool) {
+    fn update_cover(&self, show_spinner: bool) {
         let imp = self.imp();
 
         // If hires is requested, check backlog to decide resolution.
@@ -486,7 +487,12 @@ impl AlbumCell {
                             }
                             Err(e) => {
                                 this.imp().cover.clear();
-                                eprintln!("Failed to read cover for album `{}` (URI `{}`):\n{:?}", album.get_title(), album.get_folder_uri(), e);
+                                eprintln!(
+                                    "Failed to read cover for album `{}` (URI `{}`):\n{:?}",
+                                    album.get_title(),
+                                    album.get_folder_uri(),
+                                    e
+                                );
                             }
                         }
                     }
@@ -515,27 +521,32 @@ impl AlbumCell {
         match self.imp().viewport.upgrade() {
             Some(vp) => {
                 if let Some(bounds) = self.compute_bounds(&vp) {
-                    let cell_x = bounds.x() as f64;
-                    let cell_y = bounds.y() as f64;
-                    let cell_w = bounds.width() as f64;
-                    let cell_h = bounds.height() as f64;
-                    if cell_w == 0.0 && cell_h == 0.0 {
-                        // If the bounds are the zero rectangle then we can bail early.
-                        return false;
+                    if rect_centered_at_zero(&bounds) {
+                        false
+                    } else {
+                        // eprintln!(
+                        //     "bounds: X {} Y {} W {} H {}",
+                        //     bounds.x(),
+                        //     bounds.y(),
+                        //     bounds.width(),
+                        //     bounds.height()
+                        // );
+
+                        let viewport_rect = graphene::Rect::new(
+                            -WING_DEPTH as f32,
+                            -WING_DEPTH as f32,
+                            vp.width() as f32 + WING_DEPTH as f32 * 2.0,
+                            vp.height() as f32 + WING_DEPTH as f32 * 2.0,
+                        );
+                        // eprintln!(
+                        //     "VP: X {} Y {} W {} H {}",
+                        //     viewport_rect.x(),
+                        //     viewport_rect.y(),
+                        //     viewport_rect.width(),
+                        //     viewport_rect.height()
+                        // );
+                        bounds.intersection(&viewport_rect).is_some()
                     }
-                    let vis_w = vp.width().max(0) as f64;
-                    let vis_h = vp.height().max(0) as f64;
-                    // Note: compute_bounds() on a viewport-like widget will return coordinates
-                    // in a rather weird way: always by the viewport's location within the window,
-                    // with scrolling affecting the positions of the widgets therein. In other words,
-                    // within this coordinate system, the rendered area's top left corner is always at
-                    // (0, 0) and the AlbumCell's location might be in the negative.
-                    ((cell_x <= vis_w + WING_DEPTH && cell_x >= -WING_DEPTH)
-                        || (cell_x + cell_w <= vis_w + WING_DEPTH
-                            && cell_x + cell_w >= -WING_DEPTH))
-                        && ((cell_y <= vis_h + WING_DEPTH && cell_y >= -WING_DEPTH)
-                            || (cell_y + cell_h <= vis_h + WING_DEPTH
-                                && cell_y + cell_h >= -WING_DEPTH))
                 } else {
                     false // we're in a GridView; don't load until given a bound
                 }
@@ -558,7 +569,6 @@ impl AlbumCell {
         } else {
             imp.deferred.set(true);
         }
-        
     }
 
     pub fn unbind(&self) {
@@ -590,7 +600,7 @@ impl AlbumCell {
             self.notify("hires");
             if new {
                 self.imp().deferred_hires.set(false);
-          if self.should_load_texture() {
+                if self.should_load_texture() {
                     self.update_cover(true);
                 }
             } else {
