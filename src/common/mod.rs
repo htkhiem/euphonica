@@ -50,6 +50,4 @@ pub enum ImageState {
 }
 
 // For use with GridViews.
-pub static WING_DEPTH: f64 = 128.0;
-pub static FIRST_ATTEMPT_INTERVAL_MS: core::time::Duration = core::time::Duration::from_millis(50);
-pub static RE_ATTEMPT_INTERVAL_MS: core::time::Duration = core::time::Duration::from_millis(250);
+pub static TEXTURE_LOAD_DELAY_MS: core::time::Duration = core::time::Duration::from_millis(50);

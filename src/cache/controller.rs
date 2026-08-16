@@ -15,7 +15,6 @@ use gtk::{
 use image::ImageReader;
 use lru::LruCache;
 use once_cell::sync::Lazy;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::{cmp, num::NonZeroUsize};
 use std::{fmt, fs::create_dir_all, rc::Rc, result, sync::Mutex};
 use time::OffsetDateTime;
@@ -243,16 +242,6 @@ fn download_image_from_provider(
 static IMAGE_CACHE: Lazy<Mutex<LruCache<String, Texture>>> =
     Lazy::new(|| Mutex::new(LruCache::new(NonZeroUsize::new(1024).unwrap())));
 
-/// Threshold for deferring hires album art loading. When the pending task count
-/// reaches this value, new album art requests fall back to thumbnails.
-pub static BACKLOG_THRESHOLD: Lazy<usize> = Lazy::new(|| {
-    settings_manager()
-        .child("library")
-        .uint("use-hires-backlog-threshold")
-        .try_into()
-        .unwrap_or(10)
-});
-
 // We use an Asyncified container to queue tasks, such that two requests for the
 // same texture are never run concurrently. This allows one request to cache the
 // texture in-memory for all subsequent requests.
@@ -268,9 +257,7 @@ pub struct Cache {
     // Thread pool for parallelisable operations such as texture read from disk and resizing ops.
     pool: glib::ThreadPool,
     // Cache state object for emitting signals.
-    state: CacheState,
-    // Tracks in-flight get_cover requests for backpressure-aware hires loading.
-    pending_tasks: AtomicUsize,
+    state: CacheState
 }
 
 impl fmt::Debug for Cache {
@@ -313,8 +300,7 @@ impl Cache {
                 settings_manager().child("library").uint("n-image-threads"),
             ))
             .expect("Unable to start threadpool for cache operations"),
-            state: CacheState::default(),
-            pending_tasks: AtomicUsize::new(0),
+            state: CacheState::default()
         };
 
         Rc::new(cache)
@@ -322,11 +308,6 @@ impl Cache {
 
     pub fn get_cache_state(&self) -> CacheState {
         self.state.clone()
-    }
-
-    /// Returns the number of pending cover lookup tasks.
-    pub fn backlog(&self) -> usize {
-        self.pending_tasks.load(Ordering::Relaxed)
     }
 
     /// Try to get a cover image for the given song. This prioritises the folder-level
@@ -339,15 +320,12 @@ impl Cache {
         song: &SongInfo,
         thumbnail: bool,
     ) -> Result<Option<Texture>> {
-        // Track pending tasks for backpressure-aware hires loading.
-        self.pending_tasks.fetch_add(1, Ordering::Relaxed);
         let folder_uri = strip_filename_linux(&song.uri).to_owned();
         let album = song.album.as_ref().cloned();
         let res = self
             .clone()
             .get_cover_internal(&folder_uri, &song.uri, thumbnail, album)
             .await;
-        self.pending_tasks.fetch_sub(1, Ordering::Relaxed);
         res
     }
 
@@ -361,8 +339,6 @@ impl Cache {
         album: &AlbumInfo,
         thumbnail: bool,
     ) -> Result<Option<Texture>> {
-        // Track pending tasks for backpressure-aware hires loading.
-        self.pending_tasks.fetch_add(1, Ordering::Relaxed);
         let res = self
             .clone()
             .get_cover_internal(
@@ -372,7 +348,6 @@ impl Cache {
                 Some(album.to_owned()),
             )
             .await;
-        self.pending_tasks.fetch_sub(1, Ordering::Relaxed);
         res
     }
 
@@ -384,8 +359,6 @@ impl Cache {
         example_uri: &str,
         thumbnail: bool,
     ) -> Result<Option<Texture>> {
-        // Track pending tasks for backpressure-aware hires loading.
-        self.pending_tasks.fetch_add(1, Ordering::Relaxed);
         let res = self
             .clone()
             .get_cover_internal(
@@ -395,7 +368,6 @@ impl Cache {
                 None,
             )
             .await;
-        self.pending_tasks.fetch_sub(1, Ordering::Relaxed);
         res
     }
 

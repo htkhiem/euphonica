@@ -254,10 +254,6 @@ mod imp {
         pub accent_color: RefCell<Option<RGB>>,
         pub should_populate_visible: Cell<bool>,
 
-        // Single async loop that emits "check-visible" periodically to drive
-        // visibility checks for all AlbumCell instances
-        pub check_visible_loop: RefCell<Option<glib::JoinHandle<()>>>,
-
         pub provider: CssProvider,
         pub client_state: OnceCell<ClientState>,
 
@@ -297,11 +293,6 @@ mod imp {
 
     #[glib::derived_properties]
     impl ObjectImpl for EuphonicaWindow {
-        fn signals() -> &'static [glib::subclass::Signal] {
-            static SIGNALS: OnceLock<Vec<Signal>> = OnceLock::new();
-            SIGNALS.get_or_init(|| vec![Signal::builder("check-visible").build()])
-        }
-
         fn dispose(&self) {
             // Disconnect all signal handlers registered on global/long-lived objects
             if let Some(id) = self.settings_bg_blur_id.take() {
@@ -343,9 +334,6 @@ mod imp {
                 player.disconnect(id);
             }
 
-            // Cancel the check-visible signal loop
-            self.check_visible_loop.take();
-
             // Remove display-level CSS provider
             if let Some(display) = gdk::Display::default() {
                 let provider = &self.provider;
@@ -355,17 +343,6 @@ mod imp {
 
         fn constructed(&self) {
             self.parent_constructed();
-
-            // Spawn a single async loop that emits "check-visible" periodically.
-            // All AlbumCell instances connect to this signal for visibility checks,
-            // replacing the old per-cell tick callback approach.
-            let win = self.obj().clone();
-            *self.check_visible_loop.borrow_mut() = Some(glib::spawn_future_local(async move {
-                loop {
-                    glib::timeout_future(Duration::from_millis(1000)).await;
-                    win.emit_by_name::<()>("check-visible", &[]);
-                }
-            }));
 
             let settings = settings_manager().child("ui");
             let obj_borrow = self.obj();

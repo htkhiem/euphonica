@@ -5,7 +5,7 @@ use aho_corasick::AhoCorasick;
 use gtk::{
     Ordering, gdk,
     gio::{self},
-    glib, graphene,
+    glib,
 };
 use image::{DynamicImage, imageops::FilterType};
 use mpd::status::AudioFormat;
@@ -634,11 +634,4 @@ pub fn sync_animation(animation: &adw::TimedAnimation, should_run: bool) {
     } else if animation.state() == adw::AnimationState::Playing {
         animation.pause();
     }
-}
-
-/// Mostly used to detect a delegate being kept alive but not shown (in gridviews)
-#[inline]
-pub fn rect_centered_at_zero(rect: &graphene::Rect) -> bool {
-    (rect.x() as f32 + rect.width() as f32 / 2.0).abs() < 0.5
-        && (rect.y() as f32 + rect.height() as f32 / 2.0).abs() < 0.5
 }

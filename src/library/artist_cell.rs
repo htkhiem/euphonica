@@ -13,8 +13,8 @@ use std::{
 };
 
 use crate::{
-    cache::{BACKLOG_THRESHOLD, Cache, placeholders::EMPTY_ARTIST_STRING},
-    common::{Artist, FIRST_ATTEMPT_INTERVAL_MS, RE_ATTEMPT_INTERVAL_MS},
+    cache::{Cache, placeholders::EMPTY_ARTIST_STRING},
+    common::{Artist, TEXTURE_LOAD_DELAY_MS},
     utils::settings_manager,
 };
 
@@ -156,7 +156,7 @@ impl ArtistCell {
 
         // Set up dynamic texture loading/unloading
         res.connect_map(|res| {
-            res.try_load_textures_with_backlog();
+            res.load_textures_with_delay();
         });
 
         res.connect_unmap(|res| {
@@ -172,7 +172,6 @@ impl ArtistCell {
 
     #[inline]
     fn unload_textures(&self, use_thumbnail: bool) {
-        eprintln!("Unloading");
         let imp = self.imp();
         if let Some(handle) = imp.texture_load_handle.take() {
             handle.abort();
@@ -195,8 +194,6 @@ impl ArtistCell {
 
     #[inline]
     async fn load_textures(&self, use_thumbnail: bool) {
-        // If use_thumbnail and NOT due to backlog, load thumbnail then exit
-        // If use thumbnail DUE TO backlog, load thumbnail then loop
         if let Some(artist) = self.artist() {
             let cache = self.imp().cache.get().unwrap();
             match cache
@@ -224,10 +221,9 @@ impl ArtistCell {
         }
     }
 
-    /// Attempt to load textures. If hires is enabled, will load hires ones only if not backlogged.
-    /// If backlogged, will attempt to load again after a short pause.
+    /// Load textures with a short delay to allow early cancel.
     /// Unlike AlbumCell, ArtistCells might get quite complex so spinners aren't feasible.
-    fn try_load_textures_with_backlog(&self) {
+    fn load_textures_with_delay(&self) {
         if let Some(handle) = self.imp().texture_load_handle.take() {
             handle.abort();
         }
@@ -237,35 +233,8 @@ impl ArtistCell {
             .texture_load_handle
             .replace(Some(glib::spawn_future_local(async move {
                 // Wait first to give unmap() a chance to cancel this outright
-                glib::timeout_future(FIRST_ATTEMPT_INTERVAL_MS).await;
-
-                let imp = this.imp();
-                if !imp.hires.get() {
-                    // If hires is disabled: just load thumbnail then bail
-                    this.load_textures(true).await;
-                } else {
-                    // If hires: loop attempt to load until no longer backlogged
-                    let mut loaded_thumb = false;
-                    loop {
-                        // If hires is requested, check backlog to decide resolution.
-                        if imp.cache.get().unwrap().backlog() >= *BACKLOG_THRESHOLD {
-                            if !loaded_thumb {
-                                this.load_textures(true).await;
-                                eprintln!("Backlogged. Loaded thumbnail");
-                                loaded_thumb = true;
-                            } else {
-                                eprintln!("Backlogged.");
-                            }
-                        } else {
-                            
-                            this.load_textures(false).await;
-                            eprintln!("Loaded hires");
-                            return;
-                        }
-                        // Wait after each turn
-                        glib::timeout_future(RE_ATTEMPT_INTERVAL_MS).await;
-                    }
-                }
+                glib::timeout_future(TEXTURE_LOAD_DELAY_MS).await;
+                this.load_textures(!this.imp().hires.get()).await;
             })));
     }
 
@@ -288,7 +257,7 @@ impl ArtistCell {
         if old != new {
             self.notify("hires");
 
-            self.try_load_textures_with_backlog()
+            self.load_textures_with_delay()
         }
     }
 }

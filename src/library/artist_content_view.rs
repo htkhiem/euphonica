@@ -1339,7 +1339,7 @@ impl ArtistContentView {
                                 .set_label(&release_count.to_string());
                         }
                         discography_stack.show_content();
-                        let vp = this.imp().scrolled_window.get();
+                        let _vp = this.imp().scrolled_window.get();
                         let win = this.imp().window.upgrade();
                         let count_years = albums_by_year.len();
                         // Extract genres first
@@ -1361,8 +1361,7 @@ impl ArtistContentView {
                                 maybe_albums,
                                 this.imp().cache.get().unwrap().clone(),
                                 &library,
-                                win.as_ref(),
-                                Some(&vp),
+                                win.as_ref()
                             ))
                         }
                         // 1 more loop to clear selection highlight (can't do it in the above loop as the insertion position is dictated by sort_func)
