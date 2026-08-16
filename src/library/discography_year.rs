@@ -108,8 +108,7 @@ impl DiscographyYear {
         albums_with_songs: Vec<(Option<Album>, Vec<Song>)>,
         cache: Rc<Cache>,
         library: &Library,
-        window: Option<&EuphonicaWindow>,
-        viewport: Option<&gtk::ScrolledWindow>,
+        window: Option<&EuphonicaWindow>
     ) -> Self {
         let res: Self = Object::builder().build();
         if let Some(year) = year {
@@ -119,7 +118,7 @@ impl DiscographyYear {
         for (idx, (maybe_album, songs)) in albums_with_songs.into_iter().enumerate() {
             res.imp().albums_box.append(
                 &DiscographyAlbum::new(
-                    maybe_album, &songs, cache.clone(), library, window, viewport
+                    maybe_album, &songs, cache.clone(), library, window
                 )
             );
             res.imp().albums_box.row_at_index(idx as i32).unwrap().set_activatable(false);

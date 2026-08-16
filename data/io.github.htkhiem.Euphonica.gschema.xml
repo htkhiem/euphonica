@@ -39,6 +39,18 @@
 		<value nick="stop-and-clear" value="3"/>
 	</enum>
 
+	<!-- Order matches combobox in Preferences/UI tab, while nick matches stackpage name. -->
+	<enum id="io.github.htkhiem.Euphonica.view">
+		<value nick="last" value="0"/>
+		<value nick="recent" value="1"/>
+		<value nick="albums" value="2"/>
+		<value nick="artists" value="3"/>
+		<value nick="folders" value="4"/>
+		<value nick="playlists" value="5"/>
+		<value nick="dyn-playlists" value="6"/>
+		<value nick="queue" value="7"/>
+	</enum>
+
 	<!-- Unused, but kept for compatibility -->
 	<enum id="io.github.htkhiem.Euphonica.imageformat">
 		<value nick="jpeg" value="0"/>
@@ -162,14 +174,15 @@
 			<default>false</default>
 		</key>
 
-		<key name="max-image-resolution" type="u">
-			<default>1024</default>
-			<summary>Maximum resolution for cached images</summary>
-		</key>
-
+		<!-- No longer used but kept for compatibility -->
 		<key name="use-hires-backlog-threshold" type="u">
 			<default>10</default>
 			<summary>Number of pending cover load tasks at which hires album art loading is deferred in favor of thumbnails</summary>
+		</key>
+
+		<key name="max-image-resolution" type="u">
+			<default>1024</default>
+			<summary>Maximum resolution for cached images</summary>
 		</key>
 
 		<key name="n-image-threads" type="u">
@@ -401,6 +414,13 @@
 		</key>
 		<key name="last-window-height" type="i">
 			<default>400</default>
+		</key>
+		<key name="last-view" enum='io.github.htkhiem.Euphonica.view'>
+			<summary>Must never be set to 'last'</summary>
+			<default>'recent'</default>
+		</key>
+		<key name="startup-view" enum='io.github.htkhiem.Euphonica.view'>
+			<default>'last'</default>
 		</key>
 
 		<!-- Background & autostart -->

@@ -15,13 +15,12 @@ use std::{
 
 use crate::{
     cache::{
-        Cache,
-        placeholders::{EMPTY_ALBUM_STRING, EMPTY_ARTIST_STRING},
+        Cache, placeholders::{EMPTY_ALBUM_STRING, EMPTY_ARTIST_STRING}
     },
     client::{ClientState, state::StickersSupportLevel},
     common::{PictureStack, Rating, Song, paintables::RotatingPaintable},
     player::seekbar2::Seekbar,
-    utils::{self, settings_manager, sync_animation},
+    utils::{self, settings_manager, sync_animation}, window::EuphonicaWindow,
 };
 
 use super::{MpdOutput, OutputControls, PlaybackControls, PlaybackState, Player, VolumeKnob};
@@ -77,6 +76,8 @@ mod imp {
         pub show_lyrics: TemplateChild<gtk::Switch>,
         #[template_child]
         pub use_synced_lyrics: TemplateChild<gtk::Switch>,
+        #[template_child]
+        pub refetch_lyrics: TemplateChild<gtk::Button>,
         #[template_child]
         pub import_lyrics: TemplateChild<gtk::Button>,
         #[template_child]
@@ -286,10 +287,12 @@ impl PlayerPane {
             .set_visible(has_lyrics && self.imp().show_lyrics.is_active());
         self.imp().export_lyrics.set_sensitive(has_lyrics);
         self.imp().clear_lyrics.set_sensitive(has_lyrics);
+        self.imp().refetch_lyrics.set_visible(!has_lyrics);
     }
 
     pub fn update_lyrics_state(&self, player: &Player) {
         let lyrics_box = self.imp().lyrics_box.get();
+        let lyrics_window = self.imp().lyrics_window.get();
         let n_lyric_lines = player.n_lyric_lines();
         if player.lyrics_are_synced() && self.imp().use_synced_lyrics.is_active() {
             let curr_line_idx = player.current_lyric_line();
@@ -300,19 +303,22 @@ impl PlayerPane {
                     label.set_opacity(if i == curr_line_idx { 1.0 } else { 0.2 });
                 }
             }
-            // Actually focus on several (currently 1) lines after the
-            // current one, such that the next lines are visible too.
-            // TODO: Figure out exactly how many lines ahead to focus
-            // on, based on lyrics box height, such that the current line
-            // is vertically centered.
-            let focus_line = if curr_line_idx == 0 {
-                0
-            } else {
-                (curr_line_idx + 1).min(n_lyric_lines - 1)
+            let v_adjust = lyrics_window.vadjustment();
+            if let Some(row) = lyrics_box.row_at_index(curr_line_idx as i32) {
+                let bounds = row.compute_bounds(&lyrics_box).unwrap();
+
+                // Calculate the target scroll position to center the row.
+                // Specifically, we centre the imaginary "page" within the adjustment at the row.
+                // Even more specifically cuz my future self is always dumber than right now: align
+                // the vertical midpoints of the page and the row.
+                let page_size = v_adjust.page_size() as f32;
+                let row_height = bounds.height();
+                let row_top_left = bounds.top_left();
+                let row_midpoint = row_top_left.y() + row_height / 2.0;
+                let page_top = row_midpoint - page_size / 2.0; // < 0 or > bottom is fine, GtkAdjustments will just clamp to top/bottom
+
+                v_adjust.set_value(page_top as f64);
             };
-            if let Some(row) = lyrics_box.row_at_index(focus_line as i32) {
-                row.grab_focus();
-            }
         } else {
             for i in 0..n_lyric_lines {
                 if let Some(row) = lyrics_box.row_at_index(i as i32)
@@ -324,7 +330,7 @@ impl PlayerPane {
         }
     }
 
-    pub fn setup(&self, player: &Player, cache: Rc<Cache>, client_state: &ClientState) {
+    pub fn setup(&self, player: &Player, cache: Rc<Cache>, client_state: &ClientState, win: &EuphonicaWindow) {
         self.imp().player.set(Some(player));
         self.imp()
             .song_changed_id
@@ -375,13 +381,13 @@ impl PlayerPane {
                 }
             ),
         )));
-        self.bind_state(player, cache, client_state);
+        self.bind_state(player, cache, client_state, win);
         self.imp().playback_controls.setup(player);
         self.imp().output_controls.setup(player);
         self.imp().seekbar.setup(player);
     }
 
-    fn bind_state(&self, player: &Player, cache: Rc<Cache>, client_state: &ClientState) {
+    fn bind_state(&self, player: &Player, cache: Rc<Cache>, client_state: &ClientState, win: &EuphonicaWindow) {
         let imp = self.imp();
         self.imp().vol_knob.setup(player);
         let rg_btn = self.imp().rg_btn.get();
@@ -648,6 +654,38 @@ impl PlayerPane {
                 }
             ),
         );
+
+        imp.refetch_lyrics.connect_clicked(clone!(
+            #[weak]
+            player,
+            #[weak]
+            cache,
+            #[weak]
+            win,
+            move |btn| {
+                let btn = btn.clone();
+                glib::spawn_future_local(async move {
+                    if let Some(song) = player.current_song() {
+                        btn.set_visible(false);
+                        let res = cache.get_lyrics(song.get_info(), true, true, Some(&win)).await;
+                        btn.set_visible(true);
+                        match res {
+                            Ok(Some(lyrics)) => {
+                                // Write as if user imported it
+                                player.import_lyrics_obj(lyrics);
+                            }
+                            Ok(None) => {
+                                win.send_simple_toast("No lyrics found", 3);
+                            }
+                            Err(e) => {
+                                dbg!(e);
+                                win.send_simple_toast("Could not fetch lyrics (internal error)", 3);
+                            }
+                        }
+                    }
+                });
+            }
+        ));
 
         imp.import_lyrics.connect_clicked(clone!(
             #[weak]

@@ -157,6 +157,7 @@ mod imp {
         pub avatar_signal_id: RefCell<Option<SignalHandlerId>>,
         pub avatar_set_id: RefCell<Option<SignalHandlerId>>,
         pub avatar_cleared_id: RefCell<Option<SignalHandlerId>>,
+        pub update_meta_handle: RefCell<Option<glib::JoinHandle<()>>>,
         pub cache: OnceCell<Rc<Cache>>,
         #[derivative(Default(value = "Cell::new(true)"))]
         pub selecting_all: Cell<bool>, // Enables queuing all songs from this artist efficiently
@@ -291,7 +292,7 @@ mod imp {
                         new_meta.bio = Some(bio);
 
                         // Might want to make this async?
-                        if let Err(e) = cache.set_artist_meta(artist.get_info(), &new_meta) {
+                        if let Err(e) = cache.set_artist_meta(artist.get_info(), &new_meta, false) {
                             dbg!(e);
                         }
 
@@ -301,9 +302,10 @@ mod imp {
                             #[weak]
                             this,
                             async move {
-                                this.obj().update_meta(false).await;
+                                this.obj().backup_meta(false).await;
                             }
                         ));
+                        this.obj().update_meta_guarded(false);
                     }
                 }
             ));
@@ -514,10 +516,10 @@ mod imp {
                             #[weak]
                             obj,
                             async move {
-                                obj.update_meta(true).await;
                                 obj.schedule_avatar(true).await;
                             }
                         ));
+                        obj.update_meta_guarded(true);
                     }
                 ))
                 .build();
@@ -743,6 +745,24 @@ impl ArtistContentView {
         }
     }
 
+    /// Wraps around update_meta, ensuring no concurrent requests (else latecomer requests will override current metadata)
+    fn update_meta_guarded(&self, overwrite: bool) {
+        if let Some(handle) = self.imp().update_meta_handle.take() {
+            handle.abort();
+        }
+        let _ = self
+            .imp()
+            .update_meta_handle
+            .replace(Some(glib::spawn_future_local(clone!(
+                #[weak(rename_to = this)]
+                self,
+                async move {
+                    this.update_meta(overwrite).await;
+                }
+            ))));
+    }
+
+    #[inline]
     async fn update_meta(&self, overwrite: bool) {
         if let Some(artist) = self.artist() {
             // If the current artist is the "untitled" one (i.e. for songs without an artist tag),
@@ -1319,7 +1339,7 @@ impl ArtistContentView {
                                 .set_label(&release_count.to_string());
                         }
                         discography_stack.show_content();
-                        let vp = this.imp().scrolled_window.get();
+                        let _vp = this.imp().scrolled_window.get();
                         let win = this.imp().window.upgrade();
                         let count_years = albums_by_year.len();
                         // Extract genres first
@@ -1341,8 +1361,7 @@ impl ArtistContentView {
                                 maybe_albums,
                                 this.imp().cache.get().unwrap().clone(),
                                 &library,
-                                win.as_ref(),
-                                Some(&vp),
+                                win.as_ref()
                             ))
                         }
                         // 1 more loop to clear selection highlight (can't do it in the above loop as the insertion position is dictated by sort_func)
@@ -1386,7 +1405,8 @@ impl ArtistContentView {
 
                     // The extra fluff later
                     this.schedule_avatar(false).await;
-                    this.update_meta(false).await;
+                    // Runs in its own async closure
+                    this.update_meta_guarded(false);
                 } else if let Some(win) = this.imp().window.upgrade() {                    
                     win.send_simple_toast("Unable to fetch artist content", 3);
                 }
@@ -1395,6 +1415,10 @@ impl ArtistContentView {
     }
 
     pub fn unbind(&self) {
+        if let Some(handle) = self.imp().update_meta_handle.take() {
+            handle.abort();
+        }
+
         for binding in self.imp().bindings.take().into_iter() {
             binding.unbind();
         }

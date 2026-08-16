@@ -15,7 +15,6 @@ use gtk::{
 use image::ImageReader;
 use lru::LruCache;
 use once_cell::sync::Lazy;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::{cmp, num::NonZeroUsize};
 use std::{fmt, fs::create_dir_all, rc::Rc, result, sync::Mutex};
 use time::OffsetDateTime;
@@ -243,16 +242,6 @@ fn download_image_from_provider(
 static IMAGE_CACHE: Lazy<Mutex<LruCache<String, Texture>>> =
     Lazy::new(|| Mutex::new(LruCache::new(NonZeroUsize::new(1024).unwrap())));
 
-/// Threshold for deferring hires album art loading. When the pending task count
-/// reaches this value, new album art requests fall back to thumbnails.
-pub static BACKLOG_THRESHOLD: Lazy<usize> = Lazy::new(|| {
-    settings_manager()
-        .child("library")
-        .uint("use-hires-backlog-threshold")
-        .try_into()
-        .unwrap_or(10)
-});
-
 // We use an Asyncified container to queue tasks, such that two requests for the
 // same texture are never run concurrently. This allows one request to cache the
 // texture in-memory for all subsequent requests.
@@ -268,9 +257,7 @@ pub struct Cache {
     // Thread pool for parallelisable operations such as texture read from disk and resizing ops.
     pool: glib::ThreadPool,
     // Cache state object for emitting signals.
-    state: CacheState,
-    // Tracks in-flight get_cover requests for backpressure-aware hires loading.
-    pending_tasks: AtomicUsize,
+    state: CacheState
 }
 
 impl fmt::Debug for Cache {
@@ -313,8 +300,7 @@ impl Cache {
                 settings_manager().child("library").uint("n-image-threads"),
             ))
             .expect("Unable to start threadpool for cache operations"),
-            state: CacheState::default(),
-            pending_tasks: AtomicUsize::new(0),
+            state: CacheState::default()
         };
 
         Rc::new(cache)
@@ -322,11 +308,6 @@ impl Cache {
 
     pub fn get_cache_state(&self) -> CacheState {
         self.state.clone()
-    }
-
-    /// Returns the number of pending cover lookup tasks.
-    pub fn backlog(&self) -> usize {
-        self.pending_tasks.load(Ordering::Relaxed)
     }
 
     /// Try to get a cover image for the given song. This prioritises the folder-level
@@ -339,15 +320,12 @@ impl Cache {
         song: &SongInfo,
         thumbnail: bool,
     ) -> Result<Option<Texture>> {
-        // Track pending tasks for backpressure-aware hires loading.
-        self.pending_tasks.fetch_add(1, Ordering::Relaxed);
         let folder_uri = strip_filename_linux(&song.uri).to_owned();
         let album = song.album.as_ref().cloned();
         let res = self
             .clone()
             .get_cover_internal(&folder_uri, &song.uri, thumbnail, album)
             .await;
-        self.pending_tasks.fetch_sub(1, Ordering::Relaxed);
         res
     }
 
@@ -361,8 +339,6 @@ impl Cache {
         album: &AlbumInfo,
         thumbnail: bool,
     ) -> Result<Option<Texture>> {
-        // Track pending tasks for backpressure-aware hires loading.
-        self.pending_tasks.fetch_add(1, Ordering::Relaxed);
         let res = self
             .clone()
             .get_cover_internal(
@@ -372,7 +348,6 @@ impl Cache {
                 Some(album.to_owned()),
             )
             .await;
-        self.pending_tasks.fetch_sub(1, Ordering::Relaxed);
         res
     }
 
@@ -384,8 +359,6 @@ impl Cache {
         example_uri: &str,
         thumbnail: bool,
     ) -> Result<Option<Texture>> {
-        // Track pending tasks for backpressure-aware hires loading.
-        self.pending_tasks.fetch_add(1, Ordering::Relaxed);
         let res = self
             .clone()
             .get_cover_internal(
@@ -395,7 +368,6 @@ impl Cache {
                 None,
             )
             .await;
-        self.pending_tasks.fetch_sub(1, Ordering::Relaxed);
         res
     }
 
@@ -666,7 +638,7 @@ impl Cache {
                     let title = album.title.to_owned();
                     let mbid = album.mbid.clone();
                     let artist = album.get_artist_tag().map(String::from);
-                    
+
                     self.pool
                         .push_future(move || {
                             sqlite::get_album_meta(&title, mbid.as_deref(), artist.as_deref())
@@ -702,7 +674,7 @@ impl Cache {
                                 info.mbid = mbid;
                                 // Use mpd_ts such that future comparisons between this local copy and the MPD sticker version
                                 // will be exactly equal (2c).
-                                sqlite::write_album_meta(&info, &to_local, mpd_ts)
+                                sqlite::write_album_meta(&info, &to_local, mpd_ts, true)
                             })
                             .await
                         {
@@ -753,7 +725,7 @@ impl Cache {
                 .get_album_meta(album.clone(), None, window)
                 .await
             {
-                let ts = sqlite::write_album_meta(album, &meta, None).map_err(Error::Sqlite)?;
+                let ts = sqlite::write_album_meta(album, &meta, None, true).map_err(Error::Sqlite)?;
                 Ok(Some((meta, ts, models::MetaSource::External)))
             } else {
                 // Push an empty AlbumMeta to block further calls for this album.
@@ -761,7 +733,7 @@ impl Cache {
                     "No album meta could be found for {}. Pushing empty document...",
                     &album.folder_uri
                 );
-                sqlite::write_album_meta(album, &models::AlbumMeta::from_key(album), None)
+                sqlite::write_album_meta(album, &models::AlbumMeta::from_key(album), None, false)
                     .map_err(Error::Sqlite)?;
                 Ok(None)
             }
@@ -801,18 +773,18 @@ impl Cache {
             return Err(Error::AlreadyExists);
         }
         self.mpd_client
-            .set_meta::<AlbumMeta>(
-                "filter",
-                filter_expr,
-                meta,
-                new_last_modified,
-            )
+            .set_meta::<AlbumMeta>("filter", filter_expr, meta, new_last_modified)
             .await
             .map_err(Error::Client)
     }
 
-    pub fn set_album_meta(&self, album: &AlbumInfo, meta: &models::AlbumMeta) -> Result<OffsetDateTime> {
-        sqlite::write_album_meta(album, meta, None).map_err(Error::Sqlite)
+    pub fn set_album_meta(
+        &self,
+        album: &AlbumInfo,
+        meta: &models::AlbumMeta,
+        update_tags: bool
+    ) -> Result<OffsetDateTime> {
+        sqlite::write_album_meta(album, meta, None, update_tags).map_err(Error::Sqlite)
     }
 
     pub fn set_album_tags(&self, folder_uri: &str, tags: &[models::Tag]) -> Result<()> {
@@ -845,9 +817,7 @@ impl Cache {
         }
 
         if external && artist.mbid.is_some() {
-            if !overwrite
-                && let Ok(Some(local_res)) = self.get_local_artist_meta(artist).await
-            {
+            if !overwrite && let Ok(Some(local_res)) = self.get_local_artist_meta(artist).await {
                 return Ok(Some(local_res));
             }
             if let Some(meta) = self
@@ -855,7 +825,7 @@ impl Cache {
                 .get_artist_meta(artist.clone(), None, window)
                 .await
             {
-                let ts = sqlite::write_artist_meta(artist, &meta).map_err(Error::Sqlite)?;
+                let ts = sqlite::write_artist_meta(artist, &meta, true).map_err(Error::Sqlite)?;
                 Ok(Some((meta, ts, models::MetaSource::External)))
             } else {
                 // Push an empty ArtistMeta to block further calls for this artist.
@@ -863,7 +833,7 @@ impl Cache {
                     "No artist meta could be found for {}. Pushing empty document...",
                     &artist.name
                 );
-                sqlite::write_artist_meta(artist, &models::ArtistMeta::from_key(artist))
+                sqlite::write_artist_meta(artist, &models::ArtistMeta::from_key(artist), false)
                     .map_err(Error::Sqlite)?;
                 Ok(None)
             }
@@ -897,12 +867,7 @@ impl Cache {
             return Err(Error::AlreadyExists);
         }
         self.mpd_client
-            .set_meta::<models::ArtistMeta>(
-                "filter",
-                filter_expr,
-                meta,
-                new_last_modified,
-            )
+            .set_meta::<models::ArtistMeta>("filter", filter_expr, meta, new_last_modified)
             .await
             .map_err(Error::Client)
     }
@@ -940,9 +905,7 @@ impl Cache {
                     let name = artist.name.to_owned();
                     let mbid = artist.mbid.clone();
                     self.pool
-                        .push_future(move || {
-                            sqlite::get_artist_meta(&name, mbid.as_deref())
-                        })
+                        .push_future(move || sqlite::get_artist_meta(&name, mbid.as_deref()))
                         .expect("get_local_artist_meta: threadpool error")
                         .await
                         .expect("get_local_artist_meta: threadpool error")
@@ -963,9 +926,7 @@ impl Cache {
                         let artist = artist.to_owned();
                         if let Err(e) = self
                             .local
-                            .call(move |_| {
-                                sqlite::write_artist_meta(&artist, &to_local)
-                            })
+                            .call(move |_| sqlite::write_artist_meta(&artist, &to_local, true))
                             .await
                         {
                             dbg!(e);
@@ -978,9 +939,7 @@ impl Cache {
                     let name = artist.name.to_owned();
                     let mbid = artist.mbid.clone();
                     self.pool
-                        .push_future(move || {
-                            sqlite::get_artist_meta(&name, mbid.as_deref())
-                        })
+                        .push_future(move || sqlite::get_artist_meta(&name, mbid.as_deref()))
                         .expect("get_local_artist_meta: threadpool error")
                         .await
                         .expect("get_local_artist_meta: threadpool error")
@@ -992,8 +951,13 @@ impl Cache {
         }
     }
 
-    pub fn set_artist_meta(&self, artist: &ArtistInfo, meta: &models::ArtistMeta) -> Result<OffsetDateTime> {
-        sqlite::write_artist_meta(artist, meta).map_err(Error::Sqlite)
+    pub fn set_artist_meta(
+        &self,
+        artist: &ArtistInfo,
+        meta: &models::ArtistMeta,
+        update_tags: bool
+    ) -> Result<OffsetDateTime> {
+        sqlite::write_artist_meta(artist, meta, update_tags).map_err(Error::Sqlite)
     }
 
     pub fn set_artist_tags(&self, name: &str, tags: &[models::Tag]) -> Result<()> {
@@ -1117,20 +1081,28 @@ impl Cache {
         &self,
         song: &SongInfo,
         external: bool,
+        overwrite: bool,   // only effective when external == true
         window: Option<&EuphonicaWindow>,
     ) -> Result<Option<Lyrics>> {
         let uri = song.uri.to_owned();
-        let local = self
-            .local
-            .call(move |_| sqlite::find_lyrics(&uri))
-            .await
-            .map_err(Error::Sqlite)?;
-        if local.is_some() {
-            return Ok(local);
+        if !overwrite & !external {
+            match self.local.call(move |_| sqlite::find_lyrics(&uri)).await {
+                Ok(Some(lyrics)) => {
+                    return Ok(Some(lyrics));
+                }
+                Ok(None) => {
+                    // Nothing found (haven't tried) => allow function to continue
+                }
+                Err(e) => {
+                    // Includes the "do not retry case". Caller of get_lyrics() should display a "re-fetch" button.
+                    return Err(Error::Sqlite(e));
+                }
+            }
         }
 
         if external {
             let song = song.to_owned();
+            println!("Fetching new lyrics...");
             let res = self.meta_providers.get_lyrics(song.clone(), window).await;
             sqlite::write_lyrics(&song, res.as_ref()).map_err(Error::Sqlite)?;
             Ok(res)

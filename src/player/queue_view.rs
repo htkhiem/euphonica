@@ -954,7 +954,7 @@ impl QueueView {
     ) {
         self.imp().window.set(Some(window));
         self.setup_listview(player, cache.clone());
-        self.imp().player_pane.setup(player, cache, client_state);
+        self.imp().player_pane.setup(player, cache, client_state, window);
         self.bind_state(player);
         self.imp().player.set(Some(player));
     }

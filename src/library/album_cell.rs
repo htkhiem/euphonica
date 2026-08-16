@@ -15,12 +15,9 @@ use std::{
 };
 
 use crate::{
-    window::EuphonicaWindow,
-    cache::{BACKLOG_THRESHOLD, Cache, CacheState},
-    cache::placeholders::{EMPTY_ALBUM_STRING, EMPTY_ARTIST_STRING},
+    cache::{Cache, CacheState, placeholders::{EMPTY_ALBUM_STRING, EMPTY_ARTIST_STRING}},
     common::{
-        WING_DEPTH,
-        Album, PictureStack, Rating,
+        Album, PictureStack, Rating, TEXTURE_LOAD_DELAY_MS,
         marquee::{Marquee, MarqueeWrapMode},
     },
     utils::settings_manager,
@@ -54,24 +51,10 @@ mod imp {
         pub cover_signal_ids: RefCell<Option<(SignalHandlerId, SignalHandlerId)>>,
         pub cache: OnceCell<Rc<Cache>>,
         pub hires: Cell<bool>,
-        // Stored GridView for visibility checks in bind() and the signal handler.
-        pub viewport: WeakRef<gtk::GridView>,
-        // Weak reference to the window for connecting to the check-visible signal.
-        pub window: WeakRef<EuphonicaWindow>,
-        // Signal handler ID for disconnecting from the window's check-visible signal.
-        pub check_visible_handler: RefCell<Option<SignalHandlerId>>,
-        // Tracks whether the cell is currently within the viewport, used
-        // to detect visibility transitions (entering/exiting the viewport).
-        pub should_load_texture: Cell<bool>,
-        // Use this to block loading images immediately upon construction when hires
-        // is set to true (as that would trigger the setter before a viewport is set)
-        pub obj_ready: Cell<bool>,
-        // Set to true when the bind-time visibility check was skipped due to 
-        // backpressure.
-        pub deferred: Cell<bool>,
-        // Set to true when hires was deferred due to high backlog; triggers an
-        // upgrade to hires once the backlog drops below the threshold.
-        pub deferred_hires: Cell<bool>,
+        // Handle to the texture loading process. Can be used to abort early if unmap() is called
+        // in quick succession (such as the case described in the comment block above all this mess,
+        // or during fast scrolling).
+        pub texture_load_handle: RefCell<Option<glib::JoinHandle<()>>>,
     }
 
     // The central trait for subclassing a GObject
@@ -95,10 +78,6 @@ mod imp {
         fn dispose(&self) {
             while let Some(child) = self.obj().first_child() {
                 child.unparent();
-            }
-
-            if let (Some(handler), Some(window)) = (self.check_visible_handler.take(), self.window.upgrade()) {
-                window.disconnect(handler);
             }
 
             if let Some((update_id, clear_id)) = self.cover_signal_ids.take() {
@@ -261,8 +240,6 @@ impl AlbumCell {
         item: &gtk::ListItem,
         cache: Rc<Cache>,
         wrap_mode: Option<MarqueeWrapMode>,
-        window: Option<crate::window::EuphonicaWindow>,
-        viewport: Option<gtk::GridView>,
     ) -> Self {
         let res: Self = Object::builder().build();
         let cache_state = cache.get_cache_state();
@@ -309,11 +286,7 @@ impl AlbumCell {
             .chain_property::<Album>("artist")
             .chain_closure::<String>(closure_local!(
                 |_: Option<glib::Object>, artist: Option<&str>| {
-                    String::from(if artist.is_none_or(|a| a.is_empty()) {
-                        *EMPTY_ARTIST_STRING
-                    } else {
-                        artist.unwrap()
-                    })
+                    artist.map(|s| s.to_owned()).unwrap_or(String::from(*EMPTY_ARTIST_STRING))
                 }
             ))
             .bind(&res, "artist", gtk::Widget::NONE);
@@ -385,54 +358,23 @@ impl AlbumCell {
             ),
         )));
 
-        // Set up dynamic texture loading if a GridView is available.
-        if let Some(vp) = viewport {
-            res.imp().viewport.set(Some(&vp));
-        }
+        // Set up dynamic texture loading/unloading.
+        // Prev implementation was painfully clunky. I've since discovered the map() and unmap()
+        // signals. These fire as soon as a widget comes within/out of 10px of the viewport,
+        // i.e. almost ideal for texture loading.
+        // HOWEVER, map() seems to ALWAYS FIRE ONCE upon widget creation (maybe due to every new
+        // widget being created somewhere within the viewport, then moved out? or something to do
+        // with filtering being iterative?). Afterwards for widgets that end up outside of the
+        // viewport, unmap() will be fired. To avoid flooding the cache controller on startup we
+        // add a short delay on the map() signal. If unmap() comes in quick succession then we
+        // can just cancel the load before it happens.
+        res.connect_map(|res| {
+            res.load_textures_with_delay();
+        });
 
-        // Store weak reference to the window for signal connection.
-        res.imp().window.set(window.as_ref());
-
-        // Connect to the window's check-visible signal for visibility checks.
-        if let Some(window) = window {
-            let handler = window.connect_closure(
-                "check-visible",
-                false,
-                closure_local!(
-                    #[weak(rename_to = this)]
-                    res,
-                    move |_: &EuphonicaWindow| {
-                        let imp = this.imp();
-                        let is_visible = this.should_load_texture();
-                        let was_visible = imp.should_load_texture.replace(is_visible);
-
-                        if is_visible {
-                            // Also go through this if visibility status didn't change, 
-                            // but album art load hasn't been attempted yet.
-                            if was_visible != is_visible || imp.deferred.get() {
-                                imp.deferred.set(false);
-                                if imp.album.upgrade().is_some() {
-                                    glib::idle_add_local_once(clone!(
-                                        #[weak]
-                                        this,
-                                        move || {
-                                            this.update_cover(true);
-                                        }
-                                    ));
-                                }
-                            } else if imp.deferred_hires.get() {
-                                this.try_upgrade_hires();
-                            }
-                        } else if was_visible != is_visible {
-                            imp.cover.clear();
-                        }
-                    }
-                ),
-            );
-            res.imp().check_visible_handler.replace(Some(handler));
-        }
-
-        res.imp().obj_ready.set(true);
+        res.connect_unmap(|res| {
+            res.unload_textures();
+        });
 
         res
     }
@@ -441,131 +383,69 @@ impl AlbumCell {
         self.imp().album.upgrade()
     }
 
-  fn update_cover(&self, show_spinner: bool) {
+    #[inline]
+    fn unload_textures(&self) {
         let imp = self.imp();
-
-        // If hires is requested, check backlog to decide resolution.
-        if imp.hires.get() {
-            let backlog = imp.cache.get().unwrap().backlog();
-            if backlog >= *BACKLOG_THRESHOLD {
-                // Too many pending tasks; defer hires and load thumbnail instead.
-                imp.deferred_hires.set(true);
-            }
-        } else {
-            imp.deferred_hires.set(false);
+        if let Some(handle) = imp.texture_load_handle.take() {
+            handle.abort();
         }
-
-        let thumbnail_for_fetch = !imp.hires.get() || imp.deferred_hires.get();
-        if show_spinner {
-            imp.cover.show_spinner();
-        }
-        glib::spawn_future_local(clone!(
-            #[weak(rename_to = this)]
-            self,
-            async move {
-                if let Some(album) = this.album() {
-                    let res = this
-                        .imp()
-                        .cache
-                        .get()
-                        .unwrap()
-                        .clone()
-                        .get_album_cover(album.get_info(), thumbnail_for_fetch)
-                        .await;
-                    // Check again as cell might have been bound to a different album
-                    // while awaiting
-                    if this.album().is_some_and(|a| {
-                        a.get_info().get_comp_id() == album.get_info().get_comp_id()
-                    }) {
-                        match res {
-                            Ok(Some(tex)) => {
-                                this.imp().cover.show(&tex);
-                            }
-                            Ok(None) => {
-                                this.imp().cover.clear();
-                            }
-                            Err(e) => {
-                                this.imp().cover.clear();
-                                eprintln!("Failed to read cover for album `{}` (URI `{}`):\n{:?}", album.get_title(), album.get_folder_uri(), e);
-                            }
-                        }
-                    }
-                }
-            }
-        ));
+        imp.cover.clear();
     }
 
-    fn try_upgrade_hires(&self) {
-        let imp = self.imp();
-        if imp.deferred_hires.get() && self.should_load_texture() {
-            let backlog = imp.cache.get().unwrap().backlog();
-            if backlog < *BACKLOG_THRESHOLD {
-                imp.deferred_hires.set(false);
-                self.update_cover(false);
+    #[inline]
+    async fn load_textures(&self, use_thumbnail: bool) {
+        if let Some(album) = self.album() {
+            let cache = self.imp().cache.get().unwrap();
+            self.imp().cover.show_spinner();
+            let res = cache.clone().get_album_cover(album.get_info(), use_thumbnail).await;
+            // Check again as cell might have been bound to a different album
+            // while awaiting
+            if self.album().is_some_and(|a| a.get_info().get_comp_id() == album.get_info().get_comp_id()) {
+                match res {
+                    Ok(Some(tex)) => {
+                        self.imp().cover.show(&tex);
+                    }
+                    Ok(None) => {
+                        self.imp().cover.clear();
+                    }
+                    Err(e) => {
+                        self.imp().cover.clear();
+                        eprintln!(
+                            "Failed to read cover for album `{}` (URI `{}`):\n{:?}",
+                            album.get_title(),
+                            album.get_folder_uri(),
+                            e
+                        );
+                    }
+                }
             }
         }
     }
 
-    fn should_load_texture(&self) -> bool {
-        if !self.imp().obj_ready.get() {
-            return false;
+    /// Load with a delay to allow early cancel
+    fn load_textures_with_delay(&self) {
+        if let Some(handle) = self.imp().texture_load_handle.take() {
+            handle.abort();
         }
-        // The road to this whole mess lies undocumented in the GTK source code.
-        // Nice use of my 2 evenings.
-        match self.imp().viewport.upgrade() {
-            Some(vp) => {
-                if let Some(bounds) = self.compute_bounds(&vp) {
-                    let cell_x = bounds.x() as f64;
-                    let cell_y = bounds.y() as f64;
-                    let cell_w = bounds.width() as f64;
-                    let cell_h = bounds.height() as f64;
-                    if cell_w == 0.0 && cell_h == 0.0 {
-                        // If the bounds are the zero rectangle then we can bail early.
-                        return false;
-                    }
-                    let vis_w = vp.width().max(0) as f64;
-                    let vis_h = vp.height().max(0) as f64;
-                    // Note: compute_bounds() on a viewport-like widget will return coordinates
-                    // in a rather weird way: always by the viewport's location within the window,
-                    // with scrolling affecting the positions of the widgets therein. In other words,
-                    // within this coordinate system, the rendered area's top left corner is always at
-                    // (0, 0) and the AlbumCell's location might be in the negative.
-                    ((cell_x <= vis_w + WING_DEPTH && cell_x >= -WING_DEPTH)
-                        || (cell_x + cell_w <= vis_w + WING_DEPTH
-                            && cell_x + cell_w >= -WING_DEPTH))
-                        && ((cell_y <= vis_h + WING_DEPTH && cell_y >= -WING_DEPTH)
-                            || (cell_y + cell_h <= vis_h + WING_DEPTH
-                                && cell_y + cell_h >= -WING_DEPTH))
-                } else {
-                    false // we're in a GridView; don't load until given a bound
-                }
-            }
-            None => true,
-        }
+        let this = self.clone();
+        let _ = self
+            .imp()
+            .texture_load_handle
+            .replace(Some(glib::spawn_future_local(async move {
+                // Wait first to give unmap() a chance to cancel this outright
+                glib::timeout_future(TEXTURE_LOAD_DELAY_MS).await;
+                this.load_textures(!this.imp().hires.get()).await;
+            })));
     }
 
     pub fn bind(&self, album: &Album) {
         let imp = self.imp();
         imp.album.set(Some(album));
-        imp.deferred.set(false);
-        imp.deferred_hires.set(false);
-        // Only check this eagerly if backpressure is low
-        let backlog = imp.cache.get().unwrap().backlog();
-        if backlog < *BACKLOG_THRESHOLD {
-            if self.should_load_texture() {
-                self.update_cover(true);
-            }
-        } else {
-            imp.deferred.set(true);
-        }
-        
     }
 
     pub fn unbind(&self) {
-        self.imp().cover.clear();
+        self.unload_textures();
         self.imp().album.set(None);
-        self.imp().deferred.set(false);
-        self.imp().deferred_hires.set(false);
     }
 
     pub fn image_size(&self) -> i32 {
@@ -588,14 +468,8 @@ impl AlbumCell {
         if old != new {
             self.imp().cover.set_is_thumbnail(!new);
             self.notify("hires");
-            if new {
-                self.imp().deferred_hires.set(false);
-          if self.should_load_texture() {
-                    self.update_cover(true);
-                }
-            } else {
-                self.imp().deferred_hires.set(false);
-            }
+
+            self.load_textures_with_delay()
         }
     }
 }

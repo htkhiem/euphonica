@@ -724,6 +724,9 @@ impl EuphonicaApplication {
     /// Quit Euphonica. Useful for when run-in-background is true. Otherwise just close the window.
     pub fn quit_app(&self) {
         self.imp().hold_guard.take();
+        if let Some(win) = self.active_window().and_downcast::<EuphonicaWindow>() {
+            win.save_state();
+        }
         self.quit();
     }
 }

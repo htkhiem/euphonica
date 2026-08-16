@@ -5,7 +5,7 @@ use gtk::{
     glib::{self, Value, Variant},
 };
 
-use crate::{common::marquee::MarqueeWrapMode, utils};
+use crate::{common::{View, marquee::MarqueeWrapMode}, utils};
 
 mod imp {
     use super::*;
@@ -13,6 +13,8 @@ mod imp {
     #[derive(Debug, Default, CompositeTemplate)]
     #[template(resource = "/io/github/htkhiem/Euphonica/gtk/preferences/ui.ui")]
     pub struct UIPreferences {
+        #[template_child]
+        pub startup_view: TemplateChild<adw::ComboRow>,
         #[template_child]
         pub recent_playlists_count: TemplateChild<adw::SpinRow>,
         #[template_child]
@@ -118,7 +120,27 @@ impl UIPreferences {
         let settings = utils::settings_manager();
         let player_settings = settings.child("player");
         let ui_settings = settings.child("ui");
+        let state = settings.child("state");
         // Set up UI settings
+        let startup_view = imp.startup_view.get();
+        state
+            .bind("startup-view", &startup_view, "selected")
+            .mapping(|v: &Variant, _| {
+                Some(
+                    View::try_from(v.get::<String>().unwrap().as_str())
+                        .unwrap_or_default()
+                        .as_idx()
+                        .to_value(),
+                )
+            })
+            .set_mapping(|v: &Value, _| {
+                Some(
+                    View::try_from(v.get::<u32>().unwrap())
+                        .unwrap_or_default()
+                        .into(),
+                )
+            })
+            .build();
         let recent_playlists_count = imp.recent_playlists_count.get();
         ui_settings
             .bind("recent-playlists-count", &recent_playlists_count, "value")

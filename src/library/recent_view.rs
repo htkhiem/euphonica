@@ -305,21 +305,14 @@ impl RecentView {
             cache,
             #[weak]
             adj,
-            #[weak]
-            window,
-            #[weak(rename_to = this)]
-            self,
             move |_, list_item| {
                 let item = list_item
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
-                let album_row = this.imp().album_row.get();
                 let album_cell = AlbumCell::new(
                     item,
                     cache,
                     Some(MarqueeWrapMode::Scroll),
-                    Some(window.clone()),
-                    Some(album_row),
                 );
                 // propagating the tallest cell's height to the revealer if said row wasn't
                 // the first initialised.
@@ -419,17 +412,12 @@ impl RecentView {
             cache,
             #[weak]
             adj,
-            #[weak]
-            artist_row,
-            #[weak]
-            window,
             move |_, list_item| {
                 let item = list_item
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
                 let artist_cell = ArtistCell::new(
-                    item, cache,
-                    Some(window), Some(artist_row)
+                    item, cache
                 );
                 item.set_child(Some(&artist_cell));
                 adj.set_value(0.0);

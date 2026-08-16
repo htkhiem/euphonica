@@ -1166,13 +1166,12 @@ impl Player {
                             #[strong]
                             new_song,
                             async move {
-                                println!("Fetching new lyrics...");
                                 let result = this
                                     .imp()
                                     .cache
                                     .get()
                                     .unwrap()
-                                    .get_lyrics(new_song.get_info(), true, None)
+                                    .get_lyrics(new_song.get_info(), true, false, None)   // overwrite == false means upsert
                                     .await;
                                 if !this.current_song().is_some_and(|song| {
                                     song.get_info().get_comp_id()
@@ -2000,6 +1999,15 @@ impl Player {
             && let Ok(lyrics) = Lyrics::try_from_synced_lrclib_str(text)
                 .or_else(|_| Lyrics::try_from_plain_lrclib_str(text))
         {
+            sqlite::write_lyrics(curr_song.get_info(), Some(&lyrics))
+                .expect("Unable to import lyrics into SQLite DB");
+            self.abort_lyrics_fetch();
+            self.update_lyrics(Some(lyrics));
+        }
+    }
+
+    pub fn import_lyrics_obj(&self, lyrics: Lyrics) {
+        if let Some(curr_song) = self.current_song() {
             sqlite::write_lyrics(curr_song.get_info(), Some(&lyrics))
                 .expect("Unable to import lyrics into SQLite DB");
             self.abort_lyrics_fetch();

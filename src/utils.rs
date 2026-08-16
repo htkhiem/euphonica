@@ -1,9 +1,10 @@
 use crate::cache::sqlite;
 use crate::config::APPLICATION_ID;
+use adw::prelude::*;
 use aho_corasick::AhoCorasick;
 use gtk::{
     Ordering, gdk,
-    gio::{self, prelude::*},
+    gio::{self},
     glib,
 };
 use image::{DynamicImage, imageops::FilterType};
@@ -26,7 +27,6 @@ use time::error::IndeterminateOffset;
 use time::format_description::{OwnedFormatItem, parse_owned};
 use tokio::runtime::Runtime;
 use uuid::Uuid;
-use adw::prelude::*;
 
 static APP_CACHE_PATH: Lazy<PathBuf> = Lazy::new(|| {
     let mut res = glib::user_cache_dir();
@@ -237,14 +237,16 @@ pub fn resize_convert_image(dyn_img: DynamicImage) -> (DynamicImage, DynamicImag
         )
     };
     (
-        DynamicImage::ImageRgb8(dyn_img
-            .resize(hires_size, hires_size, FilterType::Triangle)
-            .to_rgb8()
+        DynamicImage::ImageRgb8(
+            dyn_img
+                .resize(hires_size, hires_size, FilterType::Triangle)
+                .to_rgb8(),
         ),
-        DynamicImage::ImageRgb8(dyn_img
-            .thumbnail(thumbnail_sizes.0, thumbnail_sizes.1)
-            .to_rgb8()
-        )
+        DynamicImage::ImageRgb8(
+            dyn_img
+                .thumbnail(thumbnail_sizes.0, thumbnail_sizes.1)
+                .to_rgb8(),
+        ),
     )
 }
 
@@ -263,7 +265,7 @@ pub fn save_and_register_single_image(
     if settings.boolean("store-lossless-images") {
         // WebP encoder in rust image crate is lossless
         img.save_with_format(&path, image::ImageFormat::WebP)
-        .unwrap_or_else(|_| panic!("Couldn't save downloaded image to {:?}", &path));
+            .unwrap_or_else(|_| panic!("Couldn't save downloaded image to {:?}", &path));
     } else {
         let encoder = webp::Encoder::from_image(img).unwrap();
         // Default to 90% quality (not sure if this should even be user selectable)
@@ -290,7 +292,9 @@ impl RegisteredImage {
                 .set_height(rgb_image.height() as i32)
                 .set_format(gdk::MemoryFormat::R8g8b8)
                 .set_stride((rgb_image.width() * 3) as usize)
-                .set_bytes(Some(&glib::Bytes::from_owned(rgb_image.to_rgb8().into_raw())))
+                .set_bytes(Some(&glib::Bytes::from_owned(
+                    rgb_image.to_rgb8().into_raw(),
+                )))
                 .build())
         } else {
             let mut res = get_image_cache_path();
@@ -330,7 +334,7 @@ pub fn save_and_register_image(
     dyn_img: DynamicImage,
     key: &str,
     prefix: Option<&'static str>,
-) -> RegisteredImageBundle {    
+) -> RegisteredImageBundle {
     let (hires_img, thumb_img) = resize_convert_image(dyn_img);
     let hires_k = save_and_register_single_image(&hires_img, key, prefix, false);
     let thumb_k = save_and_register_single_image(&thumb_img, key, prefix, true);
@@ -418,7 +422,9 @@ pub async fn new_gtksvg_from_datafile(relpath: &str) -> Option<gtk::Svg> {
     path.push(crate::PKGDATADIR);
     path.push(relpath);
     let file = gio::File::for_path(&path);
-    Some(gtk::Svg::from_bytes(&file.load_bytes_future().await.ok().map(|tup| tup.0)?))
+    Some(gtk::Svg::from_bytes(
+        &file.load_bytes_future().await.ok().map(|tup| tup.0)?,
+    ))
 }
 
 // Build Aho-Corasick automatons only once. In case no delimiter or exception is
@@ -607,15 +613,14 @@ pub fn get_time_ago_desc(past_ts: i64) -> String {
     }
 }
 
-
 /// Serialise MPD argument types into string in their MPD protocol (sans escaping).
 pub fn mpd_args_to_string<T: mpd::ToArguments>(args: T) -> String {
     let mut output = Vec::<String>::new();
     args.to_arguments::<_, ()>(&mut |arg| {
-            output.push(arg.to_string());
-            Ok(())
-        })
-        .unwrap();
+        output.push(arg.to_string());
+        Ok(())
+    })
+    .unwrap();
     output.join(" ")
 }
 
