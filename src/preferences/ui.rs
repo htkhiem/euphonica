@@ -137,6 +137,7 @@ impl UIPreferences {
                 Some(
                     View::try_from(v.get::<u32>().unwrap())
                         .unwrap_or_default()
+                        .as_str()
                         .into(),
                 )
             })
