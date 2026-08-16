@@ -93,7 +93,7 @@
   </screenshots>
 
   <releases>
-    <release version="0.99.5-beta" date="2026-08-16">
+    <release version="0.99.6-beta" date="2026-08-16">
       <url type="details">https://github.com/htkhiem/euphonica/releases/tag/v0.99.6-beta</url>
       <description>
         <p>New: artist view now shows album covers too and is limited to albumartists by default.</p>
