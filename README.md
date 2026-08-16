@@ -21,7 +21,7 @@ It exists to sate my need for something that's got the bling and the features to
   - Save a dynamic playlist's current state as an MPD-side static playlist whenver you want.
   - JSON import/export for sharing & backing up dynamic playlist rules.
 - Fetch album arts, artist avatars and synced song lyrics from external sources (currently supports Last.fm, MusicBrainz and LRCLIB).
-- myMPD-compatible stickers handling.
+- myMPD-compatible stickers handling (now with new album stickers standard).
 - Integrated MPRIS client with background run supported. The background instance can be reopened via your shell's MPRIS applet, the "Background applications" section in GNOME's quick settings shade (if installed via Flatpak) or simply by launching Euphonica again.
 - Rate albums (requires MPD 0.24+) and individual songs.
 - Audio quality indicators (lossy, lossless, hi-res, DSD) for individual songs as well as albums & detailed format printout.
@@ -41,16 +41,22 @@ The below were captured with a mix of dark and light modes.
 
 
 - Album View[^1]
-  <img width="2100" height="1500" alt="album-view" src="https://github.com/user-attachments/assets/a262c79b-6078-4075-9986-7311fefc4d8e" />
-  
+  <img width="2100" height="1500" alt="album-view" src="https://github.com/user-attachments/assets/655cbce3-47ae-44d3-897a-348db341ff9b" />
+
+- Artist View[^1]
+  <img width="2500" height="1780" alt="artist-view" src="https://github.com/user-attachments/assets/9b3e98da-0bba-4719-8e68-a70203710af4" />
+
 - UI at different sizes[^1]
-  <img width="2100" height="1500" alt="mini-ui" src="https://github.com/user-attachments/assets/234e4fb8-2d3c-444c-b2cc-605147989f35" />
-
+  <img width="4984" height="3560" alt="mini-ui" src="https://github.com/user-attachments/assets/a30845a3-2cdd-40e0-93a1-2383022a96ec" />
+  
 - Queue View[^1]
-  <img width="2100" height="1500" alt="queue-view" src="https://github.com/user-attachments/assets/585547f5-95ca-4de7-b8c5-bd3de14948cd" />
+  <img width="2500" height="1780" alt="queue-view" src="https://github.com/user-attachments/assets/cfc760ef-5d94-48d5-b1b8-2f34c9b4bdd6" />
 
-- Album wiki as fetched from Last.fm[^1][^2]
-  <img width="2100" height="1500" alt="album-content-view" src="https://github.com/user-attachments/assets/5ef8bcbc-53f2-44df-bb0d-8711bf03429f" />
+- Album wiki [^1][^2]
+  <img width="2500" height="1780" alt="album-content-view" src="https://github.com/user-attachments/assets/39a3f7a6-2d59-48ba-9e7d-80e96db56b91" />
+
+- Artist bio, with local edits
+  <img width="2500" height="1780" alt="artist-content-view" src="https://github.com/user-attachments/assets/cfce80dc-88d4-4aef-8e6f-d86776ce5989" />
   
 - Dynamic Playlist Editor[^1]
   <img width="2100" height="1500" alt="dyn-playlist-editor" src="https://github.com/user-attachments/assets/971b1c88-59d1-4750-a72b-6af56bc7aa9a" />
@@ -59,12 +65,10 @@ The below were captured with a mix of dark and light modes.
   <img width="2100" height="1500" alt="viz-settings" src="https://github.com/user-attachments/assets/efc07616-e74a-4955-8f8b-da4c5762537d" />
 
 
-[^1]: Actual album arts and artist images have been replaced with random pictures from [Pexels](https://www.pexels.com/). All credits go to the original authors.
-[^2]: Artist bios and album wikis are user-contributed and licensed by Last.fm under CC-BY-SA.
+[^1]: Actual album arts and artist images have been replaced with random pictures from [Pexels](https://www.pexels.com/) and other sources. All credits go to the original authors.
+[^2]: Auto-fetched artist bios and album wikis are user-contributed and licensed by Last.fm under CC-BY-SA. Euphonica supports local editing and syncing between local instances but not sharing.
 
 ## Installation
-
-NOTE: Beta-quality, here be dragons.
 
 The preferred way to install Euphonica is as a Flatpak app via Flathub:
 
@@ -171,12 +175,8 @@ Euphonica requires some preparation before it can be used, especially if you hav
 - For v1.0, think of a new UI to cleanly resolve the following issues:
   - Recent View not being very useful.
   - **More browser-like navigation between pages, with actual navigation history instead of leading back to the outermost view**.
-  - How to integrate genre grouping/searching. Aside from being a top-level view by itself, we'd also like to
-    look up albums, artists and tracks by genre too.
   - A "Tracks" view that displays the library track by track, with advanced sorting & filtering.
   - Advanced filtering and sorting in Albums, Artists and Tracks View.
-  - Make use efficient use of screen real estate on larger displays (currently looks nice for 1080p & below, but kind of stretched above that).
-- User-editable album wikis and artist bios
 - Local socket-exclusive features:
   - Library management operations such as tag editing (will require access to the files themselves)
   - Save downloaded album arts and artist avatars directly into the music folders themselves so other instances
