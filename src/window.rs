@@ -30,7 +30,7 @@ use glib::WeakRef;
 use gtk::{
     CssProvider, cairo, gdk,
     gio::{self, SimpleActionGroup},
-    glib::{self, BoxedAnyObject, SignalHandlerId, clone, closure_local, subclass::Signal},
+    glib::{self, BoxedAnyObject, SignalHandlerId, clone, closure_local},
     graphene, gsk,
 };
 use image::{DynamicImage, imageops::FilterType};
@@ -39,7 +39,7 @@ use mpd::Subsystem;
 use std::{cell::RefCell, ops::Deref, path::PathBuf, thread, time::Duration};
 use std::{
     cell::{Cell, OnceCell},
-    sync::{Arc, Mutex, OnceLock},
+    sync::{Arc, Mutex},
 };
 
 use async_channel::Sender;

@@ -74,6 +74,39 @@ static META_STICKER_PAGE_SIZE: usize = 4096;
 // code (as the cache can now simply await cover art requests sent to the MPD
 // wrapper directly).
 
+/// RAII guard that decrements the fg/bg task counters exactly once, whether
+/// the future it lives in completes normally or is aborted (dropped) mid-flight.
+/// Without it, aborted calls would never decrement and the counters would leak.
+struct TaskGuard {
+    state: ClientState,
+    bg: bool,
+}
+
+impl TaskGuard {
+    fn new(state: ClientState, bg: bool) -> Self {
+        let res = Self {
+            state,
+            bg
+        };
+        if bg {
+            res.state.inc_bg();
+        } else {
+            res.state.inc_fg();
+        }
+        res
+    }
+}
+
+impl Drop for TaskGuard {
+    fn drop(&mut self) {
+        if self.bg {
+            self.state.dec_bg();
+        } else {
+            self.state.dec_fg();
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct MpdWrapper {
     // Handles return bool to indicate whether the threads stopped due to an error
@@ -350,13 +383,15 @@ impl MpdWrapper {
         task: Task,
         receiver: oneshot::Receiver<ClientResult<T>>,
     ) -> ClientResult<T> {
-        self.state.inc_fg();
+        // Decrement when this function returns OR when the future is dropped
+        // (aborted by a view navigating away), exactly once in both cases.
+        let _guard = TaskGuard {
+            state: self.state.clone(),
+            bg: false,
+        };
         self.fg_sender.send(task).await.expect("Broken FG sender");
-        let res = self
-            .handle_error(receiver.await.expect("Broken oneshot receiver"))
-            .await;
-        self.state.dec_fg();
-        res
+        self.handle_error(receiver.await.expect("Broken oneshot receiver"))
+            .await
     }
 
     async fn background<T>(
@@ -364,7 +399,12 @@ impl MpdWrapper {
         task: Task,
         receiver: oneshot::Receiver<ClientResult<T>>,
     ) -> ClientResult<T> {
-        self.state.inc_bg();
+        // Decrement when this function returns OR when the future is dropped
+        // (aborted by a view navigating away), exactly once in both cases.
+        let _guard = TaskGuard {
+            state: self.state.clone(),
+            bg: true,
+        };
         self.bg_sender.send(task).await.expect("Broken BG sender");
         // Wake background thread
         let (s, r) = oneshot::channel();
@@ -372,11 +412,8 @@ impl MpdWrapper {
         let _ = self
             .foreground(Task::SendMessage(String::from("wake"), s), r)
             .await;
-        let res = self
-            .handle_error(receiver.await.expect("Broken oneshot receiver"))
-            .await;
-        self.state.dec_bg();
-        res
+        self.handle_error(receiver.await.expect("Broken oneshot receiver"))
+            .await
     }
 
     pub async fn get_volume(&self) -> ClientResult<i8> {
