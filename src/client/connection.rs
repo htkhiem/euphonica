@@ -15,8 +15,10 @@ use resolve_path::PathResolveExt;
 use rustc_hash::FxHashSet;
 use std::{
     borrow::Cow, cell::RefCell, cmp::Ordering as StdOrdering, net::TcpStream, ops::Range,
-    os::{linux::net::SocketAddrExt, unix::net::{SocketAddr, UnixStream}}, result,
+    os::unix::net::UnixStream, result,
 };
+#[cfg(target_os = "linux")]
+use std::os::{linux::net::SocketAddrExt, unix::net::SocketAddr};
 
 use crate::{
     cache::sqlite,
@@ -458,24 +460,27 @@ impl Connection {
             let path = settings.string("mpd-unix-socket");
             let path = path.as_str();
             eprintln!("Connecting to local socket {}", &path);
-            if path.starts_with("@") {
-                path.get(1..)
-                    .ok_or(Error::NoExist)
-                    .and_then(|n| SocketAddr::from_abstract_name(n).map_err(|_| Error::NoExist))
-                    .and_then(|a| UnixStream::connect_addr(&a).map_err(|_| Error::Socket))
-                    .map(|s| StreamWrapper::new_unix(s))
-                    .and_then(|s| mpd::Client::new(s).map_err(Error::Mpd))?
-            } else if let Ok(resolved) = path.try_resolve() {
-                mpd::Client::new(StreamWrapper::new_unix(
-                    UnixStream::connect(resolved).map_err(|_| Error::Socket)?,
-                ))
-                .map_err(Error::Mpd)?
-            } else {
-                mpd::Client::new(StreamWrapper::new_unix(
-                    UnixStream::connect(path).map_err(|_| Error::Socket)?,
-                ))
-                .map_err(Error::Mpd)?
+            let mut client = None;
+            #[cfg(target_os = "linux")]
+            {
+                if path.starts_with("@") {
+                    client = Some(path.get(1..)
+                        .ok_or(Error::NoExist)
+                        .and_then(|n| SocketAddr::from_abstract_name(n).map_err(|_| Error::NoExist))
+                        .and_then(|a| UnixStream::connect_addr(&a).map_err(|_| Error::Socket))
+                        .map(|s| StreamWrapper::new_unix(s))
+                        .and_then(|s| mpd::Client::new(s).map_err(Error::Mpd)))
+                }
             }
+            client.unwrap_or_else(||
+                if let Ok(resolved) = path.try_resolve() {
+                    UnixStream::connect(resolved).map_err(|_| Error::Socket)
+                        .and_then(|s| mpd::Client::new(StreamWrapper::new_unix(s)).map_err(Error::Mpd))
+                } else {
+                    UnixStream::connect(path).map_err(|_| Error::Socket)
+                        .and_then(|s| mpd::Client::new(StreamWrapper::new_unix(s)).map_err(Error::Mpd))
+                }
+            )?
         } else {
             let addr = format!(
                 "{}:{}",
