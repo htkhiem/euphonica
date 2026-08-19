@@ -23,7 +23,7 @@ It exists to sate my need for something that's got the bling and the features to
 - Fetch album arts, artist avatars and synced song lyrics from external sources (currently supports Last.fm, MusicBrainz and LRCLIB).
 - myMPD-compatible stickers handling (now with new album stickers standard).
 - Integrated MPRIS client with background run supported. The background instance can be reopened via your shell's MPRIS applet, the "Background applications" section in GNOME's quick settings shade (if installed via Flatpak) or simply by launching Euphonica again.
-- Rate albums (requires MPD 0.24+) and individual songs.
+- Rate albums (requires MPD 0.24+, and stickers enabled in MPD config) and individual songs.
 - Audio quality indicators (lossy, lossless, hi-res, DSD) for individual songs as well as albums & detailed format printout.
 - Asynchronous search for large collections. The app as a whole should work with any library size (tested with up to 30K songs).
 - Configurable multi-artist tag syntax, works with anything you throw at it.
