@@ -690,9 +690,13 @@ impl Library {
             album_model.remove_all();
             let albumartist_model = self.imp().albumartists.clone();
             albumartist_model.remove_all();
+            // Sticker types used for ratings ("filter"/"album") require MPD 0.24+ with the
+            // sticker DB enabled. Only request them when supported, else the whole fetch fails.
+            let fetch_stickers = self.client().get_client_state().stickers_support_level()
+                >= StickersSupportLevel::All;
             let (albums, artists) = self
                 .client()
-                .get_albums_and_albumartists_by_query(Query::new(), true)
+                .get_albums_and_albumartists_by_query(Query::new(), fetch_stickers)
                 .await?;
             album_model.extend_from_slice(&albums);
             albumartist_model.extend_from_slice(&artists);
