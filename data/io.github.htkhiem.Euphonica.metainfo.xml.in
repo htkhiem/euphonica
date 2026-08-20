@@ -93,6 +93,13 @@
   </screenshots>
 
   <releases>
+    <release version="0.99.6-beta-1" date="2026-08-20">
+      <url type="details">https://github.com/htkhiem/euphonica/releases/tag/v0.99.6-beta-1</url>
+      <description>
+        <p>Fix: make Linux named sockets platform-specific to restore BSD buildability.</p>
+        <p>Fix: album and artist grids not populating without stickers DB enabled.</p>
+      </description>
+    </release>
     <release version="0.99.6-beta" date="2026-08-16">
       <url type="details">https://github.com/htkhiem/euphonica/releases/tag/v0.99.6-beta</url>
       <description>
