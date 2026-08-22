@@ -1,6 +1,6 @@
 /* application.rs
  *
- * Copyright 2024 htkhiem2000
+ * Copyright 2026 htkhiem2000
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -88,6 +88,8 @@ pub fn update_xdg_background_request() {
 }
 
 mod imp {
+    use crate::onboarding::EuphonicaOnboardingWindow;
+
     use super::*;
 
     #[derive(Debug)]
@@ -141,8 +143,6 @@ mod imp {
         // tries to launch a "second instance" of the application. When they try
         // to do that, we'll just present any existing window.
         fn activate(&self) {
-            let application = self.obj();
-
             if !self.initialized.get() {
                 println!("Creating a new Euphonica instance...");
                 // Put init logic here to ensure they're only called on the primary instance.
@@ -154,73 +154,41 @@ mod imp {
 
                 // Create client instance (not connected yet)
                 let client = MpdWrapper::new();
-
-                // Create cache controller
-                let cache = Cache::new(client.clone());
-
-                // Create controllers
-                // These two are GObjects (already refcounted by GLib)
-                let player = Player::default();
-                player.setup(self.obj().clone(), client.clone(), cache.clone());
-                let library = Library::default();
-                library.setup(client.clone(), player.clone());
-
-                let _ = self.cache.set(cache);
                 let _ = self.client.set(client);
-                let _ = self.library.set(library);
-                let _ = self.player.set(player);
 
-                let obj = self.obj();
-                obj.setup_gactions();
-                // See https://github.com/GNOME/gtk/blob/main/gdk/gdkkeysyms.h for key names
-                obj.set_accels_for_action("app.quit", &["<primary>q"]);
-                obj.set_accels_for_action("app.fullscreen", &["F11"]);
-                obj.set_accels_for_action("app.refresh", &["F5"]);
-                obj.set_accels_for_action("app.update-db", &["F6"]);
-                obj.set_accels_for_action("app.toggle-visualizer", &["F8"]);                
-                
-                // Playback shortcuts
-                obj.set_accels_for_action("app.toggle-playback", &["<Ctrl>p"]);
-                obj.set_accels_for_action("app.next-song", &["<Shift>greater"]);
-                obj.set_accels_for_action("app.prev-song", &["<Shift>less"]);
-                obj.set_accels_for_action("app.seek-forward", &["<Ctrl><Shift>f"]);
-                obj.set_accels_for_action("app.seek-backward", &["<Ctrl><Shift>b"]);
-                obj.set_accels_for_action("app.stop", &["<Ctrl><Shift>s"]);
-                obj.set_accels_for_action("app.toggle-random", &["<Alt>z"]);
-                obj.set_accels_for_action("app.cycle-flow", &["<Alt>r"]);
-                obj.set_accels_for_action("app.toggle-consume", &["<Alt><Shift>r"]);
-                obj.set_accels_for_action("app.cycle-replaygain", &["<Alt><Shift>y"]);
-                obj.set_accels_for_action("app.cycle-crossfade", &["<Alt>x"]);
-                obj.set_accels_for_action("app.volume-up", &["<Ctrl><Shift>Up"]);
-                obj.set_accels_for_action("app.volume-down", &["<Ctrl><Shift>Down"]);
-                obj.set_accels_for_action("app.toggle-mute", &["<Ctrl>m"]);
-                obj.set_accels_for_action("app.next-output", &["<Ctrl><Shift>Right"]);
-                obj.set_accels_for_action("app.prev-output", &["<Ctrl><Shift>Left"]);
-                obj.set_accels_for_action("app.toggle-output", &["<Ctrl>slash"]);
-
-                glib::spawn_future_local(clone!(
-                    #[weak]
-                    application,
-                    async move {
-                        if let Err(e) = application.refresh().await {
-                            dbg!(e);
-                        }
+                // Check whether we need to show the onboarding wizard
+                let state = settings_manager().child("state");
+                if state.boolean("onboarded") {
+                    eprintln!("ONBOARDED");
+                    // Onboarded => show main window directly
+                    self.continue_startup();
+                    if !self.start_minimized.get() {
+                        // If this is the main instance, respect the minimized flag
+                        let player = self.player.get().unwrap();
+                        glib::spawn_future_local(clone!(
+                            #[weak]
+                            player,
+                            async move {
+                                player.set_is_foreground(true).await;
+                            }
+                        ));
+                        self.obj().raise_window();
                     }
-                ));
-
-                self.initialized.set(true);
-
-                // If this is the main instance, respect the minimized flag
-                if !self.start_minimized.get() {
-                    let player = self.player.get().unwrap();
-                    glib::spawn_future_local(clone!(
-                        #[weak]
-                        player,
-                        async move {
-                            player.set_is_foreground(true).await;
-                        }
-                    ));
-                    self.obj().raise_window();
+                } else {
+                    // NOT onboarded yet.
+                    eprintln!("ONBOARDING...");
+                    if !self.start_minimized.get() {
+                        // Show onboarding wizard
+                        let onboarding_wizard = EuphonicaOnboardingWindow::new(self.obj().as_ref());
+                        // Keep app alive as we transition from onboarding wizard to main window
+                        let _ = self.hold_guard.replace(Some(self.obj().hold()));
+                        onboarding_wizard.present();
+                    } else {
+                        eprintln!(
+                            "FATAL: not yet onboarded. Please start Euphonica normally (not minimised) once to complete the onboarding first."
+                        );
+                        self.obj().quit_app();
+                    }
                 }
             } else {
                 // Not the main instance -> not starting a new one -> always open a window regardless
@@ -232,6 +200,70 @@ mod imp {
 
     impl GtkApplicationImpl for EuphonicaApplication {}
     impl AdwApplicationImpl for EuphonicaApplication {}
+
+    impl EuphonicaApplication {
+        /// Continue startup by initialising the two controllers.
+        /// This expects the clients to have been initialised and connected.
+        /// Now a separate function as we may either directly enter the main UI or go through
+        /// an onboarding wizard first.
+        pub fn continue_startup(&self) {
+            let client = self.client.get().unwrap();
+            // Create cache controller
+            let cache = Cache::new(client.clone());
+
+            // Create controllers
+            // These two are GObjects (already refcounted by GLib)
+            let player = Player::default();
+            player.setup(self.obj().clone(), client.clone(), cache.clone());
+            let library = Library::default();
+            library.setup(client.clone(), player.clone());
+
+            let _ = self.cache.set(cache);
+            let _ = self.library.set(library);
+            let _ = self.player.set(player);
+
+            let obj = self.obj();
+            obj.setup_gactions();
+            // See https://github.com/GNOME/gtk/blob/main/gdk/gdkkeysyms.h for key names
+            obj.set_accels_for_action("app.quit", &["<primary>q"]);
+            obj.set_accels_for_action("app.fullscreen", &["F11"]);
+            obj.set_accels_for_action("app.refresh", &["F5"]);
+            obj.set_accels_for_action("app.update-db", &["F6"]);
+            obj.set_accels_for_action("app.toggle-visualizer", &["F8"]);
+
+            // Playback shortcuts
+            obj.set_accels_for_action("app.toggle-playback", &["<Ctrl>p"]);
+            obj.set_accels_for_action("app.next-song", &["<Shift>greater"]);
+            obj.set_accels_for_action("app.prev-song", &["<Shift>less"]);
+            obj.set_accels_for_action("app.seek-forward", &["<Ctrl><Shift>f"]);
+            obj.set_accels_for_action("app.seek-backward", &["<Ctrl><Shift>b"]);
+            obj.set_accels_for_action("app.stop", &["<Ctrl><Shift>s"]);
+            obj.set_accels_for_action("app.toggle-random", &["<Alt>z"]);
+            obj.set_accels_for_action("app.cycle-flow", &["<Alt>r"]);
+            obj.set_accels_for_action("app.toggle-consume", &["<Alt><Shift>r"]);
+            obj.set_accels_for_action("app.cycle-replaygain", &["<Alt><Shift>y"]);
+            obj.set_accels_for_action("app.cycle-crossfade", &["<Alt>x"]);
+            obj.set_accels_for_action("app.volume-up", &["<Ctrl><Shift>Up"]);
+            obj.set_accels_for_action("app.volume-down", &["<Ctrl><Shift>Down"]);
+            obj.set_accels_for_action("app.toggle-mute", &["<Ctrl>m"]);
+            obj.set_accels_for_action("app.next-output", &["<Ctrl><Shift>Right"]);
+            obj.set_accels_for_action("app.prev-output", &["<Ctrl><Shift>Left"]);
+            obj.set_accels_for_action("app.toggle-output", &["<Ctrl>slash"]);
+
+            let app = self.obj();
+            glib::spawn_future_local(clone!(
+                #[weak]
+                app,
+                async move {
+                    if let Err(e) = app.refresh().await {
+                        dbg!(e);
+                    }
+                }
+            ));
+
+            self.initialized.set(true);
+        }
+    }
 }
 
 glib::wrapper! {
@@ -258,6 +290,28 @@ impl EuphonicaApplication {
         update_xdg_background_request();
 
         app
+    }
+
+    pub fn conclude_onboarding(&self, should_continue: bool) {
+        if should_continue {
+            let state = settings_manager().child("state");
+            let _ = state.set_boolean("onboarded", true);
+            self.imp().continue_startup();
+            let player = self.imp().player.get().unwrap().clone();
+            glib::spawn_future_local(async move {
+                player.set_is_foreground(true).await;
+            });
+            // Explicitly create window to force the app to bind to it instead of the will-be-destroyed onboarding one
+            let _ = EuphonicaWindow::new(self);
+            self.raise_window();
+            // Safe to remove hold guard now, if any
+            let _ = self.imp().hold_guard.take();
+        } else {
+            eprintln!(
+                "FATAL: user exited onboarding."
+            );
+            self.quit_app();
+        }
     }
 
     pub fn get_player(&self) -> &Player {
@@ -619,10 +673,10 @@ impl EuphonicaApplication {
             self.set_accels_for_action("win.view-playlists", &["<Ctrl>6"]);
             self.set_accels_for_action("win.view-queue", &["<Ctrl>7"]);
             self.set_accels_for_action("win.search-current-view", &["<Ctrl>f"]);
-            self.set_accels_for_action("queue.scroll-to-playing", &["<Ctrl><Shift>o"]);  // toggle autoscroll on-off, bad name
+            self.set_accels_for_action("queue.scroll-to-playing", &["<Ctrl><Shift>o"]); // toggle autoscroll on-off, bad name
             self.set_accels_for_action("queue.stop-and-clear", &["<Alt>c"]);
             self.set_accels_for_action("win.save", &["<Ctrl>s"]);
-            self.set_accels_for_action("queue.jump-to-current", &["<Ctrl>o"]);  
+            self.set_accels_for_action("queue.jump-to-current", &["<Ctrl>o"]);
             self.set_accels_for_action("queue.toggle-autoscroll", &["<Ctrl>u"]);
             self.set_accels_for_action("playlist-editor.undo", &["<Ctrl>z"]);
             self.set_accels_for_action("playlist-editor.redo", &["<Ctrl>y"]);

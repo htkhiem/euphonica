@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <gresources>
   <gresource prefix="/io/github/htkhiem/Euphonica">
+    <file preprocess="xml-stripblanks">gtk/onboarding-window.ui</file>
     <file preprocess="xml-stripblanks">window.ui</file>
     <file preprocess="xml-stripblanks">gtk/song-row.ui</file>
     <file preprocess="xml-stripblanks">gtk/row-add-buttons.ui</file>

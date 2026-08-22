@@ -410,6 +410,10 @@
 		<child schema="io.github.htkhiem.Euphonica.state.dynplaylistview" name="dynplaylistview"/>
 		<child schema="io.github.htkhiem.Euphonica.state.queueview" name="queueview"/>
 
+		<key name="onboarded" type="b">
+			<default>false</default>
+		</key>
+
 		<!-- Remember last window size -->
 		<key name="last-window-width" type="i">
 			<default>600</default>
