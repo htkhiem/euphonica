@@ -29,7 +29,7 @@ use crate::{
         inode::INodeInfo,
     },
     player::PlaybackFlow,
-    utils::{self, strip_filename_linux},
+    utils::{self, settings_manager},
 };
 
 use super::StickerSetMode;
@@ -617,11 +617,7 @@ impl Connection {
         // `register_key` overrides the key used for DB lookup and registration.
         // This lets us store a folder-level key even when the fetch URI is track-level.
         // unwrap_or_else to avoid having to run strip_filename_linux when register_key.is_some().
-        let key = register_key.as_deref().unwrap_or_else(
-            // We still internally truncate to folder-level URI for mapping purposes, e.g. avoiding downloading
-            // the same album art more than once when given different URIs within the same folder.
-            || strip_filename_linux(&example_uri),
-        );
+        let key = register_key.as_deref().unwrap_or(&example_uri);
 
         // Always check with our DB first, as multiple calls may be spawned
         // asynchronously when no cover was locally available.
@@ -1117,20 +1113,26 @@ impl Connection {
                     Task::UpdateDb(resp) => self.respond_with_client(|c| c.update(), resp),
                     Task::GetEmbeddedCover(uri, resp) => {
                         // Assume the URI is track-level.
-                        let folder_uri = utils::strip_filename_linux(&uri).to_owned();
+                        let settings = settings_manager().child("library");
+                        let key: Option<String> = if settings.boolean("optimize-embedded-cover-loading") {
+                            Some(utils::strip_filename_linux(&uri).to_owned())
+                        } else {
+                            None
+                        };
                         self.maybe_download_image(
                             uri,
                             |client, uri| client.readpicture(uri),
-                            Some(folder_uri),
+                            key,
                             resp,
                         )
                     }
-                    Task::GetFolderCover(example_uri, resp) => self.maybe_download_image(
+                    Task::GetFolderCover(example_uri, resp) => {
+                        self.maybe_download_image(
                         example_uri,
                         |client, uri| client.albumart(uri),
-                        None, // Assume folder-level URI, no need to override
+                        None,  // Always store by example_uri
                         resp,
-                    ),
+                    )},
                     Task::List(term, query, groupby, resp) => {
                         self.respond_with_client(|c| c.list(&term, &query, groupby), resp)
                     }

@@ -280,6 +280,12 @@
 				</object>
 			</child>
 			<child>
+				<object class="AdwSwitchRow" id="optimize_embedded_cover_loading">
+					<property name="title" translatable="true">Optimise embedded cover loading</property>
+					<property name="subtitle" translatable="true">If enabled, will attempt to download only one embedded cover per folder. Ineffective if said folder already has a dedicated cover file, which always take priority. Will not work correctly if tracks from different releases share folders. Image cache MUST be cleared after changing this.</property>
+				</object>
+			</child>
+			<child>
 				<object class="AdwSwitchRow" id="store_lossless_images">
 					<property name="title" translatable="true">Store images as lossless</property>
 					<property name="subtitle" translatable="true">WebP supports both lossy and lossless. Lossless files are much larger but may look slightly better. Requires redownloading.</property>

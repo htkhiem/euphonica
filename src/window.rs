@@ -165,8 +165,6 @@ pub enum WindowMessage {
 }
 
 mod imp {
-    use crate::common::View;
-
     use super::*;
 
     #[derive(Debug, Default, Properties, gtk::CompositeTemplate)]
