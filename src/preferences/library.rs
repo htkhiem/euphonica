@@ -48,6 +48,8 @@ mod imp {
         pub pause_recent: TemplateChild<adw::SwitchRow>,
 
         #[template_child]
+        pub optimize_embedded_cover_loading: TemplateChild<adw::SwitchRow>,
+        #[template_child]
         pub image_cache_size: TemplateChild<adw::ActionRow>,
         #[template_child]
         pub info_db_size: TemplateChild<adw::ActionRow>,
@@ -156,6 +158,10 @@ impl LibraryPreferences {
 	// Image processing settings
 		library_settings
 			.bind("n-image-threads", &imp.n_image_threads.get(), "value")
+			.build();
+
+        library_settings
+			.bind("optimize-embedded-cover-loading", &imp.optimize_embedded_cover_loading.get(), "active")
 			.build();
 
 		library_settings

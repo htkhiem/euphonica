@@ -388,10 +388,11 @@ impl Cache {
         let embedded_key_owned = embedded_key.to_owned();
 
         // 1. Check if we have it cached locally. This is parallelisable so we'll use the threadpool.
-        let folder_key_cached = folder_key_owned.clone();
+        // Covers are always keyed by example_uri while in cache.
+        let cache_key = embedded_key_owned.clone();
         match self
             .pool
-            .push_future(move || get_image_internal(&folder_key_cached, None, thumbnail))
+            .push_future(move || get_image_internal(&cache_key, None, thumbnail))
             .expect("get_cover_internal: cache threadpool error")
             .await
             .expect("get_cover_internal: cache threadpool error")
@@ -428,8 +429,7 @@ impl Cache {
                 {
                     return Ok(bundle.take_texture(thumbnail).map(Some)?);
                 }
-                // 2b. MPD embedded cover, WILL BE SAVED AS FOLDER-LEVEL ART such that all future calls from tracks in the
-                // same folder will point to this one. This way we avoid downloading the same embedded art from each track.
+                // 2b. MPD embedded cover. When caching we'll key by example_uri, or folder_uri if optimize-embedded-cover-loading is enabled.
                 if let Some(bundle) = self
                     .mpd_client
                     .get_embedded_cover(embedded_key_owned.to_owned())

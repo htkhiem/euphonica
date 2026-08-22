@@ -57,8 +57,6 @@
 		<value nick="png" value="1"/>
 	</enum>
 
-	
-
 	<schema id="io.github.htkhiem.Euphonica" path="/io/github/htkhiem/Euphonica/">
 		<child schema="io.github.htkhiem.Euphonica.ui" name="ui"/>
 		<child schema="io.github.htkhiem.Euphonica.state" name="state"/>
@@ -189,6 +187,10 @@
 			<default>4</default>
 			<summary>Number of threads for image processing operations</summary>
 			<description>Controls the number of threads used for parallel image processing (resizing, encoding, decoding). More threads does not always mean better performance. Requires restart to take effect.</description>
+		</key>
+
+		<key name="optimize-embedded-cover-loading" type="b">
+			<default>false</default>
 		</key>
 	</schema>
 
