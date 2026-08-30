@@ -192,7 +192,10 @@ fn get_image_internal(
                 let mut cover_path = get_image_cache_path();
                 cover_path.push(&filename);
                 match Texture::from_filename(&cover_path).map_err(Error::from) {
-                    Ok(tex) => Ok(Some(tex)),
+                    Ok(tex) => {
+                        IMAGE_CACHE.lock().unwrap().put(filename, tex.clone());
+                        Ok(Some(tex))
+                    }
                     Err(Error::NotFound) => {
                         // File no longer exists (maybe user had removed it). Unregister it from DB.
                         sqlite::unregister_image_key(key, prefix, thumbnail)
