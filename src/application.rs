@@ -173,10 +173,11 @@ mod imp {
                             }
                         ));
                         self.obj().raise_window();
+                    } else {
+                        let _ = self.hold_guard.replace(Some(self.obj().hold()));
                     }
                 } else {
                     // NOT onboarded yet.
-                    eprintln!("ONBOARDING...");
                     if !self.start_minimized.get() {
                         // Show onboarding wizard
                         let onboarding_wizard = EuphonicaOnboardingWindow::new(self.obj().as_ref());
@@ -184,10 +185,12 @@ mod imp {
                         let _ = self.hold_guard.replace(Some(self.obj().hold()));
                         onboarding_wizard.present();
                     } else {
+                        // Keep the onboarded flag at false and yell in stderr
                         eprintln!(
-                            "FATAL: not yet onboarded. Please start Euphonica normally (not minimised) once to complete the onboarding first."
+                            "WARNING: not yet onboarded. Using default settings where possible. If this is your first time using Euphonica, the default settings might not be suitable for your MPD setup and might fail to connect."
                         );
-                        self.obj().quit_app();
+                        let _ = self.hold_guard.replace(Some(self.obj().hold()));
+                        self.continue_startup();
                     }
                 }
             } else {
