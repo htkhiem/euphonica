@@ -2,7 +2,7 @@
 // you name it.
 // This helps avoid having to query the same thing multiple times,
 // whether from MPD or from Last.fm.
-// - Images are stored as resized PNG files on disk.
+// - Images are stored as resized WebP files on disk.
 // - Text data is stored as BSON blobs in SQLite.
 use futures::TryFutureExt;
 extern crate bson;
@@ -77,11 +77,36 @@ impl Error {
 
 impl From<glib::Error> for Error {
     fn from(value: glib::Error) -> Self {
-        Error::GlibError(value)
+        if value.matches(gio::IOErrorEnum::NotFound) {
+            Error::NotFound
+        } else {
+            Error::GlibError(value)
+        }
     }
 }
 
 pub type Result<T> = result::Result<T, Error>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn distinguishes_missing_files_from_load_failures() {
+        let path = std::env::temp_dir().join(format!(
+            "euphonica-invalid-texture-{}.webp",
+            uuid::Uuid::new_v4().simple()
+        ));
+
+        let missing_error = Texture::from_filename(&path).err().unwrap();
+        assert!(matches!(Error::from(missing_error), Error::NotFound));
+
+        std::fs::write(&path, b"not an image").unwrap();
+        let load_error = Texture::from_filename(&path).err().unwrap();
+        std::fs::remove_file(path).unwrap();
+        assert!(matches!(Error::from(load_error), Error::GlibError(_)));
+    }
+}
 
 #[derive(Default, Debug, Clone)]
 pub enum ImageAction {
@@ -166,16 +191,18 @@ fn get_image_internal(
             } else {
                 let mut cover_path = get_image_cache_path();
                 cover_path.push(&filename);
-                match Texture::from_filename(&cover_path) {
-                    Ok(tex) => Ok(Some(tex)),
-                    Err(_) => {
+                match Texture::from_filename(&cover_path).map_err(Error::from) {
+                    Ok(tex) => {
+                        IMAGE_CACHE.lock().unwrap().put(filename, tex.clone());
+                        Ok(Some(tex))
+                    }
+                    Err(Error::NotFound) => {
                         // File no longer exists (maybe user had removed it). Unregister it from DB.
                         sqlite::unregister_image_key(key, prefix, thumbnail)
                             .map_err(Error::Sqlite)?;
-                        println!("Unregistered image. Retrying...");
-                        // Return song info object to facilitate recursive retry
-                        Err(Error::NotFound)
+                        Ok(None)
                     }
+                    Err(error) => Err(error),
                 }
             }
         } else {
@@ -194,10 +221,7 @@ fn read_texture_from_name(name: &str) -> Result<gdk::Texture> {
     let mut res = get_image_cache_path();
     res.push(name);
 
-    gdk::Texture::from_filename(res).map_err(|e| {
-        dbg!(e);
-        Error::NotFound
-    })
+    gdk::Texture::from_filename(res).map_err(Error::from)
 }
 
 #[inline]
@@ -384,11 +408,10 @@ impl Cache {
     ) -> Result<Option<Texture>> {
         let mut failed_before = false;
 
-        let folder_key_owned = folder_key.to_owned();
         let embedded_key_owned = embedded_key.to_owned();
 
         // 1. Check if we have it cached locally. This is parallelisable so we'll use the threadpool.
-        let folder_key_cached = folder_key_owned.clone();
+        let folder_key_cached = folder_key.to_owned();
         match self
             .pool
             .push_future(move || get_image_internal(&folder_key_cached, None, thumbnail))
@@ -399,17 +422,6 @@ impl Cache {
             Ok(Some(tex)) => return Ok(Some(tex)),
             Ok(None) => {}
             Err(Error::PriorFailure) => failed_before = true,
-            Err(Error::NotFound) => {
-                // Retry (DB entry should have been purged by get_image_internal)
-                // No need to increment/decrement pending_tasks here.
-                return Box::pin(self.get_cover_internal(
-                    &folder_key_owned,
-                    &embedded_key_owned,
-                    thumbnail,
-                    album,
-                ))
-                .await;
-            }
             Err(e) => return Err(e),
         }
 
