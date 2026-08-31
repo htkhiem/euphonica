@@ -22,14 +22,14 @@ mod imp {
             static SIGNALS: OnceLock<Vec<Signal>> = OnceLock::new();
             SIGNALS.get_or_init(|| {
                 vec![
-                    Signal::builder("folder-cover-set")
+                    Signal::builder("album-cover-set")
                         .param_types([
-                            String::static_type(),       // folder URI
+                            String::static_type(),       // URI
                             gdk::Texture::static_type(), // handle to hires texture
                             gdk::Texture::static_type(), // handle to thumbnail texture
                         ])
                         .build(),
-                    Signal::builder("folder-cover-cleared")
+                    Signal::builder("album-cover-cleared")
                         .param_types([
                             String::static_type(), // folder URI
                         ])
@@ -46,19 +46,30 @@ mod imp {
                             String::static_type(), // Artist name (may be part of a tag)
                         ])
                         .build(),
-                    // Signal::builder("playlist-cover-downloaded")
-                    //     .param_types([
-                    //         String::static_type(), // playlist name
-                    //         bool::static_type(),   // is_thumbnail
-                    //         gdk::Texture::static_type()
-                    //     ])
-                    //     .build(),
-                    // Signal::builder("playlist-cover-cleared")
-                    //     .param_types([
-                    //         String::static_type(), // playlist name
-                    //     ])
-                    //     .build(),
-                    // Dynamic playlists are local & changes would require refreshing the outer list anyway.
+                    Signal::builder("playlist-cover-set")
+                        .param_types([
+                            String::static_type(), // playlist name
+                            gdk::Texture::static_type(), // handle to hires texture
+                            gdk::Texture::static_type(), // handle to thumbnail texture
+                        ])
+                        .build(),
+                    Signal::builder("dynamic-playlist-cover-set")
+                        .param_types([
+                            String::static_type(), // dynamic playlist name
+                            gdk::Texture::static_type(), // handle to hires texture
+                            gdk::Texture::static_type(), // handle to thumbnail texture
+                        ])
+                        .build(),
+                    Signal::builder("playlist-cover-cleared")
+                        .param_types([
+                            String::static_type(), // playlist name
+                        ])
+                        .build(),
+                    Signal::builder("dynamic-playlist-cover-cleared")
+                        .param_types([
+                            String::static_type(), // dynamic playlist name
+                        ])
+                        .build(),
                 ]
             })
         }

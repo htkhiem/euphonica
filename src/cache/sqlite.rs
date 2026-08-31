@@ -1205,8 +1205,8 @@ pub fn insert_dynamic_playlist(
             && let Err(db_err) = tx.execute(
                 "update images set key = ?1 where key = ?2",
                 params![
-                    &format!("dynamic_playlist:{to_overwrite}"),
                     &format!("dynamic_playlist:{}", dp.name),
+                    &format!("dynamic_playlist:{to_overwrite}"),
                 ],
             )
         {

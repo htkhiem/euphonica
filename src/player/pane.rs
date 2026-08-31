@@ -2,7 +2,7 @@ use adw::prelude::*;
 use ashpd::desktop::file_chooser::{FileFilter, SelectedFiles};
 use glib::{SignalHandlerId, WeakRef, clone, closure_local};
 use gtk::{
-    CompositeTemplate,
+    CompositeTemplate, gdk,
     glib::{self, Variant},
     subclass::prelude::*,
 };
@@ -15,12 +15,14 @@ use std::{
 
 use crate::{
     cache::{
-        Cache, placeholders::{EMPTY_ALBUM_STRING, EMPTY_ARTIST_STRING}
+        Cache, CacheState,
+        placeholders::{EMPTY_ALBUM_STRING, EMPTY_ARTIST_STRING},
     },
     client::{ClientState, state::StickersSupportLevel},
     common::{PictureStack, Rating, Song, paintables::RotatingPaintable},
     player::seekbar2::Seekbar,
-    utils::{self, settings_manager, sync_animation}, window::EuphonicaWindow,
+    utils::{self, settings_manager, sync_animation},
+    window::EuphonicaWindow,
 };
 
 use super::{MpdOutput, OutputControls, PlaybackControls, PlaybackState, Player, VolumeKnob};
@@ -102,6 +104,8 @@ mod imp {
         pub song_changed_id: RefCell<Option<SignalHandlerId>>,
         pub playback_state_id: RefCell<Option<SignalHandlerId>>,
         pub seeked_id: RefCell<Option<SignalHandlerId>>,
+        pub album_cover_signal_ids: RefCell<Option<(SignalHandlerId, SignalHandlerId)>>,
+        pub cache_state: RefCell<Option<CacheState>>,
     }
 
     // The central trait for subclassing a GObject
@@ -248,6 +252,12 @@ mod imp {
                     player.disconnect(id);
                 }
             }
+            if let Some((set_id, cleared_id)) = self.album_cover_signal_ids.take()
+                && let Some(state) = self.cache_state.borrow().clone()
+            {
+                state.disconnect(set_id);
+                state.disconnect(cleared_id);
+            }
             self.albumart_animation.get().unwrap().reset();
         }
     }
@@ -330,7 +340,13 @@ impl PlayerPane {
         }
     }
 
-    pub fn setup(&self, player: &Player, cache: Rc<Cache>, client_state: &ClientState, win: &EuphonicaWindow) {
+    pub fn setup(
+        &self,
+        player: &Player,
+        cache: Rc<Cache>,
+        client_state: &ClientState,
+        win: &EuphonicaWindow,
+    ) {
         self.imp().player.set(Some(player));
         self.imp()
             .song_changed_id
@@ -387,7 +403,13 @@ impl PlayerPane {
         self.imp().seekbar.setup(player);
     }
 
-    fn bind_state(&self, player: &Player, cache: Rc<Cache>, client_state: &ClientState, win: &EuphonicaWindow) {
+    fn bind_state(
+        &self,
+        player: &Player,
+        cache: Rc<Cache>,
+        client_state: &ClientState,
+        win: &EuphonicaWindow,
+    ) {
         let imp = self.imp();
         self.imp().vol_knob.setup(player);
         let rg_btn = self.imp().rg_btn.get();
@@ -629,6 +651,54 @@ impl PlayerPane {
                 ),
             )));
 
+        // Update album art live when the current song's cover is set/cleared.
+        let state = cache.get_cache_state();
+        let (set_id, cleared_id) = (
+            state.connect_closure(
+                "album-cover-set",
+                false,
+                closure_local!(
+                    #[weak(rename_to = this)]
+                    self,
+                    move |_: CacheState, uri: String, hires: gdk::Texture, _: gdk::Texture| {
+                        if this
+                            .imp()
+                            .player
+                            .upgrade()
+                            .and_then(|p| p.current_song())
+                            .map_or(false, |s| s.get_uri() == &uri || s.get_folder_uri() == &uri)
+                        {
+                            this.imp().albumart.show(&hires);
+                        }
+                    }
+                ),
+            ),
+            state.connect_closure(
+                "album-cover-cleared",
+                false,
+                closure_local!(
+                    #[weak(rename_to = this)]
+                    self,
+                    move |_: CacheState, uri: String| {
+                        if this
+                            .imp()
+                            .player
+                            .upgrade()
+                            .and_then(|p| p.current_song())
+                            .map_or(false, |s| s.get_uri() == &uri || s.get_folder_uri() == &uri)
+                        {
+                            this.imp().albumart.clear();
+                        }
+                    }
+                ),
+            ),
+        );
+        let _ = self.imp().cache_state.replace(Some(state));
+        let _ = self
+            .imp()
+            .album_cover_signal_ids
+            .replace(Some((set_id, cleared_id)));
+
         imp.show_lyrics.connect_notify_local(
             Some("active"),
             clone!(
@@ -667,7 +737,9 @@ impl PlayerPane {
                 glib::spawn_future_local(async move {
                     if let Some(song) = player.current_song() {
                         btn.set_visible(false);
-                        let res = cache.get_lyrics(song.get_info(), true, true, Some(&win)).await;
+                        let res = cache
+                            .get_lyrics(song.get_info(), true, true, Some(&win))
+                            .await;
                         btn.set_visible(true);
                         match res {
                             Ok(Some(lyrics)) => {

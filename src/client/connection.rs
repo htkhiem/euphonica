@@ -29,7 +29,7 @@ use crate::{
         inode::INodeInfo,
     },
     player::PlaybackFlow,
-    utils::{self, settings_manager},
+    utils,
 };
 
 use super::StickerSetMode;
@@ -174,7 +174,7 @@ pub type Responder<T> = OneShotSender<Result<T>>;
 /// thread & avoid blocking this one.
 pub enum ImageHandle {
     Registered(utils::RegisteredImageBundle),
-    New(Vec<u8>, String), // bytes and key to register as
+    New(Vec<u8>), // image bytes in some format
 }
 
 /// The successor to BackgroundTask.
@@ -340,6 +340,8 @@ pub enum Task {
     GetEmbeddedCover(
         /// URI to song file
         String,
+        /// Cache key to check before requesting. If None, will use the above URI.
+        Option<String>,
         /// Full paths to high-resolution and low-resolution file, respectively
         Responder<Option<ImageHandle>>,
     ),
@@ -348,6 +350,8 @@ pub enum Task {
     GetFolderCover(
         /// URI to folder with trailing slash
         String,
+        /// Cache key to check before requesting. If null, will use the above URI.
+        Option<String>,
         /// Full paths to high-resolution and low-resolution file, respectively
         Responder<Option<ImageHandle>>,
     ),
@@ -646,7 +650,7 @@ impl Connection {
             self.respond_with_client(
                 |c| {
                     match download_func(c, &example_uri) {
-                        Ok(bytes) => Ok(Some(ImageHandle::New(bytes, key.to_owned()))),
+                        Ok(bytes) => Ok(Some(ImageHandle::New(bytes))),
                         Err(MpdError::Proto(ProtoError::NotPair)) => {
                             // Empty output. Treat as not available.
                             Ok(None)
@@ -1114,26 +1118,19 @@ impl Connection {
                         self.respond_with_client(|c| c.changesposid(since, window), resp)
                     }
                     Task::UpdateDb(resp) => self.respond_with_client(|c| c.update(), resp),
-                    Task::GetEmbeddedCover(uri, resp) => {
-                        // Assume the URI is track-level.
-                        let settings = settings_manager().child("library");
-                        let key: Option<String> = if settings.boolean("optimize-embedded-cover-loading") {
-                            Some(utils::strip_filename_linux(&uri).to_owned())
-                        } else {
-                            None
-                        };
+                    Task::GetEmbeddedCover(uri, cache_key, resp) => {
                         self.maybe_download_image(
                             uri,
                             |client, uri| client.readpicture(uri),
-                            key,
+                            cache_key,
                             resp,
                         )
                     }
-                    Task::GetFolderCover(example_uri, resp) => {
+                    Task::GetFolderCover(example_uri, cache_key, resp) => {
                         self.maybe_download_image(
                         example_uri,
                         |client, uri| client.albumart(uri),
-                        None,  // Always store by example_uri
+                        cache_key,  // Always store by example_uri
                         resp,
                     )},
                     Task::List(term, query, groupby, resp) => {

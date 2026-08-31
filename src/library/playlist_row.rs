@@ -36,7 +36,7 @@ mod imp {
         pub library: OnceCell<Library>,
         pub playlist: RefCell<Option<INode>>,
         pub is_dynamic: Cell<bool>,
-        pub cache: OnceCell<Rc<Cache>>,
+        pub cache: OnceCell<Rc<Cache>>
     }
 
     // The central trait for subclassing a GObject

@@ -120,9 +120,7 @@ impl ClientState {
             self.imp().has_pending.set(false);
             self.notify("has-pending");
         } else {
-            // Only start showing the popover when there are more than 3 queued tasks,
-            // else the thing will look strobey.
-            let new = total >= 3;
+            let new = total > 1;
             self.imp().has_pending.set(new);
             if old != new {
                 self.notify("has-pending");

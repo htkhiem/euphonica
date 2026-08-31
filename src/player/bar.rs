@@ -1,17 +1,18 @@
 use glib::{SignalHandlerId, WeakRef, clone, closure_local};
 use gtk::{
-    CompositeTemplate,
+    CompositeTemplate, gdk,
     glib::{self, Properties, subclass::Signal},
     prelude::*,
     subclass::prelude::*,
 };
+use rusqlite::fallible_streaming_iterator::FallibleStreamingIterator;
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::sync::OnceLock;
 
 use crate::{
     cache::{
-        Cache,
+        Cache, CacheState,
         placeholders::{EMPTY_ALBUM_STRING, EMPTY_ARTIST_STRING},
     },
     common::{ImageStack, Marquee, Song},
@@ -65,6 +66,8 @@ mod imp {
 
         pub player: WeakRef<Player>,
         pub cover_changed_id: RefCell<Option<SignalHandlerId>>,
+        pub album_cover_signal_ids: RefCell<Option<(SignalHandlerId, SignalHandlerId)>>,
+        pub cache_state: WeakRef<CacheState>,
         #[property(get, set)]
         pub layout: Cell<u32>, // 0: micro, 1: mini, 2: full. TODO: turn into enum.
     }
@@ -128,7 +131,7 @@ mod imp {
                     Some(
                         match layout {
                             0 => 12,
-                            _ => 0
+                            _ => 0,
                         }
                         .to_value(),
                     )
@@ -168,9 +171,16 @@ mod imp {
 
         fn dispose(&self) {
             if let Some(player) = self.player.upgrade()
-                && let Some(id) = self.cover_changed_id.take() {
-                    player.disconnect(id);
-                }
+                && let Some(id) = self.cover_changed_id.take()
+            {
+                player.disconnect(id);
+            }
+            if let Some((set_id, cleared_id)) = self.album_cover_signal_ids.take()
+                && let Some(state) = self.cache_state.upgrade()
+            {
+                state.disconnect(set_id);
+                state.disconnect(cleared_id);
+            }
         }
     }
 
@@ -274,6 +284,54 @@ impl PlayerBar {
                     }
                 ),
             )));
+
+        // Update album art live when the current song's cover is set/cleared.
+        let state = cache.get_cache_state();
+        let (set_id, cleared_id) = (
+            state.connect_closure(
+                "album-cover-set",
+                false,
+                closure_local!(
+                    #[weak(rename_to = this)]
+                    self,
+                    move |_: CacheState, uri: String, _: gdk::Texture, thumb: gdk::Texture| {
+                        if this
+                            .imp()
+                            .player
+                            .upgrade()
+                            .and_then(|p| p.current_song())
+                            .map_or(false, |s| s.get_uri() == &uri || s.get_folder_uri() == &uri)
+                        {
+                            this.imp().albumart.show(&thumb);
+                        }
+                    }
+                ),
+            ),
+            state.connect_closure(
+                "album-cover-cleared",
+                false,
+                closure_local!(
+                    #[weak(rename_to = this)]
+                    self,
+                    move |_: CacheState, uri: String| {
+                        if this
+                            .imp()
+                            .player
+                            .upgrade()
+                            .and_then(|p| p.current_song())
+                            .map_or(false, |s| s.get_uri() == &uri || s.get_folder_uri() == &uri)
+                        {
+                            this.imp().albumart.clear();
+                        }
+                    }
+                ),
+            ),
+        );
+        let _ = self.imp().cache_state.set(Some(&state));
+        let _ = self
+            .imp()
+            .album_cover_signal_ids
+            .replace(Some((set_id, cleared_id)));
     }
 
     fn update_album_art(&self, song: Option<Song>, cache: Rc<Cache>) {

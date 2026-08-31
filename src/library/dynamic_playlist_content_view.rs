@@ -1,6 +1,6 @@
 use super::{DynamicPlaylistView, Library};
 use crate::{
-    cache::{Cache, sqlite},
+    cache::{Cache, CacheState, sqlite},
     common::{
         ContentStack, ContentView, DynamicPlaylist, INodeType, ImageStack, Song, SongRow,
         dynamic_playlist::AutoRefresh, inode::INodeInfo,
@@ -15,7 +15,7 @@ use derivative::Derivative;
 use gio::{ActionEntry, SimpleActionGroup};
 use glib::WeakRef;
 use glib::{clone, closure_local};
-use gtk::{CompositeTemplate, ListItem, SignalListItemFactory, gio, glib};
+use gtk::{CompositeTemplate, ListItem, SignalListItemFactory, gdk, gio, glib};
 use std::{
     cell::{OnceCell, RefCell},
     rc::Rc,
@@ -73,6 +73,7 @@ mod imp {
         pub outer: WeakRef<DynamicPlaylistView>,
         pub window: WeakRef<EuphonicaWindow>,
         pub cache: OnceCell<Rc<Cache>>,
+        pub cover_signal_ids: RefCell<Option<(glib::SignalHandlerId, glib::SignalHandlerId)>>,
     }
 
     #[glib::object_subclass]
@@ -548,6 +549,37 @@ impl DynamicPlaylistContentView {
     }
 
     pub async fn bind_by_name(&self, name: String) {
+        // Wire dynamic-playlist-cover signals for live updates.
+        let cache = self.imp().cache.get().unwrap().clone();
+        let state = cache.get_cache_state();
+        let _ = self.imp().cover_signal_ids.replace(Some((
+            state.connect_closure(
+                "dynamic-playlist-cover-set",
+                false,
+                closure_local!(
+                    #[weak(rename_to = this)]
+                    self,
+                    move |_: CacheState, name: String, tex: gdk::Texture, _: gdk::Texture| {
+                        if this.imp().dp.borrow().as_ref().is_some_and(|dp| dp.name == name) {
+                            this.imp().cover.show(&tex);
+                        }
+                    }
+                ),
+            ),
+            state.connect_closure(
+                "dynamic-playlist-cover-cleared",
+                false,
+                closure_local!(
+                    #[weak(rename_to = this)]
+                    self,
+                    move |_: CacheState, name: String| {
+                        if this.imp().dp.borrow().as_ref().is_some_and(|dp| dp.name == name) {
+                            this.imp().cover.clear();
+                        }
+                    }
+                ),
+            ),
+        )));
         self.update_cover(name.clone()).await;
         match gio::spawn_blocking(move || sqlite::get_dynamic_playlist_info(&name))
             .await
@@ -595,6 +627,13 @@ impl DynamicPlaylistContentView {
     }
 
     pub fn unbind(&self) {
+        if let Some((set_id, cleared_id)) = self.imp().cover_signal_ids.take()
+            && let Some(cache) = self.imp().cache.get()
+        {
+            let state = cache.get_cache_state();
+            state.disconnect(set_id);
+            state.disconnect(cleared_id);
+        }
         self.imp().song_list.remove_all();
         self.imp().title.set_label("");
         self.imp().dp.take();

@@ -1,5 +1,5 @@
 use crate::{
-    cache::{Cache, sqlite},
+    cache::{Cache, CacheState, sqlite},
     client::{
         Error as ClientError, MpdWrapper, Result as ClientResult, StickerSetMode,
         state::StickersSupportLevel,
@@ -11,8 +11,7 @@ use crate::{
 };
 use chrono::Local;
 use derivative::Derivative;
-use glib::subclass::Signal;
-use gtk::{gio, glib, prelude::*};
+use gtk::{gdk, gio, glib::{self, SignalHandlerId, WeakRef, closure_local, subclass::Signal}, prelude::*};
 use itertools::Itertools;
 use rustc_hash::FxHashMap;
 use std::{borrow::Cow, cell::OnceCell, rc::Rc, sync::OnceLock, vec::Vec};
@@ -29,7 +28,6 @@ use adw::subclass::prelude::*;
 use mpd::{EditAction, Query, SaveMode, Term, search::Operation as QueryOperation};
 
 mod imp {
-
     use super::*;
 
     #[derive(Debug, Derivative)]
@@ -72,8 +70,10 @@ mod imp {
         #[derivative(Default(value = "gio::ListStore::new::<INode>()"))]
         pub folder_inodes: gio::ListStore,
         pub folder_inodes_initialized: Cell<bool>,
+        pub playlist_cover_ids: RefCell<Option<(SignalHandlerId, SignalHandlerId)>>,
+        pub dyn_playlist_cover_ids: RefCell<Option<(SignalHandlerId, SignalHandlerId)>>,
 
-        pub cache: OnceCell<Rc<Cache>>,
+        pub cache_state: WeakRef<CacheState>,
         pub player: OnceCell<Player>,
     }
 
@@ -88,6 +88,18 @@ mod imp {
     }
 
     impl ObjectImpl for Library {
+        fn dispose(&self) {
+            if let (Some(state), Some((set_id, cleared_id)), Some((dyn_set_id, dyn_cleared_id))) = (
+                self.cache_state.upgrade(),
+                self.playlist_cover_ids.take(),
+                self.dyn_playlist_cover_ids.take(),
+            ) {
+                state.disconnect(set_id);
+                state.disconnect(cleared_id);
+                state.disconnect(dyn_set_id);
+                state.disconnect(dyn_cleared_id);
+            }
+        }
         fn properties() -> &'static [ParamSpec] {
             static PROPERTIES: Lazy<Vec<ParamSpec>> = Lazy::new(|| {
                 vec![
@@ -137,9 +149,68 @@ impl Default for Library {
 }
 
 impl Library {
-    pub fn setup(&self, client: Rc<MpdWrapper>, player: Player) {
+    pub fn setup(&self, client: Rc<MpdWrapper>, player: Player, cache: Rc<Cache>) {
         let _ = self.imp().client.set(client);
         let _ = self.imp().player.set(player);
+
+        let state = cache.get_cache_state();
+        let _ = self.imp().playlist_cover_ids.replace(Some((
+            state.connect_closure(
+                "playlist-cover-set",
+                false,
+                closure_local!(
+                    #[weak(rename_to = this)]
+                    self,
+                    move |_: CacheState, _: String, _: gdk::Texture, _: gdk::Texture| {
+                        glib::spawn_future_local(async move {
+                            this.init_playlists(true).await;
+                        });
+                    }
+                ),
+            ),
+            state.connect_closure(
+                "playlist-cover-cleared",
+                false,
+                closure_local!(
+                    #[weak(rename_to = this)]
+                    self,
+                    move |_: CacheState, _: String| {
+                        glib::spawn_future_local(async move {
+                            this.init_playlists(true).await;
+                        });
+                    }
+                ),
+            ),
+        )));
+        let _ = self.imp().dyn_playlist_cover_ids.replace(Some((
+            state.connect_closure(
+                "dynamic-playlist-cover-set",
+                false,
+                closure_local!(
+                    #[weak(rename_to = this)]
+                    self,
+                    move |_: CacheState, _: String, _: gdk::Texture, _: gdk::Texture| {
+                        glib::spawn_future_local(async move {
+                            this.init_dyn_playlists(true).await;
+                        });
+                    }
+                ),
+            ),
+            state.connect_closure(
+                "dynamic-playlist-cover-cleared",
+                false,
+                closure_local!(
+                    #[weak(rename_to = this)]
+                    self,
+                    move |_: CacheState, _: String| {
+                        glib::spawn_future_local(async move {
+                            this.init_dyn_playlists(true).await;
+                        });
+                    }
+                ),
+            ),
+        )));
+        let _ = self.imp().cache_state.set(Some(&state));
     }
 
     pub fn clear(&self) {

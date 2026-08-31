@@ -243,21 +243,20 @@ impl SongRow {
             let _ = res.imp().cache.set(cache);
             let _ = res.imp().thumbnail_signal_ids.replace(Some((
                 cache_state.connect_closure(
-                    "folder-cover-set",
+                    "album-cover-set",
                     false,
                     closure_local!(
                         #[weak]
                         res,
                         move |_: CacheState, uri: String, _: gdk::Texture, thumb: gdk::Texture| {
                             // This signal is only emitted when an album cover is set manually.
-                            // This only affects folder-level arts, so only use them when we currently
-                            // don't have any art.
+                            // The URI can be folder-level or track-level depending on the embedded art optimisation setting.
                             if res.imp().thumbnail.get_state() == ImageState::Empty
                                 && res
                                     .imp()
                                     .song
                                     .upgrade()
-                                    .is_some_and(|s| s.get_folder_uri() == uri)
+                                    .is_some_and(|s| s.get_folder_uri() == uri || s.get_uri() == uri)
                             {
                                 res.imp().thumbnail.show(&thumb);
                             }
@@ -265,7 +264,7 @@ impl SongRow {
                     ),
                 ),
                 cache_state.connect_closure(
-                    "folder-cover-cleared",
+                    "album-cover-cleared",
                     false,
                     closure_local!(
                         #[weak]
@@ -275,7 +274,7 @@ impl SongRow {
                                 .imp()
                                 .song
                                 .upgrade()
-                                .is_some_and(|s| s.get_folder_uri() == uri)
+                                .is_some_and(|s| s.get_folder_uri() == uri || s.get_uri() == uri)
                             {
                                 res.imp().thumbnail.clear();
                             }

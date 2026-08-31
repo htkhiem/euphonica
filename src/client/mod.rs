@@ -12,6 +12,7 @@ pub use wrapper::MpdWrapper;
 
 pub use connection::Error;
 pub use connection::Result;
+pub use connection::ImageHandle;
 
 #[derive(Debug, Clone, Copy)]
 pub enum StickerSetMode {

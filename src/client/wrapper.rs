@@ -3,7 +3,7 @@ use asyncified::Asyncified;
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use futures::executor;
-use glib::{ThreadPool, clone};
+use glib::clone;
 use gtk::gio::prelude::*;
 use gtk::{gio, glib};
 use itertools::Itertools;
@@ -114,7 +114,6 @@ pub struct MpdWrapper {
     _fg_handle: thread::JoinHandle<bool>,
     _bg_handle: thread::JoinHandle<bool>,
     // For heavy but parallelisable local tasks.
-    pool: ThreadPool,
     state: ClientState,
     fg_sender: Sender<Task>, // For sending tasks to the interactive client
     bg_sender: Sender<Task>, // For sending tasks to the background client
@@ -148,10 +147,6 @@ impl MpdWrapper {
                     .run()
                     .is_err()
             }),
-            pool: ThreadPool::shared(Some(
-                settings_manager().child("library").uint("n-image-threads"),
-            ))
-            .expect("Unable to start MpdWrapper threadpool"),
             state: ClientState::default(),
             fg_sender,
             bg_sender,
@@ -345,7 +340,7 @@ impl MpdWrapper {
 
         // Figure out stickers support early as we need to decide whether we should show the Dynamic Playlists page.
         // Set to maximum supported level first by MPD version.
-        if version.1 < 24 {
+        if version.0 < 1 && version.1 < 24 {
             self.state
                 .set_stickers_support_level(StickersSupportLevel::SongsOnly);
         } else {
@@ -385,10 +380,7 @@ impl MpdWrapper {
     ) -> ClientResult<T> {
         // Decrement when this function returns OR when the future is dropped
         // (aborted by a view navigating away), exactly once in both cases.
-        let _guard = TaskGuard {
-            state: self.state.clone(),
-            bg: false,
-        };
+        let _guard = TaskGuard::new(self.state.clone(), false);
         self.fg_sender.send(task).await.expect("Broken FG sender");
         self.handle_error(receiver.await.expect("Broken oneshot receiver"))
             .await
@@ -401,10 +393,7 @@ impl MpdWrapper {
     ) -> ClientResult<T> {
         // Decrement when this function returns OR when the future is dropped
         // (aborted by a view navigating away), exactly once in both cases.
-        let _guard = TaskGuard {
-            state: self.state.clone(),
-            bg: true,
-        };
+        let _guard = TaskGuard::new(self.state.clone(), true);
         self.bg_sender.send(task).await.expect("Broken BG sender");
         // Wake background thread
         let (s, r) = oneshot::channel();
@@ -444,10 +433,12 @@ impl MpdWrapper {
                     self.state
                         .set_stickers_support_level(StickersSupportLevel::Disabled);
                 }
-                MpdErrorCode::Argument => {
-                    self.state
-                        .set_stickers_support_level(StickersSupportLevel::SongsOnly);
-                }
+                // FIXME: this interferes with album queries that don't have enough tags.
+                // MpdErrorCode::Argument => {
+                //     dbg!(e);
+                //     self.state
+                //         .set_stickers_support_level(StickersSupportLevel::SongsOnly);
+                // }
                 _ => {}
             }
         }
@@ -911,71 +902,23 @@ impl MpdWrapper {
     pub async fn get_embedded_cover(
         &self,
         uri: String,
-    ) -> ClientResult<Option<utils::RegisteredImageBundle>> {
+    ) -> ClientResult<Option<ImageHandle>> {
         // Leave downloading to the background connection thread, but local operations
         // (resizing, transcoding, writing to disk) will be done with a threadpool, whose
         // handle is held by the this thread (the main one).
         let (s, r) = oneshot::channel();
-        match self.background(Task::GetEmbeddedCover(uri, s), r).await {
-            Err(e) => Err(e),
-            Ok(None) => Ok(None),
-            Ok(Some(handle)) => {
-                match handle {
-                    ImageHandle::Registered(bundle) => Ok(Some(bundle)),
-                    ImageHandle::New(bytes, key) => {
-                        // process in threadpool
-                        self.pool
-                            .push_future(move || {
-                                Ok(utils::save_and_register_image(
-                                    image::load_from_memory(&bytes)?,
-                                    &key,
-                                    None,
-                                ))
-                            })
-                            .expect("get_embedded_cover: threadpool error")
-                            .await
-                            .expect("get_embedded_cover: threadpool error")
-                            .map_err(ClientError::Image)
-                            .map(Some)
-                    }
-                }
-            }
-        }
+        self.background(Task::GetEmbeddedCover(uri, None, s), r).await
     }
 
     pub async fn get_folder_cover(
         &self,
         example_uri: String,
-    ) -> ClientResult<Option<utils::RegisteredImageBundle>> {
+        folder_uri: String,
+    ) -> ClientResult<Option<ImageHandle>> {
         let (s, r) = oneshot::channel();
-        match self
-            .background(Task::GetFolderCover(example_uri, s), r)
+        self
+            .background(Task::GetFolderCover(example_uri, Some(folder_uri), s), r)
             .await
-        {
-            Err(e) => Err(e),
-            Ok(None) => Ok(None),
-            Ok(Some(handle)) => {
-                match handle {
-                    ImageHandle::Registered(bundle) => Ok(Some(bundle)),
-                    ImageHandle::New(bytes, key) => {
-                        // process in threadpool
-                        self.pool
-                            .push_future(move || {
-                                Ok(utils::save_and_register_image(
-                                    image::load_from_memory(&bytes)?,
-                                    &key,
-                                    None,
-                                ))
-                            })
-                            .expect("get_folder_cover: threadpool error")
-                            .await
-                            .expect("get_folder_cover: threadpool error")
-                            .map_err(ClientError::Image)
-                            .map(Some)
-                    }
-                }
-            }
-        }
     }
 
     /// Fetch albums and albumartists together for efficiency.
