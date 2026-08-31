@@ -685,11 +685,25 @@ impl Cache {
         playlist_name: String,
         path: &str,
     ) -> Result<(gdk::Texture, gdk::Texture)> {
-        self.set_image(playlist_name, Some("playlist"), path).await
+        let res = self.set_image(playlist_name.clone(), Some("playlist"), path).await;
+
+        if let Ok(texs) = res.as_ref() {
+            self.get_cache_state()
+                .emit_texture("playlist-cover-set", &playlist_name, &texs.0, &texs.1);
+        }
+
+        res
     }
 
     pub async fn clear_playlist_cover(&self, playlist_name: String) -> Result<()> {
-        self.clear_image(playlist_name, Some("playlist")).await
+        let res = self.clear_image(playlist_name.clone(), Some("playlist")).await;
+
+        if res.is_ok() {
+            self.get_cache_state()
+                .emit_with_param("playlist-cover-cleared", &playlist_name);
+        }
+
+        res
     }
 
     /// Function for getting & caching the latest album meta from local sources.
@@ -1144,19 +1158,25 @@ impl Cache {
         cover_action: ImageAction,
         overwrite_name: Option<String>,
     ) -> Result<()> {
-        self.local
-            .call(move |_| {
+        let new_name = dp.name.to_owned();
+        let current_cover_key = overwrite_name.clone().unwrap_or_else(|| new_name.clone());
+        let is_clear = matches!(cover_action, ImageAction::Clear);
+        let cover_action = cover_action.clone();
+        let res = self
+            .local
+            .call(move |_| -> Result<Option<(Texture, Texture)>> {
                 // If updating an existing DP, use old name first. SQLite code will migrate it for us.
                 let should_overwrite = overwrite_name.is_some();
                 let current_cover_key = overwrite_name.unwrap_or_else(|| dp.name.to_owned());
-                match cover_action {
+                let new_cover_result: Option<(Texture, Texture)> = match cover_action {
                     ImageAction::Clear => {
                         clear_image_internal(&current_cover_key, Some("dynamic_playlist"))?;
+                        None
                     }
                     ImageAction::New(path) => {
-                        set_image_internal(&current_cover_key, Some("dynamic_playlist"), &path)?;
+                        Some(set_image_internal(&current_cover_key, Some("dynamic_playlist"), &path)?)
                     }
-                    _ => {}
+                    _ => None,
                 };
 
                 sqlite::insert_dynamic_playlist(
@@ -1167,9 +1187,23 @@ impl Cache {
                         None
                     },
                 )
-                .map_err(Error::Sqlite)
+                .map_err(Error::Sqlite)?;
+
+                Ok(new_cover_result)
             })
-            .await
+            .await?;
+
+        if let Some(texs) = res {
+            // After sqlite::insert_dynamic_playlist, the cover key is always dp.name
+            // (the migration renames old_key -> new_key). Emit under the new name.
+            self.get_cache_state()
+                .emit_texture("dynamic-playlist-cover-set", &new_name, &texs.0, &texs.1);
+        } else if is_clear {
+            self.get_cache_state()
+                .emit_with_param("dynamic-playlist-cover-cleared", &current_cover_key);
+        }
+
+        Ok(())
     }
 
     pub async fn get_lyrics(

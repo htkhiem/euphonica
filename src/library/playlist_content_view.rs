@@ -15,7 +15,7 @@ use std::{
 
 use super::Library;
 use crate::{
-    cache::Cache,
+    cache::{Cache, CacheState},
     client::Error as ClientError,
     common::{ContentStack, INode, ImageStack, RowAddButtons, RowEditButtons, Song, SongRow},
     utils::{format_secs_as_duration, tokio_runtime},
@@ -194,7 +194,7 @@ mod imp {
 
         pub playlist: RefCell<Option<INode>>,
         pub bindings: RefCell<Vec<Binding>>,
-        pub cover_signal_id: RefCell<Option<SignalHandlerId>>,
+        pub cover_signal_ids: RefCell<Option<(SignalHandlerId, SignalHandlerId)>>,
         pub cache: OnceCell<Rc<Cache>>,
         #[derivative(Default(value = "Cell::new(true)"))]
         pub selecting_all: Cell<bool>, // Enables queuing the entire playlist efficiently
@@ -1041,6 +1041,38 @@ impl PlaylistContentView {
         // Save binding
         bindings.push(last_mod_binding);
 
+        // Playlist cover updates (necessary?)
+        let cache = self.imp().cache.get().unwrap().clone();
+        let state = cache.get_cache_state();
+        let _ = self.imp().cover_signal_ids.replace(Some((
+            state.connect_closure(
+                "playlist-cover-set",
+                false,
+                closure_local!(
+                    #[weak(rename_to = this)]
+                    self,
+                    move |_: CacheState, name: String, tex: gdk::Texture, _: gdk::Texture| {
+                        if this.imp().playlist.borrow().as_ref().map_or(false, |p| p.get_uri() == name) {
+                            this.update_cover(&tex);
+                        }
+                    }
+                ),
+            ),
+            state.connect_closure(
+                "playlist-cover-cleared",
+                false,
+                closure_local!(
+                    #[weak(rename_to = this)]
+                    self,
+                    move |_: CacheState, name: String| {
+                        if this.imp().playlist.borrow().as_ref().map_or(false, |p| p.get_uri() == name) {
+                            this.clear_cover();
+                        }
+                    }
+                ),
+            ),
+        )));
+
         glib::spawn_future_local(clone!(
             #[weak(rename_to = this)]
             self,
@@ -1109,10 +1141,12 @@ impl PlaylistContentView {
         for binding in self.imp().bindings.borrow_mut().drain(..) {
             binding.unbind();
         }
-        if let Some(id) = self.imp().cover_signal_id.take()
+        if let Some((set_id, cleared_id)) = self.imp().cover_signal_ids.take()
             && let Some(cache) = self.imp().cache.get()
         {
-            cache.get_cache_state().disconnect(id);
+            let state = cache.get_cache_state();
+            state.disconnect(set_id);
+            state.disconnect(cleared_id);
         }
         if clear_contents {
             self.imp().song_list.remove_all();

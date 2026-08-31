@@ -20,6 +20,7 @@
 
 use crate::{
     application::EuphonicaApplication,
+    cache::CacheState,
     client::{ClientState, ConnectionState, Result as ClientResult},
     common::{Album, Artist, INode, ThemeSelector, View, paintables::FadePaintable},
     library::{
@@ -274,6 +275,8 @@ mod imp {
         pub client_state_idle_id: RefCell<Option<SignalHandlerId>>,
         pub client_state_conn_state_id: RefCell<Option<SignalHandlerId>>,
         pub player_cover_changed_id: RefCell<Option<SignalHandlerId>>,
+        pub cover_signal_ids: RefCell<Option<(SignalHandlerId, SignalHandlerId)>>,
+        pub cache_state: WeakRef<CacheState>,
         pub player_title_changed_id: RefCell<Option<SignalHandlerId>>,
         pub client_state_pct_fg_id: RefCell<Option<SignalHandlerId>>,
         pub client_state_pct_bg_id: RefCell<Option<SignalHandlerId>>,
@@ -333,6 +336,12 @@ mod imp {
                 && let Some(player) = self.player.upgrade()
             {
                 player.disconnect(id);
+            }
+            if let Some((set_id, cleared_id)) = self.cover_signal_ids.take()
+                && let Some(state) = self.cache_state.upgrade()
+            {
+                state.disconnect(set_id);
+                state.disconnect(cleared_id);
             }
             if let Some(id) = self.player_title_changed_id.take()
                 && let Some(player) = self.player.upgrade()
@@ -1279,6 +1288,61 @@ impl EuphonicaWindow {
             .player_bar
             .setup(app.get_player(), app.get_cache());
 
+        // Update blurred background live when the current song's album cover is set/cleared.
+        {
+            let cache = app.get_cache();
+            let state = cache.get_cache_state();
+            let (set_id, cleared_id) = (
+                state.connect_closure(
+                    "album-cover-set",
+                    false,
+                    closure_local!(
+                        #[weak(rename_to = this)]
+                        win,
+                        move |_: CacheState, uri: String, _: gdk::Texture, _: gdk::Texture| {
+                            if this
+                                .imp()
+                                .player
+                                .upgrade()
+                                .and_then(|p| p.current_song())
+                                .map_or(false, |song| {
+                                    song.get_uri() == uri || song.get_folder_uri() == uri
+                                })
+                            {
+                                this.queue_new_background();
+                            }
+                        }
+                    ),
+                ),
+                state.connect_closure(
+                    "album-cover-cleared",
+                    false,
+                    closure_local!(
+                        #[weak(rename_to = this)]
+                        win,
+                        move |_: CacheState, uri: String| {
+                            if this
+                                .imp()
+                                .player
+                                .upgrade()
+                                .and_then(|p| p.current_song())
+                                .map_or(false, |song| {
+                                    song.get_uri() == uri || song.get_folder_uri() == uri
+                                })
+                            {
+                                this.queue_new_background();
+                            }
+                        }
+                    ),
+                ),
+            );
+            let _ = win.imp().cache_state.set(Some(&state));
+            let _ = win
+                .imp()
+                .cover_signal_ids
+                .replace(Some((set_id, cleared_id)));
+        }
+
         // Now that all the components are ready, we can start handling backend state changes
         win.imp()
             .fft_data
@@ -2083,7 +2147,12 @@ impl EuphonicaWindow {
             .set_int("last-window-height", height)
             .expect("Unable to stop last-window-height");
         if let Some(visible_child_name) = self.imp().stack.visible_child_name() {
-            let _ = state.set_enum("last-view", View::try_from(visible_child_name.as_str()).unwrap().as_idx() as i32);
+            let _ = state.set_enum(
+                "last-view",
+                View::try_from(visible_child_name.as_str())
+                    .unwrap()
+                    .as_idx() as i32,
+            );
         }
     }
 
