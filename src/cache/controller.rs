@@ -437,14 +437,15 @@ impl Cache {
     /// `embedded_key` is the URI used for embedded (track-level) images.
     /// If `album` is provided, it is used for external metadata lookups.
     /// Sequence:
-    /// 1. Check by folder_key in in-mem cache
-    /// 2. If folder-cover optimisation ("optim") is disabled, check by embedded_key too
-    /// 3. Check by folder_key on disk. If hits, cache by folder_key.
-    /// 4. If optim is disabled, check by embedded_key on disk too. If hits, cache by embedded_key.
-    /// 5. Try fetching cover file from MPD. If hits, cache by folder key.
-    /// 6. If optim is disabled, try fetching embedded art from MPD too. If hits, cache by embedded key.
-    /// 7. Try fetching from external sources. If hits, cacahe by folder_key regardless of optim status.
-    /// 8. If we still can't find anything then write a placeholder entry into SQLite then return None.
+    // 1. Check by folder_key in in-mem cache.
+    // 2. If not available, check by embedded_key too.
+    // 3. Check by folder_key on disk. If hits, cache by folder_key.
+    // 4. Check by embedded_key on disk too. If hits, cache by embedded_key.
+    // 5. Try fetching cover file from MPD. If hits, cache by folder key.
+    // 6. Try fetching embedded art from MPD too. If hits, cache by folder key **if embedded art optimisation is enabled**, else by embedded key.
+    // 7. Try fetching from external sources. If hits, cache by folder key **if embedded art optimisation is enabled**, else by embedded key.
+    // 8. If we still can't find anything then write a placeholder entry into SQLite & return None.
+
     #[inline]
     async fn get_cover_internal(
         self: Rc<Self>,
@@ -455,7 +456,9 @@ impl Cache {
     ) -> Result<Option<Texture>> {
         let mut failed_before = false;
 
-        let optimized_load = settings_manager().child("library").boolean("optimize-embedded-cover-loading");
+        let optimized_load = settings_manager()
+            .child("library")
+            .boolean("optimize-embedded-cover-loading");
 
         let folder_key_owned = folder_key.to_owned();
         let embedded_key_owned = embedded_key.to_owned();
@@ -463,14 +466,8 @@ impl Cache {
             .pool
             .push_future(move || {
                 // Steps 1-2
-                get_image_internal(&folder_key_owned, None, thumbnail).or_else(|err| {
-                    if !optimized_load {
-                        // Steps 3-4
-                        get_image_internal(&embedded_key_owned, None, thumbnail)
-                    } else {
-                        Err(err)
-                    }
-                })
+                get_image_internal(&folder_key_owned, None, thumbnail)
+                    .or_else(|_| get_image_internal(&embedded_key_owned, None, thumbnail))
             })
             .expect("get_cover_internal: cache threadpool error")
             .await
@@ -506,22 +503,28 @@ impl Cache {
                     }
                 }
                 // Step 6
-                if !optimized_load {
-                    match self
-                        .mpd_client
-                        .get_embedded_cover(embedded_key.to_owned())
-                        .await
-                    {
-                        Err(e) => {
-                            dbg!(e);
-                        }
-                        Ok(None) => {}
-                        Ok(Some(handle)) => {
-                            return self
-                                .process_image_handle(handle, embedded_key.to_owned(), thumbnail)
-                                .await
-                                .map(Some);
-                        }
+                match self
+                    .mpd_client
+                    .get_embedded_cover(embedded_key.to_owned())
+                    .await
+                {
+                    Err(e) => {
+                        dbg!(e);
+                    }
+                    Ok(None) => {}
+                    Ok(Some(handle)) => {
+                        return self
+                            .process_image_handle(
+                                handle,
+                                if optimized_load {
+                                    folder_key.to_owned()
+                                } else {
+                                    embedded_key.to_owned()
+                                },
+                                thumbnail,
+                            )
+                            .await
+                            .map(Some);
                     }
                 }
             }
@@ -530,11 +533,21 @@ impl Cache {
             if let Some(album) = album
                 && let Some(meta) = self.get_album_meta(&album, true, false, None).await?
             {
-                let key = folder_key.to_owned();
+                let folder_key_owned = folder_key.to_owned();
+                let embedded_key_owned = embedded_key.to_owned();
                 return self
                     .external
                     .call(move |_| {
-                        download_image_from_provider(&key, None, &meta.0.image, thumbnail)
+                        download_image_from_provider(
+                            if optimized_load {
+                                &folder_key_owned
+                            } else {
+                                &embedded_key_owned
+                            },
+                            None,
+                            &meta.0.image,
+                            thumbnail,
+                        )
                     })
                     .await;
             }
@@ -548,7 +561,7 @@ impl Cache {
         &self,
         key: String,
         key_prefix: Option<&'static str>,
-        path: &str
+        path: &str,
     ) -> Result<(gdk::Texture, gdk::Texture)> {
         // Assume ashpd always return filesystem spec
         let filepath = String::from(
@@ -573,11 +586,7 @@ impl Cache {
     /// Evict the image from cache and delete from cache folder on disk.
     /// This does not by itself yeet the image from memory (UI elements will still hold refs to it).
     /// We'll need to signal to these elements to clear themselves.
-    pub async fn clear_image(
-        &self,
-        key: String,
-        key_prefix: Option<&'static str>
-    ) -> Result<()> {
+    pub async fn clear_image(&self, key: String, key_prefix: Option<&'static str>) -> Result<()> {
         // Assume ashpd always return filesystem spec
         let cloned_key = key.clone();
         self.local
@@ -601,7 +610,9 @@ impl Cache {
         path: &str,
         notify: bool,
     ) -> Result<(gdk::Texture, gdk::Texture)> {
-        let optimized_load = settings_manager().child("library").boolean("optimize-embedded-cover-loading");
+        let optimized_load = settings_manager()
+            .child("library")
+            .boolean("optimize-embedded-cover-loading");
         let key = if optimized_load {
             &album.folder_uri
         } else {
@@ -609,13 +620,8 @@ impl Cache {
             self.clear_image(album.folder_uri.to_owned(), None).await?;
             &album.example_uri
         };
-        
-        let res = self.set_image(
-            key.to_owned(),
-            None,
-            path
-        )
-        .await;
+
+        let res = self.set_image(key.to_owned(), None, path).await;
 
         if let (Ok(texs), true) = (res.as_ref(), notify) {
             // For updates, still notify via signals to update all widgets wherever they are.
@@ -628,20 +634,19 @@ impl Cache {
 
     ///
     pub async fn clear_cover(&self, album: &AlbumInfo, notify: bool) -> Result<()> {
-        let optimized_load = settings_manager().child("library").boolean("optimize-embedded-cover-loading");
+        let optimized_load = settings_manager()
+            .child("library")
+            .boolean("optimize-embedded-cover-loading");
         let key = if optimized_load {
             &album.folder_uri
         } else {
             &album.example_uri
         };
-        let res = self.clear_image(
-            key.to_owned(),
-            None,
-        )
-        .await;
-        
+        let res = self.clear_image(key.to_owned(), None).await;
+
         if let (Ok(_), true) = (res.as_ref(), notify) {
-            self.get_cache_state().emit_with_param("album-cover-cleared", &key);
+            self.get_cache_state()
+                .emit_with_param("album-cover-cleared", &key);
         }
 
         res
@@ -653,12 +658,7 @@ impl Cache {
         path: &str,
         notify: bool,
     ) -> Result<(gdk::Texture, gdk::Texture)> {
-        let res = self.set_image(
-            tag.clone(),
-            Some("avatar"),
-            path
-        )
-        .await;
+        let res = self.set_image(tag.clone(), Some("avatar"), path).await;
 
         if let (Ok(texs), true) = (res.as_ref(), notify) {
             // For updates, still notify via signals to update all widgets wherever they are.
@@ -670,14 +670,11 @@ impl Cache {
     }
 
     pub async fn clear_artist_avatar(&self, tag: String, notify: bool) -> Result<()> {
-        let res = self.clear_image(
-            tag.clone(),
-            Some("avatar")
-        )
-        .await;
-        
+        let res = self.clear_image(tag.clone(), Some("avatar")).await;
+
         if let (Ok(_), true) = (res.as_ref(), notify) {
-            self.get_cache_state().emit_with_param("artist-avatar-cleared", &tag);
+            self.get_cache_state()
+                .emit_with_param("artist-avatar-cleared", &tag);
         }
 
         res
@@ -688,13 +685,11 @@ impl Cache {
         playlist_name: String,
         path: &str,
     ) -> Result<(gdk::Texture, gdk::Texture)> {
-        self.set_image(playlist_name, Some("playlist"), path)
-            .await
+        self.set_image(playlist_name, Some("playlist"), path).await
     }
 
     pub async fn clear_playlist_cover(&self, playlist_name: String) -> Result<()> {
-        self.clear_image(playlist_name, Some("playlist"))
-            .await
+        self.clear_image(playlist_name, Some("playlist")).await
     }
 
     /// Function for getting & caching the latest album meta from local sources.
