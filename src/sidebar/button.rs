@@ -1,5 +1,5 @@
 use glib::{Object, Properties};
-use gtk::{CompositeTemplate, Image, Label, glib, prelude::*, subclass::prelude::*};
+use gtk::{CompositeTemplate, Label, glib, prelude::*, subclass::prelude::*};
 use std::cell::RefCell;
 
 mod imp {
@@ -12,11 +12,9 @@ mod imp {
         #[template_child]
         pub label_widget: TemplateChild<Label>,
         #[template_child]
-        pub icon_widget: TemplateChild<Image>,
+        pub prefix_box: TemplateChild<gtk::Box>,
         #[property(get, set)]
         pub label: RefCell<String>,
-        #[property(get, set)]
-        pub icon_name: RefCell<String>,
     }
 
     #[glib::object_subclass]
@@ -45,10 +43,6 @@ mod imp {
             obj.bind_property("label", &obj.imp().label_widget.get(), "label")
                 .sync_create()
                 .build();
-
-            obj.bind_property("icon_name", &obj.imp().icon_widget.get(), "icon-name")
-                .sync_create()
-                .build();
         }
     }
 
@@ -66,10 +60,17 @@ glib::wrapper! {
 }
 
 impl SidebarButton {
-    pub fn new(label: &str, icon_name: &str) -> Self {
-        Object::builder()
-            .property("label", label)
-            .property("icon_name", icon_name)
-            .build()
+    pub fn new(label: &str) -> Self {
+        Object::builder().property("label", label).build()
+    }
+
+    /// Replace the button's prefix widget with a custom widget
+    /// (e.g. a symbolic icon, a playlist cover, or any other widget)
+    pub fn set_prefix(&self, prefix: &impl IsA<gtk::Widget>) {
+        let prefix_box = self.imp().prefix_box.get();
+        while let Some(child) = prefix_box.first_child() {
+            child.unparent();
+        }
+        prefix_box.append(prefix);
     }
 }

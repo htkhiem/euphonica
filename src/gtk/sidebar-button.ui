@@ -8,7 +8,10 @@
 			<object class="GtkBox">
 				<property name="spacing">12</property>
 				<child>
-					<object class="GtkImage" id="icon_widget"></object>
+					<object class="GtkBox" id="prefix_box">
+					<property name="halign">3</property>
+					<property name="valign">3</property>
+				</object>
 				</child>
 				<child>
 					<object class="GtkLabel" id="label_widget">
