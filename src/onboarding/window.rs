@@ -20,37 +20,17 @@
 
 use crate::{
     application::EuphonicaApplication,
-    client::{ClientState, ConnectionState, Result as ClientResult},
-    common::{Album, Artist, INode, ThemeSelector, View, paintables::FadePaintable},
-    library::{
-        AlbumView, ArtistContentView, ArtistView, DynamicPlaylistEditorView, DynamicPlaylistView,
-        FolderView, PlaylistView, RecentView,
-    },
-    player::{Player, PlayerBar, QueueView},
-    sidebar::Sidebar,
-    utils::{self, LazyInit, SearchableView, settings_manager},
+    utils::settings_manager,
 };
-use adw::{ColorScheme, StyleManager, prelude::*, subclass::prelude::*};
-use auto_palette::{ImageData, Palette, color::RGB};
+use adw::{prelude::*, subclass::prelude::*};
 use glib::WeakRef;
 use gtk::{
-    CssProvider, cairo, gdk,
-    gio::{self, SimpleActionGroup},
-    glib::{self, BoxedAnyObject, SignalHandlerId, clone, closure_local},
-    graphene, gsk,
+    gio::{self},
+    glib::{self, clone},
 };
-use image::{DynamicImage, imageops::FilterType};
-use libblur::{FastBlurChannels, ThreadingPolicy, stack_blur};
-use mpd::Subsystem;
-use std::{cell::RefCell, ops::Deref, path::PathBuf, thread, time::Duration};
-use std::{
-    cell::{Cell, OnceCell},
-    sync::{Arc, Mutex},
-};
+use std::cell::Cell;
 
-use async_channel::Sender;
 use glib::Properties;
-use image::ImageReader as Reader;
 
 mod imp {
     use super::*;

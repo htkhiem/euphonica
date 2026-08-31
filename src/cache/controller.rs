@@ -4,13 +4,13 @@
 // whether from MPD or from Last.fm.
 // - Images are stored as resized WebP files on disk.
 // - Text data is stored as BSON blobs in SQLite.
-use futures::TryFutureExt;
 extern crate bson;
 use asyncified::Asyncified;
 use gio::prelude::*;
 use gtk::{
     gdk::{self, Texture},
-    gio, glib,
+    gio,
+    glib::{self},
 };
 use image::ImageReader;
 use lru::LruCache;
@@ -20,7 +20,7 @@ use std::{fmt, fs::create_dir_all, rc::Rc, result, sync::Mutex};
 use time::OffsetDateTime;
 
 use crate::{
-    client::{Error as ClientError, MpdWrapper},
+    client::{Error as ClientError, ImageHandle, MpdWrapper},
     common::{AlbumInfo, ArtistInfo},
     meta_providers::{
         MetadataChain,
@@ -29,7 +29,7 @@ use crate::{
         utils::get_best_image,
     },
     utils::{
-        get_app_cache_path, get_image_cache_path, register_image_as_failure,
+        RegisteredImageBundle, get_app_cache_path, get_image_cache_path, register_image_as_failure,
         save_and_register_image, settings_manager,
     },
     window::EuphonicaWindow,
@@ -281,7 +281,7 @@ pub struct Cache {
     // Thread pool for parallelisable operations such as texture read from disk and resizing ops.
     pool: glib::ThreadPool,
     // Cache state object for emitting signals.
-    state: CacheState
+    state: CacheState,
 }
 
 impl fmt::Debug for Cache {
@@ -324,7 +324,7 @@ impl Cache {
                 settings_manager().child("library").uint("n-image-threads"),
             ))
             .expect("Unable to start threadpool for cache operations"),
-            state: CacheState::default()
+            state: CacheState::default(),
         };
 
         Rc::new(cache)
@@ -395,9 +395,56 @@ impl Cache {
         res
     }
 
+    #[inline]
+    async fn process_image_handle(
+        &self,
+        handle: ImageHandle,
+        register_key: String,
+        thumbnail: bool,
+    ) -> Result<gdk::Texture> {
+        let bundle = match handle {
+            ImageHandle::Registered(bundle) => bundle,
+            ImageHandle::New(bytes) => {
+                // process in threadpool
+                let bundle = self
+                    .pool
+                    .push_future(move || -> Result<RegisteredImageBundle> {
+                        Ok(save_and_register_image(
+                            image::load_from_memory(&bytes).map_err(|_| Error::UnknownFormat)?,
+                            &register_key,
+                            None,
+                        ))
+                    })
+                    .expect("maybe_register_image_handle: threadpool error")
+                    .await
+                    .expect("maybe_register_image_handle: threadpool error")?;
+                bundle
+            }
+        };
+        let tex = bundle.take_texture(thumbnail)?;
+        IMAGE_CACHE.lock().unwrap().put(
+            if thumbnail {
+                bundle.thumb.name.to_owned()
+            } else {
+                bundle.hires.name.to_owned()
+            },
+            tex.clone(),
+        );
+        Ok(tex)
+    }
+
     /// Shared cover lookup. `folder_key` is the URI used for folder-level images,
     /// `embedded_key` is the URI used for embedded (track-level) images.
     /// If `album` is provided, it is used for external metadata lookups.
+    /// Sequence:
+    /// 1. Check by folder_key in in-mem cache
+    /// 2. If folder-cover optimisation ("optim") is disabled, check by embedded_key too
+    /// 3. Check by folder_key on disk. If hits, cache by folder_key.
+    /// 4. If optim is disabled, check by embedded_key on disk too. If hits, cache by embedded_key.
+    /// 5. Try fetching cover file from MPD. If hits, cache by folder key.
+    /// 6. If optim is disabled, try fetching embedded art from MPD too. If hits, cache by embedded key.
+    /// 7. Try fetching from external sources. If hits, cacahe by folder_key regardless of optim status.
+    /// 8. If we still can't find anything then write a placeholder entry into SQLite then return None.
     #[inline]
     async fn get_cover_internal(
         self: Rc<Self>,
@@ -408,12 +455,23 @@ impl Cache {
     ) -> Result<Option<Texture>> {
         let mut failed_before = false;
 
-        // 1. Check if we have it cached locally. This is parallelisable so we'll use the threadpool.
-        // Covers are always keyed by example_uri while in cache.
-        let cache_key = embedded_key.to_owned();
+        let optimized_load = settings_manager().child("library").boolean("optimize-embedded-cover-loading");
+
+        let folder_key_owned = folder_key.to_owned();
+        let embedded_key_owned = embedded_key.to_owned();
         match self
             .pool
-            .push_future(move || get_image_internal(&cache_key, None, thumbnail))
+            .push_future(move || {
+                // Steps 1-2
+                get_image_internal(&folder_key_owned, None, thumbnail).or_else(|err| {
+                    if !optimized_load {
+                        // Steps 3-4
+                        get_image_internal(&embedded_key_owned, None, thumbnail)
+                    } else {
+                        Err(err)
+                    }
+                })
+            })
             .expect("get_cover_internal: cache threadpool error")
             .await
             .expect("get_cover_internal: cache threadpool error")
@@ -424,45 +482,59 @@ impl Cache {
             Err(e) => return Err(e),
         }
 
-        // 2. Nope, fall back to downloading fresh
+        // Subsequent steps are only performed if the full flow hasn't failed once before
         if !failed_before {
             if settings_manager()
                 .child("client")
                 .boolean("mpd-download-album-art")
             {
-                // 2a. MPD folder-level cover
-                if let Some(bundle) = self
+                // Step 5
+                match self
                     .mpd_client
-                    .get_folder_cover(embedded_key.to_owned())
-                    .map_err(Error::Client)
-                    .await?
+                    .get_folder_cover(embedded_key.to_owned(), folder_key.to_owned())
+                    .await
                 {
-                    return Ok(bundle.take_texture(thumbnail).map(Some)?);
+                    Err(e) => {
+                        dbg!(e);
+                    }
+                    Ok(None) => {}
+                    Ok(Some(handle)) => {
+                        return self
+                            .process_image_handle(handle, folder_key.to_owned(), thumbnail)
+                            .await
+                            .map(Some);
+                    }
                 }
-                // 2b. MPD embedded cover. When caching we'll key by example_uri, or folder_uri if optimize-embedded-cover-loading is enabled.
-                if let Some(bundle) = self
-                    .mpd_client
-                    .get_embedded_cover(embedded_key.to_owned())
-                    .map_err(Error::Client)
-                    .await?
-                {
-                    return Ok(bundle.take_texture(thumbnail).map(Some)?);
+                // Step 6
+                if !optimized_load {
+                    match self
+                        .mpd_client
+                        .get_embedded_cover(embedded_key.to_owned())
+                        .await
+                    {
+                        Err(e) => {
+                            dbg!(e);
+                        }
+                        Ok(None) => {}
+                        Ok(Some(handle)) => {
+                            return self
+                                .process_image_handle(handle, embedded_key.to_owned(), thumbnail)
+                                .await
+                                .map(Some);
+                        }
+                    }
                 }
             }
 
-            // 2c. Go outside & scream
+            // Step 7: Go outside & scream
             if let Some(album) = album
                 && let Some(meta) = self.get_album_meta(&album, true, false, None).await?
             {
+                let key = folder_key.to_owned();
                 return self
                     .external
                     .call(move |_| {
-                        download_image_from_provider(
-                            &album.folder_uri,
-                            None,
-                            &meta.0.image,
-                            thumbnail,
-                        )
+                        download_image_from_provider(&key, None, &meta.0.image, thumbnail)
                     })
                     .await;
             }
@@ -735,7 +807,8 @@ impl Cache {
                 .get_album_meta(album.clone(), None, window)
                 .await
             {
-                let ts = sqlite::write_album_meta(album, &meta, None, true).map_err(Error::Sqlite)?;
+                let ts =
+                    sqlite::write_album_meta(album, &meta, None, true).map_err(Error::Sqlite)?;
                 Ok(Some((meta, ts, models::MetaSource::External)))
             } else {
                 // Push an empty AlbumMeta to block further calls for this album.
@@ -792,7 +865,7 @@ impl Cache {
         &self,
         album: &AlbumInfo,
         meta: &models::AlbumMeta,
-        update_tags: bool
+        update_tags: bool,
     ) -> Result<OffsetDateTime> {
         sqlite::write_album_meta(album, meta, None, update_tags).map_err(Error::Sqlite)
     }
@@ -965,7 +1038,7 @@ impl Cache {
         &self,
         artist: &ArtistInfo,
         meta: &models::ArtistMeta,
-        update_tags: bool
+        update_tags: bool,
     ) -> Result<OffsetDateTime> {
         sqlite::write_artist_meta(artist, meta, update_tags).map_err(Error::Sqlite)
     }
@@ -1091,7 +1164,7 @@ impl Cache {
         &self,
         song: &SongInfo,
         external: bool,
-        overwrite: bool,   // only effective when external == true
+        overwrite: bool, // only effective when external == true
         window: Option<&EuphonicaWindow>,
     ) -> Result<Option<Lyrics>> {
         let uri = song.uri.to_owned();
