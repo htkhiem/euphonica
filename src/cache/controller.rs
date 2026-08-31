@@ -408,11 +408,9 @@ impl Cache {
     ) -> Result<Option<Texture>> {
         let mut failed_before = false;
 
-        let embedded_key_owned = embedded_key.to_owned();
-
         // 1. Check if we have it cached locally. This is parallelisable so we'll use the threadpool.
         // Covers are always keyed by example_uri while in cache.
-        let cache_key = embedded_key_owned.clone();
+        let cache_key = embedded_key.to_owned();
         match self
             .pool
             .push_future(move || get_image_internal(&cache_key, None, thumbnail))
@@ -435,7 +433,7 @@ impl Cache {
                 // 2a. MPD folder-level cover
                 if let Some(bundle) = self
                     .mpd_client
-                    .get_folder_cover(embedded_key_owned.to_owned())
+                    .get_folder_cover(embedded_key.to_owned())
                     .map_err(Error::Client)
                     .await?
                 {
@@ -444,7 +442,7 @@ impl Cache {
                 // 2b. MPD embedded cover. When caching we'll key by example_uri, or folder_uri if optimize-embedded-cover-loading is enabled.
                 if let Some(bundle) = self
                     .mpd_client
-                    .get_embedded_cover(embedded_key_owned.to_owned())
+                    .get_embedded_cover(embedded_key.to_owned())
                     .map_err(Error::Client)
                     .await?
                 {

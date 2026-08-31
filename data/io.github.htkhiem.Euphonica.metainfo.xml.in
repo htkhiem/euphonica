@@ -93,6 +93,14 @@
   </screenshots>
 
   <releases>
+    <release version="0.99.7-beta" date="2026-08-31">
+      <url type="details">https://github.com/htkhiem/euphonica/releases/tag/v0.99.7-beta</url>
+      <description>
+        <p>New: playlist cover images are now shown in the sidebar.</p>
+        <p>Fix: restore in-memory image cache codepath.</p>
+        <p>Fix: song-level stickers not loading, interfering with dynamic playlists.</p>
+      </description>
+    </release>
     <release version="0.99.6-beta-1" date="2026-08-20">
       <url type="details">https://github.com/htkhiem/euphonica/releases/tag/v0.99.6-beta-1</url>
       <description>
