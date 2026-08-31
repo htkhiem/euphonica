@@ -1,4 +1,4 @@
-use glib::{Object, ParamSpec, ParamSpecString, clone, closure_local};
+use glib::{Object, ParamSpec, ParamSpecString, clone};
 use gtk::{CompositeTemplate, gdk, glib, prelude::*, subclass::prelude::*};
 use once_cell::sync::Lazy;
 use std::{
@@ -7,16 +7,14 @@ use std::{
 };
 
 use crate::{
-    cache::{Cache, CacheState, placeholders::ALBUMART_THUMBNAIL_PLACEHOLDER},
+    cache::{Cache, placeholders::ALBUMART_THUMBNAIL_PLACEHOLDER},
     common::INode,
 };
 
 use super::Library;
 
 mod imp {
-    use gtk::glib::WeakRef;
-
-use super::*;
+    use super::*;
 
     #[derive(Default, CompositeTemplate)]
     #[template(resource = "/io/github/htkhiem/Euphonica/gtk/library/playlist-row.ui")]
@@ -38,9 +36,7 @@ use super::*;
         pub library: OnceCell<Library>,
         pub playlist: RefCell<Option<INode>>,
         pub is_dynamic: Cell<bool>,
-        pub cache: OnceCell<Rc<Cache>>,
-        pub cover_signal_ids: RefCell<Option<(glib::SignalHandlerId, glib::SignalHandlerId)>>,
-        pub cache_state: WeakRef<CacheState>,
+        pub cache: OnceCell<Rc<Cache>>
     }
 
     // The central trait for subclassing a GObject
@@ -200,41 +196,6 @@ impl PlaylistRow {
         // Bind album art listener. Set once first (like sync_create)
         self.imp().playlist.replace(Some(playlist.clone()));
         self.clear_thumbnail();
-        // Wire playlist-cover signals for live thumbnail updates.
-        let is_dynamic = self.imp().is_dynamic.get();
-        let set_signal = if is_dynamic { "dynamic-playlist-cover-set" } else { "playlist-cover-set" };
-        let cleared_signal = if is_dynamic { "dynamic-playlist-cover-cleared" } else { "playlist-cover-cleared" };
-        let cache = self.imp().cache.get().unwrap().clone();
-        let state = cache.get_cache_state();
-        let _ = self.imp().cache_state.set(Some(&state));
-        let _ = self.imp().cover_signal_ids.replace(Some((
-            state.connect_closure(
-                set_signal,
-                false,
-                closure_local!(
-                    #[weak(rename_to = this)]
-                    self,
-                    move |_: CacheState, name: String, tex: gdk::Texture, _: gdk::Texture| {
-                        if this.uri().is_some_and(|u| u == name) {
-                            this.imp().thumbnail.set_paintable(Some(&tex));
-                        }
-                    }
-                ),
-            ),
-            state.connect_closure(
-                cleared_signal,
-                false,
-                closure_local!(
-                    #[weak(rename_to = this)]
-                    self,
-                    move |_: CacheState, name: String| {
-                        if this.uri().is_some_and(|u| u == name) {
-                            this.clear_thumbnail();
-                        }
-                    }
-                ),
-            ),
-        )));
         glib::spawn_future_local(clone!(
             #[weak(rename_to = this)]
             self,
@@ -272,12 +233,6 @@ impl PlaylistRow {
     }
 
     pub fn unbind(&self) {
-        if let Some((set_id, cleared_id)) = self.imp().cover_signal_ids.take()
-            && let Some(state) = self.imp().cache_state.upgrade()
-        {
-            state.disconnect(set_id);
-            state.disconnect(cleared_id);
-        }
         if let Some(_) = self.imp().playlist.take() {
             self.clear_thumbnail();
         }

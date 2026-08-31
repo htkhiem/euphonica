@@ -219,7 +219,7 @@ mod imp {
             let player = Player::default();
             player.setup(self.obj().clone(), client.clone(), cache.clone());
             let library = Library::default();
-            library.setup(client.clone(), player.clone());
+            library.setup(client.clone(), player.clone(), cache.clone());
 
             let _ = self.cache.set(cache);
             let _ = self.library.set(library);
