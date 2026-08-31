@@ -38,6 +38,17 @@
                       </object>
                     </child>
                     <child>
+                      <object class="GtkLabel">
+                        <property name="label" translatable="true">This helps Euphonica determine the most efficient way to load album arts.</property>
+                        <property name="wrap">true</property>
+                        <property name="justify">center</property>
+                        <property name="margin-top">6</property>
+                        <!-- <style>
+                          <class name="body"/>
+                        </style> -->
+                      </object>
+                    </child>
+                    <child>
                       <object class="GtkImage" id="library_mode_illustration">
                         <property name="pixel-size">256</property>
                         <style>
@@ -53,8 +64,8 @@
                         </style>
                         <child>
                           <object class="AdwActionRow">
-                            <property name="title" translatable="true">One album/release per folder</property>
-                            <property name="subtitle" translatable="true">All tracks within the same folder use the same cover art. This is either a dedicated &lt;tt&gt;cover.{png,webp,jpg}&lt;/tt&gt; file, or the first embedded art found.</property>
+                            <property name="title" translatable="true">Each album/release has its own folder</property>
+                            <!-- <property name="subtitle" translatable="true">All tracks within the same folder use the same cover art. This is either a dedicated &lt;tt&gt;cover.{png,webp,jpg}&lt;/tt&gt; file, or the first embedded art found.</property> -->
                             <child type="prefix">
                               <object class="GtkCheckButton" id="release_folder_library_mode">
                                 <property name="active">true</property>
@@ -64,8 +75,8 @@
                         </child>
                         <child>
                           <object class="AdwActionRow">
-                            <property name="title" translatable="true">Some or all folders are mixed</property>
-                            <property name="subtitle" translatable="true">Embedded art will be downloaded per-track, but &lt;tt&gt;cover.{png,webp,jpg}&lt;/tt&gt; files still take priority. For folders that are indeed single-release, these files help prevent duplicate downloads. For other folders, clear them out to force fallback to per-track embedded art.</property>
+                            <property name="title" translatable="true">Other/mixed</property>
+                            <!-- <property name="subtitle" translatable="true">Embedded art will be downloaded per-track, but &lt;tt&gt;cover.{png,webp,jpg}&lt;/tt&gt; files still take priority. For folders that are indeed single-release, these files help prevent duplicate downloads. For other folders, clear them out to force fallback to per-track embedded art.</property> -->
                             <child type="prefix">
                               <object class="GtkCheckButton" id="mixed_library_mode">
                                 <property name="group">release_folder_library_mode</property>
