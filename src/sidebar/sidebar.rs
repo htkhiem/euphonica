@@ -167,34 +167,7 @@ impl Sidebar {
 
         let recent_btn = self.imp().recent_btn.get();
         recent_btn.set_active(true);
-
-        // Prefix icons for the static sidebar buttons
-        recent_btn.set_prefix(&gtk::Image::builder().icon_name("recent-symbolic").build());
-        self.imp().albums_btn.set_prefix(
-            &gtk::Image::builder()
-                .icon_name("library-music-symbolic")
-                .build(),
-        );
-        self.imp().artists_btn.set_prefix(
-            &gtk::Image::builder()
-                .icon_name("music-artist-symbolic")
-                .build(),
-        );
-        self.imp().folders_btn.set_prefix(
-            &gtk::Image::builder()
-                .icon_name("folder-symbolic")
-                .build(),
-        );
-        self.imp().playlists_btn.set_prefix(
-            &gtk::Image::builder()
-                .icon_name("playlist-symbolic")
-                .build(),
-        );
-        self.imp().dyn_playlists_btn.set_prefix(
-            &gtk::Image::builder()
-                .icon_name("playlist-symbolic")
-                .build(),
-        );
+        
         // Hook each button to their respective views
         recent_btn.connect_toggled(clone!(
             #[weak]
@@ -298,7 +271,7 @@ impl Sidebar {
                     let btn = SidebarButton::new(playlist.get_uri());
                     let (cover, cover_box) = playlist_cover_prefix();
                     fetch_playlist_cover(&cache, cover, playlist.get_uri(), false);
-                    btn.set_prefix(&cover_box);
+                    btn.set_prefix_child(cover_box);
                     btn.set_group(Some(&recent_btn));
                     btn.connect_toggled(clone!(
                         #[weak]
@@ -387,7 +360,7 @@ impl Sidebar {
                     let btn = SidebarButton::new(playlist.get_uri());
                     let (cover, cover_box) = playlist_cover_prefix();
                     fetch_playlist_cover(&cache, cover, playlist.get_uri(), true);
-                    btn.set_prefix(&cover_box);
+                    btn.set_prefix_child(cover_box);
                     btn.set_group(Some(&recent_btn));
                     btn.connect_toggled(clone!(
                         #[weak]

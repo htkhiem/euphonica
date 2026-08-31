@@ -14,6 +14,11 @@
 						<child>
 							<object class="EuphonicaSidebarButton" id="recent_btn">
 								<property name="label" translatable="true">Recent</property>
+								<property name="prefix-child">
+									<object class="GtkImage">
+										<property name="icon-name">recent-symbolic</property>
+									</object>
+								</property>
 							</object>
 						</child>
 						<child>
@@ -23,18 +28,34 @@
 							<object class="EuphonicaSidebarButton" id="albums_btn">
 								<property name="group">recent_btn</property>
 								<property name="label" translatable="true">Albums</property>
+								<property name="prefix-child">
+									<object class="GtkImage">
+										<property name="icon-name">library-music-symbolic</property>
+									</object>
+								</property>
 							</object>
 						</child>
 						<child>
 							<object class="EuphonicaSidebarButton" id="artists_btn">
 								<property name="group">recent_btn</property>
 								<property name="label" translatable="true">Artists</property>
+								<property name="prefix-child">
+									<object class="GtkImage">
+										<property name="icon-name">music-artist-symbolic</property>
+									</object>
+								</property>
 							</object>
 						</child>
 						<child>
 							<object class="EuphonicaSidebarButton" id="folders_btn">
 								<property name="group">recent_btn</property>
 								<property name="label" translatable="true">Folders</property>
+								<property name="prefix-child">
+									<object class="GtkImage">
+										<property name="icon-name">folder-symbolic</property>
+									</object>
+								</property>
+
 							</object>
 						</child>
 
@@ -52,6 +73,11 @@
 									<object class="EuphonicaSidebarButton" id="dyn_playlists_btn">
 										<property name="group">recent_btn</property>
 										<property name="label" translatable="true">Dynamic Playlists</property>
+										<property name="prefix-child">
+											<object class="GtkImage">
+												<property name="icon-name">playlist-symbolic</property>
+											</object>
+										</property>
 									</object>
 								</child>
 
@@ -79,6 +105,11 @@
 									<object class="EuphonicaSidebarButton" id="playlists_btn">
 										<property name="group">recent_btn</property>
 										<property name="label" translatable="true">Saved Playlists</property>
+										<property name="prefix-child">
+											<object class="GtkImage">
+												<property name="icon-name">playlist-symbolic</property>
+											</object>
+										</property>
 									</object>
 								</child>
 

@@ -3,7 +3,9 @@ use gtk::{CompositeTemplate, Label, glib, prelude::*, subclass::prelude::*};
 use std::cell::RefCell;
 
 mod imp {
-    use super::*;
+    use gtk::glib::WeakRef;
+
+use super::*;
 
     #[derive(Properties, Default, CompositeTemplate)]
     #[template(resource = "/io/github/htkhiem/Euphonica/gtk/sidebar-button.ui")]
@@ -15,6 +17,8 @@ mod imp {
         pub prefix_box: TemplateChild<gtk::Box>,
         #[property(get, set)]
         pub label: RefCell<String>,
+        #[property(get = Self::get_prefix_child, set = Self::set_prefix_child)]
+        pub prefix_child: WeakRef<gtk::Widget>
     }
 
     #[glib::object_subclass]
@@ -51,6 +55,21 @@ mod imp {
     impl ButtonImpl for SidebarButton {}
 
     impl ToggleButtonImpl for SidebarButton {}
+
+    impl SidebarButton {
+        fn set_prefix_child(&self, prefix: gtk::Widget) {
+            let prefix_box = self.prefix_box.get();
+            while let Some(child) = prefix_box.first_child() {
+                child.unparent();
+            }
+            prefix_box.append(&prefix);
+            self.prefix_child.set(Some(&prefix));
+        }
+
+        fn get_prefix_child(&self) -> Option<gtk::Widget> {
+            self.prefix_child.upgrade()
+        }
+    }
 }
 
 glib::wrapper! {
@@ -62,15 +81,5 @@ glib::wrapper! {
 impl SidebarButton {
     pub fn new(label: &str) -> Self {
         Object::builder().property("label", label).build()
-    }
-
-    /// Replace the button's prefix widget with a custom widget
-    /// (e.g. a symbolic icon, a playlist cover, or any other widget)
-    pub fn set_prefix(&self, prefix: &impl IsA<gtk::Widget>) {
-        let prefix_box = self.imp().prefix_box.get();
-        while let Some(child) = prefix_box.first_child() {
-            child.unparent();
-        }
-        prefix_box.append(prefix);
     }
 }
