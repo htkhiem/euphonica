@@ -475,7 +475,7 @@ mod imp {
                                 if let (Some(album), Some(cache)) =
                                     (obj.imp().album.borrow().as_ref(), obj.imp().cache.get())
                                     && let Err(e) = cache
-                                        .clear_cover(album.get_folder_uri().to_owned(), true)
+                                        .clear_cover(album.get_info(), true)
                                         .await
                                 {
                                     obj.show_cache_error("Couldn't clear cover", e);
@@ -913,7 +913,7 @@ impl AlbumContentView {
     pub async fn set_cover(&self, path: &str) {
         if let (Some(album), Some(cache)) = (self.album(), self.imp().cache.get())
             && let Err(e) = cache
-                .set_cover(album.get_example_uri().to_owned(), path, true)
+                .set_cover(album.get_info(), path, true)
                 .await
         {
             self.show_cache_error("Couldn't set cover", e);
@@ -1114,7 +1114,7 @@ impl AlbumContentView {
             // Remove existing entry in SQLite, which might be an empty "do not retry" placeholder.
             if overwrite {
                 // Don't notify, else we'd interrupt the spinner
-                if let Err(e) = cache.clear_cover(info.example_uri.to_owned(), false).await {
+                if let Err(e) = cache.clear_cover(info, false).await {
                     self.show_cache_error("Couldn't clear cover", e);
                 }
             }
