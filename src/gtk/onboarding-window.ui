@@ -54,7 +54,7 @@
                         <child>
                           <object class="AdwActionRow">
                             <property name="title" translatable="true">One album/release per folder</property>
-                            <property name="subtitle" translatable="true">Optimise resource usage by loading only one representative cover art per folder. This is either a dedicated &lt;tt&gt;cover.{png,webp,jpg}&lt;/tt&gt; file, or the first embedded art found.</property>
+                            <property name="subtitle" translatable="true">All tracks within the same folder use the same cover art. This is either a dedicated &lt;tt&gt;cover.{png,webp,jpg}&lt;/tt&gt; file, or the first embedded art found.</property>
                             <child type="prefix">
                               <object class="GtkCheckButton" id="release_folder_library_mode">
                                 <property name="active">true</property>
@@ -64,8 +64,8 @@
                         </child>
                         <child>
                           <object class="AdwActionRow">
-                            <property name="title" translatable="true">Mixed</property>
-                            <property name="subtitle" translatable="true">Prioritise per-track embedded art for correctness. Might load the same cover art multiple times if every track contains embedded art.</property>
+                            <property name="title" translatable="true">Some or all folders are mixed</property>
+                            <property name="subtitle" translatable="true">Embedded art will be downloaded per-track, but &lt;tt&gt;cover.{png,webp,jpg}&lt;/tt&gt; files still take priority. For folders that are indeed single-release, these files help prevent duplicate downloads. For other folders, clear them out to force fallback to per-track embedded art.</property>
                             <child type="prefix">
                               <object class="GtkCheckButton" id="mixed_library_mode">
                                 <property name="group">release_folder_library_mode</property>
