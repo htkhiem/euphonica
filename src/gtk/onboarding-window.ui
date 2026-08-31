@@ -3,17 +3,12 @@
   <requires lib="gtk" version="4.0"/>
   <requires lib="Adw" version="1.0"/>
   <template class="EuphonicaOnboardingWindow" parent="AdwApplicationWindow">
+    <property name="title" translatable="true">Euphonica</property>
     <property name="default-width">400</property>
     <property name="default-height">500</property>
     <property name="height-request">640</property>
     <property name="width-request">360</property>
-    <child>
-      <object class="AdwBreakpoint">
-        <condition>max-width: 750</condition>
-        <setter object="player_bar" property="layout">1</setter>
-        <setter object="queue_view" property="pane-collapsed">true</setter>
-      </object>
-    </child>
+
     <property name="content">
       <object class="GtkBox" id="content">
         <property name="halign">fill</property>
@@ -22,11 +17,67 @@
           <object class="AdwToastOverlay" id="toast_overlay">
             <child>
               <object class="AdwToolbarView">
+                <child type="top">
+                  <object class="AdwHeaderBar"></object>
+                </child>
                 <property name="content">
-                  <object class="AdwStatusPage">
-                    <property name="title">Welcome to Euphonica</property>
+                  <!-- Page 1 -->
+                  <object class="GtkBox">
+                    <style>
+                      <class name="padding-12"/>
+                    </style>
+                    <property name="orientation">1</property>
+                    <child>
+                      <object class="GtkLabel">
+                        <property name="label" translatable="true">How is your library organised?</property>
+                        <property name="wrap">true</property>
+                        <property name="justify">center</property>
+                        <style>
+                          <class name="title-1"/>
+                        </style>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="GtkImage" id="library_mode_illustration">
+                        <property name="pixel-size">256</property>
+                        <style>
+                          <class name="accent"/>
+                        </style>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="GtkListBox">
+                        <property name="selection-mode">0</property>
+                        <style>
+                          <class name="boxed-list"/>
+                        </style>
+                        <child>
+                          <object class="AdwActionRow">
+                            <property name="title" translatable="true">One album/release per folder</property>
+                            <property name="subtitle" translatable="true">Optimise resource usage by loading only one representative cover art per folder. This is either a dedicated &lt;tt&gt;cover.{png,webp,jpg}&lt;/tt&gt; file, or the first embedded art found.</property>
+                            <child type="prefix">
+                              <object class="GtkCheckButton" id="release_folder_library_mode">
+                                <property name="active">true</property>
+                              </object>
+                            </child>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="AdwActionRow">
+                            <property name="title" translatable="true">Mixed</property>
+                            <property name="subtitle" translatable="true">Prioritise per-track embedded art for correctness. Might load the same cover art multiple times if every track contains embedded art.</property>
+                            <child type="prefix">
+                              <object class="GtkCheckButton" id="mixed_library_mode">
+                                <property name="group">release_folder_library_mode</property>
+                              </object>
+                            </child>
+                          </object>
+                        </child>
+                      </object>
+                    </child>
                     <child>
                       <object class="GtkButton" id="finish_btn">
+                        <property name="margin-top">12</property>
                         <style>
                           <class name="pill"/>
                           <class name="suggested-action"/>

@@ -65,10 +65,12 @@ mod imp {
         // pub carousel
 
         // Page 1: library organisation
-        // #[template_child]
-        // pub albums_as_folders: TemplateChild<gtk::CheckButton>,
-        // #[template_child]
-        // pub freeform_folders: TemplateChild<gtk::CheckButton>,
+        #[template_child]
+        pub library_mode_illustration: TemplateChild<gtk::Image>,
+        #[template_child]
+        pub release_folder_library_mode: TemplateChild<gtk::CheckButton>,
+        #[template_child]
+        pub mixed_library_mode: TemplateChild<gtk::CheckButton>,
         #[template_child]
         pub finish_btn: TemplateChild<gtk::Button>,
 
@@ -138,13 +140,42 @@ mod imp {
         fn constructed(&self) {
             self.parent_constructed();
 
-            // TODO
+            // Page 1
+            let library_settings = settings_manager().child("library");
+            library_settings
+                .bind(
+                    "optimize-embedded-cover-loading",
+                    &self.release_folder_library_mode.get(),
+                    "active",
+                )
+                .build();
+
+            self.update_library_mode_illustration(self.release_folder_library_mode.is_active());
+            self.release_folder_library_mode
+                .connect_active_notify(clone!(
+                    #[weak(rename_to = this)]
+                    self,
+                    move |btn| {
+                        this.update_library_mode_illustration(btn.is_active());
+                    }
+                ));
         }
     }
     impl WidgetImpl for EuphonicaOnboardingWindow {}
     impl WindowImpl for EuphonicaOnboardingWindow {}
     impl ApplicationWindowImpl for EuphonicaOnboardingWindow {}
     impl AdwApplicationWindowImpl for EuphonicaOnboardingWindow {}
+
+    impl EuphonicaOnboardingWindow {
+        fn update_library_mode_illustration(&self, is_release_folder_mode: bool) {
+            self.library_mode_illustration
+                .set_icon_name(Some(if is_release_folder_mode {
+                    "albums-in-folders-symbolic"
+                } else {
+                    "freeform-folders-symbolic"
+                }));
+        }
+    }
 }
 
 glib::wrapper! {
