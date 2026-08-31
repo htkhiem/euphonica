@@ -4,11 +4,53 @@ use gtk::{CompositeTemplate, glib, prelude::*};
 use std::cell::Cell;
 
 use crate::{
-    application::EuphonicaApplication, client::state::StickersSupportLevel, common::{INode, View}, utils,
+    application::EuphonicaApplication,
+    cache::Cache,
+    client::state::StickersSupportLevel,
+    common::{INode, ImageStack, View},
+    utils,
     window::EuphonicaWindow,
 };
+use std::rc::Rc;
 
 use super::SidebarButton;
+
+/// Build the 16px rounded playlist cover ImageStack used as the prefix of
+/// recent playlist buttons in the sidebar
+fn playlist_cover_prefix() -> (ImageStack, gtk::Box) {
+    let cover = ImageStack::new();
+    cover.set_size(16);
+    cover.set_is_thumbnail(true);
+    let rounded_box = gtk::Box::builder()
+        .halign(gtk::Align::Center)
+        .valign(gtk::Align::Center)
+        .overflow(gtk::Overflow::Hidden)
+        .css_classes(["border-radius-6"])
+        .build();
+    rounded_box.append(&cover);
+    (cover, rounded_box)
+}
+
+fn fetch_playlist_cover(cache: &Rc<Cache>, cover: ImageStack, name: &str, is_dynamic: bool) {
+    let name = name.to_string();
+    cover.show_spinner();
+    glib::spawn_future_local(clone!(
+        #[strong]
+        cache,
+        #[strong]
+        cover,
+        async move {
+            match cache.get_playlist_cover(name, is_dynamic, true).await {
+                Ok(Some(tex)) => cover.show(&tex),
+                Ok(None) => cover.clear(),
+                Err(e) => {
+                    dbg!(e);
+                    cover.clear();
+                }
+            }
+        }
+    ));
+}
 
 mod imp {
     use super::*;
@@ -125,6 +167,7 @@ impl Sidebar {
 
         let recent_btn = self.imp().recent_btn.get();
         recent_btn.set_active(true);
+        
         // Hook each button to their respective views
         recent_btn.connect_toggled(clone!(
             #[weak]
@@ -168,6 +211,7 @@ impl Sidebar {
 
         let playlist_view = win.get_playlist_view();
         let playlists = library.playlists();
+        let cache = app.get_cache();
         let recent_playlists_model = gtk::SliceListModel::new(
             Some(gtk::SortListModel::new(
                 Some(playlists.clone()),
@@ -210,6 +254,8 @@ impl Sidebar {
         recent_playlists_widget.bind_model(
             Some(&recent_playlists_model),
             clone!(
+                #[strong]
+                cache,
                 #[weak]
                 stack,
                 #[weak]
@@ -219,10 +265,13 @@ impl Sidebar {
                 #[weak]
                 recent_btn,
                 #[upgrade_or]
-                SidebarButton::new("ERROR", "dot-symbolic").upcast::<gtk::Widget>(),
+                SidebarButton::new("ERROR").upcast::<gtk::Widget>(),
                 move |obj| {
                     let playlist = obj.downcast_ref::<INode>().unwrap();
-                    let btn = SidebarButton::new(playlist.get_uri(), "dot-symbolic");
+                    let btn = SidebarButton::new(playlist.get_uri());
+                    let (cover, cover_box) = playlist_cover_prefix();
+                    fetch_playlist_cover(&cache, cover, playlist.get_uri(), false);
+                    btn.set_prefix_child(cover_box);
                     btn.set_group(Some(&recent_btn));
                     btn.connect_toggled(clone!(
                         #[weak]
@@ -294,6 +343,8 @@ impl Sidebar {
         recent_dyn_playlists_widget.bind_model(
             Some(&recent_dyn_playlists_model),
             clone!(
+                #[strong]
+                cache,
                 #[weak]
                 stack,
                 #[weak]
@@ -303,10 +354,13 @@ impl Sidebar {
                 #[weak]
                 recent_btn,
                 #[upgrade_or]
-                SidebarButton::new("ERROR", "dot-symbolic").upcast::<gtk::Widget>(),
+                SidebarButton::new("ERROR").upcast::<gtk::Widget>(),
                 move |obj| {
                     let playlist = obj.downcast_ref::<INode>().unwrap();
-                    let btn = SidebarButton::new(playlist.get_uri(), "dot-symbolic");
+                    let btn = SidebarButton::new(playlist.get_uri());
+                    let (cover, cover_box) = playlist_cover_prefix();
+                    fetch_playlist_cover(&cache, cover, playlist.get_uri(), true);
+                    btn.set_prefix_child(cover_box);
                     btn.set_group(Some(&recent_btn));
                     btn.connect_toggled(clone!(
                         #[weak]

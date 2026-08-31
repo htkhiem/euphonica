@@ -960,7 +960,10 @@ impl Connection {
                     }
                     Task::GetCommonStickers(typ, uri, resp) => {
                         self.respond_with_client(
-                            |c| c.get_stickers(typ, &uri, Stickers::COMMON_NAMES).map(Stickers::from_mpd_kv),
+                            |c| {
+                                // FIXME: currently cannot scope down, will just filter post-hoc
+                                c.stickers(typ, &uri).map(Stickers::from_mpd_kv)
+                            },
                             resp,
                         )
                     }

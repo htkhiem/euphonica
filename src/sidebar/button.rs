@@ -1,9 +1,11 @@
 use glib::{Object, Properties};
-use gtk::{CompositeTemplate, Image, Label, glib, prelude::*, subclass::prelude::*};
+use gtk::{CompositeTemplate, Label, glib, prelude::*, subclass::prelude::*};
 use std::cell::RefCell;
 
 mod imp {
-    use super::*;
+    use gtk::glib::WeakRef;
+
+use super::*;
 
     #[derive(Properties, Default, CompositeTemplate)]
     #[template(resource = "/io/github/htkhiem/Euphonica/gtk/sidebar-button.ui")]
@@ -12,11 +14,11 @@ mod imp {
         #[template_child]
         pub label_widget: TemplateChild<Label>,
         #[template_child]
-        pub icon_widget: TemplateChild<Image>,
+        pub prefix_box: TemplateChild<gtk::Box>,
         #[property(get, set)]
         pub label: RefCell<String>,
-        #[property(get, set)]
-        pub icon_name: RefCell<String>,
+        #[property(get = Self::get_prefix_child, set = Self::set_prefix_child)]
+        pub prefix_child: WeakRef<gtk::Widget>
     }
 
     #[glib::object_subclass]
@@ -45,10 +47,6 @@ mod imp {
             obj.bind_property("label", &obj.imp().label_widget.get(), "label")
                 .sync_create()
                 .build();
-
-            obj.bind_property("icon_name", &obj.imp().icon_widget.get(), "icon-name")
-                .sync_create()
-                .build();
         }
     }
 
@@ -57,6 +55,21 @@ mod imp {
     impl ButtonImpl for SidebarButton {}
 
     impl ToggleButtonImpl for SidebarButton {}
+
+    impl SidebarButton {
+        fn set_prefix_child(&self, prefix: gtk::Widget) {
+            let prefix_box = self.prefix_box.get();
+            while let Some(child) = prefix_box.first_child() {
+                child.unparent();
+            }
+            prefix_box.append(&prefix);
+            self.prefix_child.set(Some(&prefix));
+        }
+
+        fn get_prefix_child(&self) -> Option<gtk::Widget> {
+            self.prefix_child.upgrade()
+        }
+    }
 }
 
 glib::wrapper! {
@@ -66,10 +79,7 @@ glib::wrapper! {
 }
 
 impl SidebarButton {
-    pub fn new(label: &str, icon_name: &str) -> Self {
-        Object::builder()
-            .property("label", label)
-            .property("icon_name", icon_name)
-            .build()
+    pub fn new(label: &str) -> Self {
+        Object::builder().property("label", label).build()
     }
 }

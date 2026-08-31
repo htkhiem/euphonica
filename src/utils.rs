@@ -278,7 +278,7 @@ pub fn save_and_register_single_image(
 }
 
 pub struct RegisteredImage {
-    /// image name (eg. uayhsjdkjasuijad.png)
+    /// image name (eg. uayhsjdkjasuijad.webp)
     pub name: String,
     /// this field is only present if it is returned by a method that created the image
     pub img: RefCell<Option<DynamicImage>>,
