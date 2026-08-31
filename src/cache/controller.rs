@@ -548,8 +548,7 @@ impl Cache {
         &self,
         key: String,
         key_prefix: Option<&'static str>,
-        path: &str,
-        notify_signal: Option<&'static str>,
+        path: &str
     ) -> Result<(gdk::Texture, gdk::Texture)> {
         // Assume ashpd always return filesystem spec
         let filepath = String::from(
@@ -568,12 +567,6 @@ impl Cache {
                 Ok((hires, thumb))
             })
             .await;
-
-        if let (Ok(texs), Some(signal)) = (res.as_ref(), notify_signal) {
-            // For updates, still notify via signals to update all widgets wherever they are.
-            self.get_cache_state()
-                .emit_texture(signal, &key, &texs.0, &texs.1);
-        }
         res
     }
 
@@ -583,11 +576,9 @@ impl Cache {
     pub async fn clear_image(
         &self,
         key: String,
-        key_prefix: Option<&'static str>,
-        notify_signal: Option<&'static str>,
+        key_prefix: Option<&'static str>
     ) -> Result<()> {
         // Assume ashpd always return filesystem spec
-        let state = self.get_cache_state();
         let cloned_key = key.clone();
         self.local
             .call(move |_| {
@@ -595,43 +586,65 @@ impl Cache {
                 Ok::<(), Error>(())
             })
             .await?;
-        // For updates, still notify via signals to update all widgets wherever they are.
-        if let Some(signal) = notify_signal {
-            state.emit_with_param(signal, &key);
-        }
         Ok(())
     }
 
+    /// Sets folder cover using embedded key.
+    /// This will CLEAR any existing folder_key'd version from the cache such that the newly
+    /// user-set version can take precedence. The user-set version must use the full URI for
+    /// its key to have correct behaviour in mixed-layout libraries (i.e. setting one album's
+    /// cover art doesn't also replace the cover arts of other albums whose tracks are in the
+    /// same folder server-side).
     pub async fn set_cover(
         &self,
-        folder_uri: String,
+        album: &AlbumInfo,
         path: &str,
         notify: bool,
     ) -> Result<(gdk::Texture, gdk::Texture)> {
-        self.set_image(
-            folder_uri,
+        let optimized_load = settings_manager().child("library").boolean("optimize-embedded-cover-loading");
+        let key = if optimized_load {
+            &album.folder_uri
+        } else {
+            // Need to clear this one out first
+            self.clear_image(album.folder_uri.to_owned(), None).await?;
+            &album.example_uri
+        };
+        
+        let res = self.set_image(
+            key.to_owned(),
             None,
-            path,
-            if notify {
-                Some("folder-cover-set")
-            } else {
-                None
-            },
+            path
         )
-        .await
+        .await;
+
+        if let (Ok(texs), true) = (res.as_ref(), notify) {
+            // For updates, still notify via signals to update all widgets wherever they are.
+            self.get_cache_state()
+                .emit_texture("album-cover-set", &key, &texs.0, &texs.1);
+        }
+
+        res
     }
 
-    pub async fn clear_cover(&self, folder_uri: String, notify: bool) -> Result<()> {
-        self.clear_image(
-            folder_uri,
+    ///
+    pub async fn clear_cover(&self, album: &AlbumInfo, notify: bool) -> Result<()> {
+        let optimized_load = settings_manager().child("library").boolean("optimize-embedded-cover-loading");
+        let key = if optimized_load {
+            &album.folder_uri
+        } else {
+            &album.example_uri
+        };
+        let res = self.clear_image(
+            key.to_owned(),
             None,
-            if notify {
-                Some("folder-cover-cleared")
-            } else {
-                None
-            },
         )
-        .await
+        .await;
+        
+        if let (Ok(_), true) = (res.as_ref(), notify) {
+            self.get_cache_state().emit_with_param("album-cover-cleared", &key);
+        }
+
+        res
     }
 
     pub async fn set_artist_avatar(
@@ -640,30 +653,34 @@ impl Cache {
         path: &str,
         notify: bool,
     ) -> Result<(gdk::Texture, gdk::Texture)> {
-        self.set_image(
-            tag,
+        let res = self.set_image(
+            tag.clone(),
             Some("avatar"),
-            path,
-            if notify {
-                Some("artist-avatar-set")
-            } else {
-                None
-            },
+            path
         )
-        .await
+        .await;
+
+        if let (Ok(texs), true) = (res.as_ref(), notify) {
+            // For updates, still notify via signals to update all widgets wherever they are.
+            self.get_cache_state()
+                .emit_texture("artist-avatar-set", &tag, &texs.0, &texs.1);
+        }
+
+        res
     }
 
     pub async fn clear_artist_avatar(&self, tag: String, notify: bool) -> Result<()> {
-        self.clear_image(
-            tag,
-            Some("avatar"),
-            if notify {
-                Some("artist-avatar-cleared")
-            } else {
-                None
-            },
+        let res = self.clear_image(
+            tag.clone(),
+            Some("avatar")
         )
-        .await
+        .await;
+        
+        if let (Ok(_), true) = (res.as_ref(), notify) {
+            self.get_cache_state().emit_with_param("artist-avatar-cleared", &tag);
+        }
+
+        res
     }
 
     pub async fn set_playlist_cover(
@@ -671,12 +688,12 @@ impl Cache {
         playlist_name: String,
         path: &str,
     ) -> Result<(gdk::Texture, gdk::Texture)> {
-        self.set_image(playlist_name, Some("playlist"), path, None)
+        self.set_image(playlist_name, Some("playlist"), path)
             .await
     }
 
     pub async fn clear_playlist_cover(&self, playlist_name: String) -> Result<()> {
-        self.clear_image(playlist_name, Some("playlist"), None)
+        self.clear_image(playlist_name, Some("playlist"))
             .await
     }
 

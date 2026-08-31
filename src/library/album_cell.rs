@@ -321,7 +321,7 @@ impl AlbumCell {
         res.add_controller(hover_ctl);
         let _ = res.imp().cover_signal_ids.replace(Some((
             cache_state.connect_closure(
-                "folder-cover-set",
+                "album-cover-set",
                 false,
                 closure_local!(
                     #[weak(rename_to = this)]
@@ -331,7 +331,7 @@ impl AlbumCell {
                             .imp()
                             .album
                             .upgrade()
-                            .is_some_and(|a| a.get_folder_uri() == uri)
+                            .is_some_and(|a| a.get_folder_uri() == uri || a.get_example_uri() == uri)
                         {
                             this.imp().cover.show(&thumb);
                         }
@@ -339,7 +339,7 @@ impl AlbumCell {
                 ),
             ),
             cache_state.connect_closure(
-                "folder-cover-cleared",
+                "album-cover-cleared",
                 false,
                 closure_local!(
                     #[weak(rename_to = this)]
@@ -349,7 +349,7 @@ impl AlbumCell {
                             .imp()
                             .album
                             .upgrade()
-                            .is_some_and(|a| a.get_folder_uri() == uri)
+                            .is_some_and(|a| a.get_folder_uri() == uri || a.get_example_uri() == uri)
                         {
                             this.imp().cover.clear();
                         }

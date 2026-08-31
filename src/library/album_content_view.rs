@@ -913,7 +913,7 @@ impl AlbumContentView {
     pub async fn set_cover(&self, path: &str) {
         if let (Some(album), Some(cache)) = (self.album(), self.imp().cache.get())
             && let Err(e) = cache
-                .set_cover(album.get_folder_uri().to_owned(), path, true)
+                .set_cover(album.get_example_uri().to_owned(), path, true)
                 .await
         {
             self.show_cache_error("Couldn't set cover", e);
@@ -949,13 +949,13 @@ impl AlbumContentView {
         self.imp()
             .cover_set_id
             .replace(Some(cache_state.connect_closure(
-                "folder-cover-set",
+                "album-cover-set",
                 false,
                 closure_local!(
                     #[weak(rename_to = this)]
                     self,
                     move |_: CacheState, uri: String, hires: gdk::Texture, _: gdk::Texture| {
-                        if this.album().is_some_and(|a| a.get_folder_uri() == uri) {
+                        if this.album().is_some_and(|a| a.get_example_uri() == uri || a.get_folder_uri() == uri) {
                             this.update_cover(hires);
                         }
                     }
@@ -964,13 +964,13 @@ impl AlbumContentView {
         self.imp()
             .cover_cleared_id
             .replace(Some(cache_state.connect_closure(
-                "folder-cover-cleared",
+                "album-cover-cleared",
                 false,
                 closure_local!(
                     #[weak(rename_to = this)]
                     self,
                     move |_: CacheState, uri: String| {
-                        if this.album().is_some_and(|a| a.get_folder_uri() == uri) {
+                        if this.album().is_some_and(|a| a.get_example_uri() == uri || a.get_folder_uri() == uri) {
                             this.clear_cover();
                         }
                     }
@@ -1114,7 +1114,7 @@ impl AlbumContentView {
             // Remove existing entry in SQLite, which might be an empty "do not retry" placeholder.
             if overwrite {
                 // Don't notify, else we'd interrupt the spinner
-                if let Err(e) = cache.clear_cover(info.folder_uri.to_owned(), false).await {
+                if let Err(e) = cache.clear_cover(info.example_uri.to_owned(), false).await {
                     self.show_cache_error("Couldn't clear cover", e);
                 }
             }

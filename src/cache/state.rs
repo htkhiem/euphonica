@@ -22,14 +22,14 @@ mod imp {
             static SIGNALS: OnceLock<Vec<Signal>> = OnceLock::new();
             SIGNALS.get_or_init(|| {
                 vec![
-                    Signal::builder("folder-cover-set")
+                    Signal::builder("album-cover-set")
                         .param_types([
-                            String::static_type(),       // folder URI
+                            String::static_type(),       // URI
                             gdk::Texture::static_type(), // handle to hires texture
                             gdk::Texture::static_type(), // handle to thumbnail texture
                         ])
                         .build(),
-                    Signal::builder("folder-cover-cleared")
+                    Signal::builder("album-cover-cleared")
                         .param_types([
                             String::static_type(), // folder URI
                         ])
