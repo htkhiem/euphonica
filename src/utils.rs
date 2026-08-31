@@ -334,10 +334,19 @@ pub fn save_and_register_image(
     dyn_img: DynamicImage,
     key: &str,
     prefix: Option<&'static str>,
+    additional_keys: Option<Vec<String>>,
 ) -> RegisteredImageBundle {
     let (hires_img, thumb_img) = resize_convert_image(dyn_img);
     let hires_k = save_and_register_single_image(&hires_img, key, prefix, false);
     let thumb_k = save_and_register_single_image(&thumb_img, key, prefix, true);
+    if let Some(keys) = additional_keys {
+        for key in keys.iter() {
+            // Reuse the same two files as created above for other keys (for setting cover art at the track
+            // level for all tracks in the same release).
+            sqlite::register_image_key(key, prefix, Some(&hires_k), false).expect("Sqlite error");
+            sqlite::register_image_key(key, prefix, Some(&thumb_k), true).expect("Sqlite error");
+        }
+    }
 
     RegisteredImageBundle {
         hires: RegisteredImage {

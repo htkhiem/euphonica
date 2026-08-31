@@ -44,6 +44,7 @@ use super::{CacheState, sqlite};
 
 #[derive(Debug)]
 pub enum Error {
+    EmptyInput,
     Download(String),
     Io,
     NotFound,
@@ -60,6 +61,7 @@ pub enum Error {
 impl Error {
     pub fn message(&self) -> String {
         match self {
+            Self::EmptyInput => "empty input".to_owned(),
             Self::Download(msg) => msg.to_owned(),
             Self::Io => "I/O error".into(),
             Self::NotFound => "resource not found".into(),
@@ -125,6 +127,7 @@ pub enum ImageAction {
 fn set_image_internal(
     key: &str,
     key_prefix: Option<&'static str>,
+    additional_keys: Option<Vec<String>>,
     filepath: &str,
 ) -> Result<(Texture, Texture)> {
     let dyn_img = ImageReader::open(filepath)
@@ -132,7 +135,7 @@ fn set_image_internal(
         .decode()
         .map_err(|_| Error::UnknownFormat)?;
 
-    let bundle = save_and_register_image(dyn_img, key, key_prefix);
+    let bundle = save_and_register_image(dyn_img, key, key_prefix, additional_keys);
     let hires_tex = bundle.hires.take_texture()?;
     let thumb_tex = bundle.thumb.take_texture()?;
 
@@ -230,6 +233,7 @@ fn download_image_from_provider(
     prefix: Option<&'static str>,
     fallback_images: &[models::ImageMeta],
     thumbnail: bool,
+    additional_keys: Option<Vec<String>>,
 ) -> Result<Option<Texture>> {
     // Always check with our DB first as a prior call might have downloaded the
     // necessary image for us.
@@ -239,7 +243,7 @@ fn download_image_from_provider(
     } else {
         match get_best_image(fallback_images) {
             Ok(dyn_img) => {
-                let bundle = save_and_register_image(dyn_img, key, prefix);
+                let bundle = save_and_register_image(dyn_img, key, prefix, additional_keys);
                 Ok(bundle.take_texture(thumbnail).map(Some)?)
             }
             Err(e) => {
@@ -400,6 +404,7 @@ impl Cache {
         &self,
         handle: ImageHandle,
         register_key: String,
+        additional_keys: Option<Vec<String>>,
         thumbnail: bool,
     ) -> Result<gdk::Texture> {
         let bundle = match handle {
@@ -413,6 +418,7 @@ impl Cache {
                             image::load_from_memory(&bytes).map_err(|_| Error::UnknownFormat)?,
                             &register_key,
                             None,
+                            additional_keys,
                         ))
                     })
                     .expect("maybe_register_image_handle: threadpool error")
@@ -497,7 +503,7 @@ impl Cache {
                     Ok(None) => {}
                     Ok(Some(handle)) => {
                         return self
-                            .process_image_handle(handle, folder_key.to_owned(), thumbnail)
+                            .process_image_handle(handle, folder_key.to_owned(), None, thumbnail)
                             .await
                             .map(Some);
                     }
@@ -521,6 +527,7 @@ impl Cache {
                                 } else {
                                     embedded_key.to_owned()
                                 },
+                                None,
                                 thumbnail,
                             )
                             .await
@@ -547,6 +554,7 @@ impl Cache {
                             None,
                             &meta.0.image,
                             thumbnail,
+                            None,
                         )
                     })
                     .await;
@@ -561,6 +569,7 @@ impl Cache {
         &self,
         key: String,
         key_prefix: Option<&'static str>,
+        additional_keys: Option<Vec<String>>,
         path: &str,
     ) -> Result<(gdk::Texture, gdk::Texture)> {
         // Assume ashpd always return filesystem spec
@@ -576,7 +585,8 @@ impl Cache {
         let res = self
             .local
             .call(move |_| {
-                let (hires, thumb) = set_image_internal(&cloned_key, key_prefix, &filepath)?;
+                let (hires, thumb) =
+                    set_image_internal(&cloned_key, key_prefix, additional_keys, &filepath)?;
                 Ok((hires, thumb))
             })
             .await;
@@ -598,58 +608,92 @@ impl Cache {
         Ok(())
     }
 
-    /// Sets folder cover using embedded key.
-    /// This will CLEAR any existing folder_key'd version from the cache such that the newly
-    /// user-set version can take precedence. The user-set version must use the full URI for
-    /// its key to have correct behaviour in mixed-layout libraries (i.e. setting one album's
-    /// cover art doesn't also replace the cover arts of other albums whose tracks are in the
-    /// same folder server-side).
-    pub async fn set_cover(
+    /// Sets folder cover using folder-level URI.
+    pub async fn set_folder_cover(
         &self,
-        album: &AlbumInfo,
+        folder_uri: &str,
         path: &str,
         notify: bool,
     ) -> Result<(gdk::Texture, gdk::Texture)> {
-        let optimized_load = settings_manager()
-            .child("library")
-            .boolean("optimize-embedded-cover-loading");
-        let key = if optimized_load {
-            &album.folder_uri
-        } else {
-            // Need to clear this one out first
-            self.clear_image(album.folder_uri.to_owned(), None).await?;
-            &album.example_uri
-        };
-
-        let res = self.set_image(key.to_owned(), None, path).await;
+        let res = self
+            .set_image(folder_uri.to_owned(), None, None, path)
+            .await;
 
         if let (Ok(texs), true) = (res.as_ref(), notify) {
             // For updates, still notify via signals to update all widgets wherever they are.
             self.get_cache_state()
-                .emit_texture("album-cover-set", &key, &texs.0, &texs.1);
+                .emit_texture("album-cover-set", &folder_uri, &texs.0, &texs.1);
         }
 
         res
     }
 
-    ///
-    pub async fn clear_cover(&self, album: &AlbumInfo, notify: bool) -> Result<()> {
-        let optimized_load = settings_manager()
-            .child("library")
-            .boolean("optimize-embedded-cover-loading");
-        let key = if optimized_load {
-            &album.folder_uri
-        } else {
-            &album.example_uri
-        };
-        let res = self.clear_image(key.to_owned(), None).await;
+    /// This will CLEAR any existing folder_key'd version from the cache such that the newly
+    /// user-set version can take precedence. The same image file must be mapped to each URI
+    /// individually for correctness in  mixed-layout libraries (i.e. setting one album's
+    /// cover art doesn't also replace the cover arts of other albums whose tracks are in the
+    /// same folder server-side).
+    pub async fn set_track_cover(
+        &self,
+        apply_uris: Vec<String>,
+        path: &str,
+        notify: bool,
+    ) -> Result<(gdk::Texture, gdk::Texture)> {
+        if !apply_uris.is_empty() {
+            let folder_uri = strip_filename_linux(apply_uris[0].as_str());
+            self.clear_image(folder_uri.to_owned(), None).await?;
+            let res = self
+                .set_image(
+                    apply_uris[0].to_owned(),
+                    None,
+                    Some(
+                        apply_uris
+                            .iter()
+                            .skip(1)
+                            .map(|s| s.to_owned())
+                            .collect::<Vec<String>>(),
+                    ),
+                    path,
+                )
+                .await;
 
-        if let (Ok(_), true) = (res.as_ref(), notify) {
-            self.get_cache_state()
-                .emit_with_param("album-cover-cleared", &key);
+            if let (Ok(texs), true) = (res.as_ref(), notify) {
+                // Fire once per key
+                for uri in apply_uris {
+                    self.get_cache_state()
+                        .emit_texture("album-cover-set", &uri, &texs.0, &texs.1);
+                }
+            }
+
+            res
+        } else {
+            Err(Error::EmptyInput)
+        }
+    }
+
+    /// Clear both folder and per-track cover entries.
+    pub async fn clear_album_cover(
+        &self,
+        folder_uri: &str,
+        track_uris: Vec<String>,
+        notify: bool,
+    ) -> Result<()> {
+        if let Ok(_) = self.clear_image(folder_uri.to_owned(), None).await {
+            if notify {
+                self.get_cache_state()
+                    .emit_with_param("album-cover-cleared", &folder_uri);
+            }
         }
 
-        res
+        for uri in track_uris {
+            if let Ok(_) = self.clear_image(uri.clone(), None).await {
+                if notify {
+                    self.get_cache_state()
+                        .emit_with_param("album-cover-cleared", &uri);
+                }
+            }
+        }
+        Ok(())
     }
 
     pub async fn set_artist_avatar(
@@ -658,7 +702,9 @@ impl Cache {
         path: &str,
         notify: bool,
     ) -> Result<(gdk::Texture, gdk::Texture)> {
-        let res = self.set_image(tag.clone(), Some("avatar"), path).await;
+        let res = self
+            .set_image(tag.clone(), Some("avatar"), None, path)
+            .await;
 
         if let (Ok(texs), true) = (res.as_ref(), notify) {
             // For updates, still notify via signals to update all widgets wherever they are.
@@ -685,18 +731,26 @@ impl Cache {
         playlist_name: String,
         path: &str,
     ) -> Result<(gdk::Texture, gdk::Texture)> {
-        let res = self.set_image(playlist_name.clone(), Some("playlist"), path).await;
+        let res = self
+            .set_image(playlist_name.clone(), Some("playlist"), None, path)
+            .await;
 
         if let Ok(texs) = res.as_ref() {
-            self.get_cache_state()
-                .emit_texture("playlist-cover-set", &playlist_name, &texs.0, &texs.1);
+            self.get_cache_state().emit_texture(
+                "playlist-cover-set",
+                &playlist_name,
+                &texs.0,
+                &texs.1,
+            );
         }
 
         res
     }
 
     pub async fn clear_playlist_cover(&self, playlist_name: String) -> Result<()> {
-        let res = self.clear_image(playlist_name.clone(), Some("playlist")).await;
+        let res = self
+            .clear_image(playlist_name.clone(), Some("playlist"))
+            .await;
 
         if res.is_ok() {
             self.get_cache_state()
@@ -1124,6 +1178,7 @@ impl Cache {
                         Some("avatar"),
                         &meta.image,
                         thumbnail,
+                        None,
                     )
                 })
                 .await;
@@ -1173,9 +1228,12 @@ impl Cache {
                         clear_image_internal(&current_cover_key, Some("dynamic_playlist"))?;
                         None
                     }
-                    ImageAction::New(path) => {
-                        Some(set_image_internal(&current_cover_key, Some("dynamic_playlist"), &path)?)
-                    }
+                    ImageAction::New(path) => Some(set_image_internal(
+                        &current_cover_key,
+                        Some("dynamic_playlist"),
+                        None,
+                        &path,
+                    )?),
                     _ => None,
                 };
 
@@ -1196,8 +1254,12 @@ impl Cache {
         if let Some(texs) = res {
             // After sqlite::insert_dynamic_playlist, the cover key is always dp.name
             // (the migration renames old_key -> new_key). Emit under the new name.
-            self.get_cache_state()
-                .emit_texture("dynamic-playlist-cover-set", &new_name, &texs.0, &texs.1);
+            self.get_cache_state().emit_texture(
+                "dynamic-playlist-cover-set",
+                &new_name,
+                &texs.0,
+                &texs.1,
+            );
         } else if is_clear {
             self.get_cache_state()
                 .emit_with_param("dynamic-playlist-cover-cleared", &current_cover_key);

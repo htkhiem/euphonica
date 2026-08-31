@@ -1,5 +1,5 @@
 use glib::{Object, ParamSpec, ParamSpecString, clone};
-use gtk::{CompositeTemplate, gdk, glib, prelude::*, subclass::prelude::*};
+use gtk::{CompositeTemplate, glib, prelude::*, subclass::prelude::*};
 use once_cell::sync::Lazy;
 use std::{
     cell::{Cell, OnceCell, RefCell},

@@ -474,11 +474,13 @@ mod imp {
                             async move {
                                 if let (Some(album), Some(cache)) =
                                     (obj.imp().album.borrow().as_ref(), obj.imp().cache.get())
-                                    && let Err(e) = cache
-                                        .clear_cover(album.get_info(), true)
-                                        .await
                                 {
-                                    obj.show_cache_error("Couldn't clear cover", e);
+                                    // Always clear both regardless of optimisation enablement
+                                    if let Err(e) =
+                                        cache.clear_album_cover(album.get_folder_uri(), obj.uris(), true).await
+                                    {
+                                        obj.show_cache_error("Couldn't clear cover", e);
+                                    }
                                 }
                             }
                         ));
@@ -909,14 +911,35 @@ impl AlbumContentView {
         }
     }
 
+    fn uris(&self) -> Vec<String> {
+        let song_list = &self.imp().song_list;
+        let mut res = Vec::with_capacity(song_list.n_items() as usize);
+        for elem in song_list.iter::<Song>() {
+            if let Ok(song) = elem {
+                res.push(song.get_uri().to_owned());
+            } else {
+                break; // mutated during scan - just set covers for what we have
+            }
+        }
+        res
+    }
+
     /// Set a user-selected path as the new local cover.
     pub async fn set_cover(&self, path: &str) {
-        if let (Some(album), Some(cache)) = (self.album(), self.imp().cache.get())
-            && let Err(e) = cache
-                .set_cover(album.get_info(), path, true)
-                .await
-        {
-            self.show_cache_error("Couldn't set cover", e);
+        if let (Some(album), Some(cache)) = (self.album(), self.imp().cache.get()) {
+            if settings_manager()
+                .child("library")
+                .boolean("optimize-embedded-cover-loading")
+            {
+                if let Err(e) = cache.set_folder_cover(album.get_folder_uri(), path, true).await {
+                    self.show_cache_error("Couldn't set cover", e);
+                }
+            } else {
+                eprintln!("Setting album art per track");
+                if let Err(e) = cache.set_track_cover(self.uris(), path, true).await {
+                    self.show_cache_error("Couldn't set cover", e);
+                }
+            }
         }
     }
 
@@ -955,7 +978,9 @@ impl AlbumContentView {
                     #[weak(rename_to = this)]
                     self,
                     move |_: CacheState, uri: String, hires: gdk::Texture, _: gdk::Texture| {
-                        if this.album().is_some_and(|a| a.get_example_uri() == uri || a.get_folder_uri() == uri) {
+                        if this.album().is_some_and(|a| {
+                            a.get_example_uri() == uri || a.get_folder_uri() == uri
+                        }) {
                             this.update_cover(hires);
                         }
                     }
@@ -970,7 +995,9 @@ impl AlbumContentView {
                     #[weak(rename_to = this)]
                     self,
                     move |_: CacheState, uri: String| {
-                        if this.album().is_some_and(|a| a.get_example_uri() == uri || a.get_folder_uri() == uri) {
+                        if this.album().is_some_and(|a| {
+                            a.get_example_uri() == uri || a.get_folder_uri() == uri
+                        }) {
                             this.clear_cover();
                         }
                     }
@@ -1114,7 +1141,7 @@ impl AlbumContentView {
             // Remove existing entry in SQLite, which might be an empty "do not retry" placeholder.
             if overwrite {
                 // Don't notify, else we'd interrupt the spinner
-                if let Err(e) = cache.clear_cover(info, false).await {
+                if let Err(e) = cache.clear_album_cover(&info.folder_uri, self.uris(), false).await {
                     self.show_cache_error("Couldn't clear cover", e);
                 }
             }
@@ -1286,7 +1313,7 @@ impl AlbumContentView {
         if let Some(handle) = self.imp().update_meta_handle.take() {
             handle.abort();
         }
-        
+
         for binding in self.imp().bindings.take().into_iter() {
             binding.unbind();
         }

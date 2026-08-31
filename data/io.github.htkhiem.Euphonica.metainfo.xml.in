@@ -98,8 +98,10 @@
       <description>
         <p>New: playlist cover images are now shown in the sidebar.</p>
         <p>Change: per-track embedded art downloading is back and enabled by default but heavily optimised. A new onboarding wizard will help you pick the right mode.</p>
+        <p>Change: editing album art, artist avatars and playlist covers will now propagate to the rest of the app instantly.</p>
         <p>Fix: restore in-memory image cache codepath.</p>
         <p>Fix: song-level stickers not loading, interfering with dynamic playlists.</p>
+        <p>Fix: stickers capability degrading to songs-only in presence of albums with insufficient tagging for sticker query.</p>
       </description>
     </release>
     <release version="0.99.6-beta-1" date="2026-08-20">

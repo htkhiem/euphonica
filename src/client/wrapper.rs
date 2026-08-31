@@ -340,7 +340,7 @@ impl MpdWrapper {
 
         // Figure out stickers support early as we need to decide whether we should show the Dynamic Playlists page.
         // Set to maximum supported level first by MPD version.
-        if version.1 < 24 {
+        if version.0 < 1 && version.1 < 24 {
             self.state
                 .set_stickers_support_level(StickersSupportLevel::SongsOnly);
         } else {
@@ -433,10 +433,12 @@ impl MpdWrapper {
                     self.state
                         .set_stickers_support_level(StickersSupportLevel::Disabled);
                 }
-                MpdErrorCode::Argument => {
-                    self.state
-                        .set_stickers_support_level(StickersSupportLevel::SongsOnly);
-                }
+                // FIXME: this interferes with album queries that don't have enough tags.
+                // MpdErrorCode::Argument => {
+                //     dbg!(e);
+                //     self.state
+                //         .set_stickers_support_level(StickersSupportLevel::SongsOnly);
+                // }
                 _ => {}
             }
         }
