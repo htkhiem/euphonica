@@ -391,7 +391,7 @@ mod imp {
                             this.obj().notify("queue-len");
                         }
                     }
-                )
+                ),
             );
 
             self.obj().maybe_start_fft_thread();
@@ -1171,7 +1171,7 @@ impl Player {
                                     .cache
                                     .get()
                                     .unwrap()
-                                    .get_lyrics(new_song.get_info(), true, false, None)   // overwrite == false means upsert
+                                    .get_lyrics(new_song.get_info(), true, false, None) // overwrite == false means upsert
                                     .await;
                                 if !this.current_song().is_some_and(|song| {
                                     song.get_info().get_comp_id()
@@ -1196,11 +1196,16 @@ impl Player {
                             mpris_changes.push(Property::Metadata(new_song.get_mpris_metadata()));
                         }
 
-                        // Covers are cached per folder, so matching album IDs do not guarantee
-                        // matching cover art.
-                        cover_changed = Some(self.imp().current_song.borrow().as_ref().is_none_or(
-                            |current| current.get_folder_uri() != new_song.get_folder_uri(),
-                        ));
+                        // From v0.99.7 onward per-track covers are also supported.
+                        // Dumb workaround: If embedded art optimisation is disabled, always fire this thing.
+                        cover_changed = Some(
+                            !settings_manager()
+                                .child("library")
+                                .boolean("optimize-embedded-cover-loading")
+                                || self.imp().current_song.borrow().as_ref().is_none_or(
+                                    |current| current.get_folder_uri() != new_song.get_folder_uri(),
+                                ),
+                        );
 
                         // MPD's next song can also be selected manually. The previous song must
                         // have run out to confirm an automatic transition.
@@ -1486,7 +1491,9 @@ impl Player {
                     if let Some(old_song) = queue.item(pos).map(|o| o.downcast::<Song>().unwrap()) {
                         new_segment.push(old_song.upcast());
                     } else {
-                        panic!("Inconsistent queue state detected while updating. Please restart the app.");
+                        panic!(
+                            "Inconsistent queue state detected while updating. Please restart the app."
+                        );
                     }
                 } else {
                     // This position changed. Push newly received song into it.
