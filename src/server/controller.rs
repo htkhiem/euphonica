@@ -1,7 +1,7 @@
 use crate::{
+    client::{Error as ClientError, StreamWrapper},
     common::ConnectionState,
     server::config::{MpdConfig, OutputConfig},
-    client::{Error as ClientError, StreamWrapper},
     utils::{get_config_basepath, get_standalone_config_path},
 };
 use gio::{Subprocess, SubprocessFlags};
@@ -13,7 +13,15 @@ use gtk::{
 use mpd::Client;
 use resolve_path::PathResolveExt;
 use std::{
-    cell::RefCell, ffi::OsStr, fs::File, io::{Read, Write}, os::unix::net::UnixStream, process::{Child, Command, Stdio}, rc::Rc, result, time::Duration
+    cell::RefCell,
+    ffi::OsStr,
+    fs::File,
+    io::{Read, Write},
+    os::unix::net::UnixStream,
+    process::{Child, Command, Stdio},
+    rc::Rc,
+    result,
+    time::Duration,
 };
 
 #[derive(Debug)]
@@ -21,7 +29,7 @@ pub enum Error {
     NotConfigured,
     Config,
     Subprocess,
-    Client
+    Client,
 }
 
 pub type Result<T> = result::Result<T, Error>;
@@ -88,13 +96,12 @@ impl ManagedMpdServer {
 
     fn self_test(&self, socket_path: &str) -> Result<()> {
         let _: Client<UnixStream> = if let Ok(resolved) = socket_path.try_resolve() {
-            dbg!(
-                UnixStream::connect(resolved))
+            UnixStream::connect(resolved)
                 .map_err(|_| Error::Client)
                 .and_then(|s| mpd::Client::new(s).map_err(|_| Error::Client))?
         } else {
-            dbg!(
-                UnixStream::connect(socket_path)).map_err(|_| Error::Client)
+            UnixStream::connect(socket_path)
+                .map_err(|_| Error::Client)
                 .and_then(|s| mpd::Client::new(s).map_err(|_| Error::Client))?
         };
         Ok(())
@@ -153,7 +160,10 @@ impl ManagedMpdServer {
             }
         }
         if !success {
-            eprintln!("FATAL: failed to verify MPD readiness after {} tries", MAX_STARTUP_POLLS);
+            eprintln!(
+                "FATAL: failed to verify MPD readiness after {} tries",
+                MAX_STARTUP_POLLS
+            );
             return Err(Error::Subprocess);
         }
 

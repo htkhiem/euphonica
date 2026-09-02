@@ -454,19 +454,19 @@ impl Connection {
         let settings = utils::settings_manager().child("client");
         let mut client = if settings.boolean("mpd-use-own-server") {
             // Currently hardcoded to use a Unix socket in Standalone Mode without any password.
-            let config_path = dbg!(get_standalone_config_path());
+            let config_path = get_standalone_config_path();
             let mut file = File::open(&config_path).map_err(|_| Error::Server(ManagedMpdError::NotConfigured))?;
             let mut txt = String::new();
             file.read_to_string(&mut txt).map_err(|_| Error::Server(ManagedMpdError::Config))?;
-            let cfg = dbg!(MpdConfig::try_from(txt.as_str()).map_err(|_| Error::Server(ManagedMpdError::Config))?);
+            let cfg = MpdConfig::try_from(txt.as_str()).map_err(|_| Error::Server(ManagedMpdError::Config))?;
             let path = cfg.bind_to_address.ok_or(Error::Server(ManagedMpdError::Config))?;
             let client = None;
             client.unwrap_or_else(||
                 if let Ok(resolved) = path.try_resolve() {
-                    dbg!(UnixStream::connect(resolved)).map_err(|_| Error::Socket)
+                    UnixStream::connect(resolved).map_err(|_| Error::Socket)
                         .and_then(|s| mpd::Client::new(StreamWrapper::new_unix(s)).map_err(Error::Mpd))
                 } else {
-                    dbg!(UnixStream::connect(path)).map_err(|_| Error::Socket)
+                    UnixStream::connect(path).map_err(|_| Error::Socket)
                         .and_then(|s| mpd::Client::new(StreamWrapper::new_unix(s)).map_err(Error::Mpd))
                 }
             )?

@@ -289,17 +289,16 @@ mod imp {
                     );
                     self.handle_managed_server_error(e);
                 }
-            } else {
-                glib::spawn_future_local(clone!(
-                    #[weak]
-                    app,
-                    async move {
-                        if let Err(e) = app.refresh().await {
-                            dbg!(e);
-                        }
-                    }
-                ));
             }
+            glib::spawn_future_local(clone!(
+                #[weak]
+                app,
+                async move {
+                    if let Err(e) = app.refresh().await {
+                        dbg!(e);
+                    }
+                }
+            ));
 
             self.initialized.set(true);
         }
