@@ -89,7 +89,21 @@ mod imp {
     #[derive(Debug, Default, CompositeTemplate)]
     #[template(resource = "/io/github/htkhiem/Euphonica/gtk/preferences/client.ui")]
     pub struct ClientPreferences {
-        // MPD
+        // Standalone mode
+        #[template_child]
+        pub mpd_use_own_server: TemplateChild<adw::ExpanderRow>,
+        #[template_child]
+        pub mpd_library_path: TemplateChild<adw::ActionRow>,
+        #[template_child]
+        pub mpd_library_browse: TemplateChild<gtk::Button>,
+        #[template_child]
+        pub standalone_status: TemplateChild<adw::ActionRow>,
+        #[template_child]
+        pub standalone_status_icon: TemplateChild<gtk::Image>,
+        #[template_child]
+        pub apply_standalone_config: TemplateChild<adw::ButtonRow>,
+
+        // External MPD
         #[template_child]
         pub mpd_use_unix_socket: TemplateChild<adw::SwitchRow>,
         #[template_child]
@@ -165,23 +179,6 @@ mod imp {
     impl ObjectImpl for ClientPreferences {
         fn constructed(&self) {
             self.parent_constructed();
-
-            self.mpd_use_unix_socket
-                .bind_property("active", &self.mpd_unix_socket.get(), "visible")
-                .sync_create()
-                .build();
-
-            self.mpd_use_unix_socket
-                .bind_property("active", &self.mpd_host.get(), "visible")
-                .invert_boolean()
-                .sync_create()
-                .build();
-
-            self.mpd_use_unix_socket
-                .bind_property("active", &self.mpd_port.get(), "visible")
-                .invert_boolean()
-                .sync_create()
-                .build();
 
             let viz_settings = utils::settings_manager().child("client");
             let fifo_path_row = self.fifo_path.get();
@@ -281,6 +278,16 @@ impl Default for ClientPreferences {
 }
 
 impl ClientPreferences {
+    fn on_standalone_status_changed(&self, running: bool) {
+        if running {
+            self.imp().standalone_status.set_subtitle("Running");
+            set_status_icon(&self.imp().standalone_status_icon.get(), StatusIconState::Full);
+        } else {
+            self.imp().standalone_status.set_subtitle("Failing");
+            set_status_icon(&self.imp().standalone_status_icon.get(), StatusIconState::Disabled);
+        }
+    }
+
     fn on_connection_state_changed(&self, cs: &ClientState) {
         match cs.connection_state() {
             ConnectionState::NotConnected => {

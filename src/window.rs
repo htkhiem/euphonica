@@ -1520,7 +1520,7 @@ impl EuphonicaWindow {
         self.set_title(Some(&title));
     }
 
-    fn show_error_dialog(&self, heading: &str, body: &str, suggest_open_preferences: bool) {
+    pub fn show_error_dialog(&self, heading: &str, body: &str, suggest_open_preferences: bool) {
         // Show an alert ONLY IF the preferences dialog is not already open.
         if self.visible_dialog().is_none() {
             let diag = adw::AlertDialog::builder()

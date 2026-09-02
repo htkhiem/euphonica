@@ -1,11 +1,11 @@
 use gio::{Subprocess, SubprocessFlags};
 use glib::subclass::prelude::*;
-use gtk::{gio, glib};
+use gtk::{gio::{self, prelude::*, Cancellable}, glib::{self, clone}};
 use std::{
     cell::RefCell,
     ffi::OsStr,
     fs::File,
-    io::Write,
+    io::{Read, Write},
     process::{Child, Command, Stdio},
     rc::Rc, result,
 };
@@ -17,6 +17,7 @@ use crate::{
 
 #[derive(Debug)]
 pub enum Error {
+    NotConfigured,
     Config,
     Subprocess,
 }
@@ -33,7 +34,7 @@ mod imp {
 
     #[derive(Debug, Default)]
     pub struct ManagedMpdServer {
-        handle: RefCell<Option<Subprocess>>,
+        pub handle: RefCell<Option<(Subprocess, gio::Cancellable)>>,
     }
 
     #[glib::object_subclass]
@@ -48,10 +49,8 @@ mod imp {
 
     impl ObjectImpl for ManagedMpdServer {
         fn dispose(&self) {
-            if let Some(child) = self.handle.take() {
-                child.force_exit();
-                child.wait(Cancellable::NONE);
-                eprintln!("Managed MPD process has exited");
+            if let Err(e) = self.obj().stop() {
+                dbg!(e);
             }
         }
 
@@ -73,23 +72,57 @@ impl Default for ManagedMpdServer {
 }
 
 impl ManagedMpdServer {
-    pub fn start(&self) -> Result<()> {
-        // Ensure there's a config file
-        let config_path = get_config_file_path();
-        if !std::fs::exists(&config_path).map_err(|_| Error::Config)? {
-            let mut output = File::create(&config_path).map_err(|_| Error::Config)?;
-            let default_config = get_minimal_config();
-            write!(output, "{}", default_config.to_string());
+    /// No-op if not already running.
+    pub fn stop(&self) -> Result<()> {
+        if let Some((subprocess, cancellable)) = self.imp().handle.take() {
+            cancellable.cancel();  // intentionally shutting subprocess down so silence this first.
+            subprocess.force_exit();
+            subprocess.wait(Cancellable::NONE).map_err(|_| Error::Subprocess)?;
         }
+        Ok(())
+    }
+
+    /// Will call stop() by itself first.
+    pub fn start(&self) -> Result<()> {
+        self.stop()?;
+        // Ensure there's a valid config file.
+        // TODO: maybe just skip the validation and start MPD directly & pick up crashes afterwards as config errors.
+        let config_path = get_config_file_path();
+        let mut file = File::open(&config_path).map_err(|_| Error::NotConfigured)?;
+        let mut txt = String::new();
+        file.read_to_string(&mut txt).map_err(|_| Error::Config)?;
+        let _ = MpdConfig::try_from(txt.as_str()).map_err(|_| Error::Config)?;
+
+        // let mut output = File::create(&config_path).map_err(|_| Error::Config)?;
+        // if !std::fs::exists(&config_path).map_err(|_| Error::Config)? {
+        //     write!(output, "{}", default_config.to_string()).unwrap();
+        // }
         let subprocess = Subprocess::newv(
             &[
                 &OsStr::new("mpd"),
                 &OsStr::new("--no-daemon"),
-                &OsStr::new(config_path.to_str().unwrap_or("")),
+                config_path.as_os_str()
             ], // Command and args
             SubprocessFlags::NONE,
         )
         .expect("Failed to create subprocess");
+
+        // Guard against unexpected subprocess exits.
+        let guard_cancellable = gio::Cancellable::new();
+        subprocess.wait_async(
+            Some(&guard_cancellable),
+            clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |_| {
+                    this.emit_by_name::<()>("server-stopped", &[]);
+                }
+            )
+        );
+
+
+        let _ = self.imp().handle.replace(Some((subprocess, guard_cancellable)));
+
         Ok(())
     }
 }

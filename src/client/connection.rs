@@ -14,22 +14,17 @@ use rand::seq::SliceRandom;
 use resolve_path::PathResolveExt;
 use rustc_hash::FxHashSet;
 use std::{
-    borrow::Cow, cell::RefCell, cmp::Ordering as StdOrdering, net::TcpStream, ops::Range,
-    os::unix::net::UnixStream, result,
+    borrow::Cow, cell::RefCell, cmp::Ordering as StdOrdering, fs::File, io::Read, net::TcpStream, ops::Range, os::unix::net::UnixStream, result
 };
 #[cfg(target_os = "linux")]
 use std::os::{linux::net::SocketAddrExt, unix::net::SocketAddr};
 
 use crate::{
-    cache::sqlite,
-    client::stream::StreamWrapper,
-    common::{
+    cache::sqlite, client::stream::StreamWrapper, common::{
         AlbumInfo, DynamicPlaylist, SongInfo, Stickers,
         dynamic_playlist::{Ordering, QueryLhs, Rule, StickerObjectType, StickerOperation},
         inode::INodeInfo,
-    },
-    player::PlaybackFlow,
-    utils,
+    }, player::PlaybackFlow, server::{ManagedMpdError, config::MpdConfig}, utils::{self, get_config_file_path}
 };
 
 use super::StickerSetMode;
@@ -152,6 +147,7 @@ pub fn build_comparator(
 #[derive(Debug)]
 pub enum Error {
     NoExist,
+    Server(ManagedMpdError),
     Mpd(MpdError),
     Image(image::error::ImageError),
     Internal,
@@ -365,9 +361,9 @@ pub enum Task {
     Find(Query<'static>, Window, Responder<Vec<SongInfo>>),
     /// Batched version of Find.
     FindMultiple(
-        Vec<(Query<'static>, Window)>, 
+        Vec<(Query<'static>, Window)>,
         /// Optional list of tagtypes to limit to.
-        Option<Vec<&'static str>>, 
+        Option<Vec<&'static str>>,
         Responder<Vec<SongInfo>>
     ),
     LsInfo(String, Responder<Vec<INodeInfo>>),
@@ -456,11 +452,25 @@ impl Connection {
 
     pub fn connect(&mut self) -> Result<Version> {
         let settings = utils::settings_manager().child("client");
-        // eprintln!("Attempting connection...");
-
-        // self.state.set_connection_state(ConnectionState::Connecting);
-        let use_unix_socket = settings.boolean("mpd-use-unix-socket");
-        let mut client = if use_unix_socket {
+        let mut client = if settings.boolean("use-own-server") {
+            // Currently hardcoded to use a Unix socket in Standalone Mode without any password.
+            let config_path = get_config_file_path();
+            let mut file = File::open(&config_path).map_err(|_| Error::Server(ManagedMpdError::NotConfigured))?;
+            let mut txt = String::new();
+            file.read_to_string(&mut txt).map_err(|_| Error::Server(ManagedMpdError::Config))?;
+            let cfg = MpdConfig::try_from(txt.as_str()).map_err(|_| Error::Server(ManagedMpdError::Config))?;
+            let path = cfg.bind_to_address.ok_or(Error::Server(ManagedMpdError::Config))?;
+            let client = None;
+            client.unwrap_or_else(||
+                if let Ok(resolved) = path.try_resolve() {
+                    UnixStream::connect(resolved).map_err(|_| Error::Socket)
+                        .and_then(|s| mpd::Client::new(StreamWrapper::new_unix(s)).map_err(Error::Mpd))
+                } else {
+                    UnixStream::connect(path).map_err(|_| Error::Socket)
+                        .and_then(|s| mpd::Client::new(StreamWrapper::new_unix(s)).map_err(Error::Mpd))
+                }
+            )?
+        } else if settings.boolean("mpd-use-unix-socket") {
             let path = settings.string("mpd-unix-socket");
             let path = path.as_str();
             eprintln!("Connecting to local socket {}", &path);
@@ -1148,7 +1158,7 @@ impl Connection {
                         self.respond_with_client(
                         move |c| {
                             c.find_multiple(
-                                &queries_windows, 
+                                &queries_windows,
                                 tagtypes.as_deref()
                             ).map(|mpd_songs| {
                                 mpd_songs.into_iter().map(SongInfo::from).collect()

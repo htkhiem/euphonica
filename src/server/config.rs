@@ -9,7 +9,7 @@ use std::fmt::Write;
 use strum_macros::{Display, EnumString};
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
-use crate::config::VERSION;
+use crate::{config::VERSION, utils::get_config_file_path};
 
 #[derive(Debug, Clone, Copy, PartialEq, Default, Display, EnumString)]
 #[non_exhaustive]
@@ -191,7 +191,7 @@ impl MpdConfig {
         })
     }
 
-    /// Note: this will assume some defaults, so writing down a default MpdConfig then reading it back up
+    /// Note: this will assume some connection defaults, so writing down a default MpdConfig then reading it back up
     /// will not produce the same default config.
     pub fn to_string(&self) -> String {
         let mut out = String::new();
@@ -209,7 +209,6 @@ impl MpdConfig {
         )
         .unwrap();
 
-        // Always present else we're screwed.
         writeln!(out, "music_directory \"{}\"", self.music_directory).unwrap();
         writeln!(out, "bind_to_address \"{}\"", self.bind_to_address.as_deref().unwrap_or("localhost")).unwrap();
         writeln!(out, "port \"{}\"", self.port.as_ref().unwrap_or(&6600)).unwrap();
@@ -225,6 +224,9 @@ impl MpdConfig {
 impl TryFrom<&str> for MpdConfig {
     type Error = String;
     /// A VERY limited parser, since it's only supposed to parse what WE generated.
+    /// It will try its best to gloss over invalid configuration values, falling back
+    /// to sensible defaults.
+    /// It may still fail against more severe corruptions.
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         let mut config = MpdConfig::default();
 
@@ -282,12 +284,7 @@ impl TryFrom<&str> for MpdConfig {
                     "music_directory" => config.music_directory = val.to_owned(),
                     "bind_to_address" => config.bind_to_address = Some(val.to_owned()),
                     "port" => {
-                        config.port = Some(val.parse::<u32>().map_err(|_| {
-                            format!(
-                                "Syntax error on line {}: invalid port value '{}'",
-                                line_num, val
-                            )
-                        })?)
+                        config.port = val.parse::<u32>().ok()
                     }
                     _ => {} // Discard all other top-level keys
                 }
@@ -303,8 +300,22 @@ impl TryFrom<&str> for MpdConfig {
 }
 
 pub fn get_minimal_config() -> MpdConfig {
+    eprintln!("Generating a default MPD config file...");
     let mut default_config = MpdConfig::default();
+    // For now the managed option always uses a socket file for the following reasons:
+    // - It does not make sense to let the user pick between socket and TCP here. This server instance
+    //   is only used by Euphonica and is turned on and off alongside it, so we only need a loal connection.
+    // - Supporting TCP means either letting the user set a bind address and port (no longer user-friendly, and
+    //   if they wanted/knew how to do these already, why not just use the "external MPD" option>?), or handling
+    //   port collisions by ourselves (takes time to scan/retry).
+    // The only benefit supporting TCP here may bring is future Windows compatibility, but Unix sockets are
+    // technically supported by Windows too; it's just MPD seemingly refusing to support it there.
+    let mut socket_path = get_config_file_path().clone();
+    socket_path.push("mpd.socket");
+    default_config.bind_to_address = Some(socket_path.to_str().expect("OS does not support UTF-8 paths").to_owned());
+    // No default music directory; in Flatpak the user needs to explicitly select a path for us else we won't
+    // have read access.
     // Default output is PipeWire
     default_config.audio_outputs.push(OutputConfig::default());
-    default_config
+    dbg!(default_config)
 }
