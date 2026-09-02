@@ -19,15 +19,15 @@
  */
 
 use crate::{
-    onboarding::EuphonicaOnboardingWindow,
     EuphonicaWindow,
     cache::Cache,
     client::{MpdWrapper, Result as ClientResult},
-     server::{ManagedMpdServer, ManagedMpdError},
     config::VERSION,
     library::Library,
+    onboarding::EuphonicaOnboardingWindow,
     player::{Player, get_next_replaygain},
     preferences::Preferences,
+    server::{ManagedMpdError, ManagedMpdServer},
     utils::{settings_manager, tokio_runtime},
 };
 use adw::prelude::*;
@@ -90,6 +90,8 @@ pub fn update_xdg_background_request() {
 }
 
 mod imp {
+    use crate::utils::{get_app_cache_path, get_config_basepath};
+
     use super::*;
 
     #[derive(Debug)]
@@ -112,11 +114,13 @@ mod imp {
         type ParentType = adw::Application;
 
         fn new() -> Self {
-            // Create cache folder. This is where the cached album arts go.
-            let mut cache_path: PathBuf = glib::user_cache_dir();
-            cache_path.push("euphonica");
+            // Create cache folder
+            let cache_path: PathBuf = get_app_cache_path();
+            let mut server_config_path: PathBuf = get_config_basepath();
+            server_config_path.push("playlists"); // create down to this folder too for managed playlists
             // println!("Cache path: {}", cache_path.to_str().unwrap());
             create_dir_all(&cache_path).expect("Could not create temporary directories!");
+            create_dir_all(&server_config_path).expect("Could not create temporary directories!");
 
             Self {
                 initialized: Cell::new(false),
@@ -214,6 +218,20 @@ mod imp {
     impl AdwApplicationImpl for EuphonicaApplication {}
 
     impl EuphonicaApplication {
+        pub fn handle_managed_server_error(&self, e: ManagedMpdError) {
+            if let Some(win) = self.obj().active_window().and_downcast::<EuphonicaWindow>() {
+                win.show_error_dialog(
+                    "Failed to start MPD server",
+                    match e {
+                        ManagedMpdError::Config => "MPD server manager reported a configuration issue. Please review your configuration in Preferences.",
+                        ManagedMpdError::NotConfigured => "Euphonica was started in Standalone Mode without having been set up for it. Please open Preferences to set things up or switch to an external MPD server.",
+                        ManagedMpdError::Subprocess => "The MPD subprocess failed to start. Ensure you are running MPD 0.23 or greater.",
+                        _ => "Unknown error."
+                    },
+                    !matches!(e, ManagedMpdError::Subprocess)
+                );
+            }
+        }
         /// Continue startup by initialising the two controllers.
         /// This expects the clients to have been initialised and connected.
         /// Now a separate function as we may either directly enter the main UI or go through
@@ -260,20 +278,16 @@ mod imp {
             let app = self.obj();
 
             // v0.99.8: handle our own MPD subprocess in standalone.
-            if settings_manager().child("client").boolean("use-own-server") {
+            if settings_manager()
+                .child("client")
+                .boolean("mpd-use-own-server")
+            {
                 if let Err(e) = self.server.start() {
-                    eprintln!("ERROR: Standalone Mode enabled but unable to start local server: {:?}", &e);
-                    if let Some(win) = self.obj().active_window().and_downcast::<EuphonicaWindow>() {
-                        win.show_error_dialog(
-                            "Failed to start MPD server",
-                            match e {
-                                ManagedMpdError::Config => "MPD server manager reported a configuration issue. Please review your configuration in Preferences.",
-                                ManagedMpdError::NotConfigured => "Euphonica was started in Standalone Mode without having been set up for it. Please open Preferences to set things up or switch to an external MPD server.",
-                                ManagedMpdError::Subprocess => "The MPD subprocess failed to start. Ensure you are running MPD 0.23 or greater."
-                            },
-                            !matches!(e, ManagedMpdError::Subprocess)
-                        );
-                    }
+                    eprintln!(
+                        "ERROR: Standalone Mode enabled but unable to start local server: {:?}",
+                        &e
+                    );
+                    self.handle_managed_server_error(e);
                 }
             } else {
                 glib::spawn_future_local(clone!(
@@ -333,9 +347,7 @@ impl EuphonicaApplication {
             // Safe to remove hold guard now, if any
             let _ = self.imp().hold_guard.take();
         } else {
-            eprintln!(
-                "FATAL: user exited onboarding."
-            );
+            eprintln!("FATAL: user exited onboarding.");
             self.quit_app();
         }
     }
@@ -354,6 +366,10 @@ impl EuphonicaApplication {
 
     pub fn get_client(&self) -> Rc<MpdWrapper> {
         self.imp().client.get().unwrap().clone()
+    }
+
+    pub fn get_server(&self) -> &ManagedMpdServer {
+        &self.imp().server
     }
 
     /// Set up app-level shortcuts. These are shortcuts that will work regardless of which Euphonica window is being focused.
@@ -760,6 +776,18 @@ impl EuphonicaApplication {
     }
 
     pub async fn refresh(&self) -> ClientResult<()> {
+        // If managing a server, stop and start it again
+        if settings_manager()
+            .child("client")
+            .boolean("mpd-use-own-server")
+        {
+            if let Err(e) = self.imp().server.stop() {
+                dbg!(e);
+            }
+            if let Err(e) = self.imp().server.start() {
+                self.imp().handle_managed_server_error(e);
+            }
+        }
         self.get_client().connect().await?;
         self.get_library().clear();
         self.get_player().clear()?;

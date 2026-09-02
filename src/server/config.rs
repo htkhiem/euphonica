@@ -9,7 +9,7 @@ use std::fmt::Write;
 use strum_macros::{Display, EnumString};
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
-use crate::{config::VERSION, utils::get_config_file_path};
+use crate::{config::VERSION, utils::{get_app_cache_path, get_config_basepath, get_standalone_playlists_path}};
 
 #[derive(Debug, Clone, Copy, PartialEq, Default, Display, EnumString)]
 #[non_exhaustive]
@@ -174,7 +174,7 @@ impl TryFrom<&[&str]> for OutputConfig {
     }
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Default, Debug, Clone)]
 pub struct MpdConfig {
     pub music_directory: String, // just one right now
     /// Optional server-side debug logging
@@ -182,9 +182,50 @@ pub struct MpdConfig {
     pub bind_to_address: Option<String>,
     pub port: Option<u32>,
     pub audio_outputs: Vec<OutputConfig>,
+    pub state_file: Option<String>,
+    pub sticker_file: Option<String>,
+    pub playlist_directory: Option<String>,
+    pub db_file: Option<String>,
 }
 
 impl MpdConfig {
+    pub fn new_minimal() -> Self {
+        eprintln!("Generating a default MPD config file...");
+        // For now the managed option always uses a socket file for the following reasons:
+        // - It does not make sense to let the user pick between socket and TCP here. This server instance
+        //   is only used by Euphonica and is turned on and off alongside it, so we only need a loal connection.
+        // - Supporting TCP means either letting the user set a bind address and port (no longer user-friendly, and
+        //   if they wanted/knew how to do these already, why not just use the "external MPD" option>?), or handling
+        //   port collisions by ourselves (takes time to scan/retry).
+        // The only benefit supporting TCP here may bring is future Windows compatibility, but Unix sockets are
+        // technically supported by Windows too; it's just MPD seemingly refusing to support it there.
+        let base_path = get_app_cache_path();
+        let mut socket_path = base_path.clone();
+        socket_path.push("mpd.socket");
+        let mut state_file = base_path.clone();
+        state_file.push("mpd.state");
+        let mut sticker_file = base_path.clone();
+        sticker_file.push("mpd_stickers.db");
+        let playlist_directory = get_standalone_playlists_path();
+        let mut db_file = base_path.clone();
+        db_file.push("mpd.db");
+        let mut default_out = OutputConfig::default();
+        default_out.name = String::from("PipeWire");
+
+        MpdConfig {
+            // No default music directory; in Flatpak the user needs to explicitly select a path for us else we won't
+            music_directory: String::from(""),
+            bind_to_address: Some(socket_path.to_str().expect("OS does not support UTF-8 paths").to_owned()),
+            log_level: LogLevel::default(),
+            port: Some(6600),
+            audio_outputs: vec![default_out],
+            state_file: Some(state_file.to_str().expect("OS does not support UTF-8 paths").to_owned()),
+            sticker_file: Some(sticker_file.to_str().expect("OS does not support UTF-8 paths").to_owned()),
+            playlist_directory: Some(playlist_directory.to_str().expect("OS does not support UTF-8 paths").to_owned()),
+            db_file: Some(db_file.to_str().expect("OS does not support UTF-8 paths").to_owned()),
+        }
+    }
+
     pub fn is_socket_connection(&self) -> bool {
         self.bind_to_address.as_ref().is_some_and(|addr| {
             addr.starts_with("~") || addr.starts_with("/") || addr.starts_with("@")
@@ -212,6 +253,19 @@ impl MpdConfig {
         writeln!(out, "music_directory \"{}\"", self.music_directory).unwrap();
         writeln!(out, "bind_to_address \"{}\"", self.bind_to_address.as_deref().unwrap_or("localhost")).unwrap();
         writeln!(out, "port \"{}\"", self.port.as_ref().unwrap_or(&6600)).unwrap();
+        if let Some(state_file) = self.state_file.as_deref() {
+            writeln!(out, "state_file \"{}\"", state_file).unwrap();
+        }
+        if let Some(sticker_file) = self.sticker_file.as_deref() {
+            writeln!(out, "sticker_file \"{}\"", sticker_file).unwrap();
+        }
+        if let Some(playlist_directory) = self.playlist_directory.as_deref() {
+            writeln!(out, "playlist_directory \"{}\"", playlist_directory).unwrap();
+        }
+        if let Some(db_file) = self.db_file.as_deref() {
+            writeln!(out, "db_file \"{}\"", db_file).unwrap();
+        }
+
 
         for output in &self.audio_outputs {
             output.write_buf(&mut out);
@@ -286,6 +340,10 @@ impl TryFrom<&str> for MpdConfig {
                     "port" => {
                         config.port = val.parse::<u32>().ok()
                     }
+                    "state_file" => config.state_file = Some(val.to_owned()),
+                    "sticker_file" => config.sticker_file = Some(val.to_owned()),
+                    "playlist_directory" => config.playlist_directory = Some(val.to_owned()),
+                    "db_file" => config.db_file = Some(val.to_owned()),
                     _ => {} // Discard all other top-level keys
                 }
             }
@@ -297,25 +355,4 @@ impl TryFrom<&str> for MpdConfig {
 
         Ok(config)
     }
-}
-
-pub fn get_minimal_config() -> MpdConfig {
-    eprintln!("Generating a default MPD config file...");
-    let mut default_config = MpdConfig::default();
-    // For now the managed option always uses a socket file for the following reasons:
-    // - It does not make sense to let the user pick between socket and TCP here. This server instance
-    //   is only used by Euphonica and is turned on and off alongside it, so we only need a loal connection.
-    // - Supporting TCP means either letting the user set a bind address and port (no longer user-friendly, and
-    //   if they wanted/knew how to do these already, why not just use the "external MPD" option>?), or handling
-    //   port collisions by ourselves (takes time to scan/retry).
-    // The only benefit supporting TCP here may bring is future Windows compatibility, but Unix sockets are
-    // technically supported by Windows too; it's just MPD seemingly refusing to support it there.
-    let mut socket_path = get_config_file_path().clone();
-    socket_path.push("mpd.socket");
-    default_config.bind_to_address = Some(socket_path.to_str().expect("OS does not support UTF-8 paths").to_owned());
-    // No default music directory; in Flatpak the user needs to explicitly select a path for us else we won't
-    // have read access.
-    // Default output is PipeWire
-    default_config.audio_outputs.push(OutputConfig::default());
-    dbg!(default_config)
 }

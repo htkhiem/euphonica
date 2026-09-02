@@ -71,7 +71,7 @@
 	</schema>
 
 	<schema id="io.github.htkhiem.Euphonica.client" path="/io/github/htkhiem/Euphonica/client/">
-		<key name="use-own-server" type="b">
+		<key name="mpd-use-own-server" type="b">
 			<default>false</default>
 		</key>
 		<key name="mpd-auto-reconnect" type="b">

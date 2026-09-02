@@ -24,7 +24,7 @@ use crate::{
         AlbumInfo, DynamicPlaylist, SongInfo, Stickers,
         dynamic_playlist::{Ordering, QueryLhs, Rule, StickerObjectType, StickerOperation},
         inode::INodeInfo,
-    }, player::PlaybackFlow, server::{ManagedMpdError, config::MpdConfig}, utils::{self, get_config_file_path}
+    }, player::PlaybackFlow, server::{ManagedMpdError, config::MpdConfig}, utils::{self, get_config_basepath, get_standalone_config_path}
 };
 
 use super::StickerSetMode;
@@ -452,21 +452,21 @@ impl Connection {
 
     pub fn connect(&mut self) -> Result<Version> {
         let settings = utils::settings_manager().child("client");
-        let mut client = if settings.boolean("use-own-server") {
+        let mut client = if settings.boolean("mpd-use-own-server") {
             // Currently hardcoded to use a Unix socket in Standalone Mode without any password.
-            let config_path = get_config_file_path();
+            let config_path = dbg!(get_standalone_config_path());
             let mut file = File::open(&config_path).map_err(|_| Error::Server(ManagedMpdError::NotConfigured))?;
             let mut txt = String::new();
             file.read_to_string(&mut txt).map_err(|_| Error::Server(ManagedMpdError::Config))?;
-            let cfg = MpdConfig::try_from(txt.as_str()).map_err(|_| Error::Server(ManagedMpdError::Config))?;
+            let cfg = dbg!(MpdConfig::try_from(txt.as_str()).map_err(|_| Error::Server(ManagedMpdError::Config))?);
             let path = cfg.bind_to_address.ok_or(Error::Server(ManagedMpdError::Config))?;
             let client = None;
             client.unwrap_or_else(||
                 if let Ok(resolved) = path.try_resolve() {
-                    UnixStream::connect(resolved).map_err(|_| Error::Socket)
+                    dbg!(UnixStream::connect(resolved)).map_err(|_| Error::Socket)
                         .and_then(|s| mpd::Client::new(StreamWrapper::new_unix(s)).map_err(Error::Mpd))
                 } else {
-                    UnixStream::connect(path).map_err(|_| Error::Socket)
+                    dbg!(UnixStream::connect(path)).map_err(|_| Error::Socket)
                         .and_then(|s| mpd::Client::new(StreamWrapper::new_unix(s)).map_err(Error::Mpd))
                 }
             )?

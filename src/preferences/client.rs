@@ -1,5 +1,5 @@
 use duplicate::duplicate;
-use std::str::FromStr;
+use std::{fs::File, io::{Read, Write}, str::FromStr};
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
@@ -13,14 +13,11 @@ use glib::clone;
 use mpd::status::AudioFormat;
 
 use crate::{
-    application::EuphonicaApplication,
-    client::{
-        ClientState, ConnectionState,
+    application::EuphonicaApplication, client::{
+        ClientState,
         password::{get_mpd_password_async, set_mpd_password},
         state::StickersSupportLevel,
-    },
-    player::{FftStatus, Player},
-    utils,
+    }, common::ConnectionState, player::{FftStatus, Player}, server::config::MpdConfig, utils::{self, get_config_basepath, get_standalone_config_path, settings_manager}
 };
 
 // Allows us to implicitly grant read access to files outside of the sandbox.
@@ -84,6 +81,8 @@ fn set_status_icon(img: &gtk::Image, state: StatusIconState) {
 }
 
 mod imp {
+    use std::cell::RefCell;
+
     use super::*;
 
     #[derive(Debug, Default, CompositeTemplate)]
@@ -158,6 +157,8 @@ mod imp {
         pub fifo_status: TemplateChild<adw::ActionRow>,
         #[template_child]
         pub fft_reconnect: TemplateChild<gtk::Button>,
+
+        pub standalone_cfg: RefCell<MpdConfig>,
     }
 
     #[glib::object_subclass]
@@ -281,10 +282,33 @@ impl ClientPreferences {
     fn on_standalone_status_changed(&self, running: bool) {
         if running {
             self.imp().standalone_status.set_subtitle("Running");
-            set_status_icon(&self.imp().standalone_status_icon.get(), StatusIconState::Full);
+            set_status_icon(
+                &self.imp().standalone_status_icon.get(),
+                StatusIconState::Full,
+            );
         } else {
             self.imp().standalone_status.set_subtitle("Failing");
-            set_status_icon(&self.imp().standalone_status_icon.get(), StatusIconState::Disabled);
+            set_status_icon(
+                &self.imp().standalone_status_icon.get(),
+                StatusIconState::Disabled,
+            );
+        }
+    }
+
+    fn set_music_library_path(&self, path: Option<&str>) {
+        let library_path_row = self.imp().mpd_library_path.get();
+        if let Some(path) = path {
+            library_path_row.set_subtitle(path);
+            if library_path_row.has_css_class("error") {
+                library_path_row.remove_css_class("error");
+                self.imp().apply_standalone_config.set_sensitive(true);
+            }
+        } else {
+            library_path_row.set_subtitle("(unset)");
+            if !library_path_row.has_css_class("error") {
+                library_path_row.add_css_class("error");
+                self.imp().apply_standalone_config.set_sensitive(false);
+            }
         }
     }
 
@@ -385,10 +409,131 @@ impl ClientPreferences {
         let client_state = app.get_client().get_client_state();
         // Populate with current gsettings values
         let settings = utils::settings_manager();
+        let conn_settings = settings.child("client");
+
+        // Standalone mode expander.
+        conn_settings
+            .bind(
+                "mpd-use-own-server",
+                &imp.mpd_use_own_server.get(),
+                "enable-expansion",
+            )
+            .build();
+        // Upon init, read the managed MPD config file or create a fresh one in-memory in case
+        // there's none or the existing one has issues.
+        let mut has_existing = false;
+        let config_path = get_standalone_config_path();
+        if let Ok(mut file) = File::open(&config_path) {
+            let mut txt = String::new();
+            if file.read_to_string(&mut txt).is_ok() {
+                if let Ok(cfg) = MpdConfig::try_from(txt.as_str()) {
+                    let _ = imp.standalone_cfg.replace(cfg);
+                    has_existing = true;
+                }
+            }
+        }
+        if !has_existing {
+            // Initialise with sensible defaults (the Default trait only creates
+            // an empty one for filling in by try_from, not usable as a base here).
+            let _ = imp.standalone_cfg.replace(MpdConfig::new_minimal());
+        }
+
+        {
+            let cfg = self.imp().standalone_cfg.borrow_mut();
+            self.set_music_library_path(if !cfg.music_directory.is_empty() {
+                Some(&cfg.music_directory)
+            } else {
+                None
+            });
+        }
+
+        imp.mpd_library_browse.connect_clicked(clone!(
+            #[weak(rename_to = this)]
+            self,
+            move |_| {
+                let (sender, receiver) = oneshot::channel();
+                utils::tokio_runtime().spawn(async move {
+                    sender
+                        .send(
+                            SelectedFiles::open_file()
+                                .title("Select folder containing your music")
+                                .directory(true)
+                                .modal(true)
+                                .multiple(false)
+                                .send()
+                                .await
+                                .expect("ashpd folder open await failure")
+                                .response(),
+                        )
+                        .expect("Broken oneshot sender");
+                });
+
+                glib::spawn_future_local(clone!(
+                    #[weak]
+                    this,
+                    async move {
+                        if let Ok(folders) = receiver.await.expect("Broken oneshot receiver") {
+                            let uris = folders.uris();
+                            if !uris.is_empty() {
+                                let uri = uris[0].as_str();
+                                if let Ok(uri) =
+                                    urlencoding::decode(if uri.starts_with("file://") {
+                                        &uri[7..]
+                                    } else {
+                                        uri
+                                    })
+                                    .map(String::from)
+                                {
+                                    this.set_music_library_path(Some(&uri));
+                                    let mut cfg = this.imp().standalone_cfg.borrow_mut();
+                                    cfg.music_directory = uri;
+                                }
+                            }
+                        }
+                    }
+                ));
+            }
+        ));
+
+        imp.apply_standalone_config.connect_activated(clone!(
+            #[weak(rename_to = this)]
+            self,
+            #[weak]
+            app,
+            move |_| {
+                // Overwrite path with config then trigger reconnect
+                {
+                    let cfg = this.imp().standalone_cfg.borrow();
+                    let mut output = File::create(&config_path).expect("Unable to write to config file");
+                    write!(output, "{}", cfg.to_string()).unwrap();
+                }
+                // Just to be sure
+                if let Err(e) = settings_manager().child("client").set_boolean("mpd-use-own-server", true) {
+                    dbg!(e);
+                } else {
+                    glib::spawn_future_local(async move {
+                        let _ = app.refresh().await;
+                    });
+                }
+            }
+        ));
+
+        // Display connection status
+        let standalone_server = app.get_server();
+        self.on_standalone_status_changed(matches!(standalone_server.status(), ConnectionState::Connected));
+        standalone_server.connect_notify_local(
+            Some("status"),
+            clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |ss, _| {
+                    this.on_standalone_status_changed(matches!(ss.status(), ConnectionState::Connected));
+                }
+            ),
+        );
 
         // These should only be saved when the Apply button is clicked.
         // As such we won't bind the widgets directly to the settings.
-        let conn_settings = settings.child("client");
         conn_settings
             .bind(
                 "mpd-use-unix-socket",
@@ -539,7 +684,11 @@ impl ClientPreferences {
 
         let mpd_backup_meta_as_stickers = imp.mpd_backup_meta_as_stickers.get();
         conn_settings
-            .bind("mpd-backup-metadata", &mpd_backup_meta_as_stickers, "active")
+            .bind(
+                "mpd-backup-metadata",
+                &mpd_backup_meta_as_stickers,
+                "active",
+            )
             .build();
 
         // Visualiser

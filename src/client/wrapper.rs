@@ -30,7 +30,7 @@ use uuid::Uuid;
 
 use crate::cache::sqlite;
 use crate::client::connection::ImageHandle;
-use crate::common::{AlbumInfo, ArtistInfo, DynamicPlaylist, split_genre_tag, tags};
+use crate::common::{AlbumInfo, ArtistInfo, DynamicPlaylist, split_genre_tag, tags, ConnectionState};
 use crate::utils::settings_manager;
 use crate::{
     common::{Album, Artist, INode, Song, SongInfo, Stickers},
@@ -39,7 +39,7 @@ use crate::{
 };
 
 use super::connection::{Connection, Error as ClientError, Result as ClientResult, Task};
-use super::state::{ClientState, ConnectionState, StickersSupportLevel};
+use super::state::{ClientState, StickersSupportLevel};
 use super::{BATCH_SIZE, FETCH_LIMIT, StickerSetMode};
 
 static MAX_RETRIES: u32 = 3;
