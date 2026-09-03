@@ -43,9 +43,13 @@ mod imp {
 
         // Page 1: library organisation
         #[template_child]
-        pub release_folder_library_mode: TemplateChild<gtk::ToggleButton>,
+        pub release_folder_library_button: TemplateChild<gtk::Button>,
         #[template_child]
-        pub mixed_library_mode: TemplateChild<gtk::ToggleButton>,
+        pub mixed_library_button: TemplateChild<gtk::Button>,
+        #[template_child]
+        pub release_folder_library_mode: TemplateChild<gtk::CheckButton>,
+        #[template_child]
+        pub mixed_library_mode: TemplateChild<gtk::CheckButton>,
         #[template_child]
         pub finish_btn: TemplateChild<gtk::Button>,
 
@@ -149,6 +153,18 @@ impl EuphonicaOnboardingWindow {
             .build();
         win.imp().app.set(Some(application));
         win.imp().onboard_success.set(false);
+        for (button, option) in [
+            (
+                win.imp().release_folder_library_button.get(),
+                win.imp().release_folder_library_mode.get(),
+            ),
+            (
+                win.imp().mixed_library_button.get(),
+                win.imp().mixed_library_mode.get(),
+            ),
+        ] {
+            button.connect_clicked(move |_| option.set_active(true));
+        }
         for button in [
             win.imp().release_folder_library_mode.get(),
             win.imp().mixed_library_mode.get(),

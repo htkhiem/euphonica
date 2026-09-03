@@ -1,13 +1,49 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <interface>
   <requires lib="gtk" version="4.0"/>
-  <requires lib="Adw" version="1.0"/>
+  <requires lib="Adw" version="1.4"/>
   <template class="EuphonicaOnboardingWindow" parent="AdwApplicationWindow">
     <property name="title" translatable="true">Euphonica</property>
     <property name="default-width">400</property>
     <property name="default-height">640</property>
     <property name="height-request">640</property>
     <property name="width-request">360</property>
+    <child>
+      <object class="AdwBreakpoint">
+        <condition>max-width: 500sp</condition>
+        <setter object="release_folder_1_image" property="pixel-size">96</setter>
+        <setter object="release_folder_2_image" property="pixel-size">96</setter>
+        <setter object="mixed_folder_1_image" property="pixel-size">96</setter>
+        <setter object="mixed_folder_2_image" property="pixel-size">96</setter>
+      </object>
+    </child>
+    <child>
+      <object class="AdwBreakpoint">
+        <condition>min-width: 1024sp</condition>
+        <setter object="release_folder_1_image" property="pixel-size">192</setter>
+        <setter object="release_folder_2_image" property="pixel-size">192</setter>
+        <setter object="mixed_folder_1_image" property="pixel-size">192</setter>
+        <setter object="mixed_folder_2_image" property="pixel-size">192</setter>
+      </object>
+    </child>
+    <child>
+      <object class="AdwBreakpoint">
+        <condition>min-width: 1200sp</condition>
+        <setter object="release_folder_1_image" property="pixel-size">240</setter>
+        <setter object="release_folder_2_image" property="pixel-size">240</setter>
+        <setter object="mixed_folder_1_image" property="pixel-size">240</setter>
+        <setter object="mixed_folder_2_image" property="pixel-size">240</setter>
+      </object>
+    </child>
+    <child>
+      <object class="AdwBreakpoint">
+        <condition>min-width: 1440sp</condition>
+        <setter object="release_folder_1_image" property="pixel-size">288</setter>
+        <setter object="release_folder_2_image" property="pixel-size">288</setter>
+        <setter object="mixed_folder_1_image" property="pixel-size">288</setter>
+        <setter object="mixed_folder_2_image" property="pixel-size">288</setter>
+      </object>
+    </child>
 
     <property name="content">
       <object class="GtkBox" id="content">
@@ -33,94 +69,116 @@
                         <property name="wrap">true</property>
                         <property name="justify">center</property>
                         <style>
-                          <class name="title-1"/>
+                          <class name="title-2"/>
                         </style>
                       </object>
                     </child>
                     <child>
-                      <object class="GtkOverlay">
+                      <object class="GtkBox">
+                        <property name="homogeneous">true</property>
+                        <property name="spacing">12</property>
                         <property name="margin-top">12</property>
                         <child>
-                          <object class="GtkBox">
-                            <property name="orientation">1</property>
-                            <property name="spacing">12</property>
-                            <property name="margin-top">12</property>
-                            <property name="margin-bottom">12</property>
-                            <child>
-                              <object class="GtkGrid">
-                                <property name="column-homogeneous">true</property>
-                                <property name="row-homogeneous">true</property>
-                                <property name="column-spacing">12</property>
-                                <child>
-                                  <object class="GtkImage">
-                                    <property name="icon-name">release-folder-1-symbolic</property>
-                                    <property name="pixel-size">125</property>
-                                    <style>
-                                      <class name="accent"/>
-                                    </style>
-                                    <layout>
-                                      <property name="column">0</property>
-                                      <property name="row">0</property>
-                                    </layout>
-                                  </object>
-                                </child>
-                                <child>
-                                  <object class="GtkImage">
-                                    <property name="icon-name">mixed-folder-1-symbolic</property>
-                                    <property name="pixel-size">125</property>
-                                    <style>
-                                      <class name="accent"/>
-                                    </style>
-                                    <layout>
-                                      <property name="column">1</property>
-                                      <property name="row">0</property>
-                                    </layout>
-                                  </object>
-                                </child>
-                                <child>
-                                  <object class="GtkImage">
-                                    <property name="icon-name">release-folder-2-symbolic</property>
-                                    <property name="pixel-size">125</property>
-                                    <style>
-                                      <class name="accent"/>
-                                    </style>
-                                    <layout>
-                                      <property name="column">0</property>
-                                      <property name="row">1</property>
-                                    </layout>
-                                  </object>
-                                </child>
-                                <child>
-                                  <object class="GtkImage">
-                                    <property name="icon-name">mixed-folder-2-symbolic</property>
-                                    <property name="pixel-size">125</property>
-                                    <style>
-                                      <class name="accent"/>
-                                    </style>
-                                    <layout>
-                                      <property name="column">1</property>
-                                      <property name="row">1</property>
-                                    </layout>
-                                  </object>
-                                </child>
-                              </object>
-                            </child>
+                          <object class="GtkButton" id="release_folder_library_button">
+                            <property name="hexpand">true</property>
+                            <property name="vexpand">false</property>
+                            <accessibility>
+                              <property name="label" translatable="true">Each album/release has its own folder</property>
+                            </accessibility>
                             <child>
                               <object class="GtkBox">
-                                <property name="homogeneous">true</property>
-                                <property name="spacing">12</property>
+                                <property name="orientation">1</property>
+                                <property name="spacing">6</property>
+                                <child>
+                                  <object class="AdwWrapBox">
+                                    <property name="align">0.5</property>
+                                    <property name="child-spacing">40</property>
+                                    <property name="line-spacing">40</property>
+                                    <property name="margin-top">24</property>
+                                    <property name="margin-bottom">24</property>
+                                    <child>
+                                      <object class="GtkImage" id="release_folder_1_image">
+                                        <property name="icon-name">release-folder-1-symbolic</property>
+                                        <property name="pixel-size">144</property>
+                                        <style>
+                                          <class name="accent"/>
+                                        </style>
+                                      </object>
+                                    </child>
+                                    <child>
+                                      <object class="GtkImage" id="release_folder_2_image">
+                                        <property name="icon-name">release-folder-2-symbolic</property>
+                                        <property name="pixel-size">144</property>
+                                        <style>
+                                          <class name="accent"/>
+                                        </style>
+                                      </object>
+                                    </child>
+                                  </object>
+                                </child>
                                 <child>
                                   <object class="GtkLabel">
                                     <property name="label" translatable="true">Each album/release has its own folder</property>
                                     <property name="wrap">true</property>
                                     <property name="justify">center</property>
-                                    <property name="margin-start">12</property>
-                                    <property name="margin-end">12</property>
-                                    <property name="margin-top">6</property>
-                                    <property name="margin-bottom">6</property>
+                                    <property name="margin-start">6</property>
+                                    <property name="margin-end">6</property>
+                                    <property name="vexpand">true</property>
+                                    <property name="valign">center</property>
                                     <style>
                                       <class name="heading"/>
                                     </style>
+                                  </object>
+                                </child>
+                                <child>
+                                  <object class="GtkCheckButton" id="release_folder_library_mode">
+                                    <property name="halign">center</property>
+                                    <property name="margin-bottom">6</property>
+                                    <accessibility>
+                                      <property name="label" translatable="true">Each album/release has its own folder</property>
+                                    </accessibility>
+                                  </object>
+                                </child>
+                              </object>
+                            </child>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkButton" id="mixed_library_button">
+                            <property name="hexpand">true</property>
+                            <property name="vexpand">false</property>
+                            <accessibility>
+                              <property name="label" translatable="true">Other/mixed</property>
+                            </accessibility>
+                            <child>
+                              <object class="GtkBox">
+                                <property name="orientation">1</property>
+                                <property name="spacing">6</property>
+                                <child>
+                                  <object class="AdwWrapBox">
+                                    <property name="align">0.5</property>
+                                    <property name="child-spacing">40</property>
+                                    <property name="line-spacing">40</property>
+                                    <property name="margin-top">24</property>
+                                    <property name="margin-bottom">24</property>
+                                    <child>
+                                      <object class="GtkImage" id="mixed_folder_1_image">
+                                        <property name="icon-name">mixed-folder-1-symbolic</property>
+                                        <property name="pixel-size">144</property>
+                                        <style>
+                                          <class name="accent"/>
+                                        </style>
+                                      </object>
+                                    </child>
+                                    <child>
+                                      <object class="GtkImage" id="mixed_folder_2_image">
+                                        <property name="icon-name">mixed-folder-2-symbolic</property>
+                                        <property name="pixel-size">144</property>
+                                        <style>
+                                          <class name="accent"/>
+                                        </style>
+                                      </object>
+                                    </child>
                                   </object>
                                 </child>
                                 <child>
@@ -128,54 +186,27 @@
                                     <property name="label" translatable="true">Other/mixed</property>
                                     <property name="wrap">true</property>
                                     <property name="justify">center</property>
-                                    <property name="margin-start">12</property>
-                                    <property name="margin-end">12</property>
-                                    <property name="margin-top">6</property>
-                                    <property name="margin-bottom">6</property>
+                                    <property name="margin-start">6</property>
+                                    <property name="margin-end">6</property>
+                                    <property name="vexpand">true</property>
+                                    <property name="valign">center</property>
                                     <style>
                                       <class name="heading"/>
                                     </style>
                                   </object>
                                 </child>
+                                <child>
+                                  <object class="GtkCheckButton" id="mixed_library_mode">
+                                    <property name="group">release_folder_library_mode</property>
+                                    <property name="halign">center</property>
+                                    <property name="margin-bottom">6</property>
+                                    <accessibility>
+                                      <property name="label" translatable="true">Other/mixed</property>
+                                    </accessibility>
+                                  </object>
+                                </child>
                               </object>
                             </child>
-                          </object>
-                        </child>
-                        <child type="overlay">
-                          <object class="GtkBox">
-                            <property name="homogeneous">true</property>
-                            <property name="spacing">12</property>
-                            <child>
-                              <object class="GtkToggleButton" id="release_folder_library_mode">
-                                <property name="hexpand">true</property>
-                                <accessibility>
-                                  <property name="label" translatable="true">Each album/release has its own folder</property>
-                                </accessibility>
-                                <style>
-                                  <class name="onboarding-option"/>
-                                </style>
-                              </object>
-                            </child>
-                            <child>
-                              <object class="GtkToggleButton" id="mixed_library_mode">
-                                <property name="group">release_folder_library_mode</property>
-                                <property name="hexpand">true</property>
-                                <accessibility>
-                                  <property name="label" translatable="true">Other/mixed</property>
-                                </accessibility>
-                                <style>
-                                  <class name="onboarding-option"/>
-                                </style>
-                              </object>
-                            </child>
-                          </object>
-                        </child>
-                        <child type="overlay">
-                          <object class="GtkSeparator">
-                            <property name="orientation">1</property>
-                            <property name="halign">center</property>
-                            <property name="margin-top">12</property>
-                            <property name="margin-bottom">12</property>
                           </object>
                         </child>
                       </object>
@@ -189,7 +220,7 @@
                         </style>
                         <child>
                           <object class="AdwExpanderRow">
-                            <property name="title" translatable="true">Why does Euphonica need this?</property>
+                            <property name="title" translatable="true">Why does this matter?</property>
                             <property name="expanded">false</property>
                             <child>
                               <object class="GtkListBoxRow">
@@ -197,7 +228,8 @@
                                 <property name="activatable">false</property>
                                 <child>
                                   <object class="GtkLabel">
-                                    <property name="label" translatable="true">PLACEHOLDER</property>
+                                    <property name="label" translatable="true">Knowing the folder layout lets Euphonica optimise cover art loading.&#10;&#10;If every folder contains tracks from only one release, Euphonica loads its cover art once and applies it to all tracks. It first checks for &lt;tt&gt;cover.png&lt;/tt&gt;, &lt;tt&gt;cover.webp&lt;/tt&gt;, or &lt;tt&gt;cover.jpg&lt;/tt&gt;, then uses the first embedded image it finds.&#10;&#10;If a folder contains multiple releases, shared cover art could be applied to the wrong tracks. Choose &lt;b&gt;Other/mixed&lt;/b&gt; for these libraries. Cover files still take priority; without one, Euphonica loads embedded art per track.&#10;&#10;For single-release folders, add a cover file to avoid duplicate downloads. For mixed folders, remove it to use per-track embedded art.</property>
+                                    <property name="use-markup">true</property>
                                     <property name="wrap">true</property>
                                     <property name="xalign">0</property>
                                     <style>
