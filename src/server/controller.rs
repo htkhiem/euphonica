@@ -3,6 +3,7 @@ use crate::{
     server::config::MpdConfig,
     utils::get_standalone_config_path,
 };
+use asyncified::Asyncified;
 use gio::{Subprocess, SubprocessFlags};
 use glib::subclass::prelude::*;
 use gtk::{
@@ -31,7 +32,9 @@ pub enum Error {
 
 pub type Result<T> = result::Result<T, Error>;
 
-static MAX_STARTUP_POLLS: u32 = 5;
+// Ten seconds of rapid fire tests so we don't add too much delay.
+// FIXME: this is disgusting, maybe find something in stdout to listen to instead.
+static MAX_STARTUP_POLLS: u32 = 50;
 static POLL_INTERVAL_MS: u64 = 200;
 
 /// Wrapper for managing our own server instance.
@@ -80,25 +83,25 @@ impl Default for ManagedMpdServer {
     }
 }
 
+fn self_test(socket_path: &str) -> Result<()> {
+    let _: Client<UnixStream> = if let Ok(resolved) = socket_path.try_resolve() {
+        UnixStream::connect(resolved)
+            .map_err(|_| Error::Client)
+            .and_then(|s| mpd::Client::new(s).map_err(|_| Error::Client))?
+    } else {
+        UnixStream::connect(socket_path)
+            .map_err(|_| Error::Client)
+            .and_then(|s| mpd::Client::new(s).map_err(|_| Error::Client))?
+    };
+    Ok(())
+}
+
 impl ManagedMpdServer {
     fn set_status(&self, status: ConnectionState) {
         let old = self.imp().status.replace(status);
         if old != status {
             self.notify("status");
         }
-    }
-
-    fn self_test(&self, socket_path: &str) -> Result<()> {
-        let _: Client<UnixStream> = if let Ok(resolved) = socket_path.try_resolve() {
-            UnixStream::connect(resolved)
-                .map_err(|_| Error::Client)
-                .and_then(|s| mpd::Client::new(s).map_err(|_| Error::Client))?
-        } else {
-            UnixStream::connect(socket_path)
-                .map_err(|_| Error::Client)
-                .and_then(|s| mpd::Client::new(s).map_err(|_| Error::Client))?
-        };
-        Ok(())
     }
 
     /// No-op if not already running.
@@ -115,7 +118,7 @@ impl ManagedMpdServer {
     }
 
     /// Will call stop() by itself first.
-    pub fn start(&self) -> Result<()> {
+    pub async fn start(&self) -> Result<()> {
         self.stop()?;
         // Ensure there's a valid config file.
         // TODO: maybe just skip the validation and start MPD directly & pick up crashes afterwards as config errors.
@@ -139,20 +142,23 @@ impl ManagedMpdServer {
         )
         .expect("Failed to create subprocess");
 
-        // Block until ready by using a really simple ping thread.
+        // Only return after having successfully verified online status
         let path = cfg.bind_to_address.unwrap();
-        let mut success = false;
-        for _i in 0..MAX_STARTUP_POLLS {
-            match self.self_test(&path) {
-                Ok(()) => {
-                    success = true;
-                    break;
-                }
-                Err(_) => {
-                    std::thread::sleep(Duration::from_millis(POLL_INTERVAL_MS));
+        let asyncified = Asyncified::builder().build_ok(move || {()}).await;
+        let success = asyncified.call(move |_| {
+            for _i in 0..MAX_STARTUP_POLLS {
+                match self_test(&path) {
+                    Ok(()) => {
+                        return true;
+                    }
+                    Err(_) => {
+                        std::thread::sleep(Duration::from_millis(POLL_INTERVAL_MS));
+                    }
                 }
             }
-        }
+            return false;
+        }).await;
+
         if !success {
             eprintln!(
                 "FATAL: failed to verify MPD readiness after {} tries",

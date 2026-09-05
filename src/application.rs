@@ -750,10 +750,7 @@ impl EuphonicaApplication {
             .child("client")
             .boolean("mpd-use-own-server")
         {
-            if let Err(e) = self.imp().server.stop() {
-                dbg!(e);
-            }
-            if let Err(e) = self.imp().server.start() {
+            if let Err(e) = self.imp().server.start().await {
                 self.imp().handle_managed_server_error(e);
             }
         }
