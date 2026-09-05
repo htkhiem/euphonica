@@ -28,6 +28,21 @@
             </child>
 
             <child>
+              <object class="AdwActionRow" id="config_outputs_row">
+                <property name="title" translatable="true">Configure audio outputs</property>
+                <property name="activatable">true</property>
+                <child type="suffix">
+                  <object class="GtkImage">
+                    <property name="icon-name">right-symbolic</property>
+                    <style>
+                      <class name="dim-label"/>
+                    </style>
+                  </object>
+                </child>
+              </object>
+            </child>
+
+            <child>
               <object class="AdwActionRow" id="standalone_status">
                 <style>
                   <class name="property"/>
@@ -57,6 +72,7 @@
         </child>
       </object>
     </child>
+
     <child>
       <object class="AdwPreferencesGroup" id="external_mpd_group">
         <property name="visible" bind-source="mpd_use_own_server" bind-property="enable-expansion" bind-flags="sync-create|invert-boolean"/>
@@ -274,5 +290,35 @@
         </child>
       </object>
     </child>
+
+    <object class="AdwNavigationPage" id="outputs_subpage">
+      <property name="title" translatable="true">Configure outputs</property>
+      <child>
+        <object class="AdwToolbarView">
+          <child type="top">
+            <object class="AdwHeaderBar"/>
+          </child>
+          <property name="content">
+            <object class="GtkScrolledWindow" id="outputs_window">
+              <property name="height-request">50</property>
+              <property name="hscrollbar-policy">never</property>
+              <property name="vscrollbar-policy">automatic</property>
+              <property name="propagate-natural-height">true</property>
+              <property name="has-frame">false</property>
+
+              <child>
+                <object class="GtkListBox" id="outputs_box">
+                  <property name="selection-mode">none</property>
+                  <style>
+                    <class name="no-bg"/>
+                    <class name="padding-6"/>
+                  </style>
+                </object>
+              </child>
+            </object>
+          </property>
+        </object>
+      </child>
+    </object>
   </template>
 </interface>

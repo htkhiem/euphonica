@@ -1,5 +1,9 @@
 use duplicate::duplicate;
-use std::{fs::File, io::{Read, Write}, str::FromStr};
+use std::{
+    fs::File,
+    io::{Read, Write},
+    str::FromStr,
+};
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
@@ -13,11 +17,17 @@ use glib::clone;
 use mpd::status::AudioFormat;
 
 use crate::{
-    application::EuphonicaApplication, client::{
+    application::EuphonicaApplication,
+    client::{
         ClientState,
         password::{get_mpd_password_async, set_mpd_password},
         state::StickersSupportLevel,
-    }, common::ConnectionState, player::{FftStatus, Player}, server::config::MpdConfig, utils::{self, get_standalone_config_path, settings_manager}
+    },
+    common::ConnectionState,
+    player::{FftStatus, Player},
+    preferences::Preferences,
+    server::config::MpdConfig,
+    utils::{self, get_standalone_config_path, settings_manager},
 };
 
 // Allows us to implicitly grant read access to files outside of the sandbox.
@@ -83,6 +93,10 @@ fn set_status_icon(img: &gtk::Image, state: StatusIconState) {
 mod imp {
     use std::cell::RefCell;
 
+    use gtk::glib::WeakRef;
+
+    use crate::preferences::output_row::OutputRow;
+
     use super::*;
 
     #[derive(Debug, Default, CompositeTemplate)]
@@ -95,6 +109,8 @@ mod imp {
         pub mpd_library_path: TemplateChild<adw::ActionRow>,
         #[template_child]
         pub mpd_library_browse: TemplateChild<gtk::Button>,
+        #[template_child]
+        pub config_outputs_row: TemplateChild<adw::ActionRow>,
         #[template_child]
         pub standalone_status: TemplateChild<adw::ActionRow>,
         #[template_child]
@@ -158,7 +174,13 @@ mod imp {
         #[template_child]
         pub fft_reconnect: TemplateChild<gtk::Button>,
 
+        #[template_child]
+        pub outputs_subpage: TemplateChild<adw::NavigationPage>,
+        #[template_child]
+        pub outputs_box: TemplateChild<gtk::ListBox>,
+
         pub standalone_cfg: RefCell<MpdConfig>,
+        pub dialog: WeakRef<Preferences>,
     }
 
     #[glib::object_subclass]
@@ -180,6 +202,30 @@ mod imp {
     impl ObjectImpl for ClientPreferences {
         fn constructed(&self) {
             self.parent_constructed();
+            self.config_outputs_row.connect_activated(clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |_| {
+                    if let Some(dialog) = this.dialog.upgrade() {
+                        let listbox = this.outputs_box.get();
+                        // Reload widgets in that page (might be heavy)
+                        listbox.remove_all();
+                        for (idx, output) in this
+                            .standalone_cfg
+                            .borrow()
+                            .audio_outputs
+                            .iter()
+                            .enumerate()
+                        {
+                            listbox.append(&OutputRow::new(&output, this.obj().as_ref()));
+                            if let Some(row) = listbox.row_at_index(idx as i32) {
+                                row.set_activatable(false);
+                            }
+                        }
+                        dialog.push_subpage(&this.outputs_subpage.get());
+                    }
+                }
+            ));
 
             let viz_settings = utils::settings_manager().child("client");
             let fifo_path_row = self.fifo_path.get();
@@ -404,7 +450,8 @@ impl ClientPreferences {
         row.set_subtitle(&subtitle);
     }
 
-    pub fn setup(&self, app: &EuphonicaApplication, player: &Player) {
+    pub fn setup(&self, app: &EuphonicaApplication, player: &Player, dialog: &Preferences) {
+        let _ = self.imp().dialog.set(Some(dialog));
         let imp = self.imp();
         let client_state = app.get_client().get_client_state();
         // Populate with current gsettings values
@@ -504,11 +551,15 @@ impl ClientPreferences {
                 // Overwrite path with config then trigger reconnect
                 {
                     let cfg = this.imp().standalone_cfg.borrow();
-                    let mut output = File::create(&config_path).expect("Unable to write to config file");
+                    let mut output =
+                        File::create(&config_path).expect("Unable to write to config file");
                     write!(output, "{}", cfg).unwrap();
                 }
                 // Just to be sure
-                if let Err(e) = settings_manager().child("client").set_boolean("mpd-use-own-server", true) {
+                if let Err(e) = settings_manager()
+                    .child("client")
+                    .set_boolean("mpd-use-own-server", true)
+                {
                     dbg!(e);
                 } else {
                     glib::spawn_future_local(async move {
@@ -520,14 +571,20 @@ impl ClientPreferences {
 
         // Display connection status
         let standalone_server = app.get_server();
-        self.on_standalone_status_changed(matches!(standalone_server.status(), ConnectionState::Connected));
+        self.on_standalone_status_changed(matches!(
+            standalone_server.status(),
+            ConnectionState::Connected
+        ));
         standalone_server.connect_notify_local(
             Some("status"),
             clone!(
                 #[weak(rename_to = this)]
                 self,
                 move |ss, _| {
-                    this.on_standalone_status_changed(matches!(ss.status(), ConnectionState::Connected));
+                    this.on_standalone_status_changed(matches!(
+                        ss.status(),
+                        ConnectionState::Connected
+                    ));
                 }
             ),
         );

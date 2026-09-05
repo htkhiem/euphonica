@@ -9,8 +9,7 @@ use crate::{
     common::map_output_plugin_icon,
     preferences::ClientPreferences,
     server::{
-        AudioFormatConfig, DsdMultiplier, MixerType, PcmBitDepth, PcmSampleRate,
-        config::{OutputConfig, OutputType},
+        AudioFormatConfig, DsdMultiplier, MixerType, PcmBitDepth, PcmSampleRate, ReplayGainHandler, config::{OutputConfig, OutputType}
     },
     utils::meta_provider_settings,
 };
@@ -21,7 +20,7 @@ mod imp {
     use adw::subclass::{action_row::ActionRowImpl, preferences_row::PreferencesRowImpl};
     use strum::VariantNames;
 
-    use crate::server::{DsdMultiplier, PcmBitDepth, PcmSampleRate};
+    use crate::server::{DsdMultiplier, PcmBitDepth, PcmSampleRate, ReplayGainHandler};
 
     use super::*;
 
@@ -115,6 +114,10 @@ mod imp {
                 }
             ));
 
+            let is_pcm = self.force_format_pcm_dsd.active_name().unwrap().as_str() == "pcm";
+            self.pcm_sr_box.set_visible(is_pcm);
+            self.pcm_bit_box.set_visible(is_pcm);
+            self.dsd_box.set_visible(!is_pcm);
             self.force_format_pcm_dsd.connect_active_name_notify(clone!(
                 #[weak(rename_to = this)]
                 self,
@@ -125,6 +128,12 @@ mod imp {
                     this.dsd_box.set_visible(!is_pcm);
                 }
             ));
+
+            self.mixer_type
+                .set_model(Some(&gtk::StringList::new(MixerType::VARIANTS)));
+
+            self.replaygain_handler
+                .set_model(Some(&gtk::StringList::new(ReplayGainHandler::VARIANTS)));
         }
     }
 
@@ -184,11 +193,7 @@ impl OutputRow {
         res.imp().send_tags.set_active(config.tags);
         res.imp().always_on.set_active(config.always_on);
         res.imp().always_off.set_active(config.always_off);
-        res.imp().mixer_type.set_selected(
-            config
-                .mixer_type
-                .unwrap_or_else(|| MixerType::default_for(config.output_type)) as u32,
-        );
+        res.imp().mixer_type.set_selected(config.mixer_type as u32);
         res.imp()
             .replaygain_handler
             .set_selected(config.replaygain_handler as u32);
@@ -249,6 +254,11 @@ impl OutputRow {
                     )
                 },
             );
+            config.tags = self.imp().send_tags.is_active();
+            config.always_off = self.imp().always_off.is_active();
+            config.always_on = self.imp().always_on.is_active();
+            config.mixer_type = MixerType::from_repr(self.imp().mixer_type.selected() as usize).unwrap_or_default();
+            config.replaygain_handler = ReplayGainHandler::from_repr(self.imp().replaygain_handler.selected() as usize).unwrap_or_default();
         }
 
         config

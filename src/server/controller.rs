@@ -128,7 +128,10 @@ impl ManagedMpdServer {
         let mut file = File::open(&config_path).map_err(|_| Error::NotConfigured)?;
         let mut txt = String::new();
         file.read_to_string(&mut txt).map_err(|_| Error::Config)?;
-        let cfg = MpdConfig::try_from(txt.as_str()).map_err(|_| Error::Config)?;
+        let cfg = MpdConfig::try_from(txt.as_str()).map_err(|e| {
+            dbg!(e);
+            Error::Config
+        })?;
 
         if cfg.bind_to_address.is_none() {
             return Err(Error::Config);

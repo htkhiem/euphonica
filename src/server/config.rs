@@ -7,7 +7,7 @@ use regex::Regex;
 ///
 /// The format is kinda simple but nonstandard so it's not worth trying to shoehorn Serde here.
 use std::fmt::{Display, Write};
-use strum::VariantNames;
+use strum::{EnumMessage, VariantNames};
 use strum_macros::{Display, EnumIter, EnumMessage, EnumString, FromRepr, VariantNames};
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
@@ -16,7 +16,7 @@ use crate::{
     utils::{get_app_cache_path, get_standalone_playlists_path},
 };
 
-// We use the to_string one for UI display and the message one for writing into config.
+// We use the to_string one for UI display and the serialize one for writing into config.
 // This allows us to use VariantNames to programmatically populate the gtk::StringLists,
 // and use EnumString to deserialize config values
 #[derive(
@@ -34,36 +34,36 @@ use crate::{
 )]
 pub enum PcmSampleRate {
     #[default]
-    #[strum(to_string = "*", message = "*")]
+    #[strum(to_string = "*", serialize = "*")]
     Any,
     // You're sane, thank you
-    #[strum(message = "44100", to_string = "44.1kHz")]
+    #[strum(serialize = "44100", to_string = "44.1kHz")]
     P441,
     // Most systems use this to balance both audio and video
-    #[strum(message = "48000", to_string = "48kHz")]
+    #[strum(serialize = "48000", to_string = "48kHz")]
     P480,
-    #[strum(message = "88200", to_string = "88.2kHz")]
+    #[strum(serialize = "88200", to_string = "88.2kHz")]
     P882,
-    #[strum(message = "96000", to_string = "96kHz")]
+    #[strum(serialize = "96000", to_string = "96kHz")]
     P960,
-    #[strum(message = "176400", to_string = "176.4kHz")]
+    #[strum(serialize = "176400", to_string = "176.4kHz")]
     P1764,
     // You overpaid for your digital copies
-    #[strum(message = "192000", to_string = "192kHz")]
+    #[strum(serialize = "192000", to_string = "192kHz")]
     P1920,
-    #[strum(message = "352800", to_string = "352.8kHz")]
+    #[strum(serialize = "352800", to_string = "352.8kHz")]
     P3528,
-    #[strum(message = "384000", to_string = "384kHz")]
+    #[strum(serialize = "384000", to_string = "384kHz")]
     P3840,
-    #[strum(message = "705600", to_string = "705.6kHz")]
+    #[strum(serialize = "705600", to_string = "705.6kHz")]
     P7056,
     // Just because your DAC can doesn't mean you should
-    #[strum(message = "768000", to_string = "768kHz")]
+    #[strum(serialize = "768000", to_string = "768kHz")]
     P7680,
     // Do these even exist
-    #[strum(message = "1411200", to_string = "1.4112MHz")]
+    #[strum(serialize = "1411200", to_string = "1.4112MHz")]
     P14112,
-    #[strum(message = "1536000", to_string = "1.536MHz")]
+    #[strum(serialize = "1536000", to_string = "1.536MHz")]
     P15360,
 }
 
@@ -82,17 +82,17 @@ pub enum PcmSampleRate {
 )]
 pub enum PcmBitDepth {
     #[default]
-    #[strum(to_string = "*", message = "*")]
+    #[strum(to_string = "*", serialize = "*")]
     Any,
-    #[strum(message = "8", to_string = "8bit")]
+    #[strum(serialize = "8", to_string = "8bit")]
     I8,
-    #[strum(message = "16", to_string = "16bit")]
+    #[strum(serialize = "16", to_string = "16bit")]
     I16,
-    #[strum(message = "24", to_string = "24bit")]
+    #[strum(serialize = "24", to_string = "24bit")]
     I24,
-    #[strum(message = "32", to_string = "32bit")]
+    #[strum(serialize = "32", to_string = "32bit")]
     I32,
-    #[strum(message = "f", to_string = "32bit (float)")]
+    #[strum(serialize = "f", to_string = "32bit (float)")]
     F32,
 }
 
@@ -111,23 +111,23 @@ pub enum PcmBitDepth {
 )]
 pub enum DsdMultiplier {
     #[default]
-    #[strum(to_string = "*", message = "*")]
+    #[strum(to_string = "*", serialize = "*")]
     Any,
     // None of these are sane, but you do you
-    #[strum(message = "64", to_string = "64 (2.8MHz)")]
+    #[strum(serialize = "64", to_string = "64 (2.8MHz)")]
     D64,
-    #[strum(message = "128", to_string = "128 (5.6MHz)")]
+    #[strum(serialize = "128", to_string = "128 (5.6MHz)")]
     D128,
-    #[strum(message = "256", to_string = "256 (11.2MHz)")]
+    #[strum(serialize = "256", to_string = "256 (11.2MHz)")]
     D256,
-    #[strum(message = "512", to_string = "512 (22.6MHz)")]
+    #[strum(serialize = "512", to_string = "512 (22.6MHz)")]
     D512,
     // Outside of a few British snakeoil DACs with DSD upsampling (and horrible SINAD) I haven't seen DSD1024+ in the wild.
-    #[strum(message = "1024", to_string = "1024 (45.2MHz)")]
+    #[strum(serialize = "1024", to_string = "1024 (45.2MHz)")]
     D1024,
-    #[strum(message = "1536", to_string = "1536 (67.7MHz)")]
+    #[strum(serialize = "1536", to_string = "1536 (67.7MHz)")]
     D1535,
-    #[strum(message = "2048", to_string = "2048 (90.3MHz)")]
+    #[strum(serialize = "2048", to_string = "2048 (90.3MHz)")]
     D2048,
 }
 
@@ -225,12 +225,12 @@ impl TryFrom<&str> for AudioFormatConfig {
                 let rate = rate
                     .try_into()
                     .map_err(|_| format!("Invalid PCM sample rate: {}", rate))?;
-                let bits = bits
-                    .try_into()
-                    .map_err(|_| format!(
-                            "Invalid PCM bit depth: {} (must be 8, 16, 24, 32 or f)",
-                            bits
-                    ))?;
+                let bits = bits.try_into().map_err(|_| {
+                    format!(
+                        "Invalid PCM bit depth: {} (must be 8, 16, 24, 32 or f)",
+                        bits
+                    )
+                })?;
                 let channels = if channels == "*" {
                     None
                 } else {
@@ -258,69 +258,86 @@ impl Display for AudioFormatConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Dsd(mul, ch) => {
-                write!(f, "dsd{}:{}", mul, ch.map(|ch| ch.to_string()).unwrap_or(String::from("*")))
+                write!(
+                    f,
+                    "dsd{}:{}",
+                    mul,
+                    ch.map(|ch| ch.to_string()).unwrap_or(String::from("*"))
+                )
             }
             Self::Pcm(rate, bits, ch) => {
-                write!(f, "{}:{}:{}", rate, bits, ch.map(|ch| ch.to_string()).unwrap_or(String::from("*")))
+                write!(
+                    f,
+                    "{}:{}:{}",
+                    rate,
+                    bits,
+                    ch.map(|ch| ch.to_string()).unwrap_or(String::from("*"))
+                )
             }
         }
     }
 }
 
-// We use the to_string one for writing into the config and the message one for displaying in UI.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Default, Display, EnumString, EnumIter, EnumMessage, FromRepr, VariantNames
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Default,
+    Display,
+    EnumString,
+    EnumIter,
+    EnumMessage,
+    FromRepr,
+    VariantNames,
 )]
 #[non_exhaustive]
 pub enum OutputType {
-    #[strum(message = "httpd", to_string = "HTTPD")]
+    #[strum(serialize = "httpd", to_string = "HTTPD")]
     Httpd,
-    #[strum(message = "alsa", to_string = "ALSA")]
+    #[strum(serialize = "alsa", to_string = "ALSA")]
     Alsa,
-    #[strum(message = "pulse", to_string = "PulseAudio")]
+    #[strum(serialize = "pulse", to_string = "PulseAudio")]
     Pulse,
-    #[strum(message = "oss", to_string = "OSS")]
+    #[strum(serialize = "oss", to_string = "OSS")]
     Oss,
-    #[strum(message = "pipewire", to_string = "PipeWire")]
+    #[strum(serialize = "pipewire", to_string = "PipeWire")]
     #[default]
     PipeWire,
 }
 
-/// No default value, as what's available depends on the output.
 /// ALSA, OSS and Pulse supports hardware mixer and MPD uses that as default.
 /// Other outputs use None as default.
 /// To leave this to default, simply do not specify in the config file (leave option as None).
-#[derive(Debug, Clone, Copy, PartialEq, Display, EnumString)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Display, EnumString, VariantNames, Default, EnumMessage, FromRepr
+)]
 #[non_exhaustive]
 pub enum MixerType {
-    #[strum(message = "hardware")]
+    #[strum(serialize = "", to_string = "Plugin default")]
+    #[default]
+    Default,
+    #[strum(serialize = "hardware", to_string = "Hardware")]
     Hardware,
-    #[strum(message = "software")]
+    #[strum(serialize = "software", to_string = "Software")]
     Software,
-    #[strum(message = "null")]
+    #[strum(serialize = "null", to_string = "Null (bypass)")]
     Null,
-    #[strum(message = "none")]
+    #[strum(serialize = "none", to_string = "None (disable)")]
     None,
 }
 
-impl MixerType {
-    pub fn default_for(output_type: OutputType) -> Self {
-        match output_type {
-            OutputType::Alsa | OutputType::Pulse | OutputType::Oss => MixerType::Hardware,
-            _ => MixerType::None,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Default, Display, EnumString)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Default, Display, EnumString, VariantNames, EnumMessage, FromRepr
+)]
 #[non_exhaustive]
 pub enum ReplayGainHandler {
     #[default]
-    #[strum(message = "software")]
+    #[strum(serialize = "software", to_string = "Software (pre-mixer)")]
     Software,
-    #[strum(message = "mixer")]
+    #[strum(serialize = "mixer", to_string = "Use mixer")]
     Mixer,
-    #[strum(message = "none")]
+    #[strum(serialize = "none", to_string = "None")]
     None,
 }
 
@@ -372,7 +389,7 @@ pub struct OutputConfig {
     /// Can be used with the null output (see docs, too lazy to write everything here.)
     pub always_off: bool,
     /// Mixer to use: `"hardware"`, `"software"`, `"null"`, or `"none"`.
-    pub mixer_type: Option<MixerType>,
+    pub mixer_type: MixerType,
     /// ReplayGain handler
     pub replaygain_handler: ReplayGainHandler,
     /// Output-specific configuration items.
@@ -382,7 +399,11 @@ pub struct OutputConfig {
 impl Display for OutputConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "audio_output {{")?;
-        writeln!(f, "    type \"{}\"", self.output_type)?;
+        writeln!(
+            f,
+            "    type \"{}\"",
+            self.output_type.get_serializations()[0]
+        )?;
         writeln!(f, "    name \"{}\"", self.name)?;
         if let Some(ref fmt) = self.format {
             writeln!(f, "    format \"{}\"", fmt)?;
@@ -405,10 +426,18 @@ impl Display for OutputConfig {
         if self.tags {
             writeln!(f, "    tags \"yes\"")?;
         }
-        if let Some(ref mixer) = self.mixer_type {
-            writeln!(f, "    mixer_type \"{}\"", mixer)?;
+        if !matches!(self.mixer_type, MixerType::Default) {
+            writeln!(
+                f,
+                "    mixer_type \"{}\"",
+                self.mixer_type.get_serializations()[0]
+            )?;
         }
-        writeln!(f, "    replay_gain_handler \"{}\"", self.replaygain_handler)?;
+        writeln!(
+            f,
+            "    replay_gain_handler \"{}\"",
+            self.replaygain_handler.get_serializations()[0]
+        )?;
         for (k, v) in &self.additional_config {
             writeln!(f, "    {} \"{}\"", k, v)?;
         }
@@ -435,10 +464,8 @@ impl TryFrom<&[&str]> for OutputConfig {
                     "always_off" => output.always_off = val == "yes" || val == "true" || val == "1",
                     "tags" => output.tags = val == "yes" || val == "true" || val == "1",
                     "mixer_type" => {
-                        output.mixer_type = Some(
-                            MixerType::try_from(val)
-                                .map_err(|_| format!("Unknown mixer_type: {}", val))?,
-                        )
+                        output.mixer_type = MixerType::try_from(val)
+                            .map_err(|_| format!("Unknown mixer_type: {}", val))?;
                     }
                     "replay_gain_handler" => {
                         output.replaygain_handler = ReplayGainHandler::try_from(val)
