@@ -5,20 +5,6 @@ use gtk::glib::{
 };
 use std::{cell::Cell, sync::OnceLock};
 
-#[derive(Default, Debug, Copy, Clone, PartialEq, Eq, glib::Enum)]
-#[enum_type(name = "EuphonicaConnectionState")]
-pub enum ConnectionState {
-    #[default]
-    NotConnected,
-    ConnectionRefused,
-    SocketNotFound,
-    Connecting,
-    Unauthenticated, // No password, or provided password is incorrect or insufficiently privileged
-    CredentialStoreError, // Internal error
-    WrongPassword,   // The provided password does not match any of the configured passwords
-    Connected,
-}
-
 #[derive(Default, Debug, Copy, Clone, PartialEq, Eq, glib::Enum, PartialOrd, Ord)]
 #[enum_type(name = "EuphonicaStickersSupportLevel")]
 pub enum StickersSupportLevel {
@@ -29,7 +15,9 @@ pub enum StickersSupportLevel {
 }
 
 mod imp {
-    use super::*;
+    use crate::common::ConnectionState;
+
+use super::*;
 
     #[derive(Debug, Default, Properties)]
     #[properties(wrapper_type = super::ClientState)]

@@ -16,7 +16,7 @@ use std::{
 
 use super::{DynamicPlaylistContentView, Library};
 use crate::{
-    cache::{Cache, sqlite}, client::{ClientState, ConnectionState, Result as ClientResult}, common::{ContentStack, DynamicPlaylist, INode}, library::{DynamicPlaylistEditorView, playlist_row::PlaylistRow}, utils::{self, SearchableView, g_cmp_str_options, settings_manager}, window::EuphonicaWindow,
+    cache::{Cache, sqlite}, client::{ClientState, Result as ClientResult}, common::{ConnectionState, ContentStack, DynamicPlaylist, INode}, library::{DynamicPlaylistEditorView, playlist_row::PlaylistRow}, utils::{self, SearchableView, g_cmp_str_options, settings_manager}, window::EuphonicaWindow,
 };
 
 // DynamicPlaylist view implementation

@@ -54,6 +54,7 @@
     <file preprocess="xml-stripblanks">gtk/preferences/client.ui</file>
     <file preprocess="xml-stripblanks">gtk/preferences/integrations.ui</file>
     <file preprocess="xml-stripblanks">gtk/preferences/provider-row.ui</file>
+    <file preprocess="xml-stripblanks">gtk/preferences/output-row.ui</file>
     <file preprocess="xml-stripblanks">gtk/preferences/library.ui</file>
     <file preprocess="xml-stripblanks">gtk/preferences/ui.ui</file>
     <file>gtk/style.css</file>

@@ -6,8 +6,77 @@
     <property name="title" translatable="true">Client</property>
     <property name="icon-name">server-pick-symbolic</property>
     <child>
-      <object class="AdwPreferencesGroup">
-        <property name="title" translatable="true">Music Player Daemon</property>
+      <object class="AdwPreferencesGroup" id="standalone_mode_group">
+        <property name="title" translatable="true">Standalone Player</property>
+        <child>
+          <object class="AdwExpanderRow" id="mpd_use_own_server">
+            <property name="title" translatable="true">Standalone Player Mode</property>
+            <property name="subtitle" translatable="true">Use Euphonica as a normal music player by letting it run its own MPD server locally. Disable to connect Euphonica to another MPD server.</property>
+            <property name="show-enable-switch">true</property>
+
+            <child>
+              <object class="AdwActionRow" id="mpd_library_path">
+                <property name="title" translatable="true">Path to music library</property>
+                <property name="subtitle">(unspecified)</property>
+                <child type="suffix">
+                  <object class="GtkButton" id="mpd_library_browse">
+                    <property name="valign">center</property>
+                    <property name="label" translatable="true">Browse...</property>
+                  </object>
+                </child>
+              </object>
+            </child>
+
+            <child>
+              <object class="AdwActionRow" id="config_outputs_row">
+                <property name="title" translatable="true">Configure audio outputs</property>
+                <property name="activatable">true</property>
+                <child type="suffix">
+                  <object class="GtkImage">
+                    <property name="icon-name">right-symbolic</property>
+                    <style>
+                      <class name="dim-label"/>
+                    </style>
+                  </object>
+                </child>
+              </object>
+            </child>
+
+            <child>
+              <object class="AdwActionRow" id="standalone_status">
+                <style>
+                  <class name="property"/>
+                </style>
+                <child type="prefix">
+                  <object class="GtkImage" id="standalone_status_icon">
+                    <style>
+                      <class name="error"/>
+                    </style>
+                    <property name="icon-name">disabled-feature-symbolic</property>
+                  </object>
+                </child>
+                <property name="title" translatable="true">Status</property>
+                <property name="subtitle">Failing</property>
+              </object>
+            </child>
+
+            <child>
+              <object class="AdwButtonRow" id="apply_standalone_config">
+                <style>
+                  <class name="suggested-action"/>
+                </style>
+                <property name="title" translatable="true">Apply</property>
+              </object>
+            </child>
+          </object>
+        </child>
+      </object>
+    </child>
+
+    <child>
+      <object class="AdwPreferencesGroup" id="external_mpd_group">
+        <property name="visible" bind-source="mpd_use_own_server" bind-property="enable-expansion" bind-flags="sync-create|invert-boolean"/>
+        <property name="title" translatable="true">External MPD Configuration</property>
         <property name="description" translatable="true">Change how Euphonica connects to your Music Player Daemon instance. Click Reconnect to save these settings and initiate a new connection.</property>
         <child>
           <object class="AdwSwitchRow" id="mpd_use_unix_socket">
@@ -16,17 +85,20 @@
         </child>
         <child>
           <object class="AdwEntryRow" id="mpd_unix_socket">
+            <property name="visible" bind-source="mpd_use_unix_socket" bind-property="active" bind-flags="sync-create"/>
             <property name="title" translatable="true">Local socket</property>
             <property name="visible">false</property>
           </object>
         </child>
         <child>
           <object class="AdwEntryRow" id="mpd_host">
+            <property name="visible" bind-source="mpd_use_unix_socket" bind-property="active" bind-flags="sync-create|invert-boolean"/>
             <property name="title" translatable="true">Host address</property>
           </object>
         </child>
         <child>
           <object class="AdwEntryRow" id="mpd_port">
+            <property name="visible" bind-source="mpd_use_unix_socket" bind-property="active" bind-flags="sync-create|invert-boolean"/>
             <property name="title" translatable="true">Port</property>
           </object>
         </child>
@@ -218,5 +290,35 @@
         </child>
       </object>
     </child>
+
+    <object class="AdwNavigationPage" id="outputs_subpage">
+      <property name="title" translatable="true">Configure outputs</property>
+      <child>
+        <object class="AdwToolbarView">
+          <child type="top">
+            <object class="AdwHeaderBar"/>
+          </child>
+          <property name="content">
+            <object class="GtkScrolledWindow" id="outputs_window">
+              <property name="height-request">50</property>
+              <property name="hscrollbar-policy">never</property>
+              <property name="vscrollbar-policy">automatic</property>
+              <property name="propagate-natural-height">true</property>
+              <property name="has-frame">false</property>
+
+              <child>
+                <object class="GtkListBox" id="outputs_box">
+                  <property name="selection-mode">none</property>
+                  <style>
+                    <class name="no-bg"/>
+                    <class name="padding-6"/>
+                  </style>
+                </object>
+              </child>
+            </object>
+          </property>
+        </object>
+      </child>
+    </object>
   </template>
 </interface>
