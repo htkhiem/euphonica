@@ -104,11 +104,13 @@ impl ManagedMpdServer {
         }
     }
 
-    /// No-op if not already running.
+    /// No-op if not already running. WARNING: IS BLOCKING.
     pub fn stop(&self) -> Result<()> {
         if let Some((subprocess, cancellable)) = self.imp().handle.take() {
             cancellable.cancel(); // intentionally shutting subprocess down so silence this first.
-            subprocess.force_exit();
+            subprocess.send_signal(15); // According to MPD docs, send SIGTERM to shut
+            // down gracefully; in my testing only this would properly write to the state file
+            // regarding output state.
             subprocess
                 .wait(Cancellable::NONE)
                 .map_err(|_| Error::Subprocess)?;
