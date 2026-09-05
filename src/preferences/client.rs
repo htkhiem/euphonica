@@ -17,7 +17,7 @@ use crate::{
         ClientState,
         password::{get_mpd_password_async, set_mpd_password},
         state::StickersSupportLevel,
-    }, common::ConnectionState, player::{FftStatus, Player}, server::config::MpdConfig, utils::{self, get_config_basepath, get_standalone_config_path, settings_manager}
+    }, common::ConnectionState, player::{FftStatus, Player}, server::config::MpdConfig, utils::{self, get_standalone_config_path, settings_manager}
 };
 
 // Allows us to implicitly grant read access to files outside of the sandbox.

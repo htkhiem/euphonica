@@ -1,8 +1,7 @@
 use crate::{
-    client::{Error as ClientError, StreamWrapper},
     common::ConnectionState,
-    server::config::{MpdConfig, OutputConfig},
-    utils::{get_config_basepath, get_standalone_config_path},
+    server::config::MpdConfig,
+    utils::get_standalone_config_path,
 };
 use gio::{Subprocess, SubprocessFlags};
 use glib::subclass::prelude::*;
@@ -16,10 +15,8 @@ use std::{
     cell::RefCell,
     ffi::OsStr,
     fs::File,
-    io::{Read, Write},
+    io::Read,
     os::unix::net::UnixStream,
-    process::{Child, Command, Stdio},
-    rc::Rc,
     result,
     time::Duration,
 };
@@ -39,12 +36,9 @@ static POLL_INTERVAL_MS: u64 = 200;
 
 /// Wrapper for managing our own server instance.
 mod imp {
-    use std::{cell::Cell, sync::OnceLock};
+    use std::cell::Cell;
 
-    use gtk::{
-        gio::Cancellable,
-        glib::{ParamSpec, ParamSpecEnum, Properties, subclass::Signal},
-    };
+    use gtk::glib::Properties;
 
     use super::*;
 
@@ -148,7 +142,7 @@ impl ManagedMpdServer {
         // Block until ready by using a really simple ping thread.
         let path = cfg.bind_to_address.unwrap();
         let mut success = false;
-        for i in 0..MAX_STARTUP_POLLS {
+        for _i in 0..MAX_STARTUP_POLLS {
             match self.self_test(&path) {
                 Ok(()) => {
                     success = true;

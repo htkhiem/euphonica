@@ -24,7 +24,7 @@ use crate::{
         AlbumInfo, DynamicPlaylist, SongInfo, Stickers,
         dynamic_playlist::{Ordering, QueryLhs, Rule, StickerObjectType, StickerOperation},
         inode::INodeInfo,
-    }, player::PlaybackFlow, server::{ManagedMpdError, config::MpdConfig}, utils::{self, get_config_basepath, get_standalone_config_path}
+    }, player::PlaybackFlow, server::{ManagedMpdError, config::MpdConfig}, utils::{self, get_standalone_config_path}
 };
 
 use super::StickerSetMode;

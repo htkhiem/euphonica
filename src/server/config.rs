@@ -9,7 +9,7 @@ use std::fmt::Write;
 use strum_macros::{Display, EnumString};
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
-use crate::{config::VERSION, utils::{get_app_cache_path, get_config_basepath, get_standalone_playlists_path}};
+use crate::{config::VERSION, utils::{get_app_cache_path, get_standalone_playlists_path}};
 
 #[derive(Debug, Clone, Copy, PartialEq, Default, Display, EnumString)]
 #[non_exhaustive]
@@ -211,6 +211,7 @@ impl MpdConfig {
         db_file.push("mpd.db");
         let mut default_out = OutputConfig::default();
         default_out.name = String::from("PipeWire");
+        default_out.enabled = true;
 
         MpdConfig {
             // No default music directory; in Flatpak the user needs to explicitly select a path for us else we won't

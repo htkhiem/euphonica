@@ -176,15 +176,6 @@ mod imp {
                     if !self.start_minimized.get() {
                         self.obj().raise_window();
                         self.continue_startup();
-                        // If this is the main instance, respect the minimized flag
-                        let player = &self.player;
-                        glib::spawn_future_local(clone!(
-                            #[weak]
-                            player,
-                            async move {
-                                player.set_is_foreground(true).await;
-                            }
-                        ));
                     } else {
                         let _ = self.hold_guard.replace(Some(self.obj().hold()));
                         self.continue_startup();
@@ -277,19 +268,6 @@ mod imp {
 
             let app = self.obj();
 
-            // v0.99.8: handle our own MPD subprocess in standalone.
-            if settings_manager()
-                .child("client")
-                .boolean("mpd-use-own-server")
-            {
-                if let Err(e) = self.server.start() {
-                    eprintln!(
-                        "ERROR: Standalone Mode enabled but unable to start local server: {:?}",
-                        &e
-                    );
-                    self.handle_managed_server_error(e);
-                }
-            }
             glib::spawn_future_local(clone!(
                 #[weak]
                 app,
@@ -336,10 +314,6 @@ impl EuphonicaApplication {
             let state = settings_manager().child("state");
             let _ = state.set_boolean("onboarded", true);
             self.imp().continue_startup();
-            let player = self.imp().player.clone();
-            glib::spawn_future_local(async move {
-                player.set_is_foreground(true).await;
-            });
             // Explicitly create window to force the app to bind to it instead of the will-be-destroyed onboarding one
             let _ = EuphonicaWindow::new(self);
             self.raise_window();
@@ -724,10 +698,6 @@ impl EuphonicaApplication {
             self.set_accels_for_action("dyn-playlist-editor.refresh", &["<Ctrl>r"]);
             window.upcast()
         };
-        let player = self.imp().player.clone();
-        glib::spawn_future_local(async move {
-            player.set_is_foreground(true).await;
-        });
         let player = self.imp().player.clone();
         glib::spawn_future_local(async move {
             player.set_is_foreground(true).await;
