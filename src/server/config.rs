@@ -1,3 +1,4 @@
+use regex::Regex;
 /// Config file generator, for use with the managed MPD instance.
 /// Since it's only meant for the above case, there is no need to allow configuring things like state file,
 /// sticker DB or bind_to_address. These things are always on & fully abstracted away to minimise fuss.
@@ -5,22 +6,282 @@
 /// When that happens the above will need to be implemented properly.
 ///
 /// The format is kinda simple but nonstandard so it's not worth trying to shoehorn Serde here.
-use std::fmt::Write;
-use strum_macros::{Display, EnumString};
+use std::fmt::{Display, Write};
+use strum::VariantNames;
+use strum_macros::{Display, EnumIter, EnumMessage, EnumString, FromRepr, VariantNames};
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
-use crate::{config::VERSION, utils::{get_app_cache_path, get_standalone_playlists_path}};
+use crate::{
+    config::VERSION,
+    utils::{get_app_cache_path, get_standalone_playlists_path},
+};
 
-#[derive(Debug, Clone, Copy, PartialEq, Default, Display, EnumString)]
+// We use the to_string one for UI display and the message one for writing into config.
+// This allows us to use VariantNames to programmatically populate the gtk::StringLists,
+// and use EnumString to deserialize config values
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Default,
+    Display,
+    EnumString,
+    EnumIter,
+    EnumMessage,
+    FromRepr,
+    VariantNames,
+)]
+pub enum PcmSampleRate {
+    #[default]
+    #[strum(to_string = "*", message = "*")]
+    Any,
+    // You're sane, thank you
+    #[strum(message = "44100", to_string = "44.1kHz")]
+    P441,
+    // Most systems use this to balance both audio and video
+    #[strum(message = "48000", to_string = "48kHz")]
+    P480,
+    #[strum(message = "88200", to_string = "88.2kHz")]
+    P882,
+    #[strum(message = "96000", to_string = "96kHz")]
+    P960,
+    #[strum(message = "176400", to_string = "176.4kHz")]
+    P1764,
+    // You overpaid for your digital copies
+    #[strum(message = "192000", to_string = "192kHz")]
+    P1920,
+    #[strum(message = "352800", to_string = "352.8kHz")]
+    P3528,
+    #[strum(message = "384000", to_string = "384kHz")]
+    P3840,
+    #[strum(message = "705600", to_string = "705.6kHz")]
+    P7056,
+    // Just because your DAC can doesn't mean you should
+    #[strum(message = "768000", to_string = "768kHz")]
+    P7680,
+    // Do these even exist
+    #[strum(message = "1411200", to_string = "1.4112MHz")]
+    P14112,
+    #[strum(message = "1536000", to_string = "1.536MHz")]
+    P15360,
+}
+
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Default,
+    Display,
+    EnumString,
+    EnumIter,
+    EnumMessage,
+    FromRepr,
+    VariantNames,
+)]
+pub enum PcmBitDepth {
+    #[default]
+    #[strum(to_string = "*", message = "*")]
+    Any,
+    #[strum(message = "8", to_string = "8bit")]
+    I8,
+    #[strum(message = "16", to_string = "16bit")]
+    I16,
+    #[strum(message = "24", to_string = "24bit")]
+    I24,
+    #[strum(message = "32", to_string = "32bit")]
+    I32,
+    #[strum(message = "f", to_string = "32bit (float)")]
+    F32,
+}
+
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Default,
+    Display,
+    EnumString,
+    EnumIter,
+    EnumMessage,
+    FromRepr,
+    VariantNames,
+)]
+pub enum DsdMultiplier {
+    #[default]
+    #[strum(to_string = "*", message = "*")]
+    Any,
+    // None of these are sane, but you do you
+    #[strum(message = "64", to_string = "64 (2.8MHz)")]
+    D64,
+    #[strum(message = "128", to_string = "128 (5.6MHz)")]
+    D128,
+    #[strum(message = "256", to_string = "256 (11.2MHz)")]
+    D256,
+    #[strum(message = "512", to_string = "512 (22.6MHz)")]
+    D512,
+    // Outside of a few British snakeoil DACs with DSD upsampling (and horrible SINAD) I haven't seen DSD1024+ in the wild.
+    #[strum(message = "1024", to_string = "1024 (45.2MHz)")]
+    D1024,
+    #[strum(message = "1536", to_string = "1536 (67.7MHz)")]
+    D1535,
+    #[strum(message = "2048", to_string = "2048 (90.3MHz)")]
+    D2048,
+}
+
+/// rust-mpd already has a format parser, but we'll redefine our own format config and parsing to be
+/// friendlier to the UI controls, to allow for wildcards, and to have our own error reporting.
+/// TODO: move into our rust-mpd fork.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum AudioFormatConfig {
+    /// Good ol' Pulse Code Modulation
+    Pcm(
+        /// Sample rate
+        PcmSampleRate,
+        /// Bit depth and is-float
+        PcmBitDepth,
+        /// Number of channels
+        Option<u8>,
+    ),
+    /// "but but it pushes noise into the ultrasonic range so it sounds better1!11!!!1" Direct Stream Digital
+    Dsd(
+        /// Red Book sample multiplier (64, 128, 256, etc)
+        DsdMultiplier,
+        /// Number of channels
+        Option<u8>,
+    ),
+}
+
+impl AudioFormatConfig {
+    pub const DEFAULT: Self = Self::Pcm(PcmSampleRate::P441, PcmBitDepth::I16, None);
+    pub fn is_dsd(&self) -> bool {
+        match self {
+            Self::Pcm(_, _, _) => false,
+            Self::Dsd(_, _) => true,
+        }
+    }
+}
+
+impl Default for AudioFormatConfig {
+    fn default() -> Self {
+        Self::DEFAULT
+    }
+}
+
+impl TryFrom<&str> for AudioFormatConfig {
+    type Error = String;
+    /// Attempt to parse an MPD format string. For DSD this only supports preset-type strings.
+    /// Who in their right mind would even attempt to use custom DSD multipliers?
+    /// https://mpd.readthedocs.io/en/stable/user.html#global-audio-format
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        // First, see if it starts with DSD.
+        // Note: too lazy to add Perl classes so the regex patterns may look weird.
+        if value.starts_with("dsd") {
+            // Is DSD
+            let re = Regex::new(r"^dsd([[:digit:]]+):([0-9*]+)$").unwrap();
+            if let Some(caps) = re.captures(value) {
+                // Won't hit this without having found every group so we won't panic here.
+                let (_, [mul, channels]) = caps.extract();
+                let mul: DsdMultiplier = mul.try_into().map_err(|_| {
+                    format!(
+                        "DSD multiplier {} not in {:?}",
+                        mul,
+                        DsdMultiplier::VARIANTS
+                    )
+                })?;
+                let channels = if channels == "*" {
+                    None
+                } else {
+                    Some(
+                        channels
+                            .parse::<u8>()
+                            .map_err(|_| format!("Invalid channel count: {}", mul))?,
+                    )
+                };
+                if channels.is_some_and(|channels| channels < 1 || channels > 128) {
+                    return Err(format!(
+                        "Channel count must be between 1 and 128 (got {})",
+                        channels.unwrap()
+                    ));
+                }
+                return Ok(Self::Dsd(mul, channels));
+            } else {
+                return Err(format!("Invalid DSD preset spec: {}", value));
+            }
+        } else if value.contains("dsd") {
+            // Custom DSD strings are unsupported.
+            return Err(format!(
+                "Custom DSD format strings are unsupported: {}",
+                value
+            ));
+        } else {
+            // Is PCM
+            let re = Regex::new(r"^([0-9*]+):([0-9*f]+):([0-9*]+)$").unwrap();
+            if let Some(caps) = re.captures(value) {
+                let (_, [rate, bits, channels]) = caps.extract();
+
+                let rate = rate
+                    .try_into()
+                    .map_err(|_| format!("Invalid PCM sample rate: {}", rate))?;
+                let bits = bits
+                    .try_into()
+                    .map_err(|_| format!(
+                            "Invalid PCM bit depth: {} (must be 8, 16, 24, 32 or f)",
+                            bits
+                    ))?;
+                let channels = if channels == "*" {
+                    None
+                } else {
+                    Some(
+                        channels
+                            .parse::<u8>()
+                            .map_err(|_| format!("Invalid channel count: {}", channels))?,
+                    )
+                };
+                if channels.is_some_and(|channels| channels < 1 || channels > 128) {
+                    return Err(format!(
+                        "Channel count must be between 1 and 128 (got {})",
+                        channels.unwrap()
+                    ));
+                }
+                return Ok(Self::Pcm(rate, bits, channels));
+            } else {
+                return Err(format!("Invalid PCM preset spec: {}", value));
+            }
+        }
+    }
+}
+
+impl Display for AudioFormatConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Dsd(mul, ch) => {
+                write!(f, "dsd{}:{}", mul, ch.map(|ch| ch.to_string()).unwrap_or(String::from("*")))
+            }
+            Self::Pcm(rate, bits, ch) => {
+                write!(f, "{}:{}:{}", rate, bits, ch.map(|ch| ch.to_string()).unwrap_or(String::from("*")))
+            }
+        }
+    }
+}
+
+// We use the to_string one for writing into the config and the message one for displaying in UI.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Default, Display, EnumString, EnumIter, EnumMessage, FromRepr, VariantNames
+)]
 #[non_exhaustive]
 pub enum OutputType {
-    #[strum(to_string = "httpd")]
+    #[strum(message = "httpd", to_string = "HTTPD")]
     Httpd,
-    #[strum(to_string = "alsa")]
+    #[strum(message = "alsa", to_string = "ALSA")]
     Alsa,
-    #[strum(to_string = "pulse")]
+    #[strum(message = "pulse", to_string = "PulseAudio")]
     Pulse,
-    #[strum(to_string = "pipewire")]
+    #[strum(message = "oss", to_string = "OSS")]
+    Oss,
+    #[strum(message = "pipewire", to_string = "PipeWire")]
     #[default]
     PipeWire,
 }
@@ -32,25 +293,34 @@ pub enum OutputType {
 #[derive(Debug, Clone, Copy, PartialEq, Display, EnumString)]
 #[non_exhaustive]
 pub enum MixerType {
-    #[strum(to_string = "hardware")]
+    #[strum(message = "hardware")]
     Hardware,
-    #[strum(to_string = "software")]
+    #[strum(message = "software")]
     Software,
-    #[strum(to_string = "null")]
+    #[strum(message = "null")]
     Null,
-    #[strum(to_string = "none")]
+    #[strum(message = "none")]
     None,
+}
+
+impl MixerType {
+    pub fn default_for(output_type: OutputType) -> Self {
+        match output_type {
+            OutputType::Alsa | OutputType::Pulse | OutputType::Oss => MixerType::Hardware,
+            _ => MixerType::None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Default, Display, EnumString)]
 #[non_exhaustive]
 pub enum ReplayGainHandler {
     #[default]
-    #[strum(to_string = "software")]
+    #[strum(message = "software")]
     Software,
-    #[strum(to_string = "mixer")]
+    #[strum(message = "mixer")]
     Mixer,
-    #[strum(to_string = "none")]
+    #[strum(message = "none")]
     None,
 }
 
@@ -86,16 +356,21 @@ fn parse_key_value<'a>(line: &'a str) -> Option<(&'a str, &'a str)> {
 /// Other key-val pairs are stored verbatim in `OutputConfig::additional_config`.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct OutputConfig {
-    /// Plugin name, e.g. `"httpd"`, `"alsa"`, `"pulse"`, `"pipewire"`.
+    /// MPD output plugin name.
     pub output_type: OutputType,
     /// Unique name of the output, as visible to the client.
     pub name: String,
     /// Fixed sample rate:bits:channels, e.g. `"44100:16:2"`.
-    pub format: Option<String>,
+    pub format: Option<AudioFormatConfig>,
     /// Whether the output is enabled when MPD starts.
     pub enabled: bool,
     /// Whether metadata tags are sent to this output.
     pub tags: bool,
+    /// Try to keep output device "open" by parking them in a "closed" state. Not all output types support this capability.
+    pub always_on: bool,
+    /// Never use this output for playback even if enabled.
+    /// Can be used with the null output (see docs, too lazy to write everything here.)
+    pub always_off: bool,
     /// Mixer to use: `"hardware"`, `"software"`, `"null"`, or `"none"`.
     pub mixer_type: Option<MixerType>,
     /// ReplayGain handler
@@ -104,36 +379,40 @@ pub struct OutputConfig {
     pub additional_config: Vec<(String, String)>,
 }
 
-impl OutputConfig {
-    pub fn write_buf(&self, out: &mut String) {
-        writeln!(out, "audio_output {{").unwrap();
-        writeln!(out, "    type \"{}\"", self.output_type).unwrap();
-        writeln!(out, "    name \"{}\"", self.name).unwrap();
+impl Display for OutputConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "audio_output {{")?;
+        writeln!(f, "    type \"{}\"", self.output_type)?;
+        writeln!(f, "    name \"{}\"", self.name)?;
         if let Some(ref fmt) = self.format {
-            writeln!(out, "    format \"{}\"", fmt).unwrap();
+            writeln!(f, "    format \"{}\"", fmt)?;
         }
         writeln!(
-            out,
+            f,
             "    enabled \"{}\"",
             if self.enabled { "yes" } else { "no" }
-        )
-        .unwrap();
+        )?;
+        writeln!(
+            f,
+            "    always_on \"{}\"",
+            if self.always_on { "yes" } else { "no" }
+        )?;
+        writeln!(
+            f,
+            "    always_off \"{}\"",
+            if self.always_off { "yes" } else { "no" }
+        )?;
         if self.tags {
-            writeln!(out, "    tags \"yes\"").unwrap();
+            writeln!(f, "    tags \"yes\"")?;
         }
         if let Some(ref mixer) = self.mixer_type {
-            writeln!(out, "    mixer_type \"{}\"", mixer).unwrap();
+            writeln!(f, "    mixer_type \"{}\"", mixer)?;
         }
-        writeln!(
-            out,
-            "    replay_gain_handler \"{}\"",
-            self.replaygain_handler
-        )
-        .unwrap();
+        writeln!(f, "    replay_gain_handler \"{}\"", self.replaygain_handler)?;
         for (k, v) in &self.additional_config {
-            writeln!(out, "    {} \"{}\"", k, v).unwrap();
+            writeln!(f, "    {} \"{}\"", k, v)?;
         }
-        writeln!(out, "}}").unwrap();
+        writeln!(f, "}}")
     }
 }
 
@@ -150,8 +429,10 @@ impl TryFrom<&[&str]> for OutputConfig {
                             .map_err(|_| format!("Unknown audio_output type: {}", val))?;
                     }
                     "name" => output.name = val.to_owned(),
-                    "format" => output.format = Some(val.to_owned()),
+                    "format" => output.format = Some(AudioFormatConfig::try_from(val)?),
                     "enabled" => output.enabled = val == "yes" || val == "true" || val == "1",
+                    "always_on" => output.always_on = val == "yes" || val == "true" || val == "1",
+                    "always_off" => output.always_off = val == "yes" || val == "true" || val == "1",
                     "tags" => output.tags = val == "yes" || val == "true" || val == "1",
                     "mixer_type" => {
                         output.mixer_type = Some(
@@ -216,14 +497,39 @@ impl MpdConfig {
         MpdConfig {
             // No default music directory; in Flatpak the user needs to explicitly select a path for us else we won't
             music_directory: String::from(""),
-            bind_to_address: Some(socket_path.to_str().expect("OS does not support UTF-8 paths").to_owned()),
+            bind_to_address: Some(
+                socket_path
+                    .to_str()
+                    .expect("OS does not support UTF-8 paths")
+                    .to_owned(),
+            ),
             log_level: LogLevel::default(),
             port: Some(6600),
             audio_outputs: vec![default_out],
-            state_file: Some(state_file.to_str().expect("OS does not support UTF-8 paths").to_owned()),
-            sticker_file: Some(sticker_file.to_str().expect("OS does not support UTF-8 paths").to_owned()),
-            playlist_directory: Some(playlist_directory.to_str().expect("OS does not support UTF-8 paths").to_owned()),
-            db_file: Some(db_file.to_str().expect("OS does not support UTF-8 paths").to_owned()),
+            state_file: Some(
+                state_file
+                    .to_str()
+                    .expect("OS does not support UTF-8 paths")
+                    .to_owned(),
+            ),
+            sticker_file: Some(
+                sticker_file
+                    .to_str()
+                    .expect("OS does not support UTF-8 paths")
+                    .to_owned(),
+            ),
+            playlist_directory: Some(
+                playlist_directory
+                    .to_str()
+                    .expect("OS does not support UTF-8 paths")
+                    .to_owned(),
+            ),
+            db_file: Some(
+                db_file
+                    .to_str()
+                    .expect("OS does not support UTF-8 paths")
+                    .to_owned(),
+            ),
         }
     }
 
@@ -232,14 +538,14 @@ impl MpdConfig {
             addr.starts_with("~") || addr.starts_with("/") || addr.starts_with("@")
         })
     }
+}
 
+impl Display for MpdConfig {
     /// Note: this will assume some connection defaults, so writing down a default MpdConfig then reading it back up
     /// will not produce the same default config.
-    pub fn to_string(&self) -> String {
-        let mut out = String::new();
-
+    fn fmt(&self, out: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // Header
-        writeln!(out, "# AUTOGENERATED MPD CONFIGURATION FILE - DO NOT EDIT").unwrap();
+        writeln!(out, "# AUTOGENERATED MPD CONFIGURATION FILE - DO NOT EDIT")?;
         writeln!(
             out,
             "# Generated at {} by Euphonica {}",
@@ -248,31 +554,32 @@ impl MpdConfig {
                 .format(&Rfc3339)
                 .expect("Timestamp format error"),
             VERSION
-        )
-        .unwrap();
+        )?;
 
-        writeln!(out, "music_directory \"{}\"", self.music_directory).unwrap();
-        writeln!(out, "bind_to_address \"{}\"", self.bind_to_address.as_deref().unwrap_or("localhost")).unwrap();
-        writeln!(out, "port \"{}\"", self.port.as_ref().unwrap_or(&6600)).unwrap();
+        writeln!(out, "music_directory \"{}\"", self.music_directory)?;
+        writeln!(
+            out,
+            "bind_to_address \"{}\"",
+            self.bind_to_address.as_deref().unwrap_or("localhost")
+        )?;
+        writeln!(out, "port \"{}\"", self.port.as_ref().unwrap_or(&6600))?;
         if let Some(state_file) = self.state_file.as_deref() {
-            writeln!(out, "state_file \"{}\"", state_file).unwrap();
+            writeln!(out, "state_file \"{}\"", state_file)?;
         }
         if let Some(sticker_file) = self.sticker_file.as_deref() {
-            writeln!(out, "sticker_file \"{}\"", sticker_file).unwrap();
+            writeln!(out, "sticker_file \"{}\"", sticker_file)?;
         }
         if let Some(playlist_directory) = self.playlist_directory.as_deref() {
-            writeln!(out, "playlist_directory \"{}\"", playlist_directory).unwrap();
+            writeln!(out, "playlist_directory \"{}\"", playlist_directory)?;
         }
         if let Some(db_file) = self.db_file.as_deref() {
-            writeln!(out, "db_file \"{}\"", db_file).unwrap();
+            writeln!(out, "db_file \"{}\"", db_file)?;
         }
-
 
         for output in &self.audio_outputs {
-            output.write_buf(&mut out);
+            write!(out, "{}", output)?;
         }
-
-        out
+        Ok(())
     }
 }
 
@@ -338,9 +645,7 @@ impl TryFrom<&str> for MpdConfig {
                 match key {
                     "music_directory" => config.music_directory = val.to_owned(),
                     "bind_to_address" => config.bind_to_address = Some(val.to_owned()),
-                    "port" => {
-                        config.port = val.parse::<u32>().ok()
-                    }
+                    "port" => config.port = val.parse::<u32>().ok(),
                     "state_file" => config.state_file = Some(val.to_owned()),
                     "sticker_file" => config.sticker_file = Some(val.to_owned()),
                     "playlist_directory" => config.playlist_directory = Some(val.to_owned()),

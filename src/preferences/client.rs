@@ -505,7 +505,7 @@ impl ClientPreferences {
                 {
                     let cfg = this.imp().standalone_cfg.borrow();
                     let mut output = File::create(&config_path).expect("Unable to write to config file");
-                    write!(output, "{}", cfg.to_string()).unwrap();
+                    write!(output, "{}", cfg).unwrap();
                 }
                 // Just to be sure
                 if let Err(e) = settings_manager().child("client").set_boolean("mpd-use-own-server", true) {

@@ -1,0 +1,313 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <requires lib="gtk" version="4.0" />
+  <requires lib="Adw" version="1.0" />
+  <template class="EuphonicaOutputRow" parent="GtkBox">
+    <object class="GtkPopover" id="delete_popover">
+      <property name="has-arrow">true</property>
+      <property name="name">delete_popover</property>
+      <property name="child">
+        <object class="GtkBox">
+          <property name="orientation">1</property>
+          <property name="spacing">6</property>
+          <child>
+            <object class="GtkLabel">
+              <property name="label" translatable="true">Remove this output plugin? This cannot be undone.</property>
+            </object>
+          </child>
+          <child>
+            <object class="GtkButton" id="remove">
+              <property name="label" translatable="true">Remove</property>
+              <style>
+                <class name="destructive-action"/>
+              </style>
+            </object>
+          </child>
+        </object>
+      </property>
+    </object>
+    <property name="orientation">1</property>
+    <!-- Always-visible top row -->
+    <child>
+      <object class="GtkCenterBox">
+        <property name="start-widget">
+          <object class="GtkBox">
+            <property name="spacing">6</property>
+            <child>
+              <object class="GtkSwitch" id="enabled">
+                <property name="valign">center</property>
+              </object>
+            </child>
+            <child>
+              <object class="GtkImage" id="icon">
+                <property name="icon-name">soundcard-symbolic</property>
+              </object>
+            </child>
+            <child>
+              <object class="GtkEntry" id="name">
+                <property name="hexpand">true</property>
+              </object>
+            </child>
+          </object>
+        </property>
+        <property name="end-widget">
+          <object class="GtkToggleButton" id="reveal">
+            <property name="icon-name">info-outline-symbolic</property>
+          </object>
+        </property>
+      </object>
+    </child>
+
+    <child>
+      <object class="GtkRevealer" id="revealer">
+        <property name="reveal-child" bind-source="reveal" bind-property="active" bind-flags="sync-create"/>
+        <child>
+          <object class="GtkBox">
+            <property name="orientation">1</property>
+            <property name="spacing">6</property>
+            <child>
+              <object class="GtkGrid">
+                <property name="row-spacing">3</property>
+                <property name="column-spacing">6</property>
+                <child>
+                  <object class="GtkLabel">
+                    <style>
+                      <class name="caption"/>
+                    </style>
+                    <property name="label" translatable="true">Output type</property>
+                    <property name="justify">left</property>
+                    <property name="hexpand">true</property>
+                    <layout>
+                      <property name="column">0</property>
+                      <property name="row">0</property>
+                    </layout>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkLabel">
+                    <style>
+                      <class name="caption"/>
+                    </style>
+                    <property name="label" translatable="true">Ordering</property>
+                    <property name="justify">left</property>
+                    <property name="hexpand">true</property>
+                    <layout>
+                      <property name="column">1</property>
+                      <property name="row">0</property>
+                    </layout>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkDropDown" id="output_type">
+                    <layout>
+                      <property name="column">0</property>
+                      <property name="row">1</property>
+                    </layout>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkBox">
+                    <style>
+                      <class name="linked"/>
+                    </style>
+                    <layout>
+                      <property name="column">1</property>
+                      <property name="row">1</property>
+                    </layout>
+                    <child>
+                      <object class="GtkButton" id="raise">
+                        <property name="icon-name">up-symbolic</property>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="GtkButton" id="lower">
+                        <property name="icon-name">down-symbolic</property>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="GtkMenuButton" id="remove_confirm">
+                        <style>
+                          <class name="destructive-action"/>
+                        </style>
+                        <property name="icon-name">user-trash-symbolic</property>
+                        <property name="popover">delete_popover</property>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+              </object>
+            </child>
+
+            <child>
+              <object class="AdwSwitchRow" id="force_format">
+                <property name="title" translatable="true">Force output format</property>
+                <property name="subtitle" translatable="true">Always open the device with this format, regardless of the input format.</property>
+              </object>
+            </child>
+
+            <child>
+              <object class="GtkRevealer" id="force_format_revealer">
+                <property name="reveal-child" bind-source="force_format" bind-property="active" bind-flags="sync-create"/>
+                <child>
+                  <object class="GtkBox">
+                    <property name="orientation">1</property>
+                    <property name="spacing">6</property>
+                    <child>
+                      <object class="GtkBox">
+                        <property name="spacing">6</property>
+                        <child>
+                          <object class="GtkBox">
+                            <property name="orientation">1</property>
+                            <child>
+                              <object class="GtkLabel">
+                                <style>
+                                  <class name="caption"/>
+                                </style>
+                                <!-- TODO: a better way to describe this? -->
+                                <property name="label" translatable="true">Type</property>
+                                <property name="justify">left</property>
+                                <property name="hexpand">true</property>
+                              </object>
+                            </child>
+                            <child>
+                              <object class="AdwToggleGroup" id="force_format_pcm_dsd">
+                                <property name="active-name">pcm</property>
+                                <child>
+                                  <object class="AdwToggle">
+                                    <property name="label">PCM</property>
+                                    <property name="tooltip">Pulse Code Modulation</property>
+                                    <property name="name">pcm</property>
+                                  </object>
+                                </child>
+                                <child>
+                                  <object class="AdwToggle">
+                                    <property name="label">DSD</property>
+                                    <property name="tooltip">Direct Stream Digital</property>
+                                    <property name="name">dsd</property>
+                                  </object>
+                                </child>
+                              </object>
+                            </child>
+                          </object>
+                        </child>
+
+                        <child>
+                          <object class="GtkBox" id="pcm_sr_box">
+                            <property name="orientation">1</property>
+                            <child>
+                              <object class="GtkLabel">
+                                <style>
+                                  <class name="caption"/>
+                                </style>
+                                <property name="label" translatable="true">Sample rate</property>
+                                <property name="justify">left</property>
+                                <property name="hexpand">true</property>
+                              </object>
+                            </child>
+                            <child>
+                              <object class="GtkDropDown" id="force_format_pcm_samplerate"/>
+                            </child>
+                          </object>
+                        </child>
+
+                        <child>
+                          <object class="GtkBox" id="pcm_bit_box">
+                            <property name="orientation">1</property>
+                            <child>
+                              <object class="GtkLabel">
+                                <style>
+                                  <class name="caption"/>
+                                </style>
+                                <property name="label" translatable="true">Bit depth</property>
+                                <property name="justify">left</property>
+                                <property name="hexpand">true</property>
+                              </object>
+                            </child>
+                            <child>
+                              <object class="GtkDropDown" id="force_format_pcm_bitdepth"/>
+                            </child>
+                          </object>
+                        </child>
+
+                        <child>
+                          <object class="GtkBox" id="dsd_box">
+                            <property name="orientation">1</property>
+                            <child>
+                              <object class="GtkLabel">
+                                <style>
+                                  <class name="caption"/>
+                                </style>
+                                <property name="label" translatable="true">Multiplier</property>
+                                <property name="justify">left</property>
+                                <property name="hexpand">true</property>
+                              </object>
+                            </child>
+                            <child>
+                              <object class="GtkDropDown" id="force_format_dsd_preset"/>
+                            </child>
+                          </object>
+                        </child>
+                      </object>
+                    </child>
+
+                    <child>
+                      <object class="AdwSpinRow" id="force_format_channels">
+                        <property name="title" translatable="true">Coerce channel count</property>
+                        <property name="subtitle" translatable="true">Set to 0 to disable coercing.</property>
+                        <property name="digits">0</property>
+                        <property name="adjustment">
+                          <object class="GtkAdjustment">
+                            <property name="lower">0</property>
+                            <property name="upper">128</property>
+                            <property name="value">0</property>
+                            <property name="page-increment">1</property>
+                            <property name="step-increment">2</property>
+                          </object>
+                        </property>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+              </object>
+            </child>
+
+            <child>
+              <object class="AdwSwitchRow" id="send_tags">
+                <property name="title" translatable="true">Send tags</property>
+                <property name="subtitle" translatable="true">Only useful for output plugins that can receive tags, e.g. HTTPD.</property>
+              </object>
+            </child>
+
+            <child>
+              <object class="AdwSwitchRow" id="always_on">
+                <property name="title" translatable="true">Keep device on</property>
+                <property name="subtitle" translatable="true">Instead of closing the device at the end of playback, put it in “pause” mode. Only works with output plugins that suport “pause” mode, e.g. ALSA.</property>
+              </object>
+            </child>
+
+            <child>
+              <object class="AdwSwitchRow" id="always_off">
+                <property name="title" translatable="true">Non-playback</property>
+                <property name="subtitle" translatable="true">Never play back through this device even if enabled. Useful for creating null devices for other software to react to.</property>
+              </object>
+            </child>
+
+            <child>
+              <object class="AdwComboRow" id="mixer_type">
+                <property name="title" translatable="true">Mixer type</property>
+                <property name="subtitle" translatable="true">Software mixer is available for most plugins. ALSA, OSS and PulseAudio additionally exposes a hardware mixer. Use the 'null' mixer to ignore volume control or 'none' to disable entirely.</property>
+              </object>
+            </child>
+
+            <child>
+              <object class="AdwComboRow" id="replaygain_handler">
+                <property name="title" translatable="true">ReplayGain handler</property>
+                <property name="subtitle" translatable="true">Software ReplayGain is applied before mixing. Mixer-mode ReplayGain uses the above mixer itself.</property>
+              </object>
+            </child>
+          </object>
+        </child>
+      </object>
+    </child>
+  </template>
+</interface>

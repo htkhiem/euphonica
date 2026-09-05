@@ -3,6 +3,7 @@ mod dialog;
 mod integrations;
 mod library;
 mod provider_row;
+mod output_row;
 mod ui;
 
 pub use client::ClientPreferences;

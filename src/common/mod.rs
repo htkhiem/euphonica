@@ -64,6 +64,16 @@ pub enum ImageState {
     Image,
 }
 
+/// Maps output plugin name to icon name
+pub fn map_output_plugin_icon(plugin_name: &str) -> &'static str {
+    match plugin_name {
+        "alsa" => "alsa-symbolic",
+        "pulse" => "pulseaudio-symbolic",
+        "pipewire" => "pipewire-symbolic",
+        _ => "soundcard-symbolic",
+    }
+}
+
 // For use with GridViews.
 pub static TEXTURE_LOAD_DELAY_MS: core::time::Duration = core::time::Duration::from_millis(50);
 
