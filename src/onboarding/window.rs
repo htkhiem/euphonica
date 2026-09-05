@@ -18,10 +18,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-use crate::{
-    application::EuphonicaApplication,
-    utils::settings_manager,
-};
+use crate::{application::EuphonicaApplication, utils::settings_manager};
 use adw::{prelude::*, subclass::prelude::*};
 use glib::WeakRef;
 use gtk::{
@@ -46,7 +43,9 @@ mod imp {
 
         // Page 1: library organisation
         #[template_child]
-        pub library_mode_illustration: TemplateChild<gtk::Image>,
+        pub release_folder_library_button: TemplateChild<gtk::Button>,
+        #[template_child]
+        pub mixed_library_button: TemplateChild<gtk::Button>,
         #[template_child]
         pub release_folder_library_mode: TemplateChild<gtk::CheckButton>,
         #[template_child]
@@ -128,34 +127,14 @@ mod imp {
                     &self.release_folder_library_mode.get(),
                     "active",
                 )
+                .flags(gio::SettingsBindFlags::SET)
                 .build();
-
-            self.update_library_mode_illustration(self.release_folder_library_mode.is_active());
-            self.release_folder_library_mode
-                .connect_active_notify(clone!(
-                    #[weak(rename_to = this)]
-                    self,
-                    move |btn| {
-                        this.update_library_mode_illustration(btn.is_active());
-                    }
-                ));
         }
     }
     impl WidgetImpl for EuphonicaOnboardingWindow {}
     impl WindowImpl for EuphonicaOnboardingWindow {}
     impl ApplicationWindowImpl for EuphonicaOnboardingWindow {}
     impl AdwApplicationWindowImpl for EuphonicaOnboardingWindow {}
-
-    impl EuphonicaOnboardingWindow {
-        fn update_library_mode_illustration(&self, is_release_folder_mode: bool) {
-            self.library_mode_illustration
-                .set_icon_name(Some(if is_release_folder_mode {
-                    "albums-in-folders-symbolic"
-                } else {
-                    "freeform-folders-symbolic"
-                }));
-        }
-    }
 }
 
 glib::wrapper! {
@@ -174,6 +153,25 @@ impl EuphonicaOnboardingWindow {
             .build();
         win.imp().app.set(Some(application));
         win.imp().onboard_success.set(false);
+        for (button, option) in [
+            (
+                win.imp().release_folder_library_button.get(),
+                win.imp().release_folder_library_mode.get(),
+            ),
+            (
+                win.imp().mixed_library_button.get(),
+                win.imp().mixed_library_mode.get(),
+            ),
+        ] {
+            button.connect_clicked(move |_| option.set_active(true));
+        }
+        for button in [
+            win.imp().release_folder_library_mode.get(),
+            win.imp().mixed_library_mode.get(),
+        ] {
+            let finish_btn = win.imp().finish_btn.get();
+            button.connect_toggled(move |_| finish_btn.set_sensitive(true));
+        }
         // let client_state = app.get_client().get_client_state();
         // let _ = win.imp().client_state.set(client_state.clone());
         // let player = app.get_player();
