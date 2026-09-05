@@ -135,7 +135,9 @@
     <file preprocess="xml-stripblanks" alias="circle-outline-thick-symbolic.svg">gtk/icons/circle-outline-thick-symbolic.svg</file>
     <file preprocess="xml-stripblanks" alias="info-outline-symbolic.svg">gtk/icons/info-outline-symbolic.svg</file>
     <file preprocess="xml-stripblanks" alias="exclamation-mark-symbolic.svg">gtk/icons/exclamation-mark-symbolic.svg</file>
-    <file preprocess="xml-stripblanks" alias="albums-in-folders-symbolic.svg">gtk/icons/albums-in-folders-symbolic.svg</file>
-    <file preprocess="xml-stripblanks" alias="freeform-folders-symbolic.svg">gtk/icons/freeform-folders-symbolic.svg</file>
+    <file preprocess="xml-stripblanks" alias="release-folder-1-symbolic.svg">gtk/icons/release-folder-1-symbolic.svg</file>
+    <file preprocess="xml-stripblanks" alias="release-folder-2-symbolic.svg">gtk/icons/release-folder-2-symbolic.svg</file>
+    <file preprocess="xml-stripblanks" alias="mixed-folder-1-symbolic.svg">gtk/icons/mixed-folder-1-symbolic.svg</file>
+    <file preprocess="xml-stripblanks" alias="mixed-folder-2-symbolic.svg">gtk/icons/mixed-folder-2-symbolic.svg</file>
   </gresource>
 </gresources>
