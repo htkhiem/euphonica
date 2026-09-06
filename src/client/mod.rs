@@ -9,7 +9,6 @@ pub mod wrapper;
 
 pub use state::ClientState;
 pub use wrapper::MpdWrapper;
-pub use stream::StreamWrapper;
 
 pub use connection::Error;
 pub use connection::Result;

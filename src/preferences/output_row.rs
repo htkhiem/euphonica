@@ -1,4 +1,3 @@
-use std::ops::Index;
 
 use adw::prelude::*;
 use glib::{Object, Properties, clone};
@@ -9,15 +8,15 @@ use crate::{
     common::map_output_plugin_icon,
     preferences::ClientPreferences,
     server::{
-        AudioFormatConfig, DsdMultiplier, MixerType, PcmBitDepth, PcmSampleRate, ReplayGainHandler, config::{OutputConfig, OutputType}
+        AudioFormatConfig, DsdMultiplier, MixerType, PcmBitDepth, PcmSampleRate, ReplayGainHandler,
+        config::{OutputConfig, OutputType},
     },
-    utils::meta_provider_settings,
 };
 
 mod imp {
-    use std::cell::{Cell, RefCell};
+    
 
-    use adw::subclass::{action_row::ActionRowImpl, preferences_row::PreferencesRowImpl};
+    
     use strum::VariantNames;
 
     use crate::server::{DsdMultiplier, PcmBitDepth, PcmSampleRate, ReplayGainHandler};
@@ -29,9 +28,11 @@ mod imp {
     #[template(resource = "/io/github/htkhiem/Euphonica/gtk/preferences/output-row.ui")]
     pub struct OutputRow {
         #[template_child]
+        pub header: TemplateChild<adw::ExpanderRow>,
+        #[template_child]
         pub icon: TemplateChild<gtk::Image>,
         #[template_child]
-        pub name: TemplateChild<gtk::Entry>,
+        pub name: TemplateChild<adw::EntryRow>,
         #[template_child]
         pub raise: TemplateChild<gtk::Button>,
         #[template_child]
@@ -41,7 +42,7 @@ mod imp {
         #[template_child]
         pub output_type: TemplateChild<gtk::DropDown>,
         #[template_child]
-        pub enabled: TemplateChild<gtk::Switch>,
+        pub enabled: TemplateChild<adw::SwitchRow>,
 
         #[template_child]
         pub force_format: TemplateChild<adw::SwitchRow>,
@@ -82,10 +83,11 @@ mod imp {
         // `NAME` needs to match `class` attribute of template
         const NAME: &'static str = "EuphonicaOutputRow";
         type Type = super::OutputRow;
-        type ParentType = gtk::Box;
+        type ParentType = gtk::Widget;
 
         fn class_init(klass: &mut Self::Class) {
             klass.bind_template();
+            klass.set_layout_manager_type::<gtk::BinLayout>();
         }
 
         fn instance_init(obj: &glib::subclass::InitializingObject<Self>) {
@@ -95,6 +97,11 @@ mod imp {
 
     #[glib::derived_properties]
     impl ObjectImpl for OutputRow {
+        fn dispose(&self) {
+            while let Some(child) = self.obj().first_child() {
+                child.unparent();
+            }
+        }
         fn constructed(&self) {
             self.parent_constructed();
             self.output_type
@@ -105,6 +112,13 @@ mod imp {
                 .set_model(Some(&gtk::StringList::new(PcmBitDepth::VARIANTS)));
             self.force_format_dsd_preset
                 .set_model(Some(&gtk::StringList::new(DsdMultiplier::VARIANTS)));
+
+            // Name is already bound in .ui file. Just the output type requires custom logic.
+            self.output_type
+                .bind_property("selected", &self.header.get(), "subtitle")
+                .transform_to(|_, idx: u32| Some(OutputType::VARIANTS[idx as usize].to_value()))
+                .sync_create()
+                .build();
 
             self.output_type.connect_selected_item_notify(clone!(
                 #[weak(rename_to = this)]
@@ -138,18 +152,16 @@ mod imp {
     }
 
     impl WidgetImpl for OutputRow {}
-
-    impl BoxImpl for OutputRow {}
 }
 
 glib::wrapper! {
     pub struct OutputRow(ObjectSubclass<imp::OutputRow>)
-    @extends gtk::Box, gtk::Widget,
-    @implements gtk::Accessible, gtk::Buildable, gtk::ConstraintTarget, gtk::Orientable;
+    @extends gtk::Widget,
+    @implements gtk::Accessible, gtk::Buildable, gtk::ConstraintTarget;
 }
 
 impl OutputRow {
-    pub fn new(config: &OutputConfig, controller: &ClientPreferences) -> Self {
+    pub fn new(config: &OutputConfig, _controller: &ClientPreferences) -> Self {
         let res: Self = Object::builder().build();
         res.imp().name.set_text(&config.name);
         // Prep output type dropdown
@@ -207,8 +219,8 @@ impl OutputRow {
     pub fn update_icon(&self) {
         self.imp().icon.set_icon_name(Some(map_output_plugin_icon(
             &OutputType::from_repr(self.imp().output_type.selected() as usize)
-                .map(|var| var.to_string())
-                .unwrap_or(String::from("")),
+                .map(|var| var.get_serializations()[0])
+                .unwrap_or(""),
         )));
     }
 
@@ -218,9 +230,7 @@ impl OutputRow {
             OutputType::from_repr(self.imp().output_type.selected() as usize).unwrap();
         config.name = self.imp().name.text().to_string();
         if self.imp().force_format.is_active() {
-            let raw_val = self.imp()
-                .force_format_channels
-                .value();
+            let raw_val = self.imp().force_format_channels.value();
             let channels = if (1.0..=128.0).contains(&raw_val) {
                 Some(raw_val.round() as u8)
             } else {
@@ -257,8 +267,11 @@ impl OutputRow {
             config.tags = self.imp().send_tags.is_active();
             config.always_off = self.imp().always_off.is_active();
             config.always_on = self.imp().always_on.is_active();
-            config.mixer_type = MixerType::from_repr(self.imp().mixer_type.selected() as usize).unwrap_or_default();
-            config.replaygain_handler = ReplayGainHandler::from_repr(self.imp().replaygain_handler.selected() as usize).unwrap_or_default();
+            config.mixer_type =
+                MixerType::from_repr(self.imp().mixer_type.selected() as usize).unwrap_or_default();
+            config.replaygain_handler =
+                ReplayGainHandler::from_repr(self.imp().replaygain_handler.selected() as usize)
+                    .unwrap_or_default();
         }
 
         config
