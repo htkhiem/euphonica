@@ -584,7 +584,7 @@ mod imp {
             let _ = self.sender_to_bg.set(sender_to_bg);
             let (sender_to_fg, fg_receiver) = async_channel::bounded::<WindowMessage>(1); // block background thread until sent
             let bg_handle = gio::spawn_blocking(move || {
-                let settings = settings_manager().child("ui");
+                let settings = utils::settings_reader().child("ui");
                 // Cached here to avoid having to load the same image multiple times
                 let mut curr_data: Option<DynamicImage> = None;
                 let mut curr_path: Option<PathBuf> = None;

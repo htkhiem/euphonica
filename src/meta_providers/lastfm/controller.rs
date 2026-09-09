@@ -9,7 +9,7 @@ use crate::{
     common::{AlbumInfo, ArtistInfo},
     config::APPLICATION_USER_AGENT,
     meta_providers::lastfm::models::LastfmErrorResponse,
-    utils::meta_provider_settings,
+    utils::meta_provider_settings_reader as meta_provider_settings,
 };
 
 use super::models::{LastfmAlbumResponse, LastfmArtistResponse};

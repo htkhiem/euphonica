@@ -1,4 +1,4 @@
-use crate::utils::meta_provider_settings;
+use crate::utils::meta_provider_settings_reader as meta_provider_settings;
 use gtk::prelude::SettingsExt;
 use musicbrainz_rs::entity::artist::ArtistType;
 use serde::Deserialize;

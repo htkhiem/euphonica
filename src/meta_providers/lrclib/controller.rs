@@ -3,7 +3,7 @@ use std::time::SystemTime;
 use crate::{
     common::{AlbumInfo, ArtistInfo, SongInfo},
     config::APPLICATION_USER_AGENT,
-    utils::meta_provider_settings,
+    utils::meta_provider_settings_reader as meta_provider_settings,
 };
 
 use gtk::gio::prelude::SettingsExt;

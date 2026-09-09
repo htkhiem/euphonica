@@ -455,7 +455,7 @@ impl Connection {
     }
 
     pub fn connect(&mut self) -> Result<Version> {
-        let settings = utils::settings_manager().child("client");
+        let settings = utils::settings_reader().child("client");
         // eprintln!("Attempting connection...");
 
         // self.state.set_connection_state(ConnectionState::Connecting);

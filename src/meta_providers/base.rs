@@ -1,7 +1,7 @@
 extern crate bson;
 use crate::{
     common::{AlbumInfo, ArtistInfo, SongInfo},
-    utils::settings_manager,
+    utils::settings_reader as settings_manager,
 };
 use gtk::prelude::*;
 use reqwest::{Error as ReqwestError, StatusCode, blocking::Client};
