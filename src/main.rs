@@ -28,6 +28,7 @@ mod meta_providers;
 mod onboarding;
 mod player;
 mod preferences;
+mod settings;
 mod sidebar;
 mod utils;
 mod window;
@@ -60,6 +61,8 @@ fn main() -> glib::ExitCode {
     bind_textdomain_codeset(GETTEXT_PACKAGE, "UTF-8")
         .expect("Unable to set the text domain encoding");
     textdomain(GETTEXT_PACKAGE).expect("Unable to switch to the text domain");
+
+    settings::init();
 
     // Load resources
     let resources = gio::Resource::load(PKGDATADIR.to_owned() + "/euphonica.gresource")

@@ -1,6 +1,6 @@
 use crate::{
     meta_providers::models::{ImageMeta, ImageSize},
-    utils::meta_provider_settings,
+    utils::meta_provider_settings_reader as meta_provider_settings,
 };
 use chrono::NaiveDate;
 use gtk::prelude::SettingsExt;

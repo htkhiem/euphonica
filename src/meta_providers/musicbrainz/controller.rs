@@ -14,7 +14,10 @@ use crate::{
     common::{AlbumInfo, ArtistInfo},
     config::APPLICATION_USER_AGENT,
     meta_providers::models::ImageMeta,
-    utils::{meta_provider_settings, settings_manager},
+    utils::{
+        meta_provider_settings_reader as meta_provider_settings,
+        settings_reader as settings_manager,
+    },
 };
 
 use super::{
