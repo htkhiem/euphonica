@@ -11,7 +11,7 @@ use crate::{
     EuphonicaWindow,
     cache::Cache,
     common::{
-        Album, ContentStack, TEXTURE_LOAD_DELAY_MS, ImageStack, RowAddButtons, Song, SongRow,
+        Album, ContentStack, ImageStack, RowAddButtons, Song, SongRow, TEXTURE_LOAD_DELAY_MS,
     },
     utils::format_secs_as_duration,
 };
@@ -209,7 +209,7 @@ impl DiscographyAlbum {
         songs: &[Song],
         cache: Rc<Cache>,
         library: &Library,
-        window: Option<&EuphonicaWindow>
+        window: Option<&EuphonicaWindow>,
     ) -> Self {
         let res: Self = Object::builder().build();
         let _ = res.imp().cache.set(cache);

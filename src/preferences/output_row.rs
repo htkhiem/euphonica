@@ -1,4 +1,3 @@
-
 use adw::prelude::*;
 use glib::{Object, Properties, clone};
 use gtk::{CompositeTemplate, glib, subclass::prelude::*};
@@ -6,7 +5,6 @@ use strum::{EnumMessage, IntoEnumIterator};
 
 use crate::{
     common::map_output_plugin_icon,
-    preferences::ClientPreferences,
     server::{
         AudioFormatConfig, DsdMultiplier, MixerType, PcmBitDepth, PcmSampleRate, ReplayGainHandler,
         config::{OutputConfig, OutputType},
@@ -14,9 +12,10 @@ use crate::{
 };
 
 mod imp {
-    
 
-    
+    use std::{cell::RefCell, sync::OnceLock};
+
+    use gtk::glib::{WeakRef, subclass::Signal};
     use strum::VariantNames;
 
     use crate::server::{DsdMultiplier, PcmBitDepth, PcmSampleRate, ReplayGainHandler};
@@ -75,6 +74,9 @@ mod imp {
         pub mixer_type: TemplateChild<adw::ComboRow>,
         #[template_child]
         pub replaygain_handler: TemplateChild<adw::ComboRow>,
+
+        pub check_delay: RefCell<Option<glib::SourceId>>, // for check signal debounce
+        pub parent: WeakRef<gtk::ListBoxRow>,             // for firing the delete signal
     }
 
     // The central trait for subclassing a GObject
@@ -128,6 +130,30 @@ mod imp {
                 }
             ));
 
+            self.name.connect_changed(clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |_| {
+                    if let Some(id) = this.check_delay.take() {
+                        id.remove();
+                    }
+
+                    let _ = this
+                        .check_delay
+                        .replace(Some(glib::source::timeout_add_local_once(
+                            core::time::Duration::from_millis(200),
+                            clone!(
+                                #[weak]
+                                this,
+                                move || {
+                                    this.obj().emit_by_name::<()>("renamed", &[]);
+                                    let _ = this.check_delay.take();
+                                }
+                            ),
+                        )));
+                }
+            ));
+
             let is_pcm = self.force_format_pcm_dsd.active_name().unwrap().as_str() == "pcm";
             self.pcm_sr_box.set_visible(is_pcm);
             self.pcm_bit_box.set_visible(is_pcm);
@@ -148,6 +174,34 @@ mod imp {
 
             self.replaygain_handler
                 .set_model(Some(&gtk::StringList::new(ReplayGainHandler::VARIANTS)));
+
+            self.remove.connect_clicked(clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |_| {
+                    this.obj().emit_by_name::<()>(
+                        "delete-clicked",
+                        &[&this
+                            .parent
+                            .upgrade()
+                            .map(|row| row.index())
+                            .unwrap_or(-1)
+                            .to_value()],
+                    );
+                }
+            ));
+        }
+
+        fn signals() -> &'static [Signal] {
+            static SIGNALS: OnceLock<Vec<Signal>> = OnceLock::new();
+            SIGNALS.get_or_init(|| {
+                vec![
+                    Signal::builder("delete-clicked")
+                        .param_types([i32::static_type()])
+                        .build(),
+                    Signal::builder("renamed").build(),
+                ]
+            })
         }
     }
 
@@ -161,7 +215,7 @@ glib::wrapper! {
 }
 
 impl OutputRow {
-    pub fn new(config: &OutputConfig, _controller: &ClientPreferences) -> Self {
+    pub fn new(config: &OutputConfig) -> Self {
         let res: Self = Object::builder().build();
         res.imp().name.set_text(&config.name);
         // Prep output type dropdown
@@ -211,9 +265,11 @@ impl OutputRow {
             .set_selected(config.replaygain_handler as u32);
 
         // TODO: OUTPUT TYPE-SPECIFIC CONFIGURATION
-
-        // res.setup_actions(controller);
         res
+    }
+
+    pub fn bind_parent(&self, parent: &gtk::ListBoxRow) {
+        self.imp().parent.set(Some(parent));
     }
 
     pub fn update_icon(&self) {
@@ -222,6 +278,28 @@ impl OutputRow {
                 .map(|var| var.get_serializations()[0])
                 .unwrap_or(""),
         )));
+    }
+
+    pub fn name(&self) -> String {
+        self.imp().name.text().to_string()
+    }
+
+    pub fn highlight_name_error(&self, is_error: bool) {
+        if is_error {
+            if !self.imp().icon.has_css_class("error") {
+                self.imp().icon.set_css_classes(&["error"]);
+            }
+            if !self.imp().name.has_css_class("error") {
+                self.imp().name.set_css_classes(&["error"]);
+            }
+        } else {
+            if self.imp().icon.has_css_class("error") {
+                self.imp().icon.remove_css_class("error");
+            }
+            if self.imp().name.has_css_class("error") {
+                self.imp().name.remove_css_class("error");
+            }
+        }
     }
 
     pub fn generate_config(&self) -> OutputConfig {

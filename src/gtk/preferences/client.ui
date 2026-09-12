@@ -13,6 +13,7 @@
             <property name="title" translatable="true">Standalone Player Mode</property>
             <property name="subtitle" translatable="true">Use Euphonica as a normal music player by letting it run its own MPD server locally. Disable to connect Euphonica to another MPD server.</property>
             <property name="show-enable-switch">true</property>
+            <property name="expanded" bind-source="mpd_use_own_server" bind-property="enable-expansion" bind-flags="sync-create"/>
 
             <child>
               <object class="AdwActionRow" id="mpd_library_path">
@@ -296,26 +297,17 @@
       <child>
         <object class="AdwToolbarView">
           <child type="top">
-            <object class="AdwHeaderBar"/>
-          </child>
-          <property name="content">
-            <object class="GtkScrolledWindow" id="outputs_window">
-              <property name="height-request">50</property>
-              <property name="hscrollbar-policy">never</property>
-              <property name="vscrollbar-policy">automatic</property>
-              <property name="propagate-natural-height">true</property>
-              <property name="has-frame">false</property>
-
-              <child>
-                <object class="GtkListBox" id="outputs_box">
-                  <property name="selection-mode">none</property>
-                  <style>
-                    <class name="no-bg"/>
-                    <class name="padding-6"/>
-                  </style>
+            <object class="AdwHeaderBar">
+              <child type="end">
+                <object class="GtkButton" id="add_output">
+                  <property name="icon-name">plus-symbolic</property>
+                  <property name="tooltip-text" translatable="true">Add a new output</property>
                 </object>
               </child>
             </object>
+          </child>
+          <property name="content">
+            <object class="EuphonicaAudioOutputs" id="outputs_box"/>
           </property>
         </object>
       </child>

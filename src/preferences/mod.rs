@@ -2,8 +2,9 @@ mod client;
 mod dialog;
 mod integrations;
 mod library;
-mod provider_row;
 mod output_row;
+mod outputs;
+mod provider_row;
 mod ui;
 
 pub use client::ClientPreferences;

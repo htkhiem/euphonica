@@ -1,4 +1,8 @@
-use crate::{common::QualityGrade, player::PlaybackState, utils::{self, sync_animation}};
+use crate::{
+    common::QualityGrade,
+    player::PlaybackState,
+    utils::{self, sync_animation},
+};
 use adw::prelude::*;
 use glib::{Object, ParamSpec, ParamSpecDouble, ParamSpecObject, SignalHandlerId, WeakRef, clone};
 use gtk::{CompositeTemplate, gdk, glib, graphene, gsk, subclass::prelude::*};

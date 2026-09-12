@@ -20,7 +20,7 @@ mod imp {
         pub content_page: WeakRef<gtk::StackPage>,
 
         // Really really optional
-        pub edit_page: WeakRef<gtk::StackPage>
+        pub edit_page: WeakRef<gtk::StackPage>,
     }
 
     // The central trait for subclassing a GObject

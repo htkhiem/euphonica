@@ -1,5 +1,5 @@
-use std::cell::RefCell;
 use std::cell::OnceCell;
+use std::cell::RefCell;
 use std::rc::Rc;
 use std::{cell::Cell, sync::OnceLock};
 
@@ -70,7 +70,7 @@ mod imp {
         pub player: WeakRef<Player>,
         pub history_changed_id: RefCell<Option<SignalHandlerId>>,
 
-       #[property(get, set)]
+        #[property(get, set)]
         pub collapsed: Cell<bool>,
         pub window: OnceCell<WeakRef<EuphonicaWindow>>,
     }
@@ -98,9 +98,10 @@ mod imp {
                 child.unparent();
             }
             if let Some(id) = self.history_changed_id.take()
-                && let Some(player) = self.obj().imp().player.upgrade() {
-                    player.disconnect(id);
-                }
+                && let Some(player) = self.obj().imp().player.upgrade()
+            {
+                player.disconnect(id);
+            }
         }
 
         fn constructed(&self) {
@@ -223,7 +224,7 @@ impl RecentView {
         res
     }
 
-   pub fn setup(
+    pub fn setup(
         &self,
         library: &Library,
         player: &Player,
@@ -300,7 +301,7 @@ impl RecentView {
         // Reset scroll position to zero every time a new item is created such that
         // upon startup or insertion of a new just-listened album we'll be at the
         // start of the row.
-       factory.connect_setup(clone!(
+        factory.connect_setup(clone!(
             #[weak]
             cache,
             #[weak]
@@ -309,11 +310,7 @@ impl RecentView {
                 let item = list_item
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
-                let album_cell = AlbumCell::new(
-                    item,
-                    cache,
-                    Some(MarqueeWrapMode::Scroll),
-                );
+                let album_cell = AlbumCell::new(item, cache, Some(MarqueeWrapMode::Scroll));
                 // propagating the tallest cell's height to the revealer if said row wasn't
                 // the first initialised.
                 item.set_child(Some(&album_cell));
@@ -416,9 +413,7 @@ impl RecentView {
                 let item = list_item
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
-                let artist_cell = ArtistCell::new(
-                    item, cache
-                );
+                let artist_cell = ArtistCell::new(item, cache);
                 item.set_child(Some(&artist_cell));
                 adj.set_value(0.0);
                 adj.set_value(0.0);

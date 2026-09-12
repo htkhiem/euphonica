@@ -94,9 +94,10 @@ mod imp {
     impl ObjectImpl for VolumeKnob {
         fn dispose(&self) {
             if let Some(player) = self.player.upgrade()
-                && let Some(id) = self.muted_id.take() {
-                    player.disconnect(id);
-                }
+                && let Some(id) = self.muted_id.take()
+            {
+                player.disconnect(id);
+            }
         }
 
         fn constructed(&self) {

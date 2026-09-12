@@ -1,5 +1,7 @@
-pub mod controller;
 pub mod config;
-pub use controller::ManagedMpdServer;
+pub mod controller;
+pub use config::{
+    AudioFormatConfig, DsdMultiplier, MixerType, PcmBitDepth, PcmSampleRate, ReplayGainHandler,
+};
 pub use controller::Error as ManagedMpdError;
-pub use config::{PcmSampleRate, PcmBitDepth, DsdMultiplier, AudioFormatConfig, MixerType, ReplayGainHandler};
+pub use controller::ManagedMpdServer;

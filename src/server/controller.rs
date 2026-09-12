@@ -1,7 +1,5 @@
 use crate::{
-    common::ConnectionState,
-    server::config::MpdConfig,
-    utils::get_standalone_config_path,
+    common::ConnectionState, server::config::MpdConfig, utils::get_standalone_config_path,
 };
 use asyncified::Asyncified;
 use gio::{Subprocess, SubprocessFlags};
@@ -13,12 +11,7 @@ use gtk::{
 use mpd::Client;
 use resolve_path::PathResolveExt;
 use std::{
-    cell::RefCell,
-    ffi::OsStr,
-    fs::File,
-    io::Read,
-    os::unix::net::UnixStream,
-    result,
+    cell::RefCell, ffi::OsStr, fs::File, io::Read, os::unix::net::UnixStream, result,
     time::Duration,
 };
 
@@ -149,20 +142,22 @@ impl ManagedMpdServer {
 
         // Only return after having successfully verified online status
         let path = cfg.bind_to_address.unwrap();
-        let asyncified = Asyncified::builder().build_ok(move || {()}).await;
-        let success = asyncified.call(move |_| {
-            for _i in 0..MAX_STARTUP_POLLS {
-                match self_test(&path) {
-                    Ok(()) => {
-                        return true;
-                    }
-                    Err(_) => {
-                        std::thread::sleep(Duration::from_millis(POLL_INTERVAL_MS));
+        let asyncified = Asyncified::builder().build_ok(move || ()).await;
+        let success = asyncified
+            .call(move |_| {
+                for _i in 0..MAX_STARTUP_POLLS {
+                    match self_test(&path) {
+                        Ok(()) => {
+                            return true;
+                        }
+                        Err(_) => {
+                            std::thread::sleep(Duration::from_millis(POLL_INTERVAL_MS));
+                        }
                     }
                 }
-            }
-            return false;
-        }).await;
+                return false;
+            })
+            .await;
 
         if !success {
             eprintln!(

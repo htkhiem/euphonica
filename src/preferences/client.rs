@@ -95,7 +95,7 @@ mod imp {
 
     use gtk::glib::WeakRef;
 
-    use crate::preferences::output_row::OutputRow;
+    use crate::{preferences::outputs::AudioOutputs, server::config::OutputConfig};
 
     use super::*;
 
@@ -177,7 +177,9 @@ mod imp {
         #[template_child]
         pub outputs_subpage: TemplateChild<adw::NavigationPage>,
         #[template_child]
-        pub outputs_box: TemplateChild<gtk::ListBox>,
+        pub outputs_box: TemplateChild<AudioOutputs>,
+        #[template_child]
+        pub add_output: TemplateChild<gtk::Button>,
 
         pub standalone_cfg: RefCell<MpdConfig>,
         pub dialog: WeakRef<Preferences>,
@@ -207,21 +209,8 @@ mod imp {
                 self,
                 move |_| {
                     if let Some(dialog) = this.dialog.upgrade() {
-                        let listbox = this.outputs_box.get();
-                        // Reload widgets in that page (might be heavy)
-                        listbox.remove_all();
-                        for (idx, output) in this
-                            .standalone_cfg
-                            .borrow()
-                            .audio_outputs
-                            .iter()
-                            .enumerate()
-                        {
-                            listbox.append(&OutputRow::new(&output, this.obj().as_ref()));
-                            if let Some(row) = listbox.row_at_index(idx as i32) {
-                                row.set_activatable(false);
-                            }
-                        }
+                        this.outputs_box
+                            .init_from_config(&this.standalone_cfg.borrow());
                         dialog.push_subpage(&this.outputs_subpage.get());
                     }
                 }
@@ -306,6 +295,12 @@ mod imp {
                     .sync_create()
                     .build();
             }
+
+            // Add output button (outside of the AudioOutputs widget)
+            let outputs_box = self.outputs_box.get();
+            self.add_output.connect_clicked(move |_| {
+                outputs_box.add(&OutputConfig::default(), true);
+            });
         }
     }
     impl WidgetImpl for ClientPreferences {}
@@ -550,7 +545,11 @@ impl ClientPreferences {
             move |_| {
                 // Overwrite path with config then trigger reconnect
                 {
-                    let cfg = this.imp().standalone_cfg.borrow();
+                    let mut cfg = this.imp().standalone_cfg.borrow_mut();
+                    // Apply all settings.
+                    // Library path has already been applied the moment the browse window closed so skip it here.
+                    // Outputs
+                    cfg.audio_outputs = this.imp().outputs_box.get_config();
                     let mut output =
                         File::create(&config_path).expect("Unable to write to config file");
                     write!(output, "{}", cfg).unwrap();

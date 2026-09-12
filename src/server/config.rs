@@ -16,6 +16,10 @@ use crate::{
     utils::{get_app_cache_path, get_standalone_playlists_path},
 };
 
+// Euphonica manages one hidden FIFO output plugin (not exposed to the user) to power the
+// spectrum visualiser.
+pub static INTERNAL_FIFO_NAME: &'static str = "__euphonica_fifo__";
+
 // We use the to_string one for UI display and the serialize one for writing into config.
 // This allows us to use VariantNames to programmatically populate the gtk::StringLists,
 // and use EnumString to deserialize config values
@@ -261,7 +265,7 @@ impl Display for AudioFormatConfig {
                 write!(
                     f,
                     "dsd{}:{}",
-                    mul,
+                    mul.get_serializations()[0],
                     ch.map(|ch| ch.to_string()).unwrap_or(String::from("*"))
                 )
             }
@@ -269,8 +273,8 @@ impl Display for AudioFormatConfig {
                 write!(
                     f,
                     "{}:{}:{}",
-                    rate,
-                    bits,
+                    rate.get_serializations()[0],
+                    bits.get_serializations()[0],
                     ch.map(|ch| ch.to_string()).unwrap_or(String::from("*"))
                 )
             }
@@ -301,6 +305,8 @@ pub enum OutputType {
     Pulse,
     #[strum(serialize = "oss", to_string = "OSS")]
     Oss,
+    #[strum(serialize = "fifo", to_string = "FIFO")]
+    Fifo,
     #[strum(serialize = "pipewire", to_string = "PipeWire")]
     #[default]
     PipeWire,
@@ -310,7 +316,7 @@ pub enum OutputType {
 /// Other outputs use None as default.
 /// To leave this to default, simply do not specify in the config file (leave option as None).
 #[derive(
-    Debug, Clone, Copy, PartialEq, Display, EnumString, VariantNames, Default, EnumMessage, FromRepr
+    Debug, Clone, Copy, PartialEq, Display, EnumString, VariantNames, Default, EnumMessage, FromRepr,
 )]
 #[non_exhaustive]
 pub enum MixerType {
@@ -328,7 +334,7 @@ pub enum MixerType {
 }
 
 #[derive(
-    Debug, Clone, Copy, PartialEq, Default, Display, EnumString, VariantNames, EnumMessage, FromRepr
+    Debug, Clone, Copy, PartialEq, Default, Display, EnumString, VariantNames, EnumMessage, FromRepr,
 )]
 #[non_exhaustive]
 pub enum ReplayGainHandler {
@@ -479,6 +485,35 @@ impl TryFrom<&[&str]> for OutputConfig {
         }
 
         Ok(output)
+    }
+}
+
+impl OutputConfig {
+    pub fn internal_fifo() -> Self {
+        let mut fifo_path = get_app_cache_path();
+        fifo_path.push("euphonica_internal.fifo");
+        Self {
+            output_type: OutputType::Fifo,
+            name: INTERNAL_FIFO_NAME.to_string(),
+            format: Some(AudioFormatConfig::Pcm(
+                PcmSampleRate::P441,
+                PcmBitDepth::I16,
+                Some(2),
+            )),
+            enabled: true,
+            tags: false,
+            always_on: false,
+            always_off: false,
+            mixer_type: MixerType::None,
+            replaygain_handler: ReplayGainHandler::None,
+            additional_config: vec![(
+                "path".to_string(),
+                fifo_path
+                    .to_str()
+                    .expect("OS does not support Unicode")
+                    .to_string(),
+            )],
+        }
     }
 }
 

@@ -17,7 +17,7 @@ pub enum StickersSupportLevel {
 mod imp {
     use crate::common::ConnectionState;
 
-use super::*;
+    use super::*;
 
     #[derive(Debug, Default, Properties)]
     #[properties(wrapper_type = super::ClientState)]

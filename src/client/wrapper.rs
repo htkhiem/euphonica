@@ -158,7 +158,7 @@ impl MpdWrapper {
                 NonZero::new(16384).unwrap(),
                 BuildHasherDefault::default(),
             )),
-            ping_handle: RefCell::default()
+            ping_handle: RefCell::default(),
         });
 
         wrapper.clone().setup_channel(idle_receiver);

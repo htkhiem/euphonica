@@ -21,8 +21,8 @@
 use crate::{
     application::EuphonicaApplication,
     cache::CacheState,
-    common::ConnectionState,
     client::{ClientState, Result as ClientResult},
+    common::ConnectionState,
     common::{Album, Artist, INode, ThemeSelector, View, paintables::FadePaintable},
     library::{
         AlbumView, ArtistContentView, ArtistView, DynamicPlaylistEditorView, DynamicPlaylistView,

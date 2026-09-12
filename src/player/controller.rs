@@ -3,10 +3,9 @@ use crate::{
     application::EuphonicaApplication,
     cache::{Cache, sqlite},
     client::{
-        ClientState, Error as ClientError, MpdWrapper, Result as ClientResult,
-        StickerSetMode,
+        ClientState, Error as ClientError, MpdWrapper, Result as ClientResult, StickerSetMode,
     },
-    common::{QualityGrade, Song, Stickers, ConnectionState},
+    common::{ConnectionState, QualityGrade, Song, Stickers},
     config::APPLICATION_ID,
     meta_providers::models::Lyrics,
     utils::{
