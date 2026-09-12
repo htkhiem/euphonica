@@ -35,7 +35,7 @@
                 </style>
                 <child>
                   <object class="GtkGrid">
-                    <property name="row-spacing">3</property>
+                    <property name="row-spacing">6</property>
                     <property name="column-spacing">6</property>
                     <child>
                       <object class="GtkLabel">
@@ -118,130 +118,15 @@
                       </object>
                     </child>
                     <child>
-                      <object class="GtkBox">
+                      <object class="EuphonicaAudioFormatEntry" id="force_format_entry">
                         <property name="visible" bind-source="force_format" bind-property="active" bind-flags="sync-create"/>
-                        <property name="orientation">1</property>
-                        <child>
-                          <object class="GtkBox">
-                            <property name="spacing">6</property>
-                            <style>
-                              <class name="padding-12"/>
-                            </style>
-                            <child>
-                              <object class="GtkBox">
-                                <property name="orientation">1</property>
-                                <child>
-                                  <object class="GtkLabel">
-                                    <style>
-                                      <class name="subtitle"/>
-                                    </style>
-                                    <!-- TODO: a better way to describe this? -->
-                                    <property name="label" translatable="true">Type</property>
-                                    <property name="halign">start</property>
-                                  </object>
-                                </child>
-                                <child>
-                                  <object class="AdwToggleGroup" id="force_format_pcm_dsd">
-                                    <property name="active-name">pcm</property>
-                                    <child>
-                                      <object class="AdwToggle">
-                                        <property name="label">PCM</property>
-                                        <property name="tooltip">Pulse Code Modulation</property>
-                                        <property name="name">pcm</property>
-                                      </object>
-                                    </child>
-                                    <child>
-                                      <object class="AdwToggle">
-                                        <property name="label">DSD</property>
-                                        <property name="tooltip">Direct Stream Digital</property>
-                                        <property name="name">dsd</property>
-                                      </object>
-                                    </child>
-                                  </object>
-                                </child>
-                              </object>
-                            </child>
-
-                            <child>
-                              <object class="GtkBox" id="pcm_sr_box">
-                                <property name="orientation">1</property>
-                                <child>
-                                  <object class="GtkLabel">
-                                    <style>
-                                      <class name="subtitle"/>
-                                    </style>
-                                    <property name="label" translatable="true">Sample rate</property>
-                                    <property name="halign">start</property>
-                                  </object>
-                                </child>
-                                <child>
-                                  <object class="GtkDropDown" id="force_format_pcm_samplerate"/>
-                                </child>
-                              </object>
-                            </child>
-
-                            <child>
-                              <object class="GtkBox" id="pcm_bit_box">
-                                <property name="orientation">1</property>
-                                <child>
-                                  <object class="GtkLabel">
-                                    <style>
-                                      <class name="subtitle"/>
-                                    </style>
-                                    <property name="label" translatable="true">Bit depth</property>
-                                    <property name="halign">start</property>
-                                  </object>
-                                </child>
-                                <child>
-                                  <object class="GtkDropDown" id="force_format_pcm_bitdepth"/>
-                                </child>
-                              </object>
-                            </child>
-
-                            <child>
-                              <object class="GtkBox" id="dsd_box">
-                                <property name="orientation">1</property>
-                                <child>
-                                  <object class="GtkLabel">
-                                    <style>
-                                      <class name="subtitle"/>
-                                    </style>
-                                    <property name="label" translatable="true">Multiplier</property>
-                                    <property name="halign">start</property>
-                                  </object>
-                                </child>
-                                <child>
-                                  <object class="GtkDropDown" id="force_format_dsd_preset"/>
-                                </child>
-                              </object>
-                            </child>
-                          </object>
-                        </child>
-
-                        <child>
-                          <object class="AdwSpinRow" id="force_format_channels">
-                            <property name="title" translatable="true">Coerce channel count</property>
-                            <property name="subtitle" translatable="true">Set to 0 to disable coercing.</property>
-                            <property name="digits">0</property>
-                            <property name="adjustment">
-                              <object class="GtkAdjustment">
-                                <property name="lower">0</property>
-                                <property name="upper">128</property>
-                                <property name="value">0</property>
-                                <property name="page-increment">1</property>
-                                <property name="step-increment">2</property>
-                              </object>
-                            </property>
-                          </object>
-                        </child>
+                        <style>
+                          <class name="padding-12"/>
+                        </style>
                       </object>
                     </child>
                   </object>
                 </child>
-
-
-
-
               </object>
             </child>
             <child>

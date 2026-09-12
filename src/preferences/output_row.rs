@@ -11,6 +11,8 @@ use crate::{
     },
 };
 
+use super::AudioFormatEntry;
+
 mod imp {
 
     use std::{cell::RefCell, sync::OnceLock};
@@ -46,22 +48,7 @@ mod imp {
         #[template_child]
         pub force_format: TemplateChild<adw::SwitchRow>,
         #[template_child]
-        pub force_format_pcm_dsd: TemplateChild<adw::ToggleGroup>,
-        #[template_child]
-        pub pcm_sr_box: TemplateChild<gtk::Box>,
-        #[template_child]
-        pub pcm_bit_box: TemplateChild<gtk::Box>,
-        #[template_child]
-        pub dsd_box: TemplateChild<gtk::Box>,
-        #[template_child]
-        pub force_format_pcm_samplerate: TemplateChild<gtk::DropDown>,
-        #[template_child]
-        pub force_format_pcm_bitdepth: TemplateChild<gtk::DropDown>,
-        #[template_child]
-        pub force_format_dsd_preset: TemplateChild<gtk::DropDown>,
-
-        #[template_child]
-        pub force_format_channels: TemplateChild<adw::SpinRow>, // shared between PCM and DSD; set to 0 to disable coercing
+        pub force_format_entry: TemplateChild<AudioFormatEntry>,
 
         #[template_child]
         pub send_tags: TemplateChild<adw::SwitchRow>,
@@ -108,12 +95,6 @@ mod imp {
             self.parent_constructed();
             self.output_type
                 .set_model(Some(&gtk::StringList::new(&OutputType::VARIANTS)));
-            self.force_format_pcm_samplerate
-                .set_model(Some(&gtk::StringList::new(PcmSampleRate::VARIANTS)));
-            self.force_format_pcm_bitdepth
-                .set_model(Some(&gtk::StringList::new(PcmBitDepth::VARIANTS)));
-            self.force_format_dsd_preset
-                .set_model(Some(&gtk::StringList::new(DsdMultiplier::VARIANTS)));
 
             // Name is already bound in .ui file. Just the output type requires custom logic.
             self.output_type
@@ -151,21 +132,6 @@ mod imp {
                                 }
                             ),
                         )));
-                }
-            ));
-
-            let is_pcm = self.force_format_pcm_dsd.active_name().unwrap().as_str() == "pcm";
-            self.pcm_sr_box.set_visible(is_pcm);
-            self.pcm_bit_box.set_visible(is_pcm);
-            self.dsd_box.set_visible(!is_pcm);
-            self.force_format_pcm_dsd.connect_active_name_notify(clone!(
-                #[weak(rename_to = this)]
-                self,
-                move |dropdown| {
-                    let is_pcm = dropdown.active_name().unwrap().as_str() == "pcm";
-                    this.pcm_sr_box.set_visible(is_pcm);
-                    this.pcm_bit_box.set_visible(is_pcm);
-                    this.dsd_box.set_visible(!is_pcm);
                 }
             ));
 
@@ -229,32 +195,12 @@ impl OutputRow {
         res.imp()
             .force_format
             .set_active(config.format.as_ref().is_some());
-        let force_format_spec = config
-            .format
-            .as_ref()
-            .unwrap_or(&AudioFormatConfig::DEFAULT);
-        let channels;
-        match force_format_spec {
-            &AudioFormatConfig::Dsd(mul, ch) => {
-                res.imp().force_format_pcm_dsd.set_active_name(Some("dsd"));
-                // Thanks to using strum::VariantNames as stringlist these are guaranteed to be within the valid range
-                res.imp().force_format_dsd_preset.set_selected(mul as u32);
-                channels = ch;
-            }
-            &AudioFormatConfig::Pcm(rate, bits, ch) => {
-                res.imp().force_format_pcm_dsd.set_active_name(Some("pcm"));
-                res.imp()
-                    .force_format_pcm_samplerate
-                    .set_selected(rate as u32);
-                res.imp()
-                    .force_format_pcm_bitdepth
-                    .set_selected(bits as u32);
-                channels = ch;
-            }
-        }
-        if let Some(channels) = channels {
-            res.imp().force_format_channels.set_value(channels as f64);
-        }
+        let force_format_spec = res.imp().force_format_entry.load(
+            config
+                .format
+                .as_ref()
+                .unwrap_or(&AudioFormatConfig::DEFAULT),
+        );
 
         res.imp().send_tags.set_active(config.tags);
         res.imp().always_on.set_active(config.always_on);
@@ -308,50 +254,16 @@ impl OutputRow {
             OutputType::from_repr(self.imp().output_type.selected() as usize).unwrap();
         config.name = self.imp().name.text().to_string();
         if self.imp().force_format.is_active() {
-            let raw_val = self.imp().force_format_channels.value();
-            let channels = if (1.0..=128.0).contains(&raw_val) {
-                Some(raw_val.round() as u8)
-            } else {
-                None
-            };
-            config.format = Some(
-                if self
-                    .imp()
-                    .force_format_pcm_dsd
-                    .active_name()
-                    .is_some_and(|name| name.as_str() == "pcm")
-                {
-                    AudioFormatConfig::Pcm(
-                        PcmSampleRate::from_repr(
-                            self.imp().force_format_pcm_samplerate.selected() as usize
-                        )
-                        .unwrap_or_default(),
-                        PcmBitDepth::from_repr(
-                            self.imp().force_format_pcm_bitdepth.selected() as usize
-                        )
-                        .unwrap_or_default(),
-                        channels,
-                    )
-                } else {
-                    AudioFormatConfig::Dsd(
-                        DsdMultiplier::from_repr(
-                            self.imp().force_format_dsd_preset.selected() as usize
-                        )
-                        .unwrap_or_default(),
-                        channels,
-                    )
-                },
-            );
-            config.tags = self.imp().send_tags.is_active();
-            config.always_off = self.imp().always_off.is_active();
-            config.always_on = self.imp().always_on.is_active();
-            config.mixer_type =
-                MixerType::from_repr(self.imp().mixer_type.selected() as usize).unwrap_or_default();
-            config.replaygain_handler =
-                ReplayGainHandler::from_repr(self.imp().replaygain_handler.selected() as usize)
-                    .unwrap_or_default();
+            config.format = Some(self.imp().force_format_entry.generate_config());
         }
-
+        config.tags = self.imp().send_tags.is_active();
+        config.always_off = self.imp().always_off.is_active();
+        config.always_on = self.imp().always_on.is_active();
+        config.mixer_type =
+            MixerType::from_repr(self.imp().mixer_type.selected() as usize).unwrap_or_default();
+        config.replaygain_handler =
+            ReplayGainHandler::from_repr(self.imp().replaygain_handler.selected() as usize)
+                .unwrap_or_default();
         config
     }
 }
