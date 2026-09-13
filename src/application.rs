@@ -62,10 +62,11 @@ pub fn update_xdg_background_request() {
             }
         }
 
-        match request.send().await {
-            Ok(request) => {
+        let response = request.send().await.map(|request| request.response());
+        glib::idle_add_once(move || match response {
+            Ok(response) => {
                 let settings = settings_manager();
-                if let Ok(response) = request.response() {
+                if let Ok(response) = response {
                     let _ = settings.set_boolean("background-portal-available", true);
                     let state_settings = settings.child("state");
 
@@ -83,7 +84,7 @@ pub fn update_xdg_background_request() {
                 let settings = settings_manager();
                 let _ = settings.set_boolean("background-portal-available", false);
             }
-        }
+        });
     });
 }
 
@@ -310,9 +311,7 @@ impl EuphonicaApplication {
             // Safe to remove hold guard now, if any
             let _ = self.imp().hold_guard.take();
         } else {
-            eprintln!(
-                "FATAL: user exited onboarding."
-            );
+            eprintln!("FATAL: user exited onboarding.");
             self.quit_app();
         }
     }

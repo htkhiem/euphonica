@@ -476,8 +476,9 @@ mod imp {
                                     (obj.imp().album.borrow().as_ref(), obj.imp().cache.get())
                                 {
                                     // Always clear both regardless of optimisation enablement
-                                    if let Err(e) =
-                                        cache.clear_album_cover(album.get_folder_uri(), obj.uris(), true).await
+                                    if let Err(e) = cache
+                                        .clear_album_cover(album.get_folder_uri(), obj.uris(), true)
+                                        .await
                                     {
                                         obj.show_cache_error("Couldn't clear cover", e);
                                     }
@@ -931,7 +932,10 @@ impl AlbumContentView {
                 .child("library")
                 .boolean("optimize-embedded-cover-loading")
             {
-                if let Err(e) = cache.set_folder_cover(album.get_folder_uri(), path, true).await {
+                if let Err(e) = cache
+                    .set_folder_cover(album.get_folder_uri(), path, true)
+                    .await
+                {
                     self.show_cache_error("Couldn't set cover", e);
                 }
             } else {
@@ -1141,7 +1145,10 @@ impl AlbumContentView {
             // Remove existing entry in SQLite, which might be an empty "do not retry" placeholder.
             if overwrite {
                 // Don't notify, else we'd interrupt the spinner
-                if let Err(e) = cache.clear_album_cover(&info.folder_uri, self.uris(), false).await {
+                if let Err(e) = cache
+                    .clear_album_cover(&info.folder_uri, self.uris(), false)
+                    .await
+                {
                     self.show_cache_error("Couldn't clear cover", e);
                 }
             }

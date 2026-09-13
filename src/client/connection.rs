@@ -13,12 +13,12 @@ use oneshot::Sender as OneShotSender;
 use rand::seq::SliceRandom;
 use resolve_path::PathResolveExt;
 use rustc_hash::FxHashSet;
+#[cfg(target_os = "linux")]
+use std::os::{linux::net::SocketAddrExt, unix::net::SocketAddr};
 use std::{
     borrow::Cow, cell::RefCell, cmp::Ordering as StdOrdering, net::TcpStream, ops::Range,
     os::unix::net::UnixStream, result,
 };
-#[cfg(target_os = "linux")]
-use std::os::{linux::net::SocketAddrExt, unix::net::SocketAddr};
 
 use crate::{
     cache::sqlite,
@@ -161,7 +161,7 @@ pub enum Error {
     NotConnected,
     InsufficientStickersSupportLevel, // any better name for this? not a native speaker
     PlaylistNotEnabled,
-    Parse
+    Parse,
 }
 
 pub type Result<T> = result::Result<T, Error>;
@@ -365,10 +365,10 @@ pub enum Task {
     Find(Query<'static>, Window, Responder<Vec<SongInfo>>),
     /// Batched version of Find.
     FindMultiple(
-        Vec<(Query<'static>, Window)>, 
+        Vec<(Query<'static>, Window)>,
         /// Optional list of tagtypes to limit to.
-        Option<Vec<&'static str>>, 
-        Responder<Vec<SongInfo>>
+        Option<Vec<&'static str>>,
+        Responder<Vec<SongInfo>>,
     ),
     LsInfo(String, Responder<Vec<INodeInfo>>),
     GetPlaylist(
@@ -455,7 +455,7 @@ impl Connection {
     }
 
     pub fn connect(&mut self) -> Result<Version> {
-        let settings = utils::settings_manager().child("client");
+        let settings = utils::settings_reader().child("client");
         // eprintln!("Attempting connection...");
 
         // self.state.set_connection_state(ConnectionState::Connecting);
@@ -468,23 +468,33 @@ impl Connection {
             #[cfg(target_os = "linux")]
             {
                 if path.starts_with("@") {
-                    client = Some(path.get(1..)
-                        .ok_or(Error::NoExist)
-                        .and_then(|n| SocketAddr::from_abstract_name(n).map_err(|_| Error::NoExist))
-                        .and_then(|a| UnixStream::connect_addr(&a).map_err(|_| Error::Socket))
-                        .map(|s| StreamWrapper::new_unix(s))
-                        .and_then(|s| mpd::Client::new(s).map_err(Error::Mpd)))
+                    client = Some(
+                        path.get(1..)
+                            .ok_or(Error::NoExist)
+                            .and_then(|n| {
+                                SocketAddr::from_abstract_name(n).map_err(|_| Error::NoExist)
+                            })
+                            .and_then(|a| UnixStream::connect_addr(&a).map_err(|_| Error::Socket))
+                            .map(|s| StreamWrapper::new_unix(s))
+                            .and_then(|s| mpd::Client::new(s).map_err(Error::Mpd)),
+                    )
                 }
             }
-            client.unwrap_or_else(||
+            client.unwrap_or_else(|| {
                 if let Ok(resolved) = path.try_resolve() {
-                    UnixStream::connect(resolved).map_err(|_| Error::Socket)
-                        .and_then(|s| mpd::Client::new(StreamWrapper::new_unix(s)).map_err(Error::Mpd))
+                    UnixStream::connect(resolved)
+                        .map_err(|_| Error::Socket)
+                        .and_then(|s| {
+                            mpd::Client::new(StreamWrapper::new_unix(s)).map_err(Error::Mpd)
+                        })
                 } else {
-                    UnixStream::connect(path).map_err(|_| Error::Socket)
-                        .and_then(|s| mpd::Client::new(StreamWrapper::new_unix(s)).map_err(Error::Mpd))
+                    UnixStream::connect(path)
+                        .map_err(|_| Error::Socket)
+                        .and_then(|s| {
+                            mpd::Client::new(StreamWrapper::new_unix(s)).map_err(Error::Mpd)
+                        })
                 }
-            )?
+            })?
         } else {
             let addr = format!(
                 "{}:{}",
@@ -631,7 +641,9 @@ impl Connection {
         let thumb = sqlite::find_image_by_key(key, None, true).expect("Sqlite DB error");
         // The above might return empty strings verbatim. Normally we wouldn't even reach this if the strings were empty,
         // but there might be some race conditions when there are multiple distinct album tags in the same folder?
-        if hires.as_ref().is_some_and(|s| !s.is_empty()) && thumb.as_ref().is_some_and(|s| !s.is_empty()) {
+        if hires.as_ref().is_some_and(|s| !s.is_empty())
+            && thumb.as_ref().is_some_and(|s| !s.is_empty())
+        {
             let (hires, thumb) = (hires.unwrap(), thumb.unwrap());
             let _ = resp.send(Ok(Some(ImageHandle::Registered(
                 utils::RegisteredImageBundle {
@@ -973,10 +985,7 @@ impl Connection {
                     }
                     Task::GetStickers(typ, uri, names, resp) => {
                         let name_refs: Vec<&str> = names.iter().map(|s| s.as_ref()).collect();
-                        self.respond_with_client(
-                            |c| c.get_stickers(typ, &uri, &name_refs),
-                            resp,
-                        )
+                        self.respond_with_client(|c| c.get_stickers(typ, &uri, &name_refs), resp)
                     }
                     Task::SetSticker(typ, uri, name, val, mode, resp) => self.respond_with_client(
                         |c| match mode {
@@ -991,26 +1000,18 @@ impl Connection {
                             .iter()
                             .map(|(name, val)| (name.as_ref(), val.as_ref()))
                             .collect();
-                        self.respond_with_client(
-                            |c| c.set_stickers(typ, &uri, &pairs),
-                            resp,
-                        )
+                        self.respond_with_client(|c| c.set_stickers(typ, &uri, &pairs), resp)
                     }
                     Task::DeleteSticker(typ, uri, name, resp) => {
                         self.respond_with_client(|c| c.delete_sticker(typ, &uri, &name), resp)
                     }
                     Task::DeleteStickers(typ, uri, names, resp) => {
                         let name_refs: Vec<&str> = names.iter().map(|s| s.as_ref()).collect();
-                        self.respond_with_client(
-                            |c| c.delete_stickers(typ, &uri, &name_refs),
-                            resp,
-                        )
+                        self.respond_with_client(|c| c.delete_stickers(typ, &uri, &name_refs), resp)
                     }
-                    Task::FindSticker(typ, uri, name, window, resp) => self
-                        .respond_with_client(
-                            |c| c.find_sticker(typ, &uri, &name, window),
-                            resp,
-                        ),
+                    Task::FindSticker(typ, uri, name, window, resp) => {
+                        self.respond_with_client(|c| c.find_sticker(typ, &uri, &name, window), resp)
+                    }
                     Task::GetPlaylists(resp) => self.respond_with_client(
                         |c| {
                             c.playlists().map(|playlists| {
@@ -1118,21 +1119,20 @@ impl Connection {
                         self.respond_with_client(|c| c.changesposid(since, window), resp)
                     }
                     Task::UpdateDb(resp) => self.respond_with_client(|c| c.update(), resp),
-                    Task::GetEmbeddedCover(uri, cache_key, resp) => {
+                    Task::GetEmbeddedCover(uri, cache_key, resp) => self.maybe_download_image(
+                        uri,
+                        |client, uri| client.readpicture(uri),
+                        cache_key,
+                        resp,
+                    ),
+                    Task::GetFolderCover(example_uri, cache_key, resp) => {
                         self.maybe_download_image(
-                            uri,
-                            |client, uri| client.readpicture(uri),
-                            cache_key,
+                            example_uri,
+                            |client, uri| client.albumart(uri),
+                            cache_key, // Always store by example_uri
                             resp,
                         )
                     }
-                    Task::GetFolderCover(example_uri, cache_key, resp) => {
-                        self.maybe_download_image(
-                        example_uri,
-                        |client, uri| client.albumart(uri),
-                        cache_key,  // Always store by example_uri
-                        resp,
-                    )},
                     Task::List(term, query, groupby, resp) => {
                         self.respond_with_client(|c| c.list(&term, &query, groupby), resp)
                     }
@@ -1144,18 +1144,15 @@ impl Connection {
                         },
                         resp,
                     ),
-                    Task::FindMultiple(queries_windows, tagtypes,resp) => {
-                        self.respond_with_client(
-                        move |c| {
-                            c.find_multiple(
-                                &queries_windows, 
-                                tagtypes.as_deref()
-                            ).map(|mpd_songs| {
-                                mpd_songs.into_iter().map(SongInfo::from).collect()
-                            })
-                        },
-                        resp,
-                    )},
+                    Task::FindMultiple(queries_windows, tagtypes, resp) => self
+                        .respond_with_client(
+                            move |c| {
+                                c.find_multiple(&queries_windows, tagtypes.as_deref()).map(
+                                    |mpd_songs| mpd_songs.into_iter().map(SongInfo::from).collect(),
+                                )
+                            },
+                            resp,
+                        ),
                     Task::LsInfo(path, resp) => self.respond_with_client(
                         |c| {
                             c.lsinfo(&path)
@@ -1202,9 +1199,16 @@ impl Connection {
                     }
                     Task::ListGenres(resp) => {
                         let result = (|| -> Result<Vec<String>> {
-                            let raw_genres: Vec<String> = self.client_then(|c| {
-                                c.list(&Term::Tag(Cow::Borrowed(crate::common::tags::GENRE)), &Query::new(), None)
-                            })?.groups.into_iter()
+                            let raw_genres: Vec<String> = self
+                                .client_then(|c| {
+                                    c.list(
+                                        &Term::Tag(Cow::Borrowed(crate::common::tags::GENRE)),
+                                        &Query::new(),
+                                        None,
+                                    )
+                                })?
+                                .groups
+                                .into_iter()
                                 .flat_map(|g| g.1.into_iter())
                                 .collect();
 

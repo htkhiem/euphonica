@@ -29,11 +29,12 @@ pub fn split_genre_tag(input: &str) -> Vec<&str> {
     }
 
     // Pass 2: find delimiters in modified buffer
-    let delimiter_matches: Vec<Match> = if let Some(delim_ac) = &*GENRE_DELIM_AUTOMATON.read().unwrap() {
-        delim_ac.find_iter(&buffer).collect()
-    } else {
-        return vec![input.trim()];
-    };
+    let delimiter_matches: Vec<Match> =
+        if let Some(delim_ac) = &*GENRE_DELIM_AUTOMATON.read().unwrap() {
+            delim_ac.find_iter(&buffer).collect()
+        } else {
+            return vec![input.trim()];
+        };
 
     if delimiter_matches.is_empty() {
         if !protected_ranges.is_empty() {
@@ -52,9 +53,9 @@ pub fn split_genre_tag(input: &str) -> Vec<&str> {
         .filter_map(|m| {
             let buf_start = m.start();
             let buf_end = m.end();
-            let overlaps = protected_ranges.iter().any(|&(ps, pe)| {
-                buf_start < pe && buf_end > ps
-            });
+            let overlaps = protected_ranges
+                .iter()
+                .any(|&(ps, pe)| buf_start < pe && buf_end > ps);
             if overlaps {
                 None
             } else {

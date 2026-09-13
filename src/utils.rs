@@ -1,5 +1,6 @@
 use crate::cache::sqlite;
 use crate::config::APPLICATION_ID;
+pub use crate::settings::{settings_manager, settings_reader};
 use adw::prelude::*;
 use aho_corasick::AhoCorasick;
 use gtk::{
@@ -56,17 +57,14 @@ pub fn tokio_runtime() -> &'static Runtime {
     RUNTIME.get_or_init(|| Runtime::new().expect("Setting up tokio runtime needs to succeed."))
 }
 
-/// Get GSettings for the entire application.
-pub fn settings_manager() -> gio::Settings {
-    // Trim the .Devel suffix if exists
-    let app_id = APPLICATION_ID.trim_end_matches(".Devel");
-    gio::Settings::new(app_id)
-}
-
 /// Shortcut to a metadata provider's settings.
 pub fn meta_provider_settings(key: &str) -> gio::Settings {
     // Trim the .Devel suffix if exists
     settings_manager().child("metaprovider").child(key)
+}
+
+pub fn meta_provider_settings_reader(key: &str) -> crate::settings::SettingsReader {
+    settings_reader().child("metaprovider").child(key)
 }
 
 pub fn format_secs_as_duration(seconds: f64) -> String {
@@ -218,7 +216,7 @@ pub fn read_image_from_bytes(bytes: Vec<u8>) -> Option<DynamicImage> {
 /// Their major axis's resolution is determined by the keys hires-image-size and
 /// thumbnail-image-size in the gschema respectively.
 pub fn resize_convert_image(dyn_img: DynamicImage) -> (DynamicImage, DynamicImage) {
-    let settings = settings_manager().child("library");
+    let settings = settings_reader().child("library");
     // Avoid resizing to larger than the original image.
     let w = dyn_img.width();
     let h = dyn_img.height();
@@ -259,7 +257,7 @@ pub fn save_and_register_single_image(
     is_thumb: bool,
 ) -> String {
     let mut path = get_image_cache_path();
-    let settings = settings_manager().child("library");
+    let settings = settings_reader().child("library");
     let name = format!("{}.{}", Uuid::new_v4().simple(), "webp");
     path.push(&name);
     if settings.boolean("store-lossless-images") {
@@ -451,14 +449,14 @@ pub fn build_aho_corasick_automaton(phrases: &[&str]) -> Option<AhoCorasick> {
     }
 }
 fn build_artist_delim_automaton() -> Option<AhoCorasick> {
-    let setting = settings_manager()
+    let setting = settings_reader()
         .child("library")
         .value("artist-tag-delims");
     let delims: Vec<&str> = setting.array_iter_str().unwrap().collect();
     build_aho_corasick_automaton(&delims)
 }
 fn build_artist_delim_exceptions_automaton() -> Option<AhoCorasick> {
-    let setting = settings_manager()
+    let setting = settings_reader()
         .child("library")
         .value("artist-tag-delim-exceptions");
     let excepts: Vec<&str> = setting.array_iter_str().unwrap().collect();
@@ -494,15 +492,13 @@ pub fn rebuild_artist_delim_exception_automaton() {
 }
 
 fn build_genre_delim_automaton() -> Option<AhoCorasick> {
-    let setting = settings_manager()
-        .child("library")
-        .value("genre-tag-delims");
+    let setting = settings_reader().child("library").value("genre-tag-delims");
     let delims: Vec<&str> = setting.array_iter_str().unwrap().collect();
     build_aho_corasick_automaton(&delims)
 }
 
 fn build_genre_delim_exceptions_automaton() -> Option<AhoCorasick> {
-    let setting = settings_manager()
+    let setting = settings_reader()
         .child("library")
         .value("genre-tag-delim-exceptions");
     let excepts: Vec<&str> = setting.array_iter_str().unwrap().collect();

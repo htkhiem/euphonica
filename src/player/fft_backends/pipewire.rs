@@ -23,7 +23,10 @@ use std::{
     time::Duration,
 };
 
-use crate::{player::Player, utils::settings_manager};
+use crate::{
+    player::Player,
+    utils::{settings_manager, settings_reader},
+};
 
 // Based on https://gitlab.freedesktop.org/pipewire/pipewire-rs/-/raw/main/pipewire/examples/audio-capture.rs
 // Our PipeWire backend involves two threads:
@@ -269,7 +272,7 @@ impl FftBackendImpl for PipeWireFftBackend {
                             device_lock.truncate(64);
                         }
                     }
-                    let settings = settings_manager().child("client");
+                    let settings = settings_reader().child("client");
                     let _last_device = settings.string("pipewire-last-device");
                     let last_device = _last_device.as_str();
                     {
@@ -387,7 +390,9 @@ impl FftBackendImpl for PipeWireFftBackend {
                                 if media_type != MediaType::Audio
                                     || media_subtype != MediaSubtype::Raw
                                 {
-                                    eprintln!("Not MediaType::Audio || MediaSubtype::Raw, skipping");
+                                    eprintln!(
+                                        "Not MediaType::Audio || MediaSubtype::Raw, skipping"
+                                    );
                                     return;
                                 }
 
@@ -509,7 +514,7 @@ impl FftBackendImpl for PipeWireFftBackend {
 
             // Run FFT thread
             let fft_handle = gio::spawn_blocking(move || {
-                let settings = settings_manager();
+                let settings = settings_reader();
                 let player_settings = settings.child("player");
                 // Allocate the following once only
                 let mut fft_buf_left: Vec<f32> = vec![0.0; n_samples];

@@ -36,7 +36,7 @@ pub struct Stickers {
 
 impl Stickers {
     // myMPD-compatible stickers
-    pub const RATING: &'static str = "rating";  // Usage with non-song entities is now deprecated
+    pub const RATING: &'static str = "rating"; // Usage with non-song entities is now deprecated
     pub const LIKE: &'static str = "like";
     pub const ELAPSED: &'static str = "elapsed";
     pub const LAST_PLAYED: &'static str = "lastPlayed";
@@ -60,7 +60,7 @@ impl Stickers {
     // name prefix dropped, for example).
     pub const META_DOC: &'static str = "euphonica:meta:doc";
     pub const META_LAST_MODIFIED: &'static str = "euphonica:meta:lastModified";
-    pub const META_PAGE_COUNT: &'static str = "euphonica:meta:pageCount";  // starts from 0
+    pub const META_PAGE_COUNT: &'static str = "euphonica:meta:pageCount"; // starts from 0
 
     pub fn from_mpd_kv(kvs: Vec<(String, String)>) -> Self {
         let mut res = Self::default();

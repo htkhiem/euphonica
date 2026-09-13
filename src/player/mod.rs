@@ -10,13 +10,11 @@ mod queue_view;
 mod ratio_center_box;
 mod seekbar2;
 
-
 use knob::VolumeKnob;
 use output::MpdOutput;
 
-
 pub use bar::PlayerBar;
-pub use controller::{PlaybackState, PlaybackFlow, Player, get_next_replaygain};
+pub use controller::{PlaybackFlow, PlaybackState, Player, get_next_replaygain};
 pub use fft_backends::backend::FftStatus;
 pub use output_controls::OutputControls;
 pub use pane::PlayerPane;

@@ -83,19 +83,13 @@ impl AlbumInfo {
     pub fn get_filter_expression(&self) -> String {
         let mut q = Query::new();
         if let Some(mbid) = self.mbid.as_deref() {
-            q.and(
-                Term::Tag(tags::ALBUM_MBID.into()),
-                mbid.to_owned(),
-            );
+            q.and(Term::Tag(tags::ALBUM_MBID.into()), mbid.to_owned());
         } else {
             q.and(
                 Term::Tag(tags::ALBUMARTIST.into()),
                 self.albumartist.as_deref().unwrap_or(""),
             );
-            q.and(
-                Term::Tag(tags::ALBUM.into()),
-                &self.title,
-            );
+            q.and(Term::Tag(tags::ALBUM.into()), &self.title);
             q.and(
                 Term::Tag(tags::DATE.into()),
                 self.date_tag.as_deref().unwrap_or(""),
@@ -349,7 +343,7 @@ impl Album {
     /// Checks if the given genre substring is in any of this album's genre strings.
     /// Genre-less albums always return false.
     pub fn has_genre(&self, genre_substr: &str) -> bool {
-        self.get_genres().contains(genre_substr)        
+        self.get_genres().contains(genre_substr)
     }
 }
 

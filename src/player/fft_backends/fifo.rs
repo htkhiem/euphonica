@@ -18,7 +18,7 @@ use std::{
 use mpd::status::AudioFormat;
 
 use super::backend::{FftBackendExt, FftBackendImpl, FftStatus};
-use crate::{player::Player, utils::settings_manager};
+use crate::{player::Player, utils::settings_reader as settings_manager};
 
 #[derive(Debug)]
 pub struct FifoFftBackend {
