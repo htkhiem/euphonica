@@ -95,7 +95,10 @@ mod imp {
 
     use gtk::glib::WeakRef;
 
-    use crate::{preferences::outputs::AudioOutputs, server::config::OutputConfig};
+    use crate::{
+        preferences::outputs::AudioOutputs,
+        server::config::{OutputConfig, OutputType},
+    };
 
     use super::*;
 
@@ -203,6 +206,9 @@ mod imp {
 
     impl ObjectImpl for ClientPreferences {
         fn constructed(&self) {
+            // DEBUG
+            dbg!(OutputType::PipeWire.get_custom_config_spec());
+
             self.parent_constructed();
             self.config_outputs_row.connect_activated(clone!(
                 #[weak(rename_to = this)]

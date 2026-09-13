@@ -1,4 +1,12 @@
+use crate::{
+    config::VERSION,
+    utils::{get_app_cache_path, get_pipewire_devices, get_standalone_playlists_path},
+};
+#[cfg(target_os = "linux")]
+use alsa::{self, device_name::HintIter};
 use regex::Regex;
+use rustc_hash::FxHashMap;
+use std::ffi::CString;
 /// Config file generator, for use with the managed MPD instance.
 /// Since it's only meant for the above case, there is no need to allow configuring things like state file,
 /// sticker DB or bind_to_address. These things are always on & fully abstracted away to minimise fuss.
@@ -10,11 +18,6 @@ use std::fmt::{Display, Write};
 use strum::{EnumMessage, VariantNames};
 use strum_macros::{Display, EnumIter, EnumMessage, EnumString, FromRepr, VariantNames};
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
-
-use crate::{
-    config::VERSION,
-    utils::{get_app_cache_path, get_standalone_playlists_path},
-};
 
 // Euphonica manages one hidden FIFO output plugin (not exposed to the user) to power the
 // spectrum visualiser.
@@ -292,8 +295,8 @@ pub enum ConfigValueType {
     Text,
     /// Use this to show a "Browse" row. Will default to blank.
     Path,
-    /// Allow selection from a predefined list of values. Will default to first in list.
-    Combo(Vec<String>),
+    /// Allow selection from a predefined list of (display, internal) values. Will default to first in list.
+    Combo(Vec<(String, String)>),
     /// AdwSpinRow. Parameters are min, max, step size, page size, number of decimal digits to keep in output.
     Number(f64, f64, f64, f64, u8),
     /// AdwSwitchRow. Parameter allows specifying default value.
@@ -306,7 +309,6 @@ pub enum ConfigValueType {
 pub struct OutputConfigSpec {
     title: String,
     subtitle: Option<String>,
-    key: String,
     value_type: ConfigValueType,
 }
 
@@ -326,23 +328,371 @@ pub struct OutputConfigSpec {
 #[non_exhaustive]
 pub enum OutputType {
     #[strum(serialize = "httpd", to_string = "HTTPD")]
+    #[default]
     Httpd,
+    #[cfg(target_os = "linux")]
     #[strum(serialize = "alsa", to_string = "ALSA")]
     Alsa,
+    #[cfg(any(
+        target_os = "linux",
+        target_os = "freebsd",
+        target_os = "openbsd",
+        target_os = "netbsd",
+        target_os = "dragonfly"
+    ))]
     #[strum(serialize = "pulse", to_string = "PulseAudio")]
     Pulse,
-    #[strum(serialize = "oss", to_string = "OSS")]
+    #[cfg(any(
+        target_os = "linux",
+        target_os = "freebsd",
+        target_os = "openbsd",
+        target_os = "netbsd",
+        target_os = "dragonfly"
+    ))]
+    #[strum(serialize = "pipewire", to_string = "PipeWire")]
+    PipeWire,
+    #[cfg(any(
+        target_os = "linux",
+        target_os = "freebsd",
+        target_os = "openbsd",
+        target_os = "netbsd",
+        target_os = "dragonfly"
+    ))]
     Oss,
+    #[cfg(any(
+        target_os = "linux",
+        target_os = "freebsd",
+        target_os = "openbsd",
+        target_os = "netbsd",
+        target_os = "dragonfly"
+    ))]
     #[strum(serialize = "fifo", to_string = "FIFO")]
     Fifo,
-    #[strum(serialize = "pipewire", to_string = "PipeWire")]
-    #[default]
-    PipeWire,
 }
 
 impl OutputType {
-    /// Return information regarding
-    pub fn get_custom_config_spec(&self) {}
+    /// Return plugin-specific configuration, with valid values initialised with
+    /// what the local system currently has.
+    pub fn get_custom_config_spec(&self) -> FxHashMap<&'static str, OutputConfigSpec> {
+        match &self {
+            #[cfg(target_os = "linux")]
+            &Self::Alsa => {
+                let mut display_internal_pairs = vec![("Auto".into(), "default".into())];
+                // For now only allow selection of playback devices (ALSA calls them "pcm", doesn't mean they only play PCM).
+                let i = HintIter::new(None, &*CString::new("pcm").unwrap()).unwrap();
+                for a in i.into_iter() {
+                    if let (Some(display), Some(internal), Some(dir)) =
+                        (a.desc, a.name, a.direction)
+                    {
+                        if dir == alsa::Direction::Playback {
+                            println!("  Display name {}, Internal name {}", &display, &internal);
+                            // By default display names are on two lines, both of which are necessary to tell one device from another.
+                            display_internal_pairs.push((display, internal));
+                        }
+                    }
+                }
+                [
+                    (
+                        "device",
+                        OutputConfigSpec {
+                            title: "Override playback device".into(),
+                            subtitle: None,
+                            value_type: ConfigValueType::Combo(display_internal_pairs),
+                        },
+                    ),
+                    (
+                        "auto_resample",
+                        OutputConfigSpec {
+                            title: "Auto resample".into(),
+                            subtitle: Some(
+                                "If set to no, then libasound will not attempt to resample, \
+                            handing the responsibility over to MPD. It is recommended to let MPD \
+                            resample (with libsamplerate), because ALSA is quite poor at doing so."
+                                    .into(),
+                            ),
+                            value_type: ConfigValueType::Bool(false),
+                        },
+                    ),
+                    (
+                        "auto_channels",
+                        OutputConfigSpec {
+                            title: "Auto channels".into(),
+                            subtitle: Some(
+                                "If set to no, then libasound will not attempt to convert \
+                            between different channel numbers."
+                                    .into(),
+                            ),
+                            value_type: ConfigValueType::Bool(true),
+                        },
+                    ),
+                    (
+                        "auto_format",
+                        OutputConfigSpec {
+                            title: "Auto format".into(),
+                            subtitle: Some(
+                                "If set to no, then libasound will not attempt to convert \
+                            between different sample formats (16 bit, 24 bit, floating point, …)."
+                                    .into(),
+                            ),
+                            value_type: ConfigValueType::Bool(true),
+                        },
+                    ),
+                    (
+                        "dop",
+                        OutputConfigSpec {
+                            title: "Use DSD-over-PCM (DoP)".into(),
+                            subtitle: Some(
+                                "This wraps DSD samples in fake 24 bit PCM, and is \
+                            understood by some DSD capable products, but may be harmful to \
+                            other hardware. Therefore, the default is no and you can enable \
+                            the option at your own risk."
+                                    .into(),
+                            ),
+                            value_type: ConfigValueType::Bool(false),
+                        },
+                    ),
+                    (
+                        "stop_dsd_silence",
+                        OutputConfigSpec {
+                            title: "Stop DSD silence".into(),
+                            subtitle: Some(
+                                "If enabled, silence is played before manually stopping \
+                                playback (“stop” or “pause”) in DSD mode (native \
+                                DSD or DoP). This is a workaround for some DACs \
+                                which emit noise when stopping DSD playback."
+                                    .into(),
+                            ),
+                            value_type: ConfigValueType::Bool(false),
+                        },
+                    ),
+                    (
+                        "allowed_formats",
+                        OutputConfigSpec {
+                            title: "Allowed formats".into(),
+                            subtitle: Some(
+                                "Additionally specify a list of audio formats understood \
+                                by the device here. ALSA will try to pick the one closest \
+                                to the material being played."
+                                    .into(),
+                            ),
+                            value_type: ConfigValueType::Bool(false),
+                        },
+                    ),
+                ]
+                .into_iter()
+                .collect()
+            }
+            #[cfg(any(
+                target_os = "linux",
+                target_os = "freebsd",
+                target_os = "openbsd",
+                target_os = "netbsd",
+                target_os = "dragonfly"
+            ))]
+            OutputType::Fifo => [(
+                "path",
+                OutputConfigSpec {
+                    title: "FIFO file path".into(),
+                    subtitle: None,
+                    value_type: ConfigValueType::Path,
+                },
+            )]
+            .into_iter()
+            .collect(),
+            OutputType::Httpd => [
+                (
+                    "bind_to_address",
+                    OutputConfigSpec {
+                        title: "Bind to address".into(),
+                        subtitle: None,
+                        value_type: ConfigValueType::Text,
+                    },
+                ),
+                (
+                    "port",
+                    OutputConfigSpec {
+                        title: "Port".into(),
+                        subtitle: None,
+                        value_type: ConfigValueType::Text,
+                    },
+                ),
+                (
+                    "dscp_class",
+                    OutputConfigSpec {
+                        title: "DSCP class".into(),
+                        subtitle: Some("Differentiated Services Code Point class for outgoing traffic. CS3 is recommended.".into()),
+                        // Put CS3 as default (top). Only expose CS levels.
+                        value_type: ConfigValueType::Combo(vec![
+                            ("Broadcast video (CS3)".into(), "CS3".into()),
+                            ("Standard (CS0)".into(), "CS0".into()),
+                            ("Low-priority (CS1)".into(), "CS1".into()),
+                            ("OAM (CS2)".into(), "CS2".into()),
+                            ("Real-time interactive (CS4)".into(), "CS4".into()),
+                            ("Signalling (CS5)".into(), "CS5".into()),
+                            ("Network control (CS6)".into(), "CS6".into()),
+                        ]),
+                    },
+                ),
+                (
+                    "max_clients",
+                    OutputConfigSpec {
+                        title: "Maximum concurrent clients".into(),
+                        subtitle: Some("When set to 0 no limit will apply.".into()),
+                        // Put CS3 as default (top). Only expose CS levels.
+                        value_type: ConfigValueType::Number(0.0, 128.0, 1.0, 5.0, 0),
+                    },
+                ),
+                (
+                    "genre",
+                    OutputConfigSpec {
+                        title: "Stream genre".into(),
+                        subtitle: Some("Will be reflected in the icy-genre header of the stream.".into()),
+                        value_type: ConfigValueType::Text,
+                    },
+                ),
+                (
+                    "website",
+                    OutputConfigSpec {
+                        title: "Stream website".into(),
+                        subtitle: Some("Will be reflected in the icy-website header of the stream.".into()),
+                        value_type: ConfigValueType::Text,
+                    },
+                ),
+            ]
+            .into_iter()
+            .collect(),
+            #[cfg(any(
+                target_os = "linux",  // not recommended tho
+                target_os = "freebsd",
+                target_os = "openbsd",
+                target_os = "netbsd",
+                target_os = "dragonfly"
+            ))]
+            OutputType::Oss => {
+                [
+                    (
+                        "device",
+                        OutputConfigSpec {
+                            title: "Override device path".into(),
+                            subtitle: None,
+                            value_type: ConfigValueType::Text
+                        }
+                    ),
+                    (
+                        "dop",
+                        OutputConfigSpec {
+                            title: "Use DSD-over-PCM (DoP)".into(),
+                            subtitle: Some(
+                                "This wraps DSD samples in fake 24 bit PCM, and is \
+                            understood by some DSD capable products, but may be harmful to \
+                            other hardware. Therefore, the default is no and you can enable \
+                            the option at your own risk."
+                                    .into(),
+                            ),
+                            value_type: ConfigValueType::Bool(false),
+                        },
+                    )
+                ].into_iter().collect()
+            }
+            #[cfg(any(
+                target_os = "linux",
+                target_os = "freebsd",
+                target_os = "openbsd",
+                target_os = "netbsd",
+                target_os = "dragonfly"
+            ))]
+            OutputType::PipeWire => {
+                // FIXME: BLOCKING LOGIC
+                let display_and_node_names = get_pipewire_devices(false);
+                [
+                    (
+                        "target",
+                        OutputConfigSpec {
+                            title: "Override device".into(),
+                            subtitle: Some("If not specified, let the PipeWire manager select a target.".into()),
+                            value_type: ConfigValueType::Combo(display_and_node_names)
+                        }
+                    ),
+                    (
+                        "remote",
+                        OutputConfigSpec {
+                            title: "Override remote name".into(),
+                            subtitle: None,
+                            value_type: ConfigValueType::Text
+                        }
+                    ),
+                    (
+                        "dsd",
+                        OutputConfigSpec {
+                            title: "Enable DSD playback".into(),
+                            subtitle: Some(
+                                "Requires PipeWire 0.38 and up.".into(),
+                            ),
+                            value_type: ConfigValueType::Bool(false),
+                        },
+                    )
+                ].into_iter().collect()
+            }
+            #[cfg(any(
+                target_os = "linux",
+                target_os = "freebsd",
+                target_os = "openbsd",
+                target_os = "netbsd",
+                target_os = "dragonfly"
+            ))]
+            OutputType::Pulse => {
+                [
+                    (
+                        "server",
+                        OutputConfigSpec {
+                            title: "Override server hostname".into(),
+                            subtitle: None,
+                            value_type: ConfigValueType::Text
+                        }
+                    ),
+                    (
+                        "sink",
+                        // Too lazy to implement auto sink names fetching here.
+                        // Most people use PipeWire these days anyway.
+                        OutputConfigSpec {
+                            title: "Override sink".into(),
+                            subtitle: None,
+                            value_type: ConfigValueType::Text
+                        }
+                    ),
+                    (
+                        "media_role",
+                        // Too lazy to implement auto sink names fetching here.
+                        // Most people use PipeWire these days anyway.
+                        OutputConfigSpec {
+                            title: "Media role".into(),
+                            subtitle: Some("Specify what media role MPD should report to PulseAudio.".into()),
+                            value_type: ConfigValueType::Combo(vec![
+                                ("video".into(), "video".into()),
+                                ("music".into(), "music".into()),
+                                ("game".into(), "game".into()),
+                                ("event".into(), "event".into()),
+                                ("phone".into(), "phone".into()),
+                                ("animation".into(), "animation".into()),
+                                ("production".into(), "production".into()),
+                                ("a11y".into(), "a11y".into()),
+                            ])
+                        }
+                    ),
+                    (
+                        "scale_volume",
+                        OutputConfigSpec {
+                            title: "Scale volume".into(),
+                            subtitle: Some("Specifies a linear scaling coefficient to apply when adjusting \
+                            volume through MPD. For example, chosing 0.7 means that setting the volume to \
+                            100 in MPD will set the PulseAudio volume to 70%.".into()),
+                            value_type: ConfigValueType::Number(0.5, 5.0, 0.05, 0.1, 2)
+                        }
+                    )
+                ].into_iter().collect()
+            }
+        }
+    }
 }
 
 /// ALSA, OSS and Pulse supports hardware mixer and MPD uses that as default.

@@ -1,7 +1,7 @@
 use super::DualStringObject;
 use gtk::{
     gio::{self, prelude::*, subclass::prelude::*},
-    glib::{self, subclass::prelude::*},
+    glib::{self},
 };
 use std::cell::RefCell;
 
@@ -50,6 +50,17 @@ glib::wrapper! {
 impl DualStringList {
     pub fn new() -> Self {
         glib::Object::builder().build()
+    }
+
+    /// String order: display and internal
+    pub fn from_string_pairs(pairs: &[(&str, &str)]) -> Self {
+        let res: Self = glib::Object::builder().build();
+        let objs = pairs
+            .iter()
+            .map(|(display, internal)| DualStringObject::new(*display, *internal))
+            .collect();
+        res.imp().items.replace(objs);
+        res
     }
 
     pub fn append(&self, display: &str, internal: &str) {

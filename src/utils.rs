@@ -671,3 +671,83 @@ pub fn sync_animation(animation: &adw::TimedAnimation, should_run: bool) {
         animation.pause();
     }
 }
+
+/// Get PipeWire device names. Returns a list of pairs of (display name, node_name) strings
+#[cfg(any(
+    target_os = "linux",
+    target_os = "freebsd",
+    target_os = "openbsd",
+    target_os = "netbsd",
+    target_os = "dragonfly"
+))]
+pub fn get_pipewire_devices(include_mpd_if_found: bool) -> Vec<(String, String)> {
+    use pipewire as pw;
+    use std::sync::{Arc, Mutex};
+
+    let mainloop = Arc::new(
+        pw::main_loop::MainLoopBox::new(None)
+            .expect("get_devices: Unable to create a new PipeWire mainloop"),
+    );
+    let context = pw::context::ContextBox::new(mainloop.loop_(), None)
+        .expect("get_devices: Unable to get PipeWire context");
+    let core = context.connect(None).unwrap();
+    let registry = core.get_registry().unwrap();
+
+    let res = Arc::new(Mutex::new(Vec::new()));
+    let res_cloned = res.clone();
+    let _listener = registry
+        .add_listener_local()
+        .global(move |global| {
+            if global.type_ == pw::types::ObjectType::Node {
+                let props = global.props.as_ref().unwrap();
+                let node_name = props.get("node.name").unwrap();
+                if props
+                    .get("application.name")
+                    .is_some_and(|name| name == "Music Player Daemon")
+                    && include_mpd_if_found
+                {
+                    res_cloned
+                        .lock()
+                        .unwrap()
+                        .push((format!("MPD PipeWire ({node_name})"), node_name.to_owned()));
+                } else if props
+                    .get("media.class")
+                    .is_some_and(|mclass| mclass == "Audio/Sink" || mclass == "Stream/Output/Audio")
+                {
+                    res_cloned.lock().unwrap().push((
+                        props
+                            .get("node.description")
+                            .unwrap_or(node_name)
+                            .to_owned(),
+                        node_name.to_owned(),
+                    ));
+                }
+            }
+        })
+        .register();
+
+    // Force roundtrip to return results once all globals have been received
+    let mainloop_clone = mainloop.clone();
+
+    // Queue a sync signal after processing all of the above so the loop knows when to stop.
+    let target_seq = core
+        .sync(0)
+        .expect("Cannot force PipeWire object enumeration roundtrip");
+
+    let roundtrip_listener = core
+        .add_listener_local()
+        .done(move |id, seq| {
+            if id == pw::core::PW_ID_CORE && seq.seq() == target_seq.seq() {
+                // println!("All globalobjects have been received, quitting get_devices mainloop");
+                mainloop_clone.quit();
+            }
+        })
+        .register();
+
+    // Will block until all objects have been enumerated
+    mainloop.run();
+    roundtrip_listener.unregister();
+
+    let lock = Arc::try_unwrap(res).expect("Lock still has multiple owners");
+    lock.into_inner().expect("Mutex cannot be locked")
+}

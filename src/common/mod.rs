@@ -9,6 +9,7 @@ pub mod fading_scrolled_window;
 pub mod genre;
 pub mod image_stack;
 pub mod inode;
+pub mod list_models;
 pub mod marquee;
 pub mod paintables;
 pub mod picture_stack;
@@ -20,7 +21,6 @@ pub mod song_row;
 pub mod sticker;
 pub mod tags;
 pub mod theme_selector;
-pub mod list_models;
 
 pub use album::{Album, AlbumInfo};
 pub use artist::{Artist, ArtistInfo, artists_to_string, parse_mb_artist_tag};
@@ -42,7 +42,6 @@ pub use song::{QualityGrade, Song, SongInfo};
 pub use song_row::SongRow;
 pub use sticker::Stickers;
 pub use theme_selector::ThemeSelector;
-
 
 #[derive(Default, Debug, Copy, Clone, PartialEq, Eq, glib::Enum)]
 #[enum_type(name = "EuphonicaConnectionState")]
