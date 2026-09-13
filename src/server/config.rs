@@ -307,6 +307,7 @@ pub enum ConfigValueType {
 
 #[derive(Debug)]
 pub struct OutputConfigSpec {
+    key: &'static str,
     title: String,
     subtitle: Option<String>,
     value_type: ConfigValueType,
@@ -373,7 +374,7 @@ pub enum OutputType {
 impl OutputType {
     /// Return plugin-specific configuration, with valid values initialised with
     /// what the local system currently has.
-    pub fn get_custom_config_spec(&self) -> FxHashMap<&'static str, OutputConfigSpec> {
+    pub fn get_custom_config_spec(&self) -> Vec<OutputConfigSpec> {
         match &self {
             #[cfg(target_os = "linux")]
             &Self::Alsa => {
@@ -391,18 +392,15 @@ impl OutputType {
                         }
                     }
                 }
-                [
-                    (
-                        "device",
-                        OutputConfigSpec {
-                            title: "Override playback device".into(),
-                            subtitle: None,
-                            value_type: ConfigValueType::Combo(display_internal_pairs),
-                        },
-                    ),
-                    (
-                        "auto_resample",
-                        OutputConfigSpec {
+                vec![
+                    OutputConfigSpec {
+                        key: "device",
+                        title: "Override playback device".into(),
+                        subtitle: None,
+                        value_type: ConfigValueType::Combo(display_internal_pairs),
+                    },
+                    OutputConfigSpec {
+                        key: "auto_resample",
                             title: "Auto resample".into(),
                             subtitle: Some(
                                 "If set to no, then libasound will not attempt to resample, \
@@ -412,10 +410,8 @@ impl OutputType {
                             ),
                             value_type: ConfigValueType::Bool(false),
                         },
-                    ),
-                    (
-                        "auto_channels",
                         OutputConfigSpec {
+                            key: "auto_channels",
                             title: "Auto channels".into(),
                             subtitle: Some(
                                 "If set to no, then libasound will not attempt to convert \
@@ -424,10 +420,8 @@ impl OutputType {
                             ),
                             value_type: ConfigValueType::Bool(true),
                         },
-                    ),
-                    (
-                        "auto_format",
                         OutputConfigSpec {
+                            key: "auto_format",
                             title: "Auto format".into(),
                             subtitle: Some(
                                 "If set to no, then libasound will not attempt to convert \
@@ -436,10 +430,8 @@ impl OutputType {
                             ),
                             value_type: ConfigValueType::Bool(true),
                         },
-                    ),
-                    (
-                        "dop",
                         OutputConfigSpec {
+                            key: "dop",
                             title: "Use DSD-over-PCM (DoP)".into(),
                             subtitle: Some(
                                 "This wraps DSD samples in fake 24 bit PCM, and is \
@@ -450,10 +442,8 @@ impl OutputType {
                             ),
                             value_type: ConfigValueType::Bool(false),
                         },
-                    ),
-                    (
-                        "stop_dsd_silence",
                         OutputConfigSpec {
+                            key: "stop_dsd_silence",
                             title: "Stop DSD silence".into(),
                             subtitle: Some(
                                 "If enabled, silence is played before manually stopping \
@@ -464,10 +454,8 @@ impl OutputType {
                             ),
                             value_type: ConfigValueType::Bool(false),
                         },
-                    ),
-                    (
-                        "allowed_formats",
                         OutputConfigSpec {
+                            key: "allowed_formats",
                             title: "Allowed formats".into(),
                             subtitle: Some(
                                 "Additionally specify a list of audio formats understood \
@@ -476,11 +464,8 @@ impl OutputType {
                                     .into(),
                             ),
                             value_type: ConfigValueType::Bool(false),
-                        },
-                    ),
+                        }
                 ]
-                .into_iter()
-                .collect()
             }
             #[cfg(any(
                 target_os = "linux",
@@ -489,78 +474,62 @@ impl OutputType {
                 target_os = "netbsd",
                 target_os = "dragonfly"
             ))]
-            OutputType::Fifo => [(
-                "path",
-                OutputConfigSpec {
+            OutputType::Fifo => vec![
+            OutputConfigSpec {
+                    key: "path",
                     title: "FIFO file path".into(),
                     subtitle: None,
                     value_type: ConfigValueType::Path,
+                }
+            ],
+            OutputType::Httpd => vec![
+                OutputConfigSpec {
+                    key: "bind_to_address",
+                    title: "Bind to address".into(),
+                    subtitle: None,
+                    value_type: ConfigValueType::Text,
                 },
-            )]
-            .into_iter()
-            .collect(),
-            OutputType::Httpd => [
-                (
-                    "bind_to_address",
-                    OutputConfigSpec {
-                        title: "Bind to address".into(),
-                        subtitle: None,
-                        value_type: ConfigValueType::Text,
-                    },
-                ),
-                (
-                    "port",
-                    OutputConfigSpec {
-                        title: "Port".into(),
-                        subtitle: None,
-                        value_type: ConfigValueType::Text,
-                    },
-                ),
-                (
-                    "dscp_class",
-                    OutputConfigSpec {
-                        title: "DSCP class".into(),
-                        subtitle: Some("Differentiated Services Code Point class for outgoing traffic. CS3 is recommended.".into()),
-                        // Put CS3 as default (top). Only expose CS levels.
-                        value_type: ConfigValueType::Combo(vec![
-                            ("Broadcast video (CS3)".into(), "CS3".into()),
-                            ("Standard (CS0)".into(), "CS0".into()),
-                            ("Low-priority (CS1)".into(), "CS1".into()),
-                            ("OAM (CS2)".into(), "CS2".into()),
-                            ("Real-time interactive (CS4)".into(), "CS4".into()),
-                            ("Signalling (CS5)".into(), "CS5".into()),
-                            ("Network control (CS6)".into(), "CS6".into()),
-                        ]),
-                    },
-                ),
-                (
-                    "max_clients",
-                    OutputConfigSpec {
-                        title: "Maximum concurrent clients".into(),
-                        subtitle: Some("When set to 0 no limit will apply.".into()),
-                        // Put CS3 as default (top). Only expose CS levels.
-                        value_type: ConfigValueType::Number(0.0, 128.0, 1.0, 5.0, 0),
-                    },
-                ),
-                (
-                    "genre",
-                    OutputConfigSpec {
-                        title: "Stream genre".into(),
-                        subtitle: Some("Will be reflected in the icy-genre header of the stream.".into()),
-                        value_type: ConfigValueType::Text,
-                    },
-                ),
-                (
-                    "website",
-                    OutputConfigSpec {
-                        title: "Stream website".into(),
-                        subtitle: Some("Will be reflected in the icy-website header of the stream.".into()),
-                        value_type: ConfigValueType::Text,
-                    },
-                ),
-            ]
-            .into_iter()
-            .collect(),
+                OutputConfigSpec {
+                    key: "port",
+                    title: "Port".into(),
+                    subtitle: None,
+                    value_type: ConfigValueType::Text,
+                },
+                OutputConfigSpec {
+                    key: "dscp_class",
+                    title: "DSCP class".into(),
+                    subtitle: Some("Differentiated Services Code Point class for outgoing traffic. CS3 is recommended.".into()),
+                    // Put CS3 as default (top). Only expose CS levels.
+                    value_type: ConfigValueType::Combo(vec![
+                        ("Broadcast video (CS3)".into(), "CS3".into()),
+                        ("Standard (CS0)".into(), "CS0".into()),
+                        ("Low-priority (CS1)".into(), "CS1".into()),
+                        ("OAM (CS2)".into(), "CS2".into()),
+                        ("Real-time interactive (CS4)".into(), "CS4".into()),
+                        ("Signalling (CS5)".into(), "CS5".into()),
+                        ("Network control (CS6)".into(), "CS6".into()),
+                    ]),
+                },
+                OutputConfigSpec {
+                    key: "max_clients",
+                    title: "Maximum concurrent clients".into(),
+                    subtitle: Some("When set to 0 no limit will apply.".into()),
+                    // Put CS3 as default (top). Only expose CS levels.
+                    value_type: ConfigValueType::Number(0.0, 128.0, 1.0, 5.0, 0),
+                },
+                OutputConfigSpec {
+                    key: "genre",
+                    title: "Stream genre".into(),
+                    subtitle: Some("Will be reflected in the icy-genre header of the stream.".into()),
+                    value_type: ConfigValueType::Text,
+                },
+                OutputConfigSpec {
+                    key: "website",
+                    title: "Stream website".into(),
+                    subtitle: Some("Will be reflected in the icy-website header of the stream.".into()),
+                    value_type: ConfigValueType::Text,
+                },
+            ],
             #[cfg(any(
                 target_os = "linux",  // not recommended tho
                 target_os = "freebsd",
@@ -569,30 +538,26 @@ impl OutputType {
                 target_os = "dragonfly"
             ))]
             OutputType::Oss => {
-                [
-                    (
-                        "device",
-                        OutputConfigSpec {
-                            title: "Override device path".into(),
-                            subtitle: None,
-                            value_type: ConfigValueType::Text
-                        }
-                    ),
-                    (
-                        "dop",
-                        OutputConfigSpec {
-                            title: "Use DSD-over-PCM (DoP)".into(),
-                            subtitle: Some(
-                                "This wraps DSD samples in fake 24 bit PCM, and is \
-                            understood by some DSD capable products, but may be harmful to \
-                            other hardware. Therefore, the default is no and you can enable \
-                            the option at your own risk."
-                                    .into(),
-                            ),
-                            value_type: ConfigValueType::Bool(false),
-                        },
-                    )
-                ].into_iter().collect()
+                vec![
+                    OutputConfigSpec {
+                        key: "device",
+                        title: "Override device path".into(),
+                        subtitle: None,
+                        value_type: ConfigValueType::Text
+                    },
+                    OutputConfigSpec {
+                        key: "dop",
+                        title: "Use DSD-over-PCM (DoP)".into(),
+                        subtitle: Some(
+                            "This wraps DSD samples in fake 24 bit PCM, and is \
+                        understood by some DSD capable products, but may be harmful to \
+                        other hardware. Therefore, the default is no and you can enable \
+                        the option at your own risk."
+                                .into(),
+                        ),
+                        value_type: ConfigValueType::Bool(false),
+                    }
+                ]
             }
             #[cfg(any(
                 target_os = "linux",
@@ -604,34 +569,28 @@ impl OutputType {
             OutputType::PipeWire => {
                 // FIXME: BLOCKING LOGIC
                 let display_and_node_names = get_pipewire_devices(false);
-                [
-                    (
-                        "target",
-                        OutputConfigSpec {
-                            title: "Override device".into(),
-                            subtitle: Some("If not specified, let the PipeWire manager select a target.".into()),
-                            value_type: ConfigValueType::Combo(display_and_node_names)
-                        }
-                    ),
-                    (
-                        "remote",
-                        OutputConfigSpec {
-                            title: "Override remote name".into(),
-                            subtitle: None,
-                            value_type: ConfigValueType::Text
-                        }
-                    ),
-                    (
-                        "dsd",
-                        OutputConfigSpec {
-                            title: "Enable DSD playback".into(),
-                            subtitle: Some(
-                                "Requires PipeWire 0.38 and up.".into(),
-                            ),
-                            value_type: ConfigValueType::Bool(false),
-                        },
-                    )
-                ].into_iter().collect()
+                vec![
+                    OutputConfigSpec {
+                        key: "target",
+                        title: "Override device".into(),
+                        subtitle: Some("If not specified, let the PipeWire manager select a target.".into()),
+                        value_type: ConfigValueType::Combo(display_and_node_names)
+                    },
+                    OutputConfigSpec {
+                        key: "remote",
+                        title: "Override remote name".into(),
+                        subtitle: None,
+                        value_type: ConfigValueType::Text
+                    },
+                    OutputConfigSpec {
+                        key: "dsd",
+                        title: "Enable DSD playback".into(),
+                        subtitle: Some(
+                            "Requires PipeWire 0.38 and up.".into(),
+                        ),
+                        value_type: ConfigValueType::Bool(false),
+                    },
+                ]
             }
             #[cfg(any(
                 target_os = "linux",
@@ -641,55 +600,47 @@ impl OutputType {
                 target_os = "dragonfly"
             ))]
             OutputType::Pulse => {
-                [
-                    (
-                        "server",
-                        OutputConfigSpec {
-                            title: "Override server hostname".into(),
-                            subtitle: None,
-                            value_type: ConfigValueType::Text
-                        }
-                    ),
-                    (
-                        "sink",
-                        // Too lazy to implement auto sink names fetching here.
-                        // Most people use PipeWire these days anyway.
-                        OutputConfigSpec {
-                            title: "Override sink".into(),
-                            subtitle: None,
-                            value_type: ConfigValueType::Text
-                        }
-                    ),
-                    (
-                        "media_role",
-                        // Too lazy to implement auto sink names fetching here.
-                        // Most people use PipeWire these days anyway.
-                        OutputConfigSpec {
-                            title: "Media role".into(),
-                            subtitle: Some("Specify what media role MPD should report to PulseAudio.".into()),
-                            value_type: ConfigValueType::Combo(vec![
-                                ("video".into(), "video".into()),
-                                ("music".into(), "music".into()),
-                                ("game".into(), "game".into()),
-                                ("event".into(), "event".into()),
-                                ("phone".into(), "phone".into()),
-                                ("animation".into(), "animation".into()),
-                                ("production".into(), "production".into()),
-                                ("a11y".into(), "a11y".into()),
-                            ])
-                        }
-                    ),
-                    (
-                        "scale_volume",
-                        OutputConfigSpec {
-                            title: "Scale volume".into(),
-                            subtitle: Some("Specifies a linear scaling coefficient to apply when adjusting \
-                            volume through MPD. For example, chosing 0.7 means that setting the volume to \
-                            100 in MPD will set the PulseAudio volume to 70%.".into()),
-                            value_type: ConfigValueType::Number(0.5, 5.0, 0.05, 0.1, 2)
-                        }
-                    )
-                ].into_iter().collect()
+                vec![
+                    OutputConfigSpec {
+                        key: "server",
+                        title: "Override server hostname".into(),
+                        subtitle: None,
+                        value_type: ConfigValueType::Text
+                    },
+                    // Too lazy to implement auto sink names fetching here.
+                    // Most people use PipeWire these days anyway.
+                    OutputConfigSpec {
+                        key: "sink",
+                        title: "Override sink".into(),
+                        subtitle: None,
+                        value_type: ConfigValueType::Text
+                    },
+                    // Too lazy to implement auto sink names fetching here.
+                    // Most people use PipeWire these days anyway.
+                    OutputConfigSpec {
+                        key: "media_role",
+                        title: "Media role".into(),
+                        subtitle: Some("Specify what media role MPD should report to PulseAudio.".into()),
+                        value_type: ConfigValueType::Combo(vec![
+                            ("video".into(), "video".into()),
+                            ("music".into(), "music".into()),
+                            ("game".into(), "game".into()),
+                            ("event".into(), "event".into()),
+                            ("phone".into(), "phone".into()),
+                            ("animation".into(), "animation".into()),
+                            ("production".into(), "production".into()),
+                            ("a11y".into(), "a11y".into()),
+                        ])
+                    },
+                    OutputConfigSpec {
+                        key: "scale_volume",
+                        title: "Scale volume".into(),
+                        subtitle: Some("Specifies a linear scaling coefficient to apply when adjusting \
+                        volume through MPD. For example, chosing 0.7 means that setting the volume to \
+                        100 in MPD will set the PulseAudio volume to 70%.".into()),
+                        value_type: ConfigValueType::Number(0.5, 5.0, 0.05, 0.1, 2)
+                    }
+                ]
             }
         }
     }
