@@ -23,7 +23,10 @@ use std::{
     time::Duration,
 };
 
-use crate::{player::Player, utils::settings_manager};
+use crate::{
+    player::Player,
+    utils::{get_pipewire_devices, settings_manager},
+};
 
 // Based on https://gitlab.freedesktop.org/pipewire/pipewire-rs/-/raw/main/pipewire/examples/audio-capture.rs
 // Our PipeWire backend involves two threads:
@@ -203,77 +206,18 @@ impl FftBackendImpl for PipeWireFftBackend {
                 fg_sender,
                 move || {
                     // Get list of devices
-                    {
-                        let mainloop = Arc::new(
-                            pw::main_loop::MainLoopBox::new(None)
-                                .expect("get_devices: Unable to create a new PipeWire mainloop"),
-                        );
-                        let context = pw::context::ContextBox::new(mainloop.loop_(), None)
-                            .expect("get_devices: Unable to get PipeWire context");
-                        let core = context.connect(None).unwrap();
-                        let registry = core.get_registry().unwrap();
-
-                        let devices_clone = devices.clone();
-                        let _listener = registry
-                            .add_listener_local()
-                            .global(move |global| {
-                                if global.type_ == pw::types::ObjectType::Node {
-                                    let props = global.props.as_ref().unwrap();
-                                    let node_name = props.get("node.name").unwrap();
-                                    if props
-                                        .get("application.name")
-                                        .is_some_and(|name| name == "Music Player Daemon")
-                                    {
-                                        devices_clone.lock().unwrap().push(OutputNode {
-                                            node_name: node_name.to_owned(),
-                                            display_name: format!("MPD PipeWire ({node_name})"),
-                                        });
-                                    } else if props.get("media.class").is_some_and(|mclass| {
-                                        mclass == "Audio/Sink" || mclass == "Stream/Output/Audio"
-                                    }) {
-                                        devices_clone.lock().unwrap().push(OutputNode {
-                                            node_name: node_name.to_owned(),
-                                            display_name: props
-                                                .get("node.description")
-                                                .unwrap_or(node_name)
-                                                .to_owned(),
-                                        });
-                                    }
-                                }
-                            })
-                            .register();
-
-                        // Force roundtrip to return results once all globals have been received
-                        let mainloop_clone = mainloop.clone();
-
-                        // Queue a sync signal after processing all of the above so the loop knows when to stop.
-                        let target_seq = core
-                            .sync(0)
-                            .expect("Cannot force PipeWire object enumeration roundtrip");
-
-                        let roundtrip_listener = core
-                            .add_listener_local()
-                            .done(move |id, seq| {
-                                if id == pw::core::PW_ID_CORE && seq.seq() == target_seq.seq() {
-                                    // println!("All globalobjects have been received, quitting get_devices mainloop");
-                                    mainloop_clone.quit();
-                                }
-                            })
-                            .register();
-
-                        // Will block until all objects have been enumerated
-                        mainloop.run();
-                        roundtrip_listener.unregister();
-                        {
-                            let mut device_lock = devices.lock().unwrap();
-                            device_lock.truncate(64);
-                        }
-                    }
+                    let display_and_node_names = get_pipewire_devices(true);
                     let settings = settings_manager().child("client");
                     let _last_device = settings.string("pipewire-last-device");
                     let last_device = _last_device.as_str();
                     {
-                        let devices_lock = devices.lock().unwrap();
+                        let mut devices_lock = devices.lock().unwrap();
+                        for (display_name, node_name) in display_and_node_names.into_iter() {
+                            devices_lock.push(OutputNode {
+                                node_name,
+                                display_name,
+                            });
+                        }
                         let mut curr_device = curr_device.lock().unwrap();
                         if !devices_lock.is_empty() {
                             if let Some(device_idx) = devices_lock
@@ -387,7 +331,9 @@ impl FftBackendImpl for PipeWireFftBackend {
                                 if media_type != MediaType::Audio
                                     || media_subtype != MediaSubtype::Raw
                                 {
-                                    eprintln!("Not MediaType::Audio || MediaSubtype::Raw, skipping");
+                                    eprintln!(
+                                        "Not MediaType::Audio || MediaSubtype::Raw, skipping"
+                                    );
                                     return;
                                 }
 

@@ -3,14 +3,14 @@ use gtk::{
     prelude::*,
     subclass::prelude::*,
 };
-use std::cell::{OnceCell, Cell};
 use once_cell::sync::Lazy;
+use std::cell::{Cell, OnceCell};
 
 use crate::meta_providers::models;
 
 mod imp {
     use super::*;
-    
+
     #[derive(Default)]
     pub struct Tag {
         pub name: OnceCell<String>,
@@ -35,11 +35,8 @@ mod imp {
     // #[glib::derived_properties]
     impl ObjectImpl for Tag {
         fn properties() -> &'static [ParamSpec] {
-            static PROPERTIES: Lazy<Vec<ParamSpec>> = Lazy::new(|| {
-                vec![
-                    ParamSpecString::builder("name").read_only().build(),
-                ]
-            });
+            static PROPERTIES: Lazy<Vec<ParamSpec>> =
+                Lazy::new(|| vec![ParamSpecString::builder("name").read_only().build()]);
             PROPERTIES.as_ref()
         }
 
@@ -47,7 +44,7 @@ mod imp {
             let obj = self.obj();
             match pspec.name() {
                 "name" => obj.name().to_value(),
-                _ => unimplemented!()
+                _ => unimplemented!(),
             }
         }
     }
@@ -101,7 +98,7 @@ impl Tag {
             url: self.link().map(|l| l.to_owned()),
             name: self.name().to_owned(),
             count: Some(self.count()),
-            set_by_user: self.imp().set_by_user.get()
+            set_by_user: self.imp().set_by_user.get(),
         }
     }
 }
@@ -112,8 +109,8 @@ impl From<models::Tag> for Tag {
             value.name,
             value.url,
             value.count,
-            true,  // 'false' is only used when representing in-file tags that can't be modified via MPD, such as genres
-            value.set_by_user
+            true, // 'false' is only used when representing in-file tags that can't be modified via MPD, such as genres
+            value.set_by_user,
         )
     }
 }

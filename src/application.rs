@@ -24,8 +24,10 @@ use crate::{
     client::{MpdWrapper, Result as ClientResult},
     config::VERSION,
     library::Library,
+    onboarding::EuphonicaOnboardingWindow,
     player::{Player, get_next_replaygain},
     preferences::Preferences,
+    server::{ManagedMpdError, ManagedMpdServer},
     utils::{settings_manager, tokio_runtime},
 };
 use adw::prelude::*;
@@ -88,7 +90,7 @@ pub fn update_xdg_background_request() {
 }
 
 mod imp {
-    use crate::onboarding::EuphonicaOnboardingWindow;
+    use crate::utils::{get_app_cache_path, get_config_basepath};
 
     use super::*;
 
@@ -96,11 +98,11 @@ mod imp {
     pub struct EuphonicaApplication {
         pub initialized: Cell<bool>,
         pub start_minimized: Cell<bool>,
-        pub player: OnceCell<Player>,
-        pub library: OnceCell<Library>,
+        pub player: Player,
+        pub library: Library,
         pub cache: OnceCell<Rc<Cache>>,
-        // pub library: Rc<LibraryController>, // TODO
         pub client: OnceCell<Rc<MpdWrapper>>,
+        pub server: ManagedMpdServer,
         pub cache_path: PathBuf, // Just clone this to construct more detailed paths
         pub hold_guard: RefCell<Option<gio::ApplicationHoldGuard>>,
     }
@@ -112,18 +114,21 @@ mod imp {
         type ParentType = adw::Application;
 
         fn new() -> Self {
-            // Create cache folder. This is where the cached album arts go.
-            let mut cache_path: PathBuf = glib::user_cache_dir();
-            cache_path.push("euphonica");
+            // Create cache folder
+            let cache_path: PathBuf = get_app_cache_path();
+            let mut server_config_path: PathBuf = get_config_basepath();
+            server_config_path.push("playlists"); // create down to this folder too for managed playlists
             // println!("Cache path: {}", cache_path.to_str().unwrap());
             create_dir_all(&cache_path).expect("Could not create temporary directories!");
+            create_dir_all(&server_config_path).expect("Could not create temporary directories!");
 
             Self {
                 initialized: Cell::new(false),
                 start_minimized: Cell::new(false),
-                player: OnceCell::new(),
-                library: OnceCell::new(),
+                player: Player::default(),
+                library: Library::default(),
                 client: OnceCell::new(),
+                server: ManagedMpdServer::default(),
                 cache: OnceCell::new(),
                 cache_path,
                 hold_guard: RefCell::new(None),
@@ -134,6 +139,10 @@ mod imp {
     impl ObjectImpl for EuphonicaApplication {
         fn constructed(&self) {
             self.parent_constructed();
+        }
+
+        fn dispose(&self) {
+            let _ = self.server.stop();
         }
     }
 
@@ -154,27 +163,22 @@ mod imp {
 
                 // Create client instance (not connected yet)
                 let client = MpdWrapper::new();
+                // Create cache controller
+                let cache = Cache::new(client.clone());
                 let _ = self.client.set(client);
+                let _ = self.cache.set(cache);
 
                 // Check whether we need to show the onboarding wizard
                 let state = settings_manager().child("state");
                 if state.boolean("onboarded") {
-                    eprintln!("ONBOARDED");
-                    // Onboarded => show main window directly
-                    self.continue_startup();
+                    // Onboarded => show main window directly.
+                    // Window is initialised early so we can show startup errors like connection issues.
                     if !self.start_minimized.get() {
-                        // If this is the main instance, respect the minimized flag
-                        let player = self.player.get().unwrap();
-                        glib::spawn_future_local(clone!(
-                            #[weak]
-                            player,
-                            async move {
-                                player.set_is_foreground(true).await;
-                            }
-                        ));
                         self.obj().raise_window();
+                        self.continue_startup();
                     } else {
                         let _ = self.hold_guard.replace(Some(self.obj().hold()));
+                        self.continue_startup();
                     }
                 } else {
                     // NOT onboarded yet.
@@ -205,25 +209,34 @@ mod imp {
     impl AdwApplicationImpl for EuphonicaApplication {}
 
     impl EuphonicaApplication {
+        pub fn handle_managed_server_error(&self, e: ManagedMpdError) {
+            if let Some(win) = self.obj().active_window().and_downcast::<EuphonicaWindow>() {
+                win.show_error_dialog(
+                    "Failed to start MPD server",
+                    match e {
+                        ManagedMpdError::Config => "MPD server manager reported a configuration issue. Please review your configuration in Preferences.",
+                        ManagedMpdError::NotConfigured => "Euphonica was started in Standalone Mode without having been set up for it. Please open Preferences to set things up or switch to an external MPD server.",
+                        ManagedMpdError::Subprocess => "The MPD subprocess failed to start. Ensure you are running MPD 0.23 or greater.",
+                        _ => "Unknown error."
+                    },
+                    !matches!(e, ManagedMpdError::Subprocess)
+                );
+            }
+        }
         /// Continue startup by initialising the two controllers.
         /// This expects the clients to have been initialised and connected.
         /// Now a separate function as we may either directly enter the main UI or go through
         /// an onboarding wizard first.
         pub fn continue_startup(&self) {
             let client = self.client.get().unwrap();
-            // Create cache controller
-            let cache = Cache::new(client.clone());
+            let cache = self.cache.get().unwrap();
 
             // Create controllers
             // These two are GObjects (already refcounted by GLib)
-            let player = Player::default();
+            let player = &self.player;
             player.setup(self.obj().clone(), client.clone(), cache.clone());
-            let library = Library::default();
+            let library = &self.library;
             library.setup(client.clone(), player.clone(), cache.clone());
-
-            let _ = self.cache.set(cache);
-            let _ = self.library.set(library);
-            let _ = self.player.set(player);
 
             let obj = self.obj();
             obj.setup_gactions();
@@ -254,6 +267,7 @@ mod imp {
             obj.set_accels_for_action("app.toggle-output", &["<Ctrl>slash"]);
 
             let app = self.obj();
+
             glib::spawn_future_local(clone!(
                 #[weak]
                 app,
@@ -300,29 +314,23 @@ impl EuphonicaApplication {
             let state = settings_manager().child("state");
             let _ = state.set_boolean("onboarded", true);
             self.imp().continue_startup();
-            let player = self.imp().player.get().unwrap().clone();
-            glib::spawn_future_local(async move {
-                player.set_is_foreground(true).await;
-            });
             // Explicitly create window to force the app to bind to it instead of the will-be-destroyed onboarding one
             let _ = EuphonicaWindow::new(self);
             self.raise_window();
             // Safe to remove hold guard now, if any
             let _ = self.imp().hold_guard.take();
         } else {
-            eprintln!(
-                "FATAL: user exited onboarding."
-            );
+            eprintln!("FATAL: user exited onboarding.");
             self.quit_app();
         }
     }
 
     pub fn get_player(&self) -> &Player {
-        self.imp().player.get().unwrap()
+        &self.imp().player
     }
 
     pub fn get_library(&self) -> &Library {
-        self.imp().library.get().unwrap()
+        &self.imp().library
     }
 
     pub fn get_cache(&self) -> Rc<Cache> {
@@ -331,6 +339,10 @@ impl EuphonicaApplication {
 
     pub fn get_client(&self) -> Rc<MpdWrapper> {
         self.imp().client.get().unwrap().clone()
+    }
+
+    pub fn get_server(&self) -> &ManagedMpdServer {
+        &self.imp().server
     }
 
     /// Set up app-level shortcuts. These are shortcuts that will work regardless of which Euphonica window is being focused.
@@ -686,11 +698,7 @@ impl EuphonicaApplication {
             self.set_accels_for_action("dyn-playlist-editor.refresh", &["<Ctrl>r"]);
             window.upcast()
         };
-        let player = self.imp().player.get().unwrap().clone();
-        glib::spawn_future_local(async move {
-            player.set_is_foreground(true).await;
-        });
-        let player = self.imp().player.get().unwrap().clone();
+        let player = self.imp().player.clone();
         glib::spawn_future_local(async move {
             player.set_is_foreground(true).await;
         });
@@ -701,7 +709,7 @@ impl EuphonicaApplication {
         let settings = settings_manager().child("state");
         let action = settings.enum_("on-exit-action");
 
-        let player = self.imp().player.get().unwrap().clone();
+        let player = self.imp().player.clone();
         // Refer to the gschema for enum definition
         match action {
             0 => {
@@ -723,7 +731,7 @@ impl EuphonicaApplication {
     pub fn on_window_closed(&self) {
         let settings = settings_manager().child("state");
         if settings.boolean("run-in-background") {
-            let player = self.imp().player.get().unwrap().clone();
+            let player = self.imp().player.clone();
             glib::spawn_future_local(async move {
                 player.set_is_foreground(false).await;
             });
@@ -737,6 +745,15 @@ impl EuphonicaApplication {
     }
 
     pub async fn refresh(&self) -> ClientResult<()> {
+        // If managing a server, stop and start it again
+        if settings_manager()
+            .child("client")
+            .boolean("mpd-use-own-server")
+        {
+            if let Err(e) = self.imp().server.start().await {
+                self.imp().handle_managed_server_error(e);
+            }
+        }
         self.get_client().connect().await?;
         self.get_library().clear();
         self.get_player().clear()?;

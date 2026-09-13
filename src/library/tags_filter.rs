@@ -103,7 +103,6 @@ mod imp {
                 .set(search_model)
                 .expect("Unable to set search model for genre filter dialog");
 
-            
             let toggle_btn = self.toggle_btn.get();
             let selected_filter = gtk::CustomFilter::new(|_| true); // off by default
             toggle_btn.connect_toggled(clone!(
@@ -165,7 +164,7 @@ impl TagsFilter {
 
     pub fn setup<F: Fn(FxHashSet<String>) + 'static + Clone>(
         &self,
-        model: &gio::ListStore,  // of tag::Tag objects
+        model: &gio::ListStore, // of tag::Tag objects
         on_selection_changed: F,
         window: &EuphonicaWindow,
     ) {
@@ -183,9 +182,7 @@ impl TagsFilter {
                 #[upgrade_or]
                 adw::ActionRow::new().into(),
                 move |obj| {
-                    let tag = obj
-                        .downcast_ref::<Tag>()
-                        .unwrap();
+                    let tag = obj.downcast_ref::<Tag>().unwrap();
                     let name = tag.name().to_owned();
                     let check = gtk::CheckButton::new();
                     {
@@ -209,7 +206,7 @@ impl TagsFilter {
                         .use_markup(false)
                         .title_lines(0)
                         .title(escape(&name));
-                        
+
                     let count = tag.count();
                     let row = if count > 1 {
                         row_builder
@@ -232,11 +229,7 @@ impl TagsFilter {
             #[strong]
             on_selection_changed,
             move |_| {
-                let selected = this
-                    .imp()
-                    .selected
-                    .borrow()
-                    .clone();
+                let selected = this.imp().selected.borrow().clone();
                 let len = selected.len();
                 let count_label = this.imp().count.get();
                 count_label.set_label(len.to_string().as_str());
@@ -258,8 +251,7 @@ impl TagsFilter {
                 let list = this.imp().list.get();
                 loop {
                     if let Some(tag) = list.row_at_index(idx) {
-                        tag
-                            .downcast_ref::<adw::ActionRow>()
+                        tag.downcast_ref::<adw::ActionRow>()
                             .unwrap()
                             .activatable_widget()
                             .and_downcast::<gtk::CheckButton>()

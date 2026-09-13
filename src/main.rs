@@ -25,11 +25,12 @@ mod common;
 mod config;
 mod library;
 mod meta_providers;
+mod onboarding;
 mod player;
 mod preferences;
+mod server;
 mod sidebar;
 mod utils;
-mod onboarding;
 mod window;
 
 use self::application::EuphonicaApplication;
@@ -69,6 +70,7 @@ fn main() -> glib::ExitCode {
     // Create a new GtkApplication. The application manages our main loop,
     // application windows, integration with the window manager/compositor, and
     // desktop features such as file opening and single-instance applications.
+    let _ = gtk::init();
     let app = EuphonicaApplication::new(
         "io.github.htkhiem.Euphonica",
         &gio::ApplicationFlags::empty(),

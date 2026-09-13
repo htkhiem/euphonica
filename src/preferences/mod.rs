@@ -1,10 +1,15 @@
+mod audio_format;
 mod client;
 mod dialog;
 mod integrations;
 mod library;
+mod output_config;
+mod output_row;
+mod outputs;
 mod provider_row;
 mod ui;
 
+pub use audio_format::AudioFormatEntry;
 pub use client::ClientPreferences;
 pub use dialog::Preferences;
 pub use integrations::IntegrationsPreferences;

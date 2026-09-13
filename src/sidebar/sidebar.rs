@@ -153,7 +153,7 @@ impl Sidebar {
 
     pub fn setup(&self, win: &EuphonicaWindow, app: &EuphonicaApplication) {
         let settings = utils::settings_manager().child("ui");
-        
+
         let stack = win.get_stack();
         let split_view = win.get_split_view();
         let player = app.get_player();
@@ -167,7 +167,7 @@ impl Sidebar {
 
         let recent_btn = self.imp().recent_btn.get();
         recent_btn.set_active(true);
-        
+
         // Hook each button to their respective views
         recent_btn.connect_toggled(clone!(
             #[weak]
@@ -484,9 +484,11 @@ impl Sidebar {
         // view but are now not available, that view will still be displayed at first but will
         // be empty & can't be navigated back to once moved away.
         let state = utils::settings_manager().child("state");
-        let mut view_to_show = View::try_from(state.enum_("startup-view") as u32).expect("Invalid startup-view setting value");
+        let mut view_to_show = View::try_from(state.enum_("startup-view") as u32)
+            .expect("Invalid startup-view setting value");
         if matches!(view_to_show, View::Last) {
-            view_to_show = View::try_from(state.enum_("last-view") as u32).expect("Invalid last-view setting value");
+            view_to_show = View::try_from(state.enum_("last-view") as u32)
+                .expect("Invalid last-view setting value");
         }
         self.set_view(view_to_show.as_str());
     }

@@ -1052,7 +1052,13 @@ impl PlaylistContentView {
                     #[weak(rename_to = this)]
                     self,
                     move |_: CacheState, name: String, tex: gdk::Texture, _: gdk::Texture| {
-                        if this.imp().playlist.borrow().as_ref().map_or(false, |p| p.get_uri() == name) {
+                        if this
+                            .imp()
+                            .playlist
+                            .borrow()
+                            .as_ref()
+                            .map_or(false, |p| p.get_uri() == name)
+                        {
                             this.update_cover(&tex);
                         }
                     }
@@ -1065,7 +1071,13 @@ impl PlaylistContentView {
                     #[weak(rename_to = this)]
                     self,
                     move |_: CacheState, name: String| {
-                        if this.imp().playlist.borrow().as_ref().map_or(false, |p| p.get_uri() == name) {
+                        if this
+                            .imp()
+                            .playlist
+                            .borrow()
+                            .as_ref()
+                            .map_or(false, |p| p.get_uri() == name)
+                        {
                             this.clear_cover();
                         }
                     }
