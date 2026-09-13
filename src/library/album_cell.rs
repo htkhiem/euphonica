@@ -15,7 +15,10 @@ use std::{
 };
 
 use crate::{
-    cache::{Cache, CacheState, placeholders::{EMPTY_ALBUM_STRING, EMPTY_ARTIST_STRING}},
+    cache::{
+        Cache, CacheState,
+        placeholders::{EMPTY_ALBUM_STRING, EMPTY_ARTIST_STRING},
+    },
     common::{
         Album, PictureStack, Rating, TEXTURE_LOAD_DELAY_MS,
         marquee::{Marquee, MarqueeWrapMode},
@@ -236,11 +239,7 @@ glib::wrapper! {
 }
 
 impl AlbumCell {
-    pub fn new(
-        item: &gtk::ListItem,
-        cache: Rc<Cache>,
-        wrap_mode: Option<MarqueeWrapMode>,
-    ) -> Self {
+    pub fn new(item: &gtk::ListItem, cache: Rc<Cache>, wrap_mode: Option<MarqueeWrapMode>) -> Self {
         let res: Self = Object::builder().build();
         let cache_state = cache.get_cache_state();
         res.imp()
@@ -286,7 +285,9 @@ impl AlbumCell {
             .chain_property::<Album>("artist")
             .chain_closure::<String>(closure_local!(
                 |_: Option<glib::Object>, artist: Option<&str>| {
-                    artist.map(|s| s.to_owned()).unwrap_or(String::from(*EMPTY_ARTIST_STRING))
+                    artist
+                        .map(|s| s.to_owned())
+                        .unwrap_or(String::from(*EMPTY_ARTIST_STRING))
                 }
             ))
             .bind(&res, "artist", gtk::Widget::NONE);
@@ -327,12 +328,9 @@ impl AlbumCell {
                     #[weak(rename_to = this)]
                     res,
                     move |_: CacheState, uri: String, _: gdk::Texture, thumb: gdk::Texture| {
-                        if this
-                            .imp()
-                            .album
-                            .upgrade()
-                            .is_some_and(|a| a.get_folder_uri() == uri || a.get_example_uri() == uri)
-                        {
+                        if this.imp().album.upgrade().is_some_and(|a| {
+                            a.get_folder_uri() == uri || a.get_example_uri() == uri
+                        }) {
                             this.imp().cover.show(&thumb);
                         }
                     }
@@ -345,12 +343,9 @@ impl AlbumCell {
                     #[weak(rename_to = this)]
                     res,
                     move |_: CacheState, uri: String| {
-                        if this
-                            .imp()
-                            .album
-                            .upgrade()
-                            .is_some_and(|a| a.get_folder_uri() == uri || a.get_example_uri() == uri)
-                        {
+                        if this.imp().album.upgrade().is_some_and(|a| {
+                            a.get_folder_uri() == uri || a.get_example_uri() == uri
+                        }) {
                             this.imp().cover.clear();
                         }
                     }
@@ -397,10 +392,16 @@ impl AlbumCell {
         if let Some(album) = self.album() {
             let cache = self.imp().cache.get().unwrap();
             self.imp().cover.show_spinner();
-            let res = cache.clone().get_album_cover(album.get_info(), use_thumbnail).await;
+            let res = cache
+                .clone()
+                .get_album_cover(album.get_info(), use_thumbnail)
+                .await;
             // Check again as cell might have been bound to a different album
             // while awaiting
-            if self.album().is_some_and(|a| a.get_info().get_comp_id() == album.get_info().get_comp_id()) {
+            if self
+                .album()
+                .is_some_and(|a| a.get_info().get_comp_id() == album.get_info().get_comp_id())
+            {
                 match res {
                     Ok(Some(tex)) => {
                         self.imp().cover.show(&tex);

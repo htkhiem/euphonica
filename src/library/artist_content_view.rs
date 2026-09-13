@@ -15,7 +15,14 @@ use std::{
 
 use super::{Library, tag_button::TagButton};
 use crate::{
-    cache::{Cache, CacheState, Error as CacheError, placeholders::EMPTY_ARTIST_STRING}, common::{Album, Artist, ContentStack, RowAddButtons, Song, SongRow}, library::{Tag, add_to_playlist::AddToPlaylistButton, discography_year::DiscographyYear}, meta_providers::models::{MetaSource, Wiki, artist_type_to_string}, utils::{self, format_datetime_local_tz, format_secs_as_duration, settings_manager, tokio_runtime}, window::EuphonicaWindow,
+    cache::{Cache, CacheState, Error as CacheError, placeholders::EMPTY_ARTIST_STRING},
+    common::{Album, Artist, ContentStack, RowAddButtons, Song, SongRow},
+    library::{Tag, add_to_playlist::AddToPlaylistButton, discography_year::DiscographyYear},
+    meta_providers::models::{MetaSource, Wiki, artist_type_to_string},
+    utils::{
+        self, format_datetime_local_tz, format_secs_as_duration, settings_manager, tokio_runtime,
+    },
+    window::EuphonicaWindow,
 };
 
 mod imp {
@@ -23,7 +30,6 @@ mod imp {
     use adw::prelude::AdwDialogExt;
     use chrono::NaiveDate;
     use time::OffsetDateTime;
-    
 
     use crate::{
         common::FadingScrolledWindow,
@@ -383,8 +389,8 @@ mod imp {
             ));
 
             // Set up discography subview
-            self.update_discography_sort_func();   // no matter what I did connect_changed() didn't fire so this will require a reboot...
-            
+            self.update_discography_sort_func(); // no matter what I did connect_changed() didn't fire so this will require a reboot...
+
             self.multi_layout_view.connect_layout_name_notify(clone!(
                 #[weak(rename_to = this)]
                 self,
@@ -623,7 +629,9 @@ mod imp {
         }
 
         pub fn update_discography_sort_func(&self) {
-            let asc = settings_manager().child("ui").boolean("artist-sort-discography-years-asc");
+            let asc = settings_manager()
+                .child("ui")
+                .boolean("artist-sort-discography-years-asc");
             self.discography_subview.set_sort_func(move |row1, row2| {
                 g_cmp_options(
                     row1.child()
@@ -873,14 +881,17 @@ impl ArtistContentView {
 
                         // Show last-modified
                         self.imp().meta_last_updated.set_visible(true);
-                        self.imp().meta_last_updated.set_label(&format!("Last updated {}", format_datetime_local_tz(last_modified)));
+                        self.imp().meta_last_updated.set_label(&format!(
+                            "Last updated {}",
+                            format_datetime_local_tz(last_modified)
+                        ));
 
                         let _ = self.imp().meta.replace(Some(meta.clone()));
                         // Metadata sync
                         let _ = self.imp().old_last_modified.replace(Some(last_modified));
                         let _ = self.imp().new_last_modified.replace(Some(last_modified));
-                        let should_backup = self
-                            .maybe_show_backup_metadata_btn(!matches!(src, MetaSource::Mpd));
+                        let should_backup =
+                            self.maybe_show_backup_metadata_btn(!matches!(src, MetaSource::Mpd));
                         if should_backup
                             && settings_manager()
                                 .child("client")
@@ -976,7 +987,10 @@ impl ArtistContentView {
             }
             Err(e) => {
                 if let Some(win) = self.imp().window.upgrade() {
-                    win.send_simple_toast(&format!("Couldn't back up metadata: {}", e.message()), 3);
+                    win.send_simple_toast(
+                        &format!("Couldn't back up metadata: {}", e.message()),
+                        3,
+                    );
                 }
             }
         }
@@ -1269,12 +1283,18 @@ impl ArtistContentView {
     pub fn bind(&self, artist: &Artist) {
         let stack = self.imp().stack.get();
         // Decide which view to show first
-        if settings_manager().child("ui").boolean("artist-show-all-songs") {
+        if settings_manager()
+            .child("ui")
+            .boolean("artist-show-all-songs")
+        {
             if stack.visible_child_name().is_some_and(|v| &v != "songs") {
                 stack.set_visible_child_name("songs");
             }
         } else {
-            if stack.visible_child_name().is_some_and(|v| &v != "discography") {
+            if stack
+                .visible_child_name()
+                .is_some_and(|v| &v != "discography")
+            {
                 stack.set_visible_child_name("discography");
             }
         }
@@ -1361,7 +1381,7 @@ impl ArtistContentView {
                                 maybe_albums,
                                 this.imp().cache.get().unwrap().clone(),
                                 &library,
-                                win.as_ref()
+                                win.as_ref(),
                             ))
                         }
                         // 1 more loop to clear selection highlight (can't do it in the above loop as the insertion position is dictated by sort_func)
@@ -1393,7 +1413,9 @@ impl ArtistContentView {
                     {
                         genres_stack.set_visible_child_name("content");
                     }
-                    all_genres.into_iter().map(|genre| {
+                    all_genres
+                        .into_iter()
+                        .map(|genre| {
                             TagButton::new(
                                 &Tag::new(genre.clone(), None, None, false, false),
                                 &genres_box,
@@ -1407,7 +1429,7 @@ impl ArtistContentView {
                     this.schedule_avatar(false).await;
                     // Runs in its own async closure
                     this.update_meta_guarded(false);
-                } else if let Some(win) = this.imp().window.upgrade() {                    
+                } else if let Some(win) = this.imp().window.upgrade() {
                     win.send_simple_toast("Unable to fetch artist content", 3);
                 }
             }

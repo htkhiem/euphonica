@@ -1,8 +1,6 @@
 use gtk::{
     CompositeTemplate, gdk,
-    glib::{
-        self, Object, ParamSpec, ParamSpecBoolean, ParamSpecString, WeakRef, closure_local,
-    },
+    glib::{self, Object, ParamSpec, ParamSpecBoolean, ParamSpecString, WeakRef, closure_local},
     prelude::*,
     subclass::prelude::*,
 };
@@ -52,7 +50,14 @@ mod imp {
         // in quick succession (such as the case described in the comment block above all this mess,
         // or during fast scrolling).
         pub texture_load_handle: RefCell<Option<glib::JoinHandle<()>>>,
-        pub cover_signal_ids: RefCell<Option<(glib::SignalHandlerId, glib::SignalHandlerId, glib::SignalHandlerId, glib::SignalHandlerId)>>,
+        pub cover_signal_ids: RefCell<
+            Option<(
+                glib::SignalHandlerId,
+                glib::SignalHandlerId,
+                glib::SignalHandlerId,
+                glib::SignalHandlerId,
+            )>,
+        >,
         pub cache_state: WeakRef<CacheState>,
     }
 
@@ -78,7 +83,8 @@ mod imp {
             while let Some(child) = self.obj().first_child() {
                 child.unparent();
             }
-            if let Some((avatar_set_id, avatar_cleared_id, cover_set_id, cover_cleared_id)) = self.cover_signal_ids.take()
+            if let Some((avatar_set_id, avatar_cleared_id, cover_set_id, cover_cleared_id)) =
+                self.cover_signal_ids.take()
                 && let Some(state) = self.cache_state.upgrade()
             {
                 state.disconnect(avatar_set_id);
@@ -137,10 +143,7 @@ glib::wrapper! {
 }
 
 impl ArtistCell {
-    pub fn new(
-        item: &gtk::ListItem,
-        cache: Rc<Cache>,
-    ) -> Self {
+    pub fn new(item: &gtk::ListItem, cache: Rc<Cache>) -> Self {
         let res: Self = Object::builder().build();
         let cache_state = cache.get_cache_state();
         res.imp()
@@ -186,7 +189,11 @@ impl ArtistCell {
                     move |_: CacheState, name: String, hires: gdk::Texture, thumb: gdk::Texture| {
                         let use_hires = this.imp().hires.get();
                         if this.artist().is_some_and(|a| a.get_info().name == name) {
-                            this.imp().avatar.set_custom_image(Some(if use_hires { &hires } else { &thumb }));
+                            this.imp().avatar.set_custom_image(Some(if use_hires {
+                                &hires
+                            } else {
+                                &thumb
+                            }));
                         }
                     }
                 ),
@@ -199,7 +206,9 @@ impl ArtistCell {
                     res,
                     move |_: CacheState, name: String| {
                         if this.artist().is_some_and(|a| a.get_info().name == name) {
-                            this.imp().avatar.set_custom_image(Option::<&gdk::Texture>::None);
+                            this.imp()
+                                .avatar
+                                .set_custom_image(Option::<&gdk::Texture>::None);
                         }
                     }
                 ),
@@ -212,13 +221,25 @@ impl ArtistCell {
                     res,
                     move |_: CacheState, uri: String, hires: gdk::Texture, thumb: gdk::Texture| {
                         let use_hires = this.imp().hires.get();
-                        if this.artist().is_some_and(|a| {
-                            !a.get_info().example_uris.is_empty()
-                        }) {
+                        if this
+                            .artist()
+                            .is_some_and(|a| !a.get_info().example_uris.is_empty())
+                        {
                             let cover_fan = this.imp().covers.get();
-                            for (i, example_uri) in this.artist().unwrap().get_info().example_uris.iter().take(3).enumerate() {
+                            for (i, example_uri) in this
+                                .artist()
+                                .unwrap()
+                                .get_info()
+                                .example_uris
+                                .iter()
+                                .take(3)
+                                .enumerate()
+                            {
                                 if *example_uri == uri {
-                                    cover_fan.set_cover(i as u8, if use_hires { &hires } else { &thumb });
+                                    cover_fan.set_cover(
+                                        i as u8,
+                                        if use_hires { &hires } else { &thumb },
+                                    );
                                 }
                             }
                         }
@@ -232,11 +253,20 @@ impl ArtistCell {
                     #[weak(rename_to = this)]
                     res,
                     move |_: CacheState, uri: String| {
-                        if this.artist().is_some_and(|a| {
-                            !a.get_info().example_uris.is_empty()
-                        }) {
+                        if this
+                            .artist()
+                            .is_some_and(|a| !a.get_info().example_uris.is_empty())
+                        {
                             let cover_fan = this.imp().covers.get();
-                            for (i, example_uri) in this.artist().unwrap().get_info().example_uris.iter().take(3).enumerate() {
+                            for (i, example_uri) in this
+                                .artist()
+                                .unwrap()
+                                .get_info()
+                                .example_uris
+                                .iter()
+                                .take(3)
+                                .enumerate()
+                            {
                                 if *example_uri == uri {
                                     cover_fan.clear_cover(i as u8, this.imp().hires.get());
                                 }
@@ -247,7 +277,12 @@ impl ArtistCell {
             ),
         );
         let _ = res.imp().cache_state.set(Some(&state));
-        let _ = res.imp().cover_signal_ids.replace(Some((avatar_set_id, avatar_cleared_id, cover_set_id, cover_cleared_id)));
+        let _ = res.imp().cover_signal_ids.replace(Some((
+            avatar_set_id,
+            avatar_cleared_id,
+            cover_set_id,
+            cover_cleared_id,
+        )));
 
         res
     }

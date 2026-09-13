@@ -48,14 +48,14 @@ mod imp {
                         .build(),
                     Signal::builder("playlist-cover-set")
                         .param_types([
-                            String::static_type(), // playlist name
+                            String::static_type(),       // playlist name
                             gdk::Texture::static_type(), // handle to hires texture
                             gdk::Texture::static_type(), // handle to thumbnail texture
                         ])
                         .build(),
                     Signal::builder("dynamic-playlist-cover-set")
                         .param_types([
-                            String::static_type(), // dynamic playlist name
+                            String::static_type(),       // dynamic playlist name
                             gdk::Texture::static_type(), // handle to hires texture
                             gdk::Texture::static_type(), // handle to thumbnail texture
                         ])

@@ -169,14 +169,18 @@ impl ArtistView {
                             let artist = obj.downcast_ref::<Artist>().unwrap();
                             !artist.get_info().genres.is_disjoint(&genres)
                         });
-                        this.imp().genres_filter.changed(gtk::FilterChange::MoreStrict);
+                        this.imp()
+                            .genres_filter
+                            .changed(gtk::FilterChange::MoreStrict);
                     } else {
                         this.imp().genres_filter.set_filter_func(|_| true);
-                        this.imp().genres_filter.changed(gtk::FilterChange::LessStrict);
+                        this.imp()
+                            .genres_filter
+                            .changed(gtk::FilterChange::LessStrict);
                     }
                 }
             ),
-            window
+            window,
         );
 
         self.imp().tags_filter_widget.setup(
@@ -190,14 +194,18 @@ impl ArtistView {
                             let artist = obj.downcast_ref::<Artist>().unwrap();
                             sqlite::artist_has_any_of_tags(artist.get_name(), &tags).unwrap_or(true)
                         });
-                        this.imp().tags_filter.changed(gtk::FilterChange::MoreStrict);
+                        this.imp()
+                            .tags_filter
+                            .changed(gtk::FilterChange::MoreStrict);
                     } else {
                         this.imp().tags_filter.set_filter_func(|_| true);
-                        this.imp().tags_filter.changed(gtk::FilterChange::LessStrict);
+                        this.imp()
+                            .tags_filter
+                            .changed(gtk::FilterChange::LessStrict);
                     }
                 }
             ),
-            window
+            window,
         );
 
         let content_view = self.imp().content_view.get();
@@ -358,13 +366,11 @@ impl ArtistView {
 
         // set up initial state
         let library = self.imp().library.upgrade().unwrap();
-        self.imp().artist_source.set_model(Some(&
-            if filter_state { 
-                library.album_artists()
-            } else {
-                library.artists()
-            }
-        ));
+        self.imp().artist_source.set_model(Some(&if filter_state {
+            library.album_artists()
+        } else {
+            library.artists()
+        }));
 
         album_artist_only_btn.connect_toggled(clone!(
             #[weak(rename_to = this)]
@@ -372,9 +378,10 @@ impl ArtistView {
             move |btn| {
                 // update the ui when clicked
                 let use_album = btn.is_active();
-                let _ =  settings_manager()
-                        .child("state").child("artistview")
-                        .set_boolean("album-artists-only", use_album);
+                let _ = settings_manager()
+                    .child("state")
+                    .child("artistview")
+                    .set_boolean("album-artists-only", use_album);
                 // and then update the artist_source model to point to the right ListStore
                 let library = this.imp().library.upgrade().unwrap();
                 let model = if use_album {
@@ -386,9 +393,8 @@ impl ArtistView {
                 // todo: this makes the pane flash and scroll to the bottom.
                 // the only way to avoid this that I can think of is to return to the
                 // "single list containing artist + album artists", and then filter it
-            })
-        );
-
+            }
+        ));
     }
 
     pub fn on_artist_clicked(&self, artist: &Artist) {
@@ -448,18 +454,13 @@ impl ArtistView {
             Some(self.imp().search_filter.clone()),
         );
         search_model.set_incremental(true);
-        let genres_model = gtk::FilterListModel::new(
-            Some(search_model),
-            Some(self.imp().genres_filter.clone()),
-        );
+        let genres_model =
+            gtk::FilterListModel::new(Some(search_model), Some(self.imp().genres_filter.clone()));
         genres_model.set_incremental(true);
-        let tags_model = gtk::FilterListModel::new(
-            Some(genres_model),
-            Some(self.imp().tags_filter.clone()),
-        );
+        let tags_model =
+            gtk::FilterListModel::new(Some(genres_model), Some(self.imp().tags_filter.clone()));
         tags_model.set_incremental(true);
-        let sort_model =
-            gtk::SortListModel::new(Some(tags_model), Some(self.imp().sorter.clone()));
+        let sort_model = gtk::SortListModel::new(Some(tags_model), Some(self.imp().sorter.clone()));
         sort_model.set_incremental(true);
         let sel_model = SingleSelection::new(Some(sort_model));
 
@@ -480,9 +481,7 @@ impl ArtistView {
                 let item = list_item
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
-                let artist_cell = ArtistCell::new(
-                    item, cache
-                );
+                let artist_cell = ArtistCell::new(item, cache);
                 item.set_child(Some(&artist_cell));
             }
         ));
@@ -546,28 +545,26 @@ impl ArtistView {
 impl LazyInit for ArtistView {
     fn populate(&self) {
         if let Some(library) = self.imp().library.upgrade()
-            && !self.imp().initializing.get() {
-                self.imp().initializing.set(true);
-                let stack = self.imp().stack.get();
-                let this = self.clone();
-                stack.show_spinner();
-                glib::spawn_future_local(async move {
-                    let _ = library.init_artists().await;
-                    // artists is almost surely a superset of albumartists, so it suffices to see if
-                    // we've found artists only
-                    if library.artists().n_items() > 0 {
-                        stack.show_content();
-                    } else {
-                        stack.show_placeholder();
-                    }
-                    this.imp().initializing.set(false);
-                    // Populate genres and tags for filtering
-                    let _ = futures::join!(
-                        library.init_genres(),
-                        library.refresh_artist_tags()
-                    );
-                });
-            }
+            && !self.imp().initializing.get()
+        {
+            self.imp().initializing.set(true);
+            let stack = self.imp().stack.get();
+            let this = self.clone();
+            stack.show_spinner();
+            glib::spawn_future_local(async move {
+                let _ = library.init_artists().await;
+                // artists is almost surely a superset of albumartists, so it suffices to see if
+                // we've found artists only
+                if library.artists().n_items() > 0 {
+                    stack.show_content();
+                } else {
+                    stack.show_placeholder();
+                }
+                this.imp().initializing.set(false);
+                // Populate genres and tags for filtering
+                let _ = futures::join!(library.init_genres(), library.refresh_artist_tags());
+            });
+        }
     }
 }
 

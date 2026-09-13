@@ -84,10 +84,7 @@ struct TaskGuard {
 
 impl TaskGuard {
     fn new(state: ClientState, bg: bool) -> Self {
-        let res = Self {
-            state,
-            bg
-        };
+        let res = Self { state, bg };
         if bg {
             res.state.inc_bg();
         } else {
@@ -899,15 +896,13 @@ impl MpdWrapper {
         self.foreground(Task::UpdateDb(s), r).await
     }
 
-    pub async fn get_embedded_cover(
-        &self,
-        uri: String,
-    ) -> ClientResult<Option<ImageHandle>> {
+    pub async fn get_embedded_cover(&self, uri: String) -> ClientResult<Option<ImageHandle>> {
         // Leave downloading to the background connection thread, but local operations
         // (resizing, transcoding, writing to disk) will be done with a threadpool, whose
         // handle is held by the this thread (the main one).
         let (s, r) = oneshot::channel();
-        self.background(Task::GetEmbeddedCover(uri, None, s), r).await
+        self.background(Task::GetEmbeddedCover(uri, None, s), r)
+            .await
     }
 
     pub async fn get_folder_cover(
@@ -916,8 +911,7 @@ impl MpdWrapper {
         folder_uri: String,
     ) -> ClientResult<Option<ImageHandle>> {
         let (s, r) = oneshot::channel();
-        self
-            .background(Task::GetFolderCover(example_uri, Some(folder_uri), s), r)
+        self.background(Task::GetFolderCover(example_uri, Some(folder_uri), s), r)
             .await
     }
 
@@ -992,12 +986,12 @@ impl MpdWrapper {
                             chunk,
                             Some(vec![
                                 tags::ALBUM,
-                                tags::ARTIST,  // as fallback
+                                tags::ARTIST, // as fallback
                                 tags::ALBUMARTIST,
                                 tags::ALBUMARTISTSORT,
                                 tags::ALBUMARTIST_MBID,
                                 tags::ALBUM_MBID,
-                                tags::ORIGINAL_DATE,  // as fallback
+                                tags::ORIGINAL_DATE, // as fallback
                                 tags::DATE,
                                 tags::GENRE,
                             ]),

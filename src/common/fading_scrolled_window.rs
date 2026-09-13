@@ -7,7 +7,6 @@ use gtk::{
 };
 use std::cell::{Cell, RefCell};
 
-
 // Maximum fade width, relative to fade axis. Actual width depends on how close the scroll is to that end.
 static FADE_WIDTH: f32 = 0.2;
 
@@ -72,72 +71,51 @@ mod imp {
                 let (hadj, vadj) = (inner.hadjustment(), inner.vadjustment());
                 let start_point = graphene::Point::new(0.0, 0.0);
                 let end_point: graphene::Point;
-                // Construct in one pass the gradient for the whole axis. 
+                // Construct in one pass the gradient for the whole axis.
                 // This avoid having to stack two gradients.
                 let mut stops = Vec::with_capacity(4);
                 if self.vertical.get() {
                     end_point = graphene::Point::new(0.0, h as f32);
                     if vadj.value() > 0.0 {
                         // Not at top => fade top out
-                        stops.push(
-                            gsk::ColorStop::new(0.0, gdk::RGBA::BLACK.with_alpha(0.0))
-                        );
-                        stops.push(
-                            gsk::ColorStop::new(
-                                (vadj.value() as f32 / h as f32).min(FADE_WIDTH),
-                                gdk::RGBA::BLACK,
-                            )
-                        );
+                        stops.push(gsk::ColorStop::new(0.0, gdk::RGBA::BLACK.with_alpha(0.0)));
+                        stops.push(gsk::ColorStop::new(
+                            (vadj.value() as f32 / h as f32).min(FADE_WIDTH),
+                            gdk::RGBA::BLACK,
+                        ));
                     }
                     let lower_pos = vadj.value() + vadj.page_size();
                     if lower_pos < vadj.upper() {
                         // Not at bottom => fade bottom out
-                        stops.push(
-                            gsk::ColorStop::new(
-                                (lower_pos as f32 / vadj.upper() as f32).max(1.0 - FADE_WIDTH),
-                                gdk::RGBA::BLACK,
-                            )
-                        );
-                        stops.push(
-                            gsk::ColorStop::new(1.0, gdk::RGBA::BLACK.with_alpha(0.0))
-                        );
+                        stops.push(gsk::ColorStop::new(
+                            (lower_pos as f32 / vadj.upper() as f32).max(1.0 - FADE_WIDTH),
+                            gdk::RGBA::BLACK,
+                        ));
+                        stops.push(gsk::ColorStop::new(1.0, gdk::RGBA::BLACK.with_alpha(0.0)));
                     }
                 } else {
                     end_point = graphene::Point::new(w as f32, 0.0);
                     if hadj.value() > 0.0 {
                         // Not at top => fade top out
-                        stops.push(
-                            gsk::ColorStop::new(0.0, gdk::RGBA::BLACK.with_alpha(0.0))
-                        );
-                        stops.push(
-                            gsk::ColorStop::new(
-                                (hadj.value() as f32 / w as f32).min(FADE_WIDTH),
-                                gdk::RGBA::BLACK,
-                            )
-                        );
+                        stops.push(gsk::ColorStop::new(0.0, gdk::RGBA::BLACK.with_alpha(0.0)));
+                        stops.push(gsk::ColorStop::new(
+                            (hadj.value() as f32 / w as f32).min(FADE_WIDTH),
+                            gdk::RGBA::BLACK,
+                        ));
                     }
                     let rightmost_pos = hadj.value() + hadj.page_size();
                     if rightmost_pos < hadj.upper() {
                         // Not at bottom => fade bottom out
-                        stops.push(
-                            gsk::ColorStop::new(
-                                (rightmost_pos as f32 / hadj.upper() as f32).max(1.0 - FADE_WIDTH),
-                                gdk::RGBA::BLACK,
-                            )
-                        );
-                        stops.push(
-                            gsk::ColorStop::new(1.0, gdk::RGBA::BLACK.with_alpha(0.0))
-                        );
+                        stops.push(gsk::ColorStop::new(
+                            (rightmost_pos as f32 / hadj.upper() as f32).max(1.0 - FADE_WIDTH),
+                            gdk::RGBA::BLACK,
+                        ));
+                        stops.push(gsk::ColorStop::new(1.0, gdk::RGBA::BLACK.with_alpha(0.0)));
                     }
                 }
                 if !stops.is_empty() {
                     snapshot.push_mask(gsk::MaskMode::Alpha);
-                    snapshot.append_linear_gradient(
-                        &bounds,
-                        &start_point,
-                        &end_point,
-                        &stops,
-                    );
+                    snapshot.append_linear_gradient(&bounds, &start_point, &end_point, &stops);
                     // Write mask
                     snapshot.pop();
                 }

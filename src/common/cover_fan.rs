@@ -85,7 +85,6 @@ mod imp {
             } else {
                 (for_size.max(1), for_size.max(1), -1, -1)
             }
-            
         }
 
         fn size_allocate(&self, w: i32, h: i32, baseline: i32) {

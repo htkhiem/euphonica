@@ -5,7 +5,10 @@ use gtk::{
     glib::{self, Value, Variant},
 };
 
-use crate::{common::{View, marquee::MarqueeWrapMode}, utils};
+use crate::{
+    common::{View, marquee::MarqueeWrapMode},
+    utils,
+};
 
 mod imp {
     use super::*;

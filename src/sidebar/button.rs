@@ -5,7 +5,7 @@ use std::cell::RefCell;
 mod imp {
     use gtk::glib::WeakRef;
 
-use super::*;
+    use super::*;
 
     #[derive(Properties, Default, CompositeTemplate)]
     #[template(resource = "/io/github/htkhiem/Euphonica/gtk/sidebar-button.ui")]
@@ -18,7 +18,7 @@ use super::*;
         #[property(get, set)]
         pub label: RefCell<String>,
         #[property(get = Self::get_prefix_child, set = Self::set_prefix_child)]
-        pub prefix_child: WeakRef<gtk::Widget>
+        pub prefix_child: WeakRef<gtk::Widget>,
     }
 
     #[glib::object_subclass]

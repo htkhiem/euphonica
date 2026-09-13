@@ -417,7 +417,7 @@ pub enum Error {
     InsufficientKey,
     KeyAlreadyExists,
     Filesystem,
-    DoNotRetry  // Empty placeholder found, don't do it again
+    DoNotRetry, // Empty placeholder found, don't do it again
 }
 
 #[derive(Debug, Copy, Clone, Default)]
@@ -613,7 +613,10 @@ pub fn get_artist_meta(name: &str, mbid: Option<&str>) -> Result<Option<ArtistMe
     }
 }
 
-pub fn get_artist_meta_last_modified(name: &str, mbid: Option<&str>) -> Result<Option<OffsetDateTime>, Error> {
+pub fn get_artist_meta_last_modified(
+    name: &str,
+    mbid: Option<&str>,
+) -> Result<Option<OffsetDateTime>, Error> {
     let query: Result<OffsetDateTime, SqliteError>;
     let conn = SQLITE_POOL.get().unwrap();
     if let Some(mbid) = mbid {
@@ -628,17 +631,20 @@ pub fn get_artist_meta_last_modified(name: &str, mbid: Option<&str>) -> Result<O
             .query_row(params![name], |r| r.get(0));
     }
     match query {
-        Ok(dt) => {
-            Ok(Some(dt))
-        }
+        Ok(dt) => Ok(Some(dt)),
         Err(SqliteError::QueryReturnedNoRows) => Ok(None),
         Err(e) => Err(Error::Db(e)),
     }
 }
 
-pub fn write_album_meta(album: &AlbumInfo, meta: &AlbumMeta, last_modified: Option<OffsetDateTime>, update_tags: bool) -> Result<OffsetDateTime, Error> {
+pub fn write_album_meta(
+    album: &AlbumInfo,
+    meta: &AlbumMeta,
+    last_modified: Option<OffsetDateTime>,
+    update_tags: bool,
+) -> Result<OffsetDateTime, Error> {
     let conn = SQLITE_POOL.get().unwrap();
-    let last_modified = last_modified.unwrap_or(OffsetDateTime::now_utc());  // sqlite CURRENT_TIMESTAMP also defaults to UTC
+    let last_modified = last_modified.unwrap_or(OffsetDateTime::now_utc()); // sqlite CURRENT_TIMESTAMP also defaults to UTC
     conn.execute(
         "insert into albums (folder_uri, mbid, title, artist, last_modified, data)
         values (?1,?2,?3,?4,?5,?6)
@@ -651,13 +657,11 @@ pub fn write_album_meta(album: &AlbumInfo, meta: &AlbumMeta, last_modified: Opti
             &album.title,
             &album.get_artist_tag(),
             last_modified,
-            bson::serialize_to_vec(
-                &bson
-                    ::serialize_to_document(meta)
-                    .map_err(Error::ObjectToDoc)?
-            ).map_err(Error::DocToBytes)?
-        ]
-    ).map_err(Error::Db)?;
+            bson::serialize_to_vec(&bson::serialize_to_document(meta).map_err(Error::ObjectToDoc)?)
+                .map_err(Error::DocToBytes)?
+        ],
+    )
+    .map_err(Error::Db)?;
     // When populating tag lists with metadata-supplied tags, take care not to remove user-set tags.
     // Also, when saving user edits to the doc, don't overwrite the tags table.
     if update_tags {
@@ -667,11 +671,15 @@ pub fn write_album_meta(album: &AlbumInfo, meta: &AlbumMeta, last_modified: Opti
             TagsInsertMode::DelsertMetaSupplied,
         )?;
     }
-    
+
     Ok(last_modified)
 }
 
-pub fn write_artist_meta(artist: &ArtistInfo, meta: &ArtistMeta, update_tags: bool) -> Result<OffsetDateTime, Error> {
+pub fn write_artist_meta(
+    artist: &ArtistInfo,
+    meta: &ArtistMeta,
+    update_tags: bool,
+) -> Result<OffsetDateTime, Error> {
     let conn = SQLITE_POOL.get().unwrap();
     let ts = OffsetDateTime::now_utc();
     conn.execute(
@@ -683,7 +691,8 @@ pub fn write_artist_meta(artist: &ArtistInfo, meta: &ArtistMeta, update_tags: bo
         params![
             &artist.name,
             &artist.mbid,
-            ts.format(&time::format_description::well_known::Rfc3339).map_err(|_| Error::Filesystem)?,
+            ts.format(&time::format_description::well_known::Rfc3339)
+                .map_err(|_| Error::Filesystem)?,
             bson::serialize_to_vec(&bson::serialize_to_document(meta).map_err(Error::ObjectToDoc)?)
                 .map_err(Error::DocToBytes)?
         ],

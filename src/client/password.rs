@@ -1,7 +1,4 @@
-use gtk::{
-    gio::Cancellable,
-    glib::Error as GError
-};
+use gtk::{gio::Cancellable, glib::Error as GError};
 use libsecret::*;
 use std::collections::HashMap;
 
@@ -19,9 +16,11 @@ pub fn get_mpd_password() -> Result<Option<String>, GError> {
     let mut attributes = HashMap::new();
     attributes.insert("type", "mpd");
 
-    match libsecret::password_lookup_sync(Some(&schema), attributes, Cancellable::NONE).map(|gs| gs.map(|gs| gs.to_string())) {
+    match libsecret::password_lookup_sync(Some(&schema), attributes, Cancellable::NONE)
+        .map(|gs| gs.map(|gs| gs.to_string()))
+    {
         Ok(res) => Ok(res),
-        Err(ge) => Err(dbg!(ge))
+        Err(ge) => Err(dbg!(ge)),
     }
 }
 
@@ -55,17 +54,15 @@ pub async fn set_mpd_password(maybe_password: Option<&str>) -> Result<(), GError
             "Euphonica MPD password",
             password,
         )
-        .await {
+        .await
+        {
             Ok(()) => Ok(()),
-            Err(ge) => {
-                Err(dbg!(ge))
-            }
+            Err(ge) => Err(dbg!(ge)),
         }
     } else {
-        match libsecret::password_clear_future(Some(&schema), attributes)
-            .await {
-                Ok(()) => Ok(()),
-                Err(ge) => Err(dbg!(ge))
-            }
+        match libsecret::password_clear_future(Some(&schema), attributes).await {
+            Ok(()) => Ok(()),
+            Err(ge) => Err(dbg!(ge)),
+        }
     }
 }

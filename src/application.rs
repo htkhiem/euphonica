@@ -310,9 +310,7 @@ impl EuphonicaApplication {
             // Safe to remove hold guard now, if any
             let _ = self.imp().hold_guard.take();
         } else {
-            eprintln!(
-                "FATAL: user exited onboarding."
-            );
+            eprintln!("FATAL: user exited onboarding.");
             self.quit_app();
         }
     }
