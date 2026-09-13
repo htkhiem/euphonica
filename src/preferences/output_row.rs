@@ -6,7 +6,7 @@ use strum::{EnumMessage, IntoEnumIterator};
 use crate::{
     common::map_output_plugin_icon,
     server::{
-        AudioFormatConfig, DsdMultiplier, MixerType, PcmBitDepth, PcmSampleRate, ReplayGainHandler,
+        AudioFormatConfig, MixerType, ReplayGainHandler,
         config::{OutputConfig, OutputType},
     },
 };
@@ -20,7 +20,7 @@ mod imp {
     use gtk::glib::{WeakRef, subclass::Signal};
     use strum::VariantNames;
 
-    use crate::server::{DsdMultiplier, PcmBitDepth, PcmSampleRate, ReplayGainHandler};
+    use crate::server::ReplayGainHandler;
 
     use super::*;
 
@@ -195,7 +195,7 @@ impl OutputRow {
         res.imp()
             .force_format
             .set_active(config.format.as_ref().is_some());
-        let force_format_spec = res.imp().force_format_entry.load(
+        let _force_format_spec = res.imp().force_format_entry.load(
             config
                 .format
                 .as_ref()

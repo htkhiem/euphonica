@@ -28,8 +28,6 @@ mod imp {
 
         #[property(get)]
         pub is_valid: Cell<bool>,
-
-
     }
 
     #[glib::object_subclass]
@@ -51,8 +49,6 @@ mod imp {
     impl ObjectImpl for AudioOutputs {
         fn constructed(&self) {
             self.parent_constructed();
-
-
         }
     }
     impl WidgetImpl for AudioOutputs {}
@@ -167,7 +163,13 @@ impl AudioOutputs {
         if let Some(first) = self.imp().listbox.first_child() {
             let mut cursor: gtk::ListBoxRow = first.downcast().unwrap();
             loop {
-                res.push(cursor.child().and_downcast::<OutputRow>().unwrap().generate_config());
+                res.push(
+                    cursor
+                        .child()
+                        .and_downcast::<OutputRow>()
+                        .unwrap()
+                        .generate_config(),
+                );
                 if let Some(next) = cursor.next_sibling().and_downcast() {
                     cursor = next;
                 } else {

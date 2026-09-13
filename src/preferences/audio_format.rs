@@ -1,23 +1,18 @@
 use adw::prelude::*;
-use glib::{Object, Properties, clone};
+use glib::clone;
 use gtk::{CompositeTemplate, glib, subclass::prelude::*};
 
-use crate::{server::{AudioFormatConfig, DsdMultiplier, PcmBitDepth, PcmSampleRate}, utils::meta_provider_settings};
-
-use super::IntegrationsPreferences;
+use crate::server::{AudioFormatConfig, DsdMultiplier, PcmBitDepth, PcmSampleRate};
 
 mod imp {
-    use std::cell::{Cell, RefCell};
 
-    use adw::subclass::{action_row::ActionRowImpl, preferences_row::PreferencesRowImpl};
     use strum::VariantNames;
 
     use crate::server::{DsdMultiplier, PcmBitDepth, PcmSampleRate};
 
     use super::*;
 
-    #[derive(Properties, Default, CompositeTemplate)]
-    #[properties(wrapper_type = super::AudioFormatEntry)]
+    #[derive(Default, CompositeTemplate)]
     #[template(resource = "/io/github/htkhiem/Euphonica/gtk/preferences/audio-format.ui")]
     pub struct AudioFormatEntry {
         #[template_child]
@@ -55,7 +50,6 @@ mod imp {
         }
     }
 
-    #[glib::derived_properties]
     impl ObjectImpl for AudioFormatEntry {
         fn constructed(&self) {
             self.parent_constructed();
@@ -96,7 +90,7 @@ impl AudioFormatEntry {
     pub fn load(&self, config: &AudioFormatConfig) {
         let channels;
         match config {
-            &AudioFormatConfig::Dsd(mul, ch, dop) => {
+            &AudioFormatConfig::Dsd(mul, ch, _dop) => {
                 self.imp().pcm_dsd_toggle.set_active_name(Some("dsd"));
                 // Thanks to using strum::VariantNames as stringlist these are guaranteed to be within the valid range
                 self.imp().dsd_preset.set_selected(mul as u32);

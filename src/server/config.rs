@@ -155,6 +155,8 @@ pub enum AudioFormatConfig {
         DsdMultiplier,
         /// Number of channels
         Option<u8>,
+        /// DSD-over-PCM
+        bool,
     ),
 }
 
@@ -163,7 +165,7 @@ impl AudioFormatConfig {
     pub fn is_dsd(&self) -> bool {
         match self {
             Self::Pcm(_, _, _) => false,
-            Self::Dsd(_, _) => true,
+            Self::Dsd(_, _, _) => true,
         }
     }
 }
@@ -210,7 +212,8 @@ impl TryFrom<&str> for AudioFormatConfig {
                         channels.unwrap()
                     ));
                 }
-                return Ok(Self::Dsd(mul, channels));
+                let dop = value.ends_with("=dop");
+                return Ok(Self::Dsd(mul, channels, dop));
             } else {
                 return Err(format!("Invalid DSD preset spec: {}", value));
             }
@@ -261,12 +264,13 @@ impl TryFrom<&str> for AudioFormatConfig {
 impl Display for AudioFormatConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Dsd(mul, ch) => {
+            Self::Dsd(mul, ch, dop) => {
                 write!(
                     f,
-                    "dsd{}:{}",
+                    "dsd{}:{}{}",
                     mul.get_serializations()[0],
-                    ch.map(|ch| ch.to_string()).unwrap_or(String::from("*"))
+                    ch.map(|ch| ch.to_string()).unwrap_or(String::from("*")),
+                    if *dop { "=dop" } else { "" }
                 )
             }
             Self::Pcm(rate, bits, ch) => {
@@ -280,6 +284,30 @@ impl Display for AudioFormatConfig {
             }
         }
     }
+}
+
+#[derive(Debug)]
+pub enum ConfigValueType {
+    /// Free text. Will use AdwEntryRow. Will default to blank.
+    Text,
+    /// Use this to show a "Browse" row. Will default to blank.
+    Path,
+    /// Allow selection from a predefined list of values. Will default to first in list.
+    Combo(Vec<String>),
+    /// AdwSpinRow. Parameters are min, max, step size, page size, number of decimal digits to keep in output.
+    Number(f64, f64, f64, f64, u8),
+    /// AdwSwitchRow. Parameter allows specifying default value.
+    Bool(bool),
+    /// List of AudioFormat widgets.
+    Formats,
+}
+
+#[derive(Debug)]
+pub struct OutputConfigSpec {
+    title: String,
+    subtitle: Option<String>,
+    key: String,
+    value_type: ConfigValueType,
 }
 
 #[derive(
@@ -310,6 +338,11 @@ pub enum OutputType {
     #[strum(serialize = "pipewire", to_string = "PipeWire")]
     #[default]
     PipeWire,
+}
+
+impl OutputType {
+    /// Return information regarding
+    pub fn get_custom_config_spec(&self) {}
 }
 
 /// ALSA, OSS and Pulse supports hardware mixer and MPD uses that as default.
