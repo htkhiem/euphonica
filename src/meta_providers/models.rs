@@ -146,7 +146,7 @@ pub fn artist_type_to_string(typ: &ArtistType) -> &'static str {
         ArtistType::Orchestra => "Orchestra",
         ArtistType::Person => "Person",
         ArtistType::Other => "Other",
-        _ => ""
+        _ => "",
     }
 }
 
@@ -158,7 +158,7 @@ pub fn artist_type_to_index(typ: &ArtistType) -> u32 {
         ArtistType::Group => 3,
         ArtistType::Character => 4,
         ArtistType::Other => 5,
-        _ => 6
+        _ => 6,
     }
 }
 
@@ -282,7 +282,7 @@ impl HasImage for ArtistMeta {
 pub enum MetaSource {
     Local,
     Mpd,
-    External
+    External,
 }
 
 pub struct Lyrics {

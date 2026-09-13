@@ -18,7 +18,12 @@ use std::{
 use super::PlayerPane;
 
 use crate::{
-    cache::Cache, client::{ClientState, Error as ClientError}, common::{ContentStack, RowEditButtons, Song, SongRow}, player::controller::SwapDirection, utils::{LazyInit, SearchableView, g_search_substr, settings_manager}, window::EuphonicaWindow,
+    cache::Cache,
+    client::{ClientState, Error as ClientError},
+    common::{ContentStack, RowEditButtons, Song, SongRow},
+    player::controller::SwapDirection,
+    utils::{LazyInit, SearchableView, g_search_substr, settings_manager},
+    window::EuphonicaWindow,
 };
 
 use super::Player;
@@ -743,11 +748,12 @@ impl QueueView {
             let n = model.n_items();
             if let Some(player) = self.imp().player.upgrade()
                 && let Some(pos) = player.queue_pos()
-                    && pos < n {
-                        self.imp()
-                            .queue
-                            .scroll_to(pos, gtk::ListScrollFlags::FOCUS, None);
-                    }
+                && pos < n
+            {
+                self.imp()
+                    .queue
+                    .scroll_to(pos, gtk::ListScrollFlags::FOCUS, None);
+            }
         }
     }
 
@@ -954,7 +960,9 @@ impl QueueView {
     ) {
         self.imp().window.set(Some(window));
         self.setup_listview(player, cache.clone());
-        self.imp().player_pane.setup(player, cache, client_state, window);
+        self.imp()
+            .player_pane
+            .setup(player, cache, client_state, window);
         self.bind_state(player);
         self.imp().player.set(Some(player));
     }

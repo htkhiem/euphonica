@@ -11,7 +11,11 @@ use crate::{
 };
 use chrono::Local;
 use derivative::Derivative;
-use gtk::{gdk, gio, glib::{self, SignalHandlerId, WeakRef, closure_local, subclass::Signal}, prelude::*};
+use gtk::{
+    gdk, gio,
+    glib::{self, SignalHandlerId, WeakRef, closure_local, subclass::Signal},
+    prelude::*,
+};
 use itertools::Itertools;
 use rustc_hash::FxHashMap;
 use std::{borrow::Cow, cell::OnceCell, rc::Rc, sync::OnceLock, vec::Vec};

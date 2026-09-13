@@ -6,12 +6,12 @@ use gtk::{
 };
 use std::cell::OnceCell;
 
-use crate::window::EuphonicaWindow;
 use super::Tag;
+use crate::window::EuphonicaWindow;
 
 mod imp {
     use super::*;
-    
+
     #[derive(Default, CompositeTemplate)]
     #[template(resource = "/io/github/htkhiem/Euphonica/gtk/library/tag-button.ui")]
     pub struct TagButton {
@@ -23,7 +23,7 @@ mod imp {
         pub tag_btn: TemplateChild<gtk::Button>,
         #[template_child]
         pub remove_btn: TemplateChild<gtk::Button>,
-        pub data: OnceCell<Tag>
+        pub data: OnceCell<Tag>,
     }
 
     // The central trait for subclassing a GObject

@@ -560,7 +560,13 @@ impl DynamicPlaylistContentView {
                     #[weak(rename_to = this)]
                     self,
                     move |_: CacheState, name: String, tex: gdk::Texture, _: gdk::Texture| {
-                        if this.imp().dp.borrow().as_ref().is_some_and(|dp| dp.name == name) {
+                        if this
+                            .imp()
+                            .dp
+                            .borrow()
+                            .as_ref()
+                            .is_some_and(|dp| dp.name == name)
+                        {
                             this.imp().cover.show(&tex);
                         }
                     }
@@ -573,7 +579,13 @@ impl DynamicPlaylistContentView {
                     #[weak(rename_to = this)]
                     self,
                     move |_: CacheState, name: String| {
-                        if this.imp().dp.borrow().as_ref().is_some_and(|dp| dp.name == name) {
+                        if this
+                            .imp()
+                            .dp
+                            .borrow()
+                            .as_ref()
+                            .is_some_and(|dp| dp.name == name)
+                        {
                             this.imp().cover.clear();
                         }
                     }

@@ -532,7 +532,11 @@ impl ClientPreferences {
 
         let mpd_backup_meta_as_stickers = imp.mpd_backup_meta_as_stickers.get();
         conn_settings
-            .bind("mpd-backup-metadata", &mpd_backup_meta_as_stickers, "active")
+            .bind(
+                "mpd-backup-metadata",
+                &mpd_backup_meta_as_stickers,
+                "active",
+            )
             .build();
 
         // Visualiser
