@@ -6,6 +6,8 @@ use gtk::{
     subclass::prelude::*,
 };
 
+use crate::common::list_models::{DualStringList, DualStringObject};
+
 mod imp {
     use std::cell::OnceCell;
 
@@ -54,8 +56,8 @@ impl ComboRow {
     // If given val is not in options, will default to first element and enablement switch will still be off.
     pub fn new(
         key: String,
-        options: gtk::StringList,
-        val: Option<&str>,
+        options: &DualStringList,
+        val: Option<&str>, // on internal side
         title: &str,
         subtitle: &str,
     ) -> Self {
@@ -63,7 +65,13 @@ impl ComboRow {
         let _ = res.imp().key.set(key);
         res.imp().inner.set_title(title);
         res.imp().inner.set_subtitle(subtitle);
-        res.imp().inner.set_model(Some(&options));
+        res.imp().inner.set_model(Some(options));
+        // Need to tell adw::ComboRow how to read our DualStringList
+        res.imp().inner.set_expression(Some(&gtk::PropertyExpression::new(
+            DualStringObject::static_type(),
+            gtk::Expression::NONE,
+            "display",
+        )));
         if let Some(val) = val {
             let init_idx = options.find(val);
             if init_idx < options.n_items() {

@@ -748,6 +748,6 @@ pub fn get_pipewire_devices(include_mpd_if_found: bool) -> Vec<(String, String)>
     mainloop.run();
     roundtrip_listener.unregister();
 
-    let lock = Arc::try_unwrap(res).expect("Lock still has multiple owners");
-    lock.into_inner().expect("Mutex cannot be locked")
+    // TODO: avoid cloning here (currently done to skip all the locking mess)
+    res.lock().unwrap().clone()
 }

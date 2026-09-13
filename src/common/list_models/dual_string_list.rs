@@ -74,8 +74,25 @@ impl DualStringList {
         self.items_changed(position, 0, 1);
     }
 
-    // Optional helper to get an item back cleanly typed
+    /// Optional helper to get an item back cleanly typed
     pub fn item(&self, position: u32) -> Option<DualStringObject> {
         self.imp().item(position).and_downcast::<DualStringObject>()
+    }
+
+    /// Searches for an item by its internal string.
+    /// Returns the index of the item, or u32::MAX (hopefully same as G_MAX_UINT).
+    pub fn find(&self, target_internal: &str) -> u32 {
+        let items = self.imp().items.borrow();
+
+        for (index, obj) in items.iter().enumerate() {
+            // Retrieve the property to compare it
+            let current_internal: String = obj.property("internal");
+
+            if current_internal == target_internal {
+                return index as u32;
+            }
+        }
+
+        u32::MAX
     }
 }
