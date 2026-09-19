@@ -2,17 +2,13 @@ use adw::prelude::*;
 use glib::{Object, Properties, clone};
 use gtk::{CompositeTemplate, glib, subclass::prelude::*};
 use rustc_hash::FxHashMap;
-use strum::{EnumMessage, IntoEnumIterator};
+use strum::IntoEnumIterator;
 
 use crate::{
-    common::{list_models::DualStringList, map_output_plugin_icon},
-    preferences::output_config::{
-        audio_format_box::AudioFormatBox, combo_row::ComboRow, config_row::ConfigRow,
-        number_row::NumberRow, path_row::PathRow, switch_row::SwitchRow, text_row::TextRow,
-    },
+    preferences::output_config::config_row::ConfigRow,
     server::{
         AudioFormatConfig, MixerType, ReplayGainHandler,
-        config::{ConfigValueType, OutputConfig, OutputConfigSpec, OutputType},
+        config::{OutputConfig, OutputType},
     },
 };
 
@@ -25,7 +21,7 @@ mod imp {
     use gtk::glib::{WeakRef, subclass::Signal};
     use strum::VariantNames;
 
-    use crate::{common::list_models::DualStringObject, server::ReplayGainHandler};
+    use crate::server::ReplayGainHandler;
 
     use super::*;
 
@@ -245,16 +241,14 @@ impl OutputRow {
             res,
             move |combo| {
                 this.clear_plugin_specific_config();
-                if let Some(new_type) =
-                    OutputType::from_repr(combo.selected() as usize)
-                {
+                if let Some(new_type) = OutputType::from_repr(combo.selected() as usize) {
                     this.insert_plugin_specific_config(&new_type, Vec::with_capacity(0))
                 }
             }
         ));
 
         // Needed to make nested ComboRows work
-        res.imp().inner.connect_row_activated(|lb, row| {
+        res.imp().inner.connect_row_activated(|_lb, row| {
             if let Some(config_row) = row.downcast_ref::<ConfigRow>() {
                 config_row.activate_inner();
             }

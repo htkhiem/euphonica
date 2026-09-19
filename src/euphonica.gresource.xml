@@ -58,11 +58,7 @@
     <file preprocess="xml-stripblanks">gtk/preferences/audio-format.ui</file>
     <file preprocess="xml-stripblanks">gtk/preferences/audio-format-row.ui</file>
     <file preprocess="xml-stripblanks">gtk/preferences/audio-format-box.ui</file>
-    <file preprocess="xml-stripblanks">gtk/preferences/combo-row.ui</file>
-    <file preprocess="xml-stripblanks">gtk/preferences/number-row.ui</file>
     <file preprocess="xml-stripblanks">gtk/preferences/path-row.ui</file>
-    <file preprocess="xml-stripblanks">gtk/preferences/switch-row.ui</file>
-    <file preprocess="xml-stripblanks">gtk/preferences/text-row.ui</file>
     <file preprocess="xml-stripblanks">gtk/preferences/outputs.ui</file>
     <file preprocess="xml-stripblanks">gtk/preferences/library.ui</file>
     <file preprocess="xml-stripblanks">gtk/preferences/ui.ui</file>

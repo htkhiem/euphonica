@@ -6,8 +6,7 @@ use crate::{
 use adw::prelude::*;
 use glib::Object;
 use gtk::{
-    CompositeTemplate,
-    glib::{self, clone},
+    glib::{self},
     subclass::prelude::*,
 };
 use std::cell::OnceCell;
@@ -69,7 +68,8 @@ impl ConfigRow {
                     .into()
             }
             ConfigValueType::Combo(options) => {
-                let _ = res.imp()
+                let _ = res
+                    .imp()
                     .inner_type
                     .set(ConfigValueTypeDiscriminants::Combo);
                 let options = DualStringList::from_string_pairs(
@@ -101,7 +101,8 @@ impl ConfigRow {
                 inner.into()
             }
             ConfigValueType::Formats => {
-                let _ = res.imp()
+                let _ = res
+                    .imp()
                     .inner_type
                     .set(ConfigValueTypeDiscriminants::Formats);
                 // Too complicated => custom widget lol
@@ -109,7 +110,10 @@ impl ConfigRow {
             }
             ConfigValueType::Text => {
                 let _ = res.imp().inner_type.set(ConfigValueTypeDiscriminants::Text);
-                let prefix = gtk::Switch::builder().active(value.is_some()).valign(gtk::Align::Center).build();
+                let prefix = gtk::Switch::builder()
+                    .active(value.is_some())
+                    .valign(gtk::Align::Center)
+                    .build();
                 let inner = adw::EntryRow::builder().title(title).build();
                 inner.add_prefix(&prefix);
                 if let Some(value) = value {
@@ -119,10 +123,14 @@ impl ConfigRow {
                 inner.into()
             }
             ConfigValueType::Number(min, max, step, page, digits) => {
-                let _ = res.imp()
+                let _ = res
+                    .imp()
                     .inner_type
                     .set(ConfigValueTypeDiscriminants::Number);
-                let prefix = gtk::Switch::builder().active(value.is_some()).valign(gtk::Align::Center).build();
+                let prefix = gtk::Switch::builder()
+                    .active(value.is_some())
+                    .valign(gtk::Align::Center)
+                    .build();
                 let inner = adw::SpinRow::builder()
                     .title(title)
                     .subtitle(subtitle)
@@ -156,8 +164,13 @@ impl ConfigRow {
 
     /// Needed for nested adw::ComboRows to function properly.
     pub fn activate_inner(&self) {
-        if matches!(self.imp().inner_type.get().unwrap(), ConfigValueTypeDiscriminants::Combo) {
-            adw::prelude::ActionRowExt::activate(&self.child().unwrap().downcast::<adw::ComboRow>().unwrap());
+        if matches!(
+            self.imp().inner_type.get().unwrap(),
+            ConfigValueTypeDiscriminants::Combo
+        ) {
+            adw::prelude::ActionRowExt::activate(
+                &self.child().unwrap().downcast::<adw::ComboRow>().unwrap(),
+            );
         }
     }
 

@@ -7,13 +7,11 @@ use gtk::{
 };
 
 use crate::{
-    preferences::output_config::{audio_format_row::AudioFormatRow}, server::AudioFormatConfig,
+    preferences::output_config::audio_format_row::AudioFormatRow, server::AudioFormatConfig,
 };
 
 mod imp {
     use std::cell::OnceCell;
-
-    use adw::subclass::{action_row::ActionRowImpl, preferences_row::PreferencesRowImpl};
 
     use super::*;
 

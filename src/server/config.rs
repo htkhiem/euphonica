@@ -5,7 +5,6 @@ use crate::{
 #[cfg(target_os = "linux")]
 use alsa::{self, device_name::HintIter};
 use regex::Regex;
-use rustc_hash::FxHashMap;
 use std::ffi::CString;
 /// Config file generator, for use with the managed MPD instance.
 /// Since it's only meant for the above case, there is no need to allow configuring things like state file,
@@ -16,7 +15,9 @@ use std::ffi::CString;
 /// The format is kinda simple but nonstandard so it's not worth trying to shoehorn Serde here.
 use std::fmt::{Display, Write};
 use strum::{EnumMessage, VariantNames};
-use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumMessage, EnumString, FromRepr, VariantNames};
+use strum_macros::{
+    Display, EnumDiscriminants, EnumIter, EnumMessage, EnumString, FromRepr, VariantNames,
+};
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
 // Euphonica manages one hidden FIFO output plugin (not exposed to the user) to power the
