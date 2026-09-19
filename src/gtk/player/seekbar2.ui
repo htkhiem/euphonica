@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <interface>
   <template class="EuphonicaSeekbar2" parent="GtkBox">
-    <property name="orientation">1</property>
     <style>
       <class name="fg-auto-accent"/>
     </style>
