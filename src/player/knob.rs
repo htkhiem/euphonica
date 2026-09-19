@@ -107,7 +107,14 @@ mod imp {
 
             obj.connect_clicked(move |this| {
                 if !this.imp().was_dragging.get() {
-                    this.emit_by_name::<()>("mute-toggled", &[&true]);
+                    if let Some(player) = this.imp().player.upgrade() {
+                        glib::spawn_future_local(async move {
+                            if let Err(e) = player.toggle_mute().await {
+                                dbg!(e);
+                            }
+                            // Readout already updated by us binding to Player::is-muted below.
+                        });
+                    }
                 } else {
                     this.imp().was_dragging.set(false);
                 }
@@ -411,21 +418,6 @@ impl VolumeKnob {
         self.imp().player.set(Some(player));
         self.set_value(player.mpd_volume() as f64);
         self.imp().update_readout();
-        self.connect_clicked(move |this| {
-            glib::spawn_future_local(clone!(
-                #[weak]
-                this,
-                async move {
-                    if let Some(player) = this.imp().player.upgrade() {
-                        if let Err(e) = player.toggle_mute().await {
-                            dbg!(e);
-                        } else {
-                            this.imp().update_readout();
-                        }
-                    }
-                }
-            ));
-        });
 
         // Only fired for EXTERNAL changes.
         self.imp()
