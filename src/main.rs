@@ -77,7 +77,7 @@ fn main() -> glib::ExitCode {
     app.add_main_option(
         "minimized",
         glib::Char::from(b'm'),
-        glib::OptionFlags::IN_MAIN | glib::OptionFlags::OPTIONAL_ARG,
+        glib::OptionFlags::IN_MAIN,
         glib::OptionArg::None,
         "Start Euphonica without opening a window",
         None,
