@@ -73,21 +73,18 @@ impl MetadataProvider for LrcLibWrapper {
                     if let Ok(text) = resp.text() {
                         match serde_json::from_str::<Vec<LrcLibResponse>>(&text) {
                             Ok(parsed) => {
-                                if !parsed.is_empty() {
-                                    let mut best_idx: usize = 0;
-                                    let mut best_diff: f32 = (parsed[0].duration
-                                        - key.duration.map(|d| d.as_secs_f32()).unwrap_or(0.0))
-                                    .abs();
-                                    for i in 1..parsed.len() {
-                                        // Find the one with the closest duration
-                                        let diff = (parsed[i].duration
-                                            - key.duration.map(|d| d.as_secs_f32()).unwrap_or(0.0))
-                                        .abs();
-                                        if diff < best_diff {
-                                            best_diff = diff;
-                                            best_idx = i;
-                                        }
-                                    }
+                                let target = key.duration.map(|d| d.as_secs_f32()).unwrap_or(0.0);
+                                // Find the one with the closest duration
+                                if let Some((best_idx, _)) = parsed
+                                    .iter()
+                                    .enumerate()
+                                    .filter_map(|(i, result)| {
+                                        result
+                                            .duration
+                                            .map(|duration| (i, (duration - target).abs()))
+                                    })
+                                    .min_by(|(_, a), (_, b)| a.total_cmp(b))
+                                {
                                     let mut res: Option<models::Lyrics> = None;
                                     if let Some(synced) = parsed[best_idx].synced.as_ref()
                                         && let Ok(lyrics) =
