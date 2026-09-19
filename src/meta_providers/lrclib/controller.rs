@@ -75,7 +75,7 @@ impl MetadataProvider for LrcLibWrapper {
                             Ok(parsed) => {
                                 let target = key.duration.map(|d| d.as_secs_f32()).unwrap_or(0.0);
                                 // Find the one with the closest duration
-                                if let Some((best_idx, _)) = parsed
+                                if let Some(best_idx) = parsed
                                     .iter()
                                     .enumerate()
                                     .filter_map(|(i, result)| {
@@ -84,6 +84,8 @@ impl MetadataProvider for LrcLibWrapper {
                                             .map(|duration| (i, (duration - target).abs()))
                                     })
                                     .min_by(|(_, a), (_, b)| a.total_cmp(b))
+                                    .map(|(i, _)| i)
+                                    .or_else(|| (!parsed.is_empty()).then_some(0))
                                 {
                                     let mut res: Option<models::Lyrics> = None;
                                     if let Some(synced) = parsed[best_idx].synced.as_ref()
