@@ -20,7 +20,7 @@ mod imp {
         pub enabled: TemplateChild<gtk::Switch>,
         #[template_child]
         pub inner: TemplateChild<adw::ComboRow>,
-        pub key: OnceCell<String>,
+        pub key: OnceCell<&'static str>,
     }
 
     // The central trait for subclassing a GObject
@@ -55,7 +55,7 @@ glib::wrapper! {
 impl ComboRow {
     // If given val is not in options, will default to first element and enablement switch will still be off.
     pub fn new(
-        key: String,
+        key: &'static str,
         options: &DualStringList,
         val: Option<&str>, // on internal side
         title: &str,
@@ -82,7 +82,7 @@ impl ComboRow {
         res
     }
 
-    pub fn generate_config(&self) -> Option<(String, String)> {
+    pub fn generate_config(&self) -> Option<(&'static str, String)> {
         if self.imp().enabled.is_active() {
             Some((
                 self.imp().key.get().cloned().unwrap(),

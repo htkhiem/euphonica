@@ -82,3 +82,6 @@ debug = 1
 [profile.release]
 strip = true # Should reduce binary size on Linux
 lto = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+alsa = "0.12.1"

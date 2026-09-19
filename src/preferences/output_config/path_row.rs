@@ -1,10 +1,13 @@
 use adw::prelude::*;
+use ashpd::desktop::file_chooser::SelectedFiles;
 use glib::{Object, clone};
 use gtk::{
     CompositeTemplate,
     glib::{self},
     subclass::prelude::*,
 };
+
+use crate::utils;
 
 mod imp {
     use std::cell::{OnceCell, RefCell};
@@ -14,13 +17,13 @@ mod imp {
     use super::*;
 
     #[derive(Default, CompositeTemplate)]
-    #[template(resource = "/io/github/htkhiem/Euphonica/gtk/preferences/switch-row.ui")]
+    #[template(resource = "/io/github/htkhiem/Euphonica/gtk/preferences/path-row.ui")]
     pub struct PathRow {
         #[template_child]
         pub browse: TemplateChild<gtk::Button>,
         #[template_child]
         pub clear: TemplateChild<gtk::Button>,
-        pub key: OnceCell<String>,
+        pub key: OnceCell<&'static str>,
         pub value: RefCell<Option<String>>,
     }
 
@@ -73,12 +76,56 @@ glib::wrapper! {
 
 impl PathRow {
     /// Subtitle is not supported as we're using it to display the selected path.
-    /// Path should
-    pub fn new(key: String, val: Option<String>, title: &str) -> Self {
+    pub fn new(key: &'static str, val: Option<&str>, title: &str) -> Self {
         let res: Self = Object::builder().build();
         let _ = res.imp().key.set(key);
         res.set_title(title);
-        res.set_value(val);
+        res.set_value(val.map(|s| s.to_owned()));
+
+        res.imp().browse.connect_clicked(clone!(
+            #[weak(rename_to = this)]
+            res,
+            move |_| {
+                let (sender, receiver) = oneshot::channel();
+                utils::tokio_runtime().spawn(async move {
+                    sender
+                        .send(
+                            SelectedFiles::open_file()
+                                .title("Select folder containing your music")
+                                .directory(true)
+                                .modal(true)
+                                .multiple(false)
+                                .send()
+                                .await
+                                .expect("ashpd folder open await failure")
+                                .response(),
+                        )
+                        .expect("Broken oneshot sender");
+                });
+
+                glib::spawn_future_local(clone!(
+                    #[weak]
+                    this,
+                    async move {
+                        if let Ok(folders) = receiver.await.expect("Broken oneshot receiver") {
+                            let uris = folders.uris();
+                            if !uris.is_empty() {
+                                let uri = uris[0].as_str();
+                                let res = urlencoding::decode(if uri.starts_with("file://") {
+                                    &uri[7..]
+                                } else {
+                                    uri
+                                })
+                                .map(String::from)
+                                .ok();
+                                this.set_value(res);
+                            }
+                        }
+                    }
+                ));
+            }
+        ));
+
         res
     }
 
@@ -93,9 +140,9 @@ impl PathRow {
         let _ = self.imp().value.replace(val);
     }
 
-    pub fn generate_config(&self) -> Option<(String, String)> {
+    pub fn generate_config(&self) -> Option<(&'static str, String)> {
         if let Some(path) = self.imp().value.borrow().as_deref() {
-            Some((self.imp().key.get().cloned().unwrap(), path.to_owned()))
+            Some((self.imp().key.get().unwrap(), path.to_owned()))
         } else {
             None
         }

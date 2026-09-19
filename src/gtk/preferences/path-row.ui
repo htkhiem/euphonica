@@ -10,11 +10,13 @@
         <child>
           <object class="GtkButton" id="browse">
             <property name="label" translatable="true">Browse</property>
+            <property name="valign">center</property>
           </object>
         </child>
         <child>
           <object class="GtkButton" id="clear">
             <property name="icon-name">cross-symbolic</property>
+            <property name="valign">center</property>
           </object>
         </child>
       </object>

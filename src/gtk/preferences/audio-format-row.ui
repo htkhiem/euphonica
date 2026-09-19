@@ -6,6 +6,7 @@
     <style>
       <class name="padding-12"/>
     </style>
+    <property name="spacing">12</property>
     <child>
       <object class="GtkLabel" id="order">
         <style>
@@ -22,8 +23,14 @@
           <object class="EuphonicaAudioFormatEntry" id="entry"/>
         </property>
         <property name="end-widget">
-          <object class="GtkButton" id="remove"/>
-          <property name="icon-name">cross-small-symbolic</property>
+          <object class="GtkButton" id="remove">
+            <style>
+              <class name="circular"/>
+              <class name="flat"/>
+            </style>
+            <property name="valign">center</property>
+            <property name="icon-name">cross-small-symbolic</property>
+          </object>
         </property>
       </object>
     </child>

@@ -1,13 +1,18 @@
 use adw::prelude::*;
 use glib::{Object, Properties, clone};
 use gtk::{CompositeTemplate, glib, subclass::prelude::*};
+use rustc_hash::FxHashMap;
 use strum::{EnumMessage, IntoEnumIterator};
 
 use crate::{
-    common::map_output_plugin_icon,
+    common::{list_models::DualStringList, map_output_plugin_icon},
+    preferences::output_config::{
+        audio_format_box::AudioFormatBox, combo_row::ComboRow, config_row::ConfigRow,
+        number_row::NumberRow, path_row::PathRow, switch_row::SwitchRow, text_row::TextRow,
+    },
     server::{
         AudioFormatConfig, MixerType, ReplayGainHandler,
-        config::{OutputConfig, OutputType},
+        config::{ConfigValueType, OutputConfig, OutputConfigSpec, OutputType},
     },
 };
 
@@ -20,7 +25,7 @@ mod imp {
     use gtk::glib::{WeakRef, subclass::Signal};
     use strum::VariantNames;
 
-    use crate::server::ReplayGainHandler;
+    use crate::{common::list_models::DualStringObject, server::ReplayGainHandler};
 
     use super::*;
 
@@ -29,11 +34,11 @@ mod imp {
     #[template(resource = "/io/github/htkhiem/Euphonica/gtk/preferences/output-row.ui")]
     pub struct OutputRow {
         #[template_child]
-        pub header: TemplateChild<adw::ExpanderRow>,
+        pub inner: TemplateChild<gtk::ListBox>,
         #[template_child]
-        pub icon: TemplateChild<gtk::Image>,
+        pub header: TemplateChild<adw::EntryRow>,
         #[template_child]
-        pub name: TemplateChild<adw::EntryRow>,
+        pub common_expander: TemplateChild<adw::ExpanderRow>,
         #[template_child]
         pub raise: TemplateChild<gtk::Button>,
         #[template_child]
@@ -96,22 +101,7 @@ mod imp {
             self.output_type
                 .set_model(Some(&gtk::StringList::new(&OutputType::VARIANTS)));
 
-            // Name is already bound in .ui file. Just the output type requires custom logic.
-            self.output_type
-                .bind_property("selected", &self.header.get(), "subtitle")
-                .transform_to(|_, idx: u32| Some(OutputType::VARIANTS[idx as usize].to_value()))
-                .sync_create()
-                .build();
-
-            self.output_type.connect_selected_item_notify(clone!(
-                #[weak(rename_to = this)]
-                self,
-                move |_| {
-                    this.obj().update_icon();
-                }
-            ));
-
-            self.name.connect_changed(clone!(
+            self.header.connect_changed(clone!(
                 #[weak(rename_to = this)]
                 self,
                 move |_| {
@@ -181,14 +171,53 @@ glib::wrapper! {
 }
 
 impl OutputRow {
+    /// Remove everything between header entry and the common expander
+    pub fn clear_plugin_specific_config(&self) {
+        let listbox = self.imp().inner.get();
+        let end = self.imp().common_expander.get();
+        loop {
+            if let Some(child) = self
+                .imp()
+                .header
+                .get()
+                .next_sibling()
+                .and_downcast::<gtk::ListBoxRow>()
+            {
+                if child == end {
+                    break;
+                } else {
+                    listbox.remove(&child);
+                }
+            } else {
+                break;
+            }
+        }
+    }
+    /// Insert plugin-specific config rows between Output type and Force format area.
+    pub fn insert_plugin_specific_config(&self, typ: &OutputType, existing: Vec<(String, String)>) {
+        // Ensure existing custom rows have been cleared out first.
+        // TODO: stop hardcoding the beginning idx (fragile once we add more stuff before config rows).
+        let mut idx = 0;
+        let listbox = self.imp().inner.get();
+        let mut existing_map = FxHashMap::default();
+        for (k, v) in existing {
+            existing_map.insert(k, v);
+        }
+        for config_spec in typ.get_custom_config_spec() {
+            idx += 1;
+            let val = existing_map.get(config_spec.key).map(|s| s.as_str());
+            let row = ConfigRow::from_config_spec(config_spec, val);
+            listbox.insert(&row, idx);
+        }
+    }
+
     pub fn new(config: &OutputConfig) -> Self {
         let res: Self = Object::builder().build();
-        res.imp().name.set_text(&config.name);
+        res.imp().header.set_text(&config.name);
         // Prep output type dropdown
         res.imp()
             .output_type
             .set_selected(config.output_type as u32);
-        res.update_icon();
         res.imp().enabled.set_active(config.enabled);
 
         // Force output format section
@@ -210,7 +239,26 @@ impl OutputRow {
             .replaygain_handler
             .set_selected(config.replaygain_handler as u32);
 
-        // TODO: OUTPUT TYPE-SPECIFIC CONFIGURATION
+        res.insert_plugin_specific_config(&config.output_type, config.additional_config.clone());
+        res.imp().output_type.connect_selected_notify(clone!(
+            #[weak(rename_to = this)]
+            res,
+            move |combo| {
+                this.clear_plugin_specific_config();
+                if let Some(new_type) =
+                    OutputType::from_repr(combo.selected() as usize)
+                {
+                    this.insert_plugin_specific_config(&new_type, Vec::with_capacity(0))
+                }
+            }
+        ));
+
+        // Needed to make nested ComboRows work
+        res.imp().inner.connect_row_activated(|lb, row| {
+            if let Some(config_row) = row.downcast_ref::<ConfigRow>() {
+                config_row.activate_inner();
+            }
+        });
         res
     }
 
@@ -218,32 +266,18 @@ impl OutputRow {
         self.imp().parent.set(Some(parent));
     }
 
-    pub fn update_icon(&self) {
-        self.imp().icon.set_icon_name(Some(map_output_plugin_icon(
-            &OutputType::from_repr(self.imp().output_type.selected() as usize)
-                .map(|var| var.get_serializations()[0])
-                .unwrap_or(""),
-        )));
-    }
-
     pub fn name(&self) -> String {
-        self.imp().name.text().to_string()
+        self.imp().header.text().to_string()
     }
 
     pub fn highlight_name_error(&self, is_error: bool) {
         if is_error {
-            if !self.imp().icon.has_css_class("error") {
-                self.imp().icon.set_css_classes(&["error"]);
-            }
-            if !self.imp().name.has_css_class("error") {
-                self.imp().name.set_css_classes(&["error"]);
+            if !self.imp().header.has_css_class("error") {
+                self.imp().header.set_css_classes(&["error"]);
             }
         } else {
-            if self.imp().icon.has_css_class("error") {
-                self.imp().icon.remove_css_class("error");
-            }
-            if self.imp().name.has_css_class("error") {
-                self.imp().name.remove_css_class("error");
+            if self.imp().header.has_css_class("error") {
+                self.imp().header.remove_css_class("error");
             }
         }
     }
@@ -252,11 +286,12 @@ impl OutputRow {
         let mut config = OutputConfig::default();
         config.output_type =
             OutputType::from_repr(self.imp().output_type.selected() as usize).unwrap();
-        config.name = self.imp().name.text().to_string();
+        config.name = self.imp().header.text().to_string();
         if self.imp().force_format.is_active() {
             config.format = Some(self.imp().force_format_entry.generate_config());
         }
         config.tags = self.imp().send_tags.is_active();
+        config.enabled = self.imp().enabled.is_active();
         config.always_off = self.imp().always_off.is_active();
         config.always_on = self.imp().always_on.is_active();
         config.mixer_type =
@@ -264,6 +299,27 @@ impl OutputRow {
         config.replaygain_handler =
             ReplayGainHandler::from_repr(self.imp().replaygain_handler.selected() as usize)
                 .unwrap_or_default();
+        let listbox = self.imp().inner.get();
+        // Always-present header row is at 0. The first plugin-specific config row, if present, is at 1.
+        // Loop until we hit the "Common settings" expander.
+        let mut cur = listbox.row_at_index(1).and_downcast::<ConfigRow>();
+        let mut additional_config = Vec::new();
+
+        loop {
+            if let Some(row) = cur {
+                if let Some(config) = row.generate_config() {
+                    additional_config.push(config);
+                }
+                cur = row.next_sibling().and_downcast::<ConfigRow>();
+            } else {
+                break;
+            }
+        }
+
+        config.additional_config = additional_config
+            .into_iter()
+            .map(|p| (p.0.to_owned(), p.1))
+            .collect();
         config
     }
 }

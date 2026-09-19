@@ -18,7 +18,7 @@ mod imp {
         pub enabled: TemplateChild<gtk::Switch>,
         #[template_child]
         pub inner: TemplateChild<adw::EntryRow>,
-        pub key: OnceCell<String>,
+        pub key: OnceCell<&'static str>,
         pub decimal_digits: Cell<u8>,
     }
 
@@ -52,7 +52,7 @@ glib::wrapper! {
 }
 
 impl TextRow {
-    pub fn new(key: String, val: Option<&str>, title: &str) -> Self {
+    pub fn new(key: &'static str, val: Option<&str>, title: &str) -> Self {
         let res: Self = Object::builder().build();
         let _ = res.imp().key.set(key);
         res.imp().inner.set_title(title);
@@ -64,7 +64,7 @@ impl TextRow {
         res
     }
 
-    pub fn generate_config(&self) -> Option<(String, String)> {
+    pub fn generate_config(&self) -> Option<(&'static str, String)> {
         if self.imp().enabled.is_active() {
             Some((
                 self.imp().key.get().cloned().unwrap(),

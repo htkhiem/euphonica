@@ -16,7 +16,7 @@ mod imp {
     pub struct SwitchRow {
         #[template_child]
         pub inner: TemplateChild<adw::SwitchRow>,
-        pub key: OnceCell<String>,
+        pub key: OnceCell<&'static str>,
     }
 
     // The central trait for subclassing a GObject
@@ -49,7 +49,7 @@ glib::wrapper! {
 }
 
 impl SwitchRow {
-    pub fn new(key: String, val: bool, title: &str, subtitle: &str) -> Self {
+    pub fn new(key: &'static str, val: bool, title: &str, subtitle: &str) -> Self {
         let res: Self = Object::builder().build();
         let _ = res.imp().key.set(key);
         res.imp().inner.set_title(title);
@@ -58,9 +58,9 @@ impl SwitchRow {
         res
     }
 
-    pub fn generate_config(&self) -> Option<(String, String)> {
+    pub fn generate_config(&self) -> Option<(&'static str, String)> {
         Some((
-            self.imp().key.get().cloned().unwrap(),
+            self.imp().key.get().unwrap(),
             if self.imp().inner.is_active() {
                 "yes".into()
             } else {

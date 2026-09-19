@@ -18,7 +18,7 @@ mod imp {
         pub enabled: TemplateChild<gtk::Switch>,
         #[template_child]
         pub inner: TemplateChild<adw::SpinRow>,
-        pub key: OnceCell<String>,
+        pub key: OnceCell<&'static str>,
         pub decimal_digits: Cell<u8>,
     }
 
@@ -53,30 +53,25 @@ glib::wrapper! {
 
 impl NumberRow {
     pub fn new(
-        key: String,
-        val: Option<f64>,
+        key: &'static str,
+        adj: gtk::Adjustment,
         title: &str,
         subtitle: &str,
         decimal_digits: u8,
-        adj: gtk::Adjustment,
     ) -> Self {
         let res: Self = Object::builder().build();
         let _ = res.imp().key.set(key);
         res.imp().inner.set_adjustment(Some(&adj));
         res.imp().inner.set_title(title);
         res.imp().inner.set_subtitle(subtitle);
-        if let Some(val) = val {
-            res.imp().inner.set_value(val);
-            res.imp().enabled.set_active(true);
-        }
         res.imp().decimal_digits.set(decimal_digits);
         res
     }
 
-    pub fn generate_config(&self) -> Option<(String, String)> {
+    pub fn generate_config(&self) -> Option<(&'static str, String)> {
         if self.imp().enabled.is_active() {
             Some((
-                self.imp().key.get().cloned().unwrap(),
+                self.imp().key.get().unwrap(),
                 format!(
                     "{0:.1$}",
                     self.imp().inner.value(),

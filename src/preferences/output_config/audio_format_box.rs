@@ -7,7 +7,7 @@ use gtk::{
 };
 
 use crate::{
-    preferences::output_config::audio_format_row::AudioFormatRow, server::AudioFormatConfig,
+    preferences::output_config::{audio_format_row::AudioFormatRow}, server::AudioFormatConfig,
 };
 
 mod imp {
@@ -26,7 +26,7 @@ mod imp {
         pub listbox: TemplateChild<gtk::ListBox>,
         #[template_child]
         pub add: TemplateChild<gtk::Button>,
-        pub key: OnceCell<String>,
+        pub key: OnceCell<&'static str>,
     }
 
     // The central trait for subclassing a GObject
@@ -35,7 +35,7 @@ mod imp {
         // `NAME` needs to match `class` attribute of template
         const NAME: &'static str = "EuphonicaAudioFormatBox";
         type Type = super::AudioFormatBox;
-        type ParentType = adw::ActionRow;
+        type ParentType = gtk::Box;
 
         fn class_init(klass: &mut Self::Class) {
             klass.bind_template();
@@ -60,22 +60,17 @@ mod imp {
     }
 
     impl WidgetImpl for AudioFormatBox {}
-
-    impl ListBoxRowImpl for AudioFormatBox {}
-
-    impl PreferencesRowImpl for AudioFormatBox {}
-
-    impl ActionRowImpl for AudioFormatBox {}
+    impl BoxImpl for AudioFormatBox {}
 }
 
 glib::wrapper! {
     pub struct AudioFormatBox(ObjectSubclass<imp::AudioFormatBox>)
-    @extends adw::ActionRow, adw::PreferencesRow, gtk::ListBoxRow, gtk::Widget,
-    @implements gtk::Accessible, gtk::Buildable, gtk::Actionable, gtk::ConstraintTarget;
+    @extends gtk::Box, gtk::Widget,
+    @implements gtk::Accessible, gtk::Buildable, gtk::ConstraintTarget, gtk::Orientable;
 }
 
 impl AudioFormatBox {
-    pub fn new(key: String, config: &str, title: &str, subtitle: &str) -> Self {
+    pub fn new(key: &'static str, config: &str, title: &str, subtitle: &str) -> Self {
         let res: Self = Object::builder().build();
         let _ = res.imp().key.set(key);
         // Config string is a space-separated list of audio format substrings.
@@ -132,7 +127,7 @@ impl AudioFormatBox {
         format_row.update_index();
     }
 
-    pub fn generate_config(&self) -> Option<(String, String)> {
+    pub fn generate_config(&self) -> Option<(&'static str, String)> {
         if self.imp().enabled.is_active() {
             let mut formats: Vec<String> = Vec::new();
             if let Some(first) = self.imp().listbox.first_child() {
@@ -155,7 +150,7 @@ impl AudioFormatBox {
                         .key
                         .get()
                         .cloned()
-                        .unwrap_or_else(|| "allowed_formats".into()),
+                        .unwrap_or_else(|| "allowed_formats"),
                     formats.join(" "),
                 ))
             }

@@ -16,7 +16,7 @@ use std::ffi::CString;
 /// The format is kinda simple but nonstandard so it's not worth trying to shoehorn Serde here.
 use std::fmt::{Display, Write};
 use strum::{EnumMessage, VariantNames};
-use strum_macros::{Display, EnumIter, EnumMessage, EnumString, FromRepr, VariantNames};
+use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumMessage, EnumString, FromRepr, VariantNames};
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
 // Euphonica manages one hidden FIFO output plugin (not exposed to the user) to power the
@@ -289,7 +289,10 @@ impl Display for AudioFormatConfig {
     }
 }
 
-#[derive(Debug)]
+// EnumDiscriminants is used here to get a parallel data-less enum, for use in downstream widgets
+// to determine how to read values of specialised sub-widgets.
+// The generated enum by default has "Discriminants" appended to its name.
+#[derive(Debug, EnumDiscriminants)]
 pub enum ConfigValueType {
     /// Free text. Will use AdwEntryRow. Will default to blank.
     Text,
@@ -307,10 +310,10 @@ pub enum ConfigValueType {
 
 #[derive(Debug)]
 pub struct OutputConfigSpec {
-    key: &'static str,
-    title: String,
-    subtitle: Option<String>,
-    value_type: ConfigValueType,
+    pub key: &'static str,
+    pub title: String,
+    pub subtitle: Option<String>,
+    pub value_type: ConfigValueType,
 }
 
 #[derive(
@@ -463,7 +466,7 @@ impl OutputType {
                                 to the material being played."
                                     .into(),
                             ),
-                            value_type: ConfigValueType::Bool(false),
+                            value_type: ConfigValueType::Formats,
                         }
                 ]
             }

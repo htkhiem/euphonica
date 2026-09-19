@@ -4,106 +4,61 @@
   <requires lib="Adw" version="1.0" />
   <template class="EuphonicaOutputRow" parent="GtkWidget">
     <child>
-      <object class="GtkListBox">
+      <object class="GtkListBox" id="inner">
         <style>
           <class name="boxed-list"/>
         </style>
         <property name="selection-mode">none</property>
         <child>
-          <object class="AdwExpanderRow" id="header">
-            <property name="title" bind-source="name" bind-property="text" bind-flags="sync-create"/>
+          <object class="AdwEntryRow" id="header">
             <child type="prefix">
-              <object class="GtkImage" id="icon">
-                <property name="icon-name">soundcard-symbolic</property>
+              <object class="GtkDropDown" id="output_type">
+                <property name="valign">center</property>
               </object>
             </child>
-            <child>
-              <object class="AdwEntryRow" id="name">
-                <property name="title" translatable="true">Output name</property>
-              </object>
-            </child>
-            <child>
-              <object class="AdwSwitchRow" id="enabled">
-                <property name="title" translatable="true">Enable on startup</property>
-                <property name="subtitle" translatable="true">If disabled, will be off on every startup. If enabled, will remember previous runtime state.</property>
-              </object>
-            </child>
-            <child>
-              <object class="GtkListBoxRow">
+
+            <property name="title" translatable="true">Output name</property>
+
+            <child type="suffix">
+              <object class="GtkBox">
+                <property name="valign">center</property>
                 <style>
-                  <class name="padding-12"/>
+                  <class name="linked"/>
                 </style>
                 <child>
-                  <object class="GtkGrid">
-                    <property name="row-spacing">6</property>
-                    <property name="column-spacing">6</property>
-                    <child>
-                      <object class="GtkLabel">
-                        <style>
-                          <class name="subtitle"/>
-                        </style>
-                        <property name="label" translatable="true">Output type</property>
-                        <property name="hexpand">true</property>
-                        <property name="halign">start</property>
-                        <layout>
-                          <property name="column">0</property>
-                          <property name="row">0</property>
-                        </layout>
-                      </object>
-                    </child>
-                    <child>
-                      <object class="GtkLabel">
-                        <style>
-                          <class name="subtitle"/>
-                        </style>
-                        <property name="label" translatable="true">Ordering</property>
-                        <property name="halign">start</property>
-                        <layout>
-                          <property name="column">1</property>
-                          <property name="row">0</property>
-                        </layout>
-                      </object>
-                    </child>
-                    <child>
-                      <object class="GtkDropDown" id="output_type">
-                        <layout>
-                          <property name="column">0</property>
-                          <property name="row">1</property>
-                        </layout>
-                      </object>
-                    </child>
-                    <child>
-                      <object class="GtkBox">
-                        <style>
-                          <class name="linked"/>
-                        </style>
-                        <layout>
-                          <property name="column">1</property>
-                          <property name="row">1</property>
-                        </layout>
-                        <child>
-                          <object class="GtkButton" id="raise">
-                            <property name="icon-name">up-symbolic</property>
-                          </object>
-                        </child>
-                        <child>
-                          <object class="GtkButton" id="lower">
-                            <property name="icon-name">down-symbolic</property>
-                          </object>
-                        </child>
-                        <child>
-                          <object class="GtkMenuButton" id="remove_confirm">
-                            <style>
-                              <class name="destructive-action"/>
-                            </style>
-                            <property name="icon-name">user-trash-symbolic</property>
-                            <property name="popover">delete_popover</property>
-                          </object>
-                        </child>
-                      </object>
-                    </child>
+                  <object class="GtkButton" id="raise">
+                    <property name="icon-name">up-symbolic</property>
                   </object>
                 </child>
+                <child>
+                  <object class="GtkButton" id="lower">
+                    <property name="icon-name">down-symbolic</property>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkMenuButton" id="remove_confirm">
+                    <style>
+                      <class name="destructive-action"/>
+                    </style>
+                    <property name="icon-name">user-trash-symbolic</property>
+                    <property name="popover">delete_popover</property>
+                  </object>
+                </child>
+              </object>
+            </child>
+          </object>
+        </child>
+
+        <!-- Plugin-specific config rows will be inserted between output type and force-format. -->
+
+        <child>
+          <object class="AdwExpanderRow" id="common_expander">
+            <property name="title" translatable="true">Other settings</property>
+            <child>
+              <object class="AdwSwitchRow" id="enabled">
+                <property name="active">true</property>
+                <property name="title" translatable="true">Enable on startup</property>
+                <property name="subtitle" translatable="true">If disabled, will be off on every startup. If enabled, will remember previous runtime state.</property>
               </object>
             </child>
             <child>

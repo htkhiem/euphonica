@@ -3,33 +3,42 @@
   <requires lib="gtk" version="4.0" />
   <requires lib="Adw" version="1.0" />
   <template class="EuphonicaAudioFormatBox" parent="GtkBox">
-    <style>
-      <class name="padding-12"/>
-    </style>
     <property name="orientation">1</property>
     <child>
       <object class="AdwSwitchRow" id="enabled">
         <!-- Set programmatically. The below are only placeholders. -->
         <property name="title">Set allowed formats</property>
+        <property name="valign">center</property>
         <property name="subtitle">Specify a list of audio formats supported by your hardware.</property>
       </object>
     </child>
     <child>
-      <object class="GtkFrame">
+      <object class="GtkBox" id="box-area">
+        <property name="visible" bind-source="enabled" bind-property="active" bind-flags="sync-create"/>
+        <property name="orientation">1</property>
+        <property name="spacing">6</property>
+        <style>
+          <class name="padding-12"/>
+        </style>
         <child>
-          <object class="GtkListBox">
-            <property name="selection-mode">none</property>
+          <object class="GtkFrame">
+            <child>
+              <object class="GtkListBox" id="listbox">
+                <property name="selection-mode">none</property>
+                <property name="height-request">16</property>
+              </object>
+            </child>
           </object>
         </child>
-      </object>
-    </child>
-    <child>
-      <object class="GtkButton" id="add">
-        <property name="hexpand">true</property>
         <child>
-          <object class="AdwButtonContent">
-            <property name="icon-name">plus-symbolic</property>
-            <property name="label" translatable="true">Add</property>
+          <object class="GtkButton" id="add">
+            <property name="hexpand">true</property>
+            <child>
+              <object class="AdwButtonContent">
+                <property name="icon-name">plus-symbolic</property>
+                <property name="label" translatable="true">Add</property>
+              </object>
+            </child>
           </object>
         </child>
       </object>
