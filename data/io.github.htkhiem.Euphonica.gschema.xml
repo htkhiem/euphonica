@@ -345,7 +345,7 @@
 			<default>0.75</default>
 		</key>
 		<key name="visualizer-scale" type="d">
-			<default>1.0</default>
+			<default>5.0</default>
 		</key>
 		<!-- DEPRECATED AND UNUSED -->
 		<key name="visualizer-blend-mode" type="u">

@@ -535,11 +535,9 @@ impl FftBackendImpl for PipeWireFftBackend {
                                 }
                             }
                             for i in 0..n_bins {
-                                // FIXME: To line up with FIFO backend we should scale this backend's magnitudes
-                                // up by 5x.
-                                output_lock.0[i] = curr_step_left[i] * curr_step_weight * 5.0
+                                output_lock.0[i] = curr_step_left[i] * curr_step_weight
                                     + output_lock.0[i] * (1.0 - curr_step_weight);
-                                output_lock.1[i] = curr_step_right[i] * curr_step_weight * 5.0
+                                output_lock.1[i] = curr_step_right[i] * curr_step_weight
                                     + output_lock.1[i] * (1.0 - curr_step_weight);
                             }
                             // println!("FFT L: {:?}\tR: {:?}", &output_lock.0, &output_lock.1);
