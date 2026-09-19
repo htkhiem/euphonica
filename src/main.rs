@@ -25,11 +25,11 @@ mod common;
 mod config;
 mod library;
 mod meta_providers;
+mod onboarding;
 mod player;
 mod preferences;
 mod sidebar;
 mod utils;
-mod onboarding;
 mod window;
 
 use self::application::EuphonicaApplication;

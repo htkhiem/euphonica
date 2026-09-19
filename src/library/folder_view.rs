@@ -1,6 +1,8 @@
 use super::{Library, generic_row::GenericRow};
 use crate::{
-    cache::Cache, common::{ContentStack, INode, INodeType}, utils::{LazyInit, SearchableView, g_cmp_str_options, settings_manager},
+    cache::Cache,
+    common::{ContentStack, INode, INodeType},
+    utils::{LazyInit, SearchableView, g_cmp_str_options, settings_manager},
 };
 use adw::prelude::*;
 use adw::subclass::prelude::*;
@@ -552,21 +554,22 @@ impl FolderView {
 impl LazyInit for FolderView {
     fn populate(&self) {
         if let Some(library) = self.imp().library.upgrade()
-            && !self.imp().initializing.get() {
-                self.imp().initializing.set(true);
-                let stack = self.imp().stack.get();
-                let this = self.clone();
-                stack.show_spinner();
-                glib::spawn_future_local(async move {
-                    library.get_folder_contents().await;
-                    if library.folder_inodes().n_items() > 0 {
-                        stack.show_content();
-                    } else {
-                        stack.show_placeholder();
-                    }
-                    this.imp().initializing.set(false);
-                });
-            }
+            && !self.imp().initializing.get()
+        {
+            self.imp().initializing.set(true);
+            let stack = self.imp().stack.get();
+            let this = self.clone();
+            stack.show_spinner();
+            glib::spawn_future_local(async move {
+                library.get_folder_contents().await;
+                if library.folder_inodes().n_items() > 0 {
+                    stack.show_content();
+                } else {
+                    stack.show_placeholder();
+                }
+                this.imp().initializing.set(false);
+            });
+        }
     }
 }
 

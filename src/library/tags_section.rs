@@ -6,7 +6,7 @@ use gtk::{
 };
 use std::cell::OnceCell;
 
-use super::{tag_button::TagButton, Tag};
+use super::{Tag, tag_button::TagButton};
 use crate::common::{ContentStack, FadingScrolledWindow};
 use crate::meta_providers::models::Tag as TagMeta;
 use crate::window::EuphonicaWindow;
@@ -14,7 +14,7 @@ use crate::window::EuphonicaWindow;
 mod imp {
     use super::*;
 
-   #[derive(Default, CompositeTemplate)]
+    #[derive(Default, CompositeTemplate)]
     #[template(resource = "/io/github/htkhiem/Euphonica/gtk/library/tags-section.ui")]
     pub struct TagsSection {
         #[template_child]
@@ -192,9 +192,10 @@ impl TagsSection {
         self.imp().tag_entry.set_text("");
 
         if data.set_by_user()
-            && let Some(cb) = self.imp().on_tag_added.get() {
-                cb();
-            }
+            && let Some(cb) = self.imp().on_tag_added.get()
+        {
+            cb();
+        }
     }
 
     /// Add a tag from the entry widget's current text.

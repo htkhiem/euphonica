@@ -492,7 +492,7 @@ impl From<mpd::song::Song> for SongInfo {
             let _ = res.queue_pos.replace(place.pos);
         }
 
-        // The various date tags. Release date will be picked from the first 
+        // The various date tags. Release date will be picked from the first
         // available in the listed order.
         let mut original_date: Option<Date> = None;
         let mut date: Option<Date> = None;
@@ -635,7 +635,7 @@ impl From<mpd::song::Song> for SongInfo {
 
         if let Some(album) = res.album.as_mut() {
             album.mbid = album_mbid;
-            album.albumsort = albumsort;//.or_else(|| {res.artist_tag.clone()});
+            album.albumsort = albumsort; //.or_else(|| {res.artist_tag.clone()});
             album.albumartistsort = albumartistsort;
             album.release_date = res.release_date;
             album.date_tag = date_tag;
@@ -643,7 +643,8 @@ impl From<mpd::song::Song> for SongInfo {
                 album.add_genres_from_tags(&genre_tags);
             }
             // Assume the albumartist IDs are given in the same order as the albumartist tags
-            if let Some(album_artist_str) = albumartist.as_ref().or_else(|| {res.artist_tag.as_ref()}) {
+            if let Some(album_artist_str) = albumartist.as_ref().or_else(|| res.artist_tag.as_ref())
+            {
                 album.add_artists_from_string(album_artist_str);
             }
             album.albumartist = albumartist;

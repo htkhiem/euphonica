@@ -387,7 +387,9 @@ impl FftBackendImpl for PipeWireFftBackend {
                                 if media_type != MediaType::Audio
                                     || media_subtype != MediaSubtype::Raw
                                 {
-                                    eprintln!("Not MediaType::Audio || MediaSubtype::Raw, skipping");
+                                    eprintln!(
+                                        "Not MediaType::Audio || MediaSubtype::Raw, skipping"
+                                    );
                                     return;
                                 }
 
