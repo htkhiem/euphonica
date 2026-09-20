@@ -42,6 +42,17 @@
           {
             default = pkgs.mkShell {
               inputsFrom = [ self.packages.${system}.default ];
+
+              GDK_PIXBUF_MODULE_FILE = pkgs.gnome._gdkPixbufCacheBuilder_DO_NOT_USE {
+                extraLoaders = [
+                  pkgs.librsvg
+                  pkgs.webp-pixbuf-loader
+                ];
+              };
+
+              shellHook = ''
+                export XDG_DATA_DIRS="$PWD/build/install/share''${XDG_DATA_DIRS:+:$XDG_DATA_DIRS}"
+              '';
             };
           }
         )
