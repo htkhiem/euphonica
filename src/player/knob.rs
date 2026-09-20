@@ -1,7 +1,7 @@
 use gtk::{
     CompositeTemplate, cairo as cr, gdk,
     glib::{
-        self, Object, ParamSpec, ParamSpecBoolean, ParamSpecDouble, SignalHandlerId, Variant,
+        self, Object, ParamSpec, ParamSpecDouble, ParamSpecEnum, SignalHandlerId, Variant,
         WeakRef, clone, closure_local,
         prelude::*,
         subclass::{Signal, prelude::*},
@@ -35,6 +35,15 @@ pub enum OverflowSide {
     CCW,
 }
 
+#[derive(Default, Clone, Copy, Debug, PartialEq, Eq, glib::Enum)]
+#[enum_type(name = "EuphonicaVolumeUnit")]
+enum VolumeUnit {
+    #[default]
+    Percents,
+    Decibels,
+    None,
+}
+
 mod imp {
     use super::*;
 
@@ -44,7 +53,7 @@ mod imp {
         // Stored here & bound to the settings manager so we can avoid having
         // to query the setting on every frame while scrolling.
         pub sensitivity: Cell<f64>,
-        pub use_dbfs: Cell<bool>,
+        pub unit: Cell<VolumeUnit>,
         // 0 to 100. Full precision for smooth scrolling effect.
         pub value: Cell<f64>,
         pub drag_origin: Cell<(f64, f64)>,
@@ -68,7 +77,7 @@ mod imp {
 
         fn new() -> Self {
             Self {
-                use_dbfs: Cell::new(false),
+                unit: Cell::default(),
                 sensitivity: Cell::new(1.0),
                 drag_origin: Cell::default(),
                 prev_drag_pos: Cell::default(),
@@ -104,6 +113,20 @@ mod imp {
             self.parent_constructed();
             let obj_ = self.obj();
             let obj = obj_.as_ref();
+            let settings = settings_manager().child("ui");
+
+            settings
+                .bind("vol-knob-unit", obj, "unit")
+                .get_only()
+                .mapping(|v: &Variant, _| {
+                    let unit = match v.get::<String>().unwrap().as_str() {
+                        "decibels" => VolumeUnit::Decibels,
+                        "none" => VolumeUnit::None,
+                        _ => VolumeUnit::Percents,
+                    };
+                    Some(unit.to_value())
+                })
+                .build();
 
             obj.connect_clicked(move |this| {
                 if !this.imp().was_dragging.get() {
@@ -221,7 +244,7 @@ mod imp {
                     // Only modifiable via internal setter
                     ParamSpecDouble::builder("value").read_only().build(),
                     ParamSpecDouble::builder("sensitivity").build(),
-                    ParamSpecBoolean::builder("use-dbfs").build(),
+                    ParamSpecEnum::builder::<VolumeUnit>("unit").build(),
                 ]
             });
             PROPERTIES.as_ref()
@@ -231,7 +254,7 @@ mod imp {
             match pspec.name() {
                 "value" => self.value.get().to_value(),
                 "sensitivity" => self.sensitivity.get().to_value(),
-                "use-dbfs" => self.use_dbfs.get().to_value(),
+                "unit" => self.unit.get().to_value(),
                 _ => unimplemented!(),
             }
         }
@@ -248,13 +271,12 @@ mod imp {
                         }
                     }
                 }
-                "use-dbfs" => {
-                    if let Ok(b) = value.get::<bool>() {
-                        let old_use_dbfs = self.use_dbfs.replace(b);
-                        if old_use_dbfs != b {
-                            obj.notify("use-dbfs");
-                            obj.notify("value"); // Fire this too to redraw the readout
-                        }
+                "unit" => {
+                    if let Ok(unit) = value.get::<VolumeUnit>()
+                        && self.unit.replace(unit) != unit
+                    {
+                        obj.notify("unit");
+                        self.update_readout();
                     }
                 }
                 _ => unimplemented!(),
@@ -359,18 +381,19 @@ mod imp {
                 let is_muted = player.is_muted();
                 let obj = self.obj();
                 let val = self.value.get();
-                if is_muted {
-                    obj.set_label("—"); // can you believe a human copypasted an em dash here
-                } else if self.use_dbfs.get() {
-                    if let Ok(dbfs) = convert_to_dbfs(val) {
-                        obj.set_label(&format!("{dbfs:.0}"));
-                    } else if val > 0.0 {
-                        obj.set_label("0");
-                    } else {
-                        obj.set_label("-∞");
+                match self.unit.get() {
+                    VolumeUnit::None => obj.set_label(""),
+                    _ if is_muted => obj.set_label("—"),
+                    VolumeUnit::Decibels => {
+                        if let Ok(dbfs) = convert_to_dbfs(val) {
+                            obj.set_label(&format!("{dbfs:.0}"));
+                        } else if val > 0.0 {
+                            obj.set_label("0");
+                        } else {
+                            obj.set_label("-∞");
+                        }
                     }
-                } else {
-                    obj.set_label(&format!("{val:.0}"));
+                    VolumeUnit::Percents => obj.set_label(&format!("{val:.0}")),
                 }
                 is_muted
             } else {
@@ -397,14 +420,6 @@ impl VolumeKnob {
         let res = Object::builder().build();
 
         let settings = settings_manager().child("ui");
-
-        settings
-            .bind("vol-knob-unit", &res, "use-dbfs")
-            .get_only()
-            .mapping(|v: &Variant, _| {
-                Some((v.get::<String>().unwrap().as_str() == "decibels").to_value())
-            })
-            .build();
 
         settings
             .bind("vol-knob-sensitivity", &res, "sensitivity")
@@ -450,10 +465,6 @@ impl VolumeKnob {
 
     pub fn sensitivity(&self) -> f64 {
         self.imp().sensitivity.get()
-    }
-
-    pub fn use_dbfs(&self) -> bool {
-        self.imp().use_dbfs.get()
     }
 
     pub fn value(&self) -> f64 {
