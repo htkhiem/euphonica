@@ -53,7 +53,7 @@ mod imp {
         // Stored here & bound to the settings manager so we can avoid having
         // to query the setting on every frame while scrolling.
         pub sensitivity: Cell<f64>,
-        pub unit: Cell<VolumeUnit>,
+        unit: Cell<VolumeUnit>,
         // 0 to 100. Full precision for smooth scrolling effect.
         pub value: Cell<f64>,
         pub drag_origin: Cell<(f64, f64)>,
