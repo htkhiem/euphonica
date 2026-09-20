@@ -269,12 +269,30 @@ impl UIPreferences {
             .build();
 
         let vol_knob_unit = imp.vol_knob_unit.get();
+        let unit_factory = gtk::SignalListItemFactory::new();
+        unit_factory.connect_setup(|_, item| {
+            let item = item.downcast_ref::<gtk::ListItem>().unwrap();
+            let label = gtk::Label::builder()
+                .ellipsize(gtk::pango::EllipsizeMode::End)
+                .width_chars(4)
+                .max_width_chars(8)
+                .xalign(0.0)
+                .build();
+            let container = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+            container.append(&label);
+            item.set_child(Some(&container));
+            item.property_expression("item")
+                .chain_property::<gtk::StringObject>("string")
+                .bind(&label, "label", gtk::Widget::NONE);
+        });
+        vol_knob_unit.set_factory(Some(&unit_factory));
+
         let vol_knob_sensitivity = imp.vol_knob_sensitivity.get();
         ui_settings
             .bind("vol-knob-unit", &vol_knob_unit, "selected")
             .mapping(|v: &Variant, _| match v.get::<String>().unwrap().as_str() {
-                "percents" => Some(0.to_value()),
-                "decibels" => Some(1.to_value()),
+                "percents" => Some(0u32.to_value()),
+                "decibels" => Some(1u32.to_value()),
                 _ => unreachable!(),
             })
             .set_mapping(|v: &Value, _| match v.get::<u32>().ok() {
