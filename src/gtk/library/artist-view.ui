@@ -35,6 +35,7 @@
                     </child>
                     <child type="end">
                       <object class="GtkButton" id="sort_dir_btn">
+                        <property name="tooltip-text" translatable="true">Sort by name</property>
                         <style>
                           <class name="flat"/>
                         </style>
@@ -49,6 +50,7 @@
                             <child>
                               <object class="GtkLabel">
                                 <property name="label" translatable="true">Name</property>
+                                <property name="visible" bind-source="show_sidebar" bind-property="visible" bind-flags="sync-create|invert-boolean"/>
                               </object>
                             </child>
                           </object>
