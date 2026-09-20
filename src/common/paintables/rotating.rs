@@ -107,7 +107,21 @@ mod imp {
                 (-paint_width / 2.0) as f32,
                 (-paint_height / 2.0) as f32,
             ));
-            paintable.snapshot(snapshot, paint_width, paint_height);
+            // Trilinear scaling reduces aliasing (including moiré) in fine repeating patterns during rotation
+            if let Some(texture) = paintable.downcast_ref::<gdk::Texture>() {
+                snapshot.append_scaled_texture(
+                    texture,
+                    gsk::ScalingFilter::Trilinear,
+                    &graphene::Rect::new(
+                        0.0,
+                        0.0,
+                        paint_width as f32,
+                        paint_height as f32,
+                    ),
+                );
+            } else {
+                paintable.snapshot(snapshot, paint_width, paint_height);
+            }
 
             snapshot.pop();
         }
