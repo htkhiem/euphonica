@@ -293,11 +293,13 @@ impl UIPreferences {
             .mapping(|v: &Variant, _| match v.get::<String>().unwrap().as_str() {
                 "percents" => Some(0u32.to_value()),
                 "decibels" => Some(1u32.to_value()),
+                "none" => Some(2u32.to_value()),
                 _ => unreachable!(),
             })
             .set_mapping(|v: &Value, _| match v.get::<u32>().ok() {
                 Some(0) => Some("percents".to_variant()),
                 Some(1) => Some("decibels".to_variant()),
+                Some(2) => Some("none".to_variant()),
                 _ => unreachable!(),
             })
             .build();
