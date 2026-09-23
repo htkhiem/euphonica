@@ -38,6 +38,12 @@
           system:
           let
             pkgs = import nixpkgs { inherit system; };
+            devSchemas = pkgs.runCommand "euphonica-dev-schemas" { nativeBuildInputs = [ pkgs.glib.dev ]; } ''
+              schemas="$out/share/glib-2.0/schemas"
+              mkdir -p "$schemas"
+              cp ${./data/io.github.htkhiem.Euphonica.gschema.xml} "$schemas/"
+              glib-compile-schemas --strict "$schemas"
+            '';
           in
           {
             default = pkgs.mkShell {
@@ -51,7 +57,7 @@
               };
 
               shellHook = ''
-                export XDG_DATA_DIRS="$PWD/build/install/share''${XDG_DATA_DIRS:+:$XDG_DATA_DIRS}"
+                export XDG_DATA_DIRS="${devSchemas}/share:$PWD/build/install/share''${XDG_DATA_DIRS:+:$XDG_DATA_DIRS}"
               '';
             };
           }
