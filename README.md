@@ -93,7 +93,7 @@ Other ways to install Euphonica are listed below:
 <details>
   <summary><h3>Nixpkgs</h3></summary>
 
-  The Nix package is kindly maintained by [@paperdigits](https://github.com/paperdigits) [here](https://search.nixos.org/packages?channel=unstable&show=euphonica&from=0&size=50&sort=relevance&type=packages).
+  The Nix package is kindly maintained [here](https://search.nixos.org/packages?channel=unstable&show=euphonica&from=0&size=50&sort=relevance&type=packages) by [@paperdigits](https://github.com/paperdigits), [@aaravrav](https://github.com/aaravrav) and [@doronbehar](https://github.com/doronbehar).
 </details>
 
 ## Set-up
