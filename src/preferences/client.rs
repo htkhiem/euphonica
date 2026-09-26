@@ -207,12 +207,15 @@ mod imp {
                         .response();
 
                     if let Ok(files) = maybe_files {
-                        let fifo_settings = utils::settings_manager().child("client");
                         let uris = files.uris();
                         if !uris.is_empty() {
-                            fifo_settings
-                                .set_string("mpd-fifo-path", uris[0].as_str())
-                                .expect("Unable to save FIFO path");
+                            let uri = uris[0].to_string();
+                            glib::idle_add_once(move || {
+                                utils::settings_manager()
+                                    .child("client")
+                                    .set_string("mpd-fifo-path", &uri)
+                                    .expect("Unable to save FIFO path");
+                            });
                         }
                     }
                 });
