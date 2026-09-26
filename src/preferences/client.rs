@@ -94,10 +94,7 @@ mod imp {
 
     use gtk::glib::WeakRef;
 
-    use crate::{
-        preferences::outputs::AudioOutputs,
-        server::config::OutputConfig,
-    };
+    use crate::{preferences::outputs::AudioOutputs, server::config::OutputConfig};
 
     use super::*;
 
@@ -464,21 +461,21 @@ impl ClientPreferences {
             .build();
         // Update the locked "Visualiser data source" rows on mode toggle and data source
         // selection, plus the initial state.
+        conn_settings.connect_changed(Some("mpd-use-own-server"), {
+            clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |_, _| this.update_visualizer_config_visibility()
+            )
+        });
+        conn_settings.connect_changed(Some("mpd-visualizer-pcm-source"), {
+            clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |_, _| this.update_visualizer_config_visibility()
+            )
+        });
         self.update_visualizer_config_visibility();
-        conn_settings.connect_notify_local(Some("mpd-use-own-server"), {
-            clone!(
-                #[weak(rename_to = this)]
-                self,
-                move |_, _| this.update_visualizer_config_visibility()
-            )
-        });
-        conn_settings.connect_notify_local(Some("mpd-visualizer-pcm-source"), {
-            clone!(
-                #[weak(rename_to = this)]
-                self,
-                move |_, _| this.update_visualizer_config_visibility()
-            )
-        });
         // Upon init, read the managed MPD config file or create a fresh one in-memory in case
         // there's none or the existing one has issues.
         let mut has_existing = false;

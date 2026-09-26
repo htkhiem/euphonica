@@ -26,8 +26,7 @@ use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 // Euphonica manages one hidden FIFO output plugin (not exposed to the user) to power the
 // spectrum visualiser.
 pub static INTERNAL_FIFO_NAME: &'static str = "__euphonica_fifo__";
-/// The MPD format string literal for the internal FIFO output, pinned to
-/// `Pcm(P441, I16, Some(2))` by [`OutputConfig::internal_fifo`].
+/// The MPD format string literal for the internal FIFO output.
 pub const INTERNAL_FIFO_FORMAT: Lazy<String> =
     Lazy::new(|| OutputConfig::internal_fifo().format.unwrap().to_string());
 /// Path to the hidden FIFO that powers the built-in spectrum visualiser in
