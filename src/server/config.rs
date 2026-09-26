@@ -4,6 +4,7 @@ use crate::{
 };
 #[cfg(target_os = "linux")]
 use alsa::{self, device_name::HintIter};
+use derivative::Derivative;
 use regex::Regex;
 use std::ffi::CString;
 /// Config file generator, for use with the managed MPD instance.
@@ -715,7 +716,8 @@ fn parse_key_value<'a>(line: &'a str) -> Option<(&'a str, &'a str)> {
 /// The common keys (`format`, `enabled`, `tags`, `always_on`, `always_off`,
 /// `mixer_type`, `replay_gain_handler`, `filters`) are direct fields.
 /// Other key-val pairs are stored verbatim in `OutputConfig::additional_config`.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Derivative, PartialEq)]
+#[derivative(Default)]
 pub struct OutputConfig {
     /// MPD output plugin name.
     pub output_type: OutputType,
@@ -724,6 +726,7 @@ pub struct OutputConfig {
     /// Fixed sample rate:bits:channels, e.g. `"44100:16:2"`.
     pub format: Option<AudioFormatConfig>,
     /// Whether the output is enabled when MPD starts.
+    #[derivative(Default(value = "true"))]
     pub enabled: bool,
     /// Whether metadata tags are sent to this output.
     pub tags: bool,
