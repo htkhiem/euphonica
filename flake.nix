@@ -38,10 +38,27 @@
           system:
           let
             pkgs = import nixpkgs { inherit system; };
+            devSchemas = pkgs.runCommand "euphonica-dev-schemas" { nativeBuildInputs = [ pkgs.glib.dev ]; } ''
+              schemas="$out/share/glib-2.0/schemas"
+              mkdir -p "$schemas"
+              cp ${./data/io.github.htkhiem.Euphonica.gschema.xml} "$schemas/"
+              glib-compile-schemas --strict "$schemas"
+            '';
           in
           {
             default = pkgs.mkShell {
               inputsFrom = [ self.packages.${system}.default ];
+
+              GDK_PIXBUF_MODULE_FILE = pkgs.gnome._gdkPixbufCacheBuilder_DO_NOT_USE {
+                extraLoaders = [
+                  pkgs.librsvg
+                  pkgs.webp-pixbuf-loader
+                ];
+              };
+
+              shellHook = ''
+                export XDG_DATA_DIRS="${devSchemas}/share:$PWD/build/install/share''${XDG_DATA_DIRS:+:$XDG_DATA_DIRS}"
+              '';
             };
           }
         )
