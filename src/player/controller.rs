@@ -8,6 +8,7 @@ use crate::{
     common::{ConnectionState, QualityGrade, Song, Stickers},
     config::APPLICATION_ID,
     meta_providers::models::Lyrics,
+    server::{INTERNAL_FIFO_FORMAT, internal_fifo_path},
     utils::{
         current_unix_timestamp, get_image_cache_path, prettify_audio_format, settings_manager,
     },
@@ -340,40 +341,37 @@ mod imp {
             self.fft_backend
                 .replace(Some(self.obj().init_fft_backend()));
             let settings = settings_manager();
-            settings
-                .child("client")
+            // Derive which FFT backend to use on-the-fly
+            let this = self.obj();
+            this.select_fft_backend();
+            let client_settings = settings.child("client");
+            client_settings.connect_notify_local(Some("mpd-use-own-server"), {
+                clone!(
+                    #[weak]
+                    this,
+                    move |_, _| this.select_fft_backend()
+                )
+            });
+            client_settings.connect_notify_local(Some("mpd-visualizer-pcm-source"), {
+                clone!(
+                    #[weak]
+                    this,
+                    move |_, _| this.select_fft_backend()
+                )
+            });
+
+            client_settings
                 .bind(
-                    "mpd-visualizer-pcm-source",
-                    self.obj().as_ref(),
-                    "fft-backend-idx",
+                    "pipewire-restart-between-songs",
+                    this.as_ref(),
+                    "pipewire-restart-between-songs",
                 )
                 .get_only()
-                .mapping(|var, _| {
-                    if let Some(name) = var.get::<String>() {
-                        match name.as_str() {
-                            "fifo" => Some(0i32.to_value()),
-                            "pipewire" => Some(1i32.to_value()),
-                            _ => unimplemented!(),
-                        }
-                    } else {
-                        None
-                    }
-                })
                 .build();
 
             settings
                 .child("ui")
                 .bind("use-visualizer", self.obj().as_ref(), "use-visualizer")
-                .get_only()
-                .build();
-
-            settings
-                .child("client")
-                .bind(
-                    "pipewire-restart-between-songs",
-                    self.obj().as_ref(),
-                    "pipewire-restart-between-songs",
-                )
                 .get_only()
                 .build();
 
@@ -636,9 +634,51 @@ impl Default for Player {
 }
 
 impl Player {
-    fn init_fft_backend(&self) -> Rc<dyn FftBackendExt> {
+    /// Figure out which FFT backend to use from the current settings then start it.
+    /// If standalone, always use FIFO; else read from gsettings.
+    /// The FFT thread is restarted unconditionally because the standalone toggle alone changes
+    /// the FIFO path/format even when the backend index stays the same.
+    fn select_fft_backend(&self) {
         let client_settings = settings_manager().child("client");
-        match client_settings.enum_("mpd-visualizer-pcm-source") {
+        let idx = if client_settings.boolean("mpd-use-own-server") {
+            0
+        } else {
+            match client_settings.enum_("mpd-visualizer-pcm-source") {
+                0 => 0,
+                1 => 1,
+                _ => unimplemented!(),
+            }
+        };
+        self.set_property("fft-backend-idx", idx.to_value());
+        glib::spawn_future_local(clone!(
+            #[weak(rename_to = this)]
+            self,
+            async move {
+                this.restart_fft_thread().await;
+            }
+        ));
+    }
+
+    /// The effective (FIFO path, format) pair for the FIFO FFT backend.
+    /// Standalone Mode uses the internally-managed FIFO and its locked format;
+    /// otherwise the user's saved values are returned untouched (never written by us).
+    pub fn effective_fifo_input(&self) -> (String, String) {
+        let client_settings = settings_manager().child("client");
+        if client_settings.boolean("mpd-use-own-server") {
+            (
+                internal_fifo_path().to_string_lossy().into_owned(),
+                INTERNAL_FIFO_FORMAT.clone(),
+            )
+        } else {
+            (
+                client_settings.string("mpd-fifo-path").into(),
+                client_settings.string("mpd-fifo-format").into(),
+            )
+        }
+    }
+
+    fn init_fft_backend(&self) -> Rc<dyn FftBackendExt> {
+        match self.imp().fft_backend_idx.get() {
             0 => Rc::new(FifoFftBackend::new(self.clone())),
             1 => Rc::new(PipeWireFftBackend::new(self.clone())),
             _ => unimplemented!(),
@@ -738,7 +778,7 @@ impl Player {
     }
 
     async fn maybe_stop_fft_thread(&self) {
-        println!("Stopping PipeWire backend...");
+        println!("Stopping FFT backend...");
         if let Some(backend) = self.imp().fft_backend.borrow().as_ref() {
             backend.stop().await;
         }
@@ -813,6 +853,10 @@ impl Player {
                                     if let Err(e) = this.populate().await {
                                         dbg!(e);
                                     }
+                                    // Also restart FFT backend. In Standalone Mode our server process takes some time to start,
+                                    // during which attempting to start the FIFO backend will fail (unlike PipeWire, FIFO
+                                    // can only be read while MPD is running).
+                                    this.select_fft_backend();
                                 }
                                 ConnectionState::Connecting => {
                                     if let Err(e) = this.clear() {

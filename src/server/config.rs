@@ -5,6 +5,7 @@ use crate::{
 #[cfg(target_os = "linux")]
 use alsa::{self, device_name::HintIter};
 use derivative::Derivative;
+use once_cell::sync::Lazy;
 use regex::Regex;
 use std::ffi::CString;
 /// Config file generator, for use with the managed MPD instance.
@@ -14,7 +15,8 @@ use std::ffi::CString;
 /// When that happens the above will need to be implemented properly.
 ///
 /// The format is kinda simple but nonstandard so it's not worth trying to shoehorn Serde here.
-use std::fmt::{Display, Write};
+use std::fmt::Display;
+use std::path::PathBuf;
 use strum::{EnumMessage, VariantNames};
 use strum_macros::{
     Display, EnumDiscriminants, EnumIter, EnumMessage, EnumString, FromRepr, VariantNames,
@@ -24,6 +26,18 @@ use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 // Euphonica manages one hidden FIFO output plugin (not exposed to the user) to power the
 // spectrum visualiser.
 pub static INTERNAL_FIFO_NAME: &'static str = "__euphonica_fifo__";
+/// The MPD format string literal for the internal FIFO output, pinned to
+/// `Pcm(P441, I16, Some(2))` by [`OutputConfig::internal_fifo`].
+pub const INTERNAL_FIFO_FORMAT: Lazy<String> =
+    Lazy::new(|| OutputConfig::internal_fifo().format.unwrap().to_string());
+/// Path to the hidden FIFO that powers the built-in spectrum visualiser in
+/// Standalone Mode. Lives in the app cache dir so both the managed MPD and the
+/// reader share the same sandbox on Flatpak.
+pub fn internal_fifo_path() -> PathBuf {
+    let mut fifo_path = get_app_cache_path();
+    fifo_path.push("euphonica_internal.fifo");
+    fifo_path
+}
 
 // We use the to_string one for UI display and the serialize one for writing into config.
 // This allows us to use VariantNames to programmatically populate the gtk::StringLists,
@@ -831,8 +845,7 @@ impl TryFrom<&[&str]> for OutputConfig {
 
 impl OutputConfig {
     pub fn internal_fifo() -> Self {
-        let mut fifo_path = get_app_cache_path();
-        fifo_path.push("euphonica_internal.fifo");
+        let fifo_path = internal_fifo_path();
         Self {
             output_type: OutputType::Fifo,
             name: INTERNAL_FIFO_NAME.to_string(),

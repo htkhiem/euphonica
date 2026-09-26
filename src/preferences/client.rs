@@ -1,4 +1,3 @@
-use duplicate::duplicate;
 use std::{
     fs::File,
     io::{Read, Write},
@@ -97,7 +96,7 @@ mod imp {
 
     use crate::{
         preferences::outputs::AudioOutputs,
-        server::config::{OutputConfig, OutputType},
+        server::config::OutputConfig,
     };
 
     use super::*;
@@ -205,9 +204,7 @@ mod imp {
 
     impl ObjectImpl for ClientPreferences {
         fn constructed(&self) {
-            // DEBUG
-            dbg!(OutputType::PipeWire.get_custom_config_spec());
-
+            // dbg!(OutputType::PipeWire.get_custom_config_spec());
             self.parent_constructed();
             self.config_outputs_row.connect_activated(clone!(
                 #[weak(rename_to = this)]
@@ -282,24 +279,6 @@ mod imp {
                     }
                 })
                 .build();
-            // Hide FIFO-specific rows when PipeWire is selected as data source
-            duplicate! {
-                [name; [fifo_path]; [fifo_format];]
-                viz_source
-                    .bind_property("selected", &self.name.get(), "visible")
-                    .transform_to(|_, val: u32| Some(val == 0))
-                    .sync_create()
-                    .build();
-            }
-            // Hide PipeWire-specific rows when FIFO is selected as data source
-            duplicate! {
-                [name; [pipewire_devices]; [pipewire_restart_between_songs];]
-                viz_source
-                    .bind_property("selected", &self.name.get(), "visible")
-                    .transform_to(|_, val: u32| Some(val == 1))
-                    .sync_create()
-                    .build();
-            }
 
             // Add output button (outside of the AudioOutputs widget)
             let outputs_box = self.outputs_box.get();
@@ -450,6 +429,23 @@ impl ClientPreferences {
         row.set_subtitle(&subtitle);
     }
 
+    /// Visibility of the Viz data source group rows.
+    /// Standalone Mode locks the source to the hidden internal FIFO, so the data source combo
+    /// and both the PipeWire- and FIFO-specific rows are hidden. In client mode the rows follow the
+    /// selected data source.
+    fn update_visualizer_config_visibility(&self) {
+        let imp = self.imp();
+        let standalone = imp.mpd_use_own_server.get().enables_expansion();
+        let idx = imp.viz_source.get().selected(); // 0 = fifo, 1 = pipewire
+        imp.viz_source.set_visible(!standalone);
+        let pw_visible = !standalone && idx == 1;
+        imp.pipewire_devices.set_visible(pw_visible);
+        imp.pipewire_restart_between_songs.set_visible(pw_visible);
+        let fifo_visible = !standalone && idx == 0;
+        imp.fifo_path.set_visible(fifo_visible);
+        imp.fifo_format.set_visible(fifo_visible);
+    }
+
     pub fn setup(&self, app: &EuphonicaApplication, player: &Player, dialog: &Preferences) {
         let _ = self.imp().dialog.set(Some(dialog));
         let imp = self.imp();
@@ -466,6 +462,23 @@ impl ClientPreferences {
                 "enable-expansion",
             )
             .build();
+        // Update the locked "Visualiser data source" rows on mode toggle and data source
+        // selection, plus the initial state.
+        self.update_visualizer_config_visibility();
+        conn_settings.connect_notify_local(Some("mpd-use-own-server"), {
+            clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |_, _| this.update_visualizer_config_visibility()
+            )
+        });
+        conn_settings.connect_notify_local(Some("mpd-visualizer-pcm-source"), {
+            clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |_, _| this.update_visualizer_config_visibility()
+            )
+        });
         // Upon init, read the managed MPD config file or create a fresh one in-memory in case
         // there's none or the existing one has issues.
         let mut has_existing = false;
@@ -848,9 +861,12 @@ impl ClientPreferences {
                         (pw_dev_idx as i32 - 1).to_variant(),
                     );
                 }
-                conn_settings
-                    .set_string("mpd-fifo-format", &imp.fifo_format.text())
-                    .expect("Cannot save FIFO settings");
+                // Skip this when in Standalone Mode (hardcoded config takes precedence).
+                if !conn_settings.boolean("mpd-use-own-server") {
+                    conn_settings
+                        .set_string("mpd-fifo-format", &imp.fifo_format.text())
+                        .expect("Cannot save FIFO settings");
+                }
                 player_settings
                     .set_uint("visualizer-fps", imp.fft_fps.value().round() as u32)
                     .expect("Cannot save visualizer settings");
