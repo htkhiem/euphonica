@@ -11,6 +11,7 @@ use gtk::{
     subclass::prelude::*,
 };
 use once_cell::sync::Lazy;
+use strum_macros::{Display, EnumString};
 use std::{
     cell::{Cell, RefCell},
     f64::consts::PI,
@@ -35,12 +36,15 @@ pub enum OverflowSide {
     CCW,
 }
 
-#[derive(Default, Clone, Copy, Debug, PartialEq, Eq, glib::Enum)]
+#[derive(Default, Clone, Copy, Debug, PartialEq, Eq, glib::Enum, Display, EnumString)]
 #[enum_type(name = "EuphonicaVolumeUnit")]
 enum VolumeUnit {
     #[default]
+    #[strum(serialize = "percents")]
     Percents,
+    #[strum(serialize = "decibels")]
     Decibels,
+    #[strum(serialize = "none")]
     None,
 }
 
@@ -119,11 +123,7 @@ mod imp {
                 .bind("vol-knob-unit", obj, "unit")
                 .get_only()
                 .mapping(|v: &Variant, _| {
-                    let unit = match v.get::<String>().unwrap().as_str() {
-                        "decibels" => VolumeUnit::Decibels,
-                        "none" => VolumeUnit::None,
-                        _ => VolumeUnit::Percents,
-                    };
+                    let unit = v.get::<String>().unwrap().parse::<VolumeUnit>().unwrap_or_default();
                     Some(unit.to_value())
                 })
                 .build();
