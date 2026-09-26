@@ -1256,7 +1256,18 @@ impl Connection {
                 (self.idle_sender.as_ref(), self.client.as_mut())
             {
                 // println!("Entering idle mode...");
-                let changes = client.wait(&[]).map_err(Error::Mpd)?;
+                let changes = match client.wait(&[]) {
+                    Ok(c) => c,
+                    Err(e) => {
+                        // E.g. EOF when the (managed) server was killed while we were idle,
+                        // or MPD dropping us after its idle timeout. Drop the client and keep
+                        // looping so this thread can still service queued Disconnect/Connect
+                        // tasks instead of dying and permanently wedging the wrapper.
+                        eprintln!("[bg] idle error: {e:?}; dropping client, continuing loop");
+                        self.client = None;
+                        continue;
+                    }
+                };
                 for change in changes.iter() {
                     match change {
                         Subsystem::Message => {
