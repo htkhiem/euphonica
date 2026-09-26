@@ -74,7 +74,6 @@ mod imp {
         pub speed: Cell<f64>, // in pixels per second.
         animation: OnceCell<TimedAnimation>,
         curr_offset: Cell<f64>,
-        child_width: Cell<i32>,
         #[property(get, set)]
         should_run: Cell<bool>,
         #[property(get, set = Self::set_wrap_mode, builder(MarqueeWrapMode::Ellipsis))]
@@ -82,16 +81,15 @@ mod imp {
     }
     impl Marquee {
         pub fn check_animation(&self) {
-            if self.should_run.get() && self.child_width.get() > self.obj().width() {
+            if self.should_run.get() && self.child.width() > self.obj().width() {
                 let anim = self.animation.get().unwrap();
-                // println!("Child: {}, allocated: {}, should_run: {}", self.child_width.get(), self.obj().width(), self.should_run.get());
                 if anim.state() != adw::AnimationState::Playing {
-                    let _ = self.curr_offset.replace(0.0);
+                    self.curr_offset.set(0.0);
                     anim.play();
                 }
             } else {
                 self.animation.get().unwrap().reset();
-                self.curr_offset.replace(0.0);
+                self.curr_offset.set(0.0);
             }
         }
     }
@@ -120,21 +118,16 @@ mod imp {
                 #[weak(rename_to = this)]
                 self,
                 move |progress: f64| {
-                    // Update render offset
-                    // Reacquired on the fly to deal with changing child width
-                    let child_width = this.child_width.get();
-                    if child_width > 0 {
-                        let allocated_width = this.obj().width();
-                        let anim = this.animation.get().unwrap();
-                        if child_width > allocated_width {
-                            // Recomputed on the fly to deal with window resizing
-                            let distance = (child_width - allocated_width) as f64;
-                            let _ = this.curr_offset.replace(-distance * progress);
-                            anim.set_duration((distance / this.speed.get() * 1000.0) as u32);
-                            this.obj().queue_draw();
-                        } else {
-                            let _ = this.curr_offset.replace(0.0);
-                        }
+                    let child_width = this.child.width();
+                    let allocated_width = this.obj().width();
+                    if child_width > allocated_width {
+                        let distance = (child_width - allocated_width) as f64;
+                        this.curr_offset.set(-distance * progress);
+                        let animation = this.animation.get().unwrap();
+                        animation.set_duration((distance / this.speed.get() * 1000.0) as u32);
+                        this.obj().queue_draw();
+                    } else {
+                        this.curr_offset.set(0.0);
                     }
                 }
             ));
@@ -165,41 +158,37 @@ mod imp {
 
         fn size_allocate(&self, width: i32, height: i32, baseline: i32) {
             let child = self.child.get();
-            let preferred_size = child.preferred_size().1;
-            let natural_width = preferred_size.width();
-            let _ = self.child_width.replace(natural_width);
-            self.check_animation();
+            let natural_width = child.measure(gtk::Orientation::Horizontal, -1).1;
 
-            // Allocate space for the child widget
-            child.size_allocate(&gtk::Allocation::new(0, 0, width, height), baseline);
+            // Keep the label at full width so scrolling can reveal all of its text.
+            let child_width = if self.wrap_mode.get() == MarqueeWrapMode::Scroll {
+                natural_width.max(width)
+            } else {
+                width
+            };
+            child.size_allocate(
+                &gtk::Allocation::new(0, 0, child_width, height),
+                baseline,
+            );
+            self.check_animation();
         }
 
         fn measure(&self, orientation: gtk::Orientation, for_size: i32) -> (i32, i32, i32, i32) {
-            if self.wrap_mode.get() == MarqueeWrapMode::Wrap {
-                self.child.get().measure(orientation, for_size)
-            } else {
-                let min_width = self.obj().width_request();
-                let child = self.child.get();
-                // Measure the child's natural size in the given orientation
-                let (min_size, natural_size, min_baseline, natural_baseline) =
-                    child.measure(orientation, for_size);
+            let wrap = self.wrap_mode.get() == MarqueeWrapMode::Wrap;
+            let for_size = if wrap { for_size } else { -1 };
+            let (minimum, natural, minimum_baseline, natural_baseline) =
+                self.child.measure(orientation, for_size);
 
-                // For horizontal orientation, override the label's min width
-                if orientation == gtk::Orientation::Horizontal {
-                    (
-                        min_width,
-                        natural_size.max(min_width),
-                        min_baseline,
-                        natural_baseline,
-                    )
-                } else {
-                    (
-                        min_size,
-                        natural_size.max(min_width),
-                        min_baseline,
-                        natural_baseline,
-                    )
-                }
+            if wrap || orientation == gtk::Orientation::Vertical {
+                (minimum, natural, minimum_baseline, natural_baseline)
+            } else {
+                let minimum = self.obj().width_request().max(0);
+                (
+                    minimum,
+                    natural.max(minimum),
+                    minimum_baseline,
+                    natural_baseline,
+                )
             }
         }
 
