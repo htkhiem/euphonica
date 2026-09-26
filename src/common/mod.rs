@@ -9,6 +9,7 @@ pub mod fading_scrolled_window;
 pub mod genre;
 pub mod image_stack;
 pub mod inode;
+pub mod list_models;
 pub mod marquee;
 pub mod paintables;
 pub mod picture_stack;
@@ -42,12 +43,36 @@ pub use song_row::SongRow;
 pub use sticker::Stickers;
 pub use theme_selector::ThemeSelector;
 
+#[derive(Default, Debug, Copy, Clone, PartialEq, Eq, glib::Enum)]
+#[enum_type(name = "EuphonicaConnectionState")]
+pub enum ConnectionState {
+    #[default]
+    NotConnected,
+    ConnectionRefused,
+    SocketNotFound,
+    Connecting,
+    Unauthenticated, // No password, or provided password is incorrect or insufficiently privileged
+    CredentialStoreError, // Internal error
+    WrongPassword,   // The provided password does not match any of the configured passwords
+    Connected,
+}
+
 #[derive(Clone, Copy, Eq, PartialEq, Debug, Default)]
 pub enum ImageState {
     #[default]
     Empty,
     Spinner,
     Image,
+}
+
+/// Maps output plugin name to icon name
+pub fn map_output_plugin_icon(plugin_name: &str) -> &'static str {
+    match plugin_name {
+        "alsa" => "alsa-symbolic",
+        "pulse" => "pulseaudio-symbolic",
+        "pipewire" => "pipewire-symbolic",
+        _ => "soundcard-symbolic",
+    }
 }
 
 // For use with GridViews.

@@ -1,11 +1,14 @@
 use glib::{Object, SignalHandlerId, WeakRef};
 use gtk::{
     CompositeTemplate,
+    gio::{self},
     glib::{self, clone},
     prelude::*,
     subclass::prelude::*,
 };
 use std::cell::RefCell;
+
+use crate::{server::config::INTERNAL_FIFO_NAME, utils::settings_manager};
 
 use super::{MpdOutput, Player};
 
@@ -27,6 +30,8 @@ mod imp {
         pub player: WeakRef<Player>,
         pub current_output_id: RefCell<Option<SignalHandlerId>>,
         pub outputs_changed_id: RefCell<Option<SignalHandlerId>>,
+        pub standalone_mode_id: RefCell<Option<SignalHandlerId>>,
+        pub client_settings: RefCell<Option<gio::Settings>>,
     }
 
     // The central trait for subclassing a GObject
@@ -56,6 +61,11 @@ mod imp {
                     player.disconnect(id);
                 }
             }
+            self.client_settings.borrow().as_ref().and_then(|settings| {
+                self.standalone_mode_id
+                    .take()
+                    .map(|id| settings.disconnect(id))
+            });
         }
     }
 
@@ -127,6 +137,24 @@ impl OutputControls {
             ),
         )));
 
+        // Standalone Mode is what adds the hidden internal FIFO output to the server,
+        // so re-evaluate output visibility whenever the mode toggle changes.
+        let client_settings = settings_manager().child("client");
+        imp.client_settings.replace(Some(client_settings.clone()));
+        imp.standalone_mode_id
+            .replace(Some(client_settings.connect_changed(
+                Some("mpd-use-own-server"),
+                clone!(
+                    #[weak(rename_to = this)]
+                    self,
+                    #[weak]
+                    player,
+                    move |_, _| {
+                        this.update_outputs(&player);
+                    }
+                ),
+            )));
+
         // Initial update
         self.update_outputs(player);
     }
@@ -145,11 +173,23 @@ impl OutputControls {
         let imp = self.imp();
         let section = imp.output_stack.get();
         let new_len = outputs.len();
-        if new_len == 0 {
+        // Standalone Mode hides the internal FIFO output that powers the visualiser.
+        let hide_fifo = settings_manager()
+            .child("client")
+            .boolean("mpd-use-own-server");
+        let visible_len = if hide_fifo {
+            outputs
+                .iter()
+                .filter(|o| o.borrow::<mpd::output::Output>().name != INTERNAL_FIFO_NAME)
+                .count()
+        } else {
+            new_len
+        };
+        if visible_len == 0 {
             section.set_visible(false);
         } else {
             section.set_visible(true);
-            if new_len > 1 {
+            if visible_len > 1 {
                 imp.prev_output.set_visible(true);
                 imp.next_output.set_visible(true);
             } else {
@@ -168,25 +208,27 @@ impl OutputControls {
                     section.remove(w);
                 }
                 output_widgets.truncate(new_len);
-                // Overwrite state of the remaining widgets
-                // Note that this does not re-populate the stack, so the visible
-                // child won't be changed.
-                for (w, o) in output_widgets.iter().zip(outputs) {
-                    w.update_state(&o.borrow());
-                }
             } else {
                 // Need to add more widgets
                 // Override state of all current widgets. Personal reminder:
                 // zip() is auto-truncated to the shorter of the two iters.
-                for (w, o) in output_widgets.iter().zip(&outputs) {
-                    w.update_state(&o.borrow());
-                }
                 output_widgets.reserve_exact(new_len - curr_len);
                 for o in &outputs[curr_len..] {
                     let w = MpdOutput::from_output(&o.borrow(), player);
                     section.add_child(&w);
                     output_widgets.push(w);
                 }
+            }
+            // Overwrite state of the remaining widgets
+            // Note that this does not re-populate the stack, so the visible
+            // child won't be changed.
+            for (w, o) in output_widgets.iter().zip(outputs) {
+                let borrowed = o.borrow::<mpd::output::Output>();
+                // Apply Standalone Mode FIFO hiding to all current widgets
+                w.set_visible(
+                    !hide_fifo || borrowed.name != INTERNAL_FIFO_NAME,
+                );
+                w.update_state(&borrowed);
             }
         }
         // Use this to update sensitivity of back/forward
@@ -210,9 +252,12 @@ impl OutputControls {
                 imp.prev_output.set_sensitive(true);
             }
 
-            // Update stack
-            imp.output_stack
-                .set_visible_child(&outputs[new_idx as usize]);
+            // Update stack. If the pointer landed on a hidden output (e.g. the
+            // internal FIFO in Standalone Mode), keep showing the previous child.
+            if outputs[new_idx as usize].is_visible() {
+                imp.output_stack
+                    .set_visible_child(&outputs[new_idx as usize]);
+            }
         }
     }
 }

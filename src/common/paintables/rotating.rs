@@ -112,12 +112,7 @@ mod imp {
                 snapshot.append_scaled_texture(
                     texture,
                     gsk::ScalingFilter::Trilinear,
-                    &graphene::Rect::new(
-                        0.0,
-                        0.0,
-                        paint_width as f32,
-                        paint_height as f32,
-                    ),
+                    &graphene::Rect::new(0.0, 0.0, paint_width as f32, paint_height as f32),
                 );
             } else {
                 paintable.snapshot(snapshot, paint_width, paint_height);

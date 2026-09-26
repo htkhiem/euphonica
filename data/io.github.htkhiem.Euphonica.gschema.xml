@@ -71,6 +71,9 @@
 	</schema>
 
 	<schema id="io.github.htkhiem.Euphonica.client" path="/io/github/htkhiem/Euphonica/client/">
+		<key name="mpd-use-own-server" type="b">
+			<default>false</default>
+		</key>
 		<key name="mpd-auto-reconnect" type="b">
 			<default>true</default>
 		</key>
@@ -342,7 +345,7 @@
 			<default>0.75</default>
 		</key>
 		<key name="visualizer-scale" type="d">
-			<default>1.0</default>
+			<default>5.0</default>
 		</key>
 		<!-- DEPRECATED AND UNUSED -->
 		<key name="visualizer-blend-mode" type="u">

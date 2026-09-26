@@ -30,7 +30,9 @@ use uuid::Uuid;
 
 use crate::cache::sqlite;
 use crate::client::connection::ImageHandle;
-use crate::common::{AlbumInfo, ArtistInfo, DynamicPlaylist, split_genre_tag, tags};
+use crate::common::{
+    AlbumInfo, ArtistInfo, ConnectionState, DynamicPlaylist, split_genre_tag, tags,
+};
 use crate::utils::settings_manager;
 use crate::{
     common::{Album, Artist, INode, Song, SongInfo, Stickers},
@@ -39,7 +41,7 @@ use crate::{
 };
 
 use super::connection::{Connection, Error as ClientError, Result as ClientResult, Task};
-use super::state::{ClientState, ConnectionState, StickersSupportLevel};
+use super::state::{ClientState, StickersSupportLevel};
 use super::{BATCH_SIZE, FETCH_LIMIT, StickerSetMode};
 
 static MAX_RETRIES: u32 = 3;
@@ -116,6 +118,7 @@ pub struct MpdWrapper {
     bg_sender: Sender<Task>, // For sending tasks to the background client
     client_version: RefCell<Option<Version>>,
     song_cache: RefCell<LruCache<u32, Song, BuildHasherDefault<NoHashHasher<u32>>>>,
+    ping_handle: RefCell<Option<glib::JoinHandle<()>>>,
 }
 
 impl MpdWrapper {
@@ -155,6 +158,7 @@ impl MpdWrapper {
                 NonZero::new(16384).unwrap(),
                 BuildHasherDefault::default(),
             )),
+            ping_handle: RefCell::default(),
         });
 
         wrapper.clone().setup_channel(idle_receiver);
@@ -181,31 +185,7 @@ impl MpdWrapper {
             }
         ));
 
-        // Set up a ping loop. Main client does not use idle mode, so it needs to ping periodically.
-        // If there is no client connected, it will simply skip pinging.
-        let conn = utils::settings_manager().child("client");
-        let ping_interval = conn.uint("mpd-ping-interval-s");
-        glib::MainContext::default().spawn_local(clone!(
-            #[weak(rename_to = this)]
-            self,
-            async move {
-                loop {
-                    let (s, r) = oneshot::channel();
-                    match this.foreground(Task::Ping(s), r).await {
-                        Ok(()) => {}
-                        Err(ClientError::NotConnected) => {
-                            println!(
-                                "[KeepAlive] There is no client currently running. Won't ping."
-                            );
-                        }
-                        Err(e) => {
-                            dbg!(e);
-                        }
-                    };
-                    glib::timeout_future_seconds(ping_interval).await;
-                }
-            }
-        ));
+        // Only start ping loop once connected
     }
 
     async fn handle_idle_changes(&self, subsystem: Subsystem) {
@@ -223,6 +203,11 @@ impl MpdWrapper {
     }
 
     pub async fn disconnect(&self, stop: bool, end_state: ConnectionState) -> ClientResult<()> {
+        // Stop pinging
+        if let Some(handle) = self.ping_handle.take() {
+            handle.abort();
+        }
+
         // Clients might be currently disconnected so don't exit on error.
         // In case both are running, disconnect the background first as we need to use
         // the foreground client to wake it up.
@@ -319,7 +304,7 @@ impl MpdWrapper {
         res
     }
 
-    pub async fn connect(&self) -> ClientResult<()> {
+    pub async fn connect(self: Rc<Self>) -> ClientResult<()> {
         // Disconnect both clients.
         if let Err(e) = self.disconnect(false, ConnectionState::Connecting).await {
             eprintln!("Warning: did not cleanly disconnect");
@@ -334,6 +319,35 @@ impl MpdWrapper {
         let version = self
             .handle_connect_error(r.await.expect("Broken oneshot receiver"))
             .await?;
+
+        // Connection successful => start ping loop now
+        // Set up a ping loop. Main client does not use idle mode, so it needs to ping periodically.
+        // If there is no client connected, it will simply skip pinging.
+        let conn = utils::settings_manager().child("client");
+        let ping_interval = conn.uint("mpd-ping-interval-s");
+        let _ = self
+            .ping_handle
+            .replace(Some(glib::MainContext::default().spawn_local(clone!(
+                #[weak(rename_to = this)]
+                self,
+                async move {
+                    loop {
+                        let (s, r) = oneshot::channel();
+                        match this.foreground(Task::Ping(s), r).await {
+                            Ok(()) => {}
+                            Err(ClientError::NotConnected) => {
+                                println!(
+                                    "[KeepAlive] There is no client currently running. Won't ping."
+                                );
+                            }
+                            Err(e) => {
+                                dbg!(e);
+                            }
+                        };
+                        glib::timeout_future_seconds(ping_interval).await;
+                    }
+                }
+            ))));
 
         // Figure out stickers support early as we need to decide whether we should show the Dynamic Playlists page.
         // Set to maximum supported level first by MPD version.

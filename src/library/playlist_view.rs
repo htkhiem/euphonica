@@ -13,8 +13,8 @@ use std::{cell::OnceCell, sync::OnceLock};
 use super::Library;
 use crate::{
     cache::Cache,
-    client::{ClientState, ConnectionState},
-    common::{ContentStack, INode},
+    client::ClientState,
+    common::{ConnectionState, ContentStack, INode},
     library::{PlaylistContentView, playlist_row::PlaylistRow},
     utils::{SearchableView, g_cmp_str_options, settings_manager},
     window::EuphonicaWindow,

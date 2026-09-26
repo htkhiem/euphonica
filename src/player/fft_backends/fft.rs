@@ -81,17 +81,25 @@ fn parse_to_float(buf: [u8; 4], format: &AudioFormat, is_le: bool) -> f32 {
             f32::from_be_bytes(buf)
         }
     } else {
-        // Assume signed magnitudes since that's what normal LPCM is
-        let max_val: f32 = match format.bits {
-            32 => std::i32::MAX as f32,
-            16 => std::i16::MAX as f32,
-            8 => std::i8::MAX as f32,
-            _ => unimplemented!(),
-        };
+        // Assume signed magnitudes since that's what normal LPCM is.
+        // Decode in the sample's native signed width so the sign bit is
+        // respected; zero-extending the low bytes into a wider int would treat
+        // the sign bit as magnitude (every sample lands in 0..2.0 instead of
+        // -1..1, injecting a large DC offset and even harmonics).
         if is_le {
-            i32::from_le_bytes(buf) as f32 / max_val
+            match format.bits {
+                32 => i32::from_le_bytes(buf) as f32 / (std::i32::MAX as f32),
+                16 => i16::from_le_bytes([buf[0], buf[1]]) as f32 / (std::i16::MAX as f32),
+                8 => i8::from_le_bytes([buf[0]]) as f32 / (std::i8::MAX as f32),
+                _ => unimplemented!(),
+            }
         } else {
-            i32::from_be_bytes(buf) as f32 / max_val
+            match format.bits {
+                32 => i32::from_be_bytes(buf) as f32 / (std::i32::MAX as f32),
+                16 => i16::from_be_bytes([buf[0], buf[1]]) as f32 / (std::i16::MAX as f32),
+                8 => i8::from_be_bytes([buf[0]]) as f32 / (std::i8::MAX as f32),
+                _ => unimplemented!(),
+            }
         }
     }
 }
