@@ -38,7 +38,7 @@ pub enum OverflowSide {
 
 #[derive(Default, Clone, Copy, Debug, PartialEq, Eq, glib::Enum, Display, EnumString)]
 #[enum_type(name = "EuphonicaVolumeUnit")]
-enum VolumeUnit {
+pub(crate) enum VolumeUnit {
     #[default]
     #[strum(serialize = "percents")]
     Percents,

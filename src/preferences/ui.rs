@@ -2,11 +2,16 @@ use adw::prelude::*;
 use adw::subclass::prelude::*;
 use gtk::{
     CompositeTemplate,
-    glib::{self, Value, Variant},
+    glib::{self, Value, Variant, clone},
 };
 
 use crate::{
-    common::{View, marquee::MarqueeWrapMode},
+    common::{
+        View,
+        list_models::{DualStringList, DualStringObject},
+        marquee::MarqueeWrapMode,
+    },
+    player::VolumeUnit,
     utils,
 };
 
@@ -268,6 +273,18 @@ impl UIPreferences {
             .build();
 
         let vol_knob_unit = imp.vol_knob_unit.get();
+        let none = gettextrs::gettext("None");
+        let units = DualStringList::from_string_pairs(&[
+            ("%", &VolumeUnit::Percents.to_string()),
+            ("dBFS", &VolumeUnit::Decibels.to_string()),
+            (&none, &VolumeUnit::None.to_string()),
+        ]);
+        vol_knob_unit.set_model(Some(&units));
+        vol_knob_unit.set_expression(Some(&gtk::PropertyExpression::new(
+            DualStringObject::static_type(),
+            gtk::Expression::NONE,
+            "display",
+        )));
         let unit_factory = gtk::SignalListItemFactory::new();
         unit_factory.connect_setup(|_, item| {
             let item = item.downcast_ref::<gtk::ListItem>().unwrap();
@@ -281,7 +298,7 @@ impl UIPreferences {
             container.append(&label);
             item.set_child(Some(&container));
             item.property_expression("item")
-                .chain_property::<gtk::StringObject>("string")
+                .chain_property::<DualStringObject>("display")
                 .bind(&label, "label", gtk::Widget::NONE);
         });
         vol_knob_unit.set_factory(Some(&unit_factory));
@@ -289,18 +306,17 @@ impl UIPreferences {
         let vol_knob_sensitivity = imp.vol_knob_sensitivity.get();
         ui_settings
             .bind("vol-knob-unit", &vol_knob_unit, "selected")
-            .mapping(|v: &Variant, _| match v.get::<String>().unwrap().as_str() {
-                "percents" => Some(0u32.to_value()),
-                "decibels" => Some(1u32.to_value()),
-                "none" => Some(2u32.to_value()),
-                _ => unreachable!(),
-            })
-            .set_mapping(|v: &Value, _| match v.get::<u32>().ok() {
-                Some(0) => Some("percents".to_variant()),
-                Some(1) => Some("decibels".to_variant()),
-                Some(2) => Some("none".to_variant()),
-                _ => unreachable!(),
-            })
+            .mapping(clone!(#[strong] units, move |v: &Variant, _| {
+                Some(units.find(&v.get::<String>()?).to_value())
+            }))
+            .set_mapping(clone!(#[strong] units, move |v: &Value, _| {
+                Some(
+                    units
+                        .item(v.get::<u32>().ok()?)?
+                        .property::<String>("internal")
+                        .to_variant(),
+                )
+            }))
             .build();
 
         ui_settings
