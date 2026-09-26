@@ -230,6 +230,7 @@
                 <items>
                   <item>%</item>
                   <item>dBFS</item>
+                  <item translatable="true">None</item>
                 </items>
               </object>
             </property>

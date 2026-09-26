@@ -198,14 +198,6 @@ mod imp {
                 .set(self.albumart_paintable.rotation_speed());
             let knob = self.vol_knob.get();
             ui_settings
-                .bind("vol-knob-unit", &knob, "use-dbfs")
-                .get_only()
-                .mapping(|v: &Variant, _| {
-                    Some((v.get::<String>().unwrap().as_str() == "decibels").to_value())
-                })
-                .build();
-
-            ui_settings
                 .bind("vol-knob-sensitivity", &knob, "sensitivity")
                 .mapping(|v: &Variant, _| Some(v.get::<f64>().unwrap().to_value()))
                 .build();
