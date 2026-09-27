@@ -7,6 +7,7 @@ use alsa::{self, device_name::HintIter};
 use derivative::Derivative;
 use once_cell::sync::Lazy;
 use regex::Regex;
+use rustc_hash::FxHashMap;
 use std::ffi::CString;
 /// Config file generator, for use with the managed MPD instance.
 /// Since it's only meant for the above case, there is no need to allow configuring things like state file,
@@ -324,7 +325,7 @@ pub enum ConfigValueType {
 }
 
 #[derive(Debug)]
-pub struct OutputConfigSpec {
+pub struct ConfigSpec {
     pub key: &'static str,
     pub title: String,
     pub subtitle: Option<String>,
@@ -392,7 +393,7 @@ pub enum OutputType {
 impl OutputType {
     /// Return plugin-specific configuration, with valid values initialised with
     /// what the local system currently has.
-    pub fn get_custom_config_spec(&self) -> Vec<OutputConfigSpec> {
+    pub fn get_config_spec(&self) -> Vec<ConfigSpec> {
         match &self {
             #[cfg(target_os = "linux")]
             &Self::Alsa => {
@@ -411,13 +412,13 @@ impl OutputType {
                     }
                 }
                 vec![
-                    OutputConfigSpec {
+                    ConfigSpec {
                         key: "device",
                         title: "Override playback device".into(),
                         subtitle: None,
                         value_type: ConfigValueType::Combo(display_internal_pairs),
                     },
-                    OutputConfigSpec {
+                    ConfigSpec {
                         key: "auto_resample",
                             title: "Auto resample".into(),
                             subtitle: Some(
@@ -428,7 +429,7 @@ impl OutputType {
                             ),
                             value_type: ConfigValueType::Bool(false),
                         },
-                        OutputConfigSpec {
+                        ConfigSpec {
                             key: "auto_channels",
                             title: "Auto channels".into(),
                             subtitle: Some(
@@ -438,7 +439,7 @@ impl OutputType {
                             ),
                             value_type: ConfigValueType::Bool(true),
                         },
-                        OutputConfigSpec {
+                        ConfigSpec {
                             key: "auto_format",
                             title: "Auto format".into(),
                             subtitle: Some(
@@ -448,7 +449,7 @@ impl OutputType {
                             ),
                             value_type: ConfigValueType::Bool(true),
                         },
-                        OutputConfigSpec {
+                        ConfigSpec {
                             key: "dop",
                             title: "Use DSD-over-PCM (DoP)".into(),
                             subtitle: Some(
@@ -460,7 +461,7 @@ impl OutputType {
                             ),
                             value_type: ConfigValueType::Bool(false),
                         },
-                        OutputConfigSpec {
+                        ConfigSpec {
                             key: "stop_dsd_silence",
                             title: "Stop DSD silence".into(),
                             subtitle: Some(
@@ -472,7 +473,7 @@ impl OutputType {
                             ),
                             value_type: ConfigValueType::Bool(false),
                         },
-                        OutputConfigSpec {
+                        ConfigSpec {
                             key: "allowed_formats",
                             title: "Allowed formats".into(),
                             subtitle: Some(
@@ -493,7 +494,7 @@ impl OutputType {
                 target_os = "dragonfly"
             ))]
             OutputType::Fifo => vec![
-            OutputConfigSpec {
+            ConfigSpec {
                     key: "path",
                     title: "FIFO file path".into(),
                     subtitle: None,
@@ -501,19 +502,19 @@ impl OutputType {
                 }
             ],
             OutputType::Httpd => vec![
-                OutputConfigSpec {
+                ConfigSpec {
                     key: "bind_to_address",
                     title: "Bind to address".into(),
                     subtitle: None,
                     value_type: ConfigValueType::Text,
                 },
-                OutputConfigSpec {
+                ConfigSpec {
                     key: "port",
                     title: "Port".into(),
                     subtitle: None,
                     value_type: ConfigValueType::Text,
                 },
-                OutputConfigSpec {
+                ConfigSpec {
                     key: "dscp_class",
                     title: "DSCP class".into(),
                     subtitle: Some("Differentiated Services Code Point class for outgoing traffic. CS3 is recommended.".into()),
@@ -528,20 +529,20 @@ impl OutputType {
                         ("Network control (CS6)".into(), "CS6".into()),
                     ]),
                 },
-                OutputConfigSpec {
+                ConfigSpec {
                     key: "max_clients",
                     title: "Maximum concurrent clients".into(),
                     subtitle: Some("When set to 0 no limit will apply.".into()),
                     // Put CS3 as default (top). Only expose CS levels.
                     value_type: ConfigValueType::Number(0.0, 128.0, 1.0, 5.0, 0),
                 },
-                OutputConfigSpec {
+                ConfigSpec {
                     key: "genre",
                     title: "Stream genre".into(),
                     subtitle: Some("Will be reflected in the icy-genre header of the stream.".into()),
                     value_type: ConfigValueType::Text,
                 },
-                OutputConfigSpec {
+                ConfigSpec {
                     key: "website",
                     title: "Stream website".into(),
                     subtitle: Some("Will be reflected in the icy-website header of the stream.".into()),
@@ -557,13 +558,13 @@ impl OutputType {
             ))]
             OutputType::Oss => {
                 vec![
-                    OutputConfigSpec {
+                    ConfigSpec {
                         key: "device",
                         title: "Override device path".into(),
                         subtitle: None,
                         value_type: ConfigValueType::Text
                     },
-                    OutputConfigSpec {
+                    ConfigSpec {
                         key: "dop",
                         title: "Use DSD-over-PCM (DoP)".into(),
                         subtitle: Some(
@@ -588,19 +589,19 @@ impl OutputType {
                 // FIXME: BLOCKING LOGIC
                 let display_and_node_names = get_pipewire_devices(false);
                 vec![
-                    OutputConfigSpec {
+                    ConfigSpec {
                         key: "target",
                         title: "Override device".into(),
                         subtitle: Some("If not specified, let the PipeWire manager select a target.".into()),
                         value_type: ConfigValueType::Combo(display_and_node_names)
                     },
-                    OutputConfigSpec {
+                    ConfigSpec {
                         key: "remote",
                         title: "Override remote name".into(),
                         subtitle: None,
                         value_type: ConfigValueType::Text
                     },
-                    OutputConfigSpec {
+                    ConfigSpec {
                         key: "dsd",
                         title: "Enable DSD playback".into(),
                         subtitle: Some(
@@ -619,7 +620,7 @@ impl OutputType {
             ))]
             OutputType::Pulse => {
                 vec![
-                    OutputConfigSpec {
+                    ConfigSpec {
                         key: "server",
                         title: "Override server hostname".into(),
                         subtitle: None,
@@ -627,7 +628,7 @@ impl OutputType {
                     },
                     // Too lazy to implement auto sink names fetching here.
                     // Most people use PipeWire these days anyway.
-                    OutputConfigSpec {
+                    ConfigSpec {
                         key: "sink",
                         title: "Override sink".into(),
                         subtitle: None,
@@ -635,7 +636,7 @@ impl OutputType {
                     },
                     // Too lazy to implement auto sink names fetching here.
                     // Most people use PipeWire these days anyway.
-                    OutputConfigSpec {
+                    ConfigSpec {
                         key: "media_role",
                         title: "Media role".into(),
                         subtitle: Some("Specify what media role MPD should report to PulseAudio.".into()),
@@ -650,7 +651,7 @@ impl OutputType {
                             ("a11y".into(), "a11y".into()),
                         ])
                     },
-                    OutputConfigSpec {
+                    ConfigSpec {
                         key: "scale_volume",
                         title: "Scale volume".into(),
                         subtitle: Some("Specifies a linear scaling coefficient to apply when adjusting \
@@ -870,6 +871,178 @@ impl OutputConfig {
     }
 }
 
+#[derive(
+    Debug, Clone, Copy, PartialEq, Display, EnumString, VariantNames, Default, EnumMessage, FromRepr,
+)]
+pub enum SoxrPreset {
+    #[strum(serialize = "very high", to_string = "Very high")]
+    VeryHigh,
+    #[strum(serialize = "high", to_string = "High")]
+    #[default]
+    High,
+    #[strum(serialize = "medium", to_string = "Medium")]
+    Medium,
+    #[strum(serialize = "low", to_string = "Low")]
+    Low,
+    #[strum(serialize = "quick", to_string = "Quick")]
+    Quick,
+    #[strum(serialize = "custom", to_string = "Custom")]
+    Custom(
+        // Precision
+        u8,
+        // Phase response
+        u8,
+        // Passband end
+        f64,
+        // Stopband begin
+        f64,
+        // Attenuation in dB
+        f64,
+        // TODO: bitmasks (seriously who's gonna use that though?)
+    ),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, VariantNames, Default, EnumMessage, FromRepr)]
+pub enum Resampler {
+    #[strum(serialize = "", to_string = "Auto")]
+    #[default]
+    Auto,
+    #[strum(serialize = "internal", to_string = "MPD internal")]
+    Internal,
+    #[strum(serialize = "libsamplerate", to_string = "LibSampleRate")]
+    LibSampleRate(
+        /// type index (see MPD docs)
+        u8,
+    ),
+    #[strum(serialize = "soxr", to_string = "SoX")]
+    Soxr(
+        /// Thread count
+        u8,
+        /// Quality config
+        SoxrPreset
+    ),
+}
+
+impl Resampler {
+    // /// Return plugin-specific configuration.
+    // pub fn get_config_spec(&self) -> Vec<ConfigSpec> {
+    //     match self {
+    //         Self::Internal => Vec::with_capacity(0),
+    //         Self::LibSampleRate => vec![ConfigSpec {
+    //             key: "type",
+    //             title: "Interpolator type".into(),
+    //             subtitle: None,
+    //             value_type: ConfigValueType::Combo(vec![
+    //                 // Default first
+    //                 ("Fastest Sinc (default)\n(97dB SNR, 80% BW)".into(), "2".into()),
+    //                 ("Best Sinc\n(97dB SNR, 96% BW)".into(), "0".into()),
+    //                 ("Medium Sinc\n(97dB SNR, 90% BW)".into(), "1".into()),
+    //                 (
+    //                     "ZOH Sinc\n(very fast, audible distortion)".into(),
+    //                     "3".into(),
+    //                 ), // mate why
+    //                 ("Linear\n(very fast, poor quality)".into(), "4".into()),
+    //             ]),
+    //         }],
+    //         // Custom preset config rows to be implemented later
+    //         Self::Soxr => vec![
+    //             ConfigSpec {
+    //                 key: "quality",
+    //                 title: "Quality preset".into(),
+    //                 subtitle: None,
+    //                 value_type: ConfigValueType::Combo(vec![
+    //                     // Default first
+    //                     ("High (default)".into(), "high".into()),
+    //                     ("Very high".into(), "very high".into()),
+    //                     ("Medium".into(), "medium".into()),
+    //                     ("Low".into(), "low".into()),
+    //                     ("Quick".into(), "quick".into()),
+    //                 ]),
+    //             }, ConfigSpec {
+    //                 key: "threads",
+    //                 title: "Thread count".into(),
+    //                 subtitle: None,
+    //                 value_type: ConfigValueType::Number(0.0, 16.0, 1.0, 2.0, 0)
+    //             }
+    //         ],
+    //     }
+    // }
+}
+
+impl Display for Resampler {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if matches!(self, Self::Auto) {
+            return Ok(());
+        }
+        writeln!(f, "resampler {{")?;
+        writeln!(f, "    plugin \"{}\"", self.get_serializations()[0])?;
+        match self {
+            Self::LibSampleRate(idx) => {
+                writeln!(f, "    type \"{}\"", idx)?;
+            }
+            Self::Soxr(threads, preset) => {
+                writeln!(f, "    threads \"{}\"", threads)?;
+                writeln!(f, "    quality \"{}\"", preset.get_serializations()[0])?;
+                if let SoxrPreset::Custom(precision, phase, passband, stopband, atten) = *preset {
+                    writeln!(f, "    precision \"{}\"", precision)?;
+                    writeln!(f, "    phase_response \"{}\"", phase)?;
+                    writeln!(f, "    passband_end \"{}\"", passband)?;
+                    writeln!(f, "    stopband_begin \"{}\"", stopband)?;
+                    writeln!(f, "    attenuation \"{:.1}\"", atten)?;
+                }
+            }
+            _ => {}
+        }
+        writeln!(f, "}}")
+    }
+}
+
+impl TryFrom<&[&str]> for Resampler {
+    type Error = String;
+    fn try_from(lines: &[&str]) -> Result<Self, Self::Error> {
+        let mut kv: FxHashMap<String, String> = FxHashMap::default();
+        for line in lines {
+            if let Some((key, val)) = parse_key_value(line) {
+                let _ = kv.insert(key.to_owned(), val.to_owned());
+            }
+        }
+        if let Some(plugin_name) = kv.get("plugin") {
+            // Resampler configs are enums with data so we can't simply do FromString
+            match plugin_name.as_str() {
+                "internal" => Ok(Self::Internal),
+                "libsamplerate" => Ok(Self::LibSampleRate(
+                    kv.get("type").map(|s| s.parse::<u8>().ok()).flatten().unwrap_or(2),
+                )),
+                "soxr" => {
+                    let quality = match kv.get("quality").unwrap_or(&"high".to_owned()).as_str() {
+                        "very high" => Ok(SoxrPreset::VeryHigh),
+                        "high" => Ok(SoxrPreset::High),
+                        "medium" => Ok(SoxrPreset::Medium),
+                        "low" => Ok(SoxrPreset::Low),
+                        "quick" => Ok(SoxrPreset::Quick),
+                        "custom" => Ok(SoxrPreset::Custom(
+                            // Sensible defaults at least to me
+                            kv.get("precision").map(|s| s.parse::<u8>().ok()).flatten().unwrap_or(32),
+                            kv.get("phase_response").map(|s| s.parse::<u8>().ok()).flatten().unwrap_or(0),
+                            kv.get("passband_end").map(|s| s.parse::<f64>().ok()).flatten().unwrap_or(99.7),
+                            kv.get("stopband_begin").map(|s| s.parse::<f64>().ok()).flatten().unwrap_or(100.0),
+                            kv.get("attenuation").map(|s| s.parse::<f64>().ok()).flatten().unwrap_or(0.5)
+                        )),
+                        other => Err(format!("Unknown SoX quality preset: {}", other))
+                    }?;
+                    Ok(Self::Soxr(
+                        kv.get("threads").map(|s| s.parse::<u8>().ok()).flatten().unwrap_or(1),
+                        quality
+                    ))
+                }
+                _ => Err(format!("Unknown resampler: {}", plugin_name))
+            }
+        } else {
+            Err("Resampler block must have key 'plugin' set".into())
+        }
+    }
+}
+
 #[derive(Default, Debug, Clone)]
 pub struct MpdConfig {
     pub music_directory: String, // just one right now
@@ -878,6 +1051,7 @@ pub struct MpdConfig {
     pub bind_to_address: Option<String>,
     pub port: Option<u32>,
     pub audio_outputs: Vec<OutputConfig>,
+    pub resampler: Option<Resampler>,
     pub state_file: Option<String>,
     pub sticker_file: Option<String>,
     pub playlist_directory: Option<String>,
@@ -921,6 +1095,7 @@ impl MpdConfig {
             log_level: LogLevel::default(),
             port: Some(6600),
             audio_outputs: vec![default_out],
+            resampler: None,
             state_file: Some(
                 state_file
                     .to_str()
@@ -994,6 +1169,9 @@ impl Display for MpdConfig {
         for output in &self.audio_outputs {
             write!(out, "{}", output)?;
         }
+        if let Some(resampler) = self.resampler.as_ref() {
+            write!(out, "{}", resampler)?;
+        }
         Ok(())
     }
 }
@@ -1008,6 +1186,7 @@ impl TryFrom<&str> for MpdConfig {
         let mut config = MpdConfig::default();
 
         let mut in_audio_output = false;
+        let mut in_resampler = false;
         let mut in_ignored_block = false;
         let mut buf = Vec::new();
 
@@ -1034,6 +1213,10 @@ impl TryFrom<&str> for MpdConfig {
                     in_audio_output = false;
                     config.audio_outputs.push(OutputConfig::try_from(&buf[..])?);
                     buf.clear();
+                } else if in_resampler {
+                    in_resampler = false;
+                    config.resampler = Some(Resampler::try_from(&buf[..])?);
+                    buf.clear();
                 } else if in_ignored_block {
                     in_ignored_block = false;
                 } else {
@@ -1042,7 +1225,7 @@ impl TryFrom<&str> for MpdConfig {
                         line_num
                     ));
                 }
-            } else if in_audio_output {
+            } else if in_audio_output || in_resampler {
                 // Collect lines until end of block
                 buf.push(line);
             } else if in_ignored_block {
@@ -1051,6 +1234,9 @@ impl TryFrom<&str> for MpdConfig {
                 // Handle block openings
                 if line.starts_with("audio_output") {
                     in_audio_output = true;
+                    buf.clear();
+                } else if line.starts_with("resampler") {
+                    in_resampler = true;
                     buf.clear();
                 } else {
                     in_ignored_block = true;
