@@ -1,5 +1,6 @@
 use crate::cache::sqlite;
 use crate::config::APPLICATION_ID;
+pub use crate::settings::settings_manager;
 use adw::prelude::*;
 use aho_corasick::AhoCorasick;
 use gtk::{
@@ -54,13 +55,6 @@ pub fn get_doc_cache_path() -> PathBuf {
 pub fn tokio_runtime() -> &'static Runtime {
     static RUNTIME: OnceLock<Runtime> = OnceLock::new();
     RUNTIME.get_or_init(|| Runtime::new().expect("Setting up tokio runtime needs to succeed."))
-}
-
-/// Get GSettings for the entire application.
-pub fn settings_manager() -> gio::Settings {
-    // Trim the .Devel suffix if exists
-    let app_id = APPLICATION_ID.trim_end_matches(".Devel");
-    gio::Settings::new(app_id)
 }
 
 /// Shortcut to a metadata provider's settings.
