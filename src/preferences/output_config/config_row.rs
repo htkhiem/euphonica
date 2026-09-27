@@ -1,7 +1,7 @@
 use crate::{
     common::list_models::{DualStringList, DualStringObject},
     preferences::output_config::{audio_format_box::AudioFormatBox, path_row::PathRow},
-    server::config::{ConfigValueType, ConfigValueTypeDiscriminants, OutputConfigSpec},
+    server::config::{ConfigSpec, ConfigValueType, ConfigValueTypeDiscriminants},
 };
 use adw::prelude::*;
 use glib::Object;
@@ -49,7 +49,7 @@ glib::wrapper! {
 }
 
 impl ConfigRow {
-    pub fn from_config_spec(config_spec: OutputConfigSpec, value: Option<&str>) -> Self {
+    pub fn from_config_spec(config_spec: ConfigSpec, value: Option<&str>) -> Self {
         let res: Self = Object::builder().build();
 
         let _ = res.imp().key.set(config_spec.key);

@@ -919,7 +919,7 @@ pub enum Resampler {
         /// Thread count
         u8,
         /// Quality config
-        SoxrPreset
+        SoxrPreset,
     ),
 }
 
@@ -1011,7 +1011,10 @@ impl TryFrom<&[&str]> for Resampler {
             match plugin_name.as_str() {
                 "internal" => Ok(Self::Internal),
                 "libsamplerate" => Ok(Self::LibSampleRate(
-                    kv.get("type").map(|s| s.parse::<u8>().ok()).flatten().unwrap_or(2),
+                    kv.get("type")
+                        .map(|s| s.parse::<u8>().ok())
+                        .flatten()
+                        .unwrap_or(2),
                 )),
                 "soxr" => {
                     let quality = match kv.get("quality").unwrap_or(&"high".to_owned()).as_str() {
@@ -1022,20 +1025,38 @@ impl TryFrom<&[&str]> for Resampler {
                         "quick" => Ok(SoxrPreset::Quick),
                         "custom" => Ok(SoxrPreset::Custom(
                             // Sensible defaults at least to me
-                            kv.get("precision").map(|s| s.parse::<u8>().ok()).flatten().unwrap_or(32),
-                            kv.get("phase_response").map(|s| s.parse::<u8>().ok()).flatten().unwrap_or(0),
-                            kv.get("passband_end").map(|s| s.parse::<f64>().ok()).flatten().unwrap_or(99.7),
-                            kv.get("stopband_begin").map(|s| s.parse::<f64>().ok()).flatten().unwrap_or(100.0),
-                            kv.get("attenuation").map(|s| s.parse::<f64>().ok()).flatten().unwrap_or(0.5)
+                            kv.get("precision")
+                                .map(|s| s.parse::<u8>().ok())
+                                .flatten()
+                                .unwrap_or(32),
+                            kv.get("phase_response")
+                                .map(|s| s.parse::<u8>().ok())
+                                .flatten()
+                                .unwrap_or(0),
+                            kv.get("passband_end")
+                                .map(|s| s.parse::<f64>().ok())
+                                .flatten()
+                                .unwrap_or(99.7),
+                            kv.get("stopband_begin")
+                                .map(|s| s.parse::<f64>().ok())
+                                .flatten()
+                                .unwrap_or(100.0),
+                            kv.get("attenuation")
+                                .map(|s| s.parse::<f64>().ok())
+                                .flatten()
+                                .unwrap_or(0.5),
                         )),
-                        other => Err(format!("Unknown SoX quality preset: {}", other))
+                        other => Err(format!("Unknown SoX quality preset: {}", other)),
                     }?;
                     Ok(Self::Soxr(
-                        kv.get("threads").map(|s| s.parse::<u8>().ok()).flatten().unwrap_or(1),
-                        quality
+                        kv.get("threads")
+                            .map(|s| s.parse::<u8>().ok())
+                            .flatten()
+                            .unwrap_or(1),
+                        quality,
                     ))
                 }
-                _ => Err(format!("Unknown resampler: {}", plugin_name))
+                _ => Err(format!("Unknown resampler: {}", plugin_name)),
             }
         } else {
             Err("Resampler block must have key 'plugin' set".into())

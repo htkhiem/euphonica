@@ -25,7 +25,7 @@ use crate::{
     common::ConnectionState,
     player::{FftStatus, Player},
     preferences::Preferences,
-    server::config::MpdConfig,
+    server::{Resampler, SoxrPreset, config::MpdConfig},
     utils::{self, get_standalone_config_path, settings_manager},
 };
 
@@ -111,6 +111,8 @@ mod imp {
         #[template_child]
         pub config_outputs_row: TemplateChild<adw::ActionRow>,
         #[template_child]
+        pub config_resampler_row: TemplateChild<adw::ActionRow>,
+        #[template_child]
         pub standalone_status: TemplateChild<adw::ActionRow>,
         #[template_child]
         pub standalone_status_icon: TemplateChild<gtk::Image>,
@@ -180,6 +182,33 @@ mod imp {
         #[template_child]
         pub add_output: TemplateChild<gtk::Button>,
 
+        #[template_child]
+        pub resampler_subpage: TemplateChild<adw::NavigationPage>,
+        #[template_child]
+        pub force_resampler: TemplateChild<adw::SwitchRow>,
+        #[template_child]
+        pub resampler_plugin: TemplateChild<adw::ComboRow>,
+        #[template_child]
+        pub libsamplerate_config: TemplateChild<gtk::ListBox>,
+        #[template_child]
+        pub libsamplerate_type: TemplateChild<adw::ComboRow>,
+        #[template_child]
+        pub soxr_config: TemplateChild<gtk::ListBox>,
+        #[template_child]
+        pub soxr_quality: TemplateChild<adw::ComboRow>,
+        #[template_child]
+        pub soxr_threads: TemplateChild<adw::SpinRow>,
+        #[template_child]
+        pub soxr_custom_precision: TemplateChild<adw::ComboRow>,
+        #[template_child]
+        pub soxr_custom_phase_response: TemplateChild<adw::SpinRow>,
+        #[template_child]
+        pub soxr_custom_passband_end: TemplateChild<adw::SpinRow>,
+        #[template_child]
+        pub soxr_custom_stopband_begin: TemplateChild<adw::SpinRow>,
+        #[template_child]
+        pub soxr_custom_attenuation: TemplateChild<adw::SpinRow>,
+
         pub standalone_cfg: RefCell<MpdConfig>,
         pub dialog: WeakRef<Preferences>,
     }
@@ -212,6 +241,63 @@ mod imp {
                             .init_from_config(&this.standalone_cfg.borrow());
                         dialog.push_subpage(&this.outputs_subpage.get());
                     }
+                }
+            ));
+            self.config_resampler_row.connect_activated(clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |_| {
+                    if let Some(dialog) = this.dialog.upgrade() {
+                        dialog.push_subpage(&this.resampler_subpage.get());
+                    }
+                }
+            ));
+            self.obj().on_resampler_plugin_changed();
+            self.force_resampler.connect_active_notify(clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |_| {
+                    this.obj().on_resampler_plugin_changed();
+                }
+            ));
+            self.resampler_plugin.connect_selected_notify(clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |_| {
+                    this.obj().on_resampler_plugin_changed();
+                }
+            ));
+            // Resampler subpage config rows are all set at least once on config init, so no need to manually trigger
+            let resampler_plugin = self.resampler_plugin.get();
+            self.force_resampler.connect_active_notify(move |toggle| {
+                if !toggle.is_active() {
+                    resampler_plugin.set_selected(0); // Auto
+                }
+            });
+            self.resampler_plugin.connect_selected_notify(clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |plugin| {
+                    let selected = plugin
+                        .selected_item()
+                        .and_downcast::<gtk::StringObject>()
+                        .map_or("".to_owned(), |s| s.string().to_string());
+                    this.libsamplerate_config
+                        .set_visible(selected == "LibSampleRate");
+                    this.soxr_config.set_visible(selected == "SoX");
+                }
+            ));
+            self.soxr_quality.connect_selected_notify(clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |quality| {
+                    let mut selected = quality.selected();
+                    if selected == u32::MAX {
+                        selected = 1; // default to High
+                    }
+                    // Custom => show more config rows
+                    // Just need to set the precision row's visibility (others are daisy chained)
+                    this.soxr_custom_precision.set_visible(selected == 5);
                 }
             ));
 
@@ -301,6 +387,23 @@ impl Default for ClientPreferences {
 }
 
 impl ClientPreferences {
+    fn on_resampler_plugin_changed(&self) {
+        if self.imp().force_resampler.is_active()
+            && let Some(s) = self
+                .imp()
+                .resampler_plugin
+                .selected_item()
+                .and_downcast::<gtk::StringObject>()
+        {
+            self.imp()
+                .config_resampler_row
+                .set_subtitle(s.string().as_str());
+        } else {
+            self.imp()
+                .config_resampler_row
+                .set_subtitle("Let MPD decide");
+        }
+    }
     fn on_standalone_status_changed(&self, running: bool) {
         if running {
             self.imp().standalone_status.set_subtitle("Running");
@@ -502,6 +605,68 @@ impl ClientPreferences {
             } else {
                 None
             });
+            let plugin = imp.resampler_plugin.get();
+            // Parse resampler early so we can show it as subtitle
+            if let Some(resampler) = cfg.resampler {
+                match resampler {
+                    Resampler::Auto => {
+                        plugin.set_selected(0);
+                    }
+                    Resampler::Internal => {
+                        plugin.set_selected(1);
+                    }
+                    Resampler::LibSampleRate(typ) => {
+                        plugin.set_selected(2);
+                        imp.libsamplerate_type.set_selected(typ.min(4) as u32);
+                    }
+                    Resampler::Soxr(threads, qual) => {
+                        plugin.set_selected(3);
+                        imp.soxr_threads.set_value(threads as f64);
+                        match qual {
+                            SoxrPreset::VeryHigh => {
+                                imp.soxr_quality.set_selected(0);
+                            }
+                            SoxrPreset::High => {
+                                imp.soxr_quality.set_selected(1);
+                            }
+                            SoxrPreset::Medium => {
+                                imp.soxr_quality.set_selected(2);
+                            }
+                            SoxrPreset::Low => {
+                                imp.soxr_quality.set_selected(3);
+                            }
+                            SoxrPreset::Quick => {
+                                imp.soxr_quality.set_selected(4);
+                            }
+                            SoxrPreset::Custom(
+                                precision,
+                                phase_response,
+                                passband_end,
+                                stopband_begin,
+                                attenuation,
+                            ) => {
+                                imp.soxr_quality.set_selected(5);
+                                imp.soxr_custom_precision.set_selected(
+                                    imp.soxr_custom_precision
+                                        .model()
+                                        .and_downcast::<gtk::StringList>()
+                                        .unwrap()
+                                        .find(precision.to_string().as_str())
+                                        .min(4),
+                                );
+                                imp.soxr_custom_phase_response
+                                    .set_value(phase_response as f64);
+                                imp.soxr_custom_passband_end.set_value(passband_end);
+                                imp.soxr_custom_stopband_begin.set_value(stopband_begin);
+                                imp.soxr_custom_attenuation.set_value(attenuation);
+                            }
+                        }
+                    }
+                }
+            } else {
+                plugin.set_selected(0);
+            }
+            imp.force_resampler.set_active(cfg.resampler.is_some());
         }
 
         imp.mpd_library_browse.connect_clicked(clone!(
@@ -560,11 +725,62 @@ impl ClientPreferences {
             move |_| {
                 // Overwrite path with config then trigger reconnect
                 {
-                    let mut cfg = this.imp().standalone_cfg.borrow_mut();
+                    let imp = this.imp();
+                    let mut cfg = imp.standalone_cfg.borrow_mut();
                     // Apply all settings.
                     // Library path has already been applied the moment the browse window closed so skip it here.
                     // Outputs
-                    cfg.audio_outputs = this.imp().outputs_box.get_config();
+                    cfg.audio_outputs = imp.outputs_box.get_config();
+                    // Resampler
+                    if imp.force_resampler.is_active() {
+                        match imp.resampler_plugin.selected() {
+                            0 => {
+                                cfg.resampler = None;
+                            }
+                            1 => {
+                                cfg.resampler = Some(Resampler::Internal);
+                            }
+                            2 => {
+                                cfg.resampler = Some(Resampler::LibSampleRate(
+                                    imp.libsamplerate_type.selected().min(4) as u8,
+                                ));
+                            }
+                            3 => {
+                                cfg.resampler = Some(Resampler::Soxr(
+                                    imp.soxr_threads.value().max(0.0).min(16.0).round() as u8,
+                                    match imp.soxr_quality.selected() {
+                                        0 => SoxrPreset::VeryHigh,
+                                        2 => SoxrPreset::Medium,
+                                        3 => SoxrPreset::Low,
+                                        4 => SoxrPreset::Quick,
+                                        5 => SoxrPreset::Custom(
+                                            imp.soxr_custom_precision
+                                                .selected_item()
+                                                .and_downcast::<gtk::StringObject>()
+                                                .unwrap()
+                                                .string()
+                                                .to_string()
+                                                .parse::<u8>()
+                                                .unwrap(),
+                                            imp.soxr_custom_phase_response
+                                                .value()
+                                                .max(0.0)
+                                                .min(100.0)
+                                                .round()
+                                                as u8,
+                                            imp.soxr_custom_passband_end.value() as f64,
+                                            imp.soxr_custom_stopband_begin.value() as f64,
+                                            imp.soxr_custom_attenuation.value() as f64,
+                                        ),
+                                        _ => SoxrPreset::High, // Default
+                                    },
+                                ));
+                            }
+                            _ => {}
+                        }
+                    } else {
+                        cfg.resampler = None;
+                    }
                     let mut output =
                         File::create(&config_path).expect("Unable to write to config file");
                     write!(output, "{}", cfg).unwrap();

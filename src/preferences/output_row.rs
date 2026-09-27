@@ -199,7 +199,7 @@ impl OutputRow {
         for (k, v) in existing {
             existing_map.insert(k, v);
         }
-        for config_spec in typ.get_custom_config_spec() {
+        for config_spec in typ.get_config_spec() {
             idx += 1;
             let val = existing_map.get(config_spec.key).map(|s| s.as_str());
             let row = ConfigRow::from_config_spec(config_spec, val);

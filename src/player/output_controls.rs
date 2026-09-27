@@ -225,9 +225,7 @@ impl OutputControls {
             for (w, o) in output_widgets.iter().zip(outputs) {
                 let borrowed = o.borrow::<mpd::output::Output>();
                 // Apply Standalone Mode FIFO hiding to all current widgets
-                w.set_visible(
-                    !hide_fifo || borrowed.name != INTERNAL_FIFO_NAME,
-                );
+                w.set_visible(!hide_fifo || borrowed.name != INTERNAL_FIFO_NAME);
                 w.update_state(&borrowed);
             }
         }
