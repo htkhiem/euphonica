@@ -237,8 +237,6 @@ mod imp {
                 self,
                 move |_| {
                     if let Some(dialog) = this.dialog.upgrade() {
-                        this.outputs_box
-                            .init_from_config(&this.standalone_cfg.borrow());
                         dialog.push_subpage(&this.outputs_subpage.get());
                     }
                 }
@@ -597,6 +595,10 @@ impl ClientPreferences {
             // an empty one for filling in by try_from, not usable as a base here).
             let _ = imp.standalone_cfg.replace(MpdConfig::new_minimal());
         }
+
+        // Populate the audio outputs subpage eagerly (like the resampler settings)
+        // so that Apply always reads widget state that matches the parsed config.
+        imp.outputs_box.init_from_config(&imp.standalone_cfg.borrow());
 
         {
             let cfg = self.imp().standalone_cfg.borrow_mut();

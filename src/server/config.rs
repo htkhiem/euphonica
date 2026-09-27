@@ -711,6 +711,21 @@ pub enum LogLevel {
     Verbose,
 }
 
+/// Strip an inline `#` comment from a config line, respecting double-quoted
+/// string values (a `#` inside quotes is part of the value). MPD config has no
+/// escape sequences, so a simple quote toggle suffices.
+fn strip_inline_comment(line: &str) -> &str {
+    let mut in_quotes = false;
+    for (i, c) in line.char_indices() {
+        match c {
+            '"' => in_quotes = !in_quotes,
+            '#' if !in_quotes => return &line[..i],
+            _ => {}
+        }
+    }
+    line
+}
+
 fn parse_key_value<'a>(line: &'a str) -> Option<(&'a str, &'a str)> {
     let mut parts = line.splitn(2, |c: char| c.is_whitespace());
     let key = parts.next()?.trim();
@@ -1213,8 +1228,9 @@ impl TryFrom<&str> for MpdConfig {
 
         for (raw_line_num, raw_line) in value.lines().enumerate() {
             let line_num = raw_line_num + 1;
-            // Strip comments and trim whitespace
-            let line = raw_line.split('#').next().unwrap_or("").trim();
+            // Strip comments and trim whitespace. A '#' inside a quoted value
+            // (e.g. an ALSA display name) is part of the value, not a comment.
+            let line = strip_inline_comment(raw_line).trim();
 
             if line.is_empty() {
                 continue;
