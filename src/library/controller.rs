@@ -167,7 +167,9 @@ impl Library {
                     self,
                     move |_: CacheState, _: String, _: gdk::Texture, _: gdk::Texture| {
                         glib::spawn_future_local(async move {
-                            this.init_playlists(true).await;
+                            if let Err(e) = this.init_playlists(true).await {
+                                dbg!(e);
+                            }
                         });
                     }
                 ),
@@ -180,7 +182,9 @@ impl Library {
                     self,
                     move |_: CacheState, _: String| {
                         glib::spawn_future_local(async move {
-                            this.init_playlists(true).await;
+                            if let Err(e) = this.init_playlists(true).await {
+                                dbg!(e);
+                            }
                         });
                     }
                 ),
@@ -195,7 +199,9 @@ impl Library {
                     self,
                     move |_: CacheState, _: String, _: gdk::Texture, _: gdk::Texture| {
                         glib::spawn_future_local(async move {
-                            this.init_dyn_playlists(true).await;
+                            if let Err(e) = this.init_dyn_playlists(true).await {
+                                dbg!(e);
+                            }
                         });
                     }
                 ),
@@ -208,7 +214,9 @@ impl Library {
                     self,
                     move |_: CacheState, _: String| {
                         glib::spawn_future_local(async move {
-                            this.init_dyn_playlists(true).await;
+                            if let Err(e) = this.init_dyn_playlists(true).await {
+                                dbg!(e);
+                            }
                         });
                     }
                 ),

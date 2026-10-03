@@ -68,33 +68,39 @@ mod imp {
                             if let Some(library) = this.library.get() {
                                 match this.inode_type.get() {
                                     INodeType::Song => {
-                                        library
+                                        if let Err(e) = library
                                             .queue_uri(
                                                 this.uri.borrow().to_owned(),
                                                 true,
                                                 true,
                                                 false,
                                             )
-                                            .await;
+                                            .await {
+                                                dbg!(e);
+                                            }
                                     }
                                     INodeType::Folder => {
-                                        library
+                                        if let Err(e) = library
                                             .queue_uri(
                                                 this.uri.borrow().to_owned(),
                                                 true,
                                                 true,
                                                 true,
                                             )
-                                            .await;
+                                            .await {
+                                                dbg!(e);
+                                            }
                                     }
                                     INodeType::Playlist => {
-                                        library
+                                        if let Err(e) = library
                                             .queue_playlist(
                                                 this.title.label().to_string(),
                                                 true,
                                                 true,
                                             )
-                                            .await;
+                                            .await {
+                                                dbg!(e);
+                                            }
                                     }
                                     _ => unreachable!(),
                                 }
@@ -115,33 +121,39 @@ mod imp {
                             if let Some(library) = this.library.get() {
                                 match this.inode_type.get() {
                                     INodeType::Song => {
-                                        library
+                                        if let Err(e) = library
                                             .queue_uri(
                                                 this.uri.borrow().to_owned(),
                                                 false,
                                                 false,
                                                 false,
                                             )
-                                            .await;
+                                            .await {
+                                                dbg!(e);
+                                            }
                                     }
                                     INodeType::Folder => {
-                                        library
+                                        if let Err(e) = library
                                             .queue_uri(
                                                 this.uri.borrow().to_owned(),
                                                 false,
                                                 false,
                                                 true,
                                             )
-                                            .await;
+                                            .await {
+                                                dbg!(e);
+                                            }
                                     }
                                     INodeType::Playlist => {
-                                        library
+                                        if let Err(e) = library
                                             .queue_playlist(
                                                 this.title.label().to_string(),
                                                 false,
                                                 false,
                                             )
-                                            .await;
+                                            .await {
+                                                dbg!(e);
+                                            }
                                     }
                                     _ => unreachable!(),
                                 }

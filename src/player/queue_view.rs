@@ -179,7 +179,9 @@ mod imp {
                             obj,
                             async move {
                                 if let Some(player) = obj.imp().player.upgrade() {
-                                    player.rate_current_song(None).await;
+                                    if let Err(e) = player.rate_current_song(None).await {
+                                        dbg!(e);
+                                    }
                                 }
                             }
                         ));
@@ -417,7 +419,9 @@ impl QueueView {
         );
         filter_model.set_incremental(true);
         let sel_model = SingleSelection::new(Some(filter_model));
-        self.imp().sel_model.set(sel_model.clone());
+        if let Err(e) = self.imp().sel_model.set(sel_model.clone()) {
+            dbg!(e);
+        }
         self.imp().queue.set_model(Some(&sel_model));
 
         // Set up factory
@@ -451,7 +455,9 @@ impl QueueView {
                                 player,
                                 async move {
                                     btn.set_sensitive(false);
-                                    player.swap_dir(idx, SwapDirection::Up).await;
+                                    if let Err(e) = player.swap_dir(idx, SwapDirection::Up).await {
+                                        dbg!(e);
+                                    }
                                     btn.set_sensitive(true);
                                 }
                             ));
@@ -468,7 +474,9 @@ impl QueueView {
                                 player,
                                 async move {
                                     btn.set_sensitive(false);
-                                    player.swap_dir(idx, SwapDirection::Down).await;
+                                    if let Err(e) = player.swap_dir(idx, SwapDirection::Down).await {
+                                        dbg!(e);
+                                    }
                                     btn.set_sensitive(true);
                                 }
                             ));
@@ -485,7 +493,9 @@ impl QueueView {
                                 player,
                                 async move {
                                     btn.set_sensitive(false);
-                                    player.remove_pos(idx).await;
+                                    if let Err(e) = player.remove_pos(idx).await {
+                                        dbg!(e);
+                                    }
                                     btn.set_sensitive(true);
                                 }
                             ));
@@ -614,7 +624,9 @@ impl QueueView {
                                         0
                                     };
                                 glib::spawn_future_local(async move {
-                                    player.move_to(&song, target_pos).await;
+                                    if let Err(e) = player.move_to(&song, target_pos).await {
+                                        dbg!(e);
+                                    }
                                 });
                                 true
                             } else {
@@ -701,7 +713,9 @@ impl QueueView {
                             .item(position)
                             .and_downcast::<Song>()
                             .expect("The item has to be a `common::Song`.");
-                        player.on_song_clicked(song).await;
+                        if let Err(e) = player.on_song_clicked(song).await {
+                            dbg!(e);
+                        }
                     }
                 ));
             }
@@ -725,10 +739,14 @@ impl QueueView {
             .as_str()
         {
             "append" => {
-                player.save_queue(name, SaveMode::Append).await;
+                if let Err(e) = player.save_queue(name, SaveMode::Append).await {
+                    dbg!(e);
+                }
             }
             "overwrite" => {
-                player.save_queue(name, SaveMode::Replace).await;
+                if let Err(e) = player.save_queue(name, SaveMode::Replace).await {
+                    dbg!(e);
+                }
             }
             _ => {}
         };
@@ -909,7 +927,9 @@ impl QueueView {
                     btn,
                     async move {
                         btn.set_sensitive(false);
-                        player.set_consume(btn.is_active()).await;
+                        if let Err(e) = player.set_consume(btn.is_active()).await {
+                            dbg!(e);
+                        }
                         btn.set_sensitive(true);
                     }
                 ));
@@ -927,7 +947,9 @@ impl QueueView {
                     btn,
                     async move {
                         btn.set_sensitive(false);
-                        player.clear_queue().await;
+                        if let Err(e) = player.clear_queue().await {
+                            dbg!(e);
+                        }
                         btn.set_sensitive(true);
                     }
                 ));
@@ -1004,7 +1026,9 @@ impl QueueView {
     pub fn toggle_autoscroll(&self) {
         let settings = settings_manager().child("ui");
         let current = settings.boolean("auto-scroll-to-playing");
-        settings.set_boolean("auto-scroll-to-playing", !current);
+        if let Err(e) = settings.set_boolean("auto-scroll-to-playing", !current) {
+            dbg!(e);
+        }
         let state = if !current { "on" } else { "off" };
         if let Some(window) = self.imp().window.upgrade() {
             window.send_simple_toast(&format!("Queue auto-scroll: {state}"), 3);
@@ -1026,7 +1050,9 @@ impl LazyInit for QueueView {
                         async move {
                             let stack = this.imp().content_stack.get();
                             stack.show_spinner();
-                            player.update_queue().await;
+                            if let Err(e) = player.update_queue().await {
+                                dbg!(e);
+                            }
                             this.imp().initializing.set(false);
                             this.update_stack(player.queue());
                         }

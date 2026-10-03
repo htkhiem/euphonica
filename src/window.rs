@@ -18,7 +18,6 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-use crate::cache::Cache;
 use crate::{
     application::EuphonicaApplication,
     cache::CacheState,
@@ -45,7 +44,6 @@ use gtk::{
 use image::{DynamicImage, imageops::FilterType};
 use libblur::{FastBlurChannels, ThreadingPolicy, stack_blur};
 use mpd::Subsystem;
-use std::rc::Rc;
 use std::{cell::RefCell, ops::Deref, path::PathBuf, thread, time::Duration};
 use std::{
     cell::{Cell, OnceCell},

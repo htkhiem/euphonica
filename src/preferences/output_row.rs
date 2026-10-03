@@ -2,7 +2,6 @@ use adw::prelude::*;
 use glib::{Object, Properties, clone};
 use gtk::{CompositeTemplate, glib, subclass::prelude::*};
 use rustc_hash::FxHashMap;
-use strum::IntoEnumIterator;
 
 use crate::{
     preferences::output_config::config_row::ConfigRow,

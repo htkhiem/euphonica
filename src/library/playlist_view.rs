@@ -310,7 +310,9 @@ impl PlaylistView {
         let stack = self.imp().stack.get();
         let library = self.imp().library.upgrade().unwrap();
         stack.show_spinner();
-        library.init_playlists(refresh).await;
+        if let Err(e) = library.init_playlists(refresh).await {
+            dbg!(e);
+        }
         if library.playlists().n_items() > 0 {
             stack.show_content();
         } else {

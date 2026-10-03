@@ -57,7 +57,7 @@ pub fn internal_fifo_path() -> PathBuf {
 )]
 pub enum PcmSampleRate {
     #[default]
-    #[strum(to_string = "*", serialize = "*")]
+    #[strum(serialize = "*")]
     Any,
     // You're sane, thank you
     #[strum(serialize = "44100", to_string = "44.1kHz")]
@@ -105,7 +105,7 @@ pub enum PcmSampleRate {
 )]
 pub enum PcmBitDepth {
     #[default]
-    #[strum(to_string = "*", serialize = "*")]
+    #[strum(serialize = "*")]
     Any,
     #[strum(serialize = "8", to_string = "8bit")]
     I8,
@@ -134,7 +134,7 @@ pub enum PcmBitDepth {
 )]
 pub enum DsdMultiplier {
     #[default]
-    #[strum(to_string = "*", serialize = "*")]
+    #[strum(serialize = "*")]
     Any,
     // None of these are sane, but you do you
     #[strum(serialize = "64", to_string = "64 (2.8MHz)")]
