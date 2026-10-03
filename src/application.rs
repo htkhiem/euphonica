@@ -21,7 +21,8 @@
 use crate::{
     EuphonicaWindow,
     cache::Cache,
-    client::{MpdWrapper, Result as ClientResult, Error as ClientError},
+    client::{Error as ClientError, MpdWrapper, Result as ClientResult},
+    common::ConnectionState,
     config::VERSION,
     library::Library,
     onboarding::EuphonicaOnboardingWindow,
@@ -137,12 +138,8 @@ mod imp {
     }
 
     impl ObjectImpl for EuphonicaApplication {
-        fn constructed(&self) {
-            self.parent_constructed();
-        }
-
         fn dispose(&self) {
-            let _ = self.server.stop();
+            self.obj().cleanup();
         }
     }
 
@@ -740,7 +737,6 @@ impl EuphonicaApplication {
         } else {
             // println!("Dropping hold guard");
             let _ = self.imp().hold_guard.take();
-            self.execute_on_exit_action();
         }
     }
 
@@ -796,12 +792,23 @@ impl EuphonicaApplication {
         prefs.update();
     }
 
-    /// Quit Euphonica. Useful for when run-in-background is true. Otherwise just close the window.
-    pub fn quit_app(&self) {
-        self.imp().hold_guard.take();
+    pub fn cleanup(&self) {
+        self.execute_on_exit_action();
+        if let Some(c) = self.imp().client.get() {
+            let _ = glib::MainContext::default()
+                .block_on(c.disconnect(true, ConnectionState::NotConnected));
+        }
+        let _ = self.imp().server.stop();
         if let Some(win) = self.active_window().and_downcast::<EuphonicaWindow>() {
             win.save_state();
         }
+        self.imp().hold_guard.take();
+    }
+
+    /// Quit Euphonica. Useful for when run-in-background is true. Otherwise just close the window.
+    pub fn quit_app(&self) {
+        self.cleanup();
+        // This instantly nukes the app and WILL NOT RUN dispose() (undocumented?) hence the above cleanup() function.
         self.quit();
     }
 }

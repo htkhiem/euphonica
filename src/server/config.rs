@@ -886,10 +886,36 @@ impl OutputConfig {
     }
 }
 
-#[derive(
-    Debug, Clone, Copy, PartialEq, Display, EnumString, VariantNames, Default, EnumMessage, FromRepr,
-)]
+impl SoxrPreset {
+    /// Index of this quality preset in the SoX-quality combo
+    /// (0 = Very high, 1 = High, 2 = Medium, 3 = Low, 4 = Quick, 5 = Custom).
+    pub fn ui_quality_index(&self) -> u32 {
+        match self {
+            SoxrPreset::VeryHigh => 0,
+            SoxrPreset::High => 1,
+            SoxrPreset::Medium => 2,
+            SoxrPreset::Low => 3,
+            SoxrPreset::Quick => 4,
+            SoxrPreset::Custom(..) => 5,
+        }
+    }
+
+    /// Inverse of `ui_quality_index`; out-of-range indices fall back to
+    /// `High` (the default preset).
+    pub fn from_ui_quality_index(idx: u32) -> SoxrPreset {
+        match idx {
+            0 => SoxrPreset::VeryHigh,
+            2 => SoxrPreset::Medium,
+            3 => SoxrPreset::Low,
+            4 => SoxrPreset::Quick,
+            _ => SoxrPreset::High,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, VariantNames, Default, EnumMessage, FromRepr)]
 pub enum SoxrPreset {
+    /// Very high
     #[strum(serialize = "very high", to_string = "Very high")]
     VeryHigh,
     #[strum(serialize = "high", to_string = "High")]
@@ -939,6 +965,17 @@ pub enum Resampler {
 }
 
 impl Resampler {
+    /// Index of this resampler in the resampler-plugin combo
+    /// (0 = Auto, 1 = MPD internal, 2 = LibSampleRate, 3 = SoX).
+    pub fn ui_plugin_index(&self) -> u32 {
+        match self {
+            Resampler::Auto => 0,
+            Resampler::Internal => 1,
+            Resampler::LibSampleRate(_) => 2,
+            Resampler::Soxr(_, _) => 3,
+        }
+    }
+
     // /// Return plugin-specific configuration.
     // pub fn get_config_spec(&self) -> Vec<ConfigSpec> {
     //     match self {

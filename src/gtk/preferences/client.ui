@@ -210,7 +210,7 @@
     <child>
       <object class="AdwPreferencesGroup">
         <property name="title" translatable="true">Visualiser data source</property>
-        <property name="description" translatable="true">The built-in visualiser can read from either a FIFO output (more control, standard practice for most MPD setups, but won't work in Flatpak sandboxing) or simply straight from the system PipeWire output (works everywhere but less control and will also visualise system sounds).</property>
+        <property name="description" translatable="true">The built-in visualiser can read from either a FIFO file or from system PipeWire output.</property>
         <child>
           <object class="AdwComboRow" id="viz_source">
             <property name="title">Data source</property>
@@ -227,7 +227,7 @@
         <child>
           <object class="AdwComboRow" id="pipewire_devices">
             <property name="title" translatable="true">Monitor device</property>
-            <property name="subtitle" translatable="true">The visualiser captures audio from all source devices by default. This may turn microphones on and degrade sound quality of Bluetooth headsets. In that case, please select a specific device to capture from.</property>
+            <property name="subtitle" translatable="true">PipeWire visualiser captures audio from all source devices by default. This may turn microphones on and degrade sound quality of Bluetooth headsets. In that case, please select a specific device to capture from.</property>
           </object>
         </child>
         <child>

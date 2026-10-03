@@ -27,15 +27,16 @@ use gtk::{
 };
 use std::cell::Cell;
 
-use glib::Properties;
-
 mod imp {
     use std::cell::RefCell;
 
     use ashpd::desktop::file_chooser::SelectedFiles;
 
     use crate::{
-        client::{ClientState, password::get_mpd_password_async},
+        client::{
+            ClientState,
+            password::{get_mpd_password_async, set_mpd_password},
+        },
         common::ConnectionState,
         preferences::{AudioOutputs, StatusIconState, set_status_icon},
         server::config::{MpdConfig, OutputConfig},
@@ -44,8 +45,7 @@ mod imp {
 
     use super::*;
 
-    #[derive(Debug, Default, Properties, gtk::CompositeTemplate)]
-    #[properties(wrapper_type = super::EuphonicaOnboardingWindow)]
+    #[derive(Debug, Default, gtk::CompositeTemplate)]
     #[template(resource = "/io/github/htkhiem/Euphonica/gtk/onboarding-window.ui")]
     pub struct EuphonicaOnboardingWindow {
         // Top level widgets
@@ -161,49 +161,8 @@ mod imp {
         }
     }
 
-    #[glib::derived_properties]
     impl ObjectImpl for EuphonicaOnboardingWindow {
-        fn dispose(&self) {
-            // // Disconnect all signal handlers registered on global/long-lived objects
-            // if let Some(id) = self.settings_bg_blur_id.take() {
-            //     let settings = settings_manager().child("ui");
-            //     settings.disconnect(id);
-            // }
-            // if let Some(id) = self.settings_visualizer_id.take() {
-            //     let settings = settings_manager().child("ui");
-            //     settings.disconnect(id);
-            // }
-            // if let Some(client_state) = self.client_state.get() {
-            //     if let Some(id) = self.client_state_idle_id.take() {
-            //         client_state.disconnect(id);
-            //     }
-            //     if let Some(id) = self.client_state_conn_state_id.take() {
-            //         client_state.disconnect(id);
-            //     }
-            //     if let Some(id) = self.client_state_pct_fg_id.take() {
-            //         client_state.disconnect(id);
-            //     }
-            //     if let Some(id) = self.client_state_pct_bg_id.take() {
-            //         client_state.disconnect(id);
-            //     }
-            //     if let Some(id) = self.client_state_n_fg_id.take() {
-            //         client_state.disconnect(id);
-            //     }
-            //     if let Some(id) = self.client_state_n_bg_id.take() {
-            //         client_state.disconnect(id);
-            //     }
-            // }
-            // if let Some(id) = self.player_cover_changed_id.take()
-            //     && let Some(player) = self.player.upgrade()
-            // {
-            //     player.disconnect(id);
-            // }
-            // if let Some(id) = self.player_title_changed_id.take()
-            //     && let Some(player) = self.player.upgrade()
-            // {
-            //     player.disconnect(id);
-            // }
-        }
+        // fn dispose(&self) {}
 
         fn constructed(&self) {
             self.parent_constructed();
@@ -424,7 +383,9 @@ mod imp {
                     this.on_hostname_changed();
                 }
             ));
-            client_settings.bind("mpd-host", &self.mpd_host.get(), "text").build();
+            client_settings
+                .bind("mpd-host", &self.mpd_host.get(), "text")
+                .build();
             self.on_port_changed();
             self.mpd_port.connect_changed(clone!(
                 #[weak(rename_to = this)]
@@ -433,7 +394,20 @@ mod imp {
                     this.on_port_changed();
                 }
             ));
-            client_settings.bind("mpd-port", &self.mpd_port.get(), "text").build();
+            client_settings
+                .bind("mpd-port", &self.mpd_port.get(), "text")
+                .mapping(|var, _| Some(var.get::<u32>().unwrap().to_string().to_value()))
+                .set_mapping(|val, _| {
+                    Some(
+                        val.get::<&str>()
+                            .map(|s| s.parse::<u32>().ok())
+                            .ok()
+                            .flatten()
+                            .unwrap_or(6600)
+                            .to_variant(),
+                    )
+                })
+                .build();
             let password_field = self.mpd_password.get();
             glib::spawn_future_local(async move {
                 match get_mpd_password_async().await {
@@ -449,6 +423,25 @@ mod imp {
                     Err(_e) => {
                         // println!("{e:?}");
                     }
+                }
+            });
+            self.mpd_password.connect_changed(move |entry| {
+                if entry.is_sensitive() {
+                    glib::spawn_future_local(clone!(
+                        #[weak]
+                        entry,
+                        async move {
+                            if entry.is_sensitive() {
+                                let password = entry.text();
+                                let password: Option<&str> = if password.is_empty() {
+                                    None
+                                } else {
+                                    Some(password.as_str())
+                                };
+                                let _ = set_mpd_password(password).await;
+                            }
+                        }
+                    ));
                 }
             });
 

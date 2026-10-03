@@ -1,5 +1,7 @@
 use crate::{
-    common::ConnectionState, server::config::MpdConfig, utils::{get_standalone_config_path, settings_manager},
+    common::ConnectionState,
+    server::config::MpdConfig,
+    utils::{get_standalone_config_path, settings_manager},
 };
 use asyncified::Asyncified;
 use gio::{Subprocess, SubprocessFlags};
