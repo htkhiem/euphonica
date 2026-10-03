@@ -381,7 +381,9 @@ mod imp {
                                     && let Some(cache) = obj.imp().cache.get()
                                 {
                                     obj.clear_cover();
-                                    cache.clear_playlist_cover(title).await;
+                                    if let Err(e) = cache.clear_playlist_cover(title).await {
+                                        dbg!(e);
+                                    }
                                 }
                             }
                         ));
@@ -530,13 +532,15 @@ impl PlaylistContentView {
                         let library = this.imp().library.upgrade().unwrap();
                         if let Some(playlist) = this.imp().playlist.borrow().as_ref() {
                             if this.imp().selecting_all.get() {
-                                library
+                                if let Err(e) = library
                                     .queue_playlist(
                                         playlist.get_name().unwrap().to_owned(),
                                         true,
                                         true,
                                     )
-                                    .await;
+                                    .await {
+                                        dbg!(e);
+                                    }
                             } else {
                                 let store = &this.imp().song_list;
                                 // Get list of selected songs
@@ -547,7 +551,9 @@ impl PlaylistContentView {
                                 iter.for_each(|idx| {
                                     songs.push(store.item(idx).and_downcast::<Song>().unwrap())
                                 });
-                                library.queue_songs(&songs, true, true).await;
+                                if let Err(e) =library.queue_songs(&songs, true, true).await {
+                                    dbg!(e);
+                                }
                             }
                         }
                     }
@@ -566,13 +572,15 @@ impl PlaylistContentView {
                         let library = this.imp().library.upgrade().unwrap();
                         if let Some(playlist) = this.imp().playlist.borrow().as_ref() {
                             if this.imp().selecting_all.get() {
-                                library
+                                if let Err(e) = library
                                     .queue_playlist(
                                         playlist.get_name().unwrap().to_owned(),
                                         false,
                                         false,
                                     )
-                                    .await;
+                                    .await {
+                                        dbg!(e);
+                                    }
                             } else {
                                 let store = &this.imp().song_list;
                                 // Get list of selected songs
@@ -583,7 +591,9 @@ impl PlaylistContentView {
                                 iter.for_each(|idx| {
                                     songs.push(store.item(idx).and_downcast::<Song>().unwrap())
                                 });
-                                library.queue_songs(&songs, false, false).await;
+                                if let Err(e) = library.queue_songs(&songs, false, false).await {
+                                    dbg!(e);
+                                }
                             }
                         }
                     }
@@ -1180,7 +1190,9 @@ impl PlaylistContentView {
                 if !title.is_empty()
                     && let Some(cache) = this.imp().cache.get()
                 {
-                    cache.set_playlist_cover(title.to_string(), &path).await;
+                    if let Err(e) = cache.set_playlist_cover(title.to_string(), &path).await {
+                        dbg!(e);
+                    }
                 }
             }
         ));

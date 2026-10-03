@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <requires lib="gtk" version="4.0" />
+  <requires lib="Adw" version="1.0" />
+  <template class="EuphonicaAudioFormatRow" parent="GtkBox">
+    <style>
+      <class name="padding-12"/>
+    </style>
+    <property name="spacing">12</property>
+    <child>
+      <object class="GtkLabel" id="order">
+        <style>
+          <class name="dimmed"/>
+        </style>
+        <property name="halign">start</property>
+        <property name="valign">center</property>
+        <property name="vexpand">true</property>
+      </object>
+    </child>
+    <child>
+      <object class="GtkCenterBox">
+        <property name="start-widget">
+          <object class="EuphonicaAudioFormatEntry" id="entry"/>
+        </property>
+        <property name="end-widget">
+          <object class="GtkButton" id="remove">
+            <style>
+              <class name="circular"/>
+              <class name="flat"/>
+            </style>
+            <property name="valign">center</property>
+            <property name="icon-name">cross-small-symbolic</property>
+          </object>
+        </property>
+      </object>
+    </child>
+  </template>
+</interface>

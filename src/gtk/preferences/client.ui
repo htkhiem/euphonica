@@ -6,8 +6,107 @@
     <property name="title" translatable="true">Client</property>
     <property name="icon-name">server-pick-symbolic</property>
     <child>
-      <object class="AdwPreferencesGroup">
-        <property name="title" translatable="true">Music Player Daemon</property>
+      <object class="AdwPreferencesGroup" id="standalone_mode_group">
+        <property name="title" translatable="true">Standalone Player</property>
+        <child>
+          <object class="AdwExpanderRow" id="mpd_use_own_server">
+            <property name="title" translatable="true">Standalone Player Mode</property>
+            <property name="subtitle" translatable="true">Use Euphonica as a normal music player by letting it run its own MPD server locally. Disable to connect Euphonica to another MPD server.</property>
+            <property name="show-enable-switch">true</property>
+            <property name="expanded" bind-source="mpd_use_own_server" bind-property="enable-expansion" bind-flags="sync-create"/>
+
+            <child>
+              <object class="AdwSwitchRow" id="mpd_override_exec_path">
+                <property name="title" translatable="true">Override MPD executable path</property>
+                <property name="subtitle" translatable="true">Specify where the MPD executable is on your system, in case it is not in $PATH or you would like to use a custom one.</property>
+              </object>
+            </child>
+
+            <child>
+              <object class="AdwEntryRow" id="mpd_exec_path">
+                <property name="visible" bind-source="mpd_override_exec_path" bind-property="active" bind-flags="sync-create"/>
+                <property name="title" translatable="true">MPD executable path</property>
+              </object>
+            </child>
+
+            <child>
+              <object class="AdwActionRow" id="mpd_library_path">
+                <property name="title" translatable="true">Path to music library</property>
+                <property name="subtitle">(unspecified)</property>
+                <child type="suffix">
+                  <object class="GtkButton" id="mpd_library_browse">
+                    <property name="valign">center</property>
+                    <property name="label" translatable="true">Browse...</property>
+                  </object>
+                </child>
+              </object>
+            </child>
+
+            <child>
+              <object class="AdwActionRow" id="config_outputs_row">
+                <property name="title" translatable="true">Configure audio outputs</property>
+                <property name="activatable">true</property>
+                <child type="suffix">
+                  <object class="GtkImage">
+                    <property name="icon-name">right-symbolic</property>
+                    <style>
+                      <class name="dimmed"/>
+                    </style>
+                  </object>
+                </child>
+              </object>
+            </child>
+
+            <child>
+              <object class="AdwActionRow" id="config_resampler_row">
+                <property name="title" translatable="true">Configure resampler</property>
+                <property name="activatable">true</property>
+                <child type="suffix">
+                  <object class="GtkImage">
+                    <property name="icon-name">right-symbolic</property>
+                    <style>
+                      <class name="dimmed"/>
+                    </style>
+                  </object>
+                </child>
+              </object>
+            </child>
+
+            <child>
+              <object class="AdwActionRow" id="standalone_status">
+                <style>
+                  <class name="property"/>
+                </style>
+                <child type="prefix">
+                  <object class="GtkImage" id="standalone_status_icon">
+                    <style>
+                      <class name="error"/>
+                    </style>
+                    <property name="icon-name">disabled-feature-symbolic</property>
+                  </object>
+                </child>
+                <property name="title" translatable="true">Status</property>
+                <property name="subtitle">Failing</property>
+              </object>
+            </child>
+
+            <child>
+              <object class="AdwButtonRow" id="apply_standalone_config">
+                <style>
+                  <class name="suggested-action"/>
+                </style>
+                <property name="title" translatable="true">Apply</property>
+              </object>
+            </child>
+          </object>
+        </child>
+      </object>
+    </child>
+
+    <child>
+      <object class="AdwPreferencesGroup" id="external_mpd_group">
+        <property name="visible" bind-source="mpd_use_own_server" bind-property="enable-expansion" bind-flags="sync-create|invert-boolean"/>
+        <property name="title" translatable="true">External MPD Configuration</property>
         <property name="description" translatable="true">Change how Euphonica connects to your Music Player Daemon instance. Click Reconnect to save these settings and initiate a new connection.</property>
         <child>
           <object class="AdwSwitchRow" id="mpd_use_unix_socket">
@@ -16,17 +115,19 @@
         </child>
         <child>
           <object class="AdwEntryRow" id="mpd_unix_socket">
+            <property name="visible" bind-source="mpd_use_unix_socket" bind-property="active" bind-flags="sync-create"/>
             <property name="title" translatable="true">Local socket</property>
-            <property name="visible">false</property>
           </object>
         </child>
         <child>
           <object class="AdwEntryRow" id="mpd_host">
+            <property name="visible" bind-source="mpd_use_unix_socket" bind-property="active" bind-flags="sync-create|invert-boolean"/>
             <property name="title" translatable="true">Host address</property>
           </object>
         </child>
         <child>
           <object class="AdwEntryRow" id="mpd_port">
+            <property name="visible" bind-source="mpd_use_unix_socket" bind-property="active" bind-flags="sync-create|invert-boolean"/>
             <property name="title" translatable="true">Port</property>
           </object>
         </child>
@@ -109,7 +210,7 @@
     <child>
       <object class="AdwPreferencesGroup">
         <property name="title" translatable="true">Visualiser data source</property>
-        <property name="description" translatable="true">The built-in visualiser can read from either a FIFO output (more control, standard practice for most MPD setups, but won't work in Flatpak sandboxing) or simply straight from the system PipeWire output (works everywhere but less control and will also visualise system sounds).</property>
+        <property name="description" translatable="true">The built-in visualiser can read from either a FIFO file or from system PipeWire output.</property>
         <child>
           <object class="AdwComboRow" id="viz_source">
             <property name="title">Data source</property>
@@ -126,7 +227,7 @@
         <child>
           <object class="AdwComboRow" id="pipewire_devices">
             <property name="title" translatable="true">Monitor device</property>
-            <property name="subtitle" translatable="true">The visualiser captures audio from all source devices by default. This may turn microphones on and degrade sound quality of Bluetooth headsets. In that case, please select a specific device to capture from.</property>
+            <property name="subtitle" translatable="true">PipeWire visualiser captures audio from all source devices by default. This may turn microphones on and degrade sound quality of Bluetooth headsets. In that case, please select a specific device to capture from.</property>
           </object>
         </child>
         <child>
@@ -218,5 +319,256 @@
         </child>
       </object>
     </child>
+
+    <object class="AdwNavigationPage" id="outputs_subpage">
+      <property name="title" translatable="true">Configure outputs</property>
+      <child>
+        <object class="AdwToolbarView">
+          <child type="top">
+            <object class="AdwHeaderBar">
+              <child type="end">
+                <object class="GtkButton" id="add_output">
+                  <property name="icon-name">plus-symbolic</property>
+                  <property name="tooltip-text" translatable="true">Add a new output</property>
+                </object>
+              </child>
+            </object>
+          </child>
+          <property name="content">
+            <!-- This thing is its own widget for code reuse (also used by onboarding wizard) -->
+            <object class="EuphonicaAudioOutputs" id="outputs_box"/>
+          </property>
+        </object>
+      </child>
+    </object>
+
+    <object class="AdwNavigationPage" id="resampler_subpage">
+      <property name="title" translatable="true">Configure resampler</property>
+      <child>
+        <object class="AdwToolbarView">
+          <child type="top">
+            <object class="AdwHeaderBar"/>
+          </child>
+          <property name="content">
+            <object class="GtkScrolledWindow">
+              <property name="height-request">50</property>
+              <property name="hscrollbar-policy">never</property>
+              <property name="vscrollbar-policy">automatic</property>
+              <property name="propagate-natural-height">true</property>
+              <property name="has-frame">false</property>
+              <child>
+                <object class="GtkBox">
+                  <property name="orientation">1</property>
+                  <property name="spacing">12</property>
+                  <style>
+                    <class name="padding-12"/>
+                  </style>
+
+                  <child>
+                    <object class="GtkListBox">
+                      <property name="selection-mode">none</property>
+                      <style>
+                        <class name="boxed-list"/>
+                      </style>
+
+                      <child>
+                        <object class="AdwSwitchRow" id="force_resampler">
+                          <property name="title" translatable="true">Manually set resampler</property>
+                          <property name="subtitle" translatable="true">Override MPD's automatic resampler selection. Ensure MPD is built with the selected resampler plugin on your distro.</property>
+                        </object>
+                      </child>
+
+                      <child>
+                        <object class="AdwComboRow" id="resampler_plugin">
+                          <property name="visible" bind-source="force_resampler" bind-property="active" bind-flags="sync-create"/>
+                          <property name="title" translatable="true">Resampler plugin</property>
+                          <property name="model">
+                            <object class="GtkStringList">
+                              <items>
+                                <!-- Keep this aligned with to_string values of the enum variants -->
+                                <item translatable="true">Auto</item>
+                                <item translatable="true">MPD internal</item>
+                                <item translatable="true">LibSampleRate</item>
+                                <item translatable="true">SoX</item>
+                              </items>
+                            </object>
+                          </property>
+                        </object>
+                      </child>
+                    </object>
+                  </child>
+
+                  <child>
+                    <object class="GtkListBox" id="libsamplerate_config">
+                      <property name="visible">false</property>
+                      <property name="selection-mode">none</property>
+                      <style>
+                        <class name="boxed-list"/>
+                      </style>
+
+                      <child>
+                        <object class="AdwComboRow" id="libsamplerate_type">
+                          <property name="title" translatable="true">Interpolator type</property>
+                          <property name="model">
+                            <object class="GtkStringList">
+                              <items>
+                                <item translatable="true">Best Sinc (97dB SNR, 96% BW)</item>
+                                <item translatable="true">Medium Sinc (97dB SNR, 90% BW)</item>
+                                <item translatable="true">Fastest Sinc (97dB SNR, 80% BW)</item>
+                                <item translatable="true">ZOH Sinc (very fast, audible distortion)</item>
+                                <item translatable="true">Linear (very fast, poor quality)</item>
+                              </items>
+                            </object>
+                          </property>
+                          <property name="selected">2</property>
+                        </object>
+                      </child>
+                    </object>
+                  </child>
+
+                  <child>
+                    <object class="GtkListBox" id="soxr_config">
+                      <property name="visible">false</property>
+                      <property name="selection-mode">none</property>
+                      <style>
+                        <class name="boxed-list"/>
+                      </style>
+
+                      <child>
+                        <object class="AdwComboRow" id="soxr_quality">
+                          <property name="title" translatable="true">Quality preset</property>
+                          <property name="model">
+                            <object class="GtkStringList">
+                              <items>
+                                <!-- Keep this aligned with to_string values of the enum variants -->
+                                <item translatable="true">Very high</item>
+                                <item translatable="true">High</item>
+                                <item translatable="true">Medium</item>
+                                <item translatable="true">Low</item>
+                                <item translatable="true">Quick</item>
+                                <item translatable="true">Custom</item>
+                              </items>
+                            </object>
+                          </property>
+                          <property name="selected">1</property>
+                        </object>
+                      </child>
+
+                      <child>
+                        <object class="AdwSpinRow" id="soxr_threads">
+                          <property name="title" translatable="true">Thread count</property>
+                          <property name="subtitle" translatable="true">The number of libsoxr threads. Setting to 0 means automatic. Setting to 1 disables multithreading.</property>
+                          <property name="adjustment">
+                            <object class="GtkAdjustment">
+                              <property name="lower">0</property>
+                              <property name="upper">16</property>
+                              <property name="step-increment">1</property>
+                              <property name="page-increment">2</property>
+                              <property name="value">1</property>
+                            </object>
+                          </property>
+                        </object>
+                      </child>
+
+                      <!-- The below require custom preset to appear -->
+                      <child>
+                        <object class="AdwComboRow" id="soxr_custom_precision">
+                          <!-- By default Very high quality preset is selected so keep this invisible -->
+                          <property name="visible">false</property>
+                          <property name="title" translatable="true">Precision (bits)</property>
+                          <property name="model">
+                            <object class="GtkStringList">
+                              <items>
+                                <item>16</item>
+                                <item>20</item>
+                                <item>24</item>
+                                <item>28</item>
+                                <item>32</item>
+                              </items>
+                            </object>
+                          </property>
+                          <property name="selected">4</property>
+                        </object>
+                      </child>
+
+                      <child>
+                        <object class="AdwSpinRow" id="soxr_custom_phase_response">
+                          <property name="visible" bind-source="soxr_custom_precision" bind-property="visible" bind-flags="sync-create"/>
+                          <property name="title" translatable="true">Phase response</property>
+                          <property name="subtitle" translatable="true">Goes from 0 (minimum-phase) to 100. At 50 you get a linear-phase filter.</property>
+                          <property name="adjustment">
+                            <object class="GtkAdjustment">
+                              <property name="lower">0</property>
+                              <property name="upper">100</property>
+                              <property name="step-increment">1</property>
+                              <property name="page-increment">25</property>
+                              <property name="value">0</property>
+                            </object>
+                          </property>
+                        </object>
+                      </child>
+
+                      <child>
+                        <object class="AdwSpinRow" id="soxr_custom_passband_end">
+                          <property name="visible" bind-source="soxr_custom_precision" bind-property="visible" bind-flags="sync-create"/>
+                          <property name="title" translatable="true">Passband end</property>
+                          <property name="subtitle" translatable="true">% of source bandwidth where filtering starts. Typically between 90-99.7.</property>
+                          <property name="adjustment">
+                            <object class="GtkAdjustment">
+                              <property name="lower">70</property>
+                              <property name="upper">100</property>
+                              <property name="step-increment">0.1</property>
+                              <property name="page-increment">1.0</property>
+                              <property name="value">99.7</property>
+                            </object>
+                          </property>
+                          <property name="digits">1</property>
+                        </object>
+                      </child>
+
+                      <child>
+                        <object class="AdwSpinRow" id="soxr_custom_stopband_begin">
+                          <property name="visible" bind-source="soxr_custom_precision" bind-property="visible" bind-flags="sync-create"/>
+                          <property name="title" translatable="true">Stopband begin</property>
+                          <property name="subtitle" translatable="true">% of source bandwidth where anti-aliasing starts. Typically 100+.</property>
+                          <property name="adjustment">
+                            <object class="GtkAdjustment">
+                              <property name="lower">100</property>
+                              <property name="upper">1000</property>
+                              <property name="step-increment">5</property>
+                              <property name="page-increment">20</property>
+                              <property name="value">100</property>
+                            </object>
+                          </property>
+                          <property name="digits">1</property>
+                        </object>
+                      </child>
+
+                      <child>
+                        <object class="AdwSpinRow" id="soxr_custom_attenuation">
+                          <property name="visible" bind-source="soxr_custom_precision" bind-property="visible" bind-flags="sync-create"/>
+                          <property name="title" translatable="true">Attenuation</property>
+                          <property name="subtitle" translatable="true">Reduction in decibels to avoid clipping from the resampling process.</property>
+                          <property name="adjustment">
+                            <object class="GtkAdjustment">
+                              <property name="lower">0</property>
+                              <property name="upper">40</property>
+                              <property name="step-increment">0.1</property>
+                              <property name="page-increment">0.5</property>
+                              <property name="value">0.5</property>
+                            </object>
+                          </property>
+                          <property name="digits">1</property>
+                        </object>
+                      </child>
+                    </object>
+                  </child>
+                </object>
+              </child>
+            </object>
+          </property>
+        </object>
+      </child>
+    </object>
   </template>
 </interface>

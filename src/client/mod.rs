@@ -7,7 +7,7 @@ pub mod password;
 pub mod state;
 pub mod wrapper;
 
-pub use state::{ClientState, ConnectionState};
+pub use state::ClientState;
 pub use wrapper::MpdWrapper;
 
 pub use connection::Error;

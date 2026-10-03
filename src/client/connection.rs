@@ -16,8 +16,8 @@ use rustc_hash::FxHashSet;
 #[cfg(target_os = "linux")]
 use std::os::{linux::net::SocketAddrExt, unix::net::SocketAddr};
 use std::{
-    borrow::Cow, cell::RefCell, cmp::Ordering as StdOrdering, net::TcpStream, ops::Range,
-    os::unix::net::UnixStream, result,
+    borrow::Cow, cell::RefCell, cmp::Ordering as StdOrdering, fs::File, io::Read, net::TcpStream,
+    ops::Range, os::unix::net::UnixStream, result,
 };
 
 use crate::{
@@ -29,7 +29,8 @@ use crate::{
         inode::INodeInfo,
     },
     player::PlaybackFlow,
-    utils,
+    server::{ManagedMpdError, config::MpdConfig},
+    utils::{self, get_standalone_config_path},
 };
 
 use super::StickerSetMode;
@@ -152,6 +153,7 @@ pub fn build_comparator(
 #[derive(Debug)]
 pub enum Error {
     NoExist,
+    Server(ManagedMpdError),
     Mpd(MpdError),
     Image(image::error::ImageError),
     Internal,
@@ -456,11 +458,36 @@ impl Connection {
 
     pub fn connect(&mut self) -> Result<Version> {
         let settings = utils::settings_manager().child("client");
-        // eprintln!("Attempting connection...");
-
-        // self.state.set_connection_state(ConnectionState::Connecting);
-        let use_unix_socket = settings.boolean("mpd-use-unix-socket");
-        let mut client = if use_unix_socket {
+        let mut client = if settings.boolean("mpd-use-own-server") {
+            // Currently hardcoded to use a Unix socket in Standalone Mode without any password.
+            let config_path = get_standalone_config_path();
+            let mut file = File::open(&config_path)
+                .map_err(|_| Error::Server(ManagedMpdError::NotConfigured))?;
+            let mut txt = String::new();
+            file.read_to_string(&mut txt)
+                .map_err(|_| Error::Server(ManagedMpdError::Config))?;
+            let cfg = MpdConfig::try_from(txt.as_str())
+                .map_err(|_| Error::Server(ManagedMpdError::Config))?;
+            let path = cfg
+                .bind_to_address
+                .ok_or(Error::Server(ManagedMpdError::Config))?;
+            let client = None;
+            client.unwrap_or_else(|| {
+                if let Ok(resolved) = path.try_resolve() {
+                    UnixStream::connect(resolved)
+                        .map_err(|_| Error::Socket)
+                        .and_then(|s| {
+                            mpd::Client::new(StreamWrapper::new_unix(s)).map_err(Error::Mpd)
+                        })
+                } else {
+                    UnixStream::connect(path)
+                        .map_err(|_| Error::Socket)
+                        .and_then(|s| {
+                            mpd::Client::new(StreamWrapper::new_unix(s)).map_err(Error::Mpd)
+                        })
+                }
+            })?
+        } else if settings.boolean("mpd-use-unix-socket") {
             let path = settings.string("mpd-unix-socket");
             let path = path.as_str();
             eprintln!("Connecting to local socket {}", &path);
@@ -1229,7 +1256,18 @@ impl Connection {
                 (self.idle_sender.as_ref(), self.client.as_mut())
             {
                 // println!("Entering idle mode...");
-                let changes = client.wait(&[]).map_err(Error::Mpd)?;
+                let changes = match client.wait(&[]) {
+                    Ok(c) => c,
+                    Err(e) => {
+                        // E.g. EOF when the (managed) server was killed while we were idle,
+                        // or MPD dropping us after its idle timeout. Drop the client and keep
+                        // looping so this thread can still service queued Disconnect/Connect
+                        // tasks instead of dying and permanently wedging the wrapper.
+                        eprintln!("[bg] idle error: {e:?}; dropping client, continuing loop");
+                        self.client = None;
+                        continue;
+                    }
+                };
                 for change in changes.iter() {
                     match change {
                         Subsystem::Message => {

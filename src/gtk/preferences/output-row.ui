@@ -1,0 +1,146 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <requires lib="gtk" version="4.0" />
+  <requires lib="Adw" version="1.0" />
+  <template class="EuphonicaOutputRow" parent="GtkWidget">
+    <child>
+      <object class="GtkListBox" id="inner">
+        <style>
+          <class name="boxed-list"/>
+        </style>
+        <property name="selection-mode">none</property>
+        <child>
+          <object class="AdwEntryRow" id="header">
+            <child type="prefix">
+              <object class="GtkDropDown" id="output_type">
+                <property name="valign">center</property>
+              </object>
+            </child>
+
+            <property name="title" translatable="true">Output name</property>
+
+            <child type="suffix">
+              <object class="GtkBox">
+                <property name="valign">center</property>
+                <style>
+                  <class name="linked"/>
+                </style>
+                <child>
+                  <object class="GtkButton" id="raise">
+                    <property name="icon-name">up-symbolic</property>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkButton" id="lower">
+                    <property name="icon-name">down-symbolic</property>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkMenuButton" id="remove_confirm">
+                    <style>
+                      <class name="destructive-action"/>
+                    </style>
+                    <property name="icon-name">user-trash-symbolic</property>
+                    <property name="popover">delete_popover</property>
+                  </object>
+                </child>
+              </object>
+            </child>
+          </object>
+        </child>
+
+        <!-- Plugin-specific config rows will be inserted between output type and force-format. -->
+
+        <child>
+          <object class="AdwExpanderRow" id="common_expander">
+            <property name="title" translatable="true">Other settings</property>
+            <child>
+              <object class="AdwSwitchRow" id="enabled">
+                <property name="active">true</property>
+                <property name="title" translatable="true">Enable on startup</property>
+                <property name="subtitle" translatable="true">If disabled, will be off on every startup. If enabled, will remember previous runtime state.</property>
+              </object>
+            </child>
+            <child>
+              <object class="GtkListBoxRow" id="force_format_area">
+                <child>
+                  <object class="GtkBox">
+                    <property name="orientation">1</property>
+                    <child>
+                      <object class="AdwSwitchRow" id="force_format">
+                        <property name="title" translatable="true">Force output format</property>
+                        <property name="subtitle" translatable="true">Always open the device with this format, regardless of the input format.</property>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="EuphonicaAudioFormatEntry" id="force_format_entry">
+                        <property name="visible" bind-source="force_format" bind-property="active" bind-flags="sync-create"/>
+                        <style>
+                          <class name="padding-12"/>
+                        </style>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+              </object>
+            </child>
+            <child>
+              <object class="AdwSwitchRow" id="send_tags">
+                <property name="title" translatable="true">Send tags</property>
+                <property name="subtitle" translatable="true">Only useful for output plugins that can receive tags, e.g. HTTPD.</property>
+              </object>
+            </child>
+            <child>
+              <object class="AdwSwitchRow" id="always_on">
+                <property name="title" translatable="true">Keep device on</property>
+                <property name="subtitle" translatable="true">Instead of closing the device at the end of playback, put it in “pause” mode. Only works with output plugins that suport “pause” mode, e.g. ALSA.</property>
+              </object>
+            </child>
+            <child>
+              <object class="AdwSwitchRow" id="always_off">
+                <property name="title" translatable="true">Non-playback</property>
+                <property name="subtitle" translatable="true">Never play back through this device even if enabled. Useful for creating null devices for other software to react to.</property>
+              </object>
+            </child>
+            <child>
+              <object class="AdwComboRow" id="mixer_type">
+                <property name="title" translatable="true">Mixer type</property>
+                <property name="subtitle" translatable="true">Software mixer is available for most plugins. ALSA, OSS and PulseAudio additionally expose a hardware mixer. Use the 'null' mixer to ignore volume control or 'none' to disable entirely.</property>
+              </object>
+            </child>
+            <child>
+              <object class="AdwComboRow" id="replaygain_handler">
+                <property name="title" translatable="true">ReplayGain handler</property>
+                <property name="subtitle" translatable="true">Software ReplayGain is applied before mixing. Mixer-mode ReplayGain uses the above mixer itself.</property>
+              </object>
+            </child>
+          </object>
+        </child>
+      </object>
+    </child>
+
+    <object class="GtkPopover" id="delete_popover">
+      <property name="has-arrow">true</property>
+      <property name="name">delete_popover</property>
+      <property name="child">
+        <object class="GtkBox">
+          <property name="orientation">1</property>
+          <property name="spacing">6</property>
+          <child>
+            <object class="GtkLabel">
+              <property name="label" translatable="true">Remove this output plugin? This cannot be undone.</property>
+            </object>
+          </child>
+          <child>
+            <object class="GtkButton" id="remove">
+              <property name="label" translatable="true">Remove</property>
+              <style>
+                <class name="destructive-action"/>
+              </style>
+            </object>
+          </child>
+        </object>
+      </property>
+    </object>
+  </template>
+</interface>

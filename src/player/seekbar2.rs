@@ -204,8 +204,7 @@ mod imp {
             if width > 0.0 && height > 0.0 && upper > 0.0 && self.adjustment.value() > 0.0 {
                 let style = adw::StyleManager::default();
                 let accent = self.obj().color();
-                let cursor_x =
-                    ((self.adjustment.value() / upper) as f32 * width).clamp(0.0, width);
+                let cursor_x = ((self.adjustment.value() / upper) as f32 * width).clamp(0.0, width);
 
                 // Draw highlight
                 let mut bottom_hsl = hsl::HSL::from_rgb(&[

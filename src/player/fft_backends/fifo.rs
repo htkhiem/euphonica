@@ -63,21 +63,19 @@ impl FftBackendImpl for FifoFftBackend {
         if curr_status != FftStatus::Reading && curr_status != FftStatus::Stopping {
             let stop_flag = self.stop_flag.clone();
             let (sender, receiver) = async_channel::unbounded::<FftStatus>();
+            // Standalone Mode forces its own config without overwriting user settings.
+            let (fifo_path, fifo_format) = self.player.effective_fifo_input();
             let fft_handle = gio::spawn_blocking(move || {
                 let settings = settings_manager();
                 let player_settings = settings.child("player");
                 // Will require starting a new thread to account for path and format changes
-                if let Ok(format) = AudioFormat::from_str(
-                    settings.child("client").string("mpd-fifo-format").as_str(),
-                ) {
+                if let Ok(format) = AudioFormat::from_str(fifo_format.as_str()) {
                     // These settings require a restart
                     let n_samples = player_settings.uint("visualizer-fft-samples") as usize;
                     let n_bins = player_settings.uint("visualizer-spectrum-bins") as usize;
-                    if let Ok(mut reader) = super::fft::try_open_pipe(
-                        settings.child("client").string("mpd-fifo-path").as_str(),
-                        &format,
-                        n_samples,
-                    ) {
+                    if let Ok(mut reader) =
+                        super::fft::try_open_pipe(fifo_path.as_str(), &format, n_samples)
+                    {
                         // Allocate the following once only
                         let mut fft_buf_left: Vec<f32> = vec![0.0; n_samples];
                         let mut fft_buf_right: Vec<f32> = vec![0.0; n_samples];

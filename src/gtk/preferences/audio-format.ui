@@ -1,0 +1,168 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <requires lib="gtk" version="4.0" />
+  <requires lib="Adw" version="1.0" />
+  <template class="EuphonicaAudioFormatEntry" parent="GtkBox">
+    <child>
+      <object class="AdwWrapBox">
+        <property name="valign">start</property>
+        <property name="hexpand">true</property>
+        <property name="child-spacing">6</property>
+        <property name="line-spacing">6</property>
+        <child>
+          <object class="GtkBox">
+            <property name="orientation">1</property>
+            <property name="spacing">6</property>
+            <child>
+              <object class="GtkLabel">
+                <style>
+                  <class name="subtitle"/>
+                </style>
+                <!-- TODO: a better way to describe this? -->
+                <property name="label" translatable="true">Type</property>
+                <property name="halign">start</property>
+              </object>
+            </child>
+            <child>
+              <object class="AdwToggleGroup" id="pcm_dsd_toggle">
+                <property name="active-name">pcm</property>
+                <child>
+                  <object class="AdwToggle">
+                    <property name="label">PCM</property>
+                    <property name="tooltip">Pulse Code Modulation</property>
+                    <property name="name">pcm</property>
+                  </object>
+                </child>
+                <child>
+                  <object class="AdwToggle">
+                    <property name="label">DSD</property>
+                    <property name="tooltip">Direct Stream Digital</property>
+                    <property name="name">dsd</property>
+                  </object>
+                </child>
+              </object>
+            </child>
+          </object>
+        </child>
+
+        <child>
+          <object class="GtkBox" id="pcm_box">
+            <property name="spacing">6</property>
+            <child>
+              <object class="GtkBox">
+                <property name="orientation">1</property>
+                <property name="spacing">6</property>
+                <child>
+                  <object class="GtkLabel">
+                    <style>
+                      <class name="subtitle"/>
+                    </style>
+                    <property name="label" translatable="true">Sample rate</property>
+                    <property name="halign">start</property>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkDropDown" id="pcm_samplerate"/>
+                </child>
+              </object>
+            </child>
+
+            <child>
+              <object class="GtkBox">
+                <property name="orientation">1</property>
+                <property name="spacing">6</property>
+                <child>
+                  <object class="GtkLabel">
+                    <style>
+                      <class name="subtitle"/>
+                    </style>
+                    <property name="label" translatable="true">Bit depth</property>
+                    <property name="halign">start</property>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkDropDown" id="pcm_bitdepth"/>
+                </child>
+              </object>
+            </child>
+          </object>
+        </child>
+
+        <child>
+          <object class="GtkBox" id="dsd_box">
+            <property name="spacing">6</property>
+            <child>
+              <object class="GtkBox">
+                <property name="orientation">1</property>
+                <property name="spacing">6</property>
+                <child>
+                  <object class="GtkLabel">
+                    <style>
+                      <class name="subtitle"/>
+                    </style>
+                    <property name="label" translatable="true">Multiplier</property>
+                    <property name="halign">start</property>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkDropDown" id="dsd_preset"/>
+                </child>
+              </object>
+            </child>
+            <child>
+              <object class="GtkBox">
+                <property name="orientation">1</property>
+                <property name="spacing">6</property>
+                <child>
+                  <object class="GtkLabel">
+                    <style>
+                      <class name="subtitle"/>
+                    </style>
+                    <property name="label" translatable="true">DoP</property>
+                    <property name="halign">start</property>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkCheckButton" id="dop">
+                    <property name="vexpand">true</property>
+                    <property name="valign">center</property>
+                  </object>
+                </child>
+              </object>
+            </child>
+          </object>
+        </child>
+
+        <child>
+          <object class="GtkBox">
+            <property name="orientation">1</property>
+            <property name="spacing">6</property>
+            <child>
+              <object class="GtkLabel">
+                <style>
+                  <class name="subtitle"/>
+                </style>
+                <property name="label" translatable="true">Channels (0 = disable coercing)</property>
+                <property name="halign">start</property>
+              </object>
+            </child>
+            <child>
+              <object class="GtkSpinButton" id="channels">
+                <property name="digits">0</property>
+                <property name="adjustment">
+                  <object class="GtkAdjustment">
+                    <property name="lower">0</property>
+                    <property name="upper">128</property>
+                    <property name="value">0</property>
+                    <property name="page-increment">1</property>
+                    <property name="step-increment">2</property>
+                  </object>
+                </property>
+              </object>
+            </child>
+          </object>
+        </child>
+      </object>
+    </child>
+  </template>
+</interface>

@@ -12,7 +12,7 @@ chrono = "0.4.38"
 futures = "0.3.30"
 gettext-rs = { version = "0.7", features = ["gettext-system"] }
 image = { version = "0.25.1", features = ["webp"] }
-mpd = { git = "https://github.com/htkhiem/rust-mpd.git", rev = "218e1af6c44e08101b3c99f0df0fe1d10c3702b4", features = ["serde"] }
+mpd = { git = "https://github.com/htkhiem/rust-mpd.git", rev = "0bb8342c47244548724a5b1bcc523d9ffe3ca47f", features = ["serde"] }
 once_cell = "1.19.0"
 time = { version = "0.3.47", features = ["alloc", "formatting", "local-offset"] }
 reqwest = { version = "0.12.5", features = ["blocking", "json"] }
@@ -45,7 +45,7 @@ open = "5.3.2"
 resolve-path = "0.1.0"
 lru = "0.16.0"
 nohash-hasher = "0.2.0"
-libsecret = { version = "0.9", features = ["v0_21_2"] } 
+libsecret = { version = "0.9", features = ["v0_21_2"] }
 zbus = { version = "5.12.0", features = ["tokio"], default-features = false}
 derivative = "2.2.0"
 strum = "0.27.2"
@@ -82,3 +82,6 @@ debug = 1
 [profile.release]
 strip = true # Should reduce binary size on Linux
 lto = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+alsa = "0.12.1"

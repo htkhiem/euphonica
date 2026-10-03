@@ -13,8 +13,8 @@ use std::{cell::OnceCell, sync::OnceLock};
 use super::Library;
 use crate::{
     cache::Cache,
-    client::{ClientState, ConnectionState},
-    common::{ContentStack, INode},
+    client::ClientState,
+    common::{ConnectionState, ContentStack, INode},
     library::{PlaylistContentView, playlist_row::PlaylistRow},
     utils::{SearchableView, g_cmp_str_options, settings_manager},
     window::EuphonicaWindow,
@@ -310,7 +310,9 @@ impl PlaylistView {
         let stack = self.imp().stack.get();
         let library = self.imp().library.upgrade().unwrap();
         stack.show_spinner();
-        library.init_playlists(refresh).await;
+        if let Err(e) = library.init_playlists(refresh).await {
+            dbg!(e);
+        }
         if library.playlists().n_items() > 0 {
             stack.show_content();
         } else {
