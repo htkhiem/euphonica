@@ -320,8 +320,8 @@ impl MpdWrapper {
             .handle_connect_error(r.await.expect("Broken oneshot receiver"))
             .await?;
 
-        // Connection successful => start ping loop now
-        // Set up a ping loop. Main client does not use idle mode, so it needs to ping periodically.
+        // Connection successful => start ping loop now.
+        // Main client does not use idle mode, so it needs to ping periodically.
         // If there is no client connected, it will simply skip pinging.
         let conn = utils::settings_manager().child("client");
         let ping_interval = conn.uint("mpd-ping-interval-s");

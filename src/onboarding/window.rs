@@ -35,7 +35,7 @@ mod imp {
     use ashpd::desktop::file_chooser::SelectedFiles;
 
     use crate::{
-        client::ClientState,
+        client::{ClientState, password::get_mpd_password_async},
         common::ConnectionState,
         preferences::{AudioOutputs, StatusIconState, set_status_icon},
         server::config::{MpdConfig, OutputConfig},
@@ -108,17 +108,9 @@ mod imp {
         #[template_child]
         pub mpd_password: TemplateChild<adw::PasswordEntryRow>,
         #[template_child]
-        pub mpd_status: TemplateChild<adw::ExpanderRow>,
+        pub mpd_status: TemplateChild<adw::ActionRow>,
         #[template_child]
         pub mpd_status_icon: TemplateChild<gtk::Image>,
-        #[template_child]
-        pub playlists_status: TemplateChild<adw::ActionRow>,
-        #[template_child]
-        pub playlists_status_icon: TemplateChild<gtk::Image>,
-        #[template_child]
-        pub stickers_status: TemplateChild<adw::ActionRow>,
-        #[template_child]
-        pub stickers_status_icon: TemplateChild<gtk::Image>,
         #[template_child]
         pub mpd_download_album_art: TemplateChild<adw::SwitchRow>,
         #[template_child]
@@ -146,6 +138,7 @@ mod imp {
         // Error flags
         pub valid_exec_path: Cell<bool>, // for now simply check if not empty
         pub has_library_path: Cell<bool>,
+        pub valid_host: Cell<bool>,
         pub valid_port: Cell<bool>,
 
         pub standalone_cfg: RefCell<MpdConfig>,
@@ -310,6 +303,12 @@ mod imp {
                 .build();
 
             // Page 2
+            // Changes to settings under this page are immediatelly written to the settings backend
+            // as there is no risk of unsaved settings breaking the next startup. Thing is, we won't
+            // progress out of this onboarding wizard until a connection has been established, so there
+            // is no notion of "next startup is broken due to half-edited configs that the user didn't
+            // explicitly save last time". Sounds messy, but I dunno how to put this better, sorry.
+            // Standalone mode
             // Library browse: initial state is invalid (unspecified)
             self.mpd_library_browse.connect_clicked(clone!(
                 #[weak(rename_to = this)]
@@ -416,6 +415,42 @@ mod imp {
                     this.goto_page("server_conn");
                 }
             ));
+            // Client mode
+            self.on_hostname_changed();
+            self.mpd_host.connect_changed(clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |_| {
+                    this.on_hostname_changed();
+                }
+            ));
+            client_settings.bind("mpd-host", &self.mpd_host.get(), "text").build();
+            self.on_port_changed();
+            self.mpd_port.connect_changed(clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |_| {
+                    this.on_port_changed();
+                }
+            ));
+            client_settings.bind("mpd-port", &self.mpd_port.get(), "text").build();
+            let password_field = self.mpd_password.get();
+            glib::spawn_future_local(async move {
+                match get_mpd_password_async().await {
+                    Ok(maybe_password) => {
+                        // At startup the password entry is disabled with a tooltip stating that
+                        // the credential store is not available.
+                        password_field.set_sensitive(true);
+                        password_field.set_tooltip_text(None);
+                        if let Some(password) = maybe_password {
+                            password_field.set_text(&password);
+                        }
+                    }
+                    Err(_e) => {
+                        // println!("{e:?}");
+                    }
+                }
+            });
 
             // Page 3
             let library_settings = settings_manager().child("library");
@@ -466,7 +501,7 @@ mod imp {
                         && self.outputs_box.is_valid()
                         && (!self.mpd_override_exec_path.is_active() || self.valid_exec_path.get())
                 } else {
-                    self.valid_port.get()
+                    self.valid_host.get() && self.valid_port.get()
                 });
         }
 
@@ -476,14 +511,14 @@ mod imp {
                 library_path_row.set_subtitle(path);
                 if library_path_row.has_css_class("error") {
                     library_path_row.remove_css_class("error");
-                    self.has_library_path.set(true);
                 }
+                self.has_library_path.set(true);
             } else {
                 library_path_row.set_subtitle("(unset)");
                 if !library_path_row.has_css_class("error") {
                     library_path_row.add_css_class("error");
-                    self.has_library_path.set(false);
                 }
+                self.has_library_path.set(false);
             }
             self.update_test_config_btn_sensitivity();
         }
@@ -493,13 +528,13 @@ mod imp {
             if entry_row.text_length() > 0 {
                 if entry_row.has_css_class("error") {
                     entry_row.remove_css_class("error");
-                    self.valid_exec_path.set(true);
                 }
+                self.valid_exec_path.set(true);
             } else {
                 if !entry_row.has_css_class("error") {
                     entry_row.add_css_class("error");
-                    self.valid_exec_path.set(false);
                 }
+                self.valid_exec_path.set(false);
             }
             self.update_test_config_btn_sensitivity();
         }
@@ -532,46 +567,70 @@ mod imp {
             self.update_test_config_btn_sensitivity();
         }
 
+        fn on_hostname_changed(&self) {
+            let entry_row = self.mpd_host.get();
+            if entry_row.text_length() > 0 {
+                if entry_row.has_css_class("error") {
+                    entry_row.remove_css_class("error");
+                }
+                self.valid_host.set(true);
+            } else {
+                if !entry_row.has_css_class("error") {
+                    entry_row.add_css_class("error");
+                }
+                self.valid_host.set(false);
+            }
+            self.update_test_config_btn_sensitivity();
+        }
+
+        fn on_port_changed(&self) {
+            let entry_row = self.mpd_port.get();
+            if entry_row.text().parse::<u32>().is_err() {
+                if !entry_row.has_css_class("error") {
+                    entry_row.add_css_class("error");
+                }
+                self.valid_port.set(false);
+            } else {
+                if entry_row.has_css_class("error") {
+                    entry_row.remove_css_class("error");
+                }
+                self.valid_port.set(true);
+            }
+            self.update_test_config_btn_sensitivity();
+        }
+
         pub fn on_connection_state_changed(&self, cs: &ClientState) {
             match cs.connection_state() {
                 ConnectionState::NotConnected => {
                     self.mpd_status.set_subtitle("Failed to connect");
-                    self.mpd_status.set_enable_expansion(false);
                     set_status_icon(&self.mpd_status_icon.get(), StatusIconState::Disabled);
                 }
                 ConnectionState::Connecting => {
                     self.mpd_status.set_subtitle("Connecting...");
-                    self.mpd_status.set_enable_expansion(false);
                     set_status_icon(&self.mpd_status_icon.get(), StatusIconState::Loading);
                 }
                 ConnectionState::Unauthenticated => {
                     self.mpd_status.set_subtitle("Authentication failed");
-                    self.mpd_status.set_enable_expansion(false);
                     set_status_icon(&self.mpd_status_icon.get(), StatusIconState::Disabled);
                 }
                 ConnectionState::CredentialStoreError => {
                     self.mpd_status.set_subtitle("Credential store error");
-                    self.mpd_status.set_enable_expansion(false);
                     set_status_icon(&self.mpd_status_icon.get(), StatusIconState::Disabled);
                 }
                 ConnectionState::WrongPassword => {
                     self.mpd_status.set_subtitle("Incorrect password");
-                    self.mpd_status.set_enable_expansion(false);
                     set_status_icon(&self.mpd_status_icon.get(), StatusIconState::Disabled);
                 }
                 ConnectionState::ConnectionRefused => {
                     self.mpd_status.set_subtitle("Connection refused");
-                    self.mpd_status.set_enable_expansion(false);
                     set_status_icon(&self.mpd_status_icon.get(), StatusIconState::Disabled);
                 }
                 ConnectionState::SocketNotFound => {
                     self.mpd_status.set_subtitle("Socket not found");
-                    self.mpd_status.set_enable_expansion(false);
                     set_status_icon(&self.mpd_status_icon.get(), StatusIconState::Disabled);
                 }
                 ConnectionState::Connected => {
                     self.mpd_status.set_subtitle("Connected");
-                    self.mpd_status.set_enable_expansion(true);
                     set_status_icon(&self.mpd_status_icon.get(), StatusIconState::Full);
                 }
             }
@@ -603,6 +662,7 @@ impl EuphonicaOnboardingWindow {
             standalone_server.status(),
             ConnectionState::Connected
         ));
+        // standalone mode
         standalone_server.connect_notify_local(
             Some("status"),
             clone!(
@@ -613,6 +673,19 @@ impl EuphonicaOnboardingWindow {
                         ss.status(),
                         ConnectionState::Connected
                     ));
+                }
+            ),
+        );
+        // client mode
+        let client_state = application.get_client().get_client_state();
+        win.imp().on_connection_state_changed(&client_state);
+        client_state.connect_notify_local(
+            Some("connection-state"),
+            clone!(
+                #[weak(rename_to = this)]
+                win,
+                move |cs, _| {
+                    this.imp().on_connection_state_changed(cs);
                 }
             ),
         );
