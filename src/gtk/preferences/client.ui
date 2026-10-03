@@ -36,7 +36,7 @@
                   <object class="GtkImage">
                     <property name="icon-name">right-symbolic</property>
                     <style>
-                      <class name="dim-label"/>
+                      <class name="dimmed"/>
                     </style>
                   </object>
                 </child>
@@ -51,7 +51,7 @@
                   <object class="GtkImage">
                     <property name="icon-name">right-symbolic</property>
                     <style>
-                      <class name="dim-label"/>
+                      <class name="dimmed"/>
                     </style>
                   </object>
                 </child>
