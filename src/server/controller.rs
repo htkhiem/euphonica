@@ -1,5 +1,5 @@
 use crate::{
-    common::ConnectionState, server::config::MpdConfig, utils::get_standalone_config_path,
+    common::ConnectionState, server::config::MpdConfig, utils::{get_standalone_config_path, settings_manager},
 };
 use asyncified::Asyncified;
 use gio::{Subprocess, SubprocessFlags};
@@ -15,7 +15,7 @@ use std::{
     time::Duration,
 };
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum Error {
     NotConfigured,
     Config,
@@ -130,9 +130,15 @@ impl ManagedMpdServer {
             return Err(Error::Config);
         }
 
+        let client_settings = settings_manager().child("client");
+        let mpd_path = if client_settings.boolean("mpd-override-exec-path") {
+            client_settings.string("mpd-exec-path").to_string()
+        } else {
+            String::from("mpd")
+        };
         let subprocess = Subprocess::newv(
             &[
-                &OsStr::new("mpd"),
+                &OsStr::new(&mpd_path),
                 &OsStr::new("--no-daemon"),
                 config_path.as_os_str(),
             ], // Command and args

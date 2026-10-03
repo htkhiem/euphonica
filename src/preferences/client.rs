@@ -68,7 +68,7 @@ impl StickersSupportLevel {
     }
 }
 
-fn set_status_icon(img: &gtk::Image, state: StatusIconState) {
+pub fn set_status_icon(img: &gtk::Image, state: StatusIconState) {
     match state {
         StatusIconState::Disabled => {
             img.set_css_classes(&["error"]);
@@ -104,6 +104,10 @@ mod imp {
         // Standalone mode
         #[template_child]
         pub mpd_use_own_server: TemplateChild<adw::ExpanderRow>,
+        #[template_child]
+        pub mpd_override_exec_path: TemplateChild<adw::SwitchRow>,
+        #[template_child]
+        pub mpd_exec_path: TemplateChild<adw::EntryRow>,
         #[template_child]
         pub mpd_library_path: TemplateChild<adw::ActionRow>,
         #[template_child]
@@ -230,8 +234,18 @@ mod imp {
 
     impl ObjectImpl for ClientPreferences {
         fn constructed(&self) {
-            // dbg!(OutputType::PipeWire.get_custom_config_spec());
             self.parent_constructed();
+            let client_settings = utils::settings_manager().child("client");
+            client_settings
+                .bind(
+                    "mpd-override-exec-path",
+                    &self.mpd_override_exec_path.get(),
+                    "active",
+                )
+                .build();
+            client_settings
+                .bind("mpd-exec-path", &self.mpd_exec_path.get(), "text")
+                .build();
             self.config_outputs_row.connect_activated(clone!(
                 #[weak(rename_to = this)]
                 self,
@@ -598,7 +612,8 @@ impl ClientPreferences {
 
         // Populate the audio outputs subpage eagerly (like the resampler settings)
         // so that Apply always reads widget state that matches the parsed config.
-        imp.outputs_box.init_from_config(&imp.standalone_cfg.borrow());
+        imp.outputs_box
+            .init_from_config(&imp.standalone_cfg.borrow());
 
         {
             let cfg = self.imp().standalone_cfg.borrow_mut();

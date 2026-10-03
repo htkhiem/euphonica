@@ -28,6 +28,9 @@ mod imp {
 
         #[property(get)]
         pub is_valid: Cell<bool>,
+
+        #[property(get)]
+        pub n_outputs: Cell<u32>,
     }
 
     #[glib::object_subclass]
@@ -97,7 +100,9 @@ impl AudioOutputs {
                 }
             }
         } else {
-            self.update_validity(true);
+            // No output is false
+            self.update_is_valid(false);
+            return;
         }
         let mut duplicated = false;
         if let Some(first) = self.imp().listbox.first_child() {
@@ -115,7 +120,7 @@ impl AudioOutputs {
                 }
             }
         }
-        self.update_validity(!duplicated);
+        self.update_is_valid(!duplicated);
     }
 
     pub fn add(&self, output: &OutputConfig, check_after_add: bool) {
@@ -136,6 +141,9 @@ impl AudioOutputs {
                         && let Some(row) = this.imp().listbox.row_at_index(idx).as_ref()
                     {
                         this.imp().listbox.remove(row);
+                        this.imp().n_outputs.set(this.imp().n_outputs.get() - 1);
+                        this.check();
+                        this.notify("n-outputs");
                     }
                 }
             ),
@@ -152,6 +160,8 @@ impl AudioOutputs {
             ),
         );
         self.imp().listbox.append(&row);
+        self.imp().n_outputs.set(self.imp().n_outputs.get() + 1);
+        self.notify("n-outputs");
         if check_after_add {
             self.check();
         }
@@ -180,7 +190,7 @@ impl AudioOutputs {
         res
     }
 
-    fn update_validity(&self, new: bool) {
+    fn update_is_valid(&self, new: bool) {
         let old = self.imp().is_valid.replace(new);
         if old != new {
             self.notify("is-valid");

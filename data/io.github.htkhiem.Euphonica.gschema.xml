@@ -74,6 +74,12 @@
 		<key name="mpd-use-own-server" type="b">
 			<default>false</default>
 		</key>
+		<key name="mpd-override-exec-path" type="b">
+			<default>false</default>
+		</key>
+		<key name="mpd-exec-path" type="s">
+			<default>'mpd'</default>
+		</key>
 		<key name="mpd-auto-reconnect" type="b">
 			<default>true</default>
 		</key>

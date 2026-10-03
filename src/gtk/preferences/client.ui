@@ -16,6 +16,20 @@
             <property name="expanded" bind-source="mpd_use_own_server" bind-property="enable-expansion" bind-flags="sync-create"/>
 
             <child>
+              <object class="AdwSwitchRow" id="mpd_override_exec_path">
+                <property name="title" translatable="true">Override MPD executable path</property>
+                <property name="subtitle" translatable="true">Specify where the MPD executable is on your system, in case it is not in $PATH or you would like to use a custom one.</property>
+              </object>
+            </child>
+
+            <child>
+              <object class="AdwEntryRow" id="mpd_exec_path">
+                <property name="visible" bind-source="mpd_override_exec_path" bind-property="active" bind-flags="sync-create"/>
+                <property name="title" translatable="true">MPD executable path</property>
+              </object>
+            </child>
+
+            <child>
               <object class="AdwActionRow" id="mpd_library_path">
                 <property name="title" translatable="true">Path to music library</property>
                 <property name="subtitle">(unspecified)</property>
@@ -103,7 +117,6 @@
           <object class="AdwEntryRow" id="mpd_unix_socket">
             <property name="visible" bind-source="mpd_use_unix_socket" bind-property="active" bind-flags="sync-create"/>
             <property name="title" translatable="true">Local socket</property>
-            <property name="visible">false</property>
           </object>
         </child>
         <child>

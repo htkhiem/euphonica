@@ -146,7 +146,8 @@
                                       <class name="linked"/>
                                     </style>
                                     <property name="vexpand">true</property>
-                                    <property name="valign">center</property>
+                                    <!-- Why does "end" look centered here while "center" doesn't?? -->
+                                    <property name="valign">end</property>
                                     <child>
                                       <object class="GtkButton" id="standalone_mode_btn">
                                         <property name="hexpand">true</property>
@@ -322,6 +323,9 @@
                                         <property name="valign">center</property>
                                         <child>
                                           <object class="AdwActionRow" id="mpd_library_path">
+                                            <style>
+                                              <class name="error"/>
+                                            </style>
                                             <property name="title" translatable="true">Path to music library</property>
                                             <property name="subtitle">(unspecified)</property>
                                             <child type="suffix">
@@ -345,6 +349,21 @@
                                                 </style>
                                               </object>
                                             </child>
+                                          </object>
+                                        </child>
+
+                                        <!-- Located near last since it's not something the user should change -->
+                                        <child>
+                                          <object class="AdwSwitchRow" id="mpd_override_exec_path">
+                                            <property name="title" translatable="true">Override MPD executable path</property>
+                                            <property name="subtitle" translatable="true">Specify where the MPD executable is on your system, in case it is not in $PATH or you would like to use a custom one.</property>
+                                          </object>
+                                        </child>
+
+                                        <child>
+                                          <object class="AdwEntryRow" id="mpd_exec_path">
+                                            <property name="visible" bind-source="mpd_override_exec_path" bind-property="active" bind-flags="sync-create"/>
+                                            <property name="title" translatable="true">MPD executable path</property>
                                           </object>
                                         </child>
 
@@ -496,7 +515,6 @@
                                     <property name="margin-top">12</property>
                                     <property name="spacing">12</property>
                                     <property name="valign">end</property>
-                                    <property name="vexpand">true</property>
                                     <child>
                                       <object class="GtkButton" id="p2_prev">
                                         <style>
@@ -516,6 +534,56 @@
                                         </style>
                                         <property name="hexpand">true</property>
                                         <property name="label" translatable="true">Test config</property>
+                                      </object>
+                                    </child>
+                                  </object>
+                                </child>
+                              </object>
+                            </property>
+                          </object>
+                        </child>
+
+                        <!-- Page 2.1: outputs -->
+                        <child>
+                          <object class="AdwViewStackPage">
+                            <property name="name">outputs</property>
+                            <property name="child">
+                              <object class="GtkBox">
+                                <style>
+                                  <class name="padding-12"/>
+                                </style>
+                                <property name="vexpand">true</property>
+                                <property name="orientation">1</property>
+                                <!-- 6px standard spacing, used between the listbox and the add new output btn -->
+                                <property name="spacing">6</property>
+
+                                <child>
+                                  <object class="EuphonicaAudioOutputs" id="outputs_box">
+                                    <property name="vexpand">true</property>
+                                  </object>
+                                </child>
+
+                                <child>
+                                  <object class="GtkButton" id="add_output">
+                                    <child>
+                                      <object class="AdwButtonContent">
+                                        <property name="icon-name">plus-symbolic</property>
+                                        <property name="label" translatable="true">Add new output</property>
+                                      </object>
+                                    </child>
+                                  </object>
+                                </child>
+
+                                <child>
+                                  <object class="GtkButton" id="outputs_back">
+                                    <style>
+                                      <class name="pill"/>
+                                    </style>
+                                    <property name="halign">center</property>
+                                    <child>
+                                      <object class="AdwButtonContent">
+                                        <property name="icon-name">left-symbolic</property>
+                                        <property name="label" translatable="true">Back</property>
                                       </object>
                                     </child>
                                   </object>
@@ -732,6 +800,7 @@
                                           <class name="pill"/>
                                         </style>
                                         <property name="label" translatable="true">Back</property>
+                                        <property name="hexpand">true</property>
                                       </object>
                                     </child>
 
@@ -744,6 +813,7 @@
                                           <class name="suggested-action"/>
                                         </style>
                                         <property name="label" translatable="true">Finish</property>
+                                        <property name="hexpand">true</property>
                                       </object>
                                     </child>
                                   </object>

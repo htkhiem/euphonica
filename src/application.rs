@@ -21,7 +21,7 @@
 use crate::{
     EuphonicaWindow,
     cache::Cache,
-    client::{MpdWrapper, Result as ClientResult},
+    client::{MpdWrapper, Result as ClientResult, Error as ClientError},
     config::VERSION,
     library::Library,
     onboarding::EuphonicaOnboardingWindow,
@@ -752,6 +752,7 @@ impl EuphonicaApplication {
         {
             if let Err(e) = self.imp().server.start().await {
                 self.imp().handle_managed_server_error(e);
+                return Err(ClientError::Server(e));
             }
         }
         self.get_client().connect().await?;
