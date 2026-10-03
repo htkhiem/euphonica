@@ -18,6 +18,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
+use crate::cache::Cache;
 use crate::{
     application::EuphonicaApplication,
     cache::CacheState,
@@ -44,6 +45,7 @@ use gtk::{
 use image::{DynamicImage, imageops::FilterType};
 use libblur::{FastBlurChannels, ThreadingPolicy, stack_blur};
 use mpd::Subsystem;
+use std::rc::Rc;
 use std::{cell::RefCell, ops::Deref, path::PathBuf, thread, time::Duration};
 use std::{
     cell::{Cell, OnceCell},
@@ -305,49 +307,58 @@ mod imp {
     impl ObjectImpl for EuphonicaWindow {
         fn dispose(&self) {
             // Disconnect all signal handlers registered on global/long-lived objects
+            let settings = settings_manager().child("ui");
             if let Some(id) = self.settings_bg_blur_id.take() {
-                let settings = settings_manager().child("ui");
+                // eprintln!("bg_blur");
                 settings.disconnect(id);
             }
             if let Some(id) = self.settings_visualizer_id.take() {
-                let settings = settings_manager().child("ui");
+                // eprintln!("visualizer");
                 settings.disconnect(id);
             }
             if let Some(client_state) = self.client_state.get() {
                 if let Some(id) = self.client_state_idle_id.take() {
+                    // eprintln!("state_idle");
                     client_state.disconnect(id);
                 }
                 if let Some(id) = self.client_state_conn_state_id.take() {
+                    // eprintln!("conn_state");
                     client_state.disconnect(id);
                 }
                 if let Some(id) = self.client_state_pct_fg_id.take() {
+                    // eprintln!("pct_fg");
                     client_state.disconnect(id);
                 }
                 if let Some(id) = self.client_state_pct_bg_id.take() {
+                    // eprintln!("pct_bg");
                     client_state.disconnect(id);
                 }
                 if let Some(id) = self.client_state_n_fg_id.take() {
+                    // eprintln!("n_fg");
                     client_state.disconnect(id);
                 }
                 if let Some(id) = self.client_state_n_bg_id.take() {
+                    // eprintln!("n_bg");
                     client_state.disconnect(id);
                 }
             }
-            if let Some(id) = self.player_cover_changed_id.take()
-                && let Some(player) = self.player.upgrade()
-            {
-                player.disconnect(id);
+            if let Some(player) = self.player.upgrade() {
+                if let Some(id) = self.player_cover_changed_id.take() {
+                    // eprintln!("cover_changed");
+                    player.disconnect(id);
+                }
+                if let Some(id) = self.player_title_changed_id.take() {
+                    // eprintln!("title_changed");
+                    player.disconnect(id);
+                }
             }
+
             if let Some((set_id, cleared_id)) = self.cover_signal_ids.take()
                 && let Some(state) = self.cache_state.upgrade()
             {
+                // eprintln!("set, cleared");
                 state.disconnect(set_id);
                 state.disconnect(cleared_id);
-            }
-            if let Some(id) = self.player_title_changed_id.take()
-                && let Some(player) = self.player.upgrade()
-            {
-                player.disconnect(id);
             }
 
             // Remove display-level CSS provider
@@ -1380,32 +1391,6 @@ impl EuphonicaWindow {
                     }
                 ),
             )));
-
-        win.imp()
-            .player_cover_changed_id
-            .replace(Some(player.connect_closure(
-                "cover-changed",
-                false,
-                closure_local!(
-                    #[watch(rename_to = this)]
-                    win,
-                    move |_: Player| {
-                        this.queue_new_background();
-                    }
-                ),
-            )));
-        win.handle_connection_state(client_state.connection_state());
-        *win.imp().client_state_conn_state_id.borrow_mut() =
-            Some(client_state.connect_notify_local(
-                Some("connection-state"),
-                clone!(
-                    #[weak(rename_to = this)]
-                    win,
-                    move |state: &ClientState, _| {
-                        this.handle_connection_state(state.connection_state());
-                    }
-                ),
-            ));
 
         win.imp()
             .player_cover_changed_id

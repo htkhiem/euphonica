@@ -1,6 +1,6 @@
 use gtk::{
     CompositeTemplate,
-    glib::{self, Object, clone},
+    glib::{self, Object, WeakRef, clone},
     prelude::*,
     subclass::prelude::*,
 };
@@ -32,7 +32,7 @@ mod imp {
         #[template_child]
         pub tags_box: TemplateChild<adw::WrapBox>,
 
-        pub window: OnceCell<EuphonicaWindow>,
+        pub window: WeakRef<EuphonicaWindow>,
         pub on_tag_added: OnceCell<Box<dyn Fn() + 'static>>,
         pub on_tag_removed: OnceCell<Box<dyn Fn() + 'static>>,
         pub on_add_btn_clicked: OnceCell<Box<dyn Fn() + 'static>>,
@@ -55,6 +55,12 @@ mod imp {
     }
 
     impl ObjectImpl for TagsSection {
+        fn dispose(&self) {
+            while let Some(child) = self.obj().first_child() {
+                child.unparent();
+            }
+        }
+
         fn constructed(&self) {
             self.parent_constructed();
 
@@ -113,8 +119,7 @@ impl TagsSection {
     pub fn set_window(&self, window: &EuphonicaWindow) {
         self.imp()
             .window
-            .set(window.clone())
-            .unwrap_or_else(|_| panic!("Window already set"));
+            .set(Some(window));
     }
 
     /// Set callback called after a tag is added (from UI entry or `add_tag`).
@@ -159,13 +164,13 @@ impl TagsSection {
             }
         }
 
-        let window = self.imp().window.get().unwrap();
+        let window = self.imp().window.upgrade().unwrap();
         let tags_box = self.imp().tags_box.get();
 
         let tag = TagButton::new(
             data,
             &tags_box,
-            window,
+            &window,
             clone!(
                 #[weak(rename_to = this)]
                 self,
