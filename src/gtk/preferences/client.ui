@@ -3,7 +3,7 @@
   <requires lib="gtk" version="4.0"/>
   <requires lib="Adw" version="1.0"/>
   <template class="EuphonicaClientPreferences" parent="AdwPreferencesPage">
-    <property name="title" translatable="true">Client</property>
+    <property name="title" translatable="true">General</property>
     <property name="icon-name">server-pick-symbolic</property>
     <child>
       <object class="AdwPreferencesGroup" id="standalone_mode_group">
