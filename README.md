@@ -114,7 +114,9 @@ Other ways to install Euphonica are listed below:
 
 ## Set-up
 
-Euphonica requires some preparation before it can be used, especially if you have never used an MPD client before. Please see the [wiki article](https://github.com/htkhiem/euphonica/wiki/Installation-&-basic-local-configuration) for instructions on setting up a basic local instance.
+Euphonica now comes batteries-included, with an onboarding guide to help you set things up.
+
+For using Euphonica as a traditional MPD client, please see the [wiki article](https://github.com/htkhiem/euphonica/wiki/Installation-&-basic-local-configuration) for instructions on setting up a basic local instance.
 
 ## Build
 

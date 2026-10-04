@@ -568,15 +568,17 @@ mod imp {
                         }
                         "fft-backend-idx" => {
                             if let Ok(new) = value.get::<i32>() {
-                                let old = this.fft_backend_idx.replace(new);
+                                let _ = this.fft_backend_idx.replace(new);
 
-                                if old != new {
-                                    this.obj().maybe_stop_fft_thread().await;
-                                    this.fft_backend
-                                        .replace(Some(this.obj().init_fft_backend()));
-                                    this.obj().maybe_start_fft_thread();
-                                    this.obj().notify("fft-backend-idx");
-                                }
+                                // For simplicity, ALWAYS restart backend regardless of whether the property actually changed or not.
+                                // Some startup code paths (spaghetti ik) relies on this to start the backend. Refusing to restart
+                                // might cause the FIFO backend to never start as its index is 0, which coincidentally is  the
+                                // default value the Player controller was created for.
+                                this.obj().maybe_stop_fft_thread().await;
+                                this.fft_backend
+                                    .replace(Some(this.obj().init_fft_backend()));
+                                this.obj().maybe_start_fft_thread();
+                                this.obj().notify("fft-backend-idx");
                             }
                         }
                         "pipewire-restart-between-songs" => {
@@ -758,7 +760,7 @@ impl Player {
     // On each FFT frame (not screen frame):
     // 1. Read app preferences.
     //    - If visualiser is disabled or stop flag is true, then stop this thread.
-    //    - Else, read the specified number of samples from the named pipe.
+    //    - Else, read the specified number of samples.
     //      This may have changed from the last frame by the user.
     //    - Get the number of frequencies set by the user. Again this can be changed on-the-fly.
     // 2. Perform FFT & extrapolate to the marker frequencies.
