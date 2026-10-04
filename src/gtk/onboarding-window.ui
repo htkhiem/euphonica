@@ -46,22 +46,534 @@
     </child>
 
     <property name="content">
-      <object class="GtkScrolledWindow">
-        <property name="propagate-natural-width">true</property>
-        <property name="propagate-natural-height">true</property>
-        <child>
-          <object class="GtkBox" id="content">
-            <property name="halign">fill</property>
-            <property name="orientation">1</property>
+      <object class="AdwToolbarView">
+        <child type="top">
+          <object class="AdwHeaderBar"></object>
+        </child>
+        <property name="content">
+
+          <object class="GtkScrolledWindow">
+            <property name="propagate-natural-width">true</property>
+            <property name="propagate-natural-height">true</property>
             <child>
-              <object class="AdwToastOverlay" id="toast_overlay">
+              <!-- Use AdwPageStack instead of GtkStack here so we size each page separately, i.e. one page's size
+                      won't be affected by another page's content changes. -->
+              <object class="AdwViewStack" id="page_stack">
+                <property name="enable-transitions">true</property>
+
+                <!-- Page 0: welcome -->
                 <child>
-                  <object class="AdwToolbarView">
-                    <child type="top">
-                      <object class="AdwHeaderBar"></object>
-                    </child>
-                    <property name="content">
-                      <!-- Page 1 -->
+                  <object class="AdwViewStackPage">
+                    <property name="name">welcome</property>
+                    <property name="child">
+                      <object class="GtkBox">
+                        <style>
+                          <class name="padding-12"/>
+                        </style>
+                        <property name="vexpand">true</property>
+                        <property name="valign">center</property>
+                        <property name="orientation">1</property>
+                        <property name="spacing">18</property>
+                        <child>
+                          <object class="GtkImage">
+                            <property name="icon-name">io.github.htkhiem.Euphonica</property>
+                            <property name="pixel-size">192</property>
+                          </object>
+                        </child>
+
+                        <child>
+                          <object class="GtkLabel">
+                            <property name="label" translatable="true">Welcome!</property>
+                            <property name="wrap">true</property>
+                            <property name="justify">center</property>
+                            <style>
+                              <class name="title-2"/>
+                            </style>
+                          </object>
+                        </child>
+
+                        <child>
+                          <object class="GtkLabel">
+                            <property name="label" translatable="true">This onboarding guide will help you set things up before the first run.</property>
+                            <property name="wrap">true</property>
+                            <property name="justify">center</property>
+                          </object>
+                        </child>
+
+                        <child>
+                          <object class="GtkButton" id="p0_next">
+                            <style>
+                              <class name="pill"/>
+                              <class name="suggested-action"/>
+                            </style>
+                            <property name="halign">center</property>
+                            <property name="label" translatable="true">Next</property>
+                          </object>
+                        </child>
+                      </object>
+                    </property>
+                  </object>
+                </child>
+
+                <!-- Page 1: standalone or client mode -->
+                <child>
+                  <object class="AdwViewStackPage">
+                    <property name="name">app_mode</property>
+                    <property name="child">
+                      <object class="GtkBox">
+                        <style>
+                          <class name="padding-12"/>
+                        </style>
+                        <property name="orientation">1</property>
+                        <child>
+                          <object class="GtkLabel">
+                            <property name="label" translatable="true">How would you like to use Euphonica?</property>
+                            <property name="wrap">true</property>
+                            <property name="justify">center</property>
+                            <style>
+                              <class name="title-2"/>
+                            </style>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkBox">
+                            <style>
+                              <class name="linked"/>
+                            </style>
+                            <property name="homogeneous">true</property>
+                            <property name="vexpand">true</property>
+                            <!-- Why does "end" look centered here while "center" doesn't?? -->
+                            <property name="valign">end</property>
+                            <child>
+                              <object class="GtkButton" id="standalone_mode_btn">
+                                <property name="hexpand">true</property>
+                                <property name="vexpand">false</property>
+                                <accessibility>
+                                  <property name="label" translatable="true">As a standalone music player</property>
+                                </accessibility>
+                                <child>
+                                  <object class="GtkBox">
+                                    <property name="orientation">1</property>
+                                    <property name="spacing">6</property>
+                                    <child>
+                                      <object class="GtkImage">
+                                        <style>
+                                          <class name="accent"/>
+                                        </style>
+                                        <property name="icon-name">standalone-mode-symbolic</property>
+                                        <property name="pixel-size">144</property>
+                                      </object>
+                                    </child>
+                                    <child>
+                                      <object class="GtkLabel">
+                                        <property name="label" translatable="true">As a standalone music player</property>
+                                        <property name="wrap">true</property>
+                                        <property name="justify">center</property>
+                                        <property name="margin-start">6</property>
+                                        <property name="margin-end">6</property>
+                                        <property name="vexpand">true</property>
+                                        <property name="valign">center</property>
+                                        <style>
+                                          <class name="heading"/>
+                                        </style>
+                                      </object>
+                                    </child>
+                                    <child>
+                                      <object class="GtkCheckButton" id="standalone_mode">
+                                        <style>
+                                          <class name="selection-mode"/>
+                                        </style>
+                                        <property name="halign">center</property>
+                                        <property name="margin-bottom">6</property>
+                                        <accessibility>
+                                          <property name="label" translatable="true">As a standalone music player</property>
+                                        </accessibility>
+                                      </object>
+                                    </child>
+                                  </object>
+                                </child>
+                              </object>
+                            </child>
+                            <child>
+                              <object class="GtkButton" id="client_mode_btn">
+                                <property name="hexpand">true</property>
+                                <property name="vexpand">false</property>
+                                <accessibility>
+                                  <property name="label" translatable="true">Connect to an MPD-compatible server</property>
+                                </accessibility>
+                                <child>
+                                  <object class="GtkBox">
+                                    <property name="orientation">1</property>
+                                    <property name="spacing">6</property>
+                                    <child>
+                                      <object class="GtkImage">
+                                        <style>
+                                          <class name="accent"/>
+                                        </style>
+                                        <property name="icon-name">client-mode-symbolic</property>
+                                        <property name="pixel-size">144</property>
+                                      </object>
+                                    </child>
+                                    <child>
+                                      <object class="GtkLabel">
+                                        <property name="label" translatable="true">Connect to an MPD-compatible server</property>
+                                        <property name="wrap">true</property>
+                                        <property name="justify">center</property>
+                                        <property name="margin-start">6</property>
+                                        <property name="margin-end">6</property>
+                                        <property name="vexpand">true</property>
+                                        <property name="valign">center</property>
+                                        <style>
+                                          <class name="heading"/>
+                                        </style>
+                                      </object>
+                                    </child>
+                                    <child>
+                                      <object class="GtkCheckButton" id="client_mode">
+                                        <style>
+                                          <class name="selection-mode"/>
+                                        </style>
+                                        <property name="halign">center</property>
+                                        <property name="margin-bottom">6</property>
+                                        <property name="group">standalone_mode</property>
+                                        <accessibility>
+                                          <property name="label" translatable="true">Connect to an MPD-compatible server</property>
+                                        </accessibility>
+                                      </object>
+                                    </child>
+                                  </object>
+                                </child>
+                              </object>
+                            </child>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkBox">
+                            <property name="margin-top">12</property>
+                            <property name="spacing">12</property>
+                            <property name="valign">end</property>
+                            <property name="vexpand">true</property>
+                            <child>
+                              <object class="GtkButton" id="p1_prev">
+                                <style>
+                                  <class name="pill"/>
+                                </style>
+                                <property name="label" translatable="true">Back</property>
+                                <property name="hexpand">true</property>
+                              </object>
+                            </child>
+
+                            <child>
+                              <object class="GtkButton" id="p1_next">
+                                <property name="sensitive">false</property>
+                                <style>
+                                  <class name="pill"/>
+                                  <class name="suggested-action"/>
+                                </style>
+                                <property name="label" translatable="true">Next</property>
+                                <property name="hexpand">true</property>
+                              </object>
+                            </child>
+                          </object>
+                        </child>
+                      </object>
+                    </property>
+                  </object>
+                </child>
+
+                <!-- Page 2: server/connection settings depending on selection -->
+                <child>
+                  <object class="AdwViewStackPage">
+                    <property name="name">server_conn</property>
+                    <property name="child">
+                      <object class="GtkBox">
+                        <style>
+                          <class name="padding-12"/>
+                        </style>
+                        <property name="orientation">1</property>
+                        <child>
+                          <object class="GtkBox" id="standalone_mode_settings">
+                            <property name="visible" bind-source="standalone_mode" bind-property="active" bind-flags="sync-create"/>
+                            <property name="hexpand">true</property>
+                            <property name="spacing">12</property>
+                            <property name="vexpand">true</property>
+                            <property name="orientation">1</property>
+                            <property name="spacing">12</property>
+
+                            <child>
+                              <object class="GtkLabel">
+                                <property name="label" translatable="true">Configure library &amp; outputs</property>
+                                <property name="wrap">true</property>
+                                <property name="justify">center</property>
+                                <style>
+                                  <class name="title-2"/>
+                                </style>
+                              </object>
+                            </child>
+
+                            <child>
+                              <object class="GtkListBox">
+                                <style>
+                                  <class name="boxed-list"/>
+                                </style>
+                                <property name="selection-mode">none</property>
+                                <property name="vexpand">true</property>
+                                <property name="valign">end</property>
+                                <child>
+                                  <object class="AdwActionRow" id="mpd_library_path">
+                                    <style>
+                                      <class name="error"/>
+                                    </style>
+                                    <property name="title" translatable="true">Path to music library</property>
+                                    <property name="subtitle">(unspecified)</property>
+                                    <child type="suffix">
+                                      <object class="GtkButton" id="mpd_library_browse">
+                                        <property name="valign">center</property>
+                                        <property name="label" translatable="true">Browse...</property>
+                                      </object>
+                                    </child>
+                                  </object>
+                                </child>
+
+                                <child>
+                                  <object class="AdwActionRow" id="config_outputs_row">
+                                    <property name="title" translatable="true">Configure audio outputs</property>
+                                    <property name="activatable">true</property>
+                                    <child type="suffix">
+                                      <object class="GtkImage">
+                                        <property name="icon-name">right-symbolic</property>
+                                        <style>
+                                          <class name="dimmed"/>
+                                        </style>
+                                      </object>
+                                    </child>
+                                  </object>
+                                </child>
+
+                                <!-- Located near last since it's not something the user should change -->
+                                <child>
+                                  <object class="AdwSwitchRow" id="mpd_override_exec_path">
+                                    <property name="title" translatable="true">Override MPD executable path</property>
+                                    <property name="subtitle" translatable="true">Specify where the MPD executable is on your system, in case it is not in $PATH or you would like to use a custom one.</property>
+                                  </object>
+                                </child>
+
+                                <child>
+                                  <object class="AdwEntryRow" id="mpd_exec_path">
+                                    <property name="visible" bind-source="mpd_override_exec_path" bind-property="active" bind-flags="sync-create"/>
+                                    <property name="title" translatable="true">MPD executable path</property>
+                                  </object>
+                                </child>
+
+                                <child>
+                                  <object class="AdwActionRow" id="standalone_status">
+                                    <style>
+                                      <class name="property"/>
+                                    </style>
+                                    <child type="prefix">
+                                      <object class="GtkImage" id="standalone_status_icon">
+                                        <style>
+                                          <class name="error"/>
+                                        </style>
+                                        <property name="icon-name">disabled-feature-symbolic</property>
+                                      </object>
+                                    </child>
+                                    <property name="title" translatable="true">Status</property>
+                                    <property name="subtitle">Failing</property>
+                                  </object>
+                                </child>
+                              </object>
+                            </child>
+                          </object>
+                        </child>
+
+                        <child>
+                          <object class="GtkBox" id="client_mode_settings">
+                            <property name="visible" bind-source="client_mode" bind-property="active" bind-flags="sync-create"/>
+                            <property name="hexpand">true</property>
+                            <property name="vexpand">true</property>
+                            <property name="orientation">1</property>
+                            <property name="spacing">12</property>
+
+                            <child>
+                              <object class="GtkLabel">
+                                <property name="label" translatable="true">Connect to an MPD-compatible server</property>
+                                <property name="wrap">true</property>
+                                <property name="justify">center</property>
+                                <style>
+                                  <class name="title-2"/>
+                                </style>
+                              </object>
+                            </child>
+
+                            <child>
+                              <object class="GtkListBox">
+                                <style>
+                                  <class name="boxed-list"/>
+                                </style>
+                                <property name="selection-mode">none</property>
+                                <property name="vexpand">true</property>
+                                <property name="valign">end</property>
+                                <child>
+                                  <object class="AdwSwitchRow" id="mpd_use_unix_socket">
+                                    <property name="title" translatable="true">Connect via local socket</property>
+                                  </object>
+                                </child>
+                                <child>
+                                  <object class="AdwEntryRow" id="mpd_unix_socket">
+                                    <property name="visible" bind-source="mpd_use_unix_socket" bind-property="active" bind-flags="sync-create"/>
+                                    <property name="title" translatable="true">Local socket</property>
+                                    <property name="visible">false</property>
+                                  </object>
+                                </child>
+                                <child>
+                                  <object class="AdwEntryRow" id="mpd_host">
+                                    <property name="visible" bind-source="mpd_use_unix_socket" bind-property="active" bind-flags="sync-create|invert-boolean"/>
+                                    <property name="title" translatable="true">Host address</property>
+                                    <!-- Sane local server default -->
+                                    <property name="text">localhost</property>
+                                  </object>
+                                </child>
+                                <child>
+                                  <object class="AdwEntryRow" id="mpd_port">
+                                    <property name="visible" bind-source="mpd_use_unix_socket" bind-property="active" bind-flags="sync-create|invert-boolean"/>
+                                    <property name="title" translatable="true">Port</property>
+                                    <!-- Sane local server default -->
+                                    <property name="text">6600</property>
+                                  </object>
+                                </child>
+                                <child>
+                                  <object class="AdwPasswordEntryRow" id="mpd_password">
+                                    <property name="title" translatable="true">Password (optional)</property>
+                                    <property name="sensitive">false</property>
+                                    <property name="tooltip-text" translatable="true">Default credential store is not available</property>
+                                  </object>
+                                </child>
+                                <child>
+                                  <object class="AdwSwitchRow" id="mpd_download_album_art">
+                                    <property name="title" translatable="true">Download album arts</property>
+                                    <property name="subtitle" translatable="true">Fetch album art files (named "cover.png/jpg/webp") and embedded covers in song files.</property>
+                                    <property name="active">true</property>
+                                  </object>
+                                </child>
+                                <child>
+                                  <object class="AdwSwitchRow" id="mpd_backup_meta_as_stickers">
+                                    <property name="title" translatable="true">Automatically back up metadata as stickers</property>
+                                    <property name="subtitle" translatable="true">Metadata such as album wiki and artist bio can be uploaded to your MPD server's stickers DB and can be fetched by your other Euphonica instances. Does nothing if stickers DB is not available.</property>
+                                    <property name="active">true</property>
+                                  </object>
+                                </child>
+                                <child>
+                                  <object class="AdwActionRow" id="mpd_status">
+                                    <style>
+                                      <class name="property"/>
+                                    </style>
+                                    <property name="title" translatable="true">Status</property>
+                                    <property name="subtitle">Unknown</property>
+                                    <child type="prefix">
+                                      <object class="GtkImage" id="mpd_status_icon">
+                                        <style>
+                                          <class name="error"/>
+                                        </style>
+                                        <property name="icon-name">disabled-feature-symbolic</property>
+                                      </object>
+                                    </child>
+                                  </object>
+                                </child>
+                              </object>
+                            </child>
+                          </object>
+                        </child>
+
+                        <child>
+                          <object class="GtkBox">
+                            <property name="margin-top">12</property>
+                            <property name="spacing">12</property>
+                            <property name="valign">end</property>
+                            <property name="homogeneous">true</property>
+                            <child>
+                              <object class="GtkButton" id="p2_prev">
+                                <style>
+                                  <class name="pill"/>
+                                </style>
+                                <property name="hexpand">true</property>
+                                <property name="label" translatable="true">Back</property>
+                              </object>
+                            </child>
+
+                            <child>
+                              <object class="GtkButton" id="p2_next">
+                                <property name="vexpand">true</property>
+                                <style>
+                                  <class name="pill"/>
+                                  <class name="suggested-action"/>
+                                </style>
+                                <property name="hexpand">true</property>
+                                <property name="label" translatable="true">Test config</property>
+                              </object>
+                            </child>
+                          </object>
+                        </child>
+                      </object>
+                    </property>
+                  </object>
+                </child>
+
+                <!-- Page 2.1: outputs -->
+                <child>
+                  <object class="AdwViewStackPage">
+                    <property name="name">outputs</property>
+                    <property name="child">
+                      <object class="GtkBox">
+                        <style>
+                          <class name="padding-12"/>
+                        </style>
+                        <property name="vexpand">true</property>
+                        <property name="orientation">1</property>
+                        <!-- 6px standard spacing, used between the listbox and the add new output btn -->
+                        <property name="spacing">6</property>
+
+                        <child>
+                          <object class="EuphonicaAudioOutputs" id="outputs_box">
+                            <property name="vexpand">true</property>
+                          </object>
+                        </child>
+
+                        <child>
+                          <object class="GtkButton" id="add_output">
+                            <child>
+                              <object class="AdwButtonContent">
+                                <property name="icon-name">plus-symbolic</property>
+                                <property name="label" translatable="true">Add new output</property>
+                              </object>
+                            </child>
+                          </object>
+                        </child>
+
+                        <child>
+                          <object class="GtkButton" id="outputs_back">
+                            <style>
+                              <class name="pill"/>
+                            </style>
+                            <property name="halign">center</property>
+                            <child>
+                              <object class="AdwButtonContent">
+                                <property name="icon-name">left-symbolic</property>
+                                <property name="label" translatable="true">Back</property>
+                              </object>
+                            </child>
+                          </object>
+                        </child>
+                      </object>
+                    </property>
+                  </object>
+                </child>
+
+                <!-- Page 3: library -->
+                <child>
+                  <object class="AdwViewStackPage">
+                    <property name="name">library</property>
+                    <property name="child">
                       <object class="GtkBox">
                         <style>
                           <class name="padding-12"/>
@@ -79,11 +591,15 @@
                         </child>
                         <child>
                           <object class="GtkBox">
+                            <style>
+                              <class name="linked"/>
+                            </style>
                             <property name="homogeneous">true</property>
-                            <property name="spacing">12</property>
                             <property name="margin-top">12</property>
+                            <property name="vexpand">true</property>
+                            <property name="valign">end</property>
                             <child>
-                              <object class="GtkButton" id="release_folder_library_button">
+                              <object class="GtkButton" id="release_folder_library_btn">
                                 <property name="hexpand">true</property>
                                 <property name="vexpand">false</property>
                                 <accessibility>
@@ -102,20 +618,20 @@
                                         <property name="margin-bottom">24</property>
                                         <child>
                                           <object class="GtkImage" id="release_folder_1_image">
-                                            <property name="icon-name">release-folder-1-symbolic</property>
-                                            <property name="pixel-size">144</property>
                                             <style>
                                               <class name="accent"/>
                                             </style>
+                                            <property name="icon-name">release-folder-1-symbolic</property>
+                                            <property name="pixel-size">144</property>
                                           </object>
                                         </child>
                                         <child>
                                           <object class="GtkImage" id="release_folder_2_image">
-                                            <property name="icon-name">release-folder-2-symbolic</property>
-                                            <property name="pixel-size">144</property>
                                             <style>
                                               <class name="accent"/>
                                             </style>
+                                            <property name="icon-name">release-folder-2-symbolic</property>
+                                            <property name="pixel-size">144</property>
                                           </object>
                                         </child>
                                       </object>
@@ -138,6 +654,9 @@
                                       <object class="GtkCheckButton" id="release_folder_library_mode">
                                         <property name="halign">center</property>
                                         <property name="margin-bottom">6</property>
+                                        <style>
+                                          <class name="selection-mode"/>
+                                        </style>
                                         <accessibility>
                                           <property name="label" translatable="true">Each album/release has its own folder</property>
                                         </accessibility>
@@ -148,7 +667,7 @@
                               </object>
                             </child>
                             <child>
-                              <object class="GtkButton" id="mixed_library_button">
+                              <object class="GtkButton" id="mixed_library_btn">
                                 <property name="hexpand">true</property>
                                 <property name="vexpand">false</property>
                                 <accessibility>
@@ -167,20 +686,20 @@
                                         <property name="margin-bottom">24</property>
                                         <child>
                                           <object class="GtkImage" id="mixed_folder_1_image">
-                                            <property name="icon-name">mixed-folder-1-symbolic</property>
-                                            <property name="pixel-size">144</property>
                                             <style>
                                               <class name="accent"/>
                                             </style>
+                                            <property name="icon-name">mixed-folder-1-symbolic</property>
+                                            <property name="pixel-size">144</property>
                                           </object>
                                         </child>
                                         <child>
                                           <object class="GtkImage" id="mixed_folder_2_image">
-                                            <property name="icon-name">mixed-folder-2-symbolic</property>
-                                            <property name="pixel-size">144</property>
                                             <style>
                                               <class name="accent"/>
                                             </style>
+                                            <property name="icon-name">mixed-folder-2-symbolic</property>
+                                            <property name="pixel-size">144</property>
                                           </object>
                                         </child>
                                       </object>
@@ -204,6 +723,9 @@
                                         <property name="group">release_folder_library_mode</property>
                                         <property name="halign">center</property>
                                         <property name="margin-bottom">6</property>
+                                        <style>
+                                          <class name="selection-mode"/>
+                                        </style>
                                         <accessibility>
                                           <property name="label" translatable="true">Other/mixed</property>
                                         </accessibility>
@@ -248,16 +770,65 @@
                           </object>
                         </child>
                         <child>
-                          <object class="GtkButton" id="finish_btn">
+                          <object class="GtkBox">
                             <property name="margin-top">12</property>
-                            <property name="sensitive">false</property>
-                            <property name="vexpand">true</property>
+                            <property name="spacing">12</property>
                             <property name="valign">end</property>
-                            <style>
-                              <class name="pill"/>
-                              <class name="suggested-action"/>
-                            </style>
-                            <property name="label" translatable="true">Start using Euphonica</property>
+                            <property name="homogeneous">true</property>
+                            <child>
+                              <object class="GtkButton" id="p3_prev">
+                                <style>
+                                  <class name="pill"/>
+                                </style>
+                                <property name="label" translatable="true">Back</property>
+                                <property name="hexpand">true</property>
+                              </object>
+                            </child>
+
+                            <child>
+                              <object class="GtkButton" id="finish_btn">
+                                <property name="sensitive">false</property>
+                                <property name="vexpand">true</property>
+                                <style>
+                                  <class name="pill"/>
+                                  <class name="suggested-action"/>
+                                </style>
+                                <property name="label" translatable="true">Finish</property>
+                                <property name="hexpand">true</property>
+                              </object>
+                            </child>
+                          </object>
+                        </child>
+                      </object>
+                    </property>
+                  </object>
+                </child>
+
+                <!-- Page 4: init DB. Scanning is only performed when starting in Standalone Mode.
+                This is a necessity as the internal MPD process needs to stay alive for long enough to complete a scan
+                and the user is likely to close Euphonica before that (plus before a full scan there'd be nothing to
+                show in the UI).
+                For an external server we leave it to that server having already been initialised with the library. -->
+                <child>
+                  <object class="AdwViewStackPage">
+                    <property name="name">init-db</property>
+                    <property name="child">
+                      <object class="GtkBox">
+                        <property name="orientation">1</property>
+                        <property name="spacing">12</property>
+                        <property name="valign">center</property>
+                        <property name="hexpand">true</property>
+                        <property name="vexpand">true</property>
+                        <child>
+                          <object class="AdwSpinner">
+                            <property name="height-request">64</property>
+                            <property name="width-request">64</property>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="AdwStatusPage">
+                            <property name="title" translatable="true">Scanning library</property>
+                            <property name="description" translatable="true">Initialising library DB. This may take up to several minutes.</property>
                           </object>
                         </child>
                       </object>
@@ -267,7 +838,7 @@
               </object>
             </child>
           </object>
-        </child>
+        </property>
       </object>
     </property>
   </template>

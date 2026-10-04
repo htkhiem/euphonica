@@ -1,32 +1,33 @@
 {
-    "id" : "io.github.htkhiem.Euphonica",
-    "runtime" : "org.gnome.Platform",
-    "runtime-version" : "49",
-    "sdk" : "org.gnome.Sdk",
-    "sdk-extensions" : [
+    "id": "io.github.htkhiem.Euphonica",
+    "runtime": "org.gnome.Platform",
+    "runtime-version": "50",
+    "sdk": "org.gnome.Sdk",
+    "sdk-extensions": [
         "org.freedesktop.Sdk.Extension.rust-stable",
         "org.freedesktop.Sdk.Extension.llvm21"
     ],
-    "command" : "euphonica",
-    "finish-args" : [
+    "command": "euphonica",
+    "finish-args": [
         "--share=network",
         "--share=ipc",
         "--socket=fallback-x11",
         "--device=dri",
         "--socket=wayland",
+        "--talk-name=org.freedesktop.secrets",
         "--filesystem=xdg-run/pipewire-0:ro"
     ],
-    "build-options" : {
-        "append-path" : "/usr/lib/sdk/rust-stable/bin",
-        "build-args" : [
+    "build-options": {
+        "append-path": "/usr/lib/sdk/rust-stable/bin",
+        "build-args": [
             "--share=network"
         ],
-        "env" : {
-            "RUST_BACKTRACE" : "1",
-            "RUST_LOG" : "euphonica=debug"
+        "env": {
+            "RUST_BACKTRACE": "1",
+            "RUST_LOG": "euphonica=debug"
         }
     },
-    "cleanup" : [
+    "cleanup": [
         "/include",
         "/lib/pkgconfig",
         "/man",
@@ -37,19 +38,51 @@
         "*.la",
         "*.a"
     ],
-    "modules" : [
+    "modules": [
         {
-            "name" : "euphonica",
-            "builddir" : true,
-            "buildsystem" : "meson",
+            "name": "soxr",
+            "buildsystem": "cmake",
+            "config-opts": [
+                "-DCMAKE_POLICY_VERSION_MINIMUM=3.5"
+            ],
+            "sources": [
+                {
+                    "type": "archive",
+                    "url": "https://github.com/chirlu/soxr/archive/refs/tags/0.1.3.tar.gz",
+                    "sha256": "db6ca1b1e8405c6ef92f8294fc123d910abf0a114003b3f0f13fa57a95fd62d0"
+                }
+            ]
+        },
+        {
+            "name": "mpd",
+            "buildsystem": "meson",
+            "config-opts": [
+                "--buildtype=release"
+            ],
+            "sources": [
+                {
+                    "type": "archive",
+                    "url": "https://github.com/MusicPlayerDaemon/MPD/archive/refs/tags/v0.24.15.tar.gz",
+                    "sha256": "448172fcd26aa6eb8bfe95c998cf7bd612ae6beaf5ba54f2cbf984d0249d3de4"
+                }
+            ]
+        },
+        {
+            "name": "euphonica",
+            "builddir": true,
+            "buildsystem": "meson",
             "config-opts": [
                 "--buildtype=debug"
             ],
-            "sources" : [
+            "sources": [
                 {
-                    "type" : "dir",
-                    "path" : ".",
-                    "skip" : [ "./build", "./build-flatpak", "./target" ]
+                    "type": "dir",
+                    "path": ".",
+                    "skip": [
+                        "./build",
+                        "./build-flatpak",
+                        "./target"
+                    ]
                 }
             ],
             "build-options": {

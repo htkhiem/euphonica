@@ -147,6 +147,8 @@
                     </property>
                     <property name="content">
                       <object class="GtkListBox" id="content">
+                        <!-- Make the excess last separator nicer-looking -->
+                        <property name="overflow">hidden</property>
                         <property name="selection-mode">3</property>
                         <property name="activate-on-single-click">false</property>
                         <property name="show-separators">true</property>

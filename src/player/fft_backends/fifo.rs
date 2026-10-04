@@ -63,21 +63,19 @@ impl FftBackendImpl for FifoFftBackend {
         if curr_status != FftStatus::Reading && curr_status != FftStatus::Stopping {
             let stop_flag = self.stop_flag.clone();
             let (sender, receiver) = async_channel::unbounded::<FftStatus>();
+            // Standalone Mode forces its own config without overwriting user settings.
+            let (fifo_path, fifo_format) = self.player.effective_fifo_input();
             let fft_handle = gio::spawn_blocking(move || {
                 let settings = settings_manager();
                 let player_settings = settings.child("player");
                 // Will require starting a new thread to account for path and format changes
-                if let Ok(format) = AudioFormat::from_str(
-                    settings.child("client").string("mpd-fifo-format").as_str(),
-                ) {
+                if let Ok(format) = AudioFormat::from_str(fifo_format.as_str()) {
                     // These settings require a restart
                     let n_samples = player_settings.uint("visualizer-fft-samples") as usize;
                     let n_bins = player_settings.uint("visualizer-spectrum-bins") as usize;
-                    if let Ok(mut reader) = super::fft::try_open_pipe(
-                        settings.child("client").string("mpd-fifo-path").as_str(),
-                        &format,
-                        n_samples,
-                    ) {
+                    if let Ok(mut reader) =
+                        super::fft::try_open_pipe(fifo_path.as_str(), &format, n_samples)
+                    {
                         // Allocate the following once only
                         let mut fft_buf_left: Vec<f32> = vec![0.0; n_samples];
                         let mut fft_buf_right: Vec<f32> = vec![0.0; n_samples];
@@ -141,11 +139,24 @@ impl FftBackendImpl for FifoFftBackend {
                                             }
                                         }
                                         for i in 0..n_bins {
-                                            output_lock.0[i] = curr_step_left[i] * curr_step_weight
-                                                + output_lock.0[i] * (1.0 - curr_step_weight);
-                                            output_lock.1[i] = curr_step_right[i]
-                                                * curr_step_weight
-                                                + output_lock.1[i] * (1.0 - curr_step_weight);
+                                            // Asymmetric moving average smoothing:
+                                            // - if next frame's amplitude is higher, set immediately for a sharp bouncy effect
+                                            // - if not, smoothly decay.
+                                            // Without the above asymmetry the whole thing looks lethargic.
+                                            if curr_step_left[i] >= output_lock.0[i] {
+                                                output_lock.0[i] = curr_step_left[i];
+                                            } else {
+                                                output_lock.0[i] = curr_step_left[i]
+                                                    * curr_step_weight
+                                                    + output_lock.0[i] * (1.0 - curr_step_weight);
+                                            }
+                                            if curr_step_right[i] >= output_lock.1[i] {
+                                                output_lock.1[i] = curr_step_right[i];
+                                            } else {
+                                                output_lock.1[i] = curr_step_right[i]
+                                                    * curr_step_weight
+                                                    + output_lock.1[i] * (1.0 - curr_step_weight);
+                                            }
                                         }
                                         // println!("FFT L: {:?}\tR: {:?}", &output_lock.0, &output_lock.1);
                                     } else {

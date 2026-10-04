@@ -21,7 +21,8 @@
 use crate::{
     application::EuphonicaApplication,
     cache::CacheState,
-    client::{ClientState, ConnectionState, Result as ClientResult},
+    client::{ClientState, Result as ClientResult},
+    common::ConnectionState,
     common::{Album, Artist, INode, ThemeSelector, View, paintables::FadePaintable},
     library::{
         AlbumView, ArtistContentView, ArtistView, DynamicPlaylistEditorView, DynamicPlaylistView,
@@ -37,13 +38,12 @@ use glib::WeakRef;
 use gtk::{
     CssProvider, cairo, gdk,
     gio::{self, SimpleActionGroup},
-    glib::{self, BoxedAnyObject, SignalHandlerId, clone, closure_local},
+    glib::{self, SignalHandlerId, clone, closure_local},
     graphene, gsk,
 };
 use image::{DynamicImage, imageops::FilterType};
 use libblur::{FastBlurChannels, ThreadingPolicy, stack_blur};
-use mpd::Subsystem;
-use std::{cell::RefCell, ops::Deref, path::PathBuf, thread, time::Duration};
+use std::{cell::RefCell, path::PathBuf, thread, time::Duration};
 use std::{
     cell::{Cell, OnceCell},
     sync::{Arc, Mutex},
@@ -272,7 +272,6 @@ mod imp {
         // Signal handler IDs for disconnect on dispose
         pub settings_bg_blur_id: RefCell<Option<SignalHandlerId>>,
         pub settings_visualizer_id: RefCell<Option<SignalHandlerId>>,
-        pub client_state_idle_id: RefCell<Option<SignalHandlerId>>,
         pub client_state_conn_state_id: RefCell<Option<SignalHandlerId>>,
         pub player_cover_changed_id: RefCell<Option<SignalHandlerId>>,
         pub cover_signal_ids: RefCell<Option<(SignalHandlerId, SignalHandlerId)>>,
@@ -304,49 +303,54 @@ mod imp {
     impl ObjectImpl for EuphonicaWindow {
         fn dispose(&self) {
             // Disconnect all signal handlers registered on global/long-lived objects
+            let settings = settings_manager().child("ui");
             if let Some(id) = self.settings_bg_blur_id.take() {
-                let settings = settings_manager().child("ui");
+                // eprintln!("bg_blur");
                 settings.disconnect(id);
             }
             if let Some(id) = self.settings_visualizer_id.take() {
-                let settings = settings_manager().child("ui");
+                // eprintln!("visualizer");
                 settings.disconnect(id);
             }
             if let Some(client_state) = self.client_state.get() {
-                if let Some(id) = self.client_state_idle_id.take() {
-                    client_state.disconnect(id);
-                }
                 if let Some(id) = self.client_state_conn_state_id.take() {
+                    // eprintln!("conn_state");
                     client_state.disconnect(id);
                 }
                 if let Some(id) = self.client_state_pct_fg_id.take() {
+                    // eprintln!("pct_fg");
                     client_state.disconnect(id);
                 }
                 if let Some(id) = self.client_state_pct_bg_id.take() {
+                    // eprintln!("pct_bg");
                     client_state.disconnect(id);
                 }
                 if let Some(id) = self.client_state_n_fg_id.take() {
+                    // eprintln!("n_fg");
                     client_state.disconnect(id);
                 }
                 if let Some(id) = self.client_state_n_bg_id.take() {
+                    // eprintln!("n_bg");
                     client_state.disconnect(id);
                 }
             }
-            if let Some(id) = self.player_cover_changed_id.take()
-                && let Some(player) = self.player.upgrade()
-            {
-                player.disconnect(id);
+            if let Some(player) = self.player.upgrade() {
+                if let Some(id) = self.player_cover_changed_id.take() {
+                    // eprintln!("cover_changed");
+                    player.disconnect(id);
+                }
+                if let Some(id) = self.player_title_changed_id.take() {
+                    // eprintln!("title_changed");
+                    player.disconnect(id);
+                }
             }
+
             if let Some((set_id, cleared_id)) = self.cover_signal_ids.take()
                 && let Some(state) = self.cache_state.upgrade()
             {
+                // eprintln!("set, cleared");
                 state.disconnect(set_id);
                 state.disconnect(cleared_id);
-            }
-            if let Some(id) = self.player_title_changed_id.take()
-                && let Some(player) = self.player.upgrade()
-            {
-                player.disconnect(id);
             }
 
             // Remove display-level CSS provider
@@ -1351,21 +1355,6 @@ impl EuphonicaWindow {
 
         win.queue_new_background();
 
-        win.imp()
-            .client_state_idle_id
-            .replace(Some(client_state.connect_closure(
-                "idle",
-                false,
-                closure_local!(
-                    #[watch(rename_to = this)]
-                    win,
-                    move |_: ClientState, subsys: BoxedAnyObject| {
-                        if subsys.borrow::<Subsystem>().deref() == &Subsystem::Database {
-                            this.send_simple_toast("Database updated with changes", 3);
-                        }
-                    }
-                ),
-            )));
         win.handle_connection_state(client_state.connection_state());
         win.imp()
             .client_state_conn_state_id
@@ -1379,32 +1368,6 @@ impl EuphonicaWindow {
                     }
                 ),
             )));
-
-        win.imp()
-            .player_cover_changed_id
-            .replace(Some(player.connect_closure(
-                "cover-changed",
-                false,
-                closure_local!(
-                    #[watch(rename_to = this)]
-                    win,
-                    move |_: Player| {
-                        this.queue_new_background();
-                    }
-                ),
-            )));
-        win.handle_connection_state(client_state.connection_state());
-        *win.imp().client_state_conn_state_id.borrow_mut() =
-            Some(client_state.connect_notify_local(
-                Some("connection-state"),
-                clone!(
-                    #[weak(rename_to = this)]
-                    win,
-                    move |state: &ClientState, _| {
-                        this.handle_connection_state(state.connection_state());
-                    }
-                ),
-            ));
 
         win.imp()
             .player_cover_changed_id
@@ -1520,7 +1483,7 @@ impl EuphonicaWindow {
         self.set_title(Some(&title));
     }
 
-    fn show_error_dialog(&self, heading: &str, body: &str, suggest_open_preferences: bool) {
+    pub fn show_error_dialog(&self, heading: &str, body: &str, suggest_open_preferences: bool) {
         // Show an alert ONLY IF the preferences dialog is not already open.
         if self.visible_dialog().is_none() {
             let diag = adw::AlertDialog::builder()

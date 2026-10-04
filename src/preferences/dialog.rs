@@ -64,7 +64,7 @@ impl Preferences {
     pub fn new(app: &EuphonicaApplication, cache: Rc<Cache>, player: &Player) -> Self {
         let res = Self::default();
 
-        res.imp().client_tab.get().setup(app, player);
+        res.imp().client_tab.get().setup(app, player, &res);
         res.imp().library_tab.get().setup(cache.clone());
         res.imp().ui_tab.get().setup();
         res.imp().integrations_tab.get().setup(cache);

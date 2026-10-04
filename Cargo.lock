@@ -55,6 +55,29 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
 
 [[package]]
+name = "alsa"
+version = "0.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d3f93573e7ddb15145d27c58c0fa0a452faad9f5452ac17ed4554ea035ea9b71"
+dependencies = [
+ "alsa-sys",
+ "bitflags",
+ "cfg-if",
+ "libc",
+]
+
+[[package]]
+name = "alsa-sys"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f0320138053ef93099f168102c37b46ac0b9c53affc56ef7696633ad5477e2be"
+dependencies = [
+ "cc",
+ "libc",
+ "pkg-config",
+]
+
+[[package]]
 name = "android_system_properties"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -887,9 +910,10 @@ dependencies = [
 
 [[package]]
 name = "euphonica"
-version = "0.99.7"
+version = "0.98.0"
 dependencies = [
  "aho-corasick",
+ "alsa",
  "ashpd",
  "async-channel",
  "async-lock",
@@ -2349,7 +2373,7 @@ dependencies = [
 [[package]]
 name = "mpd"
 version = "0.1.0"
-source = "git+https://github.com/htkhiem/rust-mpd.git?rev=218e1af6c44e08101b3c99f0df0fe1d10c3702b4#218e1af6c44e08101b3c99f0df0fe1d10c3702b4"
+source = "git+https://github.com/htkhiem/rust-mpd.git?rev=0bb8342c47244548724a5b1bcc523d9ffe3ca47f#0bb8342c47244548724a5b1bcc523d9ffe3ca47f"
 dependencies = [
  "bufstream",
  "fxhash",
