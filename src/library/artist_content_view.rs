@@ -1107,7 +1107,9 @@ impl ArtistContentView {
                             this.set_is_queuing(true);
                             let library = this.imp().library.upgrade().unwrap();
                             if this.imp().selecting_all.get() {
-                                if let Err(e) = library.queue_artist(&artist, false, false, false).await {
+                                if let Err(e) =
+                                    library.queue_artist(&artist, false, false, false).await
+                                {
                                     dbg!(e);
                                 }
                             } else {

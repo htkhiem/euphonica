@@ -538,9 +538,10 @@ impl PlaylistContentView {
                                         true,
                                         true,
                                     )
-                                    .await {
-                                        dbg!(e);
-                                    }
+                                    .await
+                                {
+                                    dbg!(e);
+                                }
                             } else {
                                 let store = &this.imp().song_list;
                                 // Get list of selected songs
@@ -551,7 +552,7 @@ impl PlaylistContentView {
                                 iter.for_each(|idx| {
                                     songs.push(store.item(idx).and_downcast::<Song>().unwrap())
                                 });
-                                if let Err(e) =library.queue_songs(&songs, true, true).await {
+                                if let Err(e) = library.queue_songs(&songs, true, true).await {
                                     dbg!(e);
                                 }
                             }
@@ -578,9 +579,10 @@ impl PlaylistContentView {
                                         false,
                                         false,
                                     )
-                                    .await {
-                                        dbg!(e);
-                                    }
+                                    .await
+                                {
+                                    dbg!(e);
+                                }
                             } else {
                                 let store = &this.imp().song_list;
                                 // Get list of selected songs

@@ -348,7 +348,6 @@ pub struct ConfigSpec {
 #[non_exhaustive]
 pub enum OutputType {
     #[strum(serialize = "httpd", to_string = "HTTPD")]
-    #[default]
     Httpd,
     #[cfg(target_os = "linux")]
     #[strum(serialize = "alsa", to_string = "ALSA")]
@@ -370,6 +369,7 @@ pub enum OutputType {
         target_os = "dragonfly"
     ))]
     #[strum(serialize = "pipewire", to_string = "PipeWire")]
+    #[default]
     PipeWire,
     #[cfg(any(
         target_os = "linux",
@@ -1132,16 +1132,20 @@ pub struct MpdConfig {
 }
 
 impl MpdConfig {
+    /// For now the managed option always uses a socket file for the following reasons:
+    /// - It does not make sense to let the user pick between socket and TCP here. This server instance
+    ///   is only used by Euphonica and is turned on and off alongside it, so we only need a loal connection.
+    /// - Supporting TCP means either letting the user set a bind address and port (no longer user-friendly, and
+    ///   if they wanted/knew how to do these already, why not just use the "external MPD" option>?), or handling
+    ///   port collisions by ourselves (takes time to scan/retry).
+    /// The only benefit supporting TCP here may bring is future Windows compatibility, but Unix sockets are
+    /// technically supported by Windows too; it's just MPD seemingly refusing to support it there.
+    /// The reason why this is NOT an `impl Default` is because it runs potentially high-latency operations
+    /// that aren't needed all the time. For example, some UI components keeping a RefCell<MpdConfig> would
+    /// invoke Default without actually needing the below logic since they'd almost immediately load a real
+    /// config from disk.
     pub fn new_minimal() -> Self {
         eprintln!("Generating a default MPD config file...");
-        // For now the managed option always uses a socket file for the following reasons:
-        // - It does not make sense to let the user pick between socket and TCP here. This server instance
-        //   is only used by Euphonica and is turned on and off alongside it, so we only need a loal connection.
-        // - Supporting TCP means either letting the user set a bind address and port (no longer user-friendly, and
-        //   if they wanted/knew how to do these already, why not just use the "external MPD" option>?), or handling
-        //   port collisions by ourselves (takes time to scan/retry).
-        // The only benefit supporting TCP here may bring is future Windows compatibility, but Unix sockets are
-        // technically supported by Windows too; it's just MPD seemingly refusing to support it there.
         let base_path = get_app_cache_path();
         let mut socket_path = base_path.clone();
         socket_path.push("mpd.socket");

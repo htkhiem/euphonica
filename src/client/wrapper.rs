@@ -190,16 +190,6 @@ impl MpdWrapper {
 
     async fn handle_idle_changes(&self, subsystem: Subsystem) {
         self.state.emit_boxed_result("idle", subsystem); // Handle some directly here
-        match subsystem {
-            Subsystem::Database => {
-                // Database changed after updating. Perform a reconnection,
-                // which will also trigger views to refresh their contents.
-                let (s, r) = oneshot::channel();
-                let _ = self.background(Task::Connect(s), r).await;
-            }
-            // More to come
-            _ => {}
-        }
     }
 
     pub async fn disconnect(&self, stop: bool, end_state: ConnectionState) -> ClientResult<()> {

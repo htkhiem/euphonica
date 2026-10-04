@@ -75,9 +75,10 @@ mod imp {
                                                 true,
                                                 false,
                                             )
-                                            .await {
-                                                dbg!(e);
-                                            }
+                                            .await
+                                        {
+                                            dbg!(e);
+                                        }
                                     }
                                     INodeType::Folder => {
                                         if let Err(e) = library
@@ -87,9 +88,10 @@ mod imp {
                                                 true,
                                                 true,
                                             )
-                                            .await {
-                                                dbg!(e);
-                                            }
+                                            .await
+                                        {
+                                            dbg!(e);
+                                        }
                                     }
                                     INodeType::Playlist => {
                                         if let Err(e) = library
@@ -98,9 +100,10 @@ mod imp {
                                                 true,
                                                 true,
                                             )
-                                            .await {
-                                                dbg!(e);
-                                            }
+                                            .await
+                                        {
+                                            dbg!(e);
+                                        }
                                     }
                                     _ => unreachable!(),
                                 }
@@ -128,9 +131,10 @@ mod imp {
                                                 false,
                                                 false,
                                             )
-                                            .await {
-                                                dbg!(e);
-                                            }
+                                            .await
+                                        {
+                                            dbg!(e);
+                                        }
                                     }
                                     INodeType::Folder => {
                                         if let Err(e) = library
@@ -140,9 +144,10 @@ mod imp {
                                                 false,
                                                 true,
                                             )
-                                            .await {
-                                                dbg!(e);
-                                            }
+                                            .await
+                                        {
+                                            dbg!(e);
+                                        }
                                     }
                                     INodeType::Playlist => {
                                         if let Err(e) = library
@@ -151,9 +156,10 @@ mod imp {
                                                 false,
                                                 false,
                                             )
-                                            .await {
-                                                dbg!(e);
-                                            }
+                                            .await
+                                        {
+                                            dbg!(e);
+                                        }
                                     }
                                     _ => unreachable!(),
                                 }

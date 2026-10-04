@@ -3,17 +3,22 @@
 
 [![Flathub Downloads](https://img.shields.io/flathub/downloads/io.github.htkhiem.Euphonica?style=flat-square&logo=flathub)](https://flathub.org/en/apps/io.github.htkhiem.Euphonica)
 
-An MPD frontend with delusions of grandeur. 
+A library-oriented music player, with delusions of grandeur.
 
 It exists to sate my need for something that's got the bling and the features to back that bling up.
 
 ## Features
-- Adaptive GTK4+`libadwaita` UI for most MPD features, from queue reordering and ReplayGain to crossfade and MixRamp configuration.
-- Practically **zero-cost** static background blur powered by [libblur](https://github.com/awxkee/libblur). Go ham with blur radius!
+- **Both a self-contained music player and an MPD-compatible client.** It does this by orchestrating its own MPD instance if needed. The power of MPD, without the hassle!
+  - Plays FLAC, MP3, OGG, Opus, WavPack, MP4/AAC, MOD, Musepack, WAV and any other format supported by FFmpeg.
+  - Plays DSD (DSF/DFF) directly if your hardware supports it, with DoP fallback if not.
+  - Detailed GUI for configuring MPD. No more manual MPD config file editing.
+  - Bit-perfect playback possible with the right output config and hardware chain (ALSA, zero resampling, no volume control, etc).
 - Customisable spectrum visualiser, reading from MPD FIFO or system PipeWire.
-- Automatic accent colours based on album art (optional).
+- Adaptive GTK4+`libadwaita` UI exposing most MPD features, from queue reordering and ReplayGain to crossfade and MixRamp configuration.
+- Practically **zero-cost** static background blur powered by [libblur](https://github.com/awxkee/libblur). Go ham with blur radius!
+- Automatic accent colours based on album art.
 - Advanced client-side dynamic playlists.
-  - Both query-based and sticker-based filtering rules are supported at the same time.
+  - Both query-based and sticker-based filtering rules are supported together.
   - Multiple ordering clauses (or random shuffle on refresh).
   - Auto-refresh scheduling (hourly, daily, weekly, etc).
   - Optional fetch limit for things like top-10 playlists.
@@ -21,17 +26,14 @@ It exists to sate my need for something that's got the bling and the features to
   - Save a dynamic playlist's current state as an MPD-side static playlist whenver you want.
   - JSON import/export for sharing & backing up dynamic playlist rules.
 - Fetch album arts, artist avatars and synced song lyrics from external sources (currently supports Last.fm, MusicBrainz and LRCLIB).
-- myMPD-compatible stickers handling (now with new album stickers standard).
-- Integrated MPRIS client with background run supported. The background instance can be reopened via your shell's MPRIS applet, the "Background applications" section in GNOME's quick settings shade (if installed via Flatpak) or simply by launching Euphonica again.
-- Rate albums (requires MPD 0.24+, and stickers enabled in MPD config) and individual songs.
+- myMPD-compatible stickers handling (now with new album stickers standard). Both album and song ratings are supported.
+- Integrated MPRIS client & Flatpak-friendly run-in-background.
 - Audio quality indicators (lossy, lossless, hi-res, DSD) for individual songs as well as albums & detailed format printout.
 - Asynchronous search for large collections. The app as a whole should work with any library size (tested with up to 30K songs).
-- Configurable multi-artist tag syntax, works with anything you throw at it.
-  - In other words, your artist tags can be pretty messy and Euphonica will still be able to correctly split them into individual artists.
+- Configurable multi-artist and multi-genre tag syntax parsing.
 - Performant album art fetching & display (LRU-cached to both cut down on disk reads and RAM usage).
 - Volume knob with dBFS readout support ('cuz why not?).
 - `ncmpcpp`-inspired keyboard shortcuts.
-- User-friendly configuration UI & GSettings backend.
 - MPD passwords are securely stored in your user's login keyring.
 - Commands are bundled into lists for efficient MPD-side processing where possible.
 
@@ -48,7 +50,7 @@ The below were captured with a mix of dark and light modes.
 
 - UI at different sizes[^1]
   <img width="4984" height="3560" alt="mini-ui" src="https://github.com/user-attachments/assets/a30845a3-2cdd-40e0-93a1-2383022a96ec" />
-  
+
 - Queue View[^1]
   <img width="2500" height="1780" alt="queue-view" src="https://github.com/user-attachments/assets/cfc760ef-5d94-48d5-b1b8-2f34c9b4bdd6" />
 
@@ -57,7 +59,7 @@ The below were captured with a mix of dark and light modes.
 
 - Artist bio, with local edits
   <img width="2500" height="1780" alt="artist-content-view" src="https://github.com/user-attachments/assets/cfce80dc-88d4-4aef-8e6f-d86776ce5989" />
-  
+
 - Dynamic Playlist Editor[^1]
   <img width="2100" height="1500" alt="dyn-playlist-editor" src="https://github.com/user-attachments/assets/971b1c88-59d1-4750-a72b-6af56bc7aa9a" />
 
@@ -76,18 +78,32 @@ The preferred way to install Euphonica is as a Flatpak app via Flathub:
     <img width='240' alt='Get it on Flathub' src='https://flathub.org/api/badge?locale=en'/>
 </a>
 
+The Flatpak installation bundles MPD 0.24 internally to power Standalone Mode.
+
 Other ways to install Euphonica are listed below:
 
 <details>
   <summary><h3>Arch Linux</h3></summary>
-  
-  An (admittedly experimental) AUR package is [now available](https://aur.archlinux.org/packages/euphonica-git).
+
+  **Full installation, latest commit**
+
+  We have an official AUR `-git` package: [euphonica-git](https://aur.archlinux.org/packages/euphonica-git).
+
+  **Client-only, latest commit:**
+
+  Starting from v0.98 the above includes `mpd` as a hard dependency. Should that be undesirable (for example if you only intend to use Euphonica as a client to an existing server, or have a non-standard MPD installation such as a fork), there's [euphonica-client-git](https://aur.archlinux.org/packages/euphonica-client-git).
+
+  The app itself is the same, with Standalone Mode still available and can be pointed to your MPD executable.
+
+  **Client-only, version-pinned:**
+
+  There is also a [version-pinned package](https://aur.archlinux.org/packages/euphonica) should `-git` is too bleeding-edge, kindly maintained by `supermario`.
 
   ```bash
   # Use your favourite AUR helper here
   paru -S euphonica-git
   ```
-  
+
 </details>
 
 <details>
@@ -106,33 +122,33 @@ Euphonica requires some preparation before it can be used, especially if you hav
   <summary><h3>Flatpak</h3></summary>
 
   Euphonica can also be built from source using `flatpak-builder`.
-  
-  This builds and installs Euphonica as a sandboxed Flatpak app on your system, complete with an entry in 
-  Flatpak-aware app stores (like GNOME Software, KDE Discover, etc). It should also work on virtually any 
+
+  This builds and installs Euphonica as a sandboxed Flatpak app on your system, complete with an entry in
+  Flatpak-aware app stores (like GNOME Software, KDE Discover, etc). It should also work on virtually any
   distribution, and does not require root privileges. Unlike installing from Flathub, this always builds
   the **latest** commit and as such is more suitable for development and testing purposes. Also, it might
   **overwrite** the existing Flathub-distributed installation in case you have one.
-  
+
   1. Add the Flathub repo in case you haven't already:
-     
+
   ```bash
   flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
   ```
   2. Run `flatpak-builder` as follows:
-     
+
   ```bash
   cd /path/to/where/you/cloned/euphonica
   flatpak-builder --force-clean --user --install-deps-from=flathub --repo=repo --install build-flatpak io.github.htkhiem.Euphonica-dev.json
   ```
   3. Once the above has completed, you can run Euphonica using:
-  
+
   ```bash
   flatpak run io.github.htkhiem.Euphonica
   ```
-  
-  
+
+
   A desktop icon entry should also have been installed for you, although it might take a reboot to show up.
-  
+
 </details>
 
 <details>
@@ -140,7 +156,7 @@ Euphonica requires some preparation before it can be used, especially if you hav
 
   This builds Euphonica against system library packages, then installs it directly into `/usr/local/bin`.
   It is the most lightweight option, but has only been tested on Arch Linux.
-  
+
   1. Make sure you have these dependencies installed beforehand:
     - `gtk4` >= 4.18
     - `libadwaita` >= 1.7
@@ -150,11 +166,11 @@ Euphonica requires some preparation before it can be used, especially if you hav
     - `sqlite` (metadata store dependency)
     - An `xdg-desktop-portal` provider
     - The latest stable Rust toolchain. I highly recommend using `rustup` to manage them. Using it, you can install the latest stable toolchain using `rustup default stable` or update your existing one with `rustup update`. Ensure that `rustc` and `cargo` are of at least version `1.88.0`.
-    
+
       If you are on Arch Linux, `gettext` should have been installed as part of the `base-devel` metapackage, which also includes `git` (to clone this repo :) ).
-  
+
   2. Init build folder
-   
+
   ```bash
   cd /path/to/where/to/clone/euphonica
   git clone https://github.com/htkhiem/euphonica.git
@@ -164,7 +180,7 @@ Euphonica requires some preparation before it can be used, especially if you hav
   ```
 
   3. Compile & install (will require root privileges)
-     
+
   ```bash
   cd build
   meson install

@@ -117,9 +117,7 @@ impl TagsSection {
     }
 
     pub fn set_window(&self, window: &EuphonicaWindow) {
-        self.imp()
-            .window
-            .set(Some(window));
+        self.imp().window.set(Some(window));
     }
 
     /// Set callback called after a tag is added (from UI entry or `add_tag`).

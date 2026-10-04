@@ -294,7 +294,8 @@
                         <child>
                           <object class="GtkBox" id="standalone_mode_settings">
                             <property name="visible" bind-source="standalone_mode" bind-property="active" bind-flags="sync-create"/>
-                            <property name="hexpand">true</property>                            <property name="spacing">12</property>
+                            <property name="hexpand">true</property>
+                            <property name="spacing">12</property>
                             <property name="vexpand">true</property>
                             <property name="orientation">1</property>
                             <property name="spacing">12</property>
@@ -796,6 +797,38 @@
                                 <property name="hexpand">true</property>
                               </object>
                             </child>
+                          </object>
+                        </child>
+                      </object>
+                    </property>
+                  </object>
+                </child>
+
+                <!-- Page 4: init DB. Scanning is only performed when starting in Standalone Mode.
+                This is a necessity as the internal MPD process needs to stay alive for long enough to complete a scan
+                and the user is likely to close Euphonica before that (plus before a full scan there'd be nothing to
+                show in the UI).
+                For an external server we leave it to that server having already been initialised with the library. -->
+                <child>
+                  <object class="AdwViewStackPage">
+                    <property name="name">init-db</property>
+                    <property name="child">
+                      <object class="GtkBox">
+                        <property name="orientation">1</property>
+                        <property name="spacing">12</property>
+                        <property name="valign">center</property>
+                        <property name="hexpand">true</property>
+                        <property name="vexpand">true</property>
+                        <child>
+                          <object class="AdwSpinner">
+                            <property name="height-request">64</property>
+                            <property name="width-request">64</property>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="AdwStatusPage">
+                            <property name="title" translatable="true">Scanning library</property>
+                            <property name="description" translatable="true">Initialising library DB. This may take up to several minutes.</property>
                           </object>
                         </child>
                       </object>

@@ -91,7 +91,13 @@ pub fn update_xdg_background_request() {
 }
 
 mod imp {
-    use crate::utils::{get_app_cache_path, get_config_basepath};
+    use gtk::glib::{BoxedAnyObject, closure_local};
+    use mpd::Subsystem;
+
+    use crate::{
+        client::ClientState,
+        utils::{get_app_cache_path, get_config_basepath},
+    };
 
     use super::*;
 
@@ -274,6 +280,30 @@ mod imp {
                     }
                 }
             ));
+
+            client.get_client_state().connect_closure(
+                "idle",
+                false,
+                closure_local!(
+                    #[weak]
+                    app,
+                    move |_: ClientState, subsys: BoxedAnyObject| {
+                        if subsys.borrow::<Subsystem>().clone() == Subsystem::Database {
+                            if let Some(win) = app.active_window().and_downcast::<EuphonicaWindow>()
+                            {
+                                win.send_simple_toast("Database updated", 3);
+                            }
+                            glib::spawn_future_local(clone!(
+                                #[weak]
+                                app,
+                                async move {
+                                    let _ = app.refresh().await;
+                                }
+                            ));
+                        }
+                    }
+                ),
+            );
 
             self.initialized.set(true);
         }
@@ -747,7 +777,7 @@ impl EuphonicaApplication {
             .boolean("mpd-use-own-server")
         {
             if let Err(e) = self.imp().server.start().await {
-                self.imp().handle_managed_server_error(e);
+                self.imp().handle_managed_server_error(dbg!(e));
                 return Err(ClientError::Server(e));
             }
         }
@@ -757,7 +787,7 @@ impl EuphonicaApplication {
         Ok(())
     }
 
-    fn update_db(&self) {
+    pub fn update_db(&self) {
         let client = self.get_client();
         glib::spawn_future_local(async move {
             if let Err(e) = client.update_db().await {

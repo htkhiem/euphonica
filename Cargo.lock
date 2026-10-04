@@ -910,7 +910,7 @@ dependencies = [
 
 [[package]]
 name = "euphonica"
-version = "0.99.7"
+version = "0.98.0"
 dependencies = [
  "aho-corasick",
  "alsa",
@@ -2373,7 +2373,7 @@ dependencies = [
 [[package]]
 name = "mpd"
 version = "0.1.0"
-source = "git+https://github.com/htkhiem/rust-mpd.git?rev=218e1af6c44e08101b3c99f0df0fe1d10c3702b4#218e1af6c44e08101b3c99f0df0fe1d10c3702b4"
+source = "git+https://github.com/htkhiem/rust-mpd.git?rev=0bb8342c47244548724a5b1bcc523d9ffe3ca47f#0bb8342c47244548724a5b1bcc523d9ffe3ca47f"
 dependencies = [
  "bufstream",
  "fxhash",

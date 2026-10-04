@@ -38,13 +38,12 @@ use glib::WeakRef;
 use gtk::{
     CssProvider, cairo, gdk,
     gio::{self, SimpleActionGroup},
-    glib::{self, BoxedAnyObject, SignalHandlerId, clone, closure_local},
+    glib::{self, SignalHandlerId, clone, closure_local},
     graphene, gsk,
 };
 use image::{DynamicImage, imageops::FilterType};
 use libblur::{FastBlurChannels, ThreadingPolicy, stack_blur};
-use mpd::Subsystem;
-use std::{cell::RefCell, ops::Deref, path::PathBuf, thread, time::Duration};
+use std::{cell::RefCell, path::PathBuf, thread, time::Duration};
 use std::{
     cell::{Cell, OnceCell},
     sync::{Arc, Mutex},
@@ -273,7 +272,6 @@ mod imp {
         // Signal handler IDs for disconnect on dispose
         pub settings_bg_blur_id: RefCell<Option<SignalHandlerId>>,
         pub settings_visualizer_id: RefCell<Option<SignalHandlerId>>,
-        pub client_state_idle_id: RefCell<Option<SignalHandlerId>>,
         pub client_state_conn_state_id: RefCell<Option<SignalHandlerId>>,
         pub player_cover_changed_id: RefCell<Option<SignalHandlerId>>,
         pub cover_signal_ids: RefCell<Option<(SignalHandlerId, SignalHandlerId)>>,
@@ -315,10 +313,6 @@ mod imp {
                 settings.disconnect(id);
             }
             if let Some(client_state) = self.client_state.get() {
-                if let Some(id) = self.client_state_idle_id.take() {
-                    // eprintln!("state_idle");
-                    client_state.disconnect(id);
-                }
                 if let Some(id) = self.client_state_conn_state_id.take() {
                     // eprintln!("conn_state");
                     client_state.disconnect(id);
@@ -1361,21 +1355,6 @@ impl EuphonicaWindow {
 
         win.queue_new_background();
 
-        win.imp()
-            .client_state_idle_id
-            .replace(Some(client_state.connect_closure(
-                "idle",
-                false,
-                closure_local!(
-                    #[watch(rename_to = this)]
-                    win,
-                    move |_: ClientState, subsys: BoxedAnyObject| {
-                        if subsys.borrow::<Subsystem>().deref() == &Subsystem::Database {
-                            this.send_simple_toast("Database updated with changes", 3);
-                        }
-                    }
-                ),
-            )));
         win.handle_connection_state(client_state.connection_state());
         win.imp()
             .client_state_conn_state_id

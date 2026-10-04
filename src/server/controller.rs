@@ -138,6 +138,8 @@ impl ManagedMpdServer {
         } else {
             String::from("mpd")
         };
+
+        eprintln!("Creating MPD subprocess...");
         let subprocess = Subprocess::newv(
             &[
                 &OsStr::new(&mpd_path),

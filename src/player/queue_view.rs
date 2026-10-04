@@ -474,7 +474,8 @@ impl QueueView {
                                 player,
                                 async move {
                                     btn.set_sensitive(false);
-                                    if let Err(e) = player.swap_dir(idx, SwapDirection::Down).await {
+                                    if let Err(e) = player.swap_dir(idx, SwapDirection::Down).await
+                                    {
                                         dbg!(e);
                                     }
                                     btn.set_sensitive(true);

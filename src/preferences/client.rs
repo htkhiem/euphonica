@@ -972,7 +972,7 @@ impl ClientPreferences {
             // Initialise with sensible defaults (the Default trait only
             // creates an empty one for filling in by try_from, not usable
             // as a base here).
-            let _ = imp.standalone_cfg.replace(MpdConfig::new_minimal());
+            let _ = imp.standalone_cfg.replace(MpdConfig::default());
         }
 
         // Populate the audio outputs subpage eagerly (like the resampler
