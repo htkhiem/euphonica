@@ -146,14 +146,16 @@ impl FftBackendImpl for FifoFftBackend {
                                             if curr_step_left[i] >= output_lock.0[i] {
                                                 output_lock.0[i] = curr_step_left[i];
                                             } else {
-                                                output_lock.0[i] = curr_step_left[i] * curr_step_weight
-                                                + output_lock.0[i] * (1.0 - curr_step_weight);
+                                                output_lock.0[i] = curr_step_left[i]
+                                                    * curr_step_weight
+                                                    + output_lock.0[i] * (1.0 - curr_step_weight);
                                             }
                                             if curr_step_right[i] >= output_lock.1[i] {
                                                 output_lock.1[i] = curr_step_right[i];
                                             } else {
-                                                output_lock.1[i] = curr_step_right[i] * curr_step_weight
-                                                + output_lock.1[i] * (1.0 - curr_step_weight);
+                                                output_lock.1[i] = curr_step_right[i]
+                                                    * curr_step_weight
+                                                    + output_lock.1[i] * (1.0 - curr_step_weight);
                                             }
                                         }
                                         // println!("FFT L: {:?}\tR: {:?}", &output_lock.0, &output_lock.1);

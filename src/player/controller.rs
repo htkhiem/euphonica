@@ -345,18 +345,22 @@ mod imp {
             let this = self.obj();
             this.select_fft_backend();
             let client_settings = settings.child("client");
-            client_settings.connect_notify_local(Some("mpd-use-own-server"), {
+            client_settings.connect_changed(Some("mpd-use-own-server"), {
                 clone!(
                     #[weak]
                     this,
-                    move |_, _| this.select_fft_backend()
+                    move |_, _| {
+                        this.select_fft_backend();
+                    }
                 )
             });
-            client_settings.connect_notify_local(Some("mpd-visualizer-pcm-source"), {
+            client_settings.connect_changed(Some("mpd-visualizer-pcm-source"), {
                 clone!(
                     #[weak]
                     this,
-                    move |_, _| this.select_fft_backend()
+                    move |_, _| {
+                        this.select_fft_backend();
+                    }
                 )
             });
 
@@ -643,20 +647,9 @@ impl Player {
         let idx = if client_settings.boolean("mpd-use-own-server") {
             0
         } else {
-            match client_settings.enum_("mpd-visualizer-pcm-source") {
-                0 => 0,
-                1 => 1,
-                _ => unimplemented!(),
-            }
+            client_settings.enum_("mpd-visualizer-pcm-source")
         };
-        self.set_property("fft-backend-idx", idx.to_value());
-        glib::spawn_future_local(clone!(
-            #[weak(rename_to = this)]
-            self,
-            async move {
-                this.restart_fft_thread().await;
-            }
-        ));
+        self.set_property("fft-backend-idx", idx.to_value()); // property setter will also trigger restart
     }
 
     /// The effective (FIFO path, format) pair for the FIFO FFT backend.
@@ -711,6 +704,10 @@ impl Player {
         {
             backend.set_param(key, val);
         }
+    }
+
+    pub fn get_fft_backend_idx(&self) -> i32 {
+        self.imp().fft_backend_idx.get()
     }
 
     /// Lazily get an MPRIS server. This will always be invoked near the start anyway

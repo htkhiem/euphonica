@@ -382,33 +382,17 @@ mod imp {
             // Standalone mode locks the visualiser data source to the hidden
             // internal FIFO; in client mode the rows follow the selection.
             self.update_visualizer_config_visibility();
-            viz_source.connect_selected_notify(
-                clone!(
+            viz_source.connect_selected_notify(clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |_| this.update_visualizer_config_visibility()
+            ));
+            self.mpd_use_own_server
+                .connect_enable_expansion_notify(clone!(
                     #[weak(rename_to = this)]
                     self,
                     move |_| this.update_visualizer_config_visibility()
-                ),
-            );
-            self.mpd_use_own_server.connect_enable_expansion_notify(
-                clone!(
-                    #[weak(rename_to = this)]
-                    self,
-                    move |_| this.update_visualizer_config_visibility()
-                ),
-            );
-
-            let _ = self
-                .viz_source_setting_id
-                .replace(Some(client_settings.connect_changed(
-                    Some("mpd-visualizer-pcm-source"),
-                    {
-                        clone!(
-                            #[weak(rename_to = this)]
-                            self,
-                            move |_, _| this.update_visualizer_config_visibility()
-                        )
-                    },
-                )));
+                ));
 
             // Library path browse
             self.mpd_library_browse.connect_clicked(clone!(
@@ -930,6 +914,21 @@ impl Default for ClientPreferences {
 }
 
 impl ClientPreferences {
+    fn populate_pipewire_device_list(&self, player: &Player) {
+        let imp = self.imp();
+        // Get PipeWire devices, if the PipeWire backend is running
+        imp.update_pipewire_device_list(
+            player
+                .get_fft_param(Some("pipewire"), "devices")
+                .and_then(|variant| variant.get::<Vec<String>>()),
+        );
+        imp.update_pipewire_current_device(
+            player
+                .get_fft_param(Some("pipewire"), "current-device")
+                .and_then(|variant| variant.get::<i32>()),
+        );
+    }
+
     /// Wire the external dependencies (application, player, dialog), load
     /// the standalone config file and perform the initial state population
     /// and sensitivity updates.
@@ -1166,17 +1165,47 @@ impl ClientPreferences {
             .sync_create()
             .build();
 
-        // Get PipeWire devices, if the PipeWire backend is running
-        self.imp().update_pipewire_device_list(
-            player
-                .get_fft_param(Some("pipewire"), "devices")
-                .and_then(|variant| variant.get::<Vec<String>>()),
+        if player.get_fft_backend_idx() == 1 {
+            self.populate_pipewire_device_list(player);
+        }
+        player.connect_notify_local(
+            Some("fft-backend-idx"),
+            clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |player, _| {
+                    if player.get_fft_backend_idx() == 1 {
+                        this.populate_pipewire_device_list(player);
+                    }
+                }
+            ),
         );
-        self.imp().update_pipewire_current_device(
-            player
-                .get_fft_param(Some("pipewire"), "current-device")
-                .and_then(|variant| variant.get::<i32>()),
-        );
+
+        let _ = imp.player_fft_param_id.replace(Some(player.connect_closure(
+            "fft-param-changed",
+            false,
+            closure_local!(
+                #[weak(rename_to = this)]
+                self,
+                move |_: Player, name: String, key: String, new_val: glib::Variant| {
+                    // Currently only need to handle PipeWire
+                    if name == "pipewire" {
+                        match key.as_str() {
+                            "devices" => {
+                                this.imp()
+                                    .update_pipewire_device_list(new_val.get::<Vec<String>>());
+                            }
+                            "current-device" => {
+                                this.imp()
+                                    .update_pipewire_current_device(new_val.get::<i32>());
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            ),
+        )));
+
         let _ = imp.player_fft_param_id.replace(Some(player.connect_closure(
             "fft-param-changed",
             false,
