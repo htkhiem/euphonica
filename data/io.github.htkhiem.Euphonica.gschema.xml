@@ -284,7 +284,7 @@
 		</key>
 
 		<key name="visualizer-fft-samples" type="u">
-			<default>512</default>
+			<default>2048</default>
 		</key>
 
 		<key name="visualizer-fps" type="u">
@@ -351,7 +351,7 @@
 			<default>0.75</default>
 		</key>
 		<key name="visualizer-scale" type="d">
-			<default>5.0</default>
+			<default>10.0</default>
 		</key>
 		<!-- DEPRECATED AND UNUSED -->
 		<key name="visualizer-blend-mode" type="u">

@@ -311,34 +311,6 @@ mod imp {
                 }
             ));
 
-            // Standalone mode locks the visualiser data source to the hidden
-            // internal FIFO; in client mode the rows follow the selection.
-            self.update_visualizer_config_visibility();
-            let _ = self
-                .viz_mode_setting_id
-                .replace(Some(client_settings.connect_changed(
-                    Some("mpd-use-own-server"),
-                    {
-                        clone!(
-                            #[weak(rename_to = this)]
-                            self,
-                            move |_, _| this.update_visualizer_config_visibility()
-                        )
-                    },
-                )));
-            let _ = self
-                .viz_source_setting_id
-                .replace(Some(client_settings.connect_changed(
-                    Some("mpd-visualizer-pcm-source"),
-                    {
-                        clone!(
-                            #[weak(rename_to = this)]
-                            self,
-                            move |_, _| this.update_visualizer_config_visibility()
-                        )
-                    },
-                )));
-
             let viz_settings = settings_manager().child("client");
             let fifo_path_row = self.fifo_path.get();
             viz_settings
@@ -407,6 +379,36 @@ mod imp {
                     }
                 })
                 .build();
+            // Standalone mode locks the visualiser data source to the hidden
+            // internal FIFO; in client mode the rows follow the selection.
+            self.update_visualizer_config_visibility();
+            viz_source.connect_selected_notify(
+                clone!(
+                    #[weak(rename_to = this)]
+                    self,
+                    move |_| this.update_visualizer_config_visibility()
+                ),
+            );
+            self.mpd_use_own_server.connect_enable_expansion_notify(
+                clone!(
+                    #[weak(rename_to = this)]
+                    self,
+                    move |_| this.update_visualizer_config_visibility()
+                ),
+            );
+
+            let _ = self
+                .viz_source_setting_id
+                .replace(Some(client_settings.connect_changed(
+                    Some("mpd-visualizer-pcm-source"),
+                    {
+                        clone!(
+                            #[weak(rename_to = this)]
+                            self,
+                            move |_, _| this.update_visualizer_config_visibility()
+                        )
+                    },
+                )));
 
             // Library path browse
             self.mpd_library_browse.connect_clicked(clone!(
