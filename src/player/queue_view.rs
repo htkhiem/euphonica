@@ -492,6 +492,12 @@ impl QueueView {
                         }
                     ),
                 );
+                player
+                    .queue()
+                    .bind_property("n-items", &end_widget.reorder_buttons(), "sensitive")
+                    .transform_to(|_, size: u32| Some(size > 1))
+                    .sync_create()
+                    .build();
                 row.set_end_widget(Some(&end_widget.into()));
                 item.set_child(Some(&row));
 
