@@ -3,7 +3,7 @@
   <requires lib="gtk" version="4.0"/>
   <template class="EuphonicaRowEditButtons" parent="GtkBox">
     <child>
-      <object class="GtkBox">
+      <object class="GtkBox" id="reorder_buttons">
         <style>
           <class name="linked"/>
         </style>
