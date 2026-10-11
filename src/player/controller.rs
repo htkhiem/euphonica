@@ -1941,49 +1941,39 @@ impl Player {
     }
 
     pub async fn swap_dir(&self, pos: u32, direction: SwapDirection) -> ClientResult<()> {
-        self.register_local_queue_changes(1);
-        let target = self.imp().queue.item(pos).and_downcast::<Song>().unwrap();
-        match direction {
-            SwapDirection::Up => {
-                if pos > 0 {
-                    let upper = self
-                        .imp()
-                        .queue
-                        .item(pos - 1)
-                        .and_downcast::<Song>()
-                        .unwrap();
-                    self.imp().queue.splice(
-                        pos - 1,
-                        2,
-                        &[
-                            target.clone().upcast::<glib::Object>(),
-                            upper.upcast::<glib::Object>(),
-                        ],
-                    );
-                    self.client()?.swap_pos(pos, pos - 1).await?;
-                }
-            }
-            SwapDirection::Down => {
-                if pos < self.imp().queue.n_items() - 1 {
-                    let lower = self
-                        .imp()
-                        .queue
-                        .item(pos + 1)
-                        .and_downcast::<Song>()
-                        .unwrap();
-                    self.imp().queue.splice(
-                        pos,
-                        2,
-                        &[
-                            lower.upcast::<glib::Object>(),
-                            target.clone().upcast::<glib::Object>(),
-                        ],
-                    );
-                    self.client()?.swap_pos(pos, pos + 1).await?;
-                }
-            }
+        let queue = self.queue();
+        let len = queue.n_items();
+        if len < 2 || pos >= len {
+            return Ok(());
         }
-        Ok(())
+        let (to, wraps) = match direction {
+            SwapDirection::Up if pos == 0 => (len - 1, true),
+            SwapDirection::Down if pos == len - 1 => (0, true),
+            SwapDirection::Up => (pos - 1, false),
+            SwapDirection::Down => (pos + 1, false),
+        };
+        let target = queue.item(pos).and_downcast::<Song>().unwrap();
+        let first = pos.min(to);
+        let count = pos.abs_diff(to) + 1;
+        let mut songs: Vec<glib::Object> = (first..first + count)
+            .map(|index| queue.item(index).unwrap())
+            .collect();
+        if pos < to {
+            songs.rotate_left(1);
+        } else {
+            songs.rotate_right(1);
+        }
+        // Update the queue atomically so GTK doesn't see it shrink between removal
+        // and insertion, which would reset the rows' hover state and covers.
+        self.register_local_queue_changes(1);
+        queue.splice(first, count, &songs);
+        if wraps {
+            self.client()?
+                .move_id(target.get_queue_id(), to as usize)
+                .await
+        } else {
+            self.client()?.swap_pos(pos, to).await
+        }
     }
 
     pub async fn move_to(&self, song: &Song, to_pos: u32) -> ClientResult<()> {

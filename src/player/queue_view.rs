@@ -28,6 +28,34 @@ use crate::{
 
 use super::Player;
 
+// Swapping Song objects also moves the highlighted row away from the mouse.
+// GTK then moves the highlight back on the next frame, briefly highlighting both rows.
+// To avoid this, we keep one item per queue position and change its song instead.
+mod queue_row_imp {
+    use super::*;
+
+    #[derive(Debug, Default, Properties)]
+    #[properties(wrapper_type = super::QueueRow)]
+    pub struct QueueRow {
+        #[property(get, set)]
+        pub song: RefCell<Option<Song>>,
+        pub row: WeakRef<SongRow>,
+    }
+
+    #[glib::object_subclass]
+    impl ObjectSubclass for QueueRow {
+        const NAME: &'static str = "EuphonicaQueueRow";
+        type Type = super::QueueRow;
+    }
+
+    #[glib::derived_properties]
+    impl ObjectImpl for QueueRow {}
+}
+
+glib::wrapper! {
+    pub struct QueueRow(ObjectSubclass<queue_row_imp::QueueRow>);
+}
+
 mod imp {
     use super::*;
 
@@ -102,6 +130,9 @@ mod imp {
         pub player_queue_id_id: RefCell<Option<SignalHandlerId>>,
 
         pub sel_model: OnceCell<SingleSelection>,
+        // The selection model holds the row store instead of the filter, so we need to
+        // keep the filter alive here to continue receiving changes from the player's queue.
+        pub filter_model: OnceCell<gtk::FilterListModel>,
 
         // Avoid multiple inits running concurrently
         pub initializing: Cell<bool>,
@@ -370,23 +401,21 @@ fn format_song_count(count: u32) -> Option<String> {
 fn bind_row_by_expressions(row: &SongRow, item: &ListItem) {
     row.set_index_visible(false);
     row.set_playing_indicator_visible(true);
-
-    item.property_expression("item")
-        .chain_property::<Song>("name")
-        .bind(row, "name", gtk::Widget::NONE);
-
     row.set_first_attrib_icon_name(Some("library-music-symbolic"));
-    item.property_expression("item")
-        .chain_property::<Song>("album")
-        .bind(row, "first-attrib-text", gtk::Widget::NONE);
     row.set_second_attrib_icon_name(Some("music-artist-symbolic"));
-    item.property_expression("item")
-        .chain_property::<Song>("artist")
-        .bind(row, "second-attrib-text", gtk::Widget::NONE);
 
-    item.property_expression("item")
-        .chain_property::<Song>("quality-grade")
-        .bind(row, "quality-grade", gtk::Widget::NONE);
+    let song = item
+        .property_expression("item")
+        .chain_property::<QueueRow>("song");
+    for (source, target) in [
+        ("name", "name"),
+        ("album", "first-attrib-text"),
+        ("artist", "second-attrib-text"),
+        ("quality-grade", "quality-grade"),
+    ] {
+        song.chain_property::<Song>(source)
+            .bind(row, target, gtk::Widget::NONE);
+    }
 }
 
 impl QueueView {
@@ -394,13 +423,38 @@ impl QueueView {
         Self::default()
     }
 
-    pub fn setup_listview(&self, player: &Player, cache: Rc<Cache>) {
-        // Enable/disable clear queue button depending on whether the queue is empty or not
-        // Set selection mode
-        // TODO: Allow click to jump to song
-        let queue_model = player.queue().clone();
+    fn update_queue_rows(
+        filtered: &gtk::FilterListModel,
+        rows: &gio::ListStore,
+        position: u32,
+        removed: u32,
+        added: u32,
+    ) {
+        let songs = (position..position + added)
+            .map(|index| filtered.item(index).and_downcast::<Song>().unwrap());
+        if removed != added {
+            let replacements: Vec<QueueRow> = songs
+                .map(|song| glib::Object::builder().property("song", &song).build())
+                .collect();
+            rows.splice(position, removed, &replacements);
+            return;
+        }
 
-        // Setup search bar
+        let slots: Vec<QueueRow> = (position..position + removed)
+            .map(|index| rows.item(index).and_downcast::<QueueRow>().unwrap())
+            .collect();
+        for (slot, song) in slots.iter().zip(songs) {
+            if slot.song().as_ref() == Some(&song) {
+                continue;
+            }
+            slot.set_song(&song);
+            if let Some(row) = slot.imp().row.upgrade() {
+                row.on_bind(&song);
+            }
+        }
+    }
+
+    pub fn setup_listview(&self, player: &Player, cache: Rc<Cache>) {
         let search_bar = self.imp().search_bar.get();
         let search_entry = self.imp().search_entry.get();
         search_bar.connect_entry(&search_entry);
@@ -412,16 +466,28 @@ impl QueueView {
             .bidirectional()
             .build();
 
-        // Chain filter
         let filter_model = gtk::FilterListModel::new(
-            Some(queue_model.clone()),
+            Some(player.queue().clone()),
             Some(self.imp().search_filter.clone()),
         );
-        filter_model.set_incremental(true);
-        let sel_model = SingleSelection::new(Some(filter_model));
-        if let Err(e) = self.imp().sel_model.set(sel_model.clone()) {
-            dbg!(e);
-        }
+        // Incremental filtering briefly removes the swapped songs before adding them
+        // back in an idle callback, which changes selection and reloads their covers.
+        // We need to finish filtering synchronously so the rows stay visible during swaps.
+        filter_model.set_incremental(false);
+        let rows = gio::ListStore::new::<QueueRow>();
+        let sel_model = SingleSelection::new(Some(rows.clone()));
+        self.imp()
+            .sel_model
+            .set(sel_model.clone())
+            .expect("Queue selection is only initialized once");
+        self.imp()
+            .filter_model
+            .set(filter_model.clone())
+            .expect("Queue filter is only initialized once");
+        Self::update_queue_rows(&filter_model, &rows, 0, 0, filter_model.n_items());
+        filter_model.connect_items_changed(move |filtered, position, removed, added| {
+            Self::update_queue_rows(filtered, &rows, position, removed, added);
+        });
         self.imp().queue.set_model(Some(&sel_model));
 
         // Set up factory
@@ -517,7 +583,11 @@ impl QueueView {
                     move |_, _x, _y| {
                         // FIXME: nonzero hotspots cause the drag icon to fly off-screen.
                         // Pass the whole song GObject
-                        if let Some(song) = item.item().and_downcast::<Song>() {
+                        if let Some(song) = item
+                            .item()
+                            .and_downcast::<QueueRow>()
+                            .and_then(|slot| slot.song())
+                        {
                             song.set_queue_pos(item.position()); // Ensure the Song object contains the up-to-date queue pos for local updating
                             Some(gdk::ContentProvider::for_value(&song.to_value()))
                         } else {
@@ -649,19 +719,18 @@ impl QueueView {
             move |_, list_item| {
                 let item = list_item
                     .downcast_ref::<ListItem>()
-                    .expect("Needs to be ListItem")
+                    .expect("Needs to be ListItem");
+                let slot = item
                     .item()
-                    .and_downcast::<Song>()
-                    .expect("The item has to be a common::Song.");
-                let child = list_item
-                    .downcast_ref::<ListItem>()
-                    .expect("Needs to be ListItem")
+                    .and_downcast::<QueueRow>()
+                    .expect("The item has to be a QueueRow.");
+                let row = item
                     .child()
                     .and_downcast::<SongRow>()
                     .expect("The child has to be a `SongRow`.");
 
-                // Within this binding fn is where the cached album art texture gets used.
-                child.on_bind(&item);
+                slot.imp().row.set(Some(&row));
+                row.on_bind(&slot.song().unwrap());
 
                 this.imp()
                     .last_scroll_pos
@@ -673,13 +742,16 @@ impl QueueView {
         // When row goes out of sight, unbind from item to allow reuse with another.
         // Remember to also unset the thumbnail widget's texture to potentially free it from memory.
         factory.connect_unbind(move |_, list_item| {
-            let child = list_item
+            let item = list_item
                 .downcast_ref::<ListItem>()
-                .expect("Needs to be ListItem")
+                .expect("Needs to be ListItem");
+            let slot = item.item().and_downcast::<QueueRow>().unwrap();
+            slot.imp().row.set(None::<&SongRow>);
+            let row = item
                 .child()
                 .and_downcast::<SongRow>()
                 .expect("The child has to be a `SongRow`.");
-            child.on_unbind();
+            row.on_unbind();
         });
 
         factory.connect_teardown(clone!(
@@ -712,8 +784,11 @@ impl QueueView {
                         let model = queue.model().expect("The model has to exist.");
                         let song = model
                             .item(position)
-                            .and_downcast::<Song>()
-                            .expect("The item has to be a `common::Song`.");
+                            .expect("The activated queue item has to exist.")
+                            .downcast::<QueueRow>()
+                            .expect("The item has to be a `QueueRow`.")
+                            .song()
+                            .expect("The row has to contain a song.");
                         if let Err(e) = player.on_song_clicked(song).await {
                             dbg!(e);
                         }
