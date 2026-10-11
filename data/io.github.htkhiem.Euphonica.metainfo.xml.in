@@ -22,9 +22,9 @@
 
   <description>
     <p>Dynamic playlists, integrated spectrum visualiser, background blur, synced lyrics &amp; more.</p>
-    <p>**Features**</p>
+    <p><em>Features</em></p>
     <ul>
-      <li>Both a self-contained music player and an MPD-compatible client. The power of MPD, without the manual set-up.</li>
+      <li>Both a self-contained music player and an MPD-compatible client. The power of MPD, without the manual set-up. Plays nearly every format, DSD included!</li>
       <li>Supports most MPD features, from queue reordering and ReplayGain to output control, crossfade and MixRamp.</li>
       <li>Genre &amp; tag filtering, plus in-app tag editing.</li>
       <li>Client-side dynamic playlists: both query and sticker filter rules, multiple ordering clauses, fetch-first limits, scheduled refreshes, all via an intuitive editor UI.</li>
@@ -42,7 +42,7 @@
       <li>myMPD-compatible stickers handling.</li>
     </ul>
 
-    This Flatpak installation bundles MPD 0.24 internally to serve as the playback engine for Standalone Mode.
+    <p>This Flatpak installation bundles MPD 0.24 internally to serve as the playback engine for Standalone Mode.</p>
 
     <p><em>PipeWire permissions</em></p>
     <p>Euphonica requires PipeWire capture permissions for its PipeWire visualizer backend, but currently it is only possible to specify a "blanket" PipeWire permission that also allows screen recording, microphone access, etc. Euphonica does not make use of these extra permissions, and will be updated to use a more restricted "audio portal" when one becomes available.</p>
