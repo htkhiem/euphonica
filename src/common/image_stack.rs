@@ -11,6 +11,13 @@ use crate::cache::placeholders::{ALBUMART_PLACEHOLDER, ALBUMART_THUMBNAIL_PLACEH
 
 use super::ImageState;
 
+#[derive(Clone, Debug)]
+pub enum ImageSnapshot {
+    Empty,
+    Loading,
+    Loaded(gdk::Paintable),
+}
+
 mod imp {
     use super::*;
 
@@ -89,6 +96,14 @@ impl ImageStack {
 
     pub fn get_state(&self) -> ImageState {
         self.imp().state.get()
+    }
+
+    pub fn snapshot_image(&self) -> ImageSnapshot {
+        match (self.get_state(), self.imp().image.paintable()) {
+            (ImageState::Empty, _) => ImageSnapshot::Empty,
+            (ImageState::Image, Some(paintable)) => ImageSnapshot::Loaded(paintable),
+            _ => ImageSnapshot::Loading,
+        }
     }
 
     pub fn set_state(&self, new: ImageState) {

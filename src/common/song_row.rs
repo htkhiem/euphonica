@@ -11,7 +11,7 @@ use std::{
 
 use crate::{
     cache::{Cache, CacheState},
-    common::{ImageStack, ImageState, Marquee, QualityGrade, Song},
+    common::{ImageSnapshot, ImageStack, ImageState, Marquee, QualityGrade, Song},
     player::Player,
 };
 
@@ -351,12 +351,26 @@ impl SongRow {
         ));
     }
 
+    pub fn thumbnail_snapshot(&self) -> ImageSnapshot {
+        self.imp().thumbnail.snapshot_image()
+    }
+
     pub fn on_bind(&self, song: &Song) {
+        self.on_bind_with_thumbnail(song, None);
+    }
+
+    pub fn on_bind_with_thumbnail(&self, song: &Song, thumbnail: Option<&ImageSnapshot>) {
         self.imp().song.set(Some(song));
         if let Some(player) = self.imp().player.upgrade() {
             self.update_playing_indicator(&player);
         }
-        self.schedule_thumbnail();
+        match thumbnail {
+            Some(ImageSnapshot::Loaded(paintable)) => self.imp().thumbnail.show(paintable),
+            Some(ImageSnapshot::Empty) => self.imp().thumbnail.clear(),
+            // Fetch the cover for this row if we couldn't reuse one, since any pending
+            // request still belongs to the old row and won't update this one.
+            _ => self.schedule_thumbnail(),
+        }
     }
 
     pub fn on_unbind(&self) {

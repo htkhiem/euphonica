@@ -11,6 +11,7 @@ use mpd::{
 use std::{
     cell::{Cell, OnceCell, RefCell},
     cmp::Ordering,
+    collections::HashMap,
     rc::Rc,
     sync::OnceLock,
 };
@@ -443,13 +444,23 @@ impl QueueView {
         let slots: Vec<QueueRow> = (position..position + removed)
             .map(|index| rows.item(index).and_downcast::<QueueRow>().unwrap())
             .collect();
+        // Snapshot the covers before changing any songs, otherwise rebinding one row could
+        // overwrite the cover we still need for another. This lets us move the loaded
+        // covers with their songs instead of fetching them again and showing spinners.
+        let thumbnails: HashMap<_, _> = slots
+            .iter()
+            .filter_map(|slot| {
+                let row = slot.imp().row.upgrade()?;
+                Some((slot.song()?, row.thumbnail_snapshot()))
+            })
+            .collect();
         for (slot, song) in slots.iter().zip(songs) {
             if slot.song().as_ref() == Some(&song) {
                 continue;
             }
             slot.set_song(&song);
             if let Some(row) = slot.imp().row.upgrade() {
-                row.on_bind(&song);
+                row.on_bind_with_thumbnail(&song, thumbnails.get(&song));
             }
         }
     }
