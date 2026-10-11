@@ -362,7 +362,14 @@ impl SongRow {
     pub fn on_bind_with_thumbnail(&self, song: &Song, thumbnail: Option<&ImageSnapshot>) {
         self.imp().song.set(Some(song));
         if let Some(player) = self.imp().player.upgrade() {
+            // The playing song might have just moved to another row, so we don't want to
+            // animate the indicator again. Unmap it briefly to finish any running animation
+            // before updating it for the new song.
+            let indicator = &self.imp().playing_indicator;
+            let child_visible = indicator.is_child_visible();
+            indicator.set_child_visible(false);
             self.update_playing_indicator(&player);
+            indicator.set_child_visible(child_visible);
         }
         match thumbnail {
             Some(ImageSnapshot::Loaded(paintable)) => self.imp().thumbnail.show(paintable),
