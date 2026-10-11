@@ -518,48 +518,27 @@ impl QueueView {
                 let row = SongRow::new(Some(cache.clone()), Some(&player));
                 bind_row_by_expressions(&row, item);
                 row.add_css_class("shift-on-hover");
+                let reorder = |direction: SwapDirection| {
+                    clone!(
+                        #[weak]
+                        player,
+                        move |_: &gtk::Button, idx| {
+                            glib::spawn_future_local(clone!(
+                                #[weak]
+                                player,
+                                async move {
+                                    if let Err(e) = player.swap_dir(idx, direction).await {
+                                        dbg!(e);
+                                    }
+                                }
+                            ));
+                        }
+                    )
+                };
                 let end_widget = RowEditButtons::new(
                     item,
-                    // Raise action
-                    clone!(
-                        #[weak]
-                        player,
-                        move |btn, idx| {
-                            glib::spawn_future_local(clone!(
-                                #[weak]
-                                btn,
-                                #[weak]
-                                player,
-                                async move {
-                                    btn.set_sensitive(false);
-                                    if let Err(e) = player.swap_dir(idx, SwapDirection::Up).await {
-                                        dbg!(e);
-                                    }
-                                    btn.set_sensitive(true);
-                                }
-                            ));
-                        }
-                    ),
-                    clone!(
-                        #[weak]
-                        player,
-                        move |btn, idx| {
-                            glib::spawn_future_local(clone!(
-                                #[weak]
-                                btn,
-                                #[weak]
-                                player,
-                                async move {
-                                    btn.set_sensitive(false);
-                                    if let Err(e) = player.swap_dir(idx, SwapDirection::Down).await
-                                    {
-                                        dbg!(e);
-                                    }
-                                    btn.set_sensitive(true);
-                                }
-                            ));
-                        }
-                    ),
+                    reorder(SwapDirection::Up),
+                    reorder(SwapDirection::Down),
                     clone!(
                         #[weak]
                         player,
@@ -580,6 +559,14 @@ impl QueueView {
                         }
                     ),
                 );
+                // Keep the arrows enabled while waiting for MPD so the clicked arrow doesn't
+                // lose its hover and pressed state.
+                player
+                    .queue()
+                    .bind_property("n-items", &end_widget.reorder_buttons(), "sensitive")
+                    .transform_to(|_, size: u32| Some(size > 1))
+                    .sync_create()
+                    .build();
                 row.set_end_widget(Some(&end_widget.into()));
                 item.set_child(Some(&row));
 

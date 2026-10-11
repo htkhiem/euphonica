@@ -86,6 +86,7 @@ impl FftStatus {
     }
 }
 
+#[derive(Clone, Copy)]
 pub enum SwapDirection {
     Up,
     Down,
