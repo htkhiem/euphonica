@@ -89,15 +89,15 @@ Other ways to install Euphonica are listed below:
 
   We have an official AUR `-git` package: [euphonica-git](https://aur.archlinux.org/packages/euphonica-git).
 
+  **Full installation, version-pinned:**
+
+  There is also a [version-pinned package](https://aur.archlinux.org/packages/euphonica) should `-git` is too bleeding-edge, kindly maintained by `supermario`.
+
   **Client-only, latest commit:**
 
   Starting from v0.98 the above includes `mpd` as a hard dependency. Should that be undesirable (for example if you only intend to use Euphonica as a client to an existing server, or have a non-standard MPD installation such as a fork), there's [euphonica-client-git](https://aur.archlinux.org/packages/euphonica-client-git).
 
   The app itself is the same, with Standalone Mode still available and can be pointed to your MPD executable.
-
-  **Client-only, version-pinned:**
-
-  There is also a [version-pinned package](https://aur.archlinux.org/packages/euphonica) should `-git` is too bleeding-edge, kindly maintained by `supermario`.
 
   ```bash
   # Use your favourite AUR helper here
