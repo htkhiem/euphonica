@@ -225,14 +225,6 @@
           <object class="AdwComboRow" id="vol_knob_unit">
             <property name="title" translatable="true">Display unit</property>
             <property name="subtitle" translatable="true">MPD natively uses a 100-step volume scale. The precise gain curve used depends on each output plugin's mixer configuration. dBFS assumes that the 100 steps are treated as percents.</property>
-            <property name="model">
-              <object class="GtkStringList">
-                <items>
-                  <item>%</item>
-                  <item>dBFS</item>
-                </items>
-              </object>
-            </property>
           </object>
         </child>
         <child>

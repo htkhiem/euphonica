@@ -11,6 +11,7 @@ mod ratio_center_box;
 mod seekbar2;
 
 use knob::VolumeKnob;
+pub(crate) use knob::VolumeUnit;
 use output::MpdOutput;
 
 pub use bar::PlayerBar;
