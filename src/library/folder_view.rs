@@ -129,7 +129,9 @@ mod imp {
                         this,
                         async move {
                             if let Some(lib) = this.library.upgrade() {
-                                lib.folder_backward().await;
+                                if let Err(e) = lib.folder_backward().await {
+                                    dbg!(e);
+                                }
                             }
                         }
                     ));
@@ -145,7 +147,9 @@ mod imp {
                         this,
                         async move {
                             if let Some(lib) = this.library.upgrade() {
-                                lib.folder_forward().await;
+                                if let Err(e) = lib.folder_forward().await {
+                                    dbg!(e);
+                                }
                             }
                         }
                     ));
@@ -475,7 +479,9 @@ impl FolderView {
                 {
                     let stack = this.imp().stack.get();
                     stack.show_spinner();
-                    this.library().navigate_to(name).await;
+                    if let Err(e) = this.library().navigate_to(name).await {
+                        dbg!(e);
+                    }
                     if this.library().folder_inodes().n_items() > 0 {
                         stack.show_content();
                     } else {
@@ -561,7 +567,9 @@ impl LazyInit for FolderView {
             let this = self.clone();
             stack.show_spinner();
             glib::spawn_future_local(async move {
-                library.get_folder_contents().await;
+                if let Err(e) = library.get_folder_contents().await {
+                    dbg!(e);
+                }
                 if library.folder_inodes().n_items() > 0 {
                     stack.show_content();
                 } else {

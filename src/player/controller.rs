@@ -3,12 +3,12 @@ use crate::{
     application::EuphonicaApplication,
     cache::{Cache, sqlite},
     client::{
-        ClientState, ConnectionState, Error as ClientError, MpdWrapper, Result as ClientResult,
-        StickerSetMode,
+        ClientState, Error as ClientError, MpdWrapper, Result as ClientResult, StickerSetMode,
     },
-    common::{QualityGrade, Song, Stickers},
+    common::{ConnectionState, QualityGrade, Song, Stickers},
     config::APPLICATION_ID,
     meta_providers::models::Lyrics,
+    server::{INTERNAL_FIFO_FORMAT, internal_fifo_path},
     utils::{
         current_unix_timestamp, get_image_cache_path, prettify_audio_format, settings_manager,
     },
@@ -341,40 +341,41 @@ mod imp {
             self.fft_backend
                 .replace(Some(self.obj().init_fft_backend()));
             let settings = settings_manager();
-            settings
-                .child("client")
+            // Derive which FFT backend to use on-the-fly
+            let this = self.obj();
+            this.select_fft_backend();
+            let client_settings = settings.child("client");
+            client_settings.connect_changed(Some("mpd-use-own-server"), {
+                clone!(
+                    #[weak]
+                    this,
+                    move |_, _| {
+                        this.select_fft_backend();
+                    }
+                )
+            });
+            client_settings.connect_changed(Some("mpd-visualizer-pcm-source"), {
+                clone!(
+                    #[weak]
+                    this,
+                    move |_, _| {
+                        this.select_fft_backend();
+                    }
+                )
+            });
+
+            client_settings
                 .bind(
-                    "mpd-visualizer-pcm-source",
-                    self.obj().as_ref(),
-                    "fft-backend-idx",
+                    "pipewire-restart-between-songs",
+                    this.as_ref(),
+                    "pipewire-restart-between-songs",
                 )
                 .get_only()
-                .mapping(|var, _| {
-                    if let Some(name) = var.get::<String>() {
-                        match name.as_str() {
-                            "fifo" => Some(0i32.to_value()),
-                            "pipewire" => Some(1i32.to_value()),
-                            _ => unimplemented!(),
-                        }
-                    } else {
-                        None
-                    }
-                })
                 .build();
 
             settings
                 .child("ui")
                 .bind("use-visualizer", self.obj().as_ref(), "use-visualizer")
-                .get_only()
-                .build();
-
-            settings
-                .child("client")
-                .bind(
-                    "pipewire-restart-between-songs",
-                    self.obj().as_ref(),
-                    "pipewire-restart-between-songs",
-                )
                 .get_only()
                 .build();
 
@@ -567,15 +568,17 @@ mod imp {
                         }
                         "fft-backend-idx" => {
                             if let Ok(new) = value.get::<i32>() {
-                                let old = this.fft_backend_idx.replace(new);
+                                let _ = this.fft_backend_idx.replace(new);
 
-                                if old != new {
-                                    this.obj().maybe_stop_fft_thread().await;
-                                    this.fft_backend
-                                        .replace(Some(this.obj().init_fft_backend()));
-                                    this.obj().maybe_start_fft_thread();
-                                    this.obj().notify("fft-backend-idx");
-                                }
+                                // For simplicity, ALWAYS restart backend regardless of whether the property actually changed or not.
+                                // Some startup code paths (spaghetti ik) relies on this to start the backend. Refusing to restart
+                                // might cause the FIFO backend to never start as its index is 0, which coincidentally is  the
+                                // default value the Player controller was created for.
+                                this.obj().maybe_stop_fft_thread().await;
+                                this.fft_backend
+                                    .replace(Some(this.obj().init_fft_backend()));
+                                this.obj().maybe_start_fft_thread();
+                                this.obj().notify("fft-backend-idx");
                             }
                         }
                         "pipewire-restart-between-songs" => {
@@ -637,9 +640,40 @@ impl Default for Player {
 }
 
 impl Player {
-    fn init_fft_backend(&self) -> Rc<dyn FftBackendExt> {
+    /// Figure out which FFT backend to use from the current settings then start it.
+    /// If standalone, always use FIFO; else read from gsettings.
+    /// The FFT thread is restarted unconditionally because the standalone toggle alone changes
+    /// the FIFO path/format even when the backend index stays the same.
+    fn select_fft_backend(&self) {
         let client_settings = settings_manager().child("client");
-        match client_settings.enum_("mpd-visualizer-pcm-source") {
+        let idx = if client_settings.boolean("mpd-use-own-server") {
+            0
+        } else {
+            client_settings.enum_("mpd-visualizer-pcm-source")
+        };
+        self.set_property("fft-backend-idx", idx.to_value()); // property setter will also trigger restart
+    }
+
+    /// The effective (FIFO path, format) pair for the FIFO FFT backend.
+    /// Standalone Mode uses the internally-managed FIFO and its locked format;
+    /// otherwise the user's saved values are returned untouched (never written by us).
+    pub fn effective_fifo_input(&self) -> (String, String) {
+        let client_settings = settings_manager().child("client");
+        if client_settings.boolean("mpd-use-own-server") {
+            (
+                internal_fifo_path().to_string_lossy().into_owned(),
+                INTERNAL_FIFO_FORMAT.clone(),
+            )
+        } else {
+            (
+                client_settings.string("mpd-fifo-path").into(),
+                client_settings.string("mpd-fifo-format").into(),
+            )
+        }
+    }
+
+    fn init_fft_backend(&self) -> Rc<dyn FftBackendExt> {
+        match self.imp().fft_backend_idx.get() {
             0 => Rc::new(FifoFftBackend::new(self.clone())),
             1 => Rc::new(PipeWireFftBackend::new(self.clone())),
             _ => unimplemented!(),
@@ -672,6 +706,10 @@ impl Player {
         {
             backend.set_param(key, val);
         }
+    }
+
+    pub fn get_fft_backend_idx(&self) -> i32 {
+        self.imp().fft_backend_idx.get()
     }
 
     /// Lazily get an MPRIS server. This will always be invoked near the start anyway
@@ -722,7 +760,7 @@ impl Player {
     // On each FFT frame (not screen frame):
     // 1. Read app preferences.
     //    - If visualiser is disabled or stop flag is true, then stop this thread.
-    //    - Else, read the specified number of samples from the named pipe.
+    //    - Else, read the specified number of samples.
     //      This may have changed from the last frame by the user.
     //    - Get the number of frequencies set by the user. Again this can be changed on-the-fly.
     // 2. Perform FFT & extrapolate to the marker frequencies.
@@ -739,7 +777,7 @@ impl Player {
     }
 
     async fn maybe_stop_fft_thread(&self) {
-        println!("Stopping PipeWire backend...");
+        println!("Stopping FFT backend...");
         if let Some(backend) = self.imp().fft_backend.borrow().as_ref() {
             backend.stop().await;
         }
@@ -814,6 +852,10 @@ impl Player {
                                     if let Err(e) = this.populate().await {
                                         dbg!(e);
                                     }
+                                    // Also restart FFT backend. In Standalone Mode our server process takes some time to start,
+                                    // during which attempting to start the FIFO backend will fail (unlike PipeWire, FIFO
+                                    // can only be read while MPD is running).
+                                    this.select_fft_backend();
                                 }
                                 ConnectionState::Connecting => {
                                     if let Err(e) = this.clear() {

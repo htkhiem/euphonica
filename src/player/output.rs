@@ -7,16 +7,9 @@ use gtk::{
 };
 use mpd::output::Output;
 
-use super::Player;
+use crate::common::map_output_plugin_icon;
 
-fn map_icon_name(plugin_name: &str) -> &'static str {
-    match plugin_name {
-        "alsa" => "alsa-symbolic",
-        "pulse" => "pulseaudio-symbolic",
-        "pipewire" => "pipewire-symbolic",
-        _ => "soundcard-symbolic",
-    }
-}
+use super::Player;
 
 mod imp {
     use super::*;
@@ -86,7 +79,7 @@ impl MpdOutput {
         if enable_output.is_active() != output.enabled {
             enable_output.set_active(output.enabled);
         }
-        btn.set_icon_name(map_icon_name(&output.plugin));
+        btn.set_icon_name(map_output_plugin_icon(&output.plugin));
         if !output.attributes.is_empty() {
             // Big TODO: editable runtime attributes
             let mut attribs: Vec<String> = Vec::with_capacity(output.attributes.len());

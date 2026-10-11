@@ -434,7 +434,9 @@ impl PlayerPane {
             player,
             move |_| {
                 glib::spawn_future_local(async move {
-                    player.cycle_replaygain().await;
+                    if let Err(e) = player.cycle_replaygain().await {
+                        dbg!(e);
+                    }
                 });
             }
         ));
@@ -558,7 +560,9 @@ impl PlayerPane {
                         None
                     };
                     glib::spawn_future_local(async move {
-                        player.rate_current_song(rating_opt).await;
+                        if let Err(e) = player.rate_current_song(rating_opt).await {
+                            dbg!(e);
+                        }
                     });
                 }
             ),
@@ -612,7 +616,9 @@ impl PlayerPane {
             move |_, row: &gtk::ListBoxRow| {
                 let idx = row.index();
                 glib::spawn_future_local(async move {
-                    player.seek_to_lyric_line(idx).await;
+                    if let Err(e) = player.seek_to_lyric_line(idx).await {
+                        dbg!(e);
+                    }
                 });
             }
         ));
