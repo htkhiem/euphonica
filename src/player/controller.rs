@@ -1899,46 +1899,59 @@ impl Player {
     }
 
     pub async fn swap_dir(&self, pos: u32, direction: SwapDirection) -> ClientResult<()> {
+        let len = self.imp().queue.n_items();
+        if len < 2 || pos >= len {
+            return Ok(());
+        }
         self.register_local_queue_changes(1);
         let target = self.imp().queue.item(pos).and_downcast::<Song>().unwrap();
+        let wrap_to = match direction {
+            SwapDirection::Up if pos == 0 => Some(len - 1),
+            SwapDirection::Down if pos == len - 1 => Some(0),
+            _ => None,
+        };
+        if let Some(to) = wrap_to {
+            self.imp().queue.remove(pos);
+            self.imp().queue.insert(to, &target);
+            return self
+                .client()?
+                .move_id(target.get_queue_id(), to as usize)
+                .await;
+        }
         match direction {
             SwapDirection::Up => {
-                if pos > 0 {
-                    let upper = self
-                        .imp()
-                        .queue
-                        .item(pos - 1)
-                        .and_downcast::<Song>()
-                        .unwrap();
-                    self.imp().queue.splice(
-                        pos - 1,
-                        2,
-                        &[
-                            target.clone().upcast::<glib::Object>(),
-                            upper.upcast::<glib::Object>(),
-                        ],
-                    );
-                    self.client()?.swap_pos(pos, pos - 1).await?;
-                }
+                let upper = self
+                    .imp()
+                    .queue
+                    .item(pos - 1)
+                    .and_downcast::<Song>()
+                    .unwrap();
+                self.imp().queue.splice(
+                    pos - 1,
+                    2,
+                    &[
+                        target.clone().upcast::<glib::Object>(),
+                        upper.upcast::<glib::Object>(),
+                    ],
+                );
+                self.client()?.swap_pos(pos, pos - 1).await?;
             }
             SwapDirection::Down => {
-                if pos < self.imp().queue.n_items() - 1 {
-                    let lower = self
-                        .imp()
-                        .queue
-                        .item(pos + 1)
-                        .and_downcast::<Song>()
-                        .unwrap();
-                    self.imp().queue.splice(
-                        pos,
-                        2,
-                        &[
-                            lower.upcast::<glib::Object>(),
-                            target.clone().upcast::<glib::Object>(),
-                        ],
-                    );
-                    self.client()?.swap_pos(pos, pos + 1).await?;
-                }
+                let lower = self
+                    .imp()
+                    .queue
+                    .item(pos + 1)
+                    .and_downcast::<Song>()
+                    .unwrap();
+                self.imp().queue.splice(
+                    pos,
+                    2,
+                    &[
+                        lower.upcast::<glib::Object>(),
+                        target.clone().upcast::<glib::Object>(),
+                    ],
+                );
+                self.client()?.swap_pos(pos, pos + 1).await?;
             }
         }
         Ok(())
