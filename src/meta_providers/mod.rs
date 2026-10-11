@@ -2,6 +2,7 @@ mod base;
 mod chain;
 pub mod lastfm;
 pub mod lrclib;
+pub mod the_audio_db;
 pub mod models;
 pub mod musicbrainz;
 
