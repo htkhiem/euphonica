@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <interface>
-  <template class="EuphonicaMpdOutput" parent="GtkBox">
-    <property name="orientation">1</property>
-    <property name="halign">center</property>
-    <property name="valign">center</property>
-    <object class="GtkPopover" id="options_popover">
-      <property name="has-arrow">true</property>
-      <property name="name">options_popover</property>
-      <property name="child">
+	<template class="EuphonicaMpdOutput" parent="GtkBox">
+		<property name="orientation">1</property>
+		<property name="halign">center</property>
+		<property name="valign">center</property>
+		<object class="GtkPopover" id="options_popover">
+			<property name="has-arrow">true</property>
+			<property name="name">options_popover</property>
+			<property name="child">
 				<object class="GtkBox">
 					<property name="orientation">1</property>
 					<property name="spacing">6</property>
@@ -31,17 +31,17 @@
 						</object>
 					</child>
 				</object>
-      </property>
-    </object>
-    <child>
-      <object class="GtkMenuButton" id="icon_btn">
-        <style>
-          <class name="flat"/>
-        </style>
-        <property name="icon-name">soundcard-symbolic</property>
+			</property>
+		</object>
+		<child>
+			<object class="GtkMenuButton" id="icon_btn">
+				<style>
+					<class name="flat"/>
+				</style>
+				<property name="icon-name">soundcard-symbolic</property>
 				<property name="popover">options_popover</property>
-        <property name="tooltip-text">Unknown Output</property>
-      </object>
-    </child>
-  </template>
+				<property name="tooltip-text">Unknown Output</property>
+			</object>
+		</child>
+	</template>
 </interface>

@@ -3,13 +3,13 @@
   <id>io.github.htkhiem.Euphonica</id>
 
   <name>Euphonica</name>
-  <summary>MPD client with delusions of grandeur</summary>
+  <summary>Advanced music playback powered by MPD</summary>
   <developer id="io.github.htkhiem">
     <name>Huynh Thien Khiem</name>
   </developer>
   <url type="bugtracker">https://github.com/htkhiem/euphonica/issues</url>
   <url type="homepage">https://github.com/htkhiem/euphonica</url>
-  <url type="vcs-browser">https://github.com/htkhiem/euphonica</url>  
+  <url type="vcs-browser">https://github.com/htkhiem/euphonica</url>
   <content_rating type="oars-1.1" />
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>GPL-3.0-or-later</project_license>
@@ -21,9 +21,10 @@
   </supports>
 
   <description>
-    <p>Dynamic playlists, integrated spectrum visualiser, background blur, synced lyrics &amp; more. </p>
-    <p>**Features**</p>
+    <p>Dynamic playlists, integrated spectrum visualiser, background blur, synced lyrics &amp; more.</p>
+    <p><em>Features</em></p>
     <ul>
+      <li>Both a self-contained music player and an MPD-compatible client. The power of MPD, without the manual set-up. Plays nearly every format, DSD included!</li>
       <li>Supports most MPD features, from queue reordering and ReplayGain to output control, crossfade and MixRamp.</li>
       <li>Genre &amp; tag filtering, plus in-app tag editing.</li>
       <li>Client-side dynamic playlists: both query and sticker filter rules, multiple ordering clauses, fetch-first limits, scheduled refreshes, all via an intuitive editor UI.</li>
@@ -40,6 +41,9 @@
       <li>Commands are bundled into lists for efficient MPD-side processing where possible.</li>
       <li>myMPD-compatible stickers handling.</li>
     </ul>
+
+    <p>This Flatpak installation bundles MPD 0.24 internally to serve as the playback engine for Standalone Mode.</p>
+
     <p><em>PipeWire permissions</em></p>
     <p>Euphonica requires PipeWire capture permissions for its PipeWire visualizer backend, but currently it is only possible to specify a "blanket" PipeWire permission that also allows screen recording, microphone access, etc. Euphonica does not make use of these extra permissions, and will be updated to use a more restricted "audio portal" when one becomes available.</p>
     <p><em>Screenshot content copyright information &amp; disclaimer</em></p>
@@ -51,6 +55,9 @@
     <keyword translate="no">MPD</keyword>
     <keyword translate="no">music</keyword>
     <keyword translate="no">player</keyword>
+    <keyword translate="no">mp3</keyword>
+    <keyword translate="no">flac</keyword>
+    <keyword translate="no">dsd</keyword>
     <keyword translate="no">libadwaita</keyword>
     <keyword translate="no">rust</keyword>
     <keyword translate="no">mpc</keyword>
@@ -93,6 +100,18 @@
   </screenshots>
 
   <releases>
+    <release version="0.99.8-beta" date="2026-10-11">
+      <url type="details">https://github.com/htkhiem/euphonica/releases/tag/v0.99.8-beta</url>
+      <description>
+        <p>New: builtin MPD server orchestration for a normal music player-like experience.</p>
+        <p>Change: Visualiser now uses asymmetric sliding-window averaging to capture transients better.</p>
+        <p>Change: rotating artwork now uses trilinear filtering for a less noisy look.</p>
+        <p>Fix: lyrics deletion now works correctly.</p>
+        <p>Fix: incorrect FIFO visualiser behaviour.</p>
+        <p>Fix: memleak on closing window in background mode.</p>
+        <p>Fix: various console warnings regarding UI elements, might also fix crashes on Macs running Asahi Linux.</p>
+      </description>
+    </release>
     <release version="0.99.7-beta" date="2026-08-31">
       <url type="details">https://github.com/htkhiem/euphonica/releases/tag/v0.99.7-beta</url>
       <description>

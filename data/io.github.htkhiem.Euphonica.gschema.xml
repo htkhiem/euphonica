@@ -71,6 +71,15 @@
 	</schema>
 
 	<schema id="io.github.htkhiem.Euphonica.client" path="/io/github/htkhiem/Euphonica/client/">
+		<key name="mpd-use-own-server" type="b">
+			<default>false</default>
+		</key>
+		<key name="mpd-override-exec-path" type="b">
+			<default>false</default>
+		</key>
+		<key name="mpd-exec-path" type="s">
+			<default>'mpd'</default>
+		</key>
 		<key name="mpd-auto-reconnect" type="b">
 			<default>true</default>
 		</key>
@@ -275,7 +284,7 @@
 		</key>
 
 		<key name="visualizer-fft-samples" type="u">
-			<default>512</default>
+			<default>2048</default>
 		</key>
 
 		<key name="visualizer-fps" type="u">
@@ -342,7 +351,7 @@
 			<default>0.75</default>
 		</key>
 		<key name="visualizer-scale" type="d">
-			<default>1.0</default>
+			<default>10.0</default>
 		</key>
 		<!-- DEPRECATED AND UNUSED -->
 		<key name="visualizer-blend-mode" type="u">

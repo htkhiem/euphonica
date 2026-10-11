@@ -64,9 +64,9 @@ impl Tag {
     ) -> Self {
         let res: Self = Object::builder().build();
         res.imp().count.set(count.unwrap_or(1));
-        res.imp().name.set(name);
+        let _ = res.imp().name.set(name);
         if let Some(link) = link {
-            res.imp().link.set(link);
+            let _ = res.imp().link.set(link);
         }
         res.imp().removable.set(removable);
         res.imp().set_by_user.set(set_by_user);
