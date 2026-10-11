@@ -5,7 +5,6 @@ use gtk::{
     prelude::*,
     subclass::prelude::*,
 };
-use rusqlite::fallible_streaming_iterator::FallibleStreamingIterator;
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::sync::OnceLock;

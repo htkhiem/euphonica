@@ -342,8 +342,8 @@ mod imp {
                     fg.blue() as f64,
                     0.0,
                 );
-                cr.set_source(radial);
-                cr.fill();
+                let _ = cr.set_source(radial);
+                let _ = cr.fill();
                 snapshot.pop();
 
                 self.parent_snapshot(snapshot);

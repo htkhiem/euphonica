@@ -15,9 +15,9 @@ pub struct Tag {
     pub set_by_user: bool,
 }
 
-pub trait Tagged {
-    fn get_tags(&self) -> &[Tag];
-}
+// pub trait Tagged {
+//     fn get_tags(&self) -> &[Tag];
+// }
 
 pub trait Merge {
     /// Merge data from another AlbumMeta instance.
@@ -36,9 +36,9 @@ pub trait Merge {
     }
 }
 
-pub trait HasImage {
-    fn get_images(&self) -> &[ImageMeta];
-}
+// pub trait HasImage {
+//     fn get_images(&self) -> &[ImageMeta];
+// }
 
 /// Image size enumeration. Note to self: automatic derivation of Ord traits assumes
 /// that the variants are declared in increasing order.
@@ -125,17 +125,17 @@ impl Merge for AlbumMeta {
     }
 }
 
-impl Tagged for AlbumMeta {
-    fn get_tags(&self) -> &[Tag] {
-        &self.tags
-    }
-}
+// impl Tagged for AlbumMeta {
+//     fn get_tags(&self) -> &[Tag] {
+//         &self.tags
+//     }
+// }
 
-impl HasImage for AlbumMeta {
-    fn get_images(&self) -> &[ImageMeta] {
-        &self.image
-    }
-}
+// impl HasImage for AlbumMeta {
+//     fn get_images(&self) -> &[ImageMeta] {
+//         &self.image
+//     }
+// }
 
 /// TODO: translatable
 pub fn artist_type_to_string(typ: &ArtistType) -> &'static str {
@@ -266,17 +266,17 @@ impl Merge for ArtistMeta {
     }
 }
 
-impl Tagged for ArtistMeta {
-    fn get_tags(&self) -> &[Tag] {
-        &self.tags
-    }
-}
+// impl Tagged for ArtistMeta {
+//     fn get_tags(&self) -> &[Tag] {
+//         &self.tags
+//     }
+// }
 
-impl HasImage for ArtistMeta {
-    fn get_images(&self) -> &[ImageMeta] {
-        &self.image
-    }
-}
+// impl HasImage for ArtistMeta {
+//     fn get_images(&self) -> &[ImageMeta] {
+//         &self.image
+//     }
+// }
 
 #[derive(Debug)]
 pub enum MetaSource {

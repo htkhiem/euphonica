@@ -5,3 +5,6 @@ target/
 build/
 src/config.rs
 data/gschemas.compiled
+repo/*
+builddir/*
+build-flatpak/*

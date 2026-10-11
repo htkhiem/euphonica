@@ -54,6 +54,12 @@
     <file preprocess="xml-stripblanks">gtk/preferences/client.ui</file>
     <file preprocess="xml-stripblanks">gtk/preferences/integrations.ui</file>
     <file preprocess="xml-stripblanks">gtk/preferences/provider-row.ui</file>
+    <file preprocess="xml-stripblanks">gtk/preferences/output-row.ui</file>
+    <file preprocess="xml-stripblanks">gtk/preferences/audio-format.ui</file>
+    <file preprocess="xml-stripblanks">gtk/preferences/audio-format-row.ui</file>
+    <file preprocess="xml-stripblanks">gtk/preferences/audio-format-box.ui</file>
+    <file preprocess="xml-stripblanks">gtk/preferences/path-row.ui</file>
+    <file preprocess="xml-stripblanks">gtk/preferences/outputs.ui</file>
     <file preprocess="xml-stripblanks">gtk/preferences/library.ui</file>
     <file preprocess="xml-stripblanks">gtk/preferences/ui.ui</file>
     <file>gtk/style.css</file>
@@ -135,6 +141,8 @@
     <file preprocess="xml-stripblanks" alias="circle-outline-thick-symbolic.svg">gtk/icons/circle-outline-thick-symbolic.svg</file>
     <file preprocess="xml-stripblanks" alias="info-outline-symbolic.svg">gtk/icons/info-outline-symbolic.svg</file>
     <file preprocess="xml-stripblanks" alias="exclamation-mark-symbolic.svg">gtk/icons/exclamation-mark-symbolic.svg</file>
+    <file preprocess="xml-stripblanks" alias="standalone-mode-symbolic.svg">gtk/icons/standalone-mode-symbolic.svg</file>
+    <file preprocess="xml-stripblanks" alias="client-mode-symbolic.svg">gtk/icons/client-mode-symbolic.svg</file>
     <file preprocess="xml-stripblanks" alias="release-folder-1-symbolic.svg">gtk/icons/release-folder-1-symbolic.svg</file>
     <file preprocess="xml-stripblanks" alias="release-folder-2-symbolic.svg">gtk/icons/release-folder-2-symbolic.svg</file>
     <file preprocess="xml-stripblanks" alias="mixed-folder-1-symbolic.svg">gtk/icons/mixed-folder-1-symbolic.svg</file>
