@@ -790,20 +790,18 @@ impl QueueView {
             #[weak]
             player,
             move |queue, position| {
+                let Some(song) = queue
+                    .model()
+                    .and_then(|model| model.item(position))
+                    .and_downcast::<QueueRow>()
+                    .and_then(|slot| slot.song())
+                else {
+                    return;
+                };
                 glib::spawn_future_local(clone!(
                     #[weak]
                     player,
-                    #[weak]
-                    queue,
                     async move {
-                        let model = queue.model().expect("The model has to exist.");
-                        let song = model
-                            .item(position)
-                            .expect("The activated queue item has to exist.")
-                            .downcast::<QueueRow>()
-                            .expect("The item has to be a `QueueRow`.")
-                            .song()
-                            .expect("The row has to contain a song.");
                         if let Err(e) = player.on_song_clicked(song).await {
                             dbg!(e);
                         }
