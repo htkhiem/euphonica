@@ -1941,6 +1941,24 @@ impl Player {
         Ok(())
     }
 
+    fn move_queue_locally(&self, from_pos: u32, to_pos: u32) {
+        let queue = self.queue();
+        let first = from_pos.min(to_pos);
+        let count = from_pos.abs_diff(to_pos) + 1;
+        let mut songs: Vec<Song> = (first..first + count)
+            .map(|index| queue.item(index).and_downcast::<Song>().unwrap())
+            .collect();
+        if from_pos < to_pos {
+            songs.rotate_left(1);
+        } else {
+            songs.rotate_right(1);
+        }
+        // Update the queue atomically so GTK doesn't see it shrink between removal
+        // and insertion, which would reset the rows' hover state and covers.
+        self.register_local_queue_changes(1);
+        queue.splice(first, count, &songs);
+    }
+
     pub async fn swap_dir(&self, pos: u32, direction: SwapDirection) -> ClientResult<()> {
         let queue = self.queue();
         let len = queue.n_items();
@@ -1954,20 +1972,7 @@ impl Player {
             SwapDirection::Down => (pos + 1, false),
         };
         let target = queue.item(pos).and_downcast::<Song>().unwrap();
-        let first = pos.min(to);
-        let count = pos.abs_diff(to) + 1;
-        let mut songs: Vec<glib::Object> = (first..first + count)
-            .map(|index| queue.item(index).unwrap())
-            .collect();
-        if pos < to {
-            songs.rotate_left(1);
-        } else {
-            songs.rotate_right(1);
-        }
-        // Update the queue atomically so GTK doesn't see it shrink between removal
-        // and insertion, which would reset the rows' hover state and covers.
-        self.register_local_queue_changes(1);
-        queue.splice(first, count, &songs);
+        self.move_queue_locally(pos, to);
         if wraps {
             self.client()?
                 .move_id(target.get_queue_id(), to as usize)
@@ -1992,9 +1997,7 @@ impl Player {
         if from_pos == new_pos {
             return Ok(());
         }
-        self.register_local_queue_changes(1);
-        queue.remove(from_pos);
-        queue.insert(new_pos, song);
+        self.move_queue_locally(from_pos, new_pos);
         self.client()?
             .move_id(song.get_queue_id(), new_pos as usize)
             .await
