@@ -1978,20 +1978,25 @@ impl Player {
     }
 
     pub async fn move_to(&self, song: &Song, to_pos: u32) -> ClientResult<()> {
-        self.register_local_queue_changes(1);
-        // Perform local update first
-        // We need to remove the item from the liststore, then add it back in.
-        // After removal, if the item precedes the target pos, the target pos would
-        // be one behind the original one.
-        let local_new_pos = if song.get_queue_pos() < to_pos {
+        let queue = self.queue();
+        let Some(from_pos) = queue.find(song) else {
+            return Ok(());
+        };
+        // Removing the song shifts any later drop position back by one, so we need
+        // to adjust it before updating the local queue and sending it to MPD.
+        let new_pos = if from_pos < to_pos {
             to_pos - 1
         } else {
             to_pos
         };
-        self.imp().queue.remove(song.get_queue_pos());
-        self.imp().queue.insert(local_new_pos, song);
+        if from_pos == new_pos {
+            return Ok(());
+        }
+        self.register_local_queue_changes(1);
+        queue.remove(from_pos);
+        queue.insert(new_pos, song);
         self.client()?
-            .move_id(song.get_queue_id(), to_pos as usize)
+            .move_id(song.get_queue_id(), new_pos as usize)
             .await
     }
 

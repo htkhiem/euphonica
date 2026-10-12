@@ -518,16 +518,29 @@ impl QueueView {
                 let row = SongRow::new(Some(cache.clone()), Some(&player));
                 bind_row_by_expressions(&row, item);
                 row.add_css_class("shift-on-hover");
+                // The row position may come from a filtered list, so capture the song itself
+                // and look up its position in the player's queue when the task runs.
                 let reorder = |direction: SwapDirection| {
                     clone!(
                         #[weak]
                         player,
-                        move |_: &gtk::Button, idx| {
+                        #[weak]
+                        item,
+                        move |_: &gtk::Button, _| {
+                            let Some(song) = item
+                                .item()
+                                .and_downcast::<QueueRow>()
+                                .and_then(|slot| slot.song())
+                            else {
+                                return;
+                            };
                             glib::spawn_future_local(clone!(
                                 #[weak]
                                 player,
                                 async move {
-                                    if let Err(e) = player.swap_dir(idx, direction).await {
+                                    if let Some(pos) = player.queue().find(&song)
+                                        && let Err(e) = player.swap_dir(pos, direction).await
+                                    {
                                         dbg!(e);
                                     }
                                 }
@@ -542,18 +555,29 @@ impl QueueView {
                     clone!(
                         #[weak]
                         player,
-                        move |btn, idx| {
+                        #[weak]
+                        item,
+                        move |btn, _| {
+                            let Some(song) = item
+                                .item()
+                                .and_downcast::<QueueRow>()
+                                .and_then(|slot| slot.song())
+                            else {
+                                return;
+                            };
                             glib::spawn_future_local(clone!(
                                 #[weak]
                                 btn,
                                 #[weak]
                                 player,
                                 async move {
-                                    btn.set_sensitive(false);
-                                    if let Err(e) = player.remove_pos(idx).await {
-                                        dbg!(e);
+                                    if let Some(pos) = player.queue().find(&song) {
+                                        btn.set_sensitive(false);
+                                        if let Err(e) = player.remove_pos(pos).await {
+                                            dbg!(e);
+                                        }
+                                        btn.set_sensitive(true);
                                     }
-                                    btn.set_sensitive(true);
                                 }
                             ));
                         }
@@ -581,16 +605,10 @@ impl QueueView {
                     move |_, _x, _y| {
                         // FIXME: nonzero hotspots cause the drag icon to fly off-screen.
                         // Pass the whole song GObject
-                        if let Some(song) = item
-                            .item()
+                        item.item()
                             .and_downcast::<QueueRow>()
                             .and_then(|slot| slot.song())
-                        {
-                            song.set_queue_pos(item.position()); // Ensure the Song object contains the up-to-date queue pos for local updating
-                            Some(gdk::ContentProvider::for_value(&song.to_value()))
-                        } else {
-                            None
-                        }
+                            .map(|song| gdk::ContentProvider::for_value(&song.to_value()))
                     }
                 ));
                 drag_source.connect_drag_begin(clone!(
@@ -682,29 +700,28 @@ impl QueueView {
                     false,
                     move |_, song, _x, y| {
                         row.set_floating(false);
-                        if !row.is_floating() {
-                            if let Ok(song) = song.get::<Song>() {
-                                // Get queue pos of row being dropped onto
-                                let target_pos = item.position()
-                                    + if y > row.height() as f64 / 2.0 {
-                                        // If is lower half, place dropped song after this one
-                                        1
-                                    } else {
-                                        0
-                                    };
-                                glib::spawn_future_local(async move {
-                                    if let Err(e) = player.move_to(&song, target_pos).await {
-                                        dbg!(e);
-                                    }
-                                });
-                                true
-                            } else {
-                                false
-                            }
-                        } else {
-                            // Ignore if dropped atop itself
-                            false
+                        let Ok(song) = song.get::<Song>() else {
+                            return false;
+                        };
+                        let Some(target) = item
+                            .item()
+                            .and_downcast::<QueueRow>()
+                            .and_then(|slot| slot.song())
+                        else {
+                            return false;
+                        };
+                        if song == target {
+                            return false;
                         }
+                        let after = y > row.height() as f64 / 2.0;
+                        glib::spawn_future_local(async move {
+                            if let Some(pos) = player.queue().find(&target)
+                                && let Err(e) = player.move_to(&song, pos + u32::from(after)).await
+                            {
+                                dbg!(e);
+                            }
+                        });
+                        true
                     }
                 ));
 
