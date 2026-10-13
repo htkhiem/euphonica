@@ -14,7 +14,6 @@ use super::ImageState;
 #[derive(Clone, Debug)]
 pub enum ImageSnapshot {
     Empty,
-    Loading,
     Loaded(gdk::Paintable),
 }
 
@@ -98,11 +97,11 @@ impl ImageStack {
         self.imp().state.get()
     }
 
-    pub fn snapshot_image(&self) -> ImageSnapshot {
-        match (self.get_state(), self.imp().image.paintable()) {
-            (ImageState::Empty, _) => ImageSnapshot::Empty,
-            (ImageState::Image, Some(paintable)) => ImageSnapshot::Loaded(paintable),
-            _ => ImageSnapshot::Loading,
+    pub fn snapshot_image(&self) -> Option<ImageSnapshot> {
+        match self.get_state() {
+            ImageState::Empty => Some(ImageSnapshot::Empty),
+            ImageState::Image => self.imp().image.paintable().map(ImageSnapshot::Loaded),
+            ImageState::Spinner => None,
         }
     }
 

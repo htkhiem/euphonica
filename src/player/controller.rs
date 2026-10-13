@@ -1934,14 +1934,20 @@ impl Player {
     }
 
     /// Remove given song from queue.
-    pub async fn remove_pos(&self, pos: u32) -> ClientResult<()> {
+    pub async fn remove_song(&self, song: &Song) -> ClientResult<()> {
+        let queue = self.queue();
+        let Some(pos) = queue.find(song) else {
+            return Ok(());
+        };
         self.register_local_queue_changes(1);
-        self.queue().remove(pos);
-        self.client()?.delete_at_pos(pos).await?;
-        Ok(())
+        queue.remove(pos);
+        self.client()?.delete_at_pos(pos).await
     }
 
-    fn move_queue_locally(&self, from_pos: u32, to_pos: u32) {
+    async fn move_song(&self, song: &Song, from_pos: u32, to_pos: u32) -> ClientResult<()> {
+        if from_pos == to_pos {
+            return Ok(());
+        }
         let queue = self.queue();
         let first = from_pos.min(to_pos);
         let count = from_pos.abs_diff(to_pos) + 1;
@@ -1957,36 +1963,32 @@ impl Player {
         // and insertion, which would reset the rows' hover state and covers.
         self.register_local_queue_changes(1);
         queue.splice(first, count, &songs);
+        self.client()?
+            .move_id(song.get_queue_id(), to_pos as usize)
+            .await
     }
 
-    pub async fn swap_dir(&self, pos: u32, direction: SwapDirection) -> ClientResult<()> {
+    pub async fn swap_dir(&self, song: &Song, direction: SwapDirection) -> ClientResult<()> {
         let queue = self.queue();
+        let Some(pos) = queue.find(song) else {
+            return Ok(());
+        };
         let len = queue.n_items();
-        if len < 2 || pos >= len {
-            return Ok(());
-        }
-        let (to, wraps) = match direction {
-            SwapDirection::Up if pos == 0 => (len - 1, true),
-            SwapDirection::Down if pos == len - 1 => (0, true),
-            SwapDirection::Up => (pos - 1, false),
-            SwapDirection::Down => (pos + 1, false),
+        let to = match direction {
+            SwapDirection::Up if pos == 0 => len - 1,
+            SwapDirection::Down if pos == len - 1 => 0,
+            SwapDirection::Up => pos - 1,
+            SwapDirection::Down => pos + 1,
         };
-        let target = queue.item(pos).and_downcast::<Song>().unwrap();
-        self.move_queue_locally(pos, to);
-        if wraps {
-            self.client()?
-                .move_id(target.get_queue_id(), to as usize)
-                .await
-        } else {
-            self.client()?.swap_pos(pos, to).await
-        }
+        self.move_song(song, pos, to).await
     }
 
-    pub async fn move_to(&self, song: &Song, to_pos: u32) -> ClientResult<()> {
+    pub async fn move_to(&self, song: &Song, target: &Song, after: bool) -> ClientResult<()> {
         let queue = self.queue();
-        let Some(from_pos) = queue.find(song) else {
+        let (Some(from_pos), Some(target_pos)) = (queue.find(song), queue.find(target)) else {
             return Ok(());
         };
+        let to_pos = target_pos + u32::from(after);
         // Removing the song shifts any later drop position back by one, so we need
         // to adjust it before updating the local queue and sending it to MPD.
         let new_pos = if from_pos < to_pos {
@@ -1994,13 +1996,7 @@ impl Player {
         } else {
             to_pos
         };
-        if from_pos == new_pos {
-            return Ok(());
-        }
-        self.move_queue_locally(from_pos, new_pos);
-        self.client()?
-            .move_id(song.get_queue_id(), new_pos as usize)
-            .await
+        self.move_song(song, from_pos, new_pos).await
     }
 
     pub async fn save_queue(&self, name: String, save_mode: SaveMode) -> ClientResult<()> {

@@ -317,7 +317,7 @@ impl SongRow {
         }
     }
 
-    fn song(&self) -> Option<Song> {
+    pub fn song(&self) -> Option<Song> {
         self.imp().song.upgrade()
     }
 
@@ -351,7 +351,7 @@ impl SongRow {
         ));
     }
 
-    pub fn thumbnail_snapshot(&self) -> ImageSnapshot {
+    pub fn thumbnail_snapshot(&self) -> Option<ImageSnapshot> {
         self.imp().thumbnail.snapshot_image()
     }
 
@@ -376,7 +376,7 @@ impl SongRow {
             Some(ImageSnapshot::Empty) => self.imp().thumbnail.clear(),
             // Fetch the cover for this row if we couldn't reuse one, since any pending
             // request still belongs to the old row and won't update this one.
-            _ => self.schedule_thumbnail(),
+            None => self.schedule_thumbnail(),
         }
     }
 

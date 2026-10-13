@@ -1,6 +1,6 @@
 use gtk::{
     CompositeTemplate,
-    glib::{self, Object, clone},
+    glib::{self, Object},
     prelude::*,
     subclass::prelude::*,
 };
@@ -59,44 +59,15 @@ impl RowEditButtons {
         self.imp().reorder_buttons.get()
     }
 
-    pub fn new<F1, F2, F3>(
-        item: &gtk::ListItem,
-        on_raise_clicked: F1,
-        on_lower_clicked: F2,
-        on_remove_clicked: F3,
-    ) -> Self
-    where
-        F1: Fn(&gtk::Button, u32) + 'static,
-        F2: Fn(&gtk::Button, u32) + 'static,
-        F3: Fn(&gtk::Button, u32) + 'static,
-    {
+    pub fn new(
+        on_raise_clicked: impl Fn(&gtk::Button) + 'static,
+        on_lower_clicked: impl Fn(&gtk::Button) + 'static,
+        on_remove_clicked: impl Fn(&gtk::Button) + 'static,
+    ) -> Self {
         let res: Self = Object::builder().build();
-        res.imp().raise.connect_clicked(clone!(
-            #[weak]
-            item,
-            move |btn| {
-                on_raise_clicked(btn, item.position());
-            }
-        ));
-
-        res.imp().lower.connect_clicked(clone!(
-            #[weak]
-            item,
-            move |btn| {
-                on_lower_clicked(btn, item.position());
-            }
-        ));
-
-        res.imp().remove.connect_clicked(clone!(
-            #[weak]
-            item,
-            #[upgrade_or]
-            (),
-            move |btn| {
-                on_remove_clicked(btn, item.position());
-            }
-        ));
-
+        res.imp().raise.connect_clicked(on_raise_clicked);
+        res.imp().lower.connect_clicked(on_lower_clicked);
+        res.imp().remove.connect_clicked(on_remove_clicked);
         res
     }
 }
