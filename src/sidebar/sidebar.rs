@@ -1,6 +1,6 @@
 use adw::{prelude::*, subclass::prelude::*};
 use glib::{Properties, clone};
-use gtk::{CompositeTemplate, glib, prelude::*};
+use gtk::{CompositeTemplate, glib};
 use std::cell::Cell;
 
 use crate::{
