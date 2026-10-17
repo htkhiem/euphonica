@@ -2,9 +2,7 @@ use asyncified::Asyncified;
 use gtk::gio::prelude::SettingsExt;
 
 use crate::{
-    common::{AlbumInfo, ArtistInfo, SongInfo},
-    utils::settings_manager,
-    window::EuphonicaWindow,
+    common::{AlbumInfo, ArtistInfo, SongInfo}, meta_providers::the_audio_db::TheAudioDbWrapper, utils::settings_manager, window::EuphonicaWindow
 };
 
 use super::{
@@ -203,6 +201,7 @@ pub fn get_provider(key: &str) -> (&'static str, Box<dyn MetadataProvider>) {
         "musicbrainz" => ("MusicBrainz", Box::new(MusicBrainzWrapper::new())),
         "lastfm" => ("Last.fm", Box::new(LastfmWrapper::new())),
         "lrclib" => ("LRCLIB", Box::new(LrcLibWrapper::new())),
+        "the_audio_db" => ("TheAudioDB", Box::new(TheAudioDbWrapper::new())),
         _ => unimplemented!(),
     }
 }

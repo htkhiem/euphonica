@@ -1,4 +1,4 @@
-static PROVIDER_KEY: &str = "theaudiodb";
+static PROVIDER_KEY: &str = "the_audio_db";
 
 mod controller;
 pub mod models;
