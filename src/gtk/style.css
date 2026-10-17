@@ -92,11 +92,6 @@ listview > row {
     background-color: unset;
 }
 
-.euphonica-sidebar {
-    padding-left: 6pt;
-    padding-right: 6pt;
-}
-
 .player-bar {
     border-top: 1px solid @borders;
 }
@@ -113,6 +108,14 @@ listview > row {
 .player-pane {
     padding-left: 12px;
     padding-right: 12px;
+}
+
+/* For some reason adw 1.9's builtin sidebar widget looks much thicker than Nautilus' own sidebar.
+ * I personally prefer Nautilus' spacing here.
+ */
+.navigation-sidebar > row > box {
+	padding-top: 0px;
+	padding-bottom: 0px;
 }
 
 /* To achieve full-window blurred background effect, we must replace the default opaque colours used
