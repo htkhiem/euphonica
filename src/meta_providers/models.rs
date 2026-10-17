@@ -25,15 +25,6 @@ pub trait Merge {
     /// - Option fields are filled in if our own is None and theirs is Some.
     /// - Normal fields are unchanged.
     fn merge(self, other: Self) -> Self;
-
-    /// Convenience provided function: apply value from other if value from self is None.
-    fn merge_option<T>(this: Option<T>, that: Option<T>) -> Option<T> {
-        if this.is_none() && that.is_some() {
-            that
-        } else {
-            this
-        }
-    }
 }
 
 // pub trait HasImage {
@@ -84,6 +75,27 @@ pub struct AlbumMeta {
     pub url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub wiki: Option<Wiki>,
+
+    // New fields after adding TheAudioDB
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mood: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub theme: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub speed: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub upc_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub spotify_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub musicmoz_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub genius_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+    // TODO: display these too next to the tagged genres
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub genres: Vec<String>
 }
 
 impl AlbumMeta {
@@ -98,6 +110,15 @@ impl AlbumMeta {
             image: Vec::with_capacity(0),
             url: None,
             wiki: None,
+            mood: None,
+            theme: None,
+            speed: None,
+            upc_id: None,
+            spotify_id: None,
+            musicmoz_id: None,
+            genius_id: None,
+            label: None,
+            genres: Vec::with_capacity(0)
         }
     }
 }
@@ -112,15 +133,33 @@ impl Merge for AlbumMeta {
             mut image,
             url,
             wiki,
+            mood,
+            theme,
+            speed,
+            upc_id,
+            spotify_id,
+            musicmoz_id,
+            genius_id,
+            label,
+            mut genres,
             ..
         }: Self,
     ) -> Self {
         self.tags.append(&mut tags);
         self.image.append(&mut image);
-        self.mbid = Self::merge_option(self.mbid, mbid);
-        self.artist = Self::merge_option(self.artist, artist);
-        self.url = Self::merge_option(self.url, url);
-        self.wiki = Self::merge_option(self.wiki, wiki);
+        self.mbid = self.mbid.or(mbid);
+        self.artist = self.artist.or(artist);
+        self.url = self.url.or(url);
+        self.wiki = self.wiki.or(wiki);
+        self.mood = self.mood.or(mood);
+        self.theme = self.theme.or(theme);
+        self.speed = self.speed.or(speed);
+        self.upc_id = self.upc_id.or(upc_id);
+        self.spotify_id = self.spotify_id.or(spotify_id);
+        self.musicmoz_id = self.musicmoz_id.or(musicmoz_id);
+        self.genius_id = self.genius_id.or(genius_id);
+        self.label = self.label.or(label);
+        self.genres.append(&mut genres);
         self
     }
 }
@@ -202,6 +241,14 @@ pub struct ArtistMeta {
     // Two-letter country code, such as US, AU, UK, JP, etc.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub country: Option<String>,
+    // Alternative to plaintext name
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub logo_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mood: Option<String>,
+    // TODO: display these too next to the tagged genres
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub genres: Vec<String>
 }
 
 impl ArtistMeta {
@@ -221,6 +268,9 @@ impl ArtistMeta {
             begin_date: None,
             end_date: None,
             country: None,
+            logo_url: None,
+            mood: None,
+            genres: Vec::with_capacity(0)
         }
     }
 }
@@ -248,9 +298,9 @@ impl Merge for ArtistMeta {
         self.tags.append(&mut tags);
         self.image.append(&mut image);
         self.similar.append(&mut similar);
-        self.mbid = Self::merge_option(self.mbid, mbid);
-        self.url = Self::merge_option(self.url, url);
-        self.bio = Self::merge_option(self.bio, bio);
+        self.mbid = self.mbid.or(mbid);
+        self.url = self.url.or(url);
+        self.bio = self.bio.or(bio);
         if (self.artist_type == ArtistType::Other
             || self.artist_type == ArtistType::UnrecognizedArtistType)
             && (artist_type != ArtistType::Other
@@ -258,10 +308,10 @@ impl Merge for ArtistMeta {
         {
             self.artist_type = artist_type;
         }
-        self.gender = Self::merge_option(self.gender, gender);
-        self.begin_date = Self::merge_option(self.begin_date, begin_date);
-        self.end_date = Self::merge_option(self.end_date, end_date);
-        self.country = Self::merge_option(self.country, country);
+        self.gender = self.gender.or(gender);
+        self.begin_date = self.begin_date.or(begin_date);
+        self.end_date = self.end_date.or(end_date);
+        self.country = self.country.or(country);
         self
     }
 }
