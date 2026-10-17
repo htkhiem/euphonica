@@ -1,5 +1,4 @@
 use crate::cache::sqlite;
-use crate::config::APPLICATION_ID;
 pub use crate::settings::settings_manager;
 use adw::prelude::*;
 use aho_corasick::AhoCorasick;
