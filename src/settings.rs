@@ -1,3 +1,5 @@
+use std::{fs, path::PathBuf, sync::RwLock};
+
 use gtk::{gio, glib, prelude::*};
 use once_cell::sync::Lazy;
 use serde_json::{Map, Value};
@@ -15,7 +17,23 @@ static USE_JSON_BACKEND: Lazy<bool> = Lazy::new(|| {
         false
     }
 });
-static JSON_BACKEND: Lazy<JsonSettingsBackend> = Lazy::new(glib::Object::new);
+
+static JSON_SETTINGS: Lazy<(PathBuf, RwLock<Map<String, Value>>)> = Lazy::new(|| {
+    let path = glib::user_config_dir()
+        .join("euphonica")
+        .join("settings.json");
+    let values = RwLock::new(match fs::read(&path) {
+        Ok(contents) => serde_json::from_slice(&contents).unwrap_or_else(|error| {
+            eprintln!("Cannot read settings {}: {error}", path.display());
+            Map::new()
+        }),
+        Err(error) => {
+            eprintln!("Cannot read settings {}: {error}", path.display());
+            Map::new()
+        }
+    });
+    (path, values)
+});
 
 fn fallback_reason(backend: &gio::SettingsBackend) -> Option<String> {
     match backend.type_().name() {
@@ -52,7 +70,7 @@ pub fn init() {
 pub fn settings_manager() -> gio::Settings {
     let app_id = APPLICATION_ID.trim_end_matches(".Devel");
     if *USE_JSON_BACKEND {
-        gio::Settings::with_backend(app_id, &*JSON_BACKEND)
+        gio::Settings::with_backend(app_id, &JsonSettingsBackend::default())
     } else {
         gio::Settings::new(app_id)
     }
@@ -63,10 +81,11 @@ glib::wrapper! {
         @extends gio::SettingsBackend;
 }
 
-// GSettingsBackend synchronizes its watchers. This subclass synchronizes its
-// state and writes, releasing both locks before emitting notifications.
-unsafe impl Send for JsonSettingsBackend {}
-unsafe impl Sync for JsonSettingsBackend {}
+impl Default for JsonSettingsBackend {
+    fn default() -> Self {
+        glib::Object::new()
+    }
+}
 
 fn variant_to_json(value: &glib::Variant) -> Option<Value> {
     match value.type_().as_str() {
@@ -151,44 +170,11 @@ mod imp {
     use std::{
         ffi::{CStr, c_char},
         fs,
-        io::ErrorKind,
-        path::PathBuf,
         ptr,
-        sync::Mutex,
     };
 
-    pub struct JsonSettingsBackend {
-        path: PathBuf,
-        values: Mutex<Option<Map<String, Value>>>,
-        write_lock: Mutex<()>,
-    }
-
-    impl Default for JsonSettingsBackend {
-        fn default() -> Self {
-            let path = glib::user_config_dir()
-                .join("euphonica")
-                .join("settings.json");
-            let values = match fs::read(&path) {
-                Ok(contents) => match serde_json::from_slice(&contents) {
-                    Ok(values) => Some(values),
-                    Err(error) => {
-                        eprintln!("Cannot read settings {}: {error}", path.display());
-                        None
-                    }
-                },
-                Err(error) if error.kind() == ErrorKind::NotFound => Some(Map::new()),
-                Err(error) => {
-                    eprintln!("Cannot read settings {}: {error}", path.display());
-                    None
-                }
-            };
-            Self {
-                path,
-                values: Mutex::new(values),
-                write_lock: Mutex::new(()),
-            }
-        }
-    }
+    #[derive(Default)]
+    pub struct JsonSettingsBackend {}
 
     #[glib::object_subclass]
     impl ObjectSubclass for JsonSettingsBackend {
@@ -215,9 +201,9 @@ mod imp {
     impl JsonSettingsBackend {
         fn read_value(&self, key: &str, expected_type: &glib::VariantTy) -> Option<glib::Variant> {
             let key = key.strip_prefix(SETTINGS_PATH)?;
-            let values = self.values.lock().unwrap();
+            let values = &(*JSON_SETTINGS).1.read().unwrap();
             let mut parts = key.split('/');
-            let mut value = values.as_ref()?.get(parts.next()?)?;
+            let mut value = values.get(parts.next()?)?;
             for part in parts {
                 value = value.as_object()?.get(part)?;
             }
@@ -225,14 +211,7 @@ mod imp {
         }
 
         fn write_values(&self, changes: &[(String, Option<glib::Variant>)]) -> bool {
-            let _write_guard = self.write_lock.lock().unwrap();
-            let mut updated = {
-                let values = self.values.lock().unwrap();
-                let Some(current) = values.as_ref() else {
-                    return false;
-                };
-                current.clone()
-            };
+            let mut updated = &mut (*JSON_SETTINGS).1.write().unwrap();
             for (key, value) in changes {
                 let Some(key) = key.strip_prefix(SETTINGS_PATH) else {
                     return false;
@@ -251,18 +230,20 @@ mod imp {
                 }
             }
             if let Err(error) = self.save(&updated) {
-                eprintln!("Cannot write settings {}: {error}", self.path.display());
+                eprintln!(
+                    "Cannot write settings {}: {error}",
+                    (*JSON_SETTINGS).0.display()
+                );
                 return false;
             }
-            *self.values.lock().unwrap() = Some(updated);
             true
         }
 
         fn save(&self, values: &Map<String, Value>) -> Result<(), Box<dyn std::error::Error>> {
             let contents = serde_json::to_vec_pretty(values)?;
-            fs::create_dir_all(self.path.parent().unwrap())?;
+            fs::create_dir_all((*JSON_SETTINGS).0.parent().unwrap())?;
             glib::file_set_contents_full(
-                &self.path,
+                &(*JSON_SETTINGS).0,
                 &contents,
                 glib::FileSetContentsFlags::CONSISTENT | glib::FileSetContentsFlags::DURABLE,
                 0o600,
@@ -288,14 +269,11 @@ mod imp {
     }
 
     unsafe extern "C" fn get_writable(
-        backend: *mut gio::ffi::GSettingsBackend,
+        _backend: *mut gio::ffi::GSettingsBackend,
         key: *const c_char,
     ) -> glib::ffi::gboolean {
-        let instance =
-            unsafe { &*backend.cast::<<JsonSettingsBackend as ObjectSubclass>::Instance>() };
         let key = unsafe { CStr::from_ptr(key) }.to_str().unwrap();
-        (key.starts_with(SETTINGS_PATH) && instance.imp().values.lock().unwrap().is_some())
-            .into_glib()
+        (key.starts_with(SETTINGS_PATH)).into_glib()
     }
 
     unsafe extern "C" fn write(
