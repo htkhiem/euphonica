@@ -87,7 +87,7 @@ impl From<Release> for models::AlbumMeta {
             musicmoz_id: None,
             genius_id: None,
             label: None,
-            genres: Vec::with_capacity(0)
+            genres: Vec::with_capacity(0),
         }
     }
 }
@@ -152,7 +152,7 @@ impl From<Artist> for models::ArtistMeta {
             country: artist.country,
             genres: Vec::with_capacity(0),
             logo_url: None,
-            mood: None
+            mood: None,
         }
     }
 }

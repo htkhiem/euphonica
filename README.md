@@ -25,7 +25,7 @@ It exists to sate my need for something that's got the bling and the features to
   - Graphical rules editor with live error checking.
   - Save a dynamic playlist's current state as an MPD-side static playlist whenver you want.
   - JSON import/export for sharing & backing up dynamic playlist rules.
-- Fetch album arts, artist avatars and synced song lyrics from external sources (currently supports Last.fm, MusicBrainz and LRCLIB).
+- Fetch album arts, artist avatars and synced song lyrics from external sources (currently supports Last.fm, MusicBrainz, TheAudioDB and LRCLIB).
 - myMPD-compatible stickers handling (now with new album stickers standard). Both album and song ratings are supported.
 - Integrated MPRIS client & Flatpak-friendly run-in-background.
 - Audio quality indicators (lossy, lossless, hi-res, DSD) for individual songs as well as albums & detailed format printout.

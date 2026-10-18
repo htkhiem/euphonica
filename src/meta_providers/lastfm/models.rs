@@ -157,7 +157,7 @@ impl From<LastfmAlbum> for AlbumMeta {
             musicmoz_id: None,
             genius_id: None,
             label: None,
-            genres: Vec::with_capacity(0)
+            genres: Vec::with_capacity(0),
         }
     }
 }
@@ -202,7 +202,7 @@ impl From<LastfmSimilarArtist> for ArtistMeta {
             country: None,
             logo_url: None,
             mood: None,
-            genres: Vec::with_capacity(0)
+            genres: Vec::with_capacity(0),
         }
     }
 }
@@ -256,7 +256,7 @@ impl From<LastfmArtist> for ArtistMeta {
             country: None,
             logo_url: None,
             mood: None,
-            genres: Vec::with_capacity(0)
+            genres: Vec::with_capacity(0),
         }
     }
 }

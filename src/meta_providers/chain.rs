@@ -1,8 +1,11 @@
 use asyncified::Asyncified;
-use gtk::gio::prelude::SettingsExt;
+use gtk::{gio::prelude::*, glib};
 
 use crate::{
-    common::{AlbumInfo, ArtistInfo, SongInfo}, meta_providers::the_audio_db::TheAudioDbWrapper, utils::settings_manager, window::EuphonicaWindow
+    common::{AlbumInfo, ArtistInfo, SongInfo},
+    meta_providers::the_audio_db::TheAudioDbWrapper,
+    utils::settings_manager,
+    window::EuphonicaWindow,
 };
 
 use super::{
@@ -36,8 +39,7 @@ impl MetadataChain {
     {
         let mut providers = Vec::new();
         let settings = settings_manager().child("metaprovider");
-        let keys = settings.value("order");
-        for key in keys.array_iter_str().unwrap().map(|k| k.to_owned()) {
+        for key in effective_provider_order() {
             let (name, provider) = get_provider(&key);
             providers.push((
                 name,
@@ -193,6 +195,10 @@ impl MetadataChain {
     }
 }
 
+/// All known provider keys, matching the arms of `get_provider` below.
+/// Upon implementing a new provider, append its key here.
+pub const ALL_PROVIDER_KEYS: [&str; 4] = ["lastfm", "lrclib", "musicbrainz", "theaudiodb"];
+
 /// Convenience method to construct a metadata provider instance by key with the given priority.
 /// When implementing a new provider, you must manually add it to this function too.
 /// Returns a display-friendly name (for error toasts) and the provider struct itself
@@ -201,7 +207,27 @@ pub fn get_provider(key: &str) -> (&'static str, Box<dyn MetadataProvider>) {
         "musicbrainz" => ("MusicBrainz", Box::new(MusicBrainzWrapper::new())),
         "lastfm" => ("Last.fm", Box::new(LastfmWrapper::new())),
         "lrclib" => ("LRCLIB", Box::new(LrcLibWrapper::new())),
-        "the_audio_db" => ("TheAudioDB", Box::new(TheAudioDbWrapper::new())),
+        "theaudiodb" => ("TheAudioDB", Box::new(TheAudioDbWrapper::new())),
         _ => unimplemented!(),
     }
+}
+
+/// The effective provider order for this run: the user's stored `order`, with
+/// any known providers missing from it automatically appended at the end
+/// in the same order they appear in `ALL_PROVIDER_KEYS`. This allows new
+/// providers added in app updates to show up in existing installs' priority list.
+pub fn effective_provider_order() -> Vec<String> {
+    let settings = settings_manager().child("metaprovider");
+    let mut res: Vec<String> = settings
+        .strv("order")
+        .into_iter()
+        .map(|gs| gs.to_string())
+        .collect();
+    let mut new_providers: Vec<String> = ALL_PROVIDER_KEYS
+        .iter()
+        .filter(|k| !res.iter().any(|existing| existing.as_str() == **k))
+        .map(|name| name.to_string())
+        .collect();
+    res.append(&mut new_providers);
+    res
 }

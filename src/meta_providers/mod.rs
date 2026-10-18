@@ -2,12 +2,12 @@ mod base;
 mod chain;
 pub mod lastfm;
 pub mod lrclib;
-pub mod the_audio_db;
 pub mod models;
 pub mod musicbrainz;
+pub mod the_audio_db;
 
 pub use base::{MetadataProvider, utils};
-pub use chain::MetadataChain;
+pub use chain::{MetadataChain, effective_provider_order};
 
 pub mod prelude {
     pub use super::base::{

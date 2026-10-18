@@ -95,7 +95,7 @@ pub struct AlbumMeta {
     pub label: Option<String>,
     // TODO: display these too next to the tagged genres
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub genres: Vec<String>
+    pub genres: Vec<String>,
 }
 
 impl AlbumMeta {
@@ -118,7 +118,7 @@ impl AlbumMeta {
             musicmoz_id: None,
             genius_id: None,
             label: None,
-            genres: Vec::with_capacity(0)
+            genres: Vec::with_capacity(0),
         }
     }
 }
@@ -248,7 +248,7 @@ pub struct ArtistMeta {
     pub mood: Option<String>,
     // TODO: display these too next to the tagged genres
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub genres: Vec<String>
+    pub genres: Vec<String>,
 }
 
 impl ArtistMeta {
@@ -270,7 +270,7 @@ impl ArtistMeta {
             country: None,
             logo_url: None,
             mood: None,
-            genres: Vec::with_capacity(0)
+            genres: Vec::with_capacity(0),
         }
     }
 }
