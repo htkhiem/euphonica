@@ -1,5 +1,10 @@
-use std::{time::SystemTime, borrow::Cow};
+use std::time::SystemTime;
 
+use crate::{
+    common::{AlbumInfo, ArtistInfo},
+    config::APPLICATION_USER_AGENT,
+    utils::meta_provider_settings,
+};
 use gtk::prelude::*;
 use reqwest::{
     Error,
@@ -7,11 +12,6 @@ use reqwest::{
     header::USER_AGENT,
 };
 use urlencoding::encode as uenc;
-use crate::{
-    common::{AlbumInfo, ArtistInfo},
-    config::APPLICATION_USER_AGENT,
-    utils::meta_provider_settings,
-};
 
 use super::models::{
     TheAudioDbAlbum, TheAudioDbAlbumResponse, TheAudioDbArtist, TheAudioDbArtistResponse,
@@ -175,7 +175,6 @@ impl MetadataProvider for TheAudioDbWrapper {
                         } else {
                             None
                         }
-
                     } else {
                         // Look for the first album whose artist string matches,
                         // case-insensitive
@@ -408,9 +407,7 @@ mod tests {
         let api_key = match live_api_key() {
             Some(key) => key,
             None => {
-                println!(
-                    "TADB_API_KEY not set, skipping live test"
-                );
+                println!("TADB_API_KEY not set, skipping live test");
                 return;
             }
         };
@@ -443,9 +440,7 @@ mod tests {
         let api_key = match live_api_key() {
             Some(key) => key,
             None => {
-                println!(
-                    "TADB_API_KEY not set, skipping live test"
-                );
+                println!("TADB_API_KEY not set, skipping live test");
                 return;
             }
         };
