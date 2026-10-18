@@ -149,6 +149,15 @@ impl From<LastfmAlbum> for AlbumMeta {
             image,
             url: Some(lfm.url),
             wiki,
+            mood: None,
+            theme: None,
+            speed: None,
+            upc_id: None,
+            spotify_id: None,
+            musicmoz_id: None,
+            genius_id: None,
+            label: None,
+            genres: Vec::with_capacity(0),
         }
     }
 }
@@ -191,6 +200,9 @@ impl From<LastfmSimilarArtist> for ArtistMeta {
             begin_date: None,
             end_date: None,
             country: None,
+            logo_url: None,
+            mood: None,
+            genres: Vec::with_capacity(0),
         }
     }
 }
@@ -242,6 +254,9 @@ impl From<LastfmArtist> for ArtistMeta {
             begin_date: None,
             end_date: None,
             country: None,
+            logo_url: None,
+            mood: None,
+            genres: Vec::with_capacity(0),
         }
     }
 }

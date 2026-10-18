@@ -79,6 +79,15 @@ impl From<Release> for models::AlbumMeta {
             image: Vec::new(), // acquired separately
             url: Some(format!("https://musicbrainz.org/release/{}", rel.id)),
             wiki: None, // not provided
+            mood: None,
+            theme: None,
+            speed: None,
+            upc_id: None,
+            spotify_id: None,
+            musicmoz_id: None,
+            genius_id: None,
+            label: None,
+            genres: Vec::with_capacity(0),
         }
     }
 }
@@ -141,6 +150,9 @@ impl From<Artist> for models::ArtistMeta {
             begin_date,
             end_date,
             country: artist.country,
+            genres: Vec::with_capacity(0),
+            logo_url: None,
+            mood: None,
         }
     }
 }

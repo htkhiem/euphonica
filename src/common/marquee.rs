@@ -166,10 +166,7 @@ mod imp {
             } else {
                 width
             };
-            child.size_allocate(
-                &gtk::Allocation::new(0, 0, child_width, height),
-                baseline,
-            );
+            child.size_allocate(&gtk::Allocation::new(0, 0, child_width, height), baseline);
             self.check_animation();
         }
 

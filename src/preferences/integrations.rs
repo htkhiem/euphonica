@@ -4,7 +4,10 @@ use gtk::{CompositeTemplate, glib};
 use std::cell::OnceCell;
 use std::rc::Rc;
 
-use crate::{application::update_xdg_background_request, cache::Cache, utils};
+use crate::{
+    application::update_xdg_background_request, cache::Cache,
+    meta_providers::effective_provider_order, utils,
+};
 
 use super::ProviderRow;
 
@@ -34,6 +37,15 @@ mod imp {
         pub musicbrainz_download_album_art: TemplateChild<adw::SwitchRow>,
         #[template_child]
         pub musicbrainz_download_artist_avatar: TemplateChild<adw::SwitchRow>,
+
+        #[template_child]
+        pub the_audio_db_key: TemplateChild<adw::EntryRow>,
+        #[template_child]
+        pub the_audio_db_api_version: TemplateChild<adw::ComboRow>,
+        #[template_child]
+        pub the_audio_db_download_album_art: TemplateChild<adw::SwitchRow>,
+        #[template_child]
+        pub the_audio_db_download_artist_avatar: TemplateChild<adw::SwitchRow>,
 
         #[template_child]
         pub order_box: TemplateChild<gtk::ListBox>,
@@ -170,18 +182,44 @@ impl IntegrationsPreferences {
             )
             .build();
 
+        // Set up TheAudioDB settings
+        let tada_settings = utils::meta_provider_settings("theaudiodb");
+        let tada_key = imp.the_audio_db_key.get();
+        let tada_api_version = imp.the_audio_db_api_version.get();
+        let tada_download_album_art = imp.the_audio_db_download_album_art.get();
+        let tada_download_artist_avatar = imp.the_audio_db_download_artist_avatar.get();
+
+        tada_settings.bind("api-key", &tada_key, "text").build();
+
+        let enum_val = tada_settings.enum_("api-version");
+        tada_api_version.set_selected((enum_val - 1).max(0) as u32);
+        let tada_api_version_settings = tada_settings.clone();
+        tada_api_version.connect_notify_local(Some("selected"), move |row, _| {
+            let _ = tada_api_version_settings.set_enum("api-version", (row.selected() + 1) as i32);
+        });
+
+        tada_settings
+            .bind("download-album-art", &tada_download_album_art, "active")
+            .build();
+
+        tada_settings
+            .bind(
+                "download-artist-avatar",
+                &tada_download_artist_avatar,
+                "active",
+            )
+            .build();
+
         // LRCLIB currently needs no settings.
 
-        // Set up priority settings
+        // Set up priority settings. Providers missing from the user's stored
+        // order are automatically appended by `effective_provider_order`.
         let order_box = self.imp().order_box.get();
 
-        for row in settings
-            .child("metaprovider")
-            .value("order")
-            .array_iter_str()
-            .unwrap()
+        for row in effective_provider_order()
+            .into_iter()
             .enumerate()
-            .map(|(prio, key)| ProviderRow::new(self, key, prio as i32))
+            .map(|(prio, key)| ProviderRow::new(self, &key, prio as i32))
         {
             order_box.append(&row);
         }
