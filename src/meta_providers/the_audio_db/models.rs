@@ -108,7 +108,7 @@ impl From<TheAudioDbAlbum> for AlbumMeta {
             .unwrap_or_default();
         let artist =
             some_nonempty_opt(&tada.artist).or_else(|| some_nonempty_opt(&tada.artist_raw));
-        let url = format!("www.theaudiodb.com/album/{}", tada.id);
+        let url = format!("https://www.theaudiodb.com/album/{}", tada.id);
         Self {
             name,
             artist,
@@ -220,7 +220,7 @@ impl From<TheAudioDbArtist> for ArtistMeta {
                 });
             }
         }
-        let tadb_url = format!("www.theaudiodb.com/artist/{}", tada.id);
+        let tadb_url = format!("https://www.theaudiodb.com/artist/{}", tada.id);
         ArtistMeta {
             name,
             mbid: some_nonempty_opt(&tada.mbid),

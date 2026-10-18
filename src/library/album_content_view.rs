@@ -494,14 +494,25 @@ mod imp {
                     #[weak]
                     obj,
                     move |_, _, _| {
-                        glib::spawn_future_local(clone!(
-                            #[weak]
-                            obj,
-                            async move {
-                                obj.schedule_cover(true).await;
-                            }
-                        ));
-                        obj.update_meta_guarded(false);
+                        // Abort any in-flight fetch, then run the metadata re-fetch to
+                        // completion BEFORE scheduling the cover. The cover download's
+                        // external fallback reads the cached metadata document, so
+                        // fetching it in parallel would see the stale pre-refetch
+                        // image list and miss images newly merged in by the chain.
+                        if let Some(handle) = obj.imp().update_meta_handle.take() {
+                            handle.abort();
+                        }
+                        let _ =
+                            obj.imp()
+                                .update_meta_handle
+                                .replace(Some(glib::spawn_future_local(clone!(
+                                    #[weak]
+                                    obj,
+                                    async move {
+                                        obj.update_meta(true).await;
+                                        obj.schedule_cover(true).await;
+                                    }
+                                ))));
                     }
                 ))
                 .build();
@@ -1308,10 +1319,24 @@ impl AlbumContentView {
                         })
                         .sum::<u64>() as f64,
                 ));
-                // The extra fluff later
-                this.schedule_cover(false).await;
-                // Runs in its own async closure
-                this.update_meta_guarded(false);
+                // "The extra fluff later". Metadata first, cover second: the cover
+                // download's external fallback reads the cached metadata document, so
+                // it must run after update_meta has finished, else it may see the
+                // stale pre-fetch image list.
+                if let Some(handle) = this.imp().update_meta_handle.take() {
+                    handle.abort();
+                }
+                let _ = this
+                    .imp()
+                    .update_meta_handle
+                    .replace(Some(glib::spawn_future_local(clone!(
+                        #[weak]
+                        this,
+                        async move {
+                            this.update_meta(false).await;
+                            this.schedule_cover(false).await;
+                        }
+                    ))));
             }
         ));
     }

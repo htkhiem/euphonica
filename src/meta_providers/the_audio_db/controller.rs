@@ -139,8 +139,13 @@ impl MetadataProvider for TheAudioDbWrapper {
     ) -> MetadataResult<Option<models::AlbumMeta>> {
         if meta_provider_settings(PROVIDER_KEY).boolean("enabled") {
             let action = if let Some(id) = key.mbid.as_ref() {
+                println!("[TheAudioDB] Looking up album with MBID {id}");
                 Action::LookupAlbum(id)
             } else if let Some(artist) = key.albumartist.as_deref() {
+                println!(
+                    "[TheAudioDB] Searching for album {} by artist {}",
+                    &key.title, artist
+                );
                 Action::SearchAlbum(artist, &key.title)
             } else {
                 return Err(MetadataError::InsufficientKey(existing));
@@ -232,8 +237,10 @@ impl MetadataProvider for TheAudioDbWrapper {
     ) -> MetadataResult<Option<models::ArtistMeta>> {
         if meta_provider_settings(PROVIDER_KEY).boolean("enabled") {
             let action = if let Some(id) = key.mbid.as_ref() {
+                println!("[TheAudioDB] Looking up artist with MBID {id}");
                 Action::LookupArtist(id)
             } else {
+                println!("[TheAudioDB] Searching for artist with name {}", &key.name);
                 Action::SearchArtist(&key.name)
             };
             let req = match self.prepare_request(action) {
