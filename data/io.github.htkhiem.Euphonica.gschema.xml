@@ -24,6 +24,7 @@
 	<enum id="io.github.htkhiem.Euphonica.volumeunit">
 		<value nick="percents" value="0"/>
 		<value nick="decibels" value="1"/>  <!-- Works as boolean too -->
+		<value nick="none" value="2"/>
 	</enum>
 
 	<enum id="io.github.htkhiem.Euphonica.titlewrapmode">
