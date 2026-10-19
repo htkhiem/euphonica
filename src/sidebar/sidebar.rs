@@ -5,9 +5,9 @@ use std::cell::Cell;
 
 use crate::{
     application::EuphonicaApplication,
-    cache::Cache,
+    cache::{Cache, placeholders::ALBUMART_THUMBNAIL_PLACEHOLDER},
     client::state::StickersSupportLevel,
-    common::{INode, ImageStack, View},
+    common::{INode, View},
     utils,
     window::EuphonicaWindow,
 };
@@ -15,37 +15,22 @@ use gtk::glib::WeakRef;
 use std::cell::OnceCell;
 use std::rc::Rc;
 
-/// Build the 16px rounded playlist cover ImageStack used as the prefix of
-/// recent playlist buttons in the sidebar
-fn playlist_cover_prefix() -> (ImageStack, gtk::Box) {
-    let cover = ImageStack::new();
-    cover.set_size(16);
-    cover.set_is_thumbnail(true);
-    let rounded_box = gtk::Box::builder()
-        .halign(gtk::Align::Center)
-        .valign(gtk::Align::Center)
-        .overflow(gtk::Overflow::Hidden)
-        .css_classes(["border-radius-6"])
-        .build();
-    rounded_box.append(&cover);
-    (cover, rounded_box)
-}
-
-fn fetch_playlist_cover(cache: &Rc<Cache>, cover: ImageStack, name: &str, is_dynamic: bool) {
+/// Fetch a playlist's cover texture and set it as the icon paintable of the
+/// given sidebar item. While loading (or if the playlist has no cover), the
+/// item keeps the albumart placeholder it was built with.
+fn fetch_playlist_cover(cache: &Rc<Cache>, item: adw::SidebarItem, name: &str, is_dynamic: bool) {
     let name = name.to_string();
-    cover.show_spinner();
     glib::spawn_future_local(clone!(
         #[strong]
         cache,
         #[strong]
-        cover,
+        item,
         async move {
             match cache.get_playlist_cover(name, is_dynamic, true).await {
-                Ok(Some(tex)) => cover.show(&tex),
-                Ok(None) => cover.clear(),
+                Ok(Some(tex)) => item.set_icon_paintable(Some(&tex)),
+                Ok(None) => {}
                 Err(e) => {
                     dbg!(e);
-                    cover.clear();
                 }
             }
         }
@@ -155,15 +140,14 @@ impl Sidebar {
         // Then add, moving the cursor along the way
         for cur in pos..pos + added {
             if let Some(playlist) = model.item(cur - 1).and_downcast::<INode>() {
-                let (cover, cover_box) = playlist_cover_prefix();
-                fetch_playlist_cover(cache, cover, playlist.get_uri(), false);
-                section.insert(
-                    adw::SidebarItem::builder()
-                        .title(playlist.get_uri())
-                        .icon_paintable(&gtk::WidgetPaintable::new(Some(&cover_box)))
-                        .build(),
-                    cur as i32,
-                );
+                let item = adw::SidebarItem::builder()
+                    .title(playlist.get_uri())
+                    // Start with the placeholder texture; the fetched cover
+                    // replaces it once the future resolves.
+                    .icon_paintable(&*ALBUMART_THUMBNAIL_PLACEHOLDER)
+                    .build();
+                fetch_playlist_cover(cache, item.clone(), playlist.get_uri(), dynamic);
+                section.insert(item, cur as i32);
             }
         }
     }
