@@ -176,6 +176,7 @@ impl Sidebar {
                 stack.set_visible_child_name("folders");
             } else if item == imp.dyn_playlists_btn.get() {
                 stack.set_visible_child_name("dyn-playlists");
+                dyn_playlist_view.pop();
             } else if section
                 .as_ref()
                 .is_some_and(|s| s == &imp.dyn_playlists_section.get())
@@ -199,6 +200,7 @@ impl Sidebar {
                 }
             } else if item == imp.playlists_btn.get() {
                 stack.set_visible_child_name("playlists");
+                playlist_view.pop();
             } else if section
                 .as_ref()
                 .is_some_and(|s| s == &imp.playlists_section.get())
@@ -239,6 +241,24 @@ impl Sidebar {
             .transform_to(|_, name: String| Some(name == "queue"))
             .sync_create()
             .build();
+
+        let dyn_playlist_view = win.get_dyn_playlist_view();
+        self.imp().add_dyn_playlist_btn.connect_clicked(clone!(
+            #[weak]
+            stack,
+            #[weak]
+            dyn_playlist_view,
+            move |_| {
+                if stack
+                    .visible_child_name()
+                    .is_none_or(|name| name.as_str() != "dyn-playlists")
+                {
+                    stack.set_visible_child_name("dyn-playlists");
+                    dyn_playlist_view.pop();
+                    dyn_playlist_view.new_playlist();
+                }
+            }
+        ));
 
         // Hook each button to their respective views
         let inner = self.imp().inner.get();
