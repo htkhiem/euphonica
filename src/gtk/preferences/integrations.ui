@@ -106,6 +106,43 @@
     </child>
     <child>
       <object class="AdwPreferencesGroup">
+        <property name="title" translatable="true">TheAudioDB</property>
+        <property name="description" translatable="true">TheAudioDB provides detailed information on albums and artists, including album arts and artist avatars. Go to theaudiodb.com for an API key.</property>
+        <child>
+          <object class="AdwEntryRow" id="the_audio_db_key">
+            <property name="title" translatable="true">API key</property>
+          </object>
+        </child>
+        <child>
+          <object class="AdwComboRow" id="the_audio_db_api_version">
+            <property name="title" translatable="true">API version</property>
+            <property name="subtitle" translatable="true">The v2 API is only available to premium subscribers.</property>
+            <property name="model">
+              <object class="GtkStringList">
+                <items>
+                  <item>v1</item>
+                  <item>v2</item>
+                </items>
+              </object>
+            </property>
+          </object>
+        </child>
+        <child>
+          <object class="AdwSwitchRow" id="the_audio_db_download_album_art">
+            <property name="title" translatable="true">Download album arts</property>
+            <property name="subtitle" translatable="true">Album arts downloaded from external sources will only be applied locally.</property>
+          </object>
+        </child>
+        <child>
+          <object class="AdwSwitchRow" id="the_audio_db_download_artist_avatar">
+            <property name="title" translatable="true">Download artist avatars</property>
+            <property name="subtitle" translatable="true">Artist avatars will only be applied locally.</property>
+          </object>
+        </child>
+      </object>
+    </child>
+    <child>
+      <object class="AdwPreferencesGroup">
         <property name="title" translatable="true">Metadata provider priority</property>
         <property name="description" translatable="true">Metadata providers can be daisy-chained. Providers earlier in the chain take precedence, filling in fields first. Later providers can fill in the blanks or add to list-type fields (e.g., tags). Results from earlier providers can also help improve the accuracy &amp;amp; hit rate of later ones. Changes take effect after restarting Euphonica.</property>
         <child>

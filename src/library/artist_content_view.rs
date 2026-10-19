@@ -518,14 +518,25 @@ mod imp {
                     #[weak]
                     obj,
                     move |_, _, _| {
-                        glib::spawn_future_local(clone!(
-                            #[weak]
-                            obj,
-                            async move {
-                                obj.schedule_avatar(true).await;
-                            }
-                        ));
-                        obj.update_meta_guarded(true);
+                        // Abort any in-flight fetch, then run the metadata re-fetch to
+                        // completion BEFORE scheduling the avatar. The avatar download
+                        // reads the cached metadata document, so fetching it in
+                        // parallel would see the stale pre-refetch document and miss
+                        // images newly merged in by the provider chain.
+                        if let Some(handle) = obj.imp().update_meta_handle.take() {
+                            handle.abort();
+                        }
+                        let _ =
+                            obj.imp()
+                                .update_meta_handle
+                                .replace(Some(glib::spawn_future_local(clone!(
+                                    #[weak]
+                                    obj,
+                                    async move {
+                                        obj.update_meta(true).await;
+                                        obj.schedule_avatar(true).await;
+                                    }
+                                ))));
                     }
                 ))
                 .build();
@@ -1431,10 +1442,24 @@ impl ArtistContentView {
                         })
                         .for_each(|tag| genres_box.append(&tag));
 
-                    // The extra fluff later
-                    this.schedule_avatar(false).await;
-                    // Runs in its own async closure
-                    this.update_meta_guarded(false);
+                    // "The extra fluff later". Metadata first, avatar second: the avatar
+                    // download reads the cached metadata document, so it must run after
+                    // update_meta has finished, else it will see the stale pre-fetch
+                    // image list (missing e.g. provider-fetched avatars).
+                    if let Some(handle) = this.imp().update_meta_handle.take() {
+                        handle.abort();
+                    }
+                    let _ = this
+                        .imp()
+                        .update_meta_handle
+                        .replace(Some(glib::spawn_future_local(clone!(
+                            #[weak]
+                            this,
+                            async move {
+                                this.update_meta(false).await;
+                                this.schedule_avatar(false).await;
+                            }
+                        ))));
                 } else if let Some(win) = this.imp().window.upgrade() {
                     win.send_simple_toast("Unable to fetch artist content", 3);
                 }

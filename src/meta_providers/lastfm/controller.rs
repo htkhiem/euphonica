@@ -33,8 +33,7 @@ impl MetadataProvider for LastfmWrapper {
         }
     }
 
-    /// Schedule getting album metadata from Last.fm.
-    /// A signal will be emitted to notify the caller when the result arrives.
+    /// Get album metadata from Last.fm.
     fn get_album_meta(
         &mut self,
         key: &mut AlbumInfo,
@@ -129,8 +128,7 @@ impl MetadataProvider for LastfmWrapper {
         }
     }
 
-    /// Schedule getting artist metadata from Last.fm.
-    /// A signal will be emitted to notify the caller when the result arrives.
+    /// Get artist metadata from Last.fm.
     /// Note that Last.fm no longer supports fetching artist images (URLs will always return
     /// a white star on grey background placeholder). For this reason, we will not parse
     /// artist image URLs.

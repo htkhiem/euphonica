@@ -28,7 +28,7 @@
       <li>Supports most MPD features, from queue reordering and ReplayGain to output control, crossfade and MixRamp.</li>
       <li>Genre &amp; tag filtering, plus in-app tag editing.</li>
       <li>Client-side dynamic playlists: both query and sticker filter rules, multiple ordering clauses, fetch-first limits, scheduled refreshes, all via an intuitive editor UI.</li>
-      <li>Fetch album arts, artist avatars and (synced) song lyrics from external sources (currently supporting Last.fm, MusicBrainz and LRCLIB).</li>
+      <li>Fetch album arts, artist avatars and (synced) song lyrics from external sources (currently supporting Last.fm, MusicBrainz, TheAudioDB and LRCLIB).</li>
       <li>Configurable multi-artist and multi-genre tag splitting.</li>
       <li>Stay in control while in the background via MPRIS &amp; XDG Background Portal.</li>
       <li>Customisable spectrum visualiser (FIFO or system PipeWire).</li>
