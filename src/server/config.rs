@@ -975,50 +975,6 @@ impl Resampler {
             Resampler::Soxr(_, _) => 3,
         }
     }
-
-    // /// Return plugin-specific configuration.
-    // pub fn get_config_spec(&self) -> Vec<ConfigSpec> {
-    //     match self {
-    //         Self::Internal => Vec::with_capacity(0),
-    //         Self::LibSampleRate => vec![ConfigSpec {
-    //             key: "type",
-    //             title: "Interpolator type".into(),
-    //             subtitle: None,
-    //             value_type: ConfigValueType::Combo(vec![
-    //                 // Default first
-    //                 ("Fastest Sinc (default)\n(97dB SNR, 80% BW)".into(), "2".into()),
-    //                 ("Best Sinc\n(97dB SNR, 96% BW)".into(), "0".into()),
-    //                 ("Medium Sinc\n(97dB SNR, 90% BW)".into(), "1".into()),
-    //                 (
-    //                     "ZOH Sinc\n(very fast, audible distortion)".into(),
-    //                     "3".into(),
-    //                 ), // mate why
-    //                 ("Linear\n(very fast, poor quality)".into(), "4".into()),
-    //             ]),
-    //         }],
-    //         // Custom preset config rows to be implemented later
-    //         Self::Soxr => vec![
-    //             ConfigSpec {
-    //                 key: "quality",
-    //                 title: "Quality preset".into(),
-    //                 subtitle: None,
-    //                 value_type: ConfigValueType::Combo(vec![
-    //                     // Default first
-    //                     ("High (default)".into(), "high".into()),
-    //                     ("Very high".into(), "very high".into()),
-    //                     ("Medium".into(), "medium".into()),
-    //                     ("Low".into(), "low".into()),
-    //                     ("Quick".into(), "quick".into()),
-    //                 ]),
-    //             }, ConfigSpec {
-    //                 key: "threads",
-    //                 title: "Thread count".into(),
-    //                 subtitle: None,
-    //                 value_type: ConfigValueType::Number(0.0, 16.0, 1.0, 2.0, 0)
-    //             }
-    //         ],
-    //     }
-    // }
 }
 
 impl Display for Resampler {
@@ -1116,7 +1072,8 @@ impl TryFrom<&[&str]> for Resampler {
     }
 }
 
-#[derive(Default, Debug, Clone)]
+#[derive(Derivative, Debug, Clone)]
+#[derivative(Default)]
 pub struct MpdConfig {
     pub music_directory: String, // just one right now
     /// Optional server-side debug logging
@@ -1129,6 +1086,8 @@ pub struct MpdConfig {
     pub sticker_file: Option<String>,
     pub playlist_directory: Option<String>,
     pub db_file: Option<String>,
+    #[derivative(Default(value = "true"))]
+    pub mixramp_analyzer: bool
 }
 
 impl MpdConfig {
@@ -1197,6 +1156,7 @@ impl MpdConfig {
                     .expect("OS does not support UTF-8 paths")
                     .to_owned(),
             ),
+            mixramp_analyzer: true
         }
     }
 
@@ -1249,7 +1209,7 @@ impl Display for MpdConfig {
         if let Some(resampler) = self.resampler.as_ref() {
             write!(out, "{}", resampler)?;
         }
-        Ok(())
+        write!(out, "mixramp_analyzer \"{}\"", if self.mixramp_analyzer { "yes" } else { "no" })
     }
 }
 
