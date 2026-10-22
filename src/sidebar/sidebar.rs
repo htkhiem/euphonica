@@ -361,6 +361,16 @@ impl Sidebar {
             .sync_create()
             .build();
 
+        client_state
+            .bind_property(
+                "stickers-support-level",
+                &self.imp().add_dyn_playlist_btn.get(),
+                "sensitive",
+            )
+            .transform_to(|_, lvl: StickersSupportLevel| Some(lvl == StickersSupportLevel::All))
+            .sync_create()
+            .build();
+
         player
             .bind_property("queue-len", &self.imp().queue_len.get(), "label")
             .transform_to(|_, size: u32| Some(size.to_string()))
