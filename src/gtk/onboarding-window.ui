@@ -826,9 +826,8 @@
                           </object>
                         </child>
                         <child>
-                          <object class="AdwStatusPage">
+                          <object class="AdwStatusPage" id="init_db_status">
                             <property name="title" translatable="true">Scanning library</property>
-                            <property name="description" translatable="true">Initialising library DB. This may take up to several minutes.</property>
                           </object>
                         </child>
                       </object>

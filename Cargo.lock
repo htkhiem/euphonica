@@ -2373,7 +2373,7 @@ dependencies = [
 [[package]]
 name = "mpd"
 version = "0.1.0"
-source = "git+https://github.com/htkhiem/rust-mpd.git?rev=0bb8342c47244548724a5b1bcc523d9ffe3ca47f#0bb8342c47244548724a5b1bcc523d9ffe3ca47f"
+source = "git+https://github.com/htkhiem/rust-mpd.git?rev=de300974875aa74d0402b81094d75aada7815503#de300974875aa74d0402b81094d75aada7815503"
 dependencies = [
  "bufstream",
  "fxhash",

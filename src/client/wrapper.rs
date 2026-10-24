@@ -900,6 +900,13 @@ impl MpdWrapper {
         self.foreground(Task::UpdateDb(s), r).await
     }
 
+    /// Count the number of songs currently in the database.
+    /// Does live counts during DB updates.
+    pub async fn count_songs(&self) -> ClientResult<u32> {
+        let (s, r) = oneshot::channel();
+        self.foreground(Task::GetSongCount(s), r).await
+    }
+
     pub async fn get_embedded_cover(&self, uri: String) -> ClientResult<Option<ImageHandle>> {
         // Leave downloading to the background connection thread, but local operations
         // (resizing, transcoding, writing to disk) will be done with a threadpool, whose
