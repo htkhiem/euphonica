@@ -342,12 +342,28 @@ impl PlayerBar {
             async move {
                 if let Some(song) = song {
                     this.imp().albumart.show_spinner();
-                    match cache.get_song_cover(song.get_info(), true).await {
-                        Ok(Some(tex)) => this.imp().albumart.show(&tex),
-                        Ok(None) => this.imp().albumart.clear(),
-                        Err(e) => {
-                            this.imp().albumart.clear();
-                            dbg!(e);
+                    let cover = cache.get_song_cover(song.get_info(), true).await;
+                    // Check again as the song may have changed while awaiting.
+                    // A slow fetch for the previous track could overwrite the new
+                    // track's artwork. Keyed on the album (comp_id) so we can avoid
+                    // flashing the spinner between tracks of the same album (and thus
+                    // cover).
+                    if this
+                        .imp()
+                        .player
+                        .upgrade()
+                        .and_then(|p| p.current_song())
+                        .is_some_and(|cur| {
+                            cur.get_info().get_comp_id() == song.get_info().get_comp_id()
+                        })
+                    {
+                        match cover {
+                            Ok(Some(tex)) => this.imp().albumart.show(&tex),
+                            Ok(None) => this.imp().albumart.clear(),
+                            Err(e) => {
+                                this.imp().albumart.clear();
+                                dbg!(e);
+                            }
                         }
                     }
                 } else {
