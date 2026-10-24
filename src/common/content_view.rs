@@ -1,5 +1,4 @@
 use adw::subclass::prelude::*;
-use derivative::Derivative;
 use glib::{ParamSpec, ParamSpecObject};
 use gtk::{CompositeTemplate, glib, prelude::*};
 use once_cell::sync::Lazy;
@@ -7,8 +6,7 @@ use once_cell::sync::Lazy;
 mod imp {
     use super::*;
 
-    #[derive(Debug, CompositeTemplate, Derivative)]
-    #[derivative(Default)]
+    #[derive(Debug, CompositeTemplate, Default)]
     #[template(resource = "/io/github/htkhiem/Euphonica/gtk/content-view.ui")]
     pub struct ContentView {
         #[template_child]
