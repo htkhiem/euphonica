@@ -761,27 +761,32 @@ impl PlaylistContentView {
                 row.add_css_class("shift-on-hover");
                 bind_editing_row_by_expressions(&row, item);
                 let end_widget = RowEditButtons::new(
-                    item,
                     // Raise action
                     clone!(
                         #[weak]
                         this,
-                        move |_, idx| {
-                            this.shift_backward(idx);
+                        #[weak]
+                        item,
+                        move |_| {
+                            this.shift_backward(item.position());
                         }
                     ),
                     clone!(
                         #[weak]
                         this,
-                        move |_, idx| {
-                            this.shift_forward(idx);
+                        #[weak]
+                        item,
+                        move |_| {
+                            this.shift_forward(item.position());
                         }
                     ),
                     clone!(
                         #[weak]
                         this,
-                        move |_, idx| {
-                            this.remove(idx);
+                        #[weak]
+                        item,
+                        move |_| {
+                            this.remove(item.position());
                         }
                     ),
                 );
