@@ -448,6 +448,49 @@ impl DynamicPlaylistView {
         res
     }
 
+    pub fn new_playlist(&self) {
+        let editor = DynamicPlaylistEditorView::default();
+        editor.setup(
+            &self.imp().library.upgrade().unwrap(),
+            self.imp().cache.get().unwrap().clone(),
+            &self.imp().window.upgrade().unwrap(),
+        );
+        editor.connect_closure(
+            "exit-clicked",
+            false,
+            closure_local!(
+                #[weak(rename_to = this)]
+                self,
+                move |_: DynamicPlaylistEditorView, should_refresh: bool| {
+                    glib::spawn_future_local(clone!(
+                        #[weak]
+                        this,
+                        async move {
+                            if should_refresh && let Err(e) = this.init_dyn_playlists(true).await {
+                                dbg!(e);
+                                if let Some(win) = this.imp().window.upgrade() {
+                                    win.send_simple_toast(
+                                        "Couldn't refresh dynamic playlists (see console)",
+                                        3,
+                                    );
+                                }
+                            }
+                            this.imp().nav_view.pop();
+                        }
+                    ));
+                }
+            ),
+        );
+
+        self.imp().nav_view.push(
+            &adw::NavigationPage::builder()
+                .tag("editor")
+                .title("New Dynamic Playlist")
+                .child(&editor)
+                .build(),
+        );
+    }
+
     pub fn setup(
         &self,
         library: &Library,
@@ -500,53 +543,8 @@ impl DynamicPlaylistView {
         self.imp().create_btn.connect_clicked(clone!(
             #[weak(rename_to = this)]
             self,
-            #[weak]
-            library,
-            #[weak]
-            cache,
-            #[weak]
-            window,
             move |_| {
-                let editor = DynamicPlaylistEditorView::default();
-                editor.setup(&library, cache, &window);
-                editor.connect_closure(
-                    "exit-clicked",
-                    false,
-                    closure_local!(
-                        #[weak]
-                        this,
-                        // #[weak]
-                        // library,
-                        move |_: DynamicPlaylistEditorView, should_refresh: bool| {
-                            glib::spawn_future_local(clone!(
-                                #[weak]
-                                this,
-                                async move {
-                                    if should_refresh
-                                        && let Err(e) = this.init_dyn_playlists(true).await
-                                    {
-                                        dbg!(e);
-                                        if let Some(win) = this.imp().window.upgrade() {
-                                            win.send_simple_toast(
-                                                "Couldn't refresh dynamic playlists (see console)",
-                                                3,
-                                            );
-                                        }
-                                    }
-                                    this.imp().nav_view.pop();
-                                }
-                            ));
-                        }
-                    ),
-                );
-
-                this.imp().nav_view.push(
-                    &adw::NavigationPage::builder()
-                        .tag("editor")
-                        .title("New Dynamic Playlist")
-                        .child(&editor)
-                        .build(),
-                );
+                this.new_playlist();
             }
         ));
     }
