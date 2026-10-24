@@ -1,8 +1,8 @@
 use gtk::{
     CompositeTemplate, cairo as cr, gdk,
     glib::{
-        self, Object, ParamSpec, ParamSpecDouble, ParamSpecEnum, SignalHandlerId, Variant,
-        WeakRef, clone, closure_local,
+        self, Object, ParamSpec, ParamSpecDouble, ParamSpecEnum, SignalHandlerId, Variant, WeakRef,
+        clone, closure_local,
         prelude::*,
         subclass::{Signal, prelude::*},
     },
@@ -11,12 +11,12 @@ use gtk::{
     subclass::prelude::*,
 };
 use once_cell::sync::Lazy;
-use strum_macros::{Display, EnumString};
 use std::{
     cell::{Cell, RefCell},
     f64::consts::PI,
     sync::OnceLock,
 };
+use strum_macros::{Display, EnumString};
 
 use crate::{player::Player, utils::settings_manager};
 
@@ -123,7 +123,11 @@ mod imp {
                 .bind("vol-knob-unit", obj, "unit")
                 .get_only()
                 .mapping(|v: &Variant, _| {
-                    let unit = v.get::<String>().unwrap().parse::<VolumeUnit>().unwrap_or_default();
+                    let unit = v
+                        .get::<String>()
+                        .unwrap()
+                        .parse::<VolumeUnit>()
+                        .unwrap_or_default();
                     Some(unit.to_value())
                 })
                 .build();

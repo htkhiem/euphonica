@@ -169,8 +169,7 @@ mod imp {
     use glib::{subclass::prelude::*, translate::*};
     use std::{
         ffi::{CStr, c_char},
-        fs,
-        ptr,
+        fs, ptr,
     };
 
     #[derive(Default)]

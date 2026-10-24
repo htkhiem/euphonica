@@ -306,17 +306,23 @@ impl UIPreferences {
         let vol_knob_sensitivity = imp.vol_knob_sensitivity.get();
         ui_settings
             .bind("vol-knob-unit", &vol_knob_unit, "selected")
-            .mapping(clone!(#[strong] units, move |v: &Variant, _| {
-                Some(units.find(&v.get::<String>()?).to_value())
-            }))
-            .set_mapping(clone!(#[strong] units, move |v: &Value, _| {
-                Some(
-                    units
-                        .item(v.get::<u32>().ok()?)?
-                        .property::<String>("internal")
-                        .to_variant(),
-                )
-            }))
+            .mapping(clone!(
+                #[strong]
+                units,
+                move |v: &Variant, _| Some(units.find(&v.get::<String>()?).to_value()) 
+            ))
+            .set_mapping(clone!(
+                #[strong]
+                units,
+                move |v: &Value, _| {
+                    Some(
+                        units
+                            .item(v.get::<u32>().ok()?)?
+                            .property::<String>("internal")
+                            .to_variant(),
+                    )
+                }
+            ))
             .build();
 
         ui_settings
