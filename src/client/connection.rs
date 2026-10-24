@@ -337,6 +337,9 @@ pub enum Task {
         Responder<Vec<PosIdChange>>,
     ),
     UpdateDb(Responder<u32>),
+    /// Count the number of songs in the database. This allows live progress
+    /// reports during DB updates.
+    GetSongCount(Responder<u32>),
     /// Get a song's embedded cover.
     /// Will try to download from MPD if one isn't already available locally.
     GetEmbeddedCover(
@@ -1146,6 +1149,15 @@ impl Connection {
                         self.respond_with_client(|c| c.changesposid(since, window), resp)
                     }
                     Task::UpdateDb(resp) => self.respond_with_client(|c| c.update(), resp),
+                    Task::GetSongCount(resp) => self.respond_with_client(
+                        // Whole-library count using a catch-all filter
+                        |c| {
+                            let mut q = Query::new();
+                            q.and(Term::Base, "");
+                            c.count(&q, None)
+                        },
+                        resp,
+                    ),
                     Task::GetEmbeddedCover(uri, cache_key, resp) => self.maybe_download_image(
                         uri,
                         |client, uri| client.readpicture(uri),

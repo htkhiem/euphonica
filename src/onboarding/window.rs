@@ -138,6 +138,10 @@ mod imp {
         #[template_child]
         pub finish_btn: TemplateChild<gtk::Button>,
 
+        // Page 4: init DB (shown only in Standalone Mode)
+        #[template_child]
+        pub init_db_status: TemplateChild<adw::StatusPage>,
+
         // Error flags
         pub valid_exec_path: Cell<bool>, // for now simply check if not empty
         pub has_library_path: Cell<bool>,
@@ -147,6 +151,7 @@ mod imp {
         pub standalone_cfg: RefCell<MpdConfig>,
         pub app: WeakRef<EuphonicaApplication>,
         pub onboard_success: Cell<bool>,
+        pub init_db_handle: RefCell<Option<glib::JoinHandle<()>>>,
     }
 
     #[glib::object_subclass]
@@ -269,6 +274,10 @@ mod imp {
                                         if subsys.borrow::<Subsystem>().clone()
                                             == Subsystem::Database
                                         {
+                                            // Scan finished: stop the progress polling loop, then proceed.
+                                            if let Some(id) = this.init_db_handle.take() {
+                                                id.abort();
+                                            }
                                             this.onboard_success.set(true);
                                             this.obj().close();
                                         }
@@ -276,6 +285,24 @@ mod imp {
                                 ),
                             );
                             let _ = app.update_db();
+                            // Poll the live song count every ~5s and report it below the spinner.
+                            let client = app.get_client();
+                            let status_page = this.init_db_status.get();
+                            let win_weak = this.obj().downgrade();
+                            this.init_db_handle
+                                .replace(Some(glib::spawn_future_local(clone!(
+                                    #[weak]
+                                    this, // will end loop when window is destroyed or this handle is aborted.
+                                    async move {
+                                        loop {
+                                            if let Ok(n) = client.count_songs().await {
+                                                this.init_db_status
+                                                    .set_description(Some(&format!("Found {} song(s)", n)));
+                                            }
+                                            glib::timeout_future_seconds(5).await;
+                                        }
+                                    }
+                                ))));
                         }
                     } else {
                         // In client mode, immediately proceed to main app (assume server already knows library).
