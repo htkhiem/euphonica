@@ -151,9 +151,11 @@ impl MpdWrapper {
             fg_sender,
             bg_sender,
             client_version: RefCell::new(None),
-            // Cache song infos so we can reuse them on queue updates.
-            // Song IDs are u32s anyway, and I don't think there's any risk of a HashDoS attack
-            // from a self-hosted music server so we'll just use identity hash for speed.
+            // Cache song infos so queue diffs can reuse them instead of re-fetching each
+            // changed song by ID. Queue IDs are only ever reissued on MPD restart or
+            // after the ID counter wraps the whole table (~max_playlist_length*4
+            // adds according to MPD v0.24.x source). We fully flush the queue on reconnects
+            // anyway.
             song_cache: RefCell::new(LruCache::with_hasher(
                 NonZero::new(16384).unwrap(),
                 BuildHasherDefault::default(),
@@ -672,7 +674,8 @@ impl MpdWrapper {
     where
         F: Fn(Vec<Song>),
     {
-        // This command is only called upon connection so we should drop the entire cache
+        // This command is only called upon connection so we should drop the entire cache.
+        // This also handles ID reissuance after an MPD restart.
         {
             self.song_cache.borrow_mut().clear();
         }
@@ -750,6 +753,8 @@ impl MpdWrapper {
                 // Map to songs.
                 let mut songs: Vec<Song> = Vec::with_capacity(changes.len());
                 for change in changes.into_iter() {
+                    // Reuse the cached song if we have it; IDs are stable within a session
+                    // (see song_cache in new()), so only the position needs updating.
                     let cached_song;
                     {
                         cached_song = self.song_cache.borrow_mut().get(&change.id.0).cloned();

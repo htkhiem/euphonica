@@ -1759,24 +1759,41 @@ impl EuphonicaWindow {
                     #[upgrade_or]
                     ClientResult::Ok(()),
                     async move {
-                        if let Some(path) = player
+                        // Remember which song we're resolving the cover for and
+                        // check again after the await: the fetch can outlive a
+                        // track change, and the background thread is last-wins,
+                        // so without this guard the previous track's artwork
+                        // could end up fading in.
+                        let song_uri: Option<String> =
+                            player.current_song().map(|s| s.get_uri().to_owned());
+                        let cover_path = player
                             .current_song_cover_path(true)
                             .await?
-                            .and_then(|path| if path.exists() { Some(path) } else { None })
-                        {
-                            let settings = settings_manager().child("ui");
-                            let config = BlurConfig {
-                                width: this.width() as u32,
-                                height: this.height() as u32,
-                                radius: settings.uint("bg-blur-radius"),
-                                is_dark: adw::StyleManager::default().is_dark(),
-                                fade: true, // new image, must fade
-                            };
-                            let _ =
-                                sender.send_blocking(WindowMessage::NewBackground(path, config));
-                        } else {
-                            let _ = sender.send_blocking(WindowMessage::ClearBackground);
-                            this.imp().push_tex(None, true);
+                            .and_then(|path| if path.exists() { Some(path) } else { None });
+                        let current_uri: Option<String> =
+                            player.current_song().map(|s| s.get_uri().to_owned());
+                        // Skip only if a *different* song is current now; if the
+                        // song was stopped (or wasn't playing yet) fall through so
+                        // the background still gets cleared.
+                        if !matches!(
+                            (song_uri.as_deref(), current_uri.as_deref()),
+                            (Some(old), Some(new)) if old != new
+                        ) {
+                            if let Some(path) = cover_path {
+                                let settings = settings_manager().child("ui");
+                                let config = BlurConfig {
+                                    width: this.width() as u32,
+                                    height: this.height() as u32,
+                                    radius: settings.uint("bg-blur-radius"),
+                                    is_dark: adw::StyleManager::default().is_dark(),
+                                    fade: true, // new image, must fade
+                                };
+                                let _ = sender
+                                    .send_blocking(WindowMessage::NewBackground(path, config));
+                            } else {
+                                let _ = sender.send_blocking(WindowMessage::ClearBackground);
+                                this.imp().push_tex(None, true);
+                            }
                         }
                         Ok(())
                     }
