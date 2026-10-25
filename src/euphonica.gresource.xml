@@ -17,6 +17,7 @@
     <file preprocess="xml-stripblanks">gtk/cover-fan.ui</file>
     <file preprocess="xml-stripblanks">gtk/theme-selector.ui</file>
     <file preprocess="xml-stripblanks">gtk/content-view.ui</file>
+    <file preprocess="xml-stripblanks">gtk/song-info.ui</file>
     <file preprocess="xml-stripblanks">gtk/library/recent-view.ui</file>
     <file preprocess="xml-stripblanks">gtk/library/album-view.ui</file>
     <file preprocess="xml-stripblanks">gtk/library/album-cell.ui</file>
