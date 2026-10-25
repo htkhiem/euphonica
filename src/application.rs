@@ -263,8 +263,9 @@ mod imp {
             obj.set_accels_for_action("app.cycle-crossfade", &["<Alt>x"]);
             obj.set_accels_for_action("app.volume-up", &["<Ctrl><Shift>Up"]);
             obj.set_accels_for_action("app.volume-down", &["<Ctrl><Shift>Down"]);
-            obj.set_accels_for_action("app.seek-forward", &["<Ctrl>Right"]);
-            obj.set_accels_for_action("app.seek-backward", &["<Ctrl>Left"]);
+            // Allow both
+            obj.set_accels_for_action("app.seek-forward", &["<Ctrl>Right", "<Ctrl><Shift>f"]);
+            obj.set_accels_for_action("app.seek-backward", &["<Ctrl>Left", "<Ctrl><Shift>b"]);
             obj.set_accels_for_action("app.toggle-mute", &["<Ctrl>m"]);
             obj.set_accels_for_action("app.next-output", &["<Ctrl><Shift>Right"]);
             obj.set_accels_for_action("app.prev-output", &["<Ctrl><Shift>Left"]);
