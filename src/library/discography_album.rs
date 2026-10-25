@@ -297,6 +297,39 @@ impl DiscographyAlbum {
             ),
         );
 
+        // Setup click action (double-click, since activate-on-single-click is false):
+        // replace queue with this album & start playing from the clicked track.
+        res.imp().content.connect_row_activated(clone!(
+            #[weak(rename_to = this)]
+            res,
+            move |_, row| {
+                let idx = row.index() as u32;
+                glib::spawn_future_local(clone!(
+                    #[weak]
+                    this,
+                    async move {
+                        let Some(library) = this.library() else {
+                            return;
+                        };
+                        let err = match this.album().cloned() {
+                            Some(album) => library.queue_album(album, true, Some(idx)).await,
+                            None => {
+                                // Untagged songs: no album to query, so queue the songs directly
+                                let store = &this.imp().song_list;
+                                let songs: Vec<Song> = (0..store.n_items())
+                                    .map(|i| store.item(i).and_downcast::<Song>().unwrap())
+                                    .collect();
+                                library.queue_songs(&songs, true, Some(idx)).await
+                            }
+                        };
+                        if let Err(e) = err {
+                            dbg!(e);
+                        }
+                    }
+                ));
+            }
+        ));
+
         // Set up dynamic texture loading/unloading.
         // Prev implementation was painfully clunky. I've since discovered the map() and unmap()
         // signals. These fire as soon as a widget comes within/out of 10px of the viewport,
@@ -371,7 +404,7 @@ impl DiscographyAlbum {
             {
                 // If has album & all tracks are selected, use queue_album.
                 if let Err(e) = library
-                    .queue_album(album.clone(), replace, play, None)
+                    .queue_album(album.clone(), replace, if play {Some(0)} else {None})
                     .await
                 {
                     dbg!(e);
@@ -379,7 +412,7 @@ impl DiscographyAlbum {
             } else {
                 // Catch-all: manually queue each song.
                 if let Err(e) = library
-                    .queue_songs(&self.selected_songs(), replace, play)
+                    .queue_songs(&self.selected_songs(), replace, if play {Some(0)} else {None})
                     .await
                 {
                     dbg!(e);

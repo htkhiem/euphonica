@@ -536,7 +536,7 @@ impl PlaylistContentView {
                                     .queue_playlist(
                                         playlist.get_name().unwrap().to_owned(),
                                         true,
-                                        true,
+                                        Some(0)
                                     )
                                     .await
                                 {
@@ -552,7 +552,8 @@ impl PlaylistContentView {
                                 iter.for_each(|idx| {
                                     songs.push(store.item(idx).and_downcast::<Song>().unwrap())
                                 });
-                                if let Err(e) = library.queue_songs(&songs, true, true).await {
+                                if let Err(e) = library.queue_songs(&songs, true, Some(0)).await
+                                {
                                     dbg!(e);
                                 }
                             }
@@ -577,7 +578,7 @@ impl PlaylistContentView {
                                     .queue_playlist(
                                         playlist.get_name().unwrap().to_owned(),
                                         false,
-                                        false,
+                                        None,
                                     )
                                     .await
                                 {
@@ -593,7 +594,9 @@ impl PlaylistContentView {
                                 iter.for_each(|idx| {
                                     songs.push(store.item(idx).and_downcast::<Song>().unwrap())
                                 });
-                                if let Err(e) = library.queue_songs(&songs, false, false).await {
+                                if let Err(e) =
+                                    library.queue_songs(&songs, false, None).await
+                                {
                                     dbg!(e);
                                 }
                             }
@@ -1008,6 +1011,36 @@ impl PlaylistContentView {
         self.imp()
             .editing_content
             .set_factory(Some(&editing_factory));
+
+        // Setup double click action
+        self.imp().content.set_single_click_activate(false);
+        self.imp().content.connect_activate(clone!(
+            #[weak(rename_to = this)]
+            self,
+            move |_, position| {
+                glib::spawn_future_local(clone!(
+                    #[weak]
+                    this,
+                    async move {
+                        if let (Some(library), Some(playlist)) = (
+                            this.imp().library.upgrade(),
+                            this.imp().playlist.borrow().clone(),
+                        ) {
+                            if let Err(e) = library
+                                .queue_playlist(
+                                    playlist.get_name().unwrap().to_owned(),
+                                    true,
+                                    Some(position),
+                                )
+                                .await
+                            {
+                                dbg!(e);
+                            }
+                        }
+                    }
+                ));
+            }
+        ));
 
         // Disgusting workaround until I can pinpoint whenever this is a GTK problem.
         self.imp()

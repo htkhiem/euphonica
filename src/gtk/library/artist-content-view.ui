@@ -798,6 +798,7 @@
                                 <property name="child">
                                   <object class="GtkListView" id="song_subview">
                                     <property name="show-separators">true</property>
+                                    <property name="single-click-activate">false</property>
                                     <style>
                                       <class name="no-bg"/>
                                     </style>

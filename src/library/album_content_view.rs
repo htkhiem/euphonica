@@ -624,7 +624,7 @@ impl AlbumContentView {
             {
                 // If has album & all tracks are selected, use queue_album.
                 if let Err(e) = library
-                    .queue_album(album.clone(), replace, play, None)
+                    .queue_album(album.clone(), replace, if play {Some(0)} else {None})
                     .await
                 {
                     dbg!(e);
@@ -632,7 +632,7 @@ impl AlbumContentView {
             } else {
                 // Catch-all: manually queue each song.
                 if let Err(e) = library
-                    .queue_songs(&self.selected_songs(), replace, play)
+                    .queue_songs(&self.selected_songs(), replace, if play {Some(0)} else {None})
                     .await
                 {
                     dbg!(e);
@@ -1128,7 +1128,7 @@ impl AlbumContentView {
                     async move {
                         if let (Some(album), Some(library)) = (this.album(), this.library())
                             && let Err(e) = library
-                                .queue_album(album.clone(), true, true, Some(idx))
+                                .queue_album(album.clone(), true, Some(idx))
                                 .await
                         {
                             dbg!(e);
