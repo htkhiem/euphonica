@@ -17,7 +17,7 @@ use glib::WeakRef;
 use glib::{clone, closure_local};
 use gtk::{CompositeTemplate, ListItem, SignalListItemFactory, gdk, gio, glib};
 use std::{
-    cell::{OnceCell, RefCell},
+    cell::{Cell, OnceCell, RefCell},
     rc::Rc,
 };
 use time::OffsetDateTime;
@@ -74,6 +74,7 @@ mod imp {
         pub window: WeakRef<EuphonicaWindow>,
         pub cache: OnceCell<Rc<Cache>>,
         pub cover_signal_ids: RefCell<Option<(glib::SignalHandlerId, glib::SignalHandlerId)>>,
+        pub queuing: Cell<bool>,
     }
 
     #[glib::object_subclass]
@@ -104,8 +105,45 @@ mod imp {
 
         fn constructed(&self) {
             self.parent_constructed();
-            self.content
-                .set_model(Some(&gtk::NoSelection::new(Some(self.song_list.clone()))));
+            // Use SingleSelection (rather than NoSelection) so rows are activatable
+            let sel_model = gtk::SingleSelection::new(Some(self.song_list.clone()));
+            self.content.set_model(Some(&sel_model));
+            // Double-click to activate a row (single click only highlights)
+            self.content.set_single_click_activate(false);
+            // Setup click action: replace queue with this dynamic playlist & start
+            // playing from the clicked track.
+            self.content.connect_activate(clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |_, position| {
+                    if this.queuing.get() {
+                        // Don't queue from a partially (re)built song list while refreshing
+                        return;
+                    }
+                    glib::spawn_future_local(clone!(
+                        #[weak]
+                        this,
+                        async move {
+                            if let (Some(library), Some(dp)) =
+                                (this.library.upgrade(), this.dp.borrow().as_ref().cloned())
+                            {
+                                this.obj().set_is_queuing(true);
+                                if let Err(e) = library
+                                    .queue_cached_dynamic_playlist(
+                                        dp.name.to_owned(),
+                                        true,
+                                        Some(position),
+                                    )
+                                    .await
+                                {
+                                    dbg!(e);
+                                }
+                                this.obj().set_is_queuing(false);
+                            }
+                        }
+                    ));
+                }
+            ));
 
             self.refresh_btn.connect_clicked(clone!(
                 #[weak(rename_to = this)]
@@ -136,7 +174,11 @@ mod imp {
                             {
                                 this.obj().set_is_queuing(true);
                                 if let Err(e) = library
-                                    .queue_cached_dynamic_playlist(dp.name.to_owned(), true, true)
+                                    .queue_cached_dynamic_playlist(
+                                        dp.name.to_owned(),
+                                        true,
+                                        Some(0)
+                                    )
                                     .await
                                 {
                                     dbg!(e);
@@ -161,7 +203,11 @@ mod imp {
                             {
                                 this.obj().set_is_queuing(true);
                                 if let Err(e) = library
-                                    .queue_cached_dynamic_playlist(dp.name.to_owned(), false, false)
+                                    .queue_cached_dynamic_playlist(
+                                        dp.name.to_owned(),
+                                        false,
+                                        None,
+                                    )
                                     .await
                                 {
                                     dbg!(e);
@@ -337,6 +383,7 @@ impl DynamicPlaylistContentView {
     }
 
     fn set_is_queuing(&self, queuing: bool) {
+        self.imp().queuing.set(queuing);
         self.imp().replace_queue.set_sensitive(!queuing);
         self.imp().append_queue.set_sensitive(!queuing);
     }

@@ -98,7 +98,7 @@ mod imp {
                                             .queue_playlist(
                                                 this.title.label().to_string(),
                                                 true,
-                                                true,
+                                                Some(0)
                                             )
                                             .await
                                         {
@@ -154,7 +154,7 @@ mod imp {
                                             .queue_playlist(
                                                 this.title.label().to_string(),
                                                 false,
-                                                false,
+                                                None
                                             )
                                             .await
                                         {

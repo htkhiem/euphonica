@@ -74,6 +74,9 @@ mod imp {
         // Search & filter models
         pub search_filter: gtk::StringFilter,
         pub sorter: gtk::CustomSorter,
+        // The sorted (unfiltered) list of inodes at the current level, kept around
+        // so we can queue the whole level in displayed order.
+        pub sorted_inodes: gtk::SortListModel,
         // Keep last length to optimise search
         // If search term is now longer, only further filter still-matching
         // items.
@@ -459,7 +462,8 @@ impl FolderView {
     }
 
     pub fn on_inode_clicked(&self, inode: &INode) {
-        // - Upon receiving click signal, get the list item at the indicated activate index.
+        // - Upon receiving double-click (row activation), get the list item at the indicated
+        //   activate index.
         // - Extract inode from that list item.
         // - If this inode is a folder:
         //   - If we're not currently at the head of the history, truncate history to be curr_idx long.
@@ -467,29 +471,64 @@ impl FolderView {
         //   - Increment curr_idx
         //   - Send an lsinfo query with the newly-updated URI.
         //   - Switch to loading page.
-        // - Else: do nothing (adding songs and playlists are done with buttons to the right of each row).
-        glib::spawn_future_local(clone!(
-            #[weak(rename_to = this)]
-            self,
-            #[weak]
-            inode,
-            async move {
-                if let Some(name) = inode.get_name()
-                    && inode.get_info().inode_type == INodeType::Folder
-                {
-                    let stack = this.imp().stack.get();
-                    stack.show_spinner();
-                    if let Err(e) = this.library().navigate_to(name).await {
-                        dbg!(e);
+        // - If it's a song: replace queue with the contents of the current level (non-recursive,
+        //   songs only, in displayed order) & start playing from the clicked track.
+        match inode.get_info().inode_type {
+            INodeType::Folder => {
+                glib::spawn_future_local(clone!(
+                    #[weak(rename_to = this)]
+                    self,
+                    #[weak]
+                    inode,
+                    async move {
+                        if let Some(name) = inode.get_name() {
+                            let stack = this.imp().stack.get();
+                            stack.show_spinner();
+                            if let Err(e) = this.library().navigate_to(name).await {
+                                dbg!(e);
+                            }
+                            if this.library().folder_inodes().n_items() > 0 {
+                                stack.show_content();
+                            } else {
+                                stack.show_placeholder();
+                            }
+                        }
                     }
-                    if this.library().folder_inodes().n_items() > 0 {
-                        stack.show_content();
-                    } else {
-                        stack.show_placeholder();
+                ));
+            }
+            INodeType::Song => {
+                // Collect the current level's songs in displayed (sorted) order, skipping
+                // folders & playlist files, & find the clicked inode's position among them.
+                let sorted = &self.imp().sorted_inodes;
+                let target_uri = inode.get_uri().to_owned();
+                let mut uris: Vec<String> = Vec::new();
+                let mut play_from: Option<u32> = None;
+                for i in 0..sorted.n_items() {
+                    if let Some(item) = sorted.item(i).and_downcast::<INode>()
+                        && item.get_info().inode_type == INodeType::Song
+                    {
+                        if item.get_uri() == target_uri {
+                            play_from = Some(uris.len() as u32);
+                        }
+                        uris.push(item.get_uri().to_owned());
                     }
                 }
+                glib::spawn_future_local(clone!(
+                    #[weak(rename_to = this)]
+                    self,
+                    async move {
+                        if let Err(e) = this.library().queue_uris(uris, true, play_from).await
+                        {
+                            dbg!(e);
+                        }
+                    }
+                ));
             }
-        ));
+            _ => {
+                // No action for playlists etc. (adding songs and playlists are done with
+                // buttons to the right of each row).
+            }
+        }
     }
 
     pub fn search_bar(&self) -> gtk::SearchBar {
@@ -515,10 +554,12 @@ impl FolderView {
             Some(self.imp().search_filter.clone()),
         );
         search_model.set_incremental(true);
-        let sort_model =
-            gtk::SortListModel::new(Some(search_model), Some(self.imp().sorter.clone()));
-        sort_model.set_incremental(true);
-        let sel_model = SingleSelection::new(Some(sort_model));
+        self.imp().sorted_inodes.set_model(Some(&search_model));
+        let sorter = self.imp().sorter.clone();
+        self.imp().sorted_inodes.set_sorter(Some(&sorter));
+        self.imp().sorted_inodes.set_incremental(true);
+        let sorted_inodes = self.imp().sorted_inodes.clone();
+        let sel_model = SingleSelection::new(Some(sorted_inodes));
 
         self.imp().list_view.set_model(Some(&sel_model));
 

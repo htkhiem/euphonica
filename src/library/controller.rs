@@ -278,24 +278,38 @@ impl Library {
     }
 
     /// Queue specific songs
-    pub async fn queue_songs(&self, songs: &[Song], replace: bool, play: bool) -> ClientResult<()> {
+    pub async fn queue_songs(
+        &self,
+        songs: &[Song],
+        replace: bool,
+        play_from: Option<u32>,
+    ) -> ClientResult<()> {
+        self.queue_uris(
+            songs
+                .iter()
+                .map(|s| s.get_uri().to_owned())
+                .collect::<Vec<String>>(),
+            replace,
+            play_from,
+        )
+        .await
+    }
+
+    /// Queue a list of MPD URIs in the given order.
+    pub async fn queue_uris(
+        &self,
+        uris: Vec<String>,
+        replace: bool,
+        play_from: Option<u32>,
+    ) -> ClientResult<()> {
         // TODO: support executing this atomically as a command list
         let client = self.client();
         if replace {
             client.clear_queue().await?;
         }
-        client
-            .add_multi(
-                songs
-                    .iter()
-                    .map(|s| s.get_uri().to_owned())
-                    .collect::<Vec<String>>(),
-                false,
-                None,
-            )
-            .await?;
-        if play {
-            client.play_at(0, false).await?;
+        client.add_multi(uris, false, None).await?;
+        if let Some(pos) = play_from {
+            client.play_at(pos, false).await?;
         }
         Ok(())
     }
@@ -325,7 +339,6 @@ impl Library {
         &self,
         album: Album,
         replace: bool,
-        play: bool,
         play_from: Option<u32>,
     ) -> ClientResult<()> {
         let client = self.client();
@@ -341,8 +354,8 @@ impl Library {
             query.and(Term::Tag(tags::ALBUM_MBID.into()), mbid.to_owned());
         }
         client.find_add(query).await?;
-        if play {
-            client.play_at(play_from.unwrap_or(0), false).await?;
+        if let Some(pos) = play_from {
+            client.play_at(pos, false).await?;
         }
         Ok(())
     }
@@ -364,35 +377,6 @@ impl Library {
                 .delete_sticker("filter", filter_expr, Stickers::RATING.into())
                 .await
         }
-    }
-
-    /// Queue all songs of an artist. TODO: allow specifying order.
-    pub async fn queue_artist(
-        &self,
-        artist: &Artist,
-        use_albumartist: bool,
-        replace: bool,
-        play: bool,
-    ) -> ClientResult<()> {
-        let client = self.client();
-        if replace {
-            client.clear_queue().await?;
-        }
-        let mut query = Query::new();
-        query.and_with_op(
-            Term::Tag(Cow::Borrowed(if use_albumartist {
-                tags::ALBUMARTIST
-            } else {
-                tags::ARTIST
-            })),
-            QueryOperation::Contains,
-            artist.get_name().to_owned(),
-        );
-        client.find_add(query).await?;
-        if play {
-            client.play_at(0, false).await?;
-        }
-        Ok(())
     }
 
     pub fn folder_inodes(&self) -> gio::ListStore {
@@ -582,15 +566,15 @@ impl Library {
         &self,
         name: String,
         replace: bool,
-        play: bool,
+        play_from: Option<u32>,
     ) -> ClientResult<()> {
         let client = self.client();
         if replace {
             client.clear_queue().await?;
         }
         client.load_playlist(name).await?;
-        if play {
-            client.play_at(0, false).await?;
+        if let Some(pos) = play_from {
+            client.play_at(pos, false).await?;
         }
         Ok(())
     }
@@ -643,15 +627,15 @@ impl Library {
         &self,
         name: String,
         replace: bool,
-        play: bool,
+        play_from: Option<u32>,
     ) -> ClientResult<()> {
         let client = self.client();
         if replace {
             client.clear_queue().await?;
         }
         client.queue_cached_dynamic_playlist(name).await?;
-        if play {
-            client.play_at(0, false).await?;
+        if let Some(pos) = play_from {
+            client.play_at(pos, false).await?;
         }
         Ok(())
     }

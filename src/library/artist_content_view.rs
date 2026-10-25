@@ -718,6 +718,15 @@ impl ArtistContentView {
         self.imp().append_queue.set_sensitive(!queuing);
     }
 
+    /// Get all songs in the "All songs" subview, in displayed order.
+    #[inline]
+    fn all_songs(&self) -> Vec<Song> {
+        let store = &self.imp().song_list;
+        (0..store.n_items())
+            .map(|i| store.item(i).and_downcast::<Song>().unwrap())
+            .collect()
+    }
+
     /// Write the current tag list to the database.
     pub fn write_tags(&self) {
         if let (Some(cache), Some(artist)) =
@@ -1076,31 +1085,31 @@ impl ArtistContentView {
                     #[weak]
                     this,
                     async move {
-                        if let Some(artist) = this.artist() {
-                            this.set_is_queuing(true);
-                            let library = this.imp().library.upgrade().unwrap();
-                            if this.imp().selecting_all.get() {
-                                if let Err(e) =
-                                    library.queue_artist(&artist, false, true, true).await
-                                {
-                                    dbg!(e);
-                                }
-                            } else {
-                                let store = &this.imp().song_list;
-                                // Get list of selected songs
-                                let sel = &this.imp().song_sel_model.selection();
-                                let mut songs: Vec<Song> = Vec::with_capacity(sel.size() as usize);
-                                let (iter, first_idx) = gtk::BitsetIter::init_first(sel).unwrap();
-                                songs.push(store.item(first_idx).and_downcast::<Song>().unwrap());
-                                iter.for_each(|idx| {
-                                    songs.push(store.item(idx).and_downcast::<Song>().unwrap())
-                                });
-                                if let Err(e) = library.queue_songs(&songs, true, true).await {
-                                    dbg!(e);
-                                }
+                        this.set_is_queuing(true);
+                        let library = this.imp().library.upgrade().unwrap();
+                        if this.imp().selecting_all.get() {
+                            // Queue by what's in the local store, cuz it's a local merge of two queries.
+                            if let Err(e) = library
+                                .queue_songs(&this.all_songs(), true, Some(0))
+                                .await
+                            {
+                                dbg!(e);
                             }
-                            this.set_is_queuing(false);
+                        } else {
+                            let store = &this.imp().song_list;
+                            // Get list of selected songs
+                            let sel = &this.imp().song_sel_model.selection();
+                            let mut songs: Vec<Song> = Vec::with_capacity(sel.size() as usize);
+                            let (iter, first_idx) = gtk::BitsetIter::init_first(sel).unwrap();
+                            songs.push(store.item(first_idx).and_downcast::<Song>().unwrap());
+                            iter.for_each(|idx| {
+                                songs.push(store.item(idx).and_downcast::<Song>().unwrap())
+                            });
+                            if let Err(e) = library.queue_songs(&songs, true, Some(0)).await {
+                                dbg!(e);
+                            }
                         }
+                        this.set_is_queuing(false);
                     }
                 ));
             }
@@ -1114,29 +1123,52 @@ impl ArtistContentView {
                     #[weak]
                     this,
                     async move {
-                        if let Some(artist) = this.artist() {
-                            this.set_is_queuing(true);
-                            let library = this.imp().library.upgrade().unwrap();
-                            if this.imp().selecting_all.get() {
-                                if let Err(e) =
-                                    library.queue_artist(&artist, false, false, false).await
-                                {
-                                    dbg!(e);
-                                }
-                            } else {
-                                let store = &this.imp().song_list;
-                                // Get list of selected songs
-                                let sel = &this.imp().song_sel_model.selection();
-                                let mut songs: Vec<Song> = Vec::with_capacity(sel.size() as usize);
-                                let (iter, first_idx) = gtk::BitsetIter::init_first(sel).unwrap();
-                                songs.push(store.item(first_idx).and_downcast::<Song>().unwrap());
-                                iter.for_each(|idx| {
-                                    songs.push(store.item(idx).and_downcast::<Song>().unwrap())
-                                });
-                                if let Err(e) = library.queue_songs(&songs, false, false).await {
-                                    dbg!(e);
-                                }
+                        this.set_is_queuing(true);
+                        let library = this.imp().library.upgrade().unwrap();
+                        if this.imp().selecting_all.get() {
+                            // Queue by what's in the local store, cuz it's a local merge of two queries.
+                            if let Err(e) = library
+                                .queue_songs(&this.all_songs(), false, None)
+                                .await
+                            {
+                                dbg!(e);
                             }
+                        } else {
+                            let store = &this.imp().song_list;
+                            // Get list of selected songs
+                            let sel = &this.imp().song_sel_model.selection();
+                            let mut songs: Vec<Song> = Vec::with_capacity(sel.size() as usize);
+                            let (iter, first_idx) = gtk::BitsetIter::init_first(sel).unwrap();
+                            songs.push(store.item(first_idx).and_downcast::<Song>().unwrap());
+                            iter.for_each(|idx| {
+                                songs.push(store.item(idx).and_downcast::<Song>().unwrap())
+                            });
+                            if let Err(e) = library.queue_songs(&songs, false, None).await {
+                                dbg!(e);
+                            }
+                        }
+                        this.set_is_queuing(false);
+                    }
+                ));
+            }
+        ));
+
+        // Setup double-click action
+        self.imp().song_subview.connect_activate(clone!(
+            #[weak(rename_to = this)]
+            self,
+            move |_, pos| {
+                glib::spawn_future_local(clone!(
+                    #[weak]
+                    this,
+                    async move {
+                        this.set_is_queuing(true);
+                        let library = this.imp().library.upgrade().unwrap();
+                        if let Err(e) = library
+                            .queue_songs(&this.all_songs(), true, Some(pos))
+                            .await
+                        {
+                            dbg!(e);
                         }
                         this.set_is_queuing(false);
                     }
