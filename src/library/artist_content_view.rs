@@ -1089,9 +1089,8 @@ impl ArtistContentView {
                         let library = this.imp().library.upgrade().unwrap();
                         if this.imp().selecting_all.get() {
                             // Queue by what's in the local store, cuz it's a local merge of two queries.
-                            if let Err(e) = library
-                                .queue_songs(&this.all_songs(), true, Some(0))
-                                .await
+                            if let Err(e) =
+                                library.queue_songs(&this.all_songs(), true, Some(0)).await
                             {
                                 dbg!(e);
                             }
@@ -1127,9 +1126,8 @@ impl ArtistContentView {
                         let library = this.imp().library.upgrade().unwrap();
                         if this.imp().selecting_all.get() {
                             // Queue by what's in the local store, cuz it's a local merge of two queries.
-                            if let Err(e) = library
-                                .queue_songs(&this.all_songs(), false, None)
-                                .await
+                            if let Err(e) =
+                                library.queue_songs(&this.all_songs(), false, None).await
                             {
                                 dbg!(e);
                             }
@@ -1179,6 +1177,7 @@ impl ArtistContentView {
         // Set up factory
         let library = self.imp().library.upgrade().unwrap();
         let cache = self.imp().cache.get().unwrap();
+        let window = self.imp().window.upgrade();
         let factory = SignalListItemFactory::new();
 
         factory.connect_setup(clone!(
@@ -1190,7 +1189,7 @@ impl ArtistContentView {
                 let item = list_item
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
-                let row = SongRow::new(Some(cache), None);
+                let row = SongRow::new(Some(cache), None, window.as_ref(), Some(&library));
                 item.property_expression("item")
                     .chain_property::<Song>("name")
                     .bind(&row, "name", gtk::Widget::NONE);

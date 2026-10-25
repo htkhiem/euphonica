@@ -177,7 +177,7 @@ mod imp {
                                     .queue_cached_dynamic_playlist(
                                         dp.name.to_owned(),
                                         true,
-                                        Some(0)
+                                        Some(0),
                                     )
                                     .await
                                 {
@@ -203,11 +203,7 @@ mod imp {
                             {
                                 this.obj().set_is_queuing(true);
                                 if let Err(e) = library
-                                    .queue_cached_dynamic_playlist(
-                                        dp.name.to_owned(),
-                                        false,
-                                        None,
-                                    )
+                                    .queue_cached_dynamic_playlist(dp.name.to_owned(), false, None)
                                     .await
                                 {
                                     dbg!(e);
@@ -420,11 +416,15 @@ impl DynamicPlaylistContentView {
         factory.connect_setup(clone!(
             #[weak]
             cache,
+            #[weak]
+            window,
+            #[weak]
+            library,
             move |_, list_item| {
                 let item = list_item
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
-                let row = SongRow::new(Some(cache), None);
+                let row = SongRow::new(Some(cache), None, Some(&window), Some(&library));
                 row.set_index_visible(false);
                 row.set_thumbnail_visible(true);
                 item.property_expression("item")

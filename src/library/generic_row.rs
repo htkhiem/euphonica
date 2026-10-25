@@ -1,8 +1,12 @@
-use glib::{Object, clone};
-use gtk::{CompositeTemplate, glib, prelude::*, subclass::prelude::*};
+use adw::prelude::*;
+use glib::{Object, WeakRef, clone};
+use gtk::{CompositeTemplate, gdk, glib, gio, subclass::prelude::*};
 use std::cell::{OnceCell, RefCell};
 
-use crate::common::INode;
+use crate::{
+    common::{INode, INodeType, SongInfoDialog},
+    window::EuphonicaWindow,
+};
 
 use super::Library;
 
@@ -33,6 +37,7 @@ mod imp {
         // Only used while displaying a folder. For songs simply use a song MIME icon.
         // pub thumbnail_signal_id: RefCell<Option<SignalHandlerId>>,
         pub library: OnceCell<Library>,
+        pub window: WeakRef<EuphonicaWindow>,
     }
 
     // The central trait for subclassing a GObject
@@ -98,7 +103,7 @@ mod imp {
                                             .queue_playlist(
                                                 this.title.label().to_string(),
                                                 true,
-                                                Some(0)
+                                                Some(0),
                                             )
                                             .await
                                         {
@@ -154,7 +159,7 @@ mod imp {
                                             .queue_playlist(
                                                 this.title.label().to_string(),
                                                 false,
-                                                None
+                                                None,
                                             )
                                             .await
                                         {
@@ -251,10 +256,89 @@ glib::wrapper! {
 }
 
 impl GenericRow {
-    pub fn new(library: Library, item: &gtk::ListItem) -> Self {
+    pub fn new(library: Library, item: &gtk::ListItem, window: Option<&EuphonicaWindow>) -> Self {
         let res: Self = Object::builder().build();
         res.setup(library, item);
+
+        // Right-click context menu. The inode type is expression-bound and may not be
+        // set yet at this point, so the menu is only popped up for songs (checked on click).
+        if let Some(window) = window {
+            res.imp().window.set(Some(window));
+
+            let song_info_action = gio::ActionEntry::builder("song-info")
+                .activate(clone!(
+                    #[weak]
+                    res,
+                    move |_, _, _| {
+                        res.show_song_info();
+                    }
+                ))
+                .build();
+            let action_group = gio::SimpleActionGroup::new();
+            action_group.add_action_entries([song_info_action]);
+            res.insert_action_group("generic-row", Some(&action_group));
+
+            let menu = gio::Menu::new();
+            menu.append(Some("Song info"), Some("generic-row.song-info"));
+            let context_menu = gtk::PopoverMenu::from_model(Some(&menu));
+            // Adding the popover as a child anchors it to this row
+            res.append(&context_menu);
+
+            let click_ctl = gtk::GestureClick::new();
+            click_ctl.set_button(gdk::BUTTON_SECONDARY);
+            click_ctl.connect_released(clone!(
+                #[weak]
+                res,
+                move |_, _, x, y| {
+                    if res.imp().inode_type.get() != INodeType::Song {
+                        return;
+                    }
+                    // Anchor the popover's arrow at the click position
+                    context_menu.set_pointing_to(Some(&gdk::Rectangle::new(
+                        x as i32,
+                        y as i32,
+                        1,
+                        1,
+                    )));
+                    context_menu.popup();
+                }
+            ));
+            res.add_controller(click_ctl);
+        }
+
         res
+    }
+
+    /// Fetches the raw rust-mpd Song struct for this row's inode URI and opens a SongInfoDialog
+    /// attached to the main window.
+    pub fn show_song_info(&self) {
+        // Only songs have raw MPD data to show
+        if self.imp().inode_type.get() != INodeType::Song {
+            return;
+        }
+        let window = match self.imp().window.upgrade() {
+            Some(window) => window,
+            None => return,
+        };
+        let library = match self.imp().library.get() {
+            Some(library) => library.clone(),
+            None => return,
+        };
+        let uri = self.imp().uri.borrow().to_string();
+        glib::spawn_future_local(async move {
+            match library.get_raw_mpd_song_by_uri(uri).await {
+                Ok(Some(raw_song)) => {
+                    let dialog = SongInfoDialog::from_mpd_song(raw_song, None);
+                    dialog.present(Some(&window));
+                }
+                Ok(None) => {
+                    // Song is no longer in the library, nothing to show
+                }
+                Err(e) => {
+                    dbg!(e);
+                }
+            }
+        });
     }
 
     #[inline(always)]

@@ -1257,9 +1257,13 @@ impl EuphonicaWindow {
 
         // Construct all views first
         win.restore_window_state();
-        win.imp()
-            .queue_view
-            .setup(app.get_player(), app.get_cache(), &client_state, &win);
+        win.imp().queue_view.setup(
+            app.get_player(),
+            app.get_library(),
+            app.get_cache(),
+            &client_state,
+            &win,
+        );
         win.imp()
             .recent_view
             .setup(app.get_library(), app.get_player(), app.get_cache(), &win);
@@ -1274,7 +1278,7 @@ impl EuphonicaWindow {
             .setup(app.get_library(), app.get_cache(), &win);
         win.imp()
             .folder_view
-            .setup(app.get_library(), app.get_cache());
+            .setup(app.get_library(), app.get_cache(), &win);
         win.imp().dyn_playlist_view.setup(
             app.get_library(),
             app.get_cache(),

@@ -449,11 +449,15 @@ impl DynamicPlaylistEditorView {
         factory.connect_setup(clone!(
             #[weak]
             cache,
+            #[weak]
+            window,
+            #[weak]
+            library,
             move |_, list_item| {
                 let item = list_item
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
-                let row = SongRow::new(Some(cache), None);
+                let row = SongRow::new(Some(cache), None, Some(&window), Some(&library));
                 item.property_expression("item")
                     .chain_property::<Song>("name")
                     .bind(&row, "name", gtk::Widget::NONE);

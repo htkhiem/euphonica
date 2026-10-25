@@ -17,11 +17,11 @@ pub mod rating;
 pub mod row_add_buttons;
 pub mod row_edit_buttons;
 pub mod song;
+pub mod song_info;
 pub mod song_row;
 pub mod sticker;
 pub mod tags;
 pub mod theme_selector;
-pub mod song_info;
 
 pub use album::{Album, AlbumInfo};
 pub use artist::{Artist, ArtistInfo, artists_to_string, parse_mb_artist_tag};
@@ -40,10 +40,10 @@ pub use rating::Rating;
 pub use row_add_buttons::RowAddButtons;
 pub use row_edit_buttons::RowEditButtons;
 pub use song::{QualityGrade, Song, SongInfo};
+pub use song_info::SongInfoDialog;
 pub use song_row::SongRow;
 pub use sticker::Stickers;
 pub use theme_selector::ThemeSelector;
-pub use song_info::SongInfoDialog;
 
 #[derive(Default, Debug, Copy, Clone, PartialEq, Eq, glib::Enum)]
 #[enum_type(name = "EuphonicaConnectionState")]

@@ -564,8 +564,7 @@ impl From<mpd::song::Song> for SongInfo {
                 }
                 // "date" => res.imp().release_date.replace(Some(val.clone())),
                 tags::FORMAT => {
-                    if let Ok(format) = val.parse::<AudioFormat>()
-                    {
+                    if let Ok(format) = val.parse::<AudioFormat>() {
                         if maybe_lossless_pcm {
                             if format.rate > 48000 && format.bits >= 24 {
                                 res.quality_grade = QualityGrade::HiRes;

@@ -624,7 +624,7 @@ impl AlbumContentView {
             {
                 // If has album & all tracks are selected, use queue_album.
                 if let Err(e) = library
-                    .queue_album(album.clone(), replace, if play {Some(0)} else {None})
+                    .queue_album(album.clone(), replace, if play { Some(0) } else { None })
                     .await
                 {
                     dbg!(e);
@@ -632,7 +632,11 @@ impl AlbumContentView {
             } else {
                 // Catch-all: manually queue each song.
                 if let Err(e) = library
-                    .queue_songs(&self.selected_songs(), replace, if play {Some(0)} else {None})
+                    .queue_songs(
+                        &self.selected_songs(),
+                        replace,
+                        if play { Some(0) } else { None },
+                    )
                     .await
                 {
                     dbg!(e);
@@ -1082,18 +1086,20 @@ impl AlbumContentView {
         ));
 
         // Set up ListBox — bind directly to song_list (no MultiSelection needed)
+        let window = self.imp().window.upgrade();
         self.imp().content.bind_model(
             Some(&self.imp().song_list),
             clone!(
                 #[weak]
                 library,
                 #[upgrade_or]
-                SongRow::new(None, None).into(),
+                SongRow::new(None, None, None, None).into(),
                 move |song_obj| {
                     let song = song_obj
                         .downcast_ref::<Song>()
                         .expect("Must be a common::Song");
-                    let row = SongRow::new(None, None);
+                    let row = SongRow::new(None, None, window.as_ref(), Some(&library));
+                    row.on_bind(song);
                     row.set_index_visible(true);
                     row.set_index(&song.get_track().to_string());
                     row.set_thumbnail_visible(false);
@@ -1127,9 +1133,8 @@ impl AlbumContentView {
                     this,
                     async move {
                         if let (Some(album), Some(library)) = (this.album(), this.library())
-                            && let Err(e) = library
-                                .queue_album(album.clone(), true, Some(idx))
-                                .await
+                            && let Err(e) =
+                                library.queue_album(album.clone(), true, Some(idx)).await
                         {
                             dbg!(e);
                         }
