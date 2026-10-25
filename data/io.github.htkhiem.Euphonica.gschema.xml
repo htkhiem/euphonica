@@ -321,6 +321,10 @@
 			<default>true</default>
 		</key>
 
+		<key name="seek-increment" type="d">
+			<default>5.0</default>
+		</key>
+
 		<key name="visualizer-fft-samples" type="u">
 			<default>2048</default>
 		</key>
@@ -350,6 +354,9 @@
 	</schema>
 
 	<schema id="io.github.htkhiem.Euphonica.ui" path="/io/github/htkhiem/Euphonica/ui/">
+		<key name="show-seek-buttons" type="b">
+			<default>true</default>
+		</key>
 		<key name="colorscheme" type="s">
 			<default>'follow'</default>
 		</key>

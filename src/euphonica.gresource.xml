@@ -93,6 +93,7 @@
     <file preprocess="xml-stripblanks" alias="month-symbolic.svg">gtk/icons/month-symbolic.svg</file>
     <file preprocess="xml-stripblanks" alias="globe-symbolic.svg">gtk/icons/globe-symbolic.svg</file>
     <file preprocess="xml-stripblanks" alias="skip-backward-large-symbolic.svg">gtk/icons/skip-backward-large-symbolic.svg</file>
+    <file preprocess="xml-stripblanks" alias="media-seek-backward-symbolic.svg">gtk/icons/media-seek-backward-symbolic.svg</file>
     <file preprocess="xml-stripblanks" alias="play-large-symbolic.svg">gtk/icons/play-large-symbolic.svg</file>
     <file preprocess="xml-stripblanks" alias="play-symbolic.svg">gtk/icons/play-symbolic.svg</file>
     <file preprocess="xml-stripblanks" alias="clock-alt-symbolic.svg">gtk/icons/clock-alt-symbolic.svg</file>
@@ -101,6 +102,7 @@
     <file preprocess="xml-stripblanks" alias="playlist-repeat-symbolic.svg">gtk/icons/playlist-repeat-symbolic.svg</file>
     <file preprocess="xml-stripblanks" alias="stop-sign-outline-symbolic.svg">gtk/icons/stop-sign-outline-symbolic.svg</file>
     <file preprocess="xml-stripblanks" alias="playlist-repeat-song-symbolic.svg">gtk/icons/playlist-repeat-song-symbolic.svg</file>
+    <file preprocess="xml-stripblanks" alias="media-seek-forward-symbolic.svg">gtk/icons/media-seek-forward-symbolic.svg</file>
     <file preprocess="xml-stripblanks" alias="skip-forward-large-symbolic.svg">gtk/icons/skip-forward-large-symbolic.svg</file>
     <file preprocess="xml-stripblanks" alias="music-artist-symbolic.svg">gtk/icons/music-artist-symbolic.svg</file>
     <file preprocess="xml-stripblanks" alias="library-artists-symbolic.svg">gtk/icons/library-artists-symbolic.svg</file>

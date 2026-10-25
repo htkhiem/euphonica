@@ -246,6 +246,33 @@
     </child>
     <child>
       <object class="AdwPreferencesGroup">
+        <property name="title" translatable="true">Playback Controls</property>
+        <child>
+          <object class="AdwSwitchRow" id="show_seek_btns">
+            <property name="title" translatable="true">Show seek buttons</property>
+            <property name="subtitle" translatable="true">Seeking by increments is always possible via keyboard shortcuts.</property>
+          </object>
+        </child>
+        <child>
+          <object class="AdwSpinRow" id="seek_increment">
+            <property name="title" translatable="true">Seek increment</property>
+            <property name="subtitle" translatable="true">How many seconds to seek forward or backward when seek buttons or keyboard shortcuts are used.</property>
+            <property name="digits">0</property>
+            <property name="adjustment">
+              <object class="GtkAdjustment">
+                <property name="lower">1.0</property>
+                <property name="upper">20.0</property>
+                <property name="value">5.0</property>
+                <property name="page-increment">5.0</property>
+                <property name="step-increment">1.0</property>
+              </object>
+            </property>
+          </object>
+        </child>
+      </object>
+    </child>
+    <child>
+      <object class="AdwPreferencesGroup">
         <property name="title" translatable="true">Spectrum Visualiser</property>
         <child>
 			    <object class="AdwExpanderRow" id="use_visualizer">
