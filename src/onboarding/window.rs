@@ -287,8 +287,6 @@ mod imp {
                             let _ = app.update_db();
                             // Poll the live song count every ~5s and report it below the spinner.
                             let client = app.get_client();
-                            let status_page = this.init_db_status.get();
-                            let win_weak = this.obj().downgrade();
                             this.init_db_handle
                                 .replace(Some(glib::spawn_future_local(clone!(
                                     #[weak]

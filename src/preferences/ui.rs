@@ -65,6 +65,11 @@ mod imp {
         pub artist_sort_discography_years_asc: TemplateChild<adw::SwitchRow>,
 
         #[template_child]
+        pub show_seek_btns: TemplateChild<adw::SwitchRow>,
+        #[template_child]
+        pub seek_increment: TemplateChild<adw::SpinRow>,
+
+        #[template_child]
         pub use_visualizer: TemplateChild<adw::ExpanderRow>,
         #[template_child]
         pub visualizer_use_cairo: TemplateChild<adw::SwitchRow>,
@@ -309,7 +314,7 @@ impl UIPreferences {
             .mapping(clone!(
                 #[strong]
                 units,
-                move |v: &Variant, _| Some(units.find(&v.get::<String>()?).to_value()) 
+                move |v: &Variant, _| Some(units.find(&v.get::<String>()?).to_value())
             ))
             .set_mapping(clone!(
                 #[strong]
@@ -327,6 +332,13 @@ impl UIPreferences {
 
         ui_settings
             .bind("vol-knob-sensitivity", &vol_knob_sensitivity, "value")
+            .build();
+
+        ui_settings
+            .bind("show-seek-buttons", &imp.show_seek_btns.get(), "active")
+            .build();
+        player_settings
+            .bind("seek-increment", &imp.seek_increment.get(), "value")
             .build();
 
         ui_settings
