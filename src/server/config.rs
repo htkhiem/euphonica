@@ -1087,7 +1087,7 @@ pub struct MpdConfig {
     pub playlist_directory: Option<String>,
     pub db_file: Option<String>,
     #[derivative(Default(value = "true"))]
-    pub mixramp_analyzer: bool
+    pub mixramp_analyzer: bool,
 }
 
 impl MpdConfig {
@@ -1156,7 +1156,7 @@ impl MpdConfig {
                     .expect("OS does not support UTF-8 paths")
                     .to_owned(),
             ),
-            mixramp_analyzer: true
+            mixramp_analyzer: true,
         }
     }
 
@@ -1209,7 +1209,11 @@ impl Display for MpdConfig {
         if let Some(resampler) = self.resampler.as_ref() {
             write!(out, "{}", resampler)?;
         }
-        write!(out, "mixramp_analyzer \"{}\"", if self.mixramp_analyzer { "yes" } else { "no" })
+        write!(
+            out,
+            "mixramp_analyzer \"{}\"",
+            if self.mixramp_analyzer { "yes" } else { "no" }
+        )
     }
 }
 

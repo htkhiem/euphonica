@@ -45,6 +45,16 @@ use super::fft_backends::{
 
 const STATUS_POLL_INTERVAL: Duration = Duration::from_secs(1);
 
+/// RAII guard for status update lock. This ensures only one status
+/// update is in flight at any time.
+struct StatusUpdateGuard<'a>(&'a Cell<bool>);
+
+impl Drop for StatusUpdateGuard<'_> {
+    fn drop(&mut self) {
+        self.0.set(false);
+    }
+}
+
 #[derive(Clone, Copy, Debug, glib::Enum, PartialEq, Default)]
 #[enum_type(name = "EuphonicaPlaybackState")]
 pub enum PlaybackState {
@@ -197,6 +207,11 @@ mod imp {
         pub lyrics_handle: RefCell<Option<glib::JoinHandle<()>>>,
         pub queue_len: Cell<u32>,
         pub current_song: RefCell<Option<Song>>,
+        // Set while update_status() is running. Concurrent runs (idle events,
+        // poller, connect) are skipped rather than serialized: a skipped run's
+        // trigger is picked up by the 1s poller or the next idle event, so the
+        // display can lag by at most ~1s.
+        pub status_update_busy: Cell<bool>,
         pub current_lyric_line: Cell<u32>,
         pub format: RefCell<Option<AudioFormat>>,
         pub bitrate: Cell<u32>,
@@ -286,6 +301,7 @@ mod imp {
                 queue: gio::ListStore::new::<Song>(),
                 queue_len: Cell::new(0),
                 current_song: RefCell::new(None),
+                status_update_busy: Cell::new(false),
                 current_lyric_line: Cell::default(),
                 format: RefCell::new(None),
                 bitrate: Cell::default(),
@@ -815,6 +831,9 @@ impl Player {
         self.imp().queue_initialized.set(false);
         self.imp().queue_version.set(0);
         self.imp().expected_queue_version.set(0);
+        // Queue IDs are reissued from the state file after an MPD restart, so a stale
+        // current_song could match a different file's new ID.
+        self.imp().current_song.take();
         Ok(())
     }
 
@@ -997,6 +1016,14 @@ impl Player {
     /// that returns everything at once. This update function will take what's
     /// relevant and update the GObject properties accordingly.
     pub async fn update_status(&self) -> ClientResult<()> {
+        // Only one update in flight at a time. We poll every second anyway
+        // while songs are playing.
+        let busy: &Cell<bool> = &self.imp().status_update_busy;
+        if busy.get() {
+            return Ok(());
+        }
+        busy.set(true);
+        let _guard = StatusUpdateGuard(busy);
         let status;
         if let Ok(client) = self.client() {
             status = client.get_status().await.unwrap_or_default();
@@ -1131,6 +1158,9 @@ impl Player {
             let needs_refresh: bool;
             let prev_uri: Option<String>;
             {
+                // Queue IDs are stable within a session: MPD only reissues them on
+                // restart, and clear() drops current_song on (re)connect, so a
+                // matching ID is the same song.
                 let curr_song = self.imp().current_song.borrow();
                 needs_refresh = curr_song
                     .as_ref()
@@ -1139,44 +1169,44 @@ impl Player {
             };
 
             if needs_refresh {
-                if let Some(prev_uri) = prev_uri {
-                    // Conform to myMPD's skipCount rule but take care not to mark a song as skipped if we've
-                    // already marked it as played this time (via playCount and lastPlayed).
-                    // We can't use status.elapsed here as it'd be for the new song, not the old one.
-                    if !self.imp().saved_to_history.get() && self.position() > 10.0 {
-                        // These are optional & can fail when stickers aren't enabled.
-                        // Don't use ? on their results.
-                        let _ = self
-                            .client()?
-                            .set_sticker(
-                                "song",
-                                prev_uri.clone(),
-                                Stickers::SKIP_COUNT.into(),
-                                "1".into(),
-                                StickerSetMode::Inc,
-                            )
-                            .await;
-
-                        let _ = self
-                            .client()?
-                            .set_sticker(
-                                "song",
-                                prev_uri,
-                                Stickers::LAST_SKIPPED.into(),
-                                current_unix_timestamp().to_string().into(),
-                                StickerSetMode::Set,
-                            )
-                            .await;
-                    }
-                }
-
-                // Always fetch as the queue might not have been populated yet
+                // Always fetch as the queue might not have been populated yet.
                 match self
                     .client()?
                     .get_song_at_queue_id(new_queue_place.id, true)
                     .await
                 {
                     Ok(Some(new_song)) => {
+                        if let Some(prev_uri) = prev_uri {
+                            // Conform to myMPD's skipCount rule but take care not to mark a song as skipped if we've
+                            // already marked it as played this time (via playCount and lastPlayed).
+                            // We can't use status.elapsed here as it'd be for the new song, not the old one.
+                            if !self.imp().saved_to_history.get() && self.position() > 10.0 {
+                                // These are optional & can fail when stickers aren't enabled.
+                                // Don't use ? on their results.
+                                let _ = self
+                                    .client()?
+                                    .set_sticker(
+                                        "song",
+                                        prev_uri.clone(),
+                                        Stickers::SKIP_COUNT.into(),
+                                        "1".into(),
+                                        StickerSetMode::Inc,
+                                    )
+                                    .await;
+
+                                let _ = self
+                                    .client()?
+                                    .set_sticker(
+                                        "song",
+                                        prev_uri,
+                                        Stickers::LAST_SKIPPED.into(),
+                                        current_unix_timestamp().to_string().into(),
+                                        StickerSetMode::Set,
+                                    )
+                                    .await;
+                            }
+                        }
+
                         // Update stickers
                         let _ = self
                             .client()?
@@ -1325,7 +1355,7 @@ impl Player {
         // song, which is not what we want.
         if status.song.is_none() || status.state == State::Stop {
             // No song is playing. Update state accordingly.
-            if let Some(_) = self.imp().current_song.take() {
+            if self.imp().current_song.take().is_some() {
                 self.imp().saved_to_history.set(false);
                 self.notify("title");
                 self.notify("artist");
