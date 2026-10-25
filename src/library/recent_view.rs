@@ -473,12 +473,13 @@ impl RecentView {
     fn setup_song_list(&self, cache: Rc<Cache>) {
         let library = self.imp().library.upgrade().unwrap().clone();
         let song_list = library.recent_songs();
+        let window = self.imp().window.get().and_then(|w| w.upgrade());
 
         self.imp()
             .song_list
             .bind_model(Some(&song_list), move |obj| {
                 let song = obj.downcast_ref::<Song>().unwrap();
-                let row = SongRow::new(Some(cache.clone()), None);
+                let row = SongRow::new(Some(cache.clone()), None, window.as_ref(), Some(&library));
                 // Manually bind attributes here
                 row.set_name(song.get_name());
                 row.set_quality_grade(song.get_quality_grade());

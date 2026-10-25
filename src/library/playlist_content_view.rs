@@ -536,7 +536,7 @@ impl PlaylistContentView {
                                     .queue_playlist(
                                         playlist.get_name().unwrap().to_owned(),
                                         true,
-                                        Some(0)
+                                        Some(0),
                                     )
                                     .await
                                 {
@@ -552,8 +552,7 @@ impl PlaylistContentView {
                                 iter.for_each(|idx| {
                                     songs.push(store.item(idx).and_downcast::<Song>().unwrap())
                                 });
-                                if let Err(e) = library.queue_songs(&songs, true, Some(0)).await
-                                {
+                                if let Err(e) = library.queue_songs(&songs, true, Some(0)).await {
                                     dbg!(e);
                                 }
                             }
@@ -594,9 +593,7 @@ impl PlaylistContentView {
                                 iter.for_each(|idx| {
                                     songs.push(store.item(idx).and_downcast::<Song>().unwrap())
                                 });
-                                if let Err(e) =
-                                    library.queue_songs(&songs, false, None).await
-                                {
+                                if let Err(e) = library.queue_songs(&songs, false, None).await {
                                     dbg!(e);
                                 }
                             }
@@ -716,11 +713,13 @@ impl PlaylistContentView {
             library,
             #[weak]
             cache,
+            #[weak]
+            window,
             move |_, list_item| {
                 let item = list_item
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
-                let row = SongRow::new(Some(cache), None);
+                let row = SongRow::new(Some(cache), None, Some(&window), Some(&library));
                 item.property_expression("item")
                     .chain_property::<Song>("name")
                     .bind(&row, "name", gtk::Widget::NONE);
@@ -760,7 +759,12 @@ impl PlaylistContentView {
                 let item = list_item
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
-                let row = SongRow::new(Some(cache), None);
+                let row = SongRow::new(
+                    Some(cache),
+                    None,
+                    this.imp().window.upgrade().as_ref(),
+                    this.imp().library.upgrade().as_ref(),
+                );
                 row.add_css_class("shift-on-hover");
                 bind_editing_row_by_expressions(&row, item);
                 let end_widget = RowEditButtons::new(
@@ -820,7 +824,7 @@ impl PlaylistContentView {
                         // To avoid problems with hotspot positioning quirks (caused by other rows changing padding upon hover)
                         // the icon will be a standalone copy of the original row.
                         // Additional benefit: we get to customise how it looks.
-                        let drag_widget = SongRow::new(None, None);
+                        let drag_widget = SongRow::new(None, None, None, None);
                         // Give it the same size as the real row
                         drag_widget.set_size_request(row.width(), row.height());
                         drag_widget.set_thumbnail_visible(false);

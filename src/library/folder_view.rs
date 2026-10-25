@@ -3,6 +3,7 @@ use crate::{
     cache::Cache,
     common::{ContentStack, INode, INodeType},
     utils::{LazyInit, SearchableView, g_cmp_str_options, settings_manager},
+    window::EuphonicaWindow,
 };
 use adw::prelude::*;
 use adw::subclass::prelude::*;
@@ -84,6 +85,7 @@ mod imp {
         // if they now match.
         pub last_search_len: Cell<usize>,
         pub library: WeakRef<Library>,
+        pub window: WeakRef<EuphonicaWindow>,
         pub sort_by_id: RefCell<Option<SignalHandlerId>>,
         pub sort_direction_id: RefCell<Option<SignalHandlerId>>,
         pub collapsed: Cell<bool>,
@@ -429,8 +431,9 @@ impl FolderView {
         self.imp().library.upgrade().unwrap()
     }
 
-    pub fn setup(&self, library: &Library, cache: Rc<Cache>) {
+    pub fn setup(&self, library: &Library, cache: Rc<Cache>, window: &EuphonicaWindow) {
         self.imp().library.set(Some(library));
+        self.imp().window.set(Some(window));
         self.setup_listview(cache.clone(), library.clone());
 
         library
@@ -517,8 +520,7 @@ impl FolderView {
                     #[weak(rename_to = this)]
                     self,
                     async move {
-                        if let Err(e) = this.library().queue_uris(uris, true, play_from).await
-                        {
+                        if let Err(e) = this.library().queue_uris(uris, true, play_from).await {
                             dbg!(e);
                         }
                     }
@@ -565,6 +567,7 @@ impl FolderView {
 
         // Set up factory
         let factory = SignalListItemFactory::new();
+        let window = self.imp().window.upgrade();
 
         // Create an empty `INodeCell` during setup
         factory.connect_setup(clone!(
@@ -574,7 +577,7 @@ impl FolderView {
                 let item = list_item
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
-                let folder_row = GenericRow::new(library, item);
+                let folder_row = GenericRow::new(library, item, window.as_ref());
                 item.set_child(Some(&folder_row));
             }
         ));

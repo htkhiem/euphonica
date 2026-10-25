@@ -21,6 +21,7 @@ use crate::{
     cache::Cache,
     client::{ClientState, Error as ClientError},
     common::{ContentStack, RowEditButtons, Song, SongRow},
+    library::Library,
     player::controller::SwapDirection,
     utils::{LazyInit, SearchableView, g_search_substr, settings_manager},
     window::EuphonicaWindow,
@@ -76,6 +77,8 @@ mod imp {
         pub save_confirm: TemplateChild<gtk::Button>,
 
         pub window: WeakRef<EuphonicaWindow>,
+
+        pub library: WeakRef<Library>,
 
         #[property(get, set)]
         pub pane_collapsed: Cell<bool>,
@@ -428,7 +431,7 @@ impl QueueView {
         let factory = SignalListItemFactory::new();
 
         factory.connect_setup(clone!(
-            #[weak(rename_to = _this)]
+            #[weak(rename_to = this)]
             self,
             #[weak]
             player,
@@ -438,7 +441,12 @@ impl QueueView {
                 let item = list_item
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
-                let row = SongRow::new(Some(cache.clone()), Some(&player));
+                let row = SongRow::new(
+                    Some(cache.clone()),
+                    Some(&player),
+                    this.imp().window.upgrade().as_ref(),
+                    this.imp().library.upgrade().as_ref(),
+                );
                 bind_row_by_expressions(&row, item);
                 row.add_css_class("shift-on-hover");
                 let end_widget = RowEditButtons::new(
@@ -535,7 +543,7 @@ impl QueueView {
                         // To avoid problems with hotspot positioning quirks (caused by other rows changing padding upon hover)
                         // the icon will be a standalone copy of the original row.
                         // Additional benefit: we get to customise how it looks.
-                        let drag_widget = SongRow::new(None, None);
+                        let drag_widget = SongRow::new(None, None, None, None);
                         // Give it the same size as the real row
                         drag_widget.set_size_request(row.width(), row.height());
                         drag_widget.set_thumbnail_visible(false);
@@ -977,11 +985,13 @@ impl QueueView {
     pub fn setup(
         &self,
         player: &Player,
+        library: &Library,
         cache: Rc<Cache>,
         client_state: &ClientState,
         window: &EuphonicaWindow,
     ) {
         self.imp().window.set(Some(window));
+        self.imp().library.set(Some(library));
         self.setup_listview(player, cache.clone());
         self.imp()
             .player_pane

@@ -777,6 +777,8 @@
       <!-- Close via either the cancel or save buttons to be explicit in intent -->
       <property name="can-close">false</property>
       <property name="title" translatable="true">Edit metadata</property>
+      <property name="content-width">600</property>
+      <property name="content-height">700</property>
       <child>
         <object class="AdwToolbarView">
           <child type="top">

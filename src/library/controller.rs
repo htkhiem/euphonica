@@ -252,6 +252,15 @@ impl Library {
         self.imp().recent_initialized.set(false);
     }
 
+    /// Fetch a raw rust-mpd Song struct by exact URI, or None if not found.
+    /// Thin passthrough to MpdWrapper; see its documentation.
+    pub async fn get_raw_mpd_song_by_uri(
+        &self,
+        uri: String,
+    ) -> ClientResult<Option<mpd::song::Song>> {
+        self.client().get_raw_mpd_song_by_uri(uri).await
+    }
+
     fn client(&self) -> &Rc<MpdWrapper> {
         self.imp().client.get().unwrap()
     }

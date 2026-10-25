@@ -294,8 +294,9 @@ mod imp {
                                     async move {
                                         loop {
                                             if let Ok(n) = client.count_songs().await {
-                                                this.init_db_status
-                                                    .set_description(Some(&format!("Found {} song(s)", n)));
+                                                this.init_db_status.set_description(Some(
+                                                    &format!("Found {} song(s)", n),
+                                                ));
                                             }
                                             glib::timeout_future_seconds(5).await;
                                         }

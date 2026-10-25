@@ -18,7 +18,7 @@ mod imp {
 
     use crate::utils::settings_manager;
 
-use super::*;
+    use super::*;
 
     #[derive(Default, Properties, CompositeTemplate)]
     #[properties(wrapper_type = super::PlaybackControls)]
@@ -66,8 +66,16 @@ use super::*;
         fn constructed(&self) {
             self.parent_constructed();
             let ui_settings = settings_manager().child("ui");
-            ui_settings.bind("show-seek-buttons", &self.seek_backward_btn.get(), "visible").build();
-            ui_settings.bind("show-seek-buttons", &self.seek_forward_btn.get(), "visible").build();
+            ui_settings
+                .bind(
+                    "show-seek-buttons",
+                    &self.seek_backward_btn.get(),
+                    "visible",
+                )
+                .build();
+            ui_settings
+                .bind("show-seek-buttons", &self.seek_forward_btn.get(), "visible")
+                .build();
         }
     }
 

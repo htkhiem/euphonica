@@ -1,8 +1,9 @@
+use adw::prelude::*;
 use glib::{
     Object, ParamSpec, ParamSpecBoolean, ParamSpecObject, ParamSpecString, SignalHandlerId,
     WeakRef, clone, closure_local,
 };
-use gtk::{CompositeTemplate, gdk, glib, prelude::*, subclass::prelude::*};
+use gtk::{CompositeTemplate, gdk, gio, glib, subclass::prelude::*};
 use once_cell::sync::Lazy;
 use std::{
     cell::{Cell, OnceCell, RefCell},
@@ -11,8 +12,10 @@ use std::{
 
 use crate::{
     cache::{Cache, CacheState},
-    common::{ImageStack, ImageState, Marquee, QualityGrade, Song},
+    common::{ImageStack, ImageState, Marquee, QualityGrade, Song, SongInfoDialog},
+    library::Library,
     player::Player,
+    window::EuphonicaWindow,
 };
 
 // Wrapper around the common row object to implement song thumbnail fetch logic.
@@ -51,6 +54,8 @@ mod imp {
         pub playing_signal_id: RefCell<Option<SignalHandlerId>>,
         pub cache: OnceCell<Rc<Cache>>,
         pub player: WeakRef<Player>,
+        pub window: WeakRef<EuphonicaWindow>,
+        pub library: WeakRef<Library>,
         pub is_floating: Cell<bool>,
     }
 
@@ -236,6 +241,9 @@ impl SongRow {
         cache: Option<Rc<Cache>>,
         // If not given, will not set up is-playing indicator
         player: Option<&Player>,
+        // If not given, will not set up the right-click context menu
+        window: Option<&EuphonicaWindow>,
+        library: Option<&Library>,
     ) -> Self {
         let res: Self = Object::builder().build();
         if let Some(cache) = cache {
@@ -300,7 +308,71 @@ impl SongRow {
                 )));
         }
 
+
+        // Right-click context menu
+        if let (Some(library), Some(window)) = (library, window) {
+            res.imp().library.set(Some(library));
+            res.imp().window.set(Some(window));
+            let song_info_action = gio::ActionEntry::builder("song-info")
+                .activate(clone!(
+                    #[weak]
+                    res,
+                    move |_, _, _| {
+                        res.show_song_info();
+                    }
+                ))
+                .build();
+            let action_group = gio::SimpleActionGroup::new();
+            action_group.add_action_entries([song_info_action]);
+            res.insert_action_group("song-row", Some(&action_group));
+
+            let menu = gio::Menu::new();
+
+            // TODO: translatable
+            menu.append(Some("Song info"), Some("song-row.song-info"));
+            let context_menu = gtk::PopoverMenu::from_model(Some(&menu));
+            // Adding the popover as a child anchors it to this row (it is not drawn inline)
+            res.append(&context_menu);
+
+            let click_ctl = gtk::GestureClick::new();
+            click_ctl.set_button(gdk::BUTTON_SECONDARY);
+            click_ctl.connect_released(move |_, _, x, y| {
+                // Anchor the popover's arrow at the click position
+                context_menu.set_pointing_to(Some(&gdk::Rectangle::new(x as i32, y as i32, 1, 1)));
+                context_menu.popup();
+            });
+            res.add_controller(click_ctl);
+        }
+
         res
+    }
+
+    /// Fetches the raw rust-mpd Song struct for this row's current song and opens a SongInfoDialog
+    /// attached to the main window.
+    pub fn show_song_info(&self) {
+        let (window, library) = match (self.imp().window.upgrade(), self.imp().library.upgrade()) {
+            (Some(window), Some(library)) => (window, library),
+            _ => return,
+        };
+        let uri = match self.song() {
+            Some(song) => song.get_uri().to_string(),
+            None => return,
+        };
+        let cover = self.imp().thumbnail.paintable();
+        glib::spawn_future_local(async move {
+            match library.get_raw_mpd_song_by_uri(uri).await {
+                Ok(Some(raw_song)) => {
+                    let dialog = SongInfoDialog::from_mpd_song(raw_song, cover);
+                    dialog.present(Some(&window));
+                }
+                Ok(None) => {
+                    // Song is no longer in the library, nothing to show
+                }
+                Err(e) => {
+                    dbg!(e);
+                }
+            }
+        });
     }
 
     fn update_playing_indicator(&self, player: &Player) {

@@ -2,47 +2,49 @@
 <interface>
   <template class="EuphonicaSongInfoDialog" parent="AdwDialog">
     <property name="title" translatable="true">Song Info</property>
+    <property name="content-width">600</property>
     <property name="width-request">300</property>
-    <child>
+    <property name="child">
       <object class="AdwToolbarView">
         <child type="top">
           <object class="AdwHeaderBar"/>
         </child>
         <property name="content">
           <object class="GtkScrolledWindow">
+            <style>
+              <class name="no-bg"/>
+            </style>
             <property name="propagate-natural-height">true</property>
             <property name="hscrollbar-policy">never</property>
             <property name="hexpand">true</property>
             <child>
-              <object class="GtkBox">
-                <property name="spacing">12</property>
-                <property name="orientation">1</property>
-                <property name="margin-start">6</property>
-                <property name="margin-end">6</property>
-
-                <child>
-                  <object class="EuphonicaImageStack" id="cover">
-                    <property name="size">96</property>
-                    <property name="halign">center</property>
-                  </object>
-                </child>
-
-                <child>
-                  <object class="EuphonicaMarquee" id="name">
-                    <property name="speed">20</property>
+              <object class="AdwClamp">
+                <property name="child">
+                  <object class="GtkBox">
                     <style>
-                      <class name="title-2" />
+                      <class name="padding-12"/>
                     </style>
-                  </object>
-                </child>
+                    <property name="spacing">12</property>
+                    <property name="orientation">1</property>
 
-                <child>
-                  <object class="GtkListBox">
-                    <style>
-                      <class name="boxed-list"/>
-                    </style>
-                    <property name="selection-mode">0</property>
-                    <property name="halign">center</property>
+                    <child>
+                      <object class="EuphonicaImageStack" id="cover">
+                        <!-- Keep same size as thumbnail since we'll mostly reuse the SongRow's texture. -->
+                        <property name="size">36</property>
+                        <property name="halign">center</property>
+                        <property name="visible">false</property>
+                      </object>
+                    </child>
+
+                    <child>
+                      <object class="EuphonicaMarquee" id="name">
+                        <property name="speed">20</property>
+                        <property name="halign">center</property>
+                        <style>
+                          <class name="title-2" />
+                        </style>
+                      </object>
+                    </child>
 
                     <child>
                       <object class="AdwPreferencesGroup">
@@ -72,6 +74,15 @@
                         </child>
 
                         <child>
+                          <object class="AdwActionRow" id="duration">
+                            <style>
+                              <class name="property"/>
+                            </style>
+                            <property name="title" translatable="true">Duration</property>
+                          </object>
+                        </child>
+
+                        <child>
                           <object class="AdwActionRow" id="added">
                             <style>
                               <class name="property"/>
@@ -91,54 +102,19 @@
                       </object>
                     </child>
                     <child>
-                      <object class="AdwPreferencesGroup">
+                      <!-- Populated dynamically by SongInfoDialog::from_mpd_song -->
+                      <object class="AdwPreferencesGroup" id="metadata">
                         <property name="title" translatable="true">Metadata</property>
-
-                        <child>
-                          <object class="AdwActionRow" id="album">
-                            <style>
-                              <class name="property"/>
-                            </style>
-                            <property name="title" translatable="true">Album tags</property>
-                          </object>
-                        </child>
-
-                        <child>
-                          <object class="AdwActionRow" id="artist">
-                            <style>
-                              <class name="property"/>
-                            </style>
-                            <property name="title" translatable="true">Artist tags</property>
-                          </object>
-                        </child>
-
-                        <child>
-                          <object class="AdwActionRow" id="artistsort">
-                            <style>
-                              <class name="property"/>
-                            </style>
-                            <property name="title" translatable="true">ArtistSort tags</property>
-                          </object>
-                        </child>
-
-                        <child>
-                          <object class="AdwActionRow" id="albumartist">
-                            <style>
-                              <class name="property"/>
-                            </style>
-                            <property name="title" translatable="true">AlbumArtist tags</property>
-                          </object>
-                        </child>
-
                       </object>
                     </child>
                   </object>
-                </child>
+                </property>
               </object>
+
             </child>
           </object>
         </property>
       </object>
-    </child>
+    </property>
   </template>
 </interface>

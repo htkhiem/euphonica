@@ -263,18 +263,20 @@ impl DiscographyAlbum {
         ));
 
         // Set up ListBox — bind directly to song_list (no MultiSelection needed)
+        let window = res.imp().window.upgrade();
         res.imp().content.bind_model(
             Some(&res.imp().song_list),
             clone!(
                 #[weak]
                 library,
                 #[upgrade_or]
-                SongRow::new(None, None).into(),
+                SongRow::new(None, None, None, None).into(),
                 move |song_obj| {
                     let song = song_obj
                         .downcast_ref::<Song>()
                         .expect("Must be a common::Song");
-                    let row = SongRow::new(None, None);
+                    let row = SongRow::new(None, None, window.as_ref(), Some(&library));
+                    row.on_bind(song);
                     row.set_index_visible(true);
                     row.set_index(&song.get_track().to_string());
                     row.set_thumbnail_visible(false);
@@ -404,7 +406,7 @@ impl DiscographyAlbum {
             {
                 // If has album & all tracks are selected, use queue_album.
                 if let Err(e) = library
-                    .queue_album(album.clone(), replace, if play {Some(0)} else {None})
+                    .queue_album(album.clone(), replace, if play { Some(0) } else { None })
                     .await
                 {
                     dbg!(e);
@@ -412,7 +414,11 @@ impl DiscographyAlbum {
             } else {
                 // Catch-all: manually queue each song.
                 if let Err(e) = library
-                    .queue_songs(&self.selected_songs(), replace, if play {Some(0)} else {None})
+                    .queue_songs(
+                        &self.selected_songs(),
+                        replace,
+                        if play { Some(0) } else { None },
+                    )
                     .await
                 {
                     dbg!(e);
