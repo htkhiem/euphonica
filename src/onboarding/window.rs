@@ -286,15 +286,20 @@ mod imp {
                             );
                             let _ = app.update_db();
                             // Poll the live song count every ~5s and report it below the spinner.
+                            // Additionally fetch status to see if there's still any DB update in progress.
+                            // DB update may end silently (no idle message) on an empty folder, for example.
                             let client = app.get_client();
-                            let status_page = this.init_db_status.get();
-                            let win_weak = this.obj().downgrade();
                             this.init_db_handle
                                 .replace(Some(glib::spawn_future_local(clone!(
                                     #[weak]
                                     this, // will end loop when window is destroyed or this handle is aborted.
                                     async move {
                                         loop {
+                                            if client.get_status().await.map(|status| status.updating_db).unwrap_or(None).is_none() {
+                                                // Temporary. Ideally we should go back to the config page.
+                                                this.onboard_success.set(true);
+                                                this.obj().close();
+                                            }
                                             if let Ok(n) = client.count_songs().await {
                                                 this.init_db_status
                                                     .set_description(Some(&format!("Found {} song(s)", n)));
