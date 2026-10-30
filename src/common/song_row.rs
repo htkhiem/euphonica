@@ -11,7 +11,7 @@ use std::{
 
 use crate::{
     cache::{Cache, CacheState},
-    common::{ImageStack, ImageState, Marquee, QualityGrade, Song},
+    common::{ImageSnapshot, ImageStack, ImageState, Marquee, QualityGrade, Song},
     player::Player,
 };
 
@@ -317,7 +317,7 @@ impl SongRow {
         }
     }
 
-    fn song(&self) -> Option<Song> {
+    pub fn song(&self) -> Option<Song> {
         self.imp().song.upgrade()
     }
 
@@ -351,12 +351,33 @@ impl SongRow {
         ));
     }
 
+    pub fn thumbnail_snapshot(&self) -> Option<ImageSnapshot> {
+        self.imp().thumbnail.snapshot_image()
+    }
+
     pub fn on_bind(&self, song: &Song) {
+        self.on_bind_with_thumbnail(song, None);
+    }
+
+    pub fn on_bind_with_thumbnail(&self, song: &Song, thumbnail: Option<&ImageSnapshot>) {
         self.imp().song.set(Some(song));
         if let Some(player) = self.imp().player.upgrade() {
+            // The playing song might have just moved to another row, so we don't want to
+            // animate the indicator again. Unmap it briefly to finish any running animation
+            // before updating it for the new song.
+            let indicator = &self.imp().playing_indicator;
+            let child_visible = indicator.is_child_visible();
+            indicator.set_child_visible(false);
             self.update_playing_indicator(&player);
+            indicator.set_child_visible(child_visible);
         }
-        self.schedule_thumbnail();
+        match thumbnail {
+            Some(ImageSnapshot::Loaded(paintable)) => self.imp().thumbnail.show(paintable),
+            Some(ImageSnapshot::Empty) => self.imp().thumbnail.clear(),
+            // Fetch the cover for this row if we couldn't reuse one, since any pending
+            // request still belongs to the old row and won't update this one.
+            None => self.schedule_thumbnail(),
+        }
     }
 
     pub fn on_unbind(&self) {

@@ -1,10 +1,9 @@
 use gtk::{
     CompositeTemplate,
-    glib::{self, Object, SignalHandlerId, clone},
+    glib::{self, Object},
     prelude::*,
     subclass::prelude::*,
 };
-use std::cell::RefCell;
 
 mod imp {
     use super::*;
@@ -13,12 +12,13 @@ mod imp {
     #[template(resource = "/io/github/htkhiem/Euphonica/gtk/row-edit-buttons.ui")]
     pub struct RowEditButtons {
         #[template_child]
+        pub reorder_buttons: TemplateChild<gtk::Box>,
+        #[template_child]
         pub raise: TemplateChild<gtk::Button>,
         #[template_child]
         pub lower: TemplateChild<gtk::Button>,
         #[template_child]
         pub remove: TemplateChild<gtk::Button>,
-        pub signal_ids: RefCell<Option<(SignalHandlerId, SignalHandlerId, SignalHandlerId)>>,
     }
 
     // The central trait for subclassing a GObject
@@ -55,44 +55,19 @@ glib::wrapper! {
 }
 
 impl RowEditButtons {
-    pub fn new<F1, F2, F3>(
-        item: &gtk::ListItem,
-        on_raise_clicked: F1,
-        on_lower_clicked: F2,
-        on_remove_clicked: F3,
-    ) -> Self
-    where
-        F1: Fn(&gtk::Button, u32) + 'static,
-        F2: Fn(&gtk::Button, u32) + 'static,
-        F3: Fn(&gtk::Button, u32) + 'static,
-    {
+    pub fn reorder_buttons(&self) -> gtk::Box {
+        self.imp().reorder_buttons.get()
+    }
+
+    pub fn new(
+        on_raise_clicked: impl Fn(&gtk::Button) + 'static,
+        on_lower_clicked: impl Fn(&gtk::Button) + 'static,
+        on_remove_clicked: impl Fn(&gtk::Button) + 'static,
+    ) -> Self {
         let res: Self = Object::builder().build();
-        res.imp().raise.connect_clicked(clone!(
-            #[weak]
-            item,
-            move |btn| {
-                on_raise_clicked(btn, item.position());
-            }
-        ));
-
-        res.imp().lower.connect_clicked(clone!(
-            #[weak]
-            item,
-            move |btn| {
-                on_lower_clicked(btn, item.position());
-            }
-        ));
-
-        res.imp().remove.connect_clicked(clone!(
-            #[weak]
-            item,
-            #[upgrade_or]
-            (),
-            move |btn| {
-                on_remove_clicked(btn, item.position());
-            }
-        ));
-
+        res.imp().raise.connect_clicked(on_raise_clicked);
+        res.imp().lower.connect_clicked(on_lower_clicked);
+        res.imp().remove.connect_clicked(on_remove_clicked);
         res
     }
 }
