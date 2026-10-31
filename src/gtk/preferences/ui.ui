@@ -135,7 +135,7 @@
               <class name="long-combo"/>
             </style>
             <property name="title" translatable="true">Action on row double-press</property>
-            <property name="subtitle" translatable="true">Applies to song and folder lists such as album, artist, playlist and folder views.</property>
+            <property name="subtitle" translatable="true">Applies to song and folder lists such as album, artist, playlist and folder views. Double-clicking on a playlist file in the folder view only queues that playlist alone to avoid duplicates.</property>
             <property name="model">
               <object class="GtkStringList">
                 <items>

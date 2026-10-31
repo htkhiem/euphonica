@@ -110,6 +110,21 @@ mod imp {
                                             dbg!(e);
                                         }
                                     }
+                                    INodeType::PlaylistFile => {
+                                        if let Err(e) = library
+                                            .queue_playlist(
+                                                // The same "add" command on MPD also allows queuing playlists
+                                                // stored elsewhere under the library root as long as we give
+                                                // it the relative path.
+                                                this.uri.borrow().to_string(),
+                                                true,
+                                                Some(0),
+                                            )
+                                            .await
+                                        {
+                                            dbg!(e);
+                                        }
+                                    }
                                     _ => unreachable!(),
                                 }
                             }
@@ -222,6 +237,7 @@ mod imp {
                         if it == INodeType::Folder
                             || it == INodeType::Song
                             || it == INodeType::Playlist
+                            || it == INodeType::PlaylistFile
                         {
                             self.replace_queue.set_visible(true);
                             self.append_queue.set_visible(true);
@@ -229,7 +245,6 @@ mod imp {
                             self.replace_queue.set_visible(false);
                             self.append_queue.set_visible(false);
                         }
-                        // TODO: playlists support
                     } else {
                         self.thumbnail
                             .set_icon_name(Some(INodeType::default().icon_name()));

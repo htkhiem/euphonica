@@ -1405,7 +1405,7 @@ impl MpdWrapper {
         let (s, r) = oneshot::channel();
         self.foreground(Task::LsInfo(path, s), r)
             .await
-            .map(|infos| infos.into_iter().map(INode::from).collect::<Vec<INode>>())
+            .map(|infos| dbg!(infos.into_iter().map(INode::from).collect::<Vec<INode>>()))
     }
 
     async fn get_playlist_song_infos<F>(&self, name: String, respond: &mut F) -> ClientResult<()>

@@ -568,9 +568,47 @@ impl FolderView {
                     }
                 }
             }
+            INodeType::PlaylistFile => {
+                // A single playlist file acts like multiple song files bundled together.
+                let action = RowDoublePressAction::from_settings();
+                if let Some(window) = self.imp().window.upgrade() {
+                    window.maybe_show_double_press_toast();
+                }
+                match action {
+                    RowDoublePressAction::DoNothing => {}
+                    _ => {
+                        // ReplaceViewAndPlay only works within this playlist file since it's common to have this file
+                        // sit in the same folder as the tracks themselves. Queuing everything in view easily leads
+                        // to queuing a track many times (once by itself and once for every playlist containing it).
+                        let uri = inode.get_uri().to_owned();
+                        let replace = matches!(
+                            action,
+                            RowDoublePressAction::Replace
+                                | RowDoublePressAction::ReplaceAndPlay
+                                | RowDoublePressAction::ReplaceViewAndPlay
+                        );
+                        let play_from = match action {
+                            RowDoublePressAction::AppendAndPlay => Some(self.library().queue_len()),
+                            RowDoublePressAction::ReplaceAndPlay
+                            | RowDoublePressAction::ReplaceViewAndPlay => Some(0),
+                            _ => None,
+                        };
+                        glib::spawn_future_local(clone!(
+                            #[weak(rename_to = this)]
+                            self,
+                            async move {
+                                if let Err(e) =
+                                    this.library().queue_playlist(uri, replace, play_from).await
+                                {
+                                    dbg!(e);
+                                }
+                            }
+                        ));
+                    }
+                }
+            }
             _ => {
-                // No action for playlists etc. (adding songs and playlists are done with
-                // buttons to the right of each row).
+                // No action for folders (just navigate)
             }
         }
     }
