@@ -257,7 +257,7 @@ impl RecentView {
                 ),
             )));
 
-        self.setup_album_row(window, cache.clone());
+        self.setup_album_row(window, library, cache.clone());
         self.setup_artist_row(window, cache.clone());
         self.setup_song_list(cache);
     }
@@ -274,7 +274,7 @@ impl RecentView {
         ));
     }
 
-    fn setup_album_row(&self, window: &EuphonicaWindow, cache: Rc<Cache>) {
+    fn setup_album_row(&self, window: &EuphonicaWindow, library: &Library, cache: Rc<Cache>) {
         let album_list = self.imp().library.upgrade().unwrap().recent_albums();
 
         album_list
@@ -308,12 +308,14 @@ impl RecentView {
             #[weak]
             cache,
             #[weak]
+            library,
+            #[weak]
             adj,
             move |_, list_item| {
                 let item = list_item
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
-                let album_cell = AlbumCell::new(item, cache, Some(MarqueeWrapMode::Scroll));
+                let album_cell = AlbumCell::new(item, Some(&library), cache, Some(MarqueeWrapMode::Scroll));
                 // propagating the tallest cell's height to the revealer if said row wasn't
                 // the first initialised.
                 item.set_child(Some(&album_cell));

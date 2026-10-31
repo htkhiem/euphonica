@@ -23,6 +23,7 @@ use crate::{
         Album, PictureStack, Rating, TEXTURE_LOAD_DELAY_MS,
         marquee::{Marquee, MarqueeWrapMode},
     },
+    library::Library,
     utils::settings_manager,
 };
 
@@ -45,11 +46,16 @@ mod imp {
         pub quality_grade: TemplateChild<Image>,
         #[template_child]
         pub rating: TemplateChild<Rating>,
+        #[template_child]
+        pub play_btn_revealer: TemplateChild<gtk::Revealer>,
+        #[template_child]
+        pub play_btn: TemplateChild<gtk::Button>,
         #[derivative(Default(value = "Cell::new(128)"))]
         pub image_size: Cell<i32>,
         #[derivative(Default(value = "Cell::new(-1)"))]
         pub rating_val: Cell<i8>,
         pub album: WeakRef<Album>,
+        pub library: WeakRef<Library>,
         // Vector holding the bindings to properties of the Album GObject
         pub cover_signal_ids: RefCell<Option<(SignalHandlerId, SignalHandlerId)>>,
         pub cache: OnceCell<Rc<Cache>>,
@@ -111,6 +117,44 @@ mod imp {
                 .build();
 
             self.cover.set_is_thumbnail(true);
+
+            self.play_btn.connect_clicked(clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |_| {
+                    let (Some(library), Some(album)) =
+                        (this.library.upgrade(), this.album.upgrade())
+                    else {
+                        return;
+                    };
+                    glib::spawn_future_local(async move {
+                        // Default behaviour: replace queue & play immediately
+                        if let Err(e) = library.queue_album(album, true, Some(0)).await {
+                            dbg!(e);
+                        }
+                    });
+                }
+            ));
+
+            let this = self.obj();
+            this.update_play_btn_visibility(false);
+            let hover_ctl = gtk::EventControllerMotion::new();
+            hover_ctl.connect_enter(clone!(
+                #[weak]
+                this,
+                move |_, _x, _y| {
+                    this.update_play_btn_visibility(true);
+                }
+            ));
+
+            hover_ctl.connect_leave(clone!(
+                #[weak]
+                this,
+                move |_| {
+                    this.update_play_btn_visibility(false);
+                }
+            ));
+            this.add_controller(hover_ctl);
         }
 
         fn properties() -> &'static [ParamSpec] {
@@ -239,8 +283,14 @@ glib::wrapper! {
 }
 
 impl AlbumCell {
-    pub fn new(item: &gtk::ListItem, cache: Rc<Cache>, wrap_mode: Option<MarqueeWrapMode>) -> Self {
+    pub fn new(
+        item: &gtk::ListItem,
+        library: Option<&Library>,
+        cache: Rc<Cache>,
+        wrap_mode: Option<MarqueeWrapMode>,
+    ) -> Self {
         let res: Self = Object::builder().build();
+        res.imp().library.set(library);
         let cache_state = cache.get_cache_state();
         res.imp()
             .cache
@@ -372,6 +422,12 @@ impl AlbumCell {
         });
 
         res
+    }
+
+    fn update_play_btn_visibility(&self, hovered: bool) {
+        self.imp()
+            .play_btn_revealer
+            .set_reveal_child(hovered || settings_manager().child("ui").boolean("is-touchscreen"));
     }
 
     fn album(&self) -> Option<Album> {

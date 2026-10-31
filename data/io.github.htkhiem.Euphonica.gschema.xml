@@ -363,6 +363,9 @@
 	</schema>
 
 	<schema id="io.github.htkhiem.Euphonica.ui" path="/io/github/htkhiem/Euphonica/ui/">
+		<key name="is-touchscreen" type="b">
+			<default>false</default>
+		</key>
 		<key name="show-seek-buttons" type="b">
 			<default>true</default>
 		</key>

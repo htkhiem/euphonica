@@ -26,6 +26,8 @@ mod imp {
         #[template_child]
         pub recent_playlists_count: TemplateChild<adw::SpinRow>,
         #[template_child]
+        pub is_touchscreen: TemplateChild<adw::SwitchRow>,
+        #[template_child]
         pub max_columns: TemplateChild<adw::SpinRow>,
         #[template_child]
         pub auto_accent: TemplateChild<adw::SwitchRow>,
@@ -159,6 +161,11 @@ impl UIPreferences {
         let recent_playlists_count = imp.recent_playlists_count.get();
         ui_settings
             .bind("recent-playlists-count", &recent_playlists_count, "value")
+            .build();
+
+        let is_touchscreen = imp.is_touchscreen.get();
+        ui_settings
+            .bind("is-touchscreen", &is_touchscreen, "active")
             .build();
 
         let max_columns = imp.max_columns.get();
