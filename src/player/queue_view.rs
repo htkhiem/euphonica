@@ -23,7 +23,7 @@ use crate::{
     common::{ContentStack, RowEditButtons, Song, SongRow},
     library::Library,
     player::controller::SwapDirection,
-    utils::{LazyInit, SearchableView, g_search_substr, settings_manager},
+    utils::{LazyInit, SearchableView, format_secs_as_duration, g_search_substr, settings_manager},
     window::EuphonicaWindow,
 };
 
@@ -372,24 +372,26 @@ fn format_song_count(count: u32) -> Option<String> {
 
 fn bind_row_by_expressions(row: &SongRow, item: &ListItem) {
     row.set_index_visible(false);
-    row.set_playing_indicator_visible(true);
 
     item.property_expression("item")
         .chain_property::<Song>("name")
         .bind(row, "name", gtk::Widget::NONE);
 
-    row.set_first_attrib_icon_name(Some("library-music-symbolic"));
     item.property_expression("item")
         .chain_property::<Song>("album")
-        .bind(row, "first-attrib-text", gtk::Widget::NONE);
-    row.set_second_attrib_icon_name(Some("music-artist-symbolic"));
+        .bind(row, "second-attrib-text", gtk::Widget::NONE);
     item.property_expression("item")
         .chain_property::<Song>("artist")
-        .bind(row, "second-attrib-text", gtk::Widget::NONE);
-
+        .bind(row, "first-attrib-text", gtk::Widget::NONE);
     item.property_expression("item")
         .chain_property::<Song>("quality-grade")
         .bind(row, "quality-grade", gtk::Widget::NONE);
+    item.property_expression("item")
+        .chain_property::<Song>("duration")
+        .chain_closure::<String>(closure_local!(|_: Option<glib::Object>, dur: u64| {
+            format_secs_as_duration(dur as f64)
+        }))
+        .bind(row, "duration", gtk::Widget::NONE);
 }
 
 impl QueueView {
@@ -511,7 +513,7 @@ impl QueueView {
                         }
                     ),
                 );
-                row.set_end_widget(Some(&end_widget.into()));
+                row.set_end_widget(&end_widget.into());
                 item.set_child(Some(&row));
 
                 // Handle drag-n-drop (DnD)

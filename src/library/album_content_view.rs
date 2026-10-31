@@ -1108,18 +1108,15 @@ impl AlbumContentView {
                     row.set_thumbnail_visible(false);
 
                     row.set_name(song.get_name());
-                    row.set_first_attrib_icon_name(Some("music-artist-symbolic"));
                     row.set_first_attrib_text(song.get_artist_tag());
-
-                    row.set_second_attrib_icon_name(Some("hourglass-symbolic"));
-                    row.set_second_attrib_text(Some(&format_secs_as_duration(
+                    row.set_duration(Some(&format_secs_as_duration(
                         song.get_duration() as f64
                     )));
 
                     row.set_quality_grade(song.get_quality_grade());
                     let end_widget = RowAddButtons::new(&library);
                     end_widget.set_song(Some(song));
-                    row.set_end_widget(Some(&end_widget.into()));
+                    row.set_end_widget(&end_widget.into());
                     row.into()
                 }
             ),
