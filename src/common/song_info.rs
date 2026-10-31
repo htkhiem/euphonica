@@ -216,9 +216,7 @@ impl SongInfoDialog {
 /// Creates a `property`-styled ActionRow with a title, optionally with a copy-to-clipboard
 /// suffix button that copies the row's subtitle.
 fn make_property_row(title: &str, copyable: bool) -> adw::ActionRow {
-    let row = adw::ActionRow::builder()
-        .title(title)
-        .build();
+    let row = adw::ActionRow::builder().title(title).build();
     row.add_css_class("property");
     if copyable {
         let button = gtk::Button::builder()

@@ -308,7 +308,6 @@ impl SongRow {
                 )));
         }
 
-
         // Right-click context menu
         if let (Some(library), Some(window)) = (library, window) {
             res.imp().library.set(Some(library));
@@ -340,10 +339,12 @@ impl SongRow {
                 #[weak]
                 context_menu,
                 move |_, _, x, y| {
-                // Anchor the popover's arrow at the click position
-                context_menu.set_pointing_to(Some(&gdk::Rectangle::new(x as i32, y as i32, 1, 1)));
-                context_menu.popup();
-            }));
+                    // Anchor the popover's arrow at the click position
+                    context_menu
+                        .set_pointing_to(Some(&gdk::Rectangle::new(x as i32, y as i32, 1, 1)));
+                    context_menu.popup();
+                }
+            ));
 
             // For touchscreen devices
             let long_press_ctl = gtk::GestureLongPress::new();
@@ -351,10 +352,12 @@ impl SongRow {
                 #[weak]
                 context_menu,
                 move |_, x, y| {
-                // Anchor the popover's arrow at the click position
-                context_menu.set_pointing_to(Some(&gdk::Rectangle::new(x as i32, y as i32, 1, 1)));
-                context_menu.popup();
-            }));
+                    // Anchor the popover's arrow at the click position
+                    context_menu
+                        .set_pointing_to(Some(&gdk::Rectangle::new(x as i32, y as i32, 1, 1)));
+                    context_menu.popup();
+                }
+            ));
 
             res.add_controller(click_ctl);
             res.add_controller(long_press_ctl);

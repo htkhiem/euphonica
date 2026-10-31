@@ -17,7 +17,10 @@ use super::Library;
 use crate::{
     cache::{Cache, CacheState},
     client::Error as ClientError,
-    common::{ContentStack, INode, ImageStack, RowAddButtons, RowEditButtons, Song, SongRow},
+    common::{
+        ContentStack, INode, ImageStack, RowAddButtons, RowDoublePressAction, RowEditButtons, Song,
+        SongRow,
+    },
     utils::{format_secs_as_duration, tokio_runtime},
     window::EuphonicaWindow,
 };
@@ -1022,27 +1025,78 @@ impl PlaylistContentView {
             #[weak(rename_to = this)]
             self,
             move |_, position| {
-                glib::spawn_future_local(clone!(
-                    #[weak]
-                    this,
-                    async move {
-                        if let (Some(library), Some(playlist)) = (
-                            this.imp().library.upgrade(),
-                            this.imp().playlist.borrow().clone(),
-                        ) {
-                            if let Err(e) = library
-                                .queue_playlist(
-                                    playlist.get_name().unwrap().to_owned(),
-                                    true,
-                                    Some(position),
-                                )
-                                .await
-                            {
-                                dbg!(e);
+                let action = RowDoublePressAction::from_settings();
+                if let Some(window) = this.imp().window.upgrade() {
+                    window.maybe_show_double_press_toast();
+                }
+                match action {
+                    RowDoublePressAction::DoNothing => {}
+                    RowDoublePressAction::Append
+                    | RowDoublePressAction::AppendAndPlay
+                    | RowDoublePressAction::Replace
+                    | RowDoublePressAction::ReplaceAndPlay => {
+                        let song = this
+                            .imp()
+                            .song_list
+                            .item(position)
+                            .and_downcast::<Song>()
+                            .expect("The item has to be a `common::Song`.");
+                        let replace = matches!(
+                            action,
+                            RowDoublePressAction::Replace | RowDoublePressAction::ReplaceAndPlay
+                        );
+                        // Append-and-play starts playback at the appended song, which
+                        // lands at the end of the (not-yet-extended) queue.
+                        let play_from = match action {
+                            RowDoublePressAction::AppendAndPlay => this
+                                .imp()
+                                .library
+                                .upgrade()
+                                .expect("Library must be set")
+                                .queue_len(),
+                            RowDoublePressAction::ReplaceAndPlay => 0,
+                            _ => return,
+                        };
+                        let play_from = Some(play_from);
+                        glib::spawn_future_local(clone!(
+                            #[weak]
+                            this,
+                            async move {
+                                let Some(library) = this.imp().library.upgrade() else {
+                                    return;
+                                };
+                                if let Err(e) =
+                                    library.queue_songs(&[song], replace, play_from).await
+                                {
+                                    dbg!(e);
+                                }
                             }
-                        }
+                        ));
                     }
-                ));
+                    RowDoublePressAction::ReplaceViewAndPlay => {
+                        glib::spawn_future_local(clone!(
+                            #[weak]
+                            this,
+                            async move {
+                                if let (Some(library), Some(playlist)) = (
+                                    this.imp().library.upgrade(),
+                                    this.imp().playlist.borrow().clone(),
+                                ) {
+                                    if let Err(e) = library
+                                        .queue_playlist(
+                                            playlist.get_name().unwrap().to_owned(),
+                                            true,
+                                            Some(position),
+                                        )
+                                        .await
+                                    {
+                                        dbg!(e);
+                                    }
+                                }
+                            }
+                        ));
+                    }
+                }
             }
         ));
 

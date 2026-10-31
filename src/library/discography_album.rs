@@ -11,7 +11,8 @@ use crate::{
     EuphonicaWindow,
     cache::Cache,
     common::{
-        Album, ContentStack, ImageStack, RowAddButtons, Song, SongRow, TEXTURE_LOAD_DELAY_MS,
+        Album, ContentStack, ImageStack, RowAddButtons, RowDoublePressAction, Song, SongRow,
+        TEXTURE_LOAD_DELAY_MS,
     },
     utils::format_secs_as_duration,
 };
@@ -299,36 +300,85 @@ impl DiscographyAlbum {
             ),
         );
 
-        // Setup click action (double-click, since activate-on-single-click is false):
-        // replace queue with this album & start playing from the clicked track.
+        // Setup double-click action
         res.imp().content.connect_row_activated(clone!(
             #[weak(rename_to = this)]
             res,
             move |_, row| {
                 let idx = row.index() as u32;
-                glib::spawn_future_local(clone!(
-                    #[weak]
-                    this,
-                    async move {
-                        let Some(library) = this.library() else {
-                            return;
-                        };
-                        let err = match this.album().cloned() {
-                            Some(album) => library.queue_album(album, true, Some(idx)).await,
-                            None => {
-                                // Untagged songs: no album to query, so queue the songs directly
-                                let store = &this.imp().song_list;
-                                let songs: Vec<Song> = (0..store.n_items())
-                                    .map(|i| store.item(i).and_downcast::<Song>().unwrap())
-                                    .collect();
-                                library.queue_songs(&songs, true, Some(idx)).await
+                let action = RowDoublePressAction::from_settings();
+                if let Some(window) = this.imp().window.upgrade() {
+                    window.maybe_show_double_press_toast();
+                }
+                match action {
+                    RowDoublePressAction::DoNothing => {}
+                    RowDoublePressAction::Append
+                    | RowDoublePressAction::AppendAndPlay
+                    | RowDoublePressAction::Replace
+                    | RowDoublePressAction::ReplaceAndPlay => {
+                        let song = this
+                            .imp()
+                            .song_list
+                            .item(idx)
+                            .and_downcast::<Song>()
+                            .expect("The item has to be a `common::Song`.");
+                        let replace = matches!(
+                            action,
+                            RowDoublePressAction::Replace | RowDoublePressAction::ReplaceAndPlay
+                        );
+                        // Append-and-play starts playback at the appended song, which
+                        // lands at the end of the (not-yet-extended) queue.
+                        let play_from = match action {
+                            RowDoublePressAction::AppendAndPlay => {
+                                this.library().expect("Library must be set").queue_len()
                             }
+                            RowDoublePressAction::ReplaceAndPlay => 0,
+                            _ => return,
                         };
-                        if let Err(e) = err {
-                            dbg!(e);
-                        }
+                        let play_from = Some(play_from);
+                        glib::spawn_future_local(clone!(
+                            #[weak]
+                            this,
+                            async move {
+                                let Some(library) = this.library() else {
+                                    return;
+                                };
+                                if let Err(e) =
+                                    library.queue_songs(&[song], replace, play_from).await
+                                {
+                                    dbg!(e);
+                                }
+                            }
+                        ));
                     }
-                ));
+                    RowDoublePressAction::ReplaceViewAndPlay => {
+                        glib::spawn_future_local(clone!(
+                            #[weak]
+                            this,
+                            async move {
+                                let Some(library) = this.library() else {
+                                    return;
+                                };
+                                let err = match this.album().cloned() {
+                                    Some(album) => {
+                                        library.queue_album(album, true, Some(idx)).await
+                                    }
+                                    None => {
+                                        // Untagged songs: no album to query, so queue the songs directly
+                                        let store = &this.imp().song_list;
+                                        let songs: Vec<Song> = (0..store.n_items())
+                                            .map(|i| store.item(i).and_downcast::<Song>().unwrap())
+                                            .collect();
+                                        library.queue_songs(&songs, true, Some(idx)).await
+                                    }
+                                };
+                                if let Err(e) = err {
+                                    dbg!(e);
+                                }
+                            }
+                        ));
+                    }
+                }
             }
         ));
 
