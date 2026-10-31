@@ -315,7 +315,8 @@ impl RecentView {
                 let item = list_item
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
-                let album_cell = AlbumCell::new(item, Some(&library), cache, Some(MarqueeWrapMode::Scroll));
+                let album_cell =
+                    AlbumCell::new(item, Some(&library), cache, Some(MarqueeWrapMode::Scroll));
                 // propagating the tallest cell's height to the revealer if said row wasn't
                 // the first initialised.
                 item.set_child(Some(&album_cell));

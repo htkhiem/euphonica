@@ -131,6 +131,12 @@
             </child>
           </object>
         </property>
+        <property name="end-widget">
+          <object class="GtkRevealer" id="end_revealer">
+            <property name="transition-type">1</property>
+            <property name="valign">center</property>
+          </object>
+        </property>
       </object>
     </child>
   </template>
