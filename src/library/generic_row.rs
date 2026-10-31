@@ -1,6 +1,6 @@
 use adw::prelude::*;
 use glib::{Object, WeakRef, clone};
-use gtk::{CompositeTemplate, gdk, glib, gio, subclass::prelude::*};
+use gtk::{CompositeTemplate, gdk, gio, glib, subclass::prelude::*};
 use std::cell::{OnceCell, RefCell};
 
 use crate::{
@@ -296,12 +296,8 @@ impl GenericRow {
                         return;
                     }
                     // Anchor the popover's arrow at the click position
-                    context_menu.set_pointing_to(Some(&gdk::Rectangle::new(
-                        x as i32,
-                        y as i32,
-                        1,
-                        1,
-                    )));
+                    context_menu
+                        .set_pointing_to(Some(&gdk::Rectangle::new(x as i32, y as i32, 1, 1)));
                     context_menu.popup();
                 }
             ));
@@ -313,18 +309,15 @@ impl GenericRow {
                 #[weak]
                 context_menu,
                 move |_, x, y| {
-                if res.imp().inode_type.get() != INodeType::Song {
+                    if res.imp().inode_type.get() != INodeType::Song {
                         return;
                     }
                     // Anchor the popover's arrow at the click position
-                    context_menu.set_pointing_to(Some(&gdk::Rectangle::new(
-                        x as i32,
-                        y as i32,
-                        1,
-                        1,
-                    )));
+                    context_menu
+                        .set_pointing_to(Some(&gdk::Rectangle::new(x as i32, y as i32, 1, 1)));
                     context_menu.popup();
-            }));
+                }
+            ));
             res.add_controller(click_ctl);
             res.add_controller(long_press_ctl);
         }

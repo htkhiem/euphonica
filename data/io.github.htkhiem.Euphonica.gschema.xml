@@ -40,6 +40,15 @@
 		<value nick="stop-and-clear" value="3"/>
 	</enum>
 
+	<enum id="io.github.htkhiem.Euphonica.rowdoublepressaction">
+		<value nick="do-nothing" value="0"/>
+		<value nick="append" value="1"/>
+		<value nick="append-and-play" value="2"/>
+		<value nick="replace" value="3"/>
+		<value nick="replace-and-play" value="4"/>
+		<value nick="replace-view-and-play" value="5"/>
+	</enum>
+
 	<!-- Order matches combobox in Preferences/UI tab, while nick matches stackpage name. -->
 	<enum id="io.github.htkhiem.Euphonica.theaudiodbapiversion">
 		<value nick="v1" value="1"/>
@@ -438,6 +447,10 @@
 			<default>true</default>
 			<summary>Automatically scroll to the currently playing song in the queue</summary>
 		</key>
+		<key name="action-on-row-double-press" enum='io.github.htkhiem.Euphonica.rowdoublepressaction'>
+			<default>'replace-view-and-play'</default>
+			<summary>Action to perform when a song or folder row is double-pressed</summary>
+		</key>
 		<key name="artist-show-all-songs" type="b">
             <default>false</default>
             <summary>If true, artist content view opens in All Songs tab.</summary>
@@ -466,6 +479,11 @@
 
 		<key name="onboarded" type="b">
 			<default>false</default>
+		</key>
+
+		<key name="row-double-press-toast-shown" type="b">
+			<default>false</default>
+			<summary>Whether the one-time row double-press hint toast has been shown</summary>
 		</key>
 
 		<!-- Remember last window size -->

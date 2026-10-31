@@ -1,7 +1,7 @@
 use super::{Library, generic_row::GenericRow};
 use crate::{
     cache::Cache,
-    common::{ContentStack, INode, INodeType},
+    common::{ContentStack, INode, INodeType, RowDoublePressAction},
     utils::{LazyInit, SearchableView, g_cmp_str_options, settings_manager},
     window::EuphonicaWindow,
 };
@@ -474,8 +474,8 @@ impl FolderView {
         //   - Increment curr_idx
         //   - Send an lsinfo query with the newly-updated URI.
         //   - Switch to loading page.
-        // - If it's a song: replace queue with the contents of the current level (non-recursive,
-        //   songs only, in displayed order) & start playing from the clicked track.
+        // - If it's a song: perform the configured "action on row double-press".
+        // Double-clicking on a folder simply navigates.
         match inode.get_info().inode_type {
             INodeType::Folder => {
                 glib::spawn_future_local(clone!(
@@ -500,31 +500,73 @@ impl FolderView {
                 ));
             }
             INodeType::Song => {
-                // Collect the current level's songs in displayed (sorted) order, skipping
-                // folders & playlist files, & find the clicked inode's position among them.
-                let sorted = &self.imp().sorted_inodes;
-                let target_uri = inode.get_uri().to_owned();
-                let mut uris: Vec<String> = Vec::new();
-                let mut play_from: Option<u32> = None;
-                for i in 0..sorted.n_items() {
-                    if let Some(item) = sorted.item(i).and_downcast::<INode>()
-                        && item.get_info().inode_type == INodeType::Song
-                    {
-                        if item.get_uri() == target_uri {
-                            play_from = Some(uris.len() as u32);
+                let action = RowDoublePressAction::from_settings();
+                if let Some(window) = self.imp().window.upgrade() {
+                    window.maybe_show_double_press_toast();
+                }
+                match action {
+                    RowDoublePressAction::DoNothing => {}
+                    RowDoublePressAction::Append
+                    | RowDoublePressAction::AppendAndPlay
+                    | RowDoublePressAction::Replace
+                    | RowDoublePressAction::ReplaceAndPlay => {
+                        let uri = inode.get_uri().to_owned();
+                        let replace = matches!(
+                            action,
+                            RowDoublePressAction::Replace | RowDoublePressAction::ReplaceAndPlay
+                        );
+                        // Append-and-play starts playback at the appended song, which
+                        // lands at the end of the (not-yet-extended) queue.
+                        let play_from = match action {
+                            RowDoublePressAction::AppendAndPlay => Some(self.library().queue_len()),
+                            RowDoublePressAction::ReplaceAndPlay => Some(0),
+                            _ => return,
+                        };
+                        glib::spawn_future_local(clone!(
+                            #[weak(rename_to = this)]
+                            self,
+                            async move {
+                                if let Err(e) = this
+                                    .library()
+                                    .queue_uris(vec![uri], replace, play_from)
+                                    .await
+                                {
+                                    dbg!(e);
+                                }
+                            }
+                        ));
+                    }
+                    RowDoublePressAction::ReplaceViewAndPlay => {
+                        // Collect the current level's songs in displayed (sorted) order,
+                        // skipping folders & playlist files, & find the clicked inode's
+                        // position among them.
+                        let sorted = &self.imp().sorted_inodes;
+                        let target_uri = inode.get_uri().to_owned();
+                        let mut uris: Vec<String> = Vec::new();
+                        let mut play_from: Option<u32> = None;
+                        for i in 0..sorted.n_items() {
+                            if let Some(item) = sorted.item(i).and_downcast::<INode>()
+                                && item.get_info().inode_type == INodeType::Song
+                            {
+                                if item.get_uri() == target_uri {
+                                    play_from = Some(uris.len() as u32);
+                                }
+                                uris.push(item.get_uri().to_owned());
+                            }
                         }
-                        uris.push(item.get_uri().to_owned());
+                        glib::spawn_future_local(clone!(
+                            #[weak(rename_to = this)]
+                            self,
+                            async move {
+                                if let Err(e) =
+                                    this.library().queue_uris(uris, true, play_from).await
+                                {
+                                    dbg!(e);
+                                }
+                            }
+                        ));
                     }
                 }
-                glib::spawn_future_local(clone!(
-                    #[weak(rename_to = this)]
-                    self,
-                    async move {
-                        if let Err(e) = this.library().queue_uris(uris, true, play_from).await {
-                            dbg!(e);
-                        }
-                    }
-                ));
             }
             _ => {
                 // No action for playlists etc. (adding songs and playlists are done with

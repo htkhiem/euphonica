@@ -16,7 +16,7 @@ use std::{
 use super::{Library, tag_button::TagButton};
 use crate::{
     cache::{Cache, CacheState, Error as CacheError, placeholders::EMPTY_ARTIST_STRING},
-    common::{Album, Artist, ContentStack, RowAddButtons, Song, SongRow},
+    common::{Album, Artist, ContentStack, RowAddButtons, RowDoublePressAction, Song, SongRow},
     library::{Tag, add_to_playlist::AddToPlaylistButton, discography_year::DiscographyYear},
     meta_providers::models::{MetaSource, Wiki, artist_type_to_string},
     utils::{
@@ -1156,21 +1156,68 @@ impl ArtistContentView {
             #[weak(rename_to = this)]
             self,
             move |_, pos| {
-                glib::spawn_future_local(clone!(
-                    #[weak]
-                    this,
-                    async move {
-                        this.set_is_queuing(true);
-                        let library = this.imp().library.upgrade().unwrap();
-                        if let Err(e) = library
-                            .queue_songs(&this.all_songs(), true, Some(pos))
-                            .await
-                        {
-                            dbg!(e);
-                        }
-                        this.set_is_queuing(false);
+                let action = RowDoublePressAction::from_settings();
+                if let Some(window) = this.imp().window.upgrade() {
+                    window.maybe_show_double_press_toast();
+                }
+                match action {
+                    RowDoublePressAction::DoNothing => {}
+                    RowDoublePressAction::Append
+                    | RowDoublePressAction::AppendAndPlay
+                    | RowDoublePressAction::Replace
+                    | RowDoublePressAction::ReplaceAndPlay => {
+                        let song = this
+                            .imp()
+                            .song_list
+                            .item(pos)
+                            .and_downcast::<Song>()
+                            .expect("The item has to be a `common::Song`.");
+                        let replace = matches!(
+                            action,
+                            RowDoublePressAction::Replace | RowDoublePressAction::ReplaceAndPlay
+                        );
+                        let play_from = match action {
+                            // Start playback at the appended song, which lands at the
+                            // end of the (not-yet-extended) queue.
+                            RowDoublePressAction::AppendAndPlay => {
+                                Some(this.imp().library.upgrade().unwrap().queue_len())
+                            }
+                            RowDoublePressAction::ReplaceAndPlay => Some(0),
+                            _ => None,
+                        };
+                        glib::spawn_future_local(clone!(
+                            #[weak]
+                            this,
+                            async move {
+                                this.set_is_queuing(true);
+                                let library = this.imp().library.upgrade().unwrap();
+                                if let Err(e) =
+                                    library.queue_songs(&[song], replace, play_from).await
+                                {
+                                    dbg!(e);
+                                }
+                                this.set_is_queuing(false);
+                            }
+                        ));
                     }
-                ));
+                    RowDoublePressAction::ReplaceViewAndPlay => {
+                        glib::spawn_future_local(clone!(
+                            #[weak]
+                            this,
+                            async move {
+                                this.set_is_queuing(true);
+                                let library = this.imp().library.upgrade().unwrap();
+                                if let Err(e) = library
+                                    .queue_songs(&this.all_songs(), true, Some(pos))
+                                    .await
+                                {
+                                    dbg!(e);
+                                }
+                                this.set_is_queuing(false);
+                            }
+                        ));
+                    }
+                }
             }
         ));
 

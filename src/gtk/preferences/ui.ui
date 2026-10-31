@@ -129,6 +129,28 @@
             <property name="subtitle" translatable="true">Automatically scroll the queue to highlight the currently playing song.</property>
           </object>
         </child>
+        <child>
+          <object class="AdwComboRow" id="action_on_row_double_press">
+            <style>
+              <class name="long-combo"/>
+            </style>
+            <property name="title" translatable="true">Action on row double-press</property>
+            <property name="subtitle" translatable="true">Applies to song and folder lists such as album, artist, playlist and folder views.</property>
+            <property name="model">
+              <object class="GtkStringList">
+                <items>
+                  <item translatable="true">Do nothing</item>
+                  <item translatable="true">Append to queue</item>
+                  <item translatable="true">Append to queue &amp; play</item>
+                  <item translatable="true">Replace queue</item>
+                  <item translatable="true">Replace queue &amp; play</item>
+                  <item translatable="true">Replace queue with all songs in view &amp; play</item>
+                </items>
+              </object>
+            </property>
+            <property name="selected">5</property>
+          </object>
+        </child>
       </object>
     </child>
     <child>

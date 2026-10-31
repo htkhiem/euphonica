@@ -208,3 +208,8 @@ listview > row {
 	border-radius: 999px;
 	background: var(--accent-color);
 }
+
+/* For combo rows with a lot to say */
+.long-combo > .header > .suffixes {
+	min-width: 120px;
+}

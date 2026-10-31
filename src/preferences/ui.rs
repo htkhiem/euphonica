@@ -7,7 +7,7 @@ use gtk::{
 
 use crate::{
     common::{
-        View,
+        RowDoublePressAction, View,
         list_models::{DualStringList, DualStringObject},
         marquee::MarqueeWrapMode,
     },
@@ -41,6 +41,8 @@ mod imp {
         pub title_wrap_mode: TemplateChild<adw::ComboRow>,
         #[template_child]
         pub auto_scroll_to_playing: TemplateChild<adw::SwitchRow>,
+        #[template_child]
+        pub action_on_row_double_press: TemplateChild<adw::ComboRow>,
 
         #[template_child]
         pub use_album_art_as_bg: TemplateChild<adw::ExpanderRow>,
@@ -220,6 +222,30 @@ impl UIPreferences {
         let auto_scroll_to_playing = imp.auto_scroll_to_playing.get();
         ui_settings
             .bind("auto-scroll-to-playing", &auto_scroll_to_playing, "active")
+            .build();
+        let action_on_row_double_press = imp.action_on_row_double_press.get();
+        ui_settings
+            .bind(
+                "action-on-row-double-press",
+                &action_on_row_double_press,
+                "selected",
+            )
+            .mapping(|v: &Variant, _| {
+                Some(
+                    RowDoublePressAction::try_from(v.get::<String>().unwrap().as_str())
+                        .unwrap_or_default()
+                        .as_idx()
+                        .to_value(),
+                )
+            })
+            .set_mapping(|v: &Value, _| {
+                Some(
+                    RowDoublePressAction::try_from(v.get::<u32>().unwrap())
+                        .unwrap_or_default()
+                        .as_str()
+                        .into(),
+                )
+            })
             .build();
         ui_settings
             .bind(

@@ -284,6 +284,7 @@
                                           <class name="no-bg"/>
                                         </style>
                                         <property name="show-separators">true</property>
+                                        <property name="activate-on-single-click">false</property>
                                       </object>
                                     </child>
                                   </object>

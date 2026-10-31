@@ -7,7 +7,10 @@ use crate::utils::settings_manager;
 use crate::{
     cache::{Cache, CacheState, Error as CacheError, placeholders::EMPTY_ALBUM_STRING},
     client::{ClientState, state::StickersSupportLevel},
-    common::{Album, Artist, ContentStack, ImageStack, Rating, RowAddButtons, Song, SongRow},
+    common::{
+        Album, Artist, ContentStack, ImageStack, Rating, RowAddButtons, RowDoublePressAction, Song,
+        SongRow,
+    },
     library::{add_to_playlist::AddToPlaylistButton, tag_button::TagButton},
     utils::{format_secs_as_duration, tokio_runtime},
     window::EuphonicaWindow,
@@ -1122,24 +1125,69 @@ impl AlbumContentView {
             ),
         );
 
-        // Setup click action
+        // Setup double-click action
         self.imp().content.connect_row_activated(clone!(
             #[weak(rename_to = this)]
             self,
             move |_, row| {
                 let idx = row.index() as u32;
-                glib::spawn_future_local(clone!(
-                    #[weak]
-                    this,
-                    async move {
-                        if let (Some(album), Some(library)) = (this.album(), this.library())
-                            && let Err(e) =
-                                library.queue_album(album.clone(), true, Some(idx)).await
-                        {
-                            dbg!(e);
-                        }
+                let action = RowDoublePressAction::from_settings();
+                if let Some(window) = this.imp().window.upgrade() {
+                    window.maybe_show_double_press_toast();
+                }
+                match action {
+                    RowDoublePressAction::DoNothing => {}
+                    RowDoublePressAction::Append
+                    | RowDoublePressAction::AppendAndPlay
+                    | RowDoublePressAction::Replace
+                    | RowDoublePressAction::ReplaceAndPlay => {
+                        let song = this
+                            .imp()
+                            .song_list
+                            .item(idx)
+                            .and_downcast::<Song>()
+                            .expect("The item has to be a `common::Song`.");
+                        let replace = matches!(
+                            action,
+                            RowDoublePressAction::Replace | RowDoublePressAction::ReplaceAndPlay
+                        );
+                        // Append-and-play starts playback at the appended song, which
+                        // lands at the end of the (not-yet-extended) queue.
+                        let play_from = match action {
+                            RowDoublePressAction::AppendAndPlay => {
+                                Some(this.library().unwrap().queue_len())
+                            }
+                            RowDoublePressAction::ReplaceAndPlay => Some(0),
+                            _ => None,
+                        };
+                        glib::spawn_future_local(clone!(
+                            #[weak]
+                            this,
+                            async move {
+                                if let Some(library) = this.library()
+                                    && let Err(e) =
+                                        library.queue_songs(&[song], replace, play_from).await
+                                {
+                                    dbg!(e);
+                                }
+                            }
+                        ));
                     }
-                ));
+                    RowDoublePressAction::ReplaceViewAndPlay => {
+                        glib::spawn_future_local(clone!(
+                            #[weak]
+                            this,
+                            async move {
+                                if let (Some(album), Some(library)) = (this.album(), this.library())
+                                    && let Err(e) =
+                                        library.queue_album(album.clone(), true, Some(idx)).await
+                                {
+                                    dbg!(e);
+                                }
+                            }
+                        ));
+                    }
+                }
             }
         ));
     }

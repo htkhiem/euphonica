@@ -1478,6 +1478,20 @@ impl EuphonicaWindow {
         self.imp().toast_overlay.add_toast(toast);
     }
 
+    /// Shows a one-time toast pointing users to the row double-press setting.
+    /// Longer timeout than regular toasts since it needs a moment to digest.
+    pub fn maybe_show_double_press_toast(&self) {
+        let state = settings_manager().child("state");
+        if state.boolean("row-double-press-toast-shown") {
+            return;
+        }
+        let _ = state.set_boolean("row-double-press-toast-shown", true);
+        self.send_simple_toast(
+            &gettextrs::gettext("Control double-press behaviour in Preferences"),
+            6,
+        );
+    }
+
     fn update_window_title(&self, player: &Player) {
         let title = match (player.title(), player.artist()) {
             (Some(title), Some(artist)) => format!("{title} – {artist}"),

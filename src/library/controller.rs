@@ -286,6 +286,12 @@ impl Library {
         self.client().get_songs_by_query(query, true, respond).await
     }
 
+    /// Current number of songs in the queue, as tracked by the player.
+    /// 0 until the first status update has been fetched.
+    pub fn queue_len(&self) -> u32 {
+        self.player().queue().n_items()
+    }
+
     /// Queue specific songs
     pub async fn queue_songs(
         &self,
