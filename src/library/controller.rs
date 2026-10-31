@@ -252,6 +252,15 @@ impl Library {
         self.imp().recent_initialized.set(false);
     }
 
+    /// Fetch a raw rust-mpd Song struct by exact URI, or None if not found.
+    /// Thin passthrough to MpdWrapper; see its documentation.
+    pub async fn get_raw_mpd_song_by_uri(
+        &self,
+        uri: String,
+    ) -> ClientResult<Option<mpd::song::Song>> {
+        self.client().get_raw_mpd_song_by_uri(uri).await
+    }
+
     fn client(&self) -> &Rc<MpdWrapper> {
         self.imp().client.get().unwrap()
     }
@@ -277,25 +286,45 @@ impl Library {
         self.client().get_songs_by_query(query, true, respond).await
     }
 
+    /// Current number of songs in the queue, as tracked by the player.
+    /// 0 until the first status update has been fetched.
+    pub fn queue_len(&self) -> u32 {
+        self.player().queue().n_items()
+    }
+
     /// Queue specific songs
-    pub async fn queue_songs(&self, songs: &[Song], replace: bool, play: bool) -> ClientResult<()> {
+    pub async fn queue_songs(
+        &self,
+        songs: &[Song],
+        replace: bool,
+        play_from: Option<u32>,
+    ) -> ClientResult<()> {
+        self.queue_uris(
+            songs
+                .iter()
+                .map(|s| s.get_uri().to_owned())
+                .collect::<Vec<String>>(),
+            replace,
+            play_from,
+        )
+        .await
+    }
+
+    /// Queue a list of MPD URIs in the given order.
+    pub async fn queue_uris(
+        &self,
+        uris: Vec<String>,
+        replace: bool,
+        play_from: Option<u32>,
+    ) -> ClientResult<()> {
         // TODO: support executing this atomically as a command list
         let client = self.client();
         if replace {
             client.clear_queue().await?;
         }
-        client
-            .add_multi(
-                songs
-                    .iter()
-                    .map(|s| s.get_uri().to_owned())
-                    .collect::<Vec<String>>(),
-                false,
-                None,
-            )
-            .await?;
-        if play {
-            client.play_at(0, false).await?;
+        client.add_multi(uris, false, None).await?;
+        if let Some(pos) = play_from {
+            client.play_at(pos, false).await?;
         }
         Ok(())
     }
@@ -325,7 +354,6 @@ impl Library {
         &self,
         album: Album,
         replace: bool,
-        play: bool,
         play_from: Option<u32>,
     ) -> ClientResult<()> {
         let client = self.client();
@@ -341,8 +369,8 @@ impl Library {
             query.and(Term::Tag(tags::ALBUM_MBID.into()), mbid.to_owned());
         }
         client.find_add(query).await?;
-        if play {
-            client.play_at(play_from.unwrap_or(0), false).await?;
+        if let Some(pos) = play_from {
+            client.play_at(pos, false).await?;
         }
         Ok(())
     }
@@ -364,35 +392,6 @@ impl Library {
                 .delete_sticker("filter", filter_expr, Stickers::RATING.into())
                 .await
         }
-    }
-
-    /// Queue all songs of an artist. TODO: allow specifying order.
-    pub async fn queue_artist(
-        &self,
-        artist: &Artist,
-        use_albumartist: bool,
-        replace: bool,
-        play: bool,
-    ) -> ClientResult<()> {
-        let client = self.client();
-        if replace {
-            client.clear_queue().await?;
-        }
-        let mut query = Query::new();
-        query.and_with_op(
-            Term::Tag(Cow::Borrowed(if use_albumartist {
-                tags::ALBUMARTIST
-            } else {
-                tags::ARTIST
-            })),
-            QueryOperation::Contains,
-            artist.get_name().to_owned(),
-        );
-        client.find_add(query).await?;
-        if play {
-            client.play_at(0, false).await?;
-        }
-        Ok(())
     }
 
     pub fn folder_inodes(&self) -> gio::ListStore {
@@ -582,15 +581,15 @@ impl Library {
         &self,
         name: String,
         replace: bool,
-        play: bool,
+        play_from: Option<u32>,
     ) -> ClientResult<()> {
         let client = self.client();
         if replace {
             client.clear_queue().await?;
         }
         client.load_playlist(name).await?;
-        if play {
-            client.play_at(0, false).await?;
+        if let Some(pos) = play_from {
+            client.play_at(pos, false).await?;
         }
         Ok(())
     }
@@ -643,15 +642,15 @@ impl Library {
         &self,
         name: String,
         replace: bool,
-        play: bool,
+        play_from: Option<u32>,
     ) -> ClientResult<()> {
         let client = self.client();
         if replace {
             client.clear_queue().await?;
         }
         client.queue_cached_dynamic_playlist(name).await?;
-        if play {
-            client.play_at(0, false).await?;
+        if let Some(pos) = play_from {
+            client.play_at(pos, false).await?;
         }
         Ok(())
     }

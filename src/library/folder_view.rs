@@ -1,8 +1,9 @@
 use super::{Library, generic_row::GenericRow};
 use crate::{
     cache::Cache,
-    common::{ContentStack, INode, INodeType},
+    common::{ContentStack, INode, INodeType, RowDoublePressAction},
     utils::{LazyInit, SearchableView, g_cmp_str_options, settings_manager},
+    window::EuphonicaWindow,
 };
 use adw::prelude::*;
 use adw::subclass::prelude::*;
@@ -74,6 +75,9 @@ mod imp {
         // Search & filter models
         pub search_filter: gtk::StringFilter,
         pub sorter: gtk::CustomSorter,
+        // The sorted (unfiltered) list of inodes at the current level, kept around
+        // so we can queue the whole level in displayed order.
+        pub sorted_inodes: gtk::SortListModel,
         // Keep last length to optimise search
         // If search term is now longer, only further filter still-matching
         // items.
@@ -81,6 +85,7 @@ mod imp {
         // if they now match.
         pub last_search_len: Cell<usize>,
         pub library: WeakRef<Library>,
+        pub window: WeakRef<EuphonicaWindow>,
         pub sort_by_id: RefCell<Option<SignalHandlerId>>,
         pub sort_direction_id: RefCell<Option<SignalHandlerId>>,
         pub collapsed: Cell<bool>,
@@ -426,8 +431,9 @@ impl FolderView {
         self.imp().library.upgrade().unwrap()
     }
 
-    pub fn setup(&self, library: &Library, cache: Rc<Cache>) {
+    pub fn setup(&self, library: &Library, cache: Rc<Cache>, window: &EuphonicaWindow) {
         self.imp().library.set(Some(library));
+        self.imp().window.set(Some(window));
         self.setup_listview(cache.clone(), library.clone());
 
         library
@@ -459,7 +465,8 @@ impl FolderView {
     }
 
     pub fn on_inode_clicked(&self, inode: &INode) {
-        // - Upon receiving click signal, get the list item at the indicated activate index.
+        // - Upon receiving double-click (row activation), get the list item at the indicated
+        //   activate index.
         // - Extract inode from that list item.
         // - If this inode is a folder:
         //   - If we're not currently at the head of the history, truncate history to be curr_idx long.
@@ -467,29 +474,143 @@ impl FolderView {
         //   - Increment curr_idx
         //   - Send an lsinfo query with the newly-updated URI.
         //   - Switch to loading page.
-        // - Else: do nothing (adding songs and playlists are done with buttons to the right of each row).
-        glib::spawn_future_local(clone!(
-            #[weak(rename_to = this)]
-            self,
-            #[weak]
-            inode,
-            async move {
-                if let Some(name) = inode.get_name()
-                    && inode.get_info().inode_type == INodeType::Folder
-                {
-                    let stack = this.imp().stack.get();
-                    stack.show_spinner();
-                    if let Err(e) = this.library().navigate_to(name).await {
-                        dbg!(e);
+        // - If it's a song: perform the configured "action on row double-press".
+        // Double-clicking on a folder simply navigates.
+        match inode.get_info().inode_type {
+            INodeType::Folder => {
+                glib::spawn_future_local(clone!(
+                    #[weak(rename_to = this)]
+                    self,
+                    #[weak]
+                    inode,
+                    async move {
+                        if let Some(name) = inode.get_name() {
+                            let stack = this.imp().stack.get();
+                            stack.show_spinner();
+                            if let Err(e) = this.library().navigate_to(name).await {
+                                dbg!(e);
+                            }
+                            if this.library().folder_inodes().n_items() > 0 {
+                                stack.show_content();
+                            } else {
+                                stack.show_placeholder();
+                            }
+                        }
                     }
-                    if this.library().folder_inodes().n_items() > 0 {
-                        stack.show_content();
-                    } else {
-                        stack.show_placeholder();
+                ));
+            }
+            INodeType::Song => {
+                let action = RowDoublePressAction::from_settings();
+                if let Some(window) = self.imp().window.upgrade() {
+                    window.maybe_show_double_press_toast();
+                }
+                match action {
+                    RowDoublePressAction::DoNothing => {}
+                    RowDoublePressAction::Append
+                    | RowDoublePressAction::AppendAndPlay
+                    | RowDoublePressAction::Replace
+                    | RowDoublePressAction::ReplaceAndPlay => {
+                        let uri = inode.get_uri().to_owned();
+                        let replace = matches!(
+                            action,
+                            RowDoublePressAction::Replace | RowDoublePressAction::ReplaceAndPlay
+                        );
+                        // Append-and-play starts playback at the appended song, which
+                        // lands at the end of the (not-yet-extended) queue.
+                        let play_from = match action {
+                            RowDoublePressAction::AppendAndPlay => Some(self.library().queue_len()),
+                            RowDoublePressAction::ReplaceAndPlay => Some(0),
+                            _ => return,
+                        };
+                        glib::spawn_future_local(clone!(
+                            #[weak(rename_to = this)]
+                            self,
+                            async move {
+                                if let Err(e) = this
+                                    .library()
+                                    .queue_uris(vec![uri], replace, play_from)
+                                    .await
+                                {
+                                    dbg!(e);
+                                }
+                            }
+                        ));
+                    }
+                    RowDoublePressAction::ReplaceViewAndPlay => {
+                        // Collect the current level's songs in displayed (sorted) order,
+                        // skipping folders & playlist files, & find the clicked inode's
+                        // position among them.
+                        let sorted = &self.imp().sorted_inodes;
+                        let target_uri = inode.get_uri().to_owned();
+                        let mut uris: Vec<String> = Vec::new();
+                        let mut play_from: Option<u32> = None;
+                        for i in 0..sorted.n_items() {
+                            if let Some(item) = sorted.item(i).and_downcast::<INode>()
+                                && item.get_info().inode_type == INodeType::Song
+                            {
+                                if item.get_uri() == target_uri {
+                                    play_from = Some(uris.len() as u32);
+                                }
+                                uris.push(item.get_uri().to_owned());
+                            }
+                        }
+                        glib::spawn_future_local(clone!(
+                            #[weak(rename_to = this)]
+                            self,
+                            async move {
+                                if let Err(e) =
+                                    this.library().queue_uris(uris, true, play_from).await
+                                {
+                                    dbg!(e);
+                                }
+                            }
+                        ));
                     }
                 }
             }
-        ));
+            INodeType::PlaylistFile => {
+                // A single playlist file acts like multiple song files bundled together.
+                let action = RowDoublePressAction::from_settings();
+                if let Some(window) = self.imp().window.upgrade() {
+                    window.maybe_show_double_press_toast();
+                }
+                match action {
+                    RowDoublePressAction::DoNothing => {}
+                    _ => {
+                        // ReplaceViewAndPlay only works within this playlist file since it's common to have this file
+                        // sit in the same folder as the tracks themselves. Queuing everything in view easily leads
+                        // to queuing a track many times (once by itself and once for every playlist containing it).
+                        let uri = inode.get_uri().to_owned();
+                        let replace = matches!(
+                            action,
+                            RowDoublePressAction::Replace
+                                | RowDoublePressAction::ReplaceAndPlay
+                                | RowDoublePressAction::ReplaceViewAndPlay
+                        );
+                        let play_from = match action {
+                            RowDoublePressAction::AppendAndPlay => Some(self.library().queue_len()),
+                            RowDoublePressAction::ReplaceAndPlay
+                            | RowDoublePressAction::ReplaceViewAndPlay => Some(0),
+                            _ => None,
+                        };
+                        glib::spawn_future_local(clone!(
+                            #[weak(rename_to = this)]
+                            self,
+                            async move {
+                                if let Err(e) =
+                                    this.library().queue_playlist(uri, replace, play_from).await
+                                {
+                                    dbg!(e);
+                                }
+                            }
+                        ));
+                    }
+                }
+            }
+            _ => {
+                // No action for folders (just navigate)
+            }
+        }
     }
 
     pub fn search_bar(&self) -> gtk::SearchBar {
@@ -515,15 +636,18 @@ impl FolderView {
             Some(self.imp().search_filter.clone()),
         );
         search_model.set_incremental(true);
-        let sort_model =
-            gtk::SortListModel::new(Some(search_model), Some(self.imp().sorter.clone()));
-        sort_model.set_incremental(true);
-        let sel_model = SingleSelection::new(Some(sort_model));
+        self.imp().sorted_inodes.set_model(Some(&search_model));
+        let sorter = self.imp().sorter.clone();
+        self.imp().sorted_inodes.set_sorter(Some(&sorter));
+        self.imp().sorted_inodes.set_incremental(true);
+        let sorted_inodes = self.imp().sorted_inodes.clone();
+        let sel_model = SingleSelection::new(Some(sorted_inodes));
 
         self.imp().list_view.set_model(Some(&sel_model));
 
         // Set up factory
         let factory = SignalListItemFactory::new();
+        let window = self.imp().window.upgrade();
 
         // Create an empty `INodeCell` during setup
         factory.connect_setup(clone!(
@@ -533,7 +657,7 @@ impl FolderView {
                 let item = list_item
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
-                let folder_row = GenericRow::new(library, item);
+                let folder_row = GenericRow::new(library, item, window.as_ref());
                 item.set_child(Some(&folder_row));
             }
         ));

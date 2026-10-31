@@ -4,53 +4,82 @@
     <style>
       <class name="padding-6"/>
     </style>
-    <!-- We cannot use GtkBox's spacing here, as that'll pad both sides of playing_indicator
-    even when it's hidden, creating a 12px space instead of 6px.-->
+    <property name="spacing">6</property>
     <child>
-      <object class="GtkRevealer" id="playing_indicator">
-        <property name="transition-type">slide-right</property>
-        <property name="visible">false</property>
-        <property name="child">
-          <object class="GtkImage">
-            <property name="margin-end">6</property>
-            <property name="icon-name">play-symbolic</property>
-          </object>
-        </property>
-      </object>
-    </child>
-    <child>
-      <object class="GtkLabel" id="index">
-        <property name="margin-end">6</property>
-        <property name="label">NaN</property>
+      <object class="GtkGrid" id="index_area">
+        <property name="width-request">45</property>
+        <property name="valign">center</property>
+        <property name="halign">start</property>
         <property name="visible">false</property>
         <style>
-          <class name="dim-label"/>
+          <class name="dimmed"/>
         </style>
+        <property name="orientation">1</property>
+        <child>
+          <object class="GtkImage">
+            <property name="icon-name">cd-symbolic</property>
+            <layout>
+              <property name="column">0</property>
+              <property name="row">0</property>
+            </layout>
+          </object>
+        </child>
+        <child>
+          <object class="GtkLabel" id="disc">
+            <property name="label">1</property>
+            <layout>
+              <property name="column">1</property>
+              <property name="row">0</property>
+            </layout>
+          </object>
+        </child>
+        <child>
+          <object class="GtkLabel">
+            <property name="label">#</property>
+            <style>
+              <class name="heading"/>
+            </style>
+            <layout>
+              <property name="column">0</property>
+              <property name="row">1</property>
+            </layout>
+          </object>
+        </child>
+        <child>
+          <object class="GtkLabel" id="index">
+            <property name="label">NaN</property>
+            <layout>
+              <property name="column">1</property>
+              <property name="row">1</property>
+            </layout>
+          </object>
+        </child>
       </object>
     </child>
+
     <child>
       <object class="GtkBox">
-        <property name="halign">3</property>
-        <property name="valign">3</property>
+        <property name="valign">center</property>
         <property name="overflow">hidden</property>
-        <property name="margin-end">6</property>
         <style>
           <class name="border-radius-6"/>
         </style>
         <child>
           <object class="EuphonicaImageStack" id="thumbnail">
-            <property name="size">36</property>
+            <property name="size">45</property>
           </object>
         </child>
       </object>
     </child>
+
     <child>
       <object class="GtkCenterBox" id="center_box">
+        <property name="valign">center</property>
         <property name="hexpand">true</property>
         <property name="start-widget">
           <object class="GtkBox">
             <property name="orientation">vertical</property>
-            <property name="spacing">6</property>
+            <property name="valign">center</property>
             <child>
               <object class="GtkBox">
                 <property name="spacing">6</property>
@@ -64,6 +93,9 @@
                 </child>
                 <child>
                   <object class="GtkImage" id="quality_grade">
+                    <style>
+                      <class name="dimmed"/>
+                    </style>
                     <property name="visible">false</property>
                   </object>
                 </child>
@@ -71,62 +103,48 @@
             </child>
             <child>
               <object class="GtkBox">
-                <property name="spacing">12</property>
                 <style>
-                  <class name="caption"/>
-                  <class name="dim-label"/>
+                  <class name="dimmed"/>
                 </style>
-
+                <property name="spacing">6</property>
                 <child>
-                  <object class="GtkBox">
-                    <property name="spacing">4</property>
-                    <child>
-                      <object class="GtkImage" id="first_attrib_icon">
-                        <property name="visible">false</property>
-                      </object>
-                    </child>
-                    <child>
-                      <object class="GtkLabel" id="first_attrib_text">
-                        <property name="ellipsize">end</property>
-                        <property name="visible">false</property>
-                      </object>
-                    </child>
+                  <object class="GtkLabel" id="first_attrib_text">
+                    <property name="ellipsize">end</property>
+                    <property name="visible">false</property>
                   </object>
                 </child>
 
                 <child>
-                  <object class="GtkBox">
-                    <property name="spacing">4</property>
-                    <child>
-                      <object class="GtkImage" id="second_attrib_icon">
-                        <property name="visible">false</property>
-                      </object>
-                    </child>
-                    <child>
-                      <object class="GtkLabel" id="second_attrib_text">
-                        <property name="ellipsize">end</property>
-                        <property name="visible">false</property>
-                      </object>
-                    </child>
+                  <object class="GtkSeparator">
+                    <property name="visible" bind-source="second_attrib_text" bind-property="visible" bind-flags="sync-create"/>
                   </object>
                 </child>
 
                 <child>
-                  <object class="GtkBox">
-                    <property name="spacing">4</property>
-                    <child>
-                      <object class="GtkImage" id="third_attrib_icon">
-                        <property name="visible">false</property>
-                      </object>
-                    </child>
-                    <child>
-                      <object class="GtkLabel" id="third_attrib_text">
-                        <property name="ellipsize">end</property>
-                        <property name="visible">false</property>
-                      </object>
-                    </child>
+                  <object class="GtkLabel" id="second_attrib_text">
+                    <property name="ellipsize">end</property>
+                    <property name="visible">false</property>
                   </object>
                 </child>
+              </object>
+            </child>
+          </object>
+        </property>
+        <property name="end-widget">
+          <object class="GtkStack" id="end_stack">
+            <property name="transition-type">crossfade</property>
+            <child>
+              <object class="GtkStackPage">
+                <property name="name">duration</property>
+                <property name="child">
+                  <object class="GtkLabel" id="duration">
+                    <style>
+                      <class name="dimmed"/>
+                    </style>
+                    <property name="valign">center</property>
+                    <property name="halign">end</property>
+                  </object>
+                </property>
               </object>
             </child>
           </object>

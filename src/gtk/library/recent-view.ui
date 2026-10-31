@@ -6,7 +6,8 @@
       <object class="AdwNavigationView" id="nav_view">
         <child>
           <object class="AdwNavigationPage">
-            <property name="title">Recents</property>
+            <!-- Renamed to Home since v1.0 but I'm too lazy to fix the filenames and the like. -->
+            <property name="title">Home</property>
             <child>
               <object class="AdwToolbarView">
                 <child type="top">
@@ -31,6 +32,17 @@
                   </object>
                 </child>
                 <property name="content">
+                  <!-- <object class="GtkBox">
+                    <property name="orientation">1</property>
+                    <property name="hexpand">true</property>
+                    <property name="vexpand">true</property>
+                    <property name="spacing">12</property>
+
+                    <child>
+                      <object class="Gtk"
+                    </child>
+                  </object> -->
+
                   <object class="EuphonicaContentStack" id="stack">
                     <property name="placeholder">
                       <object class="AdwStatusPage">
@@ -284,6 +296,7 @@
                                           <class name="no-bg"/>
                                         </style>
                                         <property name="show-separators">true</property>
+                                        <property name="activate-on-single-click">false</property>
                                       </object>
                                     </child>
                                   </object>

@@ -798,6 +798,7 @@
                                 <property name="child">
                                   <object class="GtkListView" id="song_subview">
                                     <property name="show-separators">true</property>
+                                    <property name="single-click-activate">false</property>
                                     <style>
                                       <class name="no-bg"/>
                                     </style>
@@ -820,6 +821,8 @@
 
     <object class="AdwDialog" id="edit_metadata_dialog">
       <!-- Close via either the cancel or save buttons to be explicit in intent -->
+      <property name="content-width">600</property>
+      <property name="content-height">700</property>
       <property name="can-close">false</property>
       <property name="title" translatable="true">Edit metadata</property>
       <child>

@@ -11,7 +11,8 @@ use crate::{
     EuphonicaWindow,
     cache::Cache,
     common::{
-        Album, ContentStack, ImageStack, RowAddButtons, Song, SongRow, TEXTURE_LOAD_DELAY_MS,
+        Album, ContentStack, ImageStack, RowAddButtons, RowDoublePressAction, Song, SongRow,
+        TEXTURE_LOAD_DELAY_MS,
     },
     utils::format_secs_as_duration,
 };
@@ -263,39 +264,120 @@ impl DiscographyAlbum {
         ));
 
         // Set up ListBox — bind directly to song_list (no MultiSelection needed)
+        let window = res.imp().window.upgrade();
         res.imp().content.bind_model(
             Some(&res.imp().song_list),
             clone!(
                 #[weak]
                 library,
                 #[upgrade_or]
-                SongRow::new(None, None).into(),
+                SongRow::new(None, None, None, None).into(),
                 move |song_obj| {
                     let song = song_obj
                         .downcast_ref::<Song>()
                         .expect("Must be a common::Song");
-                    let row = SongRow::new(None, None);
+                    let row = SongRow::new(None, None, window.as_ref(), Some(&library));
+                    row.on_bind(song);
                     row.set_index_visible(true);
                     row.set_index(&song.get_track().to_string());
                     row.set_thumbnail_visible(false);
 
                     row.set_name(song.get_name());
-                    row.set_first_attrib_icon_name(Some("music-artist-symbolic"));
                     row.set_first_attrib_text(song.get_artist_tag());
-
-                    row.set_second_attrib_icon_name(Some("hourglass-symbolic"));
-                    row.set_second_attrib_text(Some(&format_secs_as_duration(
+                    row.set_duration(Some(&format_secs_as_duration(
                         song.get_duration() as f64
                     )));
 
                     row.set_quality_grade(song.get_quality_grade());
                     let end_widget = RowAddButtons::new(&library);
                     end_widget.set_song(Some(song));
-                    row.set_end_widget(Some(&end_widget.into()));
+                    row.set_end_widget(&end_widget.into());
                     row.into()
                 }
             ),
         );
+
+        // Setup double-click action
+        res.imp().content.connect_row_activated(clone!(
+            #[weak(rename_to = this)]
+            res,
+            move |_, row| {
+                let idx = row.index() as u32;
+                let action = RowDoublePressAction::from_settings();
+                if let Some(window) = this.imp().window.upgrade() {
+                    window.maybe_show_double_press_toast();
+                }
+                match action {
+                    RowDoublePressAction::DoNothing => {}
+                    RowDoublePressAction::Append
+                    | RowDoublePressAction::AppendAndPlay
+                    | RowDoublePressAction::Replace
+                    | RowDoublePressAction::ReplaceAndPlay => {
+                        let song = this
+                            .imp()
+                            .song_list
+                            .item(idx)
+                            .and_downcast::<Song>()
+                            .expect("The item has to be a `common::Song`.");
+                        let replace = matches!(
+                            action,
+                            RowDoublePressAction::Replace | RowDoublePressAction::ReplaceAndPlay
+                        );
+                        // Append-and-play starts playback at the appended song, which
+                        // lands at the end of the (not-yet-extended) queue.
+                        let play_from = match action {
+                            RowDoublePressAction::AppendAndPlay => {
+                                this.library().expect("Library must be set").queue_len()
+                            }
+                            RowDoublePressAction::ReplaceAndPlay => 0,
+                            _ => return,
+                        };
+                        let play_from = Some(play_from);
+                        glib::spawn_future_local(clone!(
+                            #[weak]
+                            this,
+                            async move {
+                                let Some(library) = this.library() else {
+                                    return;
+                                };
+                                if let Err(e) =
+                                    library.queue_songs(&[song], replace, play_from).await
+                                {
+                                    dbg!(e);
+                                }
+                            }
+                        ));
+                    }
+                    RowDoublePressAction::ReplaceViewAndPlay => {
+                        glib::spawn_future_local(clone!(
+                            #[weak]
+                            this,
+                            async move {
+                                let Some(library) = this.library() else {
+                                    return;
+                                };
+                                let err = match this.album().cloned() {
+                                    Some(album) => {
+                                        library.queue_album(album, true, Some(idx)).await
+                                    }
+                                    None => {
+                                        // Untagged songs: no album to query, so queue the songs directly
+                                        let store = &this.imp().song_list;
+                                        let songs: Vec<Song> = (0..store.n_items())
+                                            .map(|i| store.item(i).and_downcast::<Song>().unwrap())
+                                            .collect();
+                                        library.queue_songs(&songs, true, Some(idx)).await
+                                    }
+                                };
+                                if let Err(e) = err {
+                                    dbg!(e);
+                                }
+                            }
+                        ));
+                    }
+                }
+            }
+        ));
 
         // Set up dynamic texture loading/unloading.
         // Prev implementation was painfully clunky. I've since discovered the map() and unmap()
@@ -371,7 +453,7 @@ impl DiscographyAlbum {
             {
                 // If has album & all tracks are selected, use queue_album.
                 if let Err(e) = library
-                    .queue_album(album.clone(), replace, play, None)
+                    .queue_album(album.clone(), replace, if play { Some(0) } else { None })
                     .await
                 {
                     dbg!(e);
@@ -379,7 +461,11 @@ impl DiscographyAlbum {
             } else {
                 // Catch-all: manually queue each song.
                 if let Err(e) = library
-                    .queue_songs(&self.selected_songs(), replace, play)
+                    .queue_songs(
+                        &self.selected_songs(),
+                        replace,
+                        if play { Some(0) } else { None },
+                    )
                     .await
                 {
                     dbg!(e);

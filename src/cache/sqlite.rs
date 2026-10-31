@@ -21,7 +21,7 @@ use crate::{
     },
 };
 
-static SQLITE_POOL: Lazy<r2d2::Pool<SqliteConnectionManager>> = Lazy::new(|| {
+pub static SQLITE_POOL: Lazy<r2d2::Pool<SqliteConnectionManager>> = Lazy::new(|| {
     let manager = SqliteConnectionManager::file(get_doc_cache_path());
     let pool = r2d2::Pool::new(manager).unwrap();
     let conn = pool.get().unwrap();

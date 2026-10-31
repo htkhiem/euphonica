@@ -144,7 +144,7 @@ impl PlaylistRow {
                             this.imp().library.get(),
                             this.imp().playlist.borrow().as_ref(),
                         ) && let Err(e) = library
-                            .queue_playlist(playlist.get_uri().to_owned(), true, true)
+                            .queue_playlist(playlist.get_uri().to_owned(), true, Some(0))
                             .await
                         {
                             dbg!(e);
@@ -166,7 +166,7 @@ impl PlaylistRow {
                             this.imp().library.get(),
                             this.imp().playlist.borrow().as_ref(),
                         ) && let Err(e) = library
-                            .queue_playlist(playlist.get_uri().to_owned(), false, false)
+                            .queue_playlist(playlist.get_uri().to_owned(), false, None)
                             .await
                         {
                             dbg!(e);

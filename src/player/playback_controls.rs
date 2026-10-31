@@ -16,6 +16,8 @@ mod imp {
 
     use glib::Properties;
 
+    use crate::utils::settings_manager;
+
     use super::*;
 
     #[derive(Default, Properties, CompositeTemplate)]
@@ -30,6 +32,10 @@ mod imp {
         pub play_pause_symbol: TemplateChild<gtk::Stack>, // inside the play/pause button
         #[template_child]
         pub prev_btn: TemplateChild<gtk::Button>,
+        #[template_child]
+        pub seek_backward_btn: TemplateChild<gtk::Button>,
+        #[template_child]
+        pub seek_forward_btn: TemplateChild<gtk::Button>,
         #[template_child]
         pub next_btn: TemplateChild<gtk::Button>,
         #[template_child]
@@ -55,14 +61,26 @@ mod imp {
         }
     }
 
-    // Trait shared by all GObjects
     #[glib::derived_properties]
-    impl ObjectImpl for PlaybackControls {}
+    impl ObjectImpl for PlaybackControls {
+        fn constructed(&self) {
+            self.parent_constructed();
+            let ui_settings = settings_manager().child("ui");
+            ui_settings
+                .bind(
+                    "show-seek-buttons",
+                    &self.seek_backward_btn.get(),
+                    "visible",
+                )
+                .build();
+            ui_settings
+                .bind("show-seek-buttons", &self.seek_forward_btn.get(), "visible")
+                .build();
+        }
+    }
 
-    // Trait shared by all widgets
     impl WidgetImpl for PlaybackControls {}
 
-    // Trait shared by all boxes
     impl BoxImpl for PlaybackControls {}
 }
 
@@ -144,6 +162,23 @@ impl PlaybackControls {
                 ));
             }
         ));
+        self.imp().seek_backward_btn.connect_clicked(clone!(
+            #[weak]
+            player,
+            move |btn| {
+                glib::spawn_future_local(clone!(
+                    #[weak]
+                    player,
+                    #[weak]
+                    btn,
+                    async move {
+                        btn.set_sensitive(false);
+                        let _ = player.seek_increment(false).await;
+                        btn.set_sensitive(true);
+                    }
+                ));
+            }
+        ));
         self.imp().play_pause_btn.connect_clicked(clone!(
             #[weak]
             player,
@@ -156,6 +191,23 @@ impl PlaybackControls {
                     async move {
                         btn.set_sensitive(false);
                         let _ = player.toggle_playback().await;
+                        btn.set_sensitive(true);
+                    }
+                ));
+            }
+        ));
+        self.imp().seek_forward_btn.connect_clicked(clone!(
+            #[weak]
+            player,
+            move |btn| {
+                glib::spawn_future_local(clone!(
+                    #[weak]
+                    player,
+                    #[weak]
+                    btn,
+                    async move {
+                        btn.set_sensitive(false);
+                        let _ = player.seek_increment(true).await;
                         btn.set_sensitive(true);
                     }
                 ));

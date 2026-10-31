@@ -1,8 +1,9 @@
+use adw::prelude::*;
 use glib::{
     Object, ParamSpec, ParamSpecBoolean, ParamSpecObject, ParamSpecString, SignalHandlerId,
     WeakRef, clone, closure_local,
 };
-use gtk::{CompositeTemplate, gdk, glib, prelude::*, subclass::prelude::*};
+use gtk::{CompositeTemplate, gdk, gio, glib, subclass::prelude::*};
 use once_cell::sync::Lazy;
 use std::{
     cell::{Cell, OnceCell, RefCell},
@@ -11,8 +12,11 @@ use std::{
 
 use crate::{
     cache::{Cache, CacheState},
-    common::{ImageStack, ImageState, Marquee, QualityGrade, Song},
+    common::{ImageStack, ImageState, Marquee, QualityGrade, Song, SongInfoDialog},
+    library::Library,
     player::Player,
+    utils::settings_manager,
+    window::EuphonicaWindow,
 };
 
 // Wrapper around the common row object to implement song thumbnail fetch logic.
@@ -23,34 +27,30 @@ mod imp {
     #[template(resource = "/io/github/htkhiem/Euphonica/gtk/song-row.ui")]
     pub struct SongRow {
         #[template_child]
-        pub playing_indicator: TemplateChild<gtk::Revealer>,
+        pub disc: TemplateChild<gtk::Label>,
         #[template_child]
         pub index: TemplateChild<gtk::Label>,
         #[template_child]
         pub quality_grade: TemplateChild<gtk::Image>,
         #[template_child]
-        pub center_box: TemplateChild<gtk::CenterBox>,
-        #[template_child]
         pub thumbnail: TemplateChild<ImageStack>,
         #[template_child]
         pub name: TemplateChild<Marquee>,
         #[template_child]
-        pub first_attrib_icon: TemplateChild<gtk::Image>,
-        #[template_child]
         pub first_attrib_text: TemplateChild<gtk::Label>,
-        #[template_child]
-        pub second_attrib_icon: TemplateChild<gtk::Image>,
         #[template_child]
         pub second_attrib_text: TemplateChild<gtk::Label>,
         #[template_child]
-        pub third_attrib_icon: TemplateChild<gtk::Image>,
+        pub duration: TemplateChild<gtk::Label>,
         #[template_child]
-        pub third_attrib_text: TemplateChild<gtk::Label>,
+        pub end_stack: TemplateChild<gtk::Stack>,
         pub song: WeakRef<Song>,
         pub thumbnail_signal_ids: RefCell<Option<(SignalHandlerId, SignalHandlerId)>>,
         pub playing_signal_id: RefCell<Option<SignalHandlerId>>,
         pub cache: OnceCell<Rc<Cache>>,
         pub player: WeakRef<Player>,
+        pub window: WeakRef<EuphonicaWindow>,
+        pub library: WeakRef<Library>,
         pub is_floating: Cell<bool>,
     }
 
@@ -75,6 +75,7 @@ mod imp {
     impl ObjectImpl for SongRow {
         fn constructed(&self) {
             self.parent_constructed();
+            self.obj().update_end_widget_visibility(false);
 
             // Run marquee only while hovered
             let hover_ctl = gtk::EventControllerMotion::new();
@@ -83,6 +84,7 @@ mod imp {
                 #[weak(rename_to = this)]
                 self,
                 move |_, _, _| {
+                    this.obj().update_end_widget_visibility(true);
                     this.name.set_should_run_and_check(true);
                 }
             ));
@@ -90,6 +92,7 @@ mod imp {
                 #[weak(rename_to = this)]
                 self,
                 move |_| {
+                    this.obj().update_end_widget_visibility(false);
                     this.name.set_should_run_and_check(false);
                 }
             ));
@@ -99,19 +102,15 @@ mod imp {
         fn properties() -> &'static [ParamSpec] {
             static PROPERTIES: Lazy<Vec<ParamSpec>> = Lazy::new(|| {
                 vec![
-                    ParamSpecBoolean::builder("playing-indicator-visible").build(),
-                    ParamSpecBoolean::builder("is-playing").build(),
                     ParamSpecBoolean::builder("index-visible").build(),
                     ParamSpecString::builder("index").build(),
+                    ParamSpecString::builder("disc").build(),
                     ParamSpecBoolean::builder("thumbnail-visible").build(),
                     ParamSpecString::builder("name").build(),
                     ParamSpecString::builder("quality-grade").build(),
-                    ParamSpecString::builder("first-attrib-icon-name").build(),
-                    ParamSpecString::builder("second-attrib-icon-name").build(),
-                    ParamSpecString::builder("third-attrib-icon-name").build(),
                     ParamSpecString::builder("first-attrib-text").build(),
                     ParamSpecString::builder("second-attrib-text").build(),
-                    ParamSpecString::builder("third-attrib-text").build(),
+                    ParamSpecString::builder("duration").build(),
                     ParamSpecObject::builder::<gtk::Widget>("end-widget").build(),
                 ]
             });
@@ -120,20 +119,16 @@ mod imp {
 
         fn property(&self, _id: usize, pspec: &ParamSpec) -> glib::Value {
             match pspec.name() {
-                "playing-indicator-visible" => self.playing_indicator.is_visible().to_value(),
-                "is-playing" => self.playing_indicator.is_child_revealed().to_value(),
                 "index-visible" => self.thumbnail.is_visible().to_value(),
                 "index" => self.index.label().to_value(),
+                "disc" => self.index.label().to_value(),
                 "thumbnail-visible" => self.thumbnail.is_visible().to_value(),
                 "name" => self.name.label().label().to_value(),
                 "quality-grade" => self.quality_grade.icon_name().to_value(),
-                "first-attrib-icon-name" => self.first_attrib_icon.icon_name().to_value(),
-                "second-attrib-icon-name" => self.second_attrib_icon.icon_name().to_value(),
-                "third-attrib-icon-name" => self.third_attrib_icon.icon_name().to_value(),
                 "first-attrib-text" => self.first_attrib_text.label().to_value(),
                 "second-attrib-text" => self.second_attrib_text.label().to_value(),
-                "third-attrib-text" => self.third_attrib_text.label().to_value(),
-                "end-widget" => self.center_box.end_widget().to_value(),
+                "duration" => self.duration.label().to_value(),
+                "end-widget" => self.obj().end_widget().to_value(),
                 _ => unimplemented!(),
             }
         }
@@ -141,16 +136,6 @@ mod imp {
         fn set_property(&self, _id: usize, value: &glib::Value, pspec: &ParamSpec) {
             let obj = self.obj();
             match pspec.name() {
-                "playing-indicator-visible" => {
-                    if let Ok(vis) = value.get::<bool>() {
-                        self.playing_indicator.set_visible(vis);
-                    }
-                }
-                "is-playing" => {
-                    if let Ok(vis) = value.get::<bool>() {
-                        self.playing_indicator.set_reveal_child(vis);
-                    }
-                }
                 "index-visible" => {
                     if let Ok(vis) = value.get::<bool>() {
                         self.index.set_visible(vis);
@@ -159,6 +144,11 @@ mod imp {
                 "index" => {
                     if let Ok(idx) = value.get::<&str>() {
                         self.index.set_label(idx);
+                    }
+                }
+                "disc" => {
+                    if let Ok(disc) = value.get::<&str>() {
+                        self.disc.set_label(disc);
                     }
                 }
                 "thumbnail-visible" => {
@@ -176,26 +166,21 @@ mod imp {
                     self.quality_grade.set_visible(maybe_icon.is_ok());
                     self.quality_grade.set_icon_name(maybe_icon.ok());
                 }
-                "first-attrib-icon-name" => {
-                    obj.set_first_attrib_icon_name(value.get::<&str>().ok());
-                }
-                "second-attrib-icon-name" => {
-                    obj.set_second_attrib_icon_name(value.get::<&str>().ok());
-                }
-                "third-attrib-icon-name" => {
-                    obj.set_third_attrib_icon_name(value.get::<&str>().ok());
-                }
                 "first-attrib-text" => {
                     obj.set_first_attrib_text(value.get::<&str>().ok());
                 }
                 "second-attrib-text" => {
                     obj.set_second_attrib_text(value.get::<&str>().ok());
                 }
-                "third-attrib-text" => {
-                    obj.set_third_attrib_text(value.get::<&str>().ok());
+                "duration" => {
+                    if let Ok(dur) = value.get::<&str>() {
+                        self.duration.set_label(dur);
+                    }
                 }
                 "end-widget" => {
-                    obj.set_end_widget(value.get::<gtk::Widget>().ok().as_ref());
+                    if let Ok(w) = value.get::<&gtk::Widget>() {
+                        obj.set_end_widget(w);
+                    }
                 }
                 _ => unimplemented!(),
             }
@@ -236,6 +221,9 @@ impl SongRow {
         cache: Option<Rc<Cache>>,
         // If not given, will not set up is-playing indicator
         player: Option<&Player>,
+        // If not given, will not set up the right-click context menu
+        window: Option<&EuphonicaWindow>,
+        library: Option<&Library>,
     ) -> Self {
         let res: Self = Object::builder().build();
         if let Some(cache) = cache {
@@ -282,39 +270,90 @@ impl SongRow {
             )));
         }
 
-        if let Some(player) = player {
-            res.imp().player.set(Some(player));
+        // Right-click context menu
+        if let (Some(library), Some(window)) = (library, window) {
+            res.imp().library.set(Some(library));
+            res.imp().window.set(Some(window));
+            let song_info_action = gio::ActionEntry::builder("song-info")
+                .activate(clone!(
+                    #[weak]
+                    res,
+                    move |_, _, _| {
+                        res.show_song_info();
+                    }
+                ))
+                .build();
+            let action_group = gio::SimpleActionGroup::new();
+            action_group.add_action_entries([song_info_action]);
+            res.insert_action_group("song-row", Some(&action_group));
 
-            let _ = res
-                .imp()
-                .playing_signal_id
-                .replace(Some(player.connect_notify_local(
-                    Some("queue-id"),
-                    clone!(
-                        #[weak]
-                        res,
-                        move |player, _| {
-                            res.update_playing_indicator(player);
-                        }
-                    ),
-                )));
+            let menu = gio::Menu::new();
+
+            // TODO: translatable
+            menu.append(Some("Song info"), Some("song-row.song-info"));
+            let context_menu = gtk::PopoverMenu::from_model(Some(&menu));
+            // Adding the popover as a child anchors it to this row (it is not drawn inline)
+            res.append(&context_menu);
+
+            let click_ctl = gtk::GestureClick::new();
+            click_ctl.set_button(gdk::BUTTON_SECONDARY);
+            click_ctl.connect_released(clone!(
+                #[weak]
+                context_menu,
+                move |_, _, x, y| {
+                    // Anchor the popover's arrow at the click position
+                    context_menu
+                        .set_pointing_to(Some(&gdk::Rectangle::new(x as i32, y as i32, 1, 1)));
+                    context_menu.popup();
+                }
+            ));
+
+            // For touchscreen devices
+            let long_press_ctl = gtk::GestureLongPress::new();
+            long_press_ctl.connect_pressed(clone!(
+                #[weak]
+                context_menu,
+                move |_, x, y| {
+                    // Anchor the popover's arrow at the click position
+                    context_menu
+                        .set_pointing_to(Some(&gdk::Rectangle::new(x as i32, y as i32, 1, 1)));
+                    context_menu.popup();
+                }
+            ));
+
+            res.add_controller(click_ctl);
+            res.add_controller(long_press_ctl);
         }
 
         res
     }
 
-    fn update_playing_indicator(&self, player: &Player) {
-        match (
-            player.queue_id(),
-            self.imp().song.upgrade().map(|s| s.get_queue_id()),
-        ) {
-            (Some(id), Some(own_id)) => {
-                self.set_is_playing(id == own_id);
+    /// Fetches the raw rust-mpd Song struct for this row's current song and opens a SongInfoDialog
+    /// attached to the main window.
+    pub fn show_song_info(&self) {
+        let (window, library) = match (self.imp().window.upgrade(), self.imp().library.upgrade()) {
+            (Some(window), Some(library)) => (window, library),
+            _ => return,
+        };
+        let uri = match self.song() {
+            Some(song) => song.get_uri().to_string(),
+            None => return,
+        };
+        let cover = self.imp().thumbnail.paintable();
+        glib::spawn_future_local(async move {
+            match library.get_raw_mpd_song_by_uri(uri).await {
+                Ok(Some(raw_song)) => {
+                    let dialog = SongInfoDialog::from_mpd_song(raw_song, cover);
+                    dialog.present(Some(&window));
+                }
+                Ok(None) => {
+                    // Song is no longer in the library, nothing to show
+                }
+                Err(e) => {
+                    dbg!(e);
+                }
             }
-            _ => {
-                self.set_is_playing(false);
-            }
-        }
+        });
     }
 
     fn song(&self) -> Option<Song> {
@@ -353,23 +392,12 @@ impl SongRow {
 
     pub fn on_bind(&self, song: &Song) {
         self.imp().song.set(Some(song));
-        if let Some(player) = self.imp().player.upgrade() {
-            self.update_playing_indicator(&player);
-        }
         self.schedule_thumbnail();
     }
 
     pub fn on_unbind(&self) {
         self.imp().thumbnail.clear();
         self.imp().song.set(None);
-    }
-
-    pub fn set_playing_indicator_visible(&self, vis: bool) {
-        self.imp().playing_indicator.set_visible(vis);
-    }
-
-    pub fn set_is_playing(&self, playing: bool) {
-        self.imp().playing_indicator.set_reveal_child(playing);
     }
 
     pub fn is_floating(&self) -> bool {
@@ -390,6 +418,10 @@ impl SongRow {
         self.imp().index.set_label(val);
     }
 
+    pub fn set_disc(&self, val: &str) {
+        self.imp().disc.set_label(val);
+    }
+
     pub fn set_name(&self, name: &str) {
         self.imp().name.label().set_label(name);
     }
@@ -404,21 +436,6 @@ impl SongRow {
         self.imp().quality_grade.set_icon_name(icon_name);
     }
 
-    pub fn set_first_attrib_icon_name(&self, val: Option<&str>) {
-        self.imp().first_attrib_icon.set_visible(val.is_some());
-        self.imp().first_attrib_icon.set_icon_name(val);
-    }
-
-    pub fn set_second_attrib_icon_name(&self, val: Option<&str>) {
-        self.imp().second_attrib_icon.set_visible(val.is_some());
-        self.imp().second_attrib_icon.set_icon_name(val);
-    }
-
-    pub fn set_third_attrib_icon_name(&self, val: Option<&str>) {
-        self.imp().third_attrib_icon.set_visible(val.is_some());
-        self.imp().third_attrib_icon.set_icon_name(val);
-    }
-
     pub fn set_first_attrib_text(&self, val: Option<&str>) {
         self.imp().first_attrib_text.set_visible(val.is_some());
         self.imp().first_attrib_text.set_label(val.unwrap_or(""));
@@ -429,16 +446,32 @@ impl SongRow {
         self.imp().second_attrib_text.set_label(val.unwrap_or(""));
     }
 
-    pub fn set_third_attrib_text(&self, val: Option<&str>) {
-        self.imp().third_attrib_text.set_visible(val.is_some());
-        self.imp().third_attrib_text.set_label(val.unwrap_or(""));
+    pub fn set_duration(&self, val: Option<&str>) {
+        self.imp().duration.set_visible(val.is_some());
+        self.imp().duration.set_label(val.unwrap_or(""));
     }
 
-    pub fn set_end_widget(&self, widget: Option<&gtk::Widget>) {
-        self.imp().center_box.set_end_widget(widget);
+    pub fn set_end_widget(&self, widget: &gtk::Widget) {
+        self.imp().end_stack.add_named(widget, Some("widget"));
     }
 
     pub fn end_widget(&self) -> Option<gtk::Widget> {
-        self.imp().center_box.end_widget()
+        self.imp().end_stack.child_by_name("widget")
+    }
+
+    fn update_end_widget_visibility(&self, hovered: bool) {
+        let new_name = if hovered || settings_manager().child("ui").boolean("is-touchscreen") {
+            "widget"
+        } else {
+            "duration"
+        };
+        if self
+            .imp()
+            .end_stack
+            .visible_child_name()
+            .is_some_and(|curr_name| curr_name.as_str() != new_name)
+        {
+            self.imp().end_stack.set_visible_child_name(new_name);
+        }
     }
 }

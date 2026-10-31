@@ -16,7 +16,10 @@ use super::{AlbumCell, ArtistCell, Library};
 use crate::{
     cache::Cache,
     client::Result as ClientResult,
-    common::{Album, Artist, ContentStack, RowAddButtons, Song, SongRow, marquee::MarqueeWrapMode},
+    common::{
+        Album, Artist, ContentStack, RowAddButtons, RowDoublePressAction, Song, SongRow,
+        marquee::MarqueeWrapMode,
+    },
     player::Player,
     utils::LazyInit,
     window::EuphonicaWindow,
@@ -254,7 +257,7 @@ impl RecentView {
                 ),
             )));
 
-        self.setup_album_row(window, cache.clone());
+        self.setup_album_row(window, library, cache.clone());
         self.setup_artist_row(window, cache.clone());
         self.setup_song_list(cache);
     }
@@ -271,7 +274,7 @@ impl RecentView {
         ));
     }
 
-    fn setup_album_row(&self, window: &EuphonicaWindow, cache: Rc<Cache>) {
+    fn setup_album_row(&self, window: &EuphonicaWindow, library: &Library, cache: Rc<Cache>) {
         let album_list = self.imp().library.upgrade().unwrap().recent_albums();
 
         album_list
@@ -305,12 +308,15 @@ impl RecentView {
             #[weak]
             cache,
             #[weak]
+            library,
+            #[weak]
             adj,
             move |_, list_item| {
                 let item = list_item
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
-                let album_cell = AlbumCell::new(item, cache, Some(MarqueeWrapMode::Scroll));
+                let album_cell =
+                    AlbumCell::new(item, Some(&library), cache, Some(MarqueeWrapMode::Scroll));
                 // propagating the tallest cell's height to the revealer if said row wasn't
                 // the first initialised.
                 item.set_child(Some(&album_cell));
@@ -473,29 +479,87 @@ impl RecentView {
     fn setup_song_list(&self, cache: Rc<Cache>) {
         let library = self.imp().library.upgrade().unwrap().clone();
         let song_list = library.recent_songs();
+        let window = self.imp().window.get().and_then(|w| w.upgrade());
 
         self.imp()
             .song_list
             .bind_model(Some(&song_list), move |obj| {
                 let song = obj.downcast_ref::<Song>().unwrap();
-                let row = SongRow::new(Some(cache.clone()), None);
+                let row = SongRow::new(Some(cache.clone()), None, window.as_ref(), Some(&library));
                 // Manually bind attributes here
                 row.set_name(song.get_name());
                 row.set_quality_grade(song.get_quality_grade());
-                row.set_first_attrib_icon_name(Some("library-music-symbolic"));
                 row.set_first_attrib_text(song.get_album_title());
-                row.set_second_attrib_icon_name(Some("music-artist-symbolic"));
                 row.set_second_attrib_text(song.get_artist_tag());
-                row.set_third_attrib_icon_name(Some("recent-symbolic"));
-                row.set_third_attrib_text(song.get_last_played_desc().as_deref());
+                row.set_duration(song.get_last_played_desc().as_deref());
 
                 let end_widget = RowAddButtons::new(&library);
                 end_widget.set_song(Some(song));
-                row.set_end_widget(Some(&end_widget.into()));
+                row.set_end_widget(&end_widget.into());
 
                 row.on_bind(song);
                 row.into()
             });
+
+        // Setup double-click action
+        self.imp().song_list.connect_row_activated(clone!(
+            #[weak(rename_to = this)]
+            self,
+            move |_, row| {
+                let idx = row.index() as u32;
+                let action = RowDoublePressAction::from_settings();
+                if let Some(window) = this.imp().window.get().and_then(|w| w.upgrade()) {
+                    window.maybe_show_double_press_toast();
+                }
+                match action {
+                    RowDoublePressAction::DoNothing => {}
+                    RowDoublePressAction::Append
+                    | RowDoublePressAction::AppendAndPlay
+                    | RowDoublePressAction::Replace
+                    | RowDoublePressAction::ReplaceAndPlay => {
+                        let Some(library) = this.imp().library.upgrade() else {
+                            return;
+                        };
+                        let song = library
+                            .recent_songs()
+                            .item(idx)
+                            .and_downcast::<Song>()
+                            .expect("The item has to be a `common::Song`.");
+                        let replace = matches!(
+                            action,
+                            RowDoublePressAction::Replace | RowDoublePressAction::ReplaceAndPlay
+                        );
+                        // Append-and-play starts playback at the appended song, which
+                        // lands at the end of the (not-yet-extended) queue.
+                        let play_from = match action {
+                            RowDoublePressAction::AppendAndPlay => Some(library.queue_len()),
+                            RowDoublePressAction::ReplaceAndPlay => Some(0),
+                            _ => None,
+                        };
+                        glib::spawn_future_local(async move {
+                            if let Err(e) = library.queue_songs(&[song], replace, play_from).await {
+                                dbg!(e);
+                            }
+                        });
+                    }
+                    RowDoublePressAction::ReplaceViewAndPlay => {
+                        let Some(library) = this.imp().library.upgrade() else {
+                            return;
+                        };
+                        // Queue all songs in the view, in displayed order.
+                        let store = library.recent_songs();
+                        let songs: Vec<Song> = (0..store.n_items())
+                            .map(|i| store.item(i).and_downcast::<Song>().unwrap())
+                            .collect();
+                        glib::spawn_future_local(async move {
+                            if let Err(e) = library.queue_songs(&songs, true, Some(idx)).await {
+                                dbg!(e);
+                            }
+                        });
+                    }
+                }
+            }
+        ));
     }
 
     async fn init_recent(&self, refresh: bool) -> ClientResult<()> {

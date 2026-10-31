@@ -17,6 +17,7 @@ pub mod rating;
 pub mod row_add_buttons;
 pub mod row_edit_buttons;
 pub mod song;
+pub mod song_info;
 pub mod song_row;
 pub mod sticker;
 pub mod tags;
@@ -30,6 +31,7 @@ pub use cover_fan::CoverFan;
 pub use dynamic_playlist::DynamicPlaylist;
 pub use fading_scrolled_window::FadingScrolledWindow;
 pub use genre::split_genre_tag;
+use gtk::gio::prelude::*;
 use gtk::glib;
 pub use image_stack::ImageStack;
 pub use inode::{INode, INodeType};
@@ -39,6 +41,7 @@ pub use rating::Rating;
 pub use row_add_buttons::RowAddButtons;
 pub use row_edit_buttons::RowEditButtons;
 pub use song::{QualityGrade, Song, SongInfo};
+pub use song_info::SongInfoDialog;
 pub use song_row::SongRow;
 pub use sticker::Stickers;
 pub use theme_selector::ThemeSelector;
@@ -157,3 +160,82 @@ impl View {
         }
     }
 }
+
+#[derive(Default, Clone, Copy, Debug, glib::Enum, glib::Variant, Eq, PartialEq)]
+#[enum_type(name = "EuphonicaRowDoublePressAction")]
+pub enum RowDoublePressAction {
+    DoNothing,
+    Append,
+    AppendAndPlay,
+    Replace,
+    ReplaceAndPlay,
+    #[default]
+    ReplaceViewAndPlay,
+}
+
+impl TryFrom<&str> for RowDoublePressAction {
+    type Error = ();
+    /// For mapping from GSettings
+    fn try_from(s: &str) -> Result<Self, Self::Error> {
+        match s {
+            "do-nothing" => Ok(Self::DoNothing),
+            "append" => Ok(Self::Append),
+            "append-and-play" => Ok(Self::AppendAndPlay),
+            "replace" => Ok(Self::Replace),
+            "replace-and-play" => Ok(Self::ReplaceAndPlay),
+            "replace-view-and-play" => Ok(Self::ReplaceViewAndPlay),
+            _ => Err(()),
+        }
+    }
+}
+
+impl TryFrom<u32> for RowDoublePressAction {
+    type Error = ();
+    /// For mapping from UI selection
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Self::DoNothing),
+            1 => Ok(Self::Append),
+            2 => Ok(Self::AppendAndPlay),
+            3 => Ok(Self::Replace),
+            4 => Ok(Self::ReplaceAndPlay),
+            5 => Ok(Self::ReplaceViewAndPlay),
+            _ => Err(()),
+        }
+    }
+}
+
+impl RowDoublePressAction {
+    /// For setting into GSettings
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::DoNothing => "do-nothing",
+            Self::Append => "append",
+            Self::AppendAndPlay => "append-and-play",
+            Self::Replace => "replace",
+            Self::ReplaceAndPlay => "replace-and-play",
+            Self::ReplaceViewAndPlay => "replace-view-and-play",
+        }
+    }
+
+    /// For mapping to UI menu selection
+    pub fn as_idx(&self) -> u32 {
+        match self {
+            Self::DoNothing => 0,
+            Self::Append => 1,
+            Self::AppendAndPlay => 2,
+            Self::Replace => 3,
+            Self::ReplaceAndPlay => 4,
+            Self::ReplaceViewAndPlay => 5,
+        }
+    }
+
+    /// Load the currently configured action from GSettings.
+    pub fn from_settings() -> Self {
+        let settings = crate::utils::settings_manager().child("ui");
+        Self::try_from(settings.string("action-on-row-double-press").as_str()).unwrap_or_default()
+    }
+}
+
+pub static DSD_EXTENSIONS: [&str; 3] = ["dsf", "dff", "wsd"];
+pub static LOSSLESS_PCM_EXTENSIONS: [&str; 4] = ["flac", "alac", "wv", "ape"];
