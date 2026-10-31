@@ -289,6 +289,8 @@ impl GenericRow {
             click_ctl.connect_released(clone!(
                 #[weak]
                 res,
+                #[weak]
+                context_menu,
                 move |_, _, x, y| {
                     if res.imp().inode_type.get() != INodeType::Song {
                         return;
@@ -303,7 +305,28 @@ impl GenericRow {
                     context_menu.popup();
                 }
             ));
+            // For touchscreen devices
+            let long_press_ctl = gtk::GestureLongPress::new();
+            long_press_ctl.connect_pressed(clone!(
+                #[weak]
+                res,
+                #[weak]
+                context_menu,
+                move |_, x, y| {
+                if res.imp().inode_type.get() != INodeType::Song {
+                        return;
+                    }
+                    // Anchor the popover's arrow at the click position
+                    context_menu.set_pointing_to(Some(&gdk::Rectangle::new(
+                        x as i32,
+                        y as i32,
+                        1,
+                        1,
+                    )));
+                    context_menu.popup();
+            }));
             res.add_controller(click_ctl);
+            res.add_controller(long_press_ctl);
         }
 
         res

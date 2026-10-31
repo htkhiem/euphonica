@@ -336,12 +336,28 @@ impl SongRow {
 
             let click_ctl = gtk::GestureClick::new();
             click_ctl.set_button(gdk::BUTTON_SECONDARY);
-            click_ctl.connect_released(move |_, _, x, y| {
+            click_ctl.connect_released(clone!(
+                #[weak]
+                context_menu,
+                move |_, _, x, y| {
                 // Anchor the popover's arrow at the click position
                 context_menu.set_pointing_to(Some(&gdk::Rectangle::new(x as i32, y as i32, 1, 1)));
                 context_menu.popup();
-            });
+            }));
+
+            // For touchscreen devices
+            let long_press_ctl = gtk::GestureLongPress::new();
+            long_press_ctl.connect_pressed(clone!(
+                #[weak]
+                context_menu,
+                move |_, x, y| {
+                // Anchor the popover's arrow at the click position
+                context_menu.set_pointing_to(Some(&gdk::Rectangle::new(x as i32, y as i32, 1, 1)));
+                context_menu.popup();
+            }));
+
             res.add_controller(click_ctl);
+            res.add_controller(long_press_ctl);
         }
 
         res
