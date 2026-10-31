@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <interface>
   <template class="EuphonicaAlbumCell" parent="GtkWidget">
-		<property name="margin-start">6</property>
+    <property name="margin-start">6</property>
     <property name="margin-end">6</property>
     <property name="margin-top">6</property>
     <property name="margin-bottom">6</property>
@@ -21,11 +21,35 @@
               <class name="cover-shadow"/>
             </style>
             <child>
-              <object class="EuphonicaPictureStack" id="cover">
-                <property name="hexpand">true</property>
-                <property name="vexpand">true</property>
+              <object class="GtkOverlay">
+                <child>
+                  <object class="EuphonicaPictureStack" id="cover">
+                    <property name="hexpand">true</property>
+                    <property name="vexpand">true</property>
+                  </object>
+                </child>
+                <child type="overlay">
+                  <object class="GtkRevealer" id="play_btn_revealer">
+                    <property name="transition-type">1</property>
+                    <property name="child">
+                      <object class="GtkButton" id="play_btn">
+                        <style>
+                          <class name="suggested-action"/>
+                          <class name="circular"/>
+                        </style>
+                        <property name="tooltip-text" translatable="true">Replace queue &amp; play</property>
+                        <property name="halign">end</property>
+                        <property name="valign">end</property>
+                        <property name="margin-end">3</property>
+                        <property name="margin-bottom">3</property>
+                        <property name="icon-name">play-symbolic</property>
+                      </object>
+                    </property>
+                  </object>
+                </child>
               </object>
             </child>
+
           </object>
         </child>
         <child>

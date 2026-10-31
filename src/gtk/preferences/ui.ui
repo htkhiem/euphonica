@@ -45,6 +45,12 @@
           </object>
         </child>
         <child>
+          <object class="AdwSwitchRow" id="is_touchscreen">
+            <property name="title" translatable="true">Optimise UI for touchscreen use</property>
+            <property name="subtitle" translatable="true">Forces all UI elements to be visible instead of on hover. Requires a restart.</property>
+          </object>
+        </child>
+        <child>
           <object class="AdwSwitchRow" id="auto_accent">
             <property name="title" translatable="true">Recolour accent to album art</property>
           </object>
