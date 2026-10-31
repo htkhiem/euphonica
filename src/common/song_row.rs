@@ -15,6 +15,7 @@ use crate::{
     common::{ImageStack, ImageState, Marquee, QualityGrade, Song, SongInfoDialog},
     library::Library,
     player::Player,
+    utils::settings_manager,
     window::EuphonicaWindow,
 };
 
@@ -49,6 +50,8 @@ mod imp {
         pub third_attrib_icon: TemplateChild<gtk::Image>,
         #[template_child]
         pub third_attrib_text: TemplateChild<gtk::Label>,
+        #[template_child]
+        pub end_revealer: TemplateChild<gtk::Revealer>, // he who reveals the end
         pub song: WeakRef<Song>,
         pub thumbnail_signal_ids: RefCell<Option<(SignalHandlerId, SignalHandlerId)>>,
         pub playing_signal_id: RefCell<Option<SignalHandlerId>>,
@@ -80,6 +83,7 @@ mod imp {
     impl ObjectImpl for SongRow {
         fn constructed(&self) {
             self.parent_constructed();
+            self.obj().update_end_widget_visibility(false);
 
             // Run marquee only while hovered
             let hover_ctl = gtk::EventControllerMotion::new();
@@ -88,6 +92,7 @@ mod imp {
                 #[weak(rename_to = this)]
                 self,
                 move |_, _, _| {
+                    this.obj().update_end_widget_visibility(true);
                     this.name.set_should_run_and_check(true);
                 }
             ));
@@ -95,6 +100,7 @@ mod imp {
                 #[weak(rename_to = this)]
                 self,
                 move |_| {
+                    this.obj().update_end_widget_visibility(false);
                     this.name.set_should_run_and_check(false);
                 }
             ));
@@ -526,10 +532,16 @@ impl SongRow {
     }
 
     pub fn set_end_widget(&self, widget: Option<&gtk::Widget>) {
-        self.imp().center_box.set_end_widget(widget);
+        self.imp().end_revealer.set_child(widget);
     }
 
     pub fn end_widget(&self) -> Option<gtk::Widget> {
-        self.imp().center_box.end_widget()
+        self.imp().end_revealer.child()
+    }
+
+    fn update_end_widget_visibility(&self, hovered: bool) {
+        self.imp()
+            .end_revealer
+            .set_reveal_child(hovered || settings_manager().child("ui").boolean("is-touchscreen"));
     }
 }

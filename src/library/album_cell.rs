@@ -144,6 +144,9 @@ mod imp {
                 this,
                 move |_, _x, _y| {
                     this.update_play_btn_visibility(true);
+                    if this.imp().title.wrap_mode() == MarqueeWrapMode::Scroll {
+                        this.imp().title.set_should_run_and_check(true);
+                    }
                 }
             ));
 
@@ -152,6 +155,7 @@ mod imp {
                 this,
                 move |_| {
                     this.update_play_btn_visibility(false);
+                    this.imp().title.set_should_run_and_check(false);
                 }
             ));
             this.add_controller(hover_ctl);
@@ -350,26 +354,6 @@ impl AlbumCell {
             .chain_property::<Album>("rating")
             .bind(&res, "rating", gtk::Widget::NONE);
 
-        // Run only while hovered
-        let hover_ctl = gtk::EventControllerMotion::new();
-        hover_ctl.set_propagation_phase(gtk::PropagationPhase::Capture);
-        hover_ctl.connect_enter(clone!(
-            #[weak(rename_to = this)]
-            res,
-            move |_, _, _| {
-                if this.imp().title.wrap_mode() == MarqueeWrapMode::Scroll {
-                    this.imp().title.set_should_run_and_check(true);
-                }
-            }
-        ));
-        hover_ctl.connect_leave(clone!(
-            #[weak(rename_to = this)]
-            res,
-            move |_| {
-                this.imp().title.set_should_run_and_check(false);
-            }
-        ));
-        res.add_controller(hover_ctl);
         let _ = res.imp().cover_signal_ids.replace(Some((
             cache_state.connect_closure(
                 "album-cover-set",
