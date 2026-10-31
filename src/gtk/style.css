@@ -89,7 +89,21 @@ listview > row {
 }
 
 .no-bg {
-    background-color: unset;
+  background-color: unset;
+}
+
+.song-list {
+  background-color: unset;
+  padding: 6px;
+}
+
+.song-list row:selected {
+  border-radius: 12px;
+}
+
+.song-list row:nth-child(even):not(:selected) {
+	border-radius: 12px;
+	background-color: alpha(currentColor, 0.05);
 }
 
 .player-bar {

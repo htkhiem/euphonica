@@ -489,16 +489,13 @@ impl RecentView {
                 // Manually bind attributes here
                 row.set_name(song.get_name());
                 row.set_quality_grade(song.get_quality_grade());
-                row.set_first_attrib_icon_name(Some("library-music-symbolic"));
                 row.set_first_attrib_text(song.get_album_title());
-                row.set_second_attrib_icon_name(Some("music-artist-symbolic"));
                 row.set_second_attrib_text(song.get_artist_tag());
-                row.set_third_attrib_icon_name(Some("recent-symbolic"));
-                row.set_third_attrib_text(song.get_last_played_desc().as_deref());
+                row.set_duration(song.get_last_played_desc().as_deref());
 
                 let end_widget = RowAddButtons::new(&library);
                 end_widget.set_song(Some(song));
-                row.set_end_widget(Some(&end_widget.into()));
+                row.set_end_widget(&end_widget.into());
 
                 row.on_bind(song);
                 row.into()

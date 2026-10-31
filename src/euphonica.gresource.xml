@@ -152,5 +152,6 @@
     <file preprocess="xml-stripblanks" alias="mixed-folder-2-symbolic.svg">gtk/icons/mixed-folder-2-symbolic.svg</file>
     <file preprocess="xml-stripblanks" alias="phone-symbolic.svg">gtk/icons/phone-symbolic.svg</file>
     <file preprocess="xml-stripblanks" alias="mouse-symbolic.svg">gtk/icons/mouse-symbolic.svg</file>
+    <file preprocess="xml-stripblanks" alias="cd-symbolic.svg">gtk/icons/cd-symbolic.svg</file>
   </gresource>
 </gresources>
