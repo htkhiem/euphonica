@@ -150,5 +150,7 @@
     <file preprocess="xml-stripblanks" alias="release-folder-2-symbolic.svg">gtk/icons/release-folder-2-symbolic.svg</file>
     <file preprocess="xml-stripblanks" alias="mixed-folder-1-symbolic.svg">gtk/icons/mixed-folder-1-symbolic.svg</file>
     <file preprocess="xml-stripblanks" alias="mixed-folder-2-symbolic.svg">gtk/icons/mixed-folder-2-symbolic.svg</file>
+    <file preprocess="xml-stripblanks" alias="phone-symbolic.svg">gtk/icons/phone-symbolic.svg</file>
+    <file preprocess="xml-stripblanks" alias="mouse-symbolic.svg">gtk/icons/mouse-symbolic.svg</file>
   </gresource>
 </gresources>
