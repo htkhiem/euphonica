@@ -10,10 +10,11 @@ use mpd::{Query, Term};
 use rustc_hash::FxHashSet;
 use std::cell::OnceCell;
 
-/// Artist struct, for use with both Artist and AlbumArtist tags.
+/// Unlike Album, an Artist entity still keeps its own data.
+/// This is because of the many-to-many relationships between Songs and Artists making things
+/// complicated, unlike the many-to-one relationships of Songs -> Albums.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ArtistInfo {
-    // TODO: Might want to refactor to Into<Cow<'a, str>>
     pub name: String,
     pub sort_tag: Option<String>,
     pub mbid: Option<String>,
@@ -43,6 +44,48 @@ impl ArtistInfo {
             is_composer,
             is_albumartist,
         }
+    }
+
+    /// Destructively pull artist data from a Song, creating one or more Artist objects.
+    /// This reduces copies, but prepare thyself for perplexing bugs from incorrect usage.
+    /// Fields not exclusive to each individual (genres and example_uris), are NOT collected.
+    /// Insert them yourself after-the-fact.
+    /// TODO: candidate for moving to wrapper.rs since this is just too specific to that one's
+    /// use case.
+    pub fn extract_from_song(song: &mut mpd::song::Song, generate_albumartists: bool) -> Vec<Self> {
+        let mut res: Vec<Self> = Vec::new();
+        let mut sort_tags = std::mem::take(if generate_albumartists {
+            &mut song.albumartistsorts
+        } else {
+            &mut song.artistsorts
+        });
+        let mut mbids = std::mem::take(if generate_albumartists {
+            &mut song.albumartist_mbids
+        } else {
+            &mut song.artist_mbids
+        });
+        let names = std::mem::take(if generate_albumartists {
+            &mut song.albumartists
+        } else {
+            &mut song.artists
+        });
+        for (i, name) in names
+            .iter()
+            .map(|s| parse_mb_artist_tag(s))
+            .flatten()
+            .enumerate()
+        {
+            res.push(ArtistInfo {
+                name: name.to_owned(),
+                sort_tag: sort_tags.get_mut(i).map(std::mem::take),
+                mbid: mbids.get_mut(i).map(std::mem::take),
+                genres: FxHashSet::default(),
+                example_uris: Vec::with_capacity(0),
+                is_composer: false,
+                is_albumartist: generate_albumartists,
+            });
+        }
+        res
     }
 
     /// Get something to serve as this artist's internal ID for
@@ -84,7 +127,7 @@ impl ArtistInfo {
 
     /// Add genres as discovered from albums, maintaining uniqueness.
     /// Useful at page init time when we fetch all the artists.
-    pub fn insert_genres(&mut self, more_genres: &FxHashSet<String>) {
+    pub fn insert_genres(&mut self, more_genres: &[String]) {
         for genre in more_genres {
             // Clone only what's not already in
             if !self.genres.contains(genre) {
