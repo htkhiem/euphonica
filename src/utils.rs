@@ -40,6 +40,11 @@ static CONFIG_BASEPATH: Lazy<PathBuf> = Lazy::new(|| {
     res
 });
 
+pub static APP_THREAD_POOL: Lazy<glib::ThreadPool> = Lazy::new(|| {
+    glib::ThreadPool::shared(Some(settings_manager().uint("n-threads")))
+        .expect("Unable to start glib thread pool")
+});
+
 pub fn get_app_cache_path() -> PathBuf {
     APP_CACHE_PATH.clone()
 }
@@ -199,6 +204,35 @@ pub fn g_cmp_str_options(
         return Ordering::from(s2.unwrap().cmp(s1.unwrap()));
     }
     Ordering::from(s2.unwrap().to_lowercase().cmp(&s1.unwrap().to_lowercase()))
+}
+
+pub fn g_cmp_string_vecs(
+    s1: &Vec<String>,
+    s2: &Vec<String>,
+    nulls_first: bool,
+    asc: bool,
+    case_sensitive: bool,
+) -> Ordering {
+    if nulls_first {
+        let s1_empty = s1.is_empty();
+        let s2_empty = s2.is_empty();
+        if s1_empty && !s2_empty {
+            return Ordering::Smaller;
+        } else if s2_empty && !s1_empty {
+            return Ordering::Larger;
+        }
+    }
+    let (s1, s2r) = if case_sensitive {
+        (s1, s2)
+    } else {
+        (
+            &s1.iter().map(|s| s.to_lowercase()).collect(),
+            &s2.iter().map(|s| s.to_lowercase()).collect(),
+        )
+    };
+
+    let raw = s1.cmp(s2);
+    Ordering::from(if asc { raw } else { raw.reverse() })
 }
 
 pub fn g_search_substr(text: Option<&str>, term: &str, case_sensitive: bool) -> bool {
