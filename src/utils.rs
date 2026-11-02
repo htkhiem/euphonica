@@ -213,13 +213,13 @@ pub fn g_cmp_string_vecs(
     asc: bool,
     case_sensitive: bool,
 ) -> Ordering {
-    if nulls_first {
+    if !nulls_first {
         let s1_empty = s1.is_empty();
         let s2_empty = s2.is_empty();
         if s1_empty && !s2_empty {
-            return Ordering::Smaller;
-        } else if s2_empty && !s1_empty {
             return Ordering::Larger;
+        } else if s2_empty && !s1_empty {
+            return Ordering::Smaller;
         }
     }
     let (s1, s2r) = if case_sensitive {
@@ -247,6 +247,7 @@ pub fn g_search_substr(text: Option<&str>, term: &str, case_sensitive: bool) -> 
     false
 }
 
+#[inline]
 pub fn strip_filename_linux(path: &str) -> &str {
     // MPD insists on having a trailing slash so here we go
     if let Some(last_slash) = path.rfind('/') {
