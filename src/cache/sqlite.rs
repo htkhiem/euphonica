@@ -937,6 +937,31 @@ pub fn write_lyrics(song: &SongInfo, lyrics: Option<&Lyrics>) -> Result<(), Erro
     Ok(())
 }
 
+/// Fast path to check for disk cache availability without actually loading the path into RAM.
+pub fn has_image_by_key(
+    key: &str,
+    prefix: Option<&str>
+) -> Result<bool, Error> {
+    let query: Result<usize, SqliteError>;
+    let conn = SQLITE_POOL.get().unwrap();
+    let final_key = if let Some(prefix) = prefix {
+        &format!("{prefix}:{key}")
+    } else {
+        key
+    };
+    query = conn
+        .prepare("select count(*) from images where key = ?1 limit 1")
+        .unwrap()
+        .query_row(params![final_key], |r| {
+            r.get::<usize, usize>(0)
+        });
+    match query {
+        Ok(count) => Ok(count > 0),
+        Err(SqliteError::QueryReturnedNoRows) => Ok(false),
+        Err(e) => Err(Error::Db(e)),
+    }
+}
+
 pub fn find_image_by_key(
     key: &str,
     prefix: Option<&str>,

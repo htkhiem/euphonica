@@ -105,8 +105,8 @@ impl AlbumMeta {
     /// whose information are unavailable on any remote source.
     pub fn from_key(key: &AlbumInfo) -> Self {
         Self {
-            name: key.title.to_owned(),
-            mbid: key.mbid.clone(),
+            name: key.get_title().to_owned(),
+            mbid: key.get_mbid().map(|s| s.to_owned()),
             artist: None,
             tags: Vec::with_capacity(0),
             image: Vec::with_capacity(0),

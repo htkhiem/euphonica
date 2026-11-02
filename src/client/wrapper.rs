@@ -700,7 +700,7 @@ impl MpdWrapper {
                         let mut res: Vec<Song> = Vec::with_capacity(song_infos.len());
                         // Cache
                         for mut song_info in song_infos.into_iter() {
-                            if let Some(id) = song_info.queue_id {
+                            if let Some(id) = song_info.place.map(|p| p.id.0) {
                                 let song = Song::from(std::mem::take(&mut song_info));
                                 res.push(song.clone()); // lightweight Rc
                                 self.song_cache.borrow_mut().put(id, song);
@@ -913,22 +913,21 @@ impl MpdWrapper {
         self.foreground(Task::GetSongCount(s), r).await
     }
 
-    pub async fn get_embedded_cover(&self, uri: String) -> ClientResult<Option<ImageHandle>> {
+    pub async fn get_embedded_cover(&self, song: Arc<SongInfo>) -> ClientResult<Option<Option<Vec<u8>>>> {
         // Leave downloading to the background connection thread, but local operations
         // (resizing, transcoding, writing to disk) will be done with a threadpool, whose
         // handle is held by the this thread (the main one).
         let (s, r) = oneshot::channel();
-        self.background(Task::GetEmbeddedCover(uri, None, s), r)
+        self.background(Task::GetEmbeddedCover(song, s), r)
             .await
     }
 
     pub async fn get_folder_cover(
         &self,
-        example_uri: String,
-        folder_uri: String,
-    ) -> ClientResult<Option<ImageHandle>> {
+        song: Arc<SongInfo>
+    ) -> ClientResult<Option<Option<Vec<u8>>>> {
         let (s, r) = oneshot::channel();
-        self.background(Task::GetFolderCover(example_uri, Some(folder_uri), s), r)
+        self.background(Task::GetFolderCover(song, s), r)
             .await
     }
 
@@ -1060,7 +1059,7 @@ impl MpdWrapper {
                     Vec::with_capacity(album_count);
 
                 for i in 0..songs.len() {
-                    let song = std::mem::take(&mut songs[i]);
+                    let mut song = std::mem::take(&mut songs[i]);
                     if song.album.is_some() {
                         // Handle artist first before surrendering the song instance to Album's Arc
                         for artist in ArtistInfo::extract_from_song(&mut song, true) {
