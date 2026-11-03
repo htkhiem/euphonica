@@ -43,7 +43,7 @@ impl AlbumInfo {
         }
     }
 
-    pub fn folder_uri(&self) -> &str {
+    pub fn get_folder_uri(&self) -> &str {
         strip_filename_linux(&self.first_song.file)
     }
 
@@ -59,11 +59,15 @@ impl AlbumInfo {
         self.first_song
             .mbid
             .as_deref()
-            .unwrap_or_else(|| self.folder_uri())
+            .unwrap_or_else(|| self.get_folder_uri())
     }
 
     pub fn get_date(&self) -> Option<&str> {
         self.first_song.date.as_deref().or(self.first_song.original_date.as_deref())
+    }
+
+    pub fn get_mbid(&self) -> Option<&str> {
+        self.first_song.mbid.as_deref()
     }
 
     /// Get MPD filter expression to find all songs by this album.
@@ -233,7 +237,7 @@ impl Album {
     }
 
     pub fn get_folder_uri(&self) -> &str {
-        &self.get_inner().folder_uri()
+        &self.get_inner().get_folder_uri()
     }
 
     pub fn get_example_uri(&self) -> &str {
@@ -302,7 +306,7 @@ impl Album {
     }
 
     pub fn get_mbid(&self) -> Option<&str> {
-        self.get_inner().first_song.mbid.as_deref()
+        self.get_inner().get_mbid()
     }
 
     /// Cached due to nontrivial parsing

@@ -13,7 +13,7 @@ use musicbrainz_rs::{
 use crate::{
     common::{AlbumInfo, ArtistInfo},
     config::APPLICATION_USER_AGENT,
-    meta_providers::models::ImageMeta,
+    meta_providers::{base::{AlbumKey, ArtistKey}, models::ImageMeta},
     utils::{meta_provider_settings, settings_manager},
 };
 
@@ -56,7 +56,7 @@ impl MetadataProvider for MusicBrainzWrapper {
     /// A signal will be emitted to notify the caller when the result arrives.
     fn get_album_meta(
         &mut self,
-        key: &mut AlbumInfo,
+        key: &mut AlbumKey,
         existing: Option<models::AlbumMeta>,
     ) -> MetadataResult<Option<models::AlbumMeta>> {
         sleep_between_requests(self.last_request_time);
@@ -84,7 +84,7 @@ impl MetadataProvider for MusicBrainzWrapper {
             }
         }
         // Else there must be an artist tag before we can search reliably
-        else if let (title, Some(artist)) = (&key.title, key.get_artist_tag()) {
+        else if let (title, Some(artist)) = (&key.title, &key.albumartist) {
             // Ensure linkages match those on MusicBrainz.
             // TODO: use multiple ORed artist clauses instead.
             println!("[MusicBrainz] Searching release with title = {title} and artist = {artist}");
@@ -143,7 +143,7 @@ impl MetadataProvider for MusicBrainzWrapper {
     /// algorithm.
     fn get_artist_meta(
         &mut self,
-        key: &mut ArtistInfo,
+        key: &mut ArtistKey,
         existing: std::option::Option<models::ArtistMeta>,
     ) -> MetadataResult<Option<models::ArtistMeta>> {
         sleep_between_requests(self.last_request_time);
@@ -209,7 +209,7 @@ impl MetadataProvider for MusicBrainzWrapper {
     /// MusicBrainz does not provide lyrics.
     fn get_lyrics(
         &mut self,
-        _key: &crate::common::SongInfo,
+        _key: &mpd::Song,
     ) -> MetadataResult<Option<models::Lyrics>> {
         Ok(None)
     }
