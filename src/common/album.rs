@@ -236,6 +236,10 @@ impl Album {
         self.imp().info.get(Ordering::Relaxed).unwrap()
     }
 
+    pub fn get_inner_arc(&self) -> Arc<AlbumInfo> {
+        self.imp().info.load(Ordering::Relaxed).unwrap()
+    }
+
     pub fn get_folder_uri(&self) -> &str {
         &self.get_inner().get_folder_uri()
     }
@@ -248,8 +252,9 @@ impl Album {
         &self.get_inner().get_title()
     }
 
-    pub fn get_sortable_title(&self) -> Option<&str> {
-        self.get_inner().first_song.albumsort.as_deref()
+    pub fn get_sortable_title(&self) -> &str {
+        let inner = self.get_inner();
+        inner.first_song.albumsort.as_deref().unwrap_or_else(|| {inner.get_title()})
     }
 
     pub fn get_albumartists(&self) -> impl Iterator<Item = &str> {

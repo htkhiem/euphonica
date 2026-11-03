@@ -1061,7 +1061,7 @@ impl MpdWrapper {
                     let mut song = std::mem::take(&mut songs[i]);
                     if song.album.is_some() {
                         // Handle artist first before surrendering the song instance to Album's Arc
-                        for artist in ArtistInfo::extract_from_song(&mut song, true) {
+                        for artist in ArtistInfo::take_from_song(&mut song, true) {
                             let comp_id = artist.get_comp_id();
                             let existing =
                                 albumartists.entry(comp_id.to_string()).or_insert_with(|| {
@@ -1320,7 +1320,7 @@ impl MpdWrapper {
                 let mut res: FxHashMap<String, ArtistInfo> = FxHashMap::default();
                 for (mut song, genres) in songs.into_iter().zip(genres) {
                     // Here we're fetching song.artists instead of song.album.artists
-                    for artist in ArtistInfo::extract_from_song(&mut song, false) {
+                    for artist in ArtistInfo::take_from_song(&mut song, false) {
                         let existing =
                             res.entry(artist.get_comp_id().to_string())
                                 .or_insert_with(|| {
@@ -1387,7 +1387,7 @@ impl MpdWrapper {
                 let mut res = Vec::with_capacity(recent_names_set.len());
                 let mut already_parsed: FxHashSet<String> = FxHashSet::default();
                 for mut song in songs {
-                    let artists = ArtistInfo::extract_from_song(&mut song, false);
+                    let artists = ArtistInfo::take_from_song(&mut song, false);
                     for artist in artists.into_iter() {
                         if recent_names_set.contains(&artist.name)
                             && already_parsed.insert(artist.get_comp_id().to_owned())

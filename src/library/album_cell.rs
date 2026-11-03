@@ -434,13 +434,13 @@ impl AlbumCell {
             self.imp().cover.show_spinner();
             let res = cache
                 .clone()
-                .get_album_cover(album.get_info(), use_thumbnail)
+                .get_song_cover(album.get_inner().first_song.clone(), use_thumbnail)
                 .await;
             // Check again as cell might have been bound to a different album
             // while awaiting
             if self
                 .album()
-                .is_some_and(|a| a.get_info().get_comp_id() == album.get_info().get_comp_id())
+                .is_some_and(|a| a.get_inner().get_comp_id() == album.get_inner().get_comp_id())
             {
                 match res {
                     Ok(Some(tex)) => {

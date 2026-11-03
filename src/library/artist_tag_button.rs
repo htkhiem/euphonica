@@ -3,11 +3,12 @@ use gtk::{CompositeTemplate, gdk, glib, prelude::*, subclass::prelude::*};
 use std::{
     cell::{OnceCell, RefCell},
     rc::Rc,
+    sync::Arc,
 };
 
 use crate::{
     cache::{Cache, CacheState},
-    common::Artist,
+    common::{Artist, ArtistInfo},
     window::EuphonicaWindow,
 };
 
@@ -24,7 +25,6 @@ mod imp {
         pub name: TemplateChild<gtk::Label>,
         pub avatar_signal_ids: RefCell<Option<(SignalHandlerId, SignalHandlerId)>>,
         pub cache: OnceCell<Rc<Cache>>,
-        // Hold strong ref to Artist since this UI elem is usually its only user
         pub artist: OnceCell<Artist>,
     }
 
@@ -94,7 +94,12 @@ glib::wrapper! {
 }
 
 impl ArtistTagButton {
-    pub fn new(artist: &Artist, cache: Rc<Cache>, window: &EuphonicaWindow) -> Self {
+    #[inline]
+    fn get_inner_arc(&self) -> Option<Arc<ArtistInfo>> {
+        self.imp().artist.get().map(|a| a.get_inner_arc())
+    }
+
+    pub fn new(artist: Artist, cache: Rc<Cache>, window: &EuphonicaWindow) -> Self {
         let res: Self = Object::builder().build();
         let cache_state = cache.get_cache_state();
         res.imp()
@@ -104,7 +109,7 @@ impl ArtistTagButton {
 
         res.imp().name.set_label(artist.get_name());
 
-        let _ = res.imp().artist.set(artist.clone());
+        let _ = res.imp().artist.set(artist);
 
         let _ = res.imp().avatar_signal_ids.replace(Some((
             cache_state.connect_closure(
@@ -114,12 +119,7 @@ impl ArtistTagButton {
                     #[weak(rename_to = this)]
                     res,
                     move |_: CacheState, name: String, _: gdk::Texture, thumb: gdk::Texture| {
-                        if this
-                            .imp()
-                            .artist
-                            .get()
-                            .is_some_and(|a| a.get_name() == name)
-                        {
+                        if this.get_inner_arc().is_some_and(|a| a.get_name() == name) {
                             this.imp().avatar.set_custom_image(Some(&thumb));
                         }
                     }
@@ -132,12 +132,7 @@ impl ArtistTagButton {
                     #[weak(rename_to = this)]
                     res,
                     move |_: CacheState, name: String| {
-                        if this
-                            .imp()
-                            .artist
-                            .get()
-                            .is_some_and(|a| a.get_name() == name)
-                        {
+                        if this.get_inner_arc().is_some_and(|a| a.get_name() == name) {
                             this.imp()
                                 .avatar
                                 .set_custom_image(Option::<&gdk::Texture>::None);
@@ -166,14 +161,14 @@ impl ArtistTagButton {
             #[weak(rename_to = this)]
             self,
             async move {
-                if let Some(artist) = this.imp().artist.get() {
+                if let Some(artist) = this.get_inner_arc() {
                     match &this
                         .imp()
                         .cache
                         .get()
                         .unwrap()
                         .clone()
-                        .get_artist_avatar(artist.get_info(), true, true)
+                        .get_artist_avatar(artist, true, true)
                         .await
                     {
                         Ok(maybe_tex) => {

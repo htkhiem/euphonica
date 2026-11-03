@@ -367,11 +367,11 @@ impl SongRow {
             self,
             async move {
                 if let (Some(cache), Some(song)) = (this.imp().cache.get(), this.song()) {
-                    let res = cache.clone().get_song_cover(song.get_info(), true).await;
+                    let res = cache.clone().get_song_cover(song.get_inner_arc(), true).await;
                     // Check again as row might have been bound to a different song
                     // while awaiting
                     if this.song().is_some_and(|a| {
-                        a.get_info().get_comp_id() == song.get_info().get_comp_id()
+                        a.get_comp_id() == song.get_comp_id()
                     }) {
                         match res {
                             Ok(Some(tex)) => this.imp().thumbnail.show(&tex),

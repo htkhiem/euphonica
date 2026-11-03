@@ -167,7 +167,7 @@ impl ArtistView {
                     if !genres.is_empty() {
                         this.imp().genres_filter.set_filter_func(move |obj| {
                             let artist = obj.downcast_ref::<Artist>().unwrap();
-                            !artist.get_info().genres.is_disjoint(&genres)
+                            !artist.get_inner().genres.is_disjoint(&genres)
                         });
                         this.imp()
                             .genres_filter

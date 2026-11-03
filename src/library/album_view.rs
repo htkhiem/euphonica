@@ -22,7 +22,9 @@ use crate::{
 };
 
 mod imp {
-    use super::*;
+    use crate::utils::g_cmp_str_vecs;
+
+use super::*;
 
     #[derive(Debug, CompositeTemplate, Properties, Default)]
     #[properties(wrapper_type = super::AlbumView)]
@@ -229,9 +231,9 @@ mod imp {
                         }
                         4 => {
                             // AlbumArtist
-                            g_cmp_str_options(
-                                album1.get_sortable_artist_tag(),
-                                album2.get_sortable_artist_tag(),
+                            g_cmp_str_vecs(
+                                album1.get_albumartists().collect(),
+                                album2.get_albumartists().collect(),
                                 nulls_first,
                                 asc,
                                 case_sensitive,
@@ -325,7 +327,7 @@ mod imp {
                             // Match either album title or AlbumArtist (not artist tag)
                             g_search_substr(Some(album.get_title()), &search_term, case_sensitive)
                                 || g_search_substr(
-                                    album.get_artist_tag(),
+                                    album.get_albumartists_str(),
                                     &search_term,
                                     case_sensitive,
                                 )
@@ -336,7 +338,7 @@ mod imp {
                         }
                         2 => {
                             // Match only AlbumArtist (albums without such tag will never match)
-                            g_search_substr(album.get_artist_tag(), &search_term, case_sensitive)
+                            g_search_substr(album.get_albumartists_str(), &search_term, case_sensitive)
                         }
                         _ => true,
                     }
@@ -467,7 +469,7 @@ impl AlbumView {
                     if !genres.is_empty() {
                         this.imp().genres_filter.set_filter_func(move |obj| {
                             let album = obj.downcast_ref::<Album>().unwrap();
-                            !genres.is_disjoint(album.get_genres())
+                            album.get_genres().into_iter().any(|genre| genres.contains(genre))
                         });
                         this.imp()
                             .genres_filter
