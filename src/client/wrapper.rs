@@ -30,7 +30,6 @@ use std::{cell::RefCell, rc::Rc};
 use uuid::Uuid;
 
 use crate::cache::sqlite;
-use crate::client::connection::ImageHandle;
 use crate::common::{
     AlbumInfo, ArtistInfo, ConnectionState, DynamicPlaylist, split_genre_tag, tags,
 };
@@ -1169,7 +1168,7 @@ impl MpdWrapper {
             )
             .await?
             .into_iter()
-            .map(|si| si.into_album_info())
+            .map(|si| AlbumInfo::from_mpd_songs(vec![Arc::new(si)]))
             .filter(|maybe_info| maybe_info.is_some())
             .map(|maybe_info| maybe_info.unwrap().into())
             .collect())
@@ -1319,7 +1318,7 @@ impl MpdWrapper {
         Ok(asyncified
             .call(move |_| {
                 let mut res: FxHashMap<String, ArtistInfo> = FxHashMap::default();
-                for (song, genres) in songs.into_iter().zip(genres) {
+                for (mut song, genres) in songs.into_iter().zip(genres) {
                     // Here we're fetching song.artists instead of song.album.artists
                     for artist in ArtistInfo::extract_from_song(&mut song, false) {
                         let existing =
@@ -1387,8 +1386,8 @@ impl MpdWrapper {
             .call(move |_| {
                 let mut res = Vec::with_capacity(recent_names_set.len());
                 let mut already_parsed: FxHashSet<String> = FxHashSet::default();
-                for song in songs {
-                    let artists = song.into_artist_infos();
+                for mut song in songs {
+                    let artists = ArtistInfo::extract_from_song(&mut song, false);
                     for artist in artists.into_iter() {
                         if recent_names_set.contains(&artist.name)
                             && already_parsed.insert(artist.get_comp_id().to_owned())
@@ -1504,7 +1503,7 @@ impl MpdWrapper {
             if fetch_stickers {
                 // Error handling is already performed for us
                 let maybe_stickers = self
-                    .get_common_stickers("song", song.uri.to_owned())
+                    .get_common_stickers("song", song.file.to_owned())
                     .await
                     .ok();
                 Ok(Some((song, maybe_stickers)))
@@ -1554,8 +1553,9 @@ impl MpdWrapper {
         .into_iter()
         .zip(ts)
         .map(|(mut si, ts)| {
-            si.last_played = Some(ts);
-            Ok(si.into())
+            let res: Song = si.into();
+            res.init_last_played(ts);
+            Ok(res)
         })
         .collect()
     }
