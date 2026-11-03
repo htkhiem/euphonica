@@ -344,6 +344,10 @@ impl Song {
         self.get_inner().last_mod.as_deref()
     }
 
+    pub fn init_last_played(&self, ts: OffsetDateTime) {
+        let _ = self.imp().last_played.set(ts);
+    }
+
     pub fn get_last_played_desc(&self) -> Option<String> {
         // TODO: translations
         self.get_last_played()

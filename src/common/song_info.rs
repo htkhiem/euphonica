@@ -106,11 +106,12 @@ impl SongInfoDialog {
         // The fork's Song parser hoists some keys out of `tags` into struct fields:
         // - `title`/`artist`/`last_mod` only keep the LAST value of repeated keys
         // - `Time` (deprecated, low-precision `duration`) is discarded entirely
-        let (file, title, last_mod, artist, duration, tags) = (
+        // TODO: manual rows for the new rust-mpd Song object format.
+        let (file, title, last_mod, artists, duration, tags) = (
             song.file,
             song.title,
             song.last_mod,
-            song.artist,
+            song.artists,
             song.duration,
             song.tags,
         );
@@ -187,7 +188,7 @@ impl SongInfoDialog {
             row.set_subtitle(&escape(title));
             metadata.add(&row);
         }
-        if let Some(artist) = &artist {
+        for artist in artists {
             let row = make_property_row("Artist", false);
             row.set_subtitle(&escape(artist));
             metadata.add(&row);

@@ -83,6 +83,10 @@
 		<key name="background-portal-available" type="b">
 			<default>true</default>
 		</key>
+
+		<key name="n-threads" type="u">
+			<default>4</default>
+		</key>
 	</schema>
 
 	<schema id="io.github.htkhiem.Euphonica.client" path="/io/github/htkhiem/Euphonica/client/">
