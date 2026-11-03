@@ -1,9 +1,11 @@
 use super::{Library, Tag, TagsSection, artist_tag_button::ArtistTagButton};
+use crate::common::ArtistInfo;
 use crate::common::FadingScrolledWindow;
 use crate::meta_providers::models::AlbumMeta;
 use crate::meta_providers::models::MetaSource;
 use crate::utils::format_datetime_local_tz;
 use crate::utils::settings_manager;
+use crate::utils::strip_filename_linux;
 use crate::{
     cache::{Cache, CacheState, Error as CacheError, placeholders::EMPTY_ALBUM_STRING},
     client::{ClientState, state::StickersSupportLevel},
@@ -282,7 +284,7 @@ mod imp {
                             new_meta.mbid = Some(mbid.to_string());
                         }
                         // Might want to make this async?
-                        match cache.set_album_meta(album.get_info(), &new_meta, false) {
+                        match cache.set_album_meta(album.get_inner(), &new_meta, false) {
                             Ok(ts) => {
                                 let _ = this.meta.replace(Some(new_meta));
                                 let _ = this.new_last_modified.replace(Some(dbg!(ts)));
@@ -679,7 +681,7 @@ impl AlbumContentView {
             (self.imp().cache.get(), self.imp().album.borrow().as_ref())
         {
             let tags = self.imp().tags_widget.get_tags();
-            let folder_uri = album.get_info().folder_uri.clone();
+            let folder_uri = album.get_folder_uri().clone();
             if let Err(e) = cache.set_album_tags(&folder_uri, &tags) {
                 dbg!(e);
             }
@@ -722,7 +724,7 @@ impl AlbumContentView {
 
             let res = cache
                 .backup_album_meta(
-                    album.get_info(),
+                    album.get_inner(),
                     &meta,
                     old_last_modified,
                     overwrite,
@@ -825,11 +827,11 @@ impl AlbumContentView {
                 self.imp().wiki_stack.show_spinner();
                 self.imp().tags_widget.remove_all(true);
                 let cache = self.imp().cache.get().unwrap().clone();
-                let folder_uri = album.get_info().folder_uri.clone();
+                let folder_uri = album.get_folder_uri().clone();
 
                 let res = cache
                     .get_album_meta(
-                        album.get_info(),
+                        album.get_inner_arc(),
                         true,
                         overwrite,
                         self.imp().window.upgrade().as_ref(),
@@ -1108,10 +1110,8 @@ impl AlbumContentView {
                     row.set_thumbnail_visible(false);
 
                     row.set_name(song.get_name());
-                    row.set_first_attrib_text(song.get_artist_tag());
-                    row.set_duration(Some(&format_secs_as_duration(
-                        song.get_duration() as f64
-                    )));
+                    row.set_first_attrib_text(Some(&song.get_artist_string()));
+                    row.set_duration(Some(&format_secs_as_duration(song.get_duration() as f64)));
 
                     row.set_quality_grade(song.get_quality_grade());
                     let end_widget = RowAddButtons::new(&library);
@@ -1201,19 +1201,23 @@ impl AlbumContentView {
 
     async fn schedule_cover(&self, overwrite: bool) {
         self.imp().cover.show_spinner();
-        if let Some(info) = self.album().as_ref().map(|a| a.get_info()) {
+        if let Some(info) = self
+            .album()
+            .as_ref()
+            .map(|a| a.get_inner_arc().first_song.clone())
+        {
             let cache = self.imp().cache.get().unwrap().clone();
             // Remove existing entry in SQLite, which might be an empty "do not retry" placeholder.
             if overwrite {
                 // Don't notify, else we'd interrupt the spinner
                 if let Err(e) = cache
-                    .clear_album_cover(&info.folder_uri, self.uris(), false)
+                    .clear_album_cover(strip_filename_linux(&info.file), self.uris(), false)
                     .await
                 {
                     self.show_cache_error("Couldn't clear cover", e);
                 }
             }
-            match cache.get_album_cover(info, false).await {
+            match cache.get_song_cover(info, false).await {
                 Ok(Some(tex)) => {
                     self.update_cover(tex);
                 }
@@ -1256,10 +1260,10 @@ impl AlbumContentView {
             let genres_stack = self.imp().genres_stack.get();
             let window = self.imp().window.upgrade().unwrap();
             genres
-                .iter()
+                .into_iter()
                 .map(|genre| {
                     TagButton::new(
-                        &Tag::new(genre.clone(), None, None, false, false),
+                        &Tag::new(genre.to_owned(), None, None, false, false),
                         &genres_box,
                         &window,
                         |_| {},
@@ -1335,21 +1339,25 @@ impl AlbumContentView {
                             stack.show_content();
                             // Only now can we populate the artist tags, as the initial albuminfo
                             // is stripped of artist MBID for album grid performance
-                            song_list
-                                .item(0)
-                                .unwrap()
-                                .downcast_ref::<Song>()
-                                .unwrap()
-                                .get_artists()
-                                .iter()
-                                .map(|info| {
-                                    ArtistTagButton::new(
-                                        &Artist::from(info.clone()),
-                                        this.imp().cache.get().unwrap().clone(),
-                                        &this.imp().window.upgrade().unwrap(),
-                                    )
-                                })
-                                .for_each(|tag| artists_box.append(&tag));
+                            ArtistInfo::take_from_song(
+                                &mut song_list
+                                    .item(0)
+                                    .unwrap()
+                                    .downcast_ref::<Song>()
+                                    .unwrap()
+                                    .get_inner()
+                                    .clone(),
+                                true
+                            )
+                            .into_iter()
+                            .map(|info| {
+                                ArtistTagButton::new(
+                                    Artist::from(info),
+                                    this.imp().cache.get().unwrap().clone(),
+                                    &this.imp().window.upgrade().unwrap(),
+                                )
+                            })
+                            .for_each(|tag| artists_box.append(&tag));
                         } else {
                             stack.show_placeholder();
                         }

@@ -298,7 +298,7 @@ mod imp {
                         new_meta.bio = Some(bio);
 
                         // Might want to make this async?
-                        if let Err(e) = cache.set_artist_meta(artist.get_info(), &new_meta, false) {
+                        if let Err(e) = cache.set_artist_meta(artist.get_inner(), &new_meta, false) {
                             dbg!(e);
                         }
 
@@ -733,7 +733,7 @@ impl ArtistContentView {
             (self.imp().cache.get(), self.imp().artist.borrow().as_ref())
         {
             let tags = self.imp().tags_widget.get_tags();
-            let name = artist.get_info().name.clone();
+            let name = artist.get_inner().name.clone();
             if let Err(e) = cache.set_artist_tags(&name, &tags) {
                 dbg!(e);
             }
@@ -806,7 +806,7 @@ impl ArtistContentView {
                 let cache = self.imp().cache.get().unwrap().clone();
                 let res = cache
                     .get_artist_meta(
-                        artist.get_info(),
+                        artist.get_inner_arc(),
                         true,
                         overwrite,
                         self.imp().window.upgrade().as_ref(),
@@ -967,7 +967,7 @@ impl ArtistContentView {
 
             let res = cache
                 .backup_artist_meta(
-                    artist.get_info(),
+                    artist.get_inner(),
                     &meta,
                     old_last_modified,
                     overwrite,
@@ -1349,7 +1349,7 @@ impl ArtistContentView {
 
     async fn schedule_avatar(&self, overwrite: bool) {
         self.update_avatar(None);
-        if let Some(info) = self.artist().as_ref().map(|a| a.get_info()) {
+        if let Some(info) = self.artist().as_ref().map(|a| a.get_inner_arc()) {
             let cache = self.imp().cache.get().unwrap().clone();
             if overwrite {
                 // Don't notify, else we'd interrupt the spinner
@@ -1392,7 +1392,7 @@ impl ArtistContentView {
             }
         }
         self.imp().on_song_selection_changed();
-        let info = artist.get_info();
+        let info = artist.get_inner();
         self.imp().release_count.set_label("-");
         self.imp().avatar.set_text(Some(&info.name));
 
@@ -1460,9 +1460,9 @@ impl ArtistContentView {
                             for (maybe_album, _) in maybe_albums.iter() {
                                 if let Some(genres) = maybe_album.as_ref().map(|a| a.get_genres()) {
                                     // Clone only what's not already in all_genres
-                                    for genre in genres.iter() {
+                                    for genre in genres.into_iter() {
                                         if !all_genres.contains(genre) {
-                                            let _ = all_genres.insert(genre.clone());
+                                            let _ = all_genres.insert(genre.to_owned());
                                         }
                                     }
                                 }

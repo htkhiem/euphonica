@@ -206,9 +206,9 @@ pub fn g_cmp_str_options(
     Ordering::from(s2.unwrap().to_lowercase().cmp(&s1.unwrap().to_lowercase()))
 }
 
-pub fn g_cmp_string_vecs(
-    s1: &Vec<String>,
-    s2: &Vec<String>,
+pub fn g_cmp_str_vecs(
+    s1: Vec<&str>,
+    s2: Vec<&str>,
     nulls_first: bool,
     asc: bool,
     case_sensitive: bool,
@@ -222,16 +222,11 @@ pub fn g_cmp_string_vecs(
             return Ordering::Smaller;
         }
     }
-    let (s1, s2r) = if case_sensitive {
-        (s1, s2)
+    let raw = if case_sensitive {
+        s1.iter().map(|s| s.to_lowercase()).cmp(s2.iter().map(|s| s.to_lowercase()))
     } else {
-        (
-            &s1.iter().map(|s| s.to_lowercase()).collect(),
-            &s2.iter().map(|s| s.to_lowercase()).collect(),
-        )
+        s1.cmp(&s2)
     };
-
-    let raw = s1.cmp(s2);
     Ordering::from(if asc { raw } else { raw.reverse() })
 }
 

@@ -9,6 +9,7 @@ use mpd::search::Operation;
 use mpd::{Query, Term};
 use rustc_hash::FxHashSet;
 use std::cell::OnceCell;
+use std::sync::Arc;
 
 /// Unlike Album, an Artist entity still keeps its own data.
 /// This is because of the many-to-many relationships between Songs and Artists making things
@@ -52,7 +53,7 @@ impl ArtistInfo {
     /// Insert them yourself after-the-fact.
     /// TODO: candidate for moving to wrapper.rs since this is just too specific to that one's
     /// use case.
-    pub fn extract_from_song(song: &mut mpd::song::Song, generate_albumartists: bool) -> Vec<Self> {
+    pub fn take_from_song(song: &mut mpd::song::Song, generate_albumartists: bool) -> Vec<Self> {
         let mut res: Vec<Self> = Vec::new();
         let mut sort_tags = std::mem::take(if generate_albumartists {
             &mut song.albumartistsorts
@@ -262,11 +263,12 @@ mod imp {
     use super::*;
     use glib::{ParamSpec, ParamSpecString};
     use gtk::glib::ParamSpecObject;
+    use once_arc::OnceArc;
     use once_cell::sync::Lazy;
 
     #[derive(Default, Debug)]
     pub struct Artist {
-        pub info: OnceCell<ArtistInfo>,
+        pub info: OnceArc<ArtistInfo>,
     }
 
     #[glib::object_subclass]
@@ -276,7 +278,7 @@ mod imp {
 
         fn new() -> Self {
             Self {
-                info: OnceCell::new(),
+                info: OnceArc::new(),
             }
         }
     }
@@ -303,7 +305,7 @@ mod imp {
                 "name" => obj.get_name().to_value(),
                 "sortable-name" => obj.get_sortable_name().to_value(),
                 "example-uris" => {
-                    glib::BoxedAnyObject::new(self.info.get().map(|info| info.example_uris.clone()))
+                    glib::BoxedAnyObject::new(obj.get_inner().example_uris.clone())
                         .to_value()
                 }
                 _ => unimplemented!(),
@@ -317,25 +319,60 @@ glib::wrapper! {
 }
 
 impl Artist {
-    pub fn get_info(&self) -> &ArtistInfo {
-        self.imp().info.get().unwrap()
+    pub fn get_inner(&self) -> &ArtistInfo {
+        self.imp().info.get(std::sync::atomic::Ordering::Relaxed).unwrap()
+    }
+
+    pub fn get_inner_arc(&self) -> Arc<ArtistInfo> {
+        self.imp().info.load(std::sync::atomic::Ordering::Relaxed).unwrap()
     }
 
     pub fn get_name(&self) -> &str {
-        &self.get_info().name
+        &self.get_inner().name
     }
 
     pub fn get_sortable_name(&self) -> &str {
-        let info = self.get_info();
+        let info = self.get_inner();
         info.sort_tag.as_deref().unwrap_or(info.name.as_str())
     }
 
     pub fn get_mbid(&self) -> Option<&str> {
-        self.get_info().mbid.as_deref()
+        self.get_inner().mbid.as_deref()
     }
 
     pub fn is_composer(&self) -> bool {
-        self.get_info().is_composer
+        self.get_inner().is_composer
+    }
+
+    pub fn get_comp_id(&self) -> &str {
+        self.get_inner().get_comp_id()
+    }
+
+    /// Checks whether this Artist would be parsed from a given mpd::Song; in other words, a membership check
+    /// without having to fully parse Artist objects, avoiding most mem allocs.
+    pub fn is_in_song(&self, song: &mpd::song::Song, as_albumartist: bool) -> bool {
+        let mbids = if as_albumartist {
+            &song.albumartist_mbids
+        } else {
+            &song.artist_mbids
+        };
+        let names = if as_albumartist {
+            &song.albumartists
+        } else {
+            &song.artists
+        };
+        let this_comp_id = self.get_comp_id();
+        for (i, name) in names
+            .iter()
+            .map(|s| parse_mb_artist_tag(s))
+            .flatten()
+            .enumerate()
+        {
+            if mbids.get(i).map(|s| s.as_str()).unwrap_or(name) == this_comp_id {
+                return true;
+            }
+        }
+        false
     }
 }
 
@@ -348,7 +385,7 @@ impl Default for Artist {
 impl From<ArtistInfo> for Artist {
     fn from(info: ArtistInfo) -> Self {
         let res = glib::Object::builder::<Self>().build();
-        let _ = res.imp().info.set(info);
+        let _ = res.imp().info.store(Arc::new(info), std::sync::atomic::Ordering::Release);
         res
     }
 }

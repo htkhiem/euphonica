@@ -430,7 +430,7 @@ impl Song {
     }
 
     /// Get an iterator over artist tags for comparison/sorting purposes.
-    pub fn get_artist_tags(&self) -> impl Iterator<Item = &String> {
+    pub fn get_artists(&self) -> impl Iterator<Item = &String> {
         self.get_inner().artists.iter()
     }
 
@@ -601,6 +601,11 @@ impl Song {
 
         // TODO: disc & track num
         meta
+    }
+
+    pub fn get_comp_id(&self) -> &str {
+        let inner = self.get_inner();
+        inner.mbid.as_deref().unwrap_or(inner.file.as_ref())
     }
 
     /// Get something to serve as this song's album's internal ID for

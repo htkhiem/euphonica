@@ -490,7 +490,7 @@ impl RecentView {
                 row.set_name(song.get_name());
                 row.set_quality_grade(song.get_quality_grade());
                 row.set_first_attrib_text(song.get_album_title());
-                row.set_second_attrib_text(song.get_artist_tag());
+                row.set_second_attrib_text(Some(&song.get_artist_string()));
                 row.set_duration(song.get_last_played_desc().as_deref());
 
                 let end_widget = RowAddButtons::new(&library);
