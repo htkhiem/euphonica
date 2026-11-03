@@ -1,9 +1,11 @@
+use std::sync::Arc;
+
 use asyncified::Asyncified;
 use gtk::gio::prelude::*;
 
 use crate::{
-    common::{AlbumInfo, ArtistInfo, SongInfo},
-    meta_providers::the_audio_db::TheAudioDbWrapper,
+    common::{AlbumInfo, ArtistInfo},
+    meta_providers::{base::{AlbumKey, ArtistKey}, the_audio_db::TheAudioDbWrapper},
     utils::settings_manager,
     window::EuphonicaWindow,
 };
@@ -58,22 +60,24 @@ impl MetadataChain {
 
     pub async fn get_album_meta(
         &self,
-        key: AlbumInfo,
+        album: &AlbumInfo,
         mut existing: Option<models::AlbumMeta>,
         window: Option<&EuphonicaWindow>, // if given, will send error toasts
     ) -> Option<models::AlbumMeta> {
         // Clone once here then pass back n forth.
+        let mut key = AlbumKey::from(album);
         for (name, container) in self.providers.iter() {
-            let mut cloned_key = key.clone();
+
             let mut tries_left = self.max_tries;
+
             'retry: loop {
                 let (modified_key, res) = container
                     .call(move |provider| {
-                        let res = provider.get_album_meta(&mut cloned_key, existing);
-                        (cloned_key, res)
+                        let res = provider.get_album_meta(&mut key, existing);
+                        (key, res)
                     })
                     .await;
-                cloned_key = modified_key;
+                key = modified_key;
                 match res {
                     Ok(res) => {
                         existing = res;
@@ -104,21 +108,21 @@ impl MetadataChain {
 
     pub async fn get_artist_meta(
         &self,
-        key: ArtistInfo,
+        artist: &ArtistInfo,
         mut existing: Option<models::ArtistMeta>,
         window: Option<&EuphonicaWindow>,
     ) -> Option<models::ArtistMeta> {
         for (name, container) in self.providers.iter() {
             let mut tries_left = self.max_tries;
-            let mut cloned_key = key.clone();
+            let mut key = ArtistKey::from(artist);
             'retry: loop {
                 let (modified_key, res) = container
                     .call(move |provider| {
-                        let res = provider.get_artist_meta(&mut cloned_key, existing);
-                        (cloned_key, res)
+                        let res = provider.get_artist_meta(&mut key, existing);
+                        (key, res)
                     })
                     .await;
-                cloned_key = modified_key;
+                key = modified_key;
                 match res {
                     Ok(res) => {
                         existing = res;
@@ -149,7 +153,7 @@ impl MetadataChain {
 
     pub async fn get_lyrics(
         &self,
-        key: SongInfo,
+        key: Arc<mpd::Song>,
         window: Option<&EuphonicaWindow>,
     ) -> Option<models::Lyrics> {
         for (name, container) in self.providers.iter() {

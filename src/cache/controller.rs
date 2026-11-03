@@ -496,7 +496,9 @@ impl Cache {
 
             // Step 7: Go outside & scream
             if let Some(album) = AlbumInfo::from_mpd_songs(vec![song.clone()])
-                && let Some(meta) = self.get_album_meta(Arc::new(album), true, false, None).await?
+                && let Some(meta) = self
+                    .get_album_meta(Arc::new(album), true, false, None)
+                    .await?
             {
                 return self
                     .external
@@ -839,12 +841,14 @@ impl Cache {
         }
 
         if external && (album.get_mbid().is_some() || album.albumartists().next().is_some()) {
-            if !overwrite && let Ok(Some(local_res)) = self.get_local_album_meta(album.clone()).await {
+            if !overwrite
+                && let Ok(Some(local_res)) = self.get_local_album_meta(album.clone()).await
+            {
                 return Ok(Some(local_res));
             }
             if let Some(meta) = self
                 .meta_providers
-                .get_album_meta((*album).clone(), None, window)
+                .get_album_meta(album.as_ref(), None, window)
                 .await
             {
                 let ts =
@@ -854,7 +858,7 @@ impl Cache {
                 // Push an empty AlbumMeta to block further calls for this album.
                 println!(
                     "No album meta could be found for {}. Pushing empty document...",
-                    album.folder_uri()
+                    album.get_folder_uri()
                 );
                 sqlite::write_album_meta(&album, &models::AlbumMeta::from_key(&album), None, false)
                     .map_err(Error::Sqlite)?;
@@ -928,27 +932,29 @@ impl Cache {
     /// Step 3: if no local/MPD copy and `external` is true, fetch from external providers.
     pub async fn get_artist_meta(
         &self,
-        artist: &ArtistInfo,
+        artist: Arc<ArtistInfo>,
         external: bool,
         overwrite: bool,
         window: Option<&EuphonicaWindow>,
     ) -> Result<Option<(models::ArtistMeta, OffsetDateTime, models::MetaSource)>> {
         if !(overwrite && external)
-            && let Ok(Some(local_res)) = self.get_local_artist_meta(artist).await
+            && let Ok(Some(local_res)) = self.get_local_artist_meta(artist.clone()).await
         {
             return Ok(Some(local_res));
         }
 
-        if external && artist.mbid.is_some() {
-            if !overwrite && let Ok(Some(local_res)) = self.get_local_artist_meta(artist).await {
+        if external && artist.get_mbid().is_some() {
+            if !overwrite
+                && let Ok(Some(local_res)) = self.get_local_artist_meta(artist.clone()).await
+            {
                 return Ok(Some(local_res));
             }
             if let Some(meta) = self
                 .meta_providers
-                .get_artist_meta(artist.clone(), None, window)
+                .get_artist_meta(artist.as_ref(), None, window)
                 .await
             {
-                let ts = sqlite::write_artist_meta(artist, &meta, true).map_err(Error::Sqlite)?;
+                let ts = sqlite::write_artist_meta(&artist, &meta, true).map_err(Error::Sqlite)?;
                 Ok(Some((meta, ts, models::MetaSource::External)))
             } else {
                 // Push an empty ArtistMeta to block further calls for this artist.
@@ -956,7 +962,7 @@ impl Cache {
                     "No artist meta could be found for {}. Pushing empty document...",
                     &artist.name
                 );
-                sqlite::write_artist_meta(artist, &models::ArtistMeta::from_key(artist), false)
+                sqlite::write_artist_meta(&artist, &models::ArtistMeta::from_key(&artist), false)
                     .map_err(Error::Sqlite)?;
                 Ok(None)
             }
@@ -999,7 +1005,7 @@ impl Cache {
     /// Mirrors `get_local_album_meta` but uses `typ="filter"` and filter expression as URI.
     async fn get_local_artist_meta(
         &self,
-        artist: &ArtistInfo,
+        artist: Arc<ArtistInfo>,
     ) -> Result<Option<(models::ArtistMeta, OffsetDateTime, models::MetaSource)>> {
         let name = artist.name.to_owned();
         let mbid = artist.mbid.clone();
@@ -1046,7 +1052,6 @@ impl Cache {
 
                     if let Some(meta) = from_mpd.as_ref() {
                         let to_local = meta.clone();
-                        let artist = artist.to_owned();
                         if let Err(e) = self
                             .local
                             .call(move |_| sqlite::write_artist_meta(&artist, &to_local, true))
@@ -1098,7 +1103,7 @@ impl Cache {
     /// Still failing that, if `external` is true, it will try to get one from external providers.
     pub async fn get_artist_avatar(
         self: Rc<Self>,
-        artist: &ArtistInfo,
+        artist: Arc<ArtistInfo>,
         thumbnail: bool,
         external: bool,
     ) -> Result<Option<Texture>> {
@@ -1122,13 +1127,15 @@ impl Cache {
                 return Err(e);
             }
         }
+        let artist = artist.to_owned();
 
         // Failing the above, ask external providers
         if external
             && !failed_before
-            && let Some((meta, _, _)) = self.get_artist_meta(artist, true, false, None).await?
+            && let Some((meta, _, _)) = self
+                .get_artist_meta(artist.clone(), true, false, None)
+                .await?
         {
-            let artist = artist.to_owned();
             return self
                 .external
                 .call(move |_| {
@@ -1235,7 +1242,15 @@ impl Cache {
         window: Option<&EuphonicaWindow>,
     ) -> Result<Option<Lyrics>> {
         if !overwrite & !external {
-            match self.local.call(move |_| sqlite::find_lyrics(&song.file)).await {
+            match self
+                .local
+                .call(clone!(
+                    #[strong]
+                    song,
+                    move |_| sqlite::find_lyrics(&song.file)
+                ))
+                .await
+            {
                 Ok(Some(lyrics)) => {
                     return Ok(Some(lyrics));
                 }
@@ -1250,7 +1265,6 @@ impl Cache {
         }
 
         if external {
-            let song = song.to_owned();
             println!("Fetching new lyrics...");
             let res = self.meta_providers.get_lyrics(song.clone(), window).await;
             sqlite::write_lyrics(&song, res.as_ref()).map_err(Error::Sqlite)?;

@@ -1,13 +1,13 @@
 extern crate bson;
 use crate::{
-    common::{AlbumInfo, ArtistInfo, SongInfo},
+    common::{AlbumInfo, ArtistInfo},
     utils::settings_manager,
 };
+use mpd::song::Song as SongInfo;
 use gtk::prelude::*;
 use reqwest::{Error as ReqwestError, StatusCode, blocking::Client};
 use std::{
-    thread,
-    time::{Duration, SystemTime},
+    borrow::Cow, sync::Arc, thread, time::{Duration, SystemTime}
 };
 
 use super::models;
@@ -98,6 +98,44 @@ impl<T> MetadataError<T> {
 }
 
 pub type MetadataResult<T> = std::result::Result<T, MetadataError<T>>;
+
+
+/// Since we mutate these keys as we go down the chain, we can't pass in AlbumInfo (it doesn't
+/// own its data fields and is therefore immutable). This lil struct exists to replace it for
+/// usage in metadata chains.
+pub struct AlbumKey {
+    pub title: String,
+    pub albumartist: Option<String>,
+    pub mbid: Option<String>
+}
+
+impl From<&AlbumInfo> for AlbumKey {
+    fn from(album: &AlbumInfo) -> Self {
+        Self {
+            title: album.get_title().to_owned(),
+            albumartist: album.albumartists().next().map(|tag| tag.to_owned()),
+            mbid: album.get_mbid().map(|tag| tag.to_owned()),
+        }
+    }
+}
+
+
+/// The same is implemented for ArtistInfo so we don't have to clone the whole thing just
+/// to temporarily mutate it along the chain.
+pub struct ArtistKey {
+    pub name: String,
+    pub mbid: Option<String>
+}
+
+impl From<&ArtistInfo> for ArtistKey {
+    fn from(artist: &ArtistInfo) -> Self {
+        Self {
+            name: artist.name.to_owned(),
+            mbid: artist.mbid.as_deref().map(|id| id.to_owned()),
+        }
+    }
+}
+
 
 /// Common provider-agnostic utilities.
 pub mod utils {
@@ -206,7 +244,8 @@ pub trait MetadataProvider: Send + Sync {
     /// In case this provider does not provide album metadata, return Ok(existing).
     fn get_album_meta(
         &mut self,
-        key: &mut AlbumInfo,
+        // Title, first albumartist tag, MBID
+        key: &mut AlbumKey,
         existing: Option<models::AlbumMeta>,
     ) -> MetadataResult<Option<models::AlbumMeta>>;
 
@@ -216,7 +255,8 @@ pub trait MetadataProvider: Send + Sync {
     /// In case this provider does not provide artist metadata, return Ok(existing).
     fn get_artist_meta(
         &mut self,
-        key: &mut ArtistInfo,
+        // name, MBID
+        key: &mut ArtistKey,
         existing: Option<models::ArtistMeta>,
     ) -> MetadataResult<Option<models::ArtistMeta>>;
 

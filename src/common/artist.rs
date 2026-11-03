@@ -93,7 +93,17 @@ impl ArtistInfo {
     /// If an artist has a MusicBrainz ID, use it. If not, fall
     /// back to their readable name.
     pub fn get_comp_id(&self) -> &str {
-        self.mbid.as_deref().unwrap_or(self.name.as_ref())
+        self.get_mbid().unwrap_or(self.get_name())
+    }
+
+    #[inline]
+    pub fn get_name(&self) -> &str {
+        self.name.as_str()
+    }
+
+    #[inline]
+    pub fn get_mbid(&self) -> Option<&str> {
+        self.mbid.as_deref()
     }
 
     /// Get MPD filter expression to find all songs by this artist.
