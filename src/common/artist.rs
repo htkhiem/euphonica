@@ -89,6 +89,46 @@ impl ArtistInfo {
         res
     }
 
+    /// Non-destructively create one or more Artist objects from a Song.
+    /// This requires copies of multiple strings.
+    /// Fields not exclusive to each individual (genres and example_uris), are NOT collected.
+    /// Insert them yourself after-the-fact.
+    pub fn copy_from_song(song: &mpd::song::Song, generate_albumartists: bool) -> Vec<Self> {
+        let mut res: Vec<Self> = Vec::new();
+        let sort_tags = if generate_albumartists {
+            &song.albumartistsorts
+        } else {
+            &song.artistsorts
+        };
+        let mbids = if generate_albumartists {
+            &song.albumartist_mbids
+        } else {
+            &song.artist_mbids
+        };
+        let names = if generate_albumartists {
+            &song.albumartists
+        } else {
+            &song.artists
+        };
+        for (i, name) in names
+            .iter()
+            .map(|s| parse_mb_artist_tag(s))
+            .flatten()
+            .enumerate()
+        {
+            res.push(ArtistInfo {
+                name: name.to_owned(),
+                sort_tag: sort_tags.get(i).map(ToOwned::to_owned),
+                mbid: mbids.get(i).map(ToOwned::to_owned),
+                genres: FxHashSet::default(),
+                example_uris: Vec::with_capacity(0),
+                is_composer: false,
+                is_albumartist: generate_albumartists,
+            });
+        }
+        res
+    }
+
     /// Get something to serve as this artist's internal ID for
     /// filtering/comparison purposes.
     /// If an artist has a MusicBrainz ID, use it. If not, fall

@@ -1061,7 +1061,7 @@ impl MpdWrapper {
                     let mut song = std::mem::take(&mut songs[i]);
                     if song.album.is_some() {
                         // Handle artist first before surrendering the song instance to Album's Arc
-                        for artist in ArtistInfo::take_from_song(&mut song, true) {
+                        for artist in ArtistInfo::copy_from_song(&mut song, true) {
                             let comp_id = artist.get_comp_id();
                             let existing =
                                 albumartists.entry(comp_id.to_string()).or_insert_with(|| {
