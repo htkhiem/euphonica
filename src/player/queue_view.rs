@@ -285,7 +285,7 @@ mod imp {
                             // Match either title or artist
                             g_search_substr(Some(song.get_name()), &search_term, case_sensitive)
                                 || g_search_substr(
-                                    song.get_artist_tag(),
+                                    Some(song.get_artist_string()),
                                     &search_term,
                                     case_sensitive,
                                 )
@@ -296,7 +296,7 @@ mod imp {
                         }
                         2 => {
                             // Match only artist
-                            g_search_substr(song.get_artist_tag(), &search_term, case_sensitive)
+                            g_search_substr(Some(song.get_artist_string()), &search_term, case_sensitive)
                         }
                         _ => true,
                     }

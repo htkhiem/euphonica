@@ -5,7 +5,7 @@ use crate::{
     client::{
         ClientState, Error as ClientError, MpdWrapper, Result as ClientResult, StickerSetMode,
     },
-    common::{ConnectionState, QualityGrade, Song, Stickers},
+    common::{ConnectionState, QualityGrade, Song, SongInfoDialog, Stickers},
     config::APPLICATION_ID,
     meta_providers::models::Lyrics,
     server::{INTERNAL_FIFO_FORMAT, internal_fifo_path},
@@ -1002,7 +1002,7 @@ impl Player {
             .current_song
             .borrow()
             .as_ref()
-            .and_then(|song| song.get_info().duration)
+            .and_then(|song| song.get_inner().duration)
             .is_some_and(|duration| {
                 Duration::from_secs_f64(self.position())
                     + at.saturating_duration_since(self.imp().position_sampled_at.get())
@@ -1243,11 +1243,11 @@ impl Player {
                                     .cache
                                     .get()
                                     .unwrap()
-                                    .get_lyrics(new_song.get_info(), true, false, None) // overwrite == false means upsert
+                                    .get_lyrics(new_song.get_inner_arc(), true, false, None) // overwrite == false means upsert
                                     .await;
                                 if !this.current_song().is_some_and(|song| {
-                                    song.get_info().get_comp_id()
-                                        == new_song.get_info().get_comp_id()
+                                    song.get_comp_id()
+                                        == new_song.get_comp_id()
                                 }) {
                                     return;
                                 }
@@ -1323,7 +1323,7 @@ impl Player {
                             && (new_position_dur.as_secs_f32() / dur >= 0.5
                                 || new_position_dur.as_secs_f32() >= 240.0)
                         {
-                            match sqlite::add_to_history(curr_song.get_info()) {
+                            match sqlite::add_to_history(curr_song.get_inner()) {
                                 Ok(()) => {
                                     self.emit_by_name::<()>("history-changed", &[]);
                                 }
@@ -1659,14 +1659,13 @@ impl Player {
     }
 
     pub fn artist(&self) -> Option<String> {
-        self.current_song().and_then(|s| s.get_artist_str())
+        self.current_song().map(|s| s.get_artist_string().to_owned())
     }
 
     pub fn album(&self) -> Option<String> {
         self.current_song()
             .as_ref()
-            .and_then(|s| s.get_album())
-            .map(|a| a.title.to_owned())
+            .and_then(|s| s.get_album_title()).map(ToOwned::to_owned)
     }
 
     pub async fn current_song_cover_path(&self, thumbnail: bool) -> ClientResult<Option<PathBuf>> {
@@ -2094,7 +2093,7 @@ impl Player {
             && let Ok(lyrics) = Lyrics::try_from_synced_lrclib_str(text)
                 .or_else(|_| Lyrics::try_from_plain_lrclib_str(text))
         {
-            sqlite::write_lyrics(curr_song.get_info(), Some(&lyrics))
+            sqlite::write_lyrics(curr_song.get_inner(), Some(&lyrics))
                 .expect("Unable to import lyrics into SQLite DB");
             self.abort_lyrics_fetch();
             self.update_lyrics(Some(lyrics));
@@ -2103,7 +2102,7 @@ impl Player {
 
     pub fn import_lyrics_obj(&self, lyrics: Lyrics) {
         if let Some(curr_song) = self.current_song() {
-            sqlite::write_lyrics(curr_song.get_info(), Some(&lyrics))
+            sqlite::write_lyrics(curr_song.get_inner(), Some(&lyrics))
                 .expect("Unable to import lyrics into SQLite DB");
             self.abort_lyrics_fetch();
             self.update_lyrics(Some(lyrics));
@@ -2112,7 +2111,7 @@ impl Player {
 
     pub fn clear_lyrics(&self) {
         if let Some(curr_song) = self.current_song() {
-            sqlite::write_lyrics(curr_song.get_info(), None)
+            sqlite::write_lyrics(curr_song.get_inner(), None)
                 .expect("Unable to clear lyrics from DB");
             self.abort_lyrics_fetch();
             self.update_lyrics(None);
