@@ -63,7 +63,10 @@ impl AlbumInfo {
     }
 
     pub fn get_date(&self) -> Option<&str> {
-        self.first_song.date.as_deref().or(self.first_song.original_date.as_deref())
+        self.first_song
+            .date
+            .as_deref()
+            .or(self.first_song.original_date.as_deref())
     }
 
     pub fn get_mbid(&self) -> Option<&str> {
@@ -101,18 +104,14 @@ impl AlbumInfo {
 
     /// Only comes from the first song.
     pub fn albumartists(&self) -> impl Iterator<Item = &str> {
-        self.first_song
-            .albumartists
+        self.first_song.albumartists
             .iter()
             .map(|s| s.as_str())
     }
 
     /// Only comes from the first song.
     pub fn albumartistsorts(&self) -> impl Iterator<Item = &str> {
-        self.first_song
-            .albumartistsorts
-            .iter()
-            .map(|s| s.as_str())
+        self.first_song.albumartistsorts.iter().map(|s| s.as_str())
     }
 
     /// Should be cached
@@ -254,7 +253,11 @@ impl Album {
 
     pub fn get_sortable_title(&self) -> &str {
         let inner = self.get_inner();
-        inner.first_song.albumsort.as_deref().unwrap_or_else(|| {inner.get_title()})
+        inner
+            .first_song
+            .albumsort
+            .as_deref()
+            .unwrap_or_else(|| inner.get_title())
     }
 
     pub fn get_albumartists(&self) -> impl Iterator<Item = &str> {

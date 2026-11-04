@@ -681,8 +681,8 @@ impl AlbumContentView {
             (self.imp().cache.get(), self.imp().album.borrow().as_ref())
         {
             let tags = self.imp().tags_widget.get_tags();
-            let folder_uri = album.get_folder_uri().clone();
-            if let Err(e) = cache.set_album_tags(&folder_uri, &tags) {
+            let folder_uri = album.get_folder_uri();
+            if let Err(e) = cache.set_album_tags(folder_uri, &tags) {
                 dbg!(e);
             }
         }
@@ -827,7 +827,7 @@ impl AlbumContentView {
                 self.imp().wiki_stack.show_spinner();
                 self.imp().tags_widget.remove_all(true);
                 let cache = self.imp().cache.get().unwrap().clone();
-                let folder_uri = album.get_folder_uri().clone();
+                let folder_uri = album.get_folder_uri();
 
                 let res = cache
                     .get_album_meta(
@@ -890,7 +890,7 @@ impl AlbumContentView {
                         }
 
                         // Load tags from DB
-                        let tags = cache.get_album_tags(&folder_uri);
+                        let tags = cache.get_album_tags(folder_uri);
                         if let Ok(tags) = tags {
                             if tags.is_empty() {
                                 self.imp().tags_widget.show_placeholder();
