@@ -67,7 +67,7 @@ impl AlbumInfo {
     }
 
     pub fn get_mbid(&self) -> Option<&str> {
-        self.first_song.mbid.as_deref()
+        self.first_song.album_mbid.as_deref()
     }
 
     /// Get MPD filter expression to find all songs by this album.
