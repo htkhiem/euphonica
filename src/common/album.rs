@@ -1,23 +1,20 @@
-use gtk::gdk::Texture;
 use gtk::glib;
 use gtk::prelude::*;
 use gtk::subclass::prelude::*;
 use itertools::Itertools;
 use mpd::Query;
 use mpd::Term;
-use rustc_hash::FxHashSet;
 use std::cell::{OnceCell, RefCell};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use time::Date;
 
 use crate::common::parse_date;
-use crate::common::split_genre_tag;
 use crate::common::tags;
 use crate::utils::mpd_args_to_string;
 use crate::utils::strip_filename_linux;
 
-use super::{ArtistInfo, QualityGrade, Stickers, artists_to_string, parse_mb_artist_tag};
+use super::{QualityGrade, Stickers};
 
 /// From v1.0 the AlbumInfo class is just a "reader class", in that it simply keeps a strong ref to
 /// one or more mpd::song::Song objects from which it reads its data.
@@ -104,9 +101,7 @@ impl AlbumInfo {
 
     /// Only comes from the first song.
     pub fn albumartists(&self) -> impl Iterator<Item = &str> {
-        self.first_song.albumartists
-            .iter()
-            .map(|s| s.as_str())
+        self.first_song.albumartists.iter().map(|s| s.as_str())
     }
 
     /// Only comes from the first song.

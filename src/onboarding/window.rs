@@ -591,20 +591,16 @@ mod imp {
             // Page 4
             let ui_settings = settings_manager().child("ui");
             ui_settings
-                .bind(
-                    "is-touchscreen",
-                    &self.only_touchscreen.get(),
-                    "active",
-                )
+                .bind("is-touchscreen", &self.only_touchscreen.get(), "active")
                 .flags(gio::SettingsBindFlags::SET)
                 .build();
 
             for (btn, option) in [
+                (self.only_touchscreen_btn.get(), self.only_touchscreen.get()),
                 (
-                    self.only_touchscreen_btn.get(),
-                    self.only_touchscreen.get(),
+                    self.pointer_available_btn.get(),
+                    self.pointer_available.get(),
                 ),
-                (self.pointer_available_btn.get(), self.pointer_available.get()),
             ] {
                 let finish_btn = self.finish_btn.get();
                 btn.connect_clicked(move |_| {

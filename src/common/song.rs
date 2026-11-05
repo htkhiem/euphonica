@@ -1,20 +1,13 @@
 use crate::cache::sqlite;
-use crate::common::{DSD_EXTENSIONS, LOSSLESS_PCM_EXTENSIONS, parse_date, tags, album::Album};
-use crate::utils::{
-    APP_THREAD_POOL, get_image_cache_path, get_time_ago_desc, strip_filename_linux,
-};
-use core::time::Duration;
-use derivative::Derivative;
-use futures::FutureExt;
+use crate::common::{DSD_EXTENSIONS, LOSSLESS_PCM_EXTENSIONS, parse_date};
+use crate::utils::{get_image_cache_path, get_time_ago_desc, strip_filename_linux};
 use gtk::glib;
 use gtk::prelude::*;
 use gtk::subclass::prelude::*;
-use itertools::EitherOrBoth::{self, Both, Right};
-use itertools::{Either, Itertools};
-use mpd::{song::Song as SongInfo, status::AudioFormat};
+use itertools::Itertools;
+use mpd::song::Song as SongInfo;
 use mpris_server::{Time, zbus::zvariant::ObjectPath};
 use once_arc::OnceArc;
-use rustc_hash::FxHashSet;
 use std::cell::Ref;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
@@ -23,10 +16,10 @@ use std::{
     ffi::OsStr,
     path::Path,
 };
-use time::{Date, Month, OffsetDateTime};
+use time::{Date, OffsetDateTime};
 
 use super::Stickers;
-use super::{AlbumInfo, ArtistInfo, artists_to_string, parse_mb_artist_tag};
+use super::{AlbumInfo, ArtistInfo};
 
 // Mostly for eyecandy
 #[derive(Clone, Copy, Debug, glib::Enum, PartialEq, Default)]
@@ -142,7 +135,7 @@ impl QualityGrade {
 // }
 
 mod imp {
-    use std::{cell::RefCell, sync::Arc};
+    use std::cell::RefCell;
 
     use super::*;
     use glib::{
@@ -718,8 +711,7 @@ impl From<SongInfo> for Song {
             imp.queue_pos.set(place.pos);
         }
         imp.quality_grade.set(QualityGrade::of_mpd_song(&song));
-        imp.info.store(Arc::new(song), Ordering::Release);
-
+        let _ = imp.info.store(Arc::new(song), Ordering::Release);
 
         res
     }

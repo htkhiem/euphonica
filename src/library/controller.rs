@@ -4,7 +4,7 @@ use crate::{
         Error as ClientError, MpdWrapper, Result as ClientResult, StickerSetMode,
         state::StickersSupportLevel,
     },
-    common::{Album, Artist, ArtistInfo, DynamicPlaylist, INode, Song, Stickers, parse_date, tags},
+    common::{Album, Artist, DynamicPlaylist, INode, Song, Stickers, parse_date, tags},
     library::Tag,
     player::Player,
     utils::{APP_THREAD_POOL, settings_manager},
@@ -29,7 +29,9 @@ use once_cell::sync::Lazy;
 
 use adw::subclass::prelude::*;
 
-use mpd::{EditAction, Query, SaveMode, Song as SongInfo, Term, search::Operation as QueryOperation};
+use mpd::{
+    EditAction, Query, SaveMode, Song as SongInfo, Term, search::Operation as QueryOperation,
+};
 
 mod imp {
     use super::*;
@@ -844,7 +846,7 @@ impl Library {
         Vec<Song>,
         Vec<(Option<i32>, Vec<(Option<Album>, Vec<Song>)>)>,
     )> {
-        let comp_id = artist.get_inner().get_comp_id();
+        let _comp_id = artist.get_inner().get_comp_id();
         let mut songs: FxHashMap<String, mpd::song::Song> = FxHashMap::default();
 
         if fetch_by_artist_tag {
@@ -858,9 +860,7 @@ impl Library {
                 .get_song_infos_by_query(query_artist_tag, true, &mut |batch| {
                     batch
                         .into_iter()
-                        .filter(|s| {
-                            artist.is_in_song(s, false)
-                        })
+                        .filter(|s| artist.is_in_song(s, false))
                         .for_each(|si| {
                             songs.insert(si.file.clone(), si.into());
                         });
@@ -878,9 +878,7 @@ impl Library {
                 .get_song_infos_by_query(query_albumartist_tag, true, &mut |batch| {
                     batch
                         .into_iter()
-                        .filter(|s| {
-                            s.album.as_ref().is_some() && artist.is_in_song(s, true)
-                        })
+                        .filter(|s| s.album.as_ref().is_some() && artist.is_in_song(s, true))
                         .for_each(|si| {
                             songs.insert(si.file.clone(), si);
                         });

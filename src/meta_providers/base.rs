@@ -3,11 +3,12 @@ use crate::{
     common::{AlbumInfo, ArtistInfo},
     utils::settings_manager,
 };
-use mpd::song::Song as SongInfo;
 use gtk::prelude::*;
+use mpd::song::Song as SongInfo;
 use reqwest::{Error as ReqwestError, StatusCode, blocking::Client};
 use std::{
-    borrow::Cow, sync::Arc, thread, time::{Duration, SystemTime}
+    thread,
+    time::{Duration, SystemTime},
 };
 
 use super::models;
@@ -99,14 +100,13 @@ impl<T> MetadataError<T> {
 
 pub type MetadataResult<T> = std::result::Result<T, MetadataError<T>>;
 
-
 /// Since we mutate these keys as we go down the chain, we can't pass in AlbumInfo (it doesn't
 /// own its data fields and is therefore immutable). This lil struct exists to replace it for
 /// usage in metadata chains.
 pub struct AlbumKey {
     pub title: String,
     pub albumartist: Option<String>,
-    pub mbid: Option<String>
+    pub mbid: Option<String>,
 }
 
 impl From<&AlbumInfo> for AlbumKey {
@@ -119,12 +119,11 @@ impl From<&AlbumInfo> for AlbumKey {
     }
 }
 
-
 /// The same is implemented for ArtistInfo so we don't have to clone the whole thing just
 /// to temporarily mutate it along the chain.
 pub struct ArtistKey {
     pub name: String,
-    pub mbid: Option<String>
+    pub mbid: Option<String>,
 }
 
 impl From<&ArtistInfo> for ArtistKey {
@@ -135,7 +134,6 @@ impl From<&ArtistInfo> for ArtistKey {
         }
     }
 }
-
 
 /// Common provider-agnostic utilities.
 pub mod utils {

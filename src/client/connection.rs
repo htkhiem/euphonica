@@ -16,17 +16,17 @@ use rustc_hash::FxHashSet;
 #[cfg(target_os = "linux")]
 use std::os::{linux::net::SocketAddrExt, unix::net::SocketAddr};
 use std::{
-    borrow::Cow, cell::RefCell, cmp::Ordering as StdOrdering, fs::File, io::Read, net::TcpStream,
-    ops::Range, os::unix::net::UnixStream, result, sync::Arc,
+    borrow::Cow, cmp::Ordering as StdOrdering, fs::File, io::Read, net::TcpStream, ops::Range,
+    os::unix::net::UnixStream, result, sync::Arc,
 };
 
 use crate::{
     cache::sqlite,
     client::stream::StreamWrapper,
     common::{
-        AlbumInfo, DynamicPlaylist, Stickers,
+        DynamicPlaylist, Stickers,
         dynamic_playlist::{Ordering, QueryLhs, Rule, StickerObjectType, StickerOperation},
-        inode::INodeInfo, parse_date,
+        inode::INodeInfo,
     },
     player::PlaybackFlow,
     server::{ManagedMpdError, config::MpdConfig},
@@ -53,12 +53,7 @@ fn cmp_vecs_nulls_last<T: Ord>(a: &Vec<T>, b: &Vec<T>, reverse: bool) -> StdOrde
     } else if b_empty && !a_empty {
         return StdOrdering::Less;
     }
-    if reverse {
-        b.cmp(a)
-    } else {
-        a.cmp(b)
-    }
-
+    if reverse { b.cmp(a) } else { a.cmp(b) }
 }
 
 // Reverse comparison, but still putting nulls last
@@ -92,37 +87,29 @@ pub fn build_comparator(
                 let date_a = song_a.date.as_deref().or(song_a.original_date.as_deref());
                 let date_b = song_b.date.as_deref().or(song_b.original_date.as_deref());
                 let res = match *ordering {
-                    Ordering::AscAlbumTitle => cmp_options_nulls_last(
-                        song_a.album.as_ref(),
-                        song_b.album.as_ref(),
-                    ),
-                    Ordering::DescAlbumTitle => reverse_cmp_options_nulls_last(
-                        song_a.album.as_ref(),
-                        song_b.album.as_ref(),
-                    ),
+                    Ordering::AscAlbumTitle => {
+                        cmp_options_nulls_last(song_a.album.as_ref(), song_b.album.as_ref())
+                    }
+                    Ordering::DescAlbumTitle => {
+                        reverse_cmp_options_nulls_last(song_a.album.as_ref(), song_b.album.as_ref())
+                    }
                     Ordering::Track => {
                         let track_a = song_a.track.unwrap_or(u32::MAX);
                         let track_b = song_b.track.unwrap_or(u32::MAX);
                         track_a.cmp(&track_b)
                     }
-                    Ordering::AscReleaseDate => cmp_options_nulls_last(
-                        date_a.as_ref(),
-                        date_b.as_ref(),
-                    ),
-                    Ordering::DescReleaseDate => reverse_cmp_options_nulls_last(
-                        date_a.as_ref(),
-                        date_b.as_ref(),
-                    ),
-                    Ordering::AscArtistTag => cmp_vecs_nulls_last(
-                        &song_a.artists,
-                        &song_b.artists,
-                        false
-                    ),
-                    Ordering::DescArtistTag => cmp_vecs_nulls_last(
-                        &song_a.artists,
-                        &song_b.artists,
-                        true
-                    ),
+                    Ordering::AscReleaseDate => {
+                        cmp_options_nulls_last(date_a.as_ref(), date_b.as_ref())
+                    }
+                    Ordering::DescReleaseDate => {
+                        reverse_cmp_options_nulls_last(date_a.as_ref(), date_b.as_ref())
+                    }
+                    Ordering::AscArtistTag => {
+                        cmp_vecs_nulls_last(&song_a.artists, &song_b.artists, false)
+                    }
+                    Ordering::DescArtistTag => {
+                        cmp_vecs_nulls_last(&song_a.artists, &song_b.artists, true)
+                    }
                     Ordering::AscRating => cmp_options_nulls_last(
                         stickers_a.rating.as_ref(),
                         stickers_b.rating.as_ref(),
@@ -131,10 +118,9 @@ pub fn build_comparator(
                         stickers_a.rating.as_ref(),
                         stickers_b.rating.as_ref(),
                     ),
-                    Ordering::AscLastModified => cmp_options_nulls_last(
-                        song_a.last_mod.as_ref(),
-                        song_b.last_mod.as_ref(),
-                    ),
+                    Ordering::AscLastModified => {
+                        cmp_options_nulls_last(song_a.last_mod.as_ref(), song_b.last_mod.as_ref())
+                    }
                     Ordering::DescLastModified => reverse_cmp_options_nulls_last(
                         song_a.last_mod.as_ref(),
                         song_b.last_mod.as_ref(),
@@ -371,7 +357,7 @@ pub enum Task {
         /// - Some(Some(Vec)): newly downloaded data
         /// - Sone(None): already in DB, skipped
         /// - None: unavailable from MPD
-        Responder<Option<Option<Vec<u8>>>>
+        Responder<Option<Option<Vec<u8>>>>,
     ),
     /// Query distinct values of a tag, optionally grouped by another
     List(
@@ -674,11 +660,14 @@ impl Connection {
         // Must be a full URI (not the truncated folder_uri) to avoid problems with remote connections
         example_uri: &String,
         download_func: F,
-        resp: Responder<Option<Option<Vec<u8>>>>
+        resp: Responder<Option<Option<Vec<u8>>>>,
     ) where
         F: Fn(&mut Client<StreamWrapper>, &String) -> MpdResult<Vec<u8>>,
     {
-        if sqlite::has_image_by_key(example_uri.as_str(), None).expect("sqlite error") || sqlite::has_image_by_key(strip_filename_linux(example_uri.as_str()), None).expect("sqlite error") {
+        if sqlite::has_image_by_key(example_uri.as_str(), None).expect("sqlite error")
+            || sqlite::has_image_by_key(strip_filename_linux(example_uri.as_str()), None)
+                .expect("sqlite error")
+        {
             let _ = resp.send(Ok(Some(None)));
             return;
         } else {
@@ -1157,13 +1146,11 @@ impl Connection {
                         |client, uri| client.readpicture(uri),
                         resp,
                     ),
-                    Task::GetFolderCover(song, resp) => {
-                        self.maybe_download_image(
-                            &song.file,
-                            |client, uri| client.albumart(uri),
-                            resp,
-                        )
-                    }
+                    Task::GetFolderCover(song, resp) => self.maybe_download_image(
+                        &song.file,
+                        |client, uri| client.albumart(uri),
+                        resp,
+                    ),
                     Task::List(term, query, groupby, resp) => {
                         self.respond_with_client(|c| c.list(&term, &query, groupby), resp)
                     }

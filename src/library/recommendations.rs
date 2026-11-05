@@ -6,11 +6,13 @@ They do feel fuzzy enough though :).
  */
 use rusqlite::params;
 
-use crate::cache::sqlite::{SQLITE_POOL, Error};
+use crate::cache::sqlite::{Error, SQLITE_POOL};
 
 /// Get albums and artists worth "rediscovering": oft-listened, but not so lately.
 /// Albums are returned as (title, artist, mbid), while artists are returned by name.
-pub fn rediscover(n: u32) -> Result<(Vec<(String, Option<String>, Option<String>)>, Vec<String>), Error> {
+pub fn rediscover(
+    n: u32,
+) -> Result<(Vec<(String, Option<String>, Option<String>)>, Vec<String>), Error> {
     let conn = SQLITE_POOL.get().unwrap();
 
     // Albums: score by affinity * staleness, where affinity is ln(1 + listens count) and
@@ -50,11 +52,7 @@ select name, ln(1 + listen_count) * pow(n_days_since_last_play, 0.4) as rediscov
         )
         .unwrap();
     let artists = artists_query
-        .query_map(params![n], |r| {
-            Ok(
-                r.get::<usize, String>(0)?
-            )
-        })
+        .query_map(params![n], |r| Ok(r.get::<usize, String>(0)?))
         .map_err(Error::Db)?
         .map(|r| r.unwrap())
         .collect();

@@ -5,7 +5,10 @@ use gtk::gio::prelude::*;
 
 use crate::{
     common::{AlbumInfo, ArtistInfo},
-    meta_providers::{base::{AlbumKey, ArtistKey}, the_audio_db::TheAudioDbWrapper},
+    meta_providers::{
+        base::{AlbumKey, ArtistKey},
+        the_audio_db::TheAudioDbWrapper,
+    },
     utils::settings_manager,
     window::EuphonicaWindow,
 };
@@ -67,7 +70,6 @@ impl MetadataChain {
         // Clone once here then pass back n forth.
         let mut key = AlbumKey::from(album);
         for (name, container) in self.providers.iter() {
-
             let mut tries_left = self.max_tries;
 
             'retry: loop {
