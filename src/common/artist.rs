@@ -8,7 +8,6 @@ use gtk::subclass::prelude::*;
 use mpd::search::Operation;
 use mpd::{Query, Term};
 use rustc_hash::FxHashSet;
-use std::cell::OnceCell;
 use std::sync::Arc;
 
 /// Unlike Album, an Artist entity still keeps its own data.
@@ -276,29 +275,6 @@ pub fn parse_mb_artist_tag(input: &str) -> Vec<&str> {
     }
 }
 
-pub fn artists_to_string(artists: &[ArtistInfo]) -> Option<String> {
-    if artists.is_empty() {
-        None
-    } else if artists.len() > 1 {
-        // For now assume that only the first artist in the list can be a composer
-        let mut res: String = "".to_owned();
-        for (i, artist) in artists.iter().enumerate() {
-            if i > 0 {
-                let sep = if artists[i - 1].is_composer {
-                    "; "
-                } else {
-                    ", "
-                };
-                res.push_str(sep);
-            }
-            res.push_str(artist.name.as_ref());
-        }
-        Some(res)
-    } else {
-        Some(artists[0].name.clone())
-    }
-}
-
 mod imp {
     use super::*;
     use glib::{ParamSpec, ParamSpecString};
@@ -345,8 +321,7 @@ mod imp {
                 "name" => obj.get_name().to_value(),
                 "sortable-name" => obj.get_sortable_name().to_value(),
                 "example-uris" => {
-                    glib::BoxedAnyObject::new(obj.get_inner().example_uris.clone())
-                        .to_value()
+                    glib::BoxedAnyObject::new(obj.get_inner().example_uris.clone()).to_value()
                 }
                 _ => unimplemented!(),
             }
@@ -360,11 +335,17 @@ glib::wrapper! {
 
 impl Artist {
     pub fn get_inner(&self) -> &ArtistInfo {
-        self.imp().info.get(std::sync::atomic::Ordering::Relaxed).unwrap()
+        self.imp()
+            .info
+            .get(std::sync::atomic::Ordering::Relaxed)
+            .unwrap()
     }
 
     pub fn get_inner_arc(&self) -> Arc<ArtistInfo> {
-        self.imp().info.load(std::sync::atomic::Ordering::Relaxed).unwrap()
+        self.imp()
+            .info
+            .load(std::sync::atomic::Ordering::Relaxed)
+            .unwrap()
     }
 
     pub fn get_name(&self) -> &str {
@@ -425,7 +406,10 @@ impl Default for Artist {
 impl From<ArtistInfo> for Artist {
     fn from(info: ArtistInfo) -> Self {
         let res = glib::Object::builder::<Self>().build();
-        let _ = res.imp().info.store(Arc::new(info), std::sync::atomic::Ordering::Release);
+        let _ = res
+            .imp()
+            .info
+            .store(Arc::new(info), std::sync::atomic::Ordering::Release);
         res
     }
 }

@@ -1,7 +1,6 @@
 use std::{path::Path, time::SystemTime};
 
 use crate::{
-    common::{AlbumInfo, ArtistInfo},
     config::APPLICATION_USER_AGENT,
     meta_providers::base::{AlbumKey, ArtistKey},
     utils::meta_provider_settings,
@@ -55,7 +54,12 @@ impl MetadataProvider for LrcLibWrapper {
                 .title
                 .as_deref()
                 .or(key.name.as_deref())
-                .or_else(|| Path::new(&key.file).file_stem().map(|stem| stem.to_str()).flatten())
+                .or_else(|| {
+                    Path::new(&key.file)
+                        .file_stem()
+                        .map(|stem| stem.to_str())
+                        .flatten()
+                })
                 .unwrap_or_else(|| "");
             params.push(("track_name", title));
             if let Some(artists) = key.albumartists.get(0) {

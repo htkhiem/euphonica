@@ -5,18 +5,20 @@ use std::time::SystemTime;
 use gtk::prelude::*;
 use reqwest::{blocking::Client, header::USER_AGENT};
 
-use crate::{
-    common::{AlbumInfo, ArtistInfo},
-    config::APPLICATION_USER_AGENT,
-    meta_providers::{base::{AlbumKey, ArtistKey}, lastfm::models::LastfmErrorResponse},
-    utils::meta_provider_settings,
-};
-use mpd::song::Song as SongInfo;
 use super::models::{LastfmAlbumResponse, LastfmArtistResponse};
 use super::{
     super::{MetadataProvider, models, prelude::*},
     PROVIDER_KEY,
 };
+use crate::{
+    config::APPLICATION_USER_AGENT,
+    meta_providers::{
+        base::{AlbumKey, ArtistKey},
+        lastfm::models::LastfmErrorResponse,
+    },
+    utils::meta_provider_settings,
+};
+use mpd::song::Song as SongInfo;
 
 pub const API_ROOT: &str = "http://ws.audioscrobbler.com/2.0";
 
@@ -221,10 +223,7 @@ impl MetadataProvider for LastfmWrapper {
     }
 
     /// Last.fm does not provide lyrics.
-    fn get_lyrics(
-        &mut self,
-        _key: &SongInfo,
-    ) -> MetadataResult<Option<models::Lyrics>> {
+    fn get_lyrics(&mut self, _key: &SongInfo) -> MetadataResult<Option<models::Lyrics>> {
         Ok(None)
     }
 }

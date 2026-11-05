@@ -3,12 +3,6 @@ extern crate rusqlite;
 
 use std::{io::Cursor, str::FromStr};
 
-use once_cell::sync::Lazy;
-use r2d2_sqlite::SqliteConnectionManager;
-use rusqlite::{Error as SqliteError, OptionalExtension, Result, Row, params};
-use rustc_hash::FxHashSet;
-use time::OffsetDateTime;
-use mpd::Song as SongInfo;
 use crate::{
     common::{
         AlbumInfo, ArtistInfo, DynamicPlaylist, INodeType,
@@ -20,6 +14,12 @@ use crate::{
         format_datetime_local_tz, get_doc_cache_path, get_image_cache_path, strip_filename_linux,
     },
 };
+use mpd::Song as SongInfo;
+use once_cell::sync::Lazy;
+use r2d2_sqlite::SqliteConnectionManager;
+use rusqlite::{Error as SqliteError, OptionalExtension, Result, Row, params};
+use rustc_hash::FxHashSet;
+use time::OffsetDateTime;
 
 pub static SQLITE_POOL: Lazy<r2d2::Pool<SqliteConnectionManager>> = Lazy::new(|| {
     let manager = SqliteConnectionManager::file(get_doc_cache_path());
@@ -938,10 +938,7 @@ pub fn write_lyrics(song: &SongInfo, lyrics: Option<&Lyrics>) -> Result<(), Erro
 }
 
 /// Fast path to check for disk cache availability without actually loading the path into RAM.
-pub fn has_image_by_key(
-    key: &str,
-    prefix: Option<&str>
-) -> Result<bool, Error> {
+pub fn has_image_by_key(key: &str, prefix: Option<&str>) -> Result<bool, Error> {
     let query: Result<usize, SqliteError>;
     let conn = SQLITE_POOL.get().unwrap();
     let final_key = if let Some(prefix) = prefix {
@@ -952,9 +949,7 @@ pub fn has_image_by_key(
     query = conn
         .prepare("select count(*) from images where key = ?1 limit 1")
         .unwrap()
-        .query_row(params![final_key], |r| {
-            r.get::<usize, usize>(0)
-        });
+        .query_row(params![final_key], |r| r.get::<usize, usize>(0));
     match query {
         Ok(count) => Ok(count > 0),
         Err(SqliteError::QueryReturnedNoRows) => Ok(false),

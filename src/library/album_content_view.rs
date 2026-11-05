@@ -1347,7 +1347,7 @@ impl AlbumContentView {
                                     .unwrap()
                                     .get_inner()
                                     .clone(),
-                                true
+                                true,
                             )
                             .into_iter()
                             .map(|info| {

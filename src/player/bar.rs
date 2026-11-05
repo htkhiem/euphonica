@@ -353,9 +353,7 @@ impl PlayerBar {
                         .player
                         .upgrade()
                         .and_then(|p| p.current_song())
-                        .is_some_and(|cur| {
-                            cur.get_comp_id() == song.get_comp_id()
-                        })
+                        .is_some_and(|cur| cur.get_comp_id() == song.get_comp_id())
                     {
                         match cover {
                             Ok(Some(tex)) => this.imp().albumart.show(&tex),

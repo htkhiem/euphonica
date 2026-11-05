@@ -11,9 +11,11 @@ use musicbrainz_rs::{
 };
 
 use crate::{
-    common::{AlbumInfo, ArtistInfo},
     config::APPLICATION_USER_AGENT,
-    meta_providers::{base::{AlbumKey, ArtistKey}, models::ImageMeta},
+    meta_providers::{
+        base::{AlbumKey, ArtistKey},
+        models::ImageMeta,
+    },
     utils::{meta_provider_settings, settings_manager},
 };
 
@@ -207,10 +209,7 @@ impl MetadataProvider for MusicBrainzWrapper {
     }
 
     /// MusicBrainz does not provide lyrics.
-    fn get_lyrics(
-        &mut self,
-        _key: &mpd::Song,
-    ) -> MetadataResult<Option<models::Lyrics>> {
+    fn get_lyrics(&mut self, _key: &mpd::Song) -> MetadataResult<Option<models::Lyrics>> {
         Ok(None)
     }
 }

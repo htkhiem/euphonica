@@ -1,10 +1,6 @@
 use std::time::SystemTime;
 
-use crate::{
-    common::{AlbumInfo, ArtistInfo},
-    config::APPLICATION_USER_AGENT,
-    utils::meta_provider_settings,
-};
+use crate::{config::APPLICATION_USER_AGENT, utils::meta_provider_settings};
 use gtk::prelude::*;
 use reqwest::{
     Error,
@@ -17,7 +13,12 @@ use super::models::{
     TheAudioDbAlbum, TheAudioDbAlbumResponse, TheAudioDbArtist, TheAudioDbArtistResponse,
 };
 use super::{
-    super::{MetadataProvider, models, prelude::*, base::{AlbumKey, ArtistKey}},
+    super::{
+        MetadataProvider,
+        base::{AlbumKey, ArtistKey},
+        models,
+        prelude::*,
+    },
     PROVIDER_KEY,
 };
 
@@ -304,10 +305,7 @@ impl MetadataProvider for TheAudioDbWrapper {
     }
 
     /// TheAudioDB does not provide lyrics.
-    fn get_lyrics(
-        &mut self,
-        _key: &mpd::Song,
-    ) -> MetadataResult<Option<models::Lyrics>> {
+    fn get_lyrics(&mut self, _key: &mpd::Song) -> MetadataResult<Option<models::Lyrics>> {
         Ok(None)
     }
 }
@@ -315,8 +313,6 @@ impl MetadataProvider for TheAudioDbWrapper {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::common::{AlbumInfo, ArtistInfo, QualityGrade};
-    use rustc_hash::FxHashSet;
 
     #[test]
     fn v1_url_search_artist() {

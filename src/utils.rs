@@ -223,7 +223,9 @@ pub fn g_cmp_str_vecs(
         }
     }
     let raw = if case_sensitive {
-        s1.iter().map(|s| s.to_lowercase()).cmp(s2.iter().map(|s| s.to_lowercase()))
+        s1.iter()
+            .map(|s| s.to_lowercase())
+            .cmp(s2.iter().map(|s| s.to_lowercase()))
     } else {
         s1.cmp(&s2)
     };

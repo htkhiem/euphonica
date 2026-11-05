@@ -24,7 +24,7 @@ pub mod tags;
 pub mod theme_selector;
 
 pub use album::{Album, AlbumInfo};
-pub use artist::{Artist, ArtistInfo, artists_to_string, parse_mb_artist_tag};
+pub use artist::{Artist, ArtistInfo};
 pub use content_stack::ContentStack;
 pub use content_view::ContentView;
 pub use cover_fan::CoverFan;
@@ -36,7 +36,6 @@ use gtk::glib;
 pub use image_stack::ImageStack;
 pub use inode::{INode, INodeType};
 pub use marquee::Marquee;
-use once_arc::InitOnceArc;
 pub use picture_stack::PictureStack;
 pub use rating::Rating;
 pub use row_add_buttons::RowAddButtons;
@@ -46,10 +45,7 @@ pub use song_info::SongInfoDialog;
 pub use song_row::SongRow;
 pub use sticker::Stickers;
 pub use theme_selector::ThemeSelector;
-use futures::future::{Shared, BoxFuture};
-use futures::FutureExt;
 use time::{Date, Month};
-use std::sync::Arc;
 
 #[derive(Default, Debug, Copy, Clone, PartialEq, Eq, glib::Enum)]
 #[enum_type(name = "EuphonicaConnectionState")]

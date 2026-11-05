@@ -24,7 +24,7 @@ use crate::{
 mod imp {
     use crate::utils::g_cmp_str_vecs;
 
-use super::*;
+    use super::*;
 
     #[derive(Debug, CompositeTemplate, Properties, Default)]
     #[properties(wrapper_type = super::AlbumView)]
@@ -338,7 +338,11 @@ use super::*;
                         }
                         2 => {
                             // Match only AlbumArtist (albums without such tag will never match)
-                            g_search_substr(album.get_albumartists_str(), &search_term, case_sensitive)
+                            g_search_substr(
+                                album.get_albumartists_str(),
+                                &search_term,
+                                case_sensitive,
+                            )
                         }
                         _ => true,
                     }
@@ -469,7 +473,10 @@ impl AlbumView {
                     if !genres.is_empty() {
                         this.imp().genres_filter.set_filter_func(move |obj| {
                             let album = obj.downcast_ref::<Album>().unwrap();
-                            album.get_genres().into_iter().any(|genre| genres.contains(genre))
+                            album
+                                .get_genres()
+                                .into_iter()
+                                .any(|genre| genres.contains(genre))
                         });
                         this.imp()
                             .genres_filter

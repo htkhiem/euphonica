@@ -34,12 +34,12 @@ use crate::common::{
     AlbumInfo, ArtistInfo, ConnectionState, DynamicPlaylist, split_genre_tag, tags,
 };
 use crate::utils::settings_manager;
-use mpd::song::{QueuePlace, Song as SongInfo};
 use crate::{
     common::{Album, Artist, INode, Song, Stickers},
     player::PlaybackFlow,
     utils,
 };
+use mpd::song::{QueuePlace, Song as SongInfo};
 
 use super::connection::{Connection, Error as ClientError, Result as ClientResult, Task};
 use super::state::{ClientState, StickersSupportLevel};
@@ -776,7 +776,11 @@ impl MpdWrapper {
                             // Queue has probably changed again. Push empty song &
                             // wait for next refresh.
                             let mut si = SongInfo::default();
-                            si.place = Some(QueuePlace { id: change.id, pos: change.pos, prio: 0});
+                            si.place = Some(QueuePlace {
+                                id: change.id,
+                                pos: change.pos,
+                                prio: 0,
+                            });
                             songs.push(si.into());
                         }
                     }
@@ -912,22 +916,23 @@ impl MpdWrapper {
         self.foreground(Task::GetSongCount(s), r).await
     }
 
-    pub async fn get_embedded_cover(&self, song: Arc<SongInfo>) -> ClientResult<Option<Option<Vec<u8>>>> {
+    pub async fn get_embedded_cover(
+        &self,
+        song: Arc<SongInfo>,
+    ) -> ClientResult<Option<Option<Vec<u8>>>> {
         // Leave downloading to the background connection thread, but local operations
         // (resizing, transcoding, writing to disk) will be done with a threadpool, whose
         // handle is held by the this thread (the main one).
         let (s, r) = oneshot::channel();
-        self.background(Task::GetEmbeddedCover(song, s), r)
-            .await
+        self.background(Task::GetEmbeddedCover(song, s), r).await
     }
 
     pub async fn get_folder_cover(
         &self,
-        song: Arc<SongInfo>
+        song: Arc<SongInfo>,
     ) -> ClientResult<Option<Option<Vec<u8>>>> {
         let (s, r) = oneshot::channel();
-        self.background(Task::GetFolderCover(song, s), r)
-            .await
+        self.background(Task::GetFolderCover(song, s), r).await
     }
 
     /// Fetch albums and albumartists together for efficiency.
@@ -1085,10 +1090,9 @@ impl MpdWrapper {
                             // Prefer new-style filter-based rating; fall back to legacy title-based rating.
                             // Force case-insensitive comparison for now as MPD mangles the expression string (all terms become uppercase there).
                             let filter_expr = album_info.get_filter_expression().to_lowercase();
-                            rating = ratings_map
-                                .get(&filter_expr)
-                                .cloned()
-                                .or_else(|| legacy_ratings_map.get(album_info.get_title()).cloned());
+                            rating = ratings_map.get(&filter_expr).cloned().or_else(|| {
+                                legacy_ratings_map.get(album_info.get_title()).cloned()
+                            });
                         } else {
                             rating = None;
                         }
@@ -1318,7 +1322,7 @@ impl MpdWrapper {
         Ok(asyncified
             .call(move |_| {
                 let mut res: FxHashMap<String, ArtistInfo> = FxHashMap::default();
-                for (mut song, genres) in songs.into_iter().zip(genres) {
+                for (mut song, _genres) in songs.into_iter().zip(genres) {
                     // Here we're fetching song.artists instead of song.album.artists
                     for artist in ArtistInfo::take_from_song(&mut song, false) {
                         let existing =
@@ -1552,7 +1556,7 @@ impl MpdWrapper {
         .await?
         .into_iter()
         .zip(ts)
-        .map(|(mut si, ts)| {
+        .map(|(si, ts)| {
             let res: Song = si.into();
             res.init_last_played(ts);
             Ok(res)
