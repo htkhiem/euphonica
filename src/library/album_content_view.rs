@@ -1340,7 +1340,7 @@ impl AlbumContentView {
                             // Only now can we populate the artist tags, as the initial albuminfo
                             // is stripped of artist MBID for album grid performance
                             ArtistInfo::take_from_song(
-                                &mut song_list
+                                song_list
                                     .item(0)
                                     .unwrap()
                                     .downcast_ref::<Song>()

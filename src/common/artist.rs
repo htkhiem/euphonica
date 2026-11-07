@@ -6,6 +6,7 @@ use gtk::glib;
 use gtk::prelude::*;
 use gtk::subclass::prelude::*;
 use mpd::search::Operation;
+use mpd::Song as SongInfo;
 use mpd::{Query, Term};
 use rustc_hash::FxHashSet;
 use std::sync::Arc;
@@ -26,6 +27,7 @@ pub struct ArtistInfo {
     pub example_uris: Vec<String>, // Example song URIs for visualisation purposes. Each should belong to a different album.
     pub is_composer: bool,
     pub is_albumartist: bool,
+    pub example_song: Arc<SongInfo>
 }
 
 impl ArtistInfo {
@@ -34,6 +36,7 @@ impl ArtistInfo {
         sort_tag: Option<&str>,
         is_composer: bool,
         is_albumartist: bool,
+        example_song: Arc<SongInfo>
     ) -> Self {
         Self {
             name: name.to_owned(),
@@ -43,17 +46,20 @@ impl ArtistInfo {
             example_uris: Vec::with_capacity(0),
             is_composer,
             is_albumartist,
+            example_song
         }
     }
 
-    /// Destructively pull artist data from a Song, creating one or more Artist objects.
-    /// This reduces copies, but prepare thyself for perplexing bugs from incorrect usage.
+    /// Destructively pull artist data from a cloned Song, creating one or more Artist objects.
+    /// One clone is still needed, as the artist objects themselves have to hold references
+    /// to an example song object. That clone will then serve as their shared example.
     /// Fields not exclusive to each individual (genres and example_uris), are NOT collected.
     /// Insert them yourself after-the-fact.
     /// TODO: candidate for moving to wrapper.rs since this is just too specific to that one's
     /// use case.
-    pub fn take_from_song(song: &mut mpd::song::Song, generate_albumartists: bool) -> Vec<Self> {
+    pub fn take_from_song(mut song: mpd::song::Song, generate_albumartists: bool) -> Vec<Self> {
         let mut res: Vec<Self> = Vec::new();
+        let example_clone = Arc::new(song.clone());
         let mut sort_tags = std::mem::take(if generate_albumartists {
             &mut song.albumartistsorts
         } else {
@@ -83,6 +89,7 @@ impl ArtistInfo {
                 example_uris: Vec::with_capacity(0),
                 is_composer: false,
                 is_albumartist: generate_albumartists,
+                example_song: example_clone.clone()
             });
         }
         res
@@ -92,7 +99,7 @@ impl ArtistInfo {
     /// This requires copies of multiple strings.
     /// Fields not exclusive to each individual (genres and example_uris), are NOT collected.
     /// Insert them yourself after-the-fact.
-    pub fn copy_from_song(song: &mpd::song::Song, generate_albumartists: bool) -> Vec<Self> {
+    pub fn copy_from_song(song: Arc<mpd::song::Song>, generate_albumartists: bool) -> Vec<Self> {
         let mut res: Vec<Self> = Vec::new();
         let sort_tags = if generate_albumartists {
             &song.albumartistsorts
@@ -123,6 +130,7 @@ impl ArtistInfo {
                 example_uris: Vec::with_capacity(0),
                 is_composer: false,
                 is_albumartist: generate_albumartists,
+                example_song: song.clone()
             });
         }
         res
@@ -197,6 +205,7 @@ impl Default for ArtistInfo {
             example_uris: Vec::with_capacity(0),
             is_composer: false,
             is_albumartist: false,
+            example_song: Arc::default()
         }
     }
 }
