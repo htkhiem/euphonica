@@ -97,14 +97,14 @@ listview > row {
   padding: 6px;
 }
 
-.song-list row:selected {
+.song-list row:selected, .song-list row:hover {
   border-radius: 12px;
 }
 
-.song-list row:nth-child(even):not(:selected) {
+/* .song-list row:nth-child(even):not(:selected) {
 	border-radius: 12px;
 	background-color: alpha(currentColor, 0.05);
-}
+} */
 
 .player-bar {
     border-top: 1px solid @borders;
