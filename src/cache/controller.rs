@@ -7,7 +7,7 @@
 extern crate bson;
 use crate::{
     client::{Error as ClientError, MpdWrapper},
-    common::{AlbumInfo, ArtistInfo, Song},
+    common::{AlbumInfo, ArtistInfo},
     meta_providers::{
         MetadataChain,
         models::{self, AlbumMeta},

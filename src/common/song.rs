@@ -4,7 +4,6 @@ use crate::utils::{get_image_cache_path, get_time_ago_desc, strip_filename_linux
 use gtk::glib;
 use gtk::prelude::*;
 use gtk::subclass::prelude::*;
-use itertools::Itertools;
 use mpd::song::Song as SongInfo;
 use mpris_server::{Time, zbus::zvariant::ObjectPath};
 use once_arc::OnceArc;

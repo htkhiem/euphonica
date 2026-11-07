@@ -5,8 +5,8 @@ use aho_corasick::Match;
 use gtk::glib;
 use gtk::prelude::*;
 use gtk::subclass::prelude::*;
-use mpd::search::Operation;
 use mpd::Song as SongInfo;
+use mpd::search::Operation;
 use mpd::{Query, Term};
 use rustc_hash::FxHashSet;
 use std::sync::Arc;
@@ -27,7 +27,7 @@ pub struct ArtistInfo {
     pub example_uris: Vec<String>, // Example song URIs for visualisation purposes. Each should belong to a different album.
     pub is_composer: bool,
     pub is_albumartist: bool,
-    pub example_song: Arc<SongInfo>
+    pub example_song: Arc<SongInfo>,
 }
 
 impl ArtistInfo {
@@ -36,7 +36,7 @@ impl ArtistInfo {
         sort_tag: Option<&str>,
         is_composer: bool,
         is_albumartist: bool,
-        example_song: Arc<SongInfo>
+        example_song: Arc<SongInfo>,
     ) -> Self {
         Self {
             name: name.to_owned(),
@@ -46,7 +46,7 @@ impl ArtistInfo {
             example_uris: Vec::with_capacity(0),
             is_composer,
             is_albumartist,
-            example_song
+            example_song,
         }
     }
 
@@ -89,7 +89,7 @@ impl ArtistInfo {
                 example_uris: Vec::with_capacity(0),
                 is_composer: false,
                 is_albumartist: generate_albumartists,
-                example_song: example_clone.clone()
+                example_song: example_clone.clone(),
             });
         }
         res
@@ -130,7 +130,7 @@ impl ArtistInfo {
                 example_uris: Vec::with_capacity(0),
                 is_composer: false,
                 is_albumartist: generate_albumartists,
-                example_song: song.clone()
+                example_song: song.clone(),
             });
         }
         res
@@ -205,7 +205,7 @@ impl Default for ArtistInfo {
             example_uris: Vec::with_capacity(0),
             is_composer: false,
             is_albumartist: false,
-            example_song: Arc::default()
+            example_song: Arc::default(),
         }
     }
 }

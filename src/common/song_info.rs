@@ -3,7 +3,6 @@ use adw::subclass::prelude::*;
 
 use glib::{Object, clone};
 use gtk::{CompositeTemplate, gdk, glib};
-use mpd::status::AudioFormat;
 use quick_xml::escape::escape;
 use std::{cell::RefCell, ffi::OsStr, path::Path};
 
@@ -242,7 +241,11 @@ impl SongInfoDialog {
         for (name, vals) in tag_values {
             // MusicBrainz ID rows get prettied-up titles & a copy button
             let copyable = name.starts_with("musicbrainz_");
-            let row = make_property_row(&tags::prettify_tag_name(&name), &escape(vals.join("\n")), copyable);
+            let row = make_property_row(
+                &tags::prettify_tag_name(&name),
+                &escape(vals.join("\n")),
+                copyable,
+            );
             metadata.add(&row);
         }
 
@@ -284,4 +287,3 @@ fn make_property_row(title: &str, subtitle: &str, copyable: bool) -> adw::Action
     }
     row
 }
-
