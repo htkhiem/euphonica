@@ -36,15 +36,15 @@
         <property name="sidebar-width-fraction">0.45</property>
         <property name="sidebar">
           <object class="AdwNavigationPage">
-            <style>
-              <class name="light-left-edge"/>
-            </style>
             <property name="title" translatable="yes">Now Playing</property>
             <property name="tag">now_playing</property>
             <property name="child">
               <object class="AdwToolbarView">
                 <child type="top">
                   <object class="AdwHeaderBar">
+                    <style>
+                      <class name="sidebar-shade"/>
+                    </style>
                     <child type="end">
                       <object class="GtkMenuButton" id="edit_menu">
                         <property name="menu-model">edit_menu_model</property>
