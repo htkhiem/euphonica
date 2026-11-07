@@ -36,15 +36,15 @@
         <property name="sidebar-width-fraction">0.45</property>
         <property name="sidebar">
           <object class="AdwNavigationPage">
-            <style>
-              <class name="light-left-edge"/>
-            </style>
             <property name="title" translatable="yes">Now Playing</property>
             <property name="tag">now_playing</property>
             <property name="child">
               <object class="AdwToolbarView">
                 <child type="top">
                   <object class="AdwHeaderBar">
+                    <style>
+                      <class name="sidebar-shade"/>
+                    </style>
                     <child type="end">
                       <object class="GtkMenuButton" id="edit_menu">
                         <property name="menu-model">edit_menu_model</property>
@@ -160,9 +160,6 @@
                   <object class="GtkBox">
                     <property name="orientation">1</property>
                     <child>
-                      <object class="GtkSeparator"/>
-                    </child>
-                    <child>
                       <object class="EuphonicaContentStack" id="content_stack">
                         <property name="placeholder">
                           <object class="AdwStatusPage">
@@ -181,7 +178,10 @@
                             <property name="hexpand">true</property>
                             <property name="child">
                               <object class="GtkListView" id="queue">
-                                <property name="single-click-activate">true</property>
+                                <!-- IMPORTANT: due to gestureclick shenanigans we must not accept clicks
+                                outside of the actual rows. The listview must only occupy exactly enough
+                                space and never more. -->
+                                <property name="valign">start</property>
                                 <style>
                                   <class name="song-list"/>
                                 </style>

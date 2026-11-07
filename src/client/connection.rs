@@ -366,7 +366,13 @@ pub enum Task {
         Option<&'static str>,
         Responder<GroupedValues>,
     ),
-    Find(Query<'static>, Window, Responder<Vec<SongInfo>>),
+    Find(
+        Query<'static>,
+        Window,
+        /// Optional list of tagtypes to limit to.
+        Option<Vec<&'static str>>,
+        Responder<Vec<SongInfo>>,
+    ),
     /// Like Find, but returns the raw rust-mpd Song structs without parsing them
     /// into SongInfos, allowing callers to access every tag/metadata field MPD returns.
     FindRaw(Query<'static>, Window, Responder<Vec<mpd::song::Song>>),
@@ -1053,7 +1059,7 @@ impl Connection {
                         |c| {
                             c.songs(id).map(|mut songs| {
                                 if !songs.is_empty() {
-                                    let res = SongInfo::from(std::mem::take(&mut songs[0]));
+                                    let res = std::mem::take(&mut songs[0]);
                                     Some(res)
                                 } else {
                                     None
@@ -1122,9 +1128,8 @@ impl Connection {
                     Task::Seek(pos, resp) => self.respond_with_client(|c| c.rewind(pos), resp),
                     Task::GetQueue(window, resp) => self.respond_with_client(
                         |c| {
-                            c.queue(window).map(|mpd_songs| {
-                                mpd_songs.into_iter().map(SongInfo::from).collect()
-                            })
+                            c.queue(window)
+                                .map(|mpd_songs| mpd_songs.into_iter().collect())
                         },
                         resp,
                     ),
@@ -1154,11 +1159,33 @@ impl Connection {
                     Task::List(term, query, groupby, resp) => {
                         self.respond_with_client(|c| c.list(&term, &query, groupby), resp)
                     }
-                    Task::Find(query, window, resp) => self.respond_with_client(
+                    Task::Find(query, window, tagtypes, resp) => self.respond_with_client(
                         |c| {
-                            c.find(&query, window).map(|mpd_songs| {
-                                mpd_songs.into_iter().map(SongInfo::from).collect()
-                            })
+                            let old_tagtypes: Option<Vec<String>> =
+                                if let Some(tagtypes) = tagtypes.as_ref() {
+                                    let old_tagtypes = Some(c.tagtypes()?);
+                                    c.tagtypes_clear()?;
+                                    if !tagtypes.is_empty() {
+                                        c.tagtypes_enable(tagtypes)?;
+                                    }
+                                    old_tagtypes
+                                } else {
+                                    None
+                                };
+                            let res = c.find(&query, window);
+                            if let Some(old_tagtypes) = old_tagtypes {
+                                if !tagtypes.as_ref().is_some_and(|tt| !tt.is_empty()) {
+                                    c.tagtypes_clear()?;
+                                }
+                                c.tagtypes_enable(
+                                    old_tagtypes
+                                        .iter()
+                                        .map(|s| s.as_str())
+                                        .collect::<Vec<&str>>()
+                                        .as_ref(),
+                                )?;
+                            }
+                            res
                         },
                         resp,
                     ),
@@ -1168,9 +1195,8 @@ impl Connection {
                     Task::FindMultiple(queries_windows, tagtypes, resp) => self
                         .respond_with_client(
                             move |c| {
-                                c.find_multiple(&queries_windows, tagtypes.as_deref()).map(
-                                    |mpd_songs| mpd_songs.into_iter().map(SongInfo::from).collect(),
-                                )
+                                c.find_multiple(&queries_windows, tagtypes.as_deref())
+                                    .map(|mpd_songs| mpd_songs.into_iter().collect())
                             },
                             resp,
                         ),
@@ -1183,9 +1209,8 @@ impl Connection {
                     ),
                     Task::GetPlaylist(name, window, resp) => self.respond_with_client(
                         |c| {
-                            c.playlist(&name, window.clone()).map(|mpd_songs| {
-                                mpd_songs.into_iter().map(SongInfo::from).collect()
-                            })
+                            c.playlist(&name, window.clone())
+                                .map(|mpd_songs| mpd_songs.into_iter().collect())
                         },
                         resp,
                     ),

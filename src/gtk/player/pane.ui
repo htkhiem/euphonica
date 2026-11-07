@@ -201,9 +201,6 @@
       </property>
     </object>
     <child>
-      <object class="GtkSeparator"/>
-    </child>
-    <child>
       <object class="EuphonicaPictureStack" id="albumart">
         <style>
           <class name="sidebar-shade"/>
@@ -218,9 +215,6 @@
           <object class="GtkBox">
             <property name="hexpand">true</property>
             <property name="orientation">1</property>
-            <child>
-              <object class="GtkSeparator"/>
-            </child>
             <child>
               <object class="EuphonicaSeekbar2" id="seekbar">
                 <property name="hexpand">true</property>
@@ -268,47 +262,27 @@
                   </object>
                 </child>
                 <child>
-                  <object class="GtkBox">
-                    <property name="halign">center</property>
-                    <property name="spacing">6</property>
-                    <child>
-                      <object class="GtkImage">
-                        <property name="icon-name">music-artist-symbolic</property>
-                      </object>
-                    </child>
-                    <child>
-                      <object class="GtkLabel" id="artist">
-                        <property name="wrap">true</property>
-                        <property name="label">Unknown</property>
-                        <property name="wrap">true</property>
-                        <property name="justify">2</property>
-                        <style>
-                          <class name="caption" />
-                        </style>
-                      </object>
-                    </child>
+                  <object class="GtkLabel" id="artist">
+                    <property name="wrap">true</property>
+                    <property name="label">Unknown</property>
+                    <property name="wrap">true</property>
+                    <property name="justify">2</property>
+                    <style>
+                      <class name="caption" />
+                      <class name="dimmed" />
+                    </style>
                   </object>
                 </child>
                 <child>
-                  <object class="GtkBox">
-                    <property name="halign">center</property>
-                    <property name="spacing">6</property>
-                    <child>
-                      <object class="GtkImage">
-                        <property name="icon-name">library-music-symbolic</property>
-                      </object>
-                    </child>
-                    <child>
-                      <object class="GtkLabel" id="album">
-                        <property name="wrap">true</property>
-                        <property name="label">Unknown</property>
-                        <property name="wrap">true</property>
-                        <property name="justify">2</property>
-                        <style>
-                          <class name="caption" />
-                        </style>
-                      </object>
-                    </child>
+                  <object class="GtkLabel" id="album">
+                    <property name="wrap">true</property>
+                    <property name="label">Unknown</property>
+                    <property name="wrap">true</property>
+                    <property name="justify">2</property>
+                    <style>
+                      <class name="caption" />
+                      <class name="dimmed" />
+                    </style>
                   </object>
                 </child>
                 <child>
@@ -319,29 +293,37 @@
                   </object>
                 </child>
                 <child>
-                  <object class="GtkScrolledWindow" id="lyrics_window">
-                    <style>
-                      <class name="lyrics-box"/>
-                    </style>
-                    <property name="hscrollbar-policy">never</property>
-                    <property name="vscrollbar-policy">external</property>
-                    <property name="propagate-natural-width">true</property>
-                    <property name="propagate-natural-height">false</property>
-                    <property name="has-frame">false</property>
-                    <property name="hexpand">true</property>
-                    <property name="height-request">48</property>
+                  <object class="EuphonicaFadingScrolledWindow" id="wiki_fader">
+                    <property name="vertical">true</property>
                     <property name="vexpand">true</property>
-                    <property name="child">
-                      <object class="GtkListBox" id="lyrics_box">
-                        <property name="selection-mode">0</property>
-                        <property name="activate-on-single-click">true</property>
+                    <property name="hexpand">true</property>
+                    <property name="inner">
+                      <object class="GtkScrolledWindow" id="lyrics_window">
                         <style>
-                          <class name="no-selection-highlight"/>
-                          <class name="no-bg"/>
+                          <class name="lyrics-box"/>
                         </style>
+                        <property name="hscrollbar-policy">never</property>
+                        <property name="vscrollbar-policy">external</property>
+                        <property name="propagate-natural-width">true</property>
+                        <property name="propagate-natural-height">false</property>
+                        <property name="has-frame">false</property>
+                        <property name="hexpand">true</property>
+                        <property name="height-request">48</property>
+                        <property name="vexpand">true</property>
+                        <property name="child">
+                          <object class="GtkListBox" id="lyrics_box">
+                            <property name="selection-mode">0</property>
+                            <property name="activate-on-single-click">true</property>
+                            <style>
+                              <class name="no-selection-highlight"/>
+                              <class name="no-bg"/>
+                            </style>
+                          </object>
+                        </property>
                       </object>
                     </property>
                   </object>
+
                 </child>
               </object>
             </child>
@@ -354,7 +336,7 @@
                 </child>
                 <child>
                   <object class="GtkBox">
-                    <property name="margin-top">6</property>  <!-- Additional padding to evenly space the taller knob from above & below -->
+                    <property name="margin-top">6</property>                    <!-- Additional padding to evenly space the taller knob from above & below -->
                     <property name="spacing">6</property>
                     <property name="halign">center</property>
                     <child>
@@ -403,8 +385,8 @@
                   </object>
                 </child>
                 <child>
-                   <object class="EuphonicaOutputControls" id="output_controls"/>
-                 </child>
+                  <object class="EuphonicaOutputControls" id="output_controls"/>
+                </child>
               </object>
             </child>
           </object>
