@@ -173,6 +173,13 @@ impl MpdWrapper {
         self.state.clone()
     }
 
+    /// A clone of the foreground client's task channel sender, for
+    /// consumers that cannot hold onto the wrapper itself, e.g.
+    /// the GNOME Shell search provider running on a tokio task.
+    pub fn fg_sender(&self) -> Sender<Task> {
+        self.fg_sender.clone()
+    }
+
     fn setup_channel(self: Rc<Self>, idle_receiver: Receiver<Subsystem>) {
         // Loop to handle idle changes
         glib::MainContext::default().spawn_local(clone!(
@@ -1183,6 +1190,7 @@ impl MpdWrapper {
     ///
     /// By default this is run on the background client. Pass use_fg = true to make use of the
     /// foreground client, e.g. when responding to user interactions.
+    /// TODO: allow specifying tagtypes to fetch
     pub async fn get_song_infos_by_query<F>(
         &self,
         query: Query<'static>,
@@ -1198,10 +1206,10 @@ impl MpdWrapper {
             let (s, r) = oneshot::channel();
             let win = Window::from((curr_len as u32, (curr_len + BATCH_SIZE) as u32));
             let songs = if use_fg {
-                self.foreground(Task::Find(query.clone(), win, s), r)
+                self.foreground(Task::Find(query.clone(), win, None, s), r)
                     .await?
             } else {
-                self.background(Task::Find(query.clone(), win, s), r)
+                self.background(Task::Find(query.clone(), win, None, s), r)
                     .await?
             };
             if !songs.is_empty() {
@@ -1492,6 +1500,7 @@ impl MpdWrapper {
     }
 
     /// Convenience function to get a single song by URI using the background client.
+    /// TODO: allow specifying tagtypes to fetch
     async fn get_song_by_uri(
         &self,
         uri: String,
@@ -1501,7 +1510,7 @@ impl MpdWrapper {
         query.and(Term::File, uri.clone());
         let (s, r) = oneshot::channel();
         let mut found_songs = self
-            .foreground(Task::Find(query, Window::from((0, 1)), s), r)
+            .foreground(Task::Find(query, Window::from((0, 1)), None, s), r)
             .await?;
         if !found_songs.is_empty() {
             let song = std::mem::take(&mut found_songs[0]);
@@ -1544,6 +1553,7 @@ impl MpdWrapper {
             Task::FindMultiple(
                 queries_windows,
                 Some(vec![
+                    tags::TITLE,
                     tags::ALBUM,
                     tags::ARTIST,
                     tags::ALBUM_MBID,
