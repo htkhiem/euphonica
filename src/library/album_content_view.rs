@@ -7,7 +7,7 @@ use crate::utils::format_datetime_local_tz;
 use crate::utils::settings_manager;
 use crate::utils::strip_filename_linux;
 use crate::{
-    cache::{Cache, CacheState, Error as CacheError, placeholders::EMPTY_ALBUM_STRING},
+    cache::{Cache, CacheState, Error as CacheError, placeholders::EMPTY_ALBUM_STRING, sqlite},
     client::{ClientState, state::StickersSupportLevel},
     common::{
         Album, Artist, ContentStack, ImageStack, Rating, RowAddButtons, RowDoublePressAction, Song,
@@ -32,6 +32,10 @@ use std::{
 use time::{Date, OffsetDateTime, format_description};
 
 mod imp {
+
+    use adw::Window;
+
+    use crate::utils::get_image_cache_path;
 
     use super::*;
 
@@ -184,6 +188,34 @@ mod imp {
 
         fn constructed(&self) {
             self.parent_constructed();
+
+            let cover_click_ctl = gtk::GestureClick::new();
+            cover_click_ctl.connect_released(clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |_, _, _, _| {
+                    // Need to look into SQLite again here
+                    if let Some(uri) = this.album.borrow().as_ref().map(|s| s.get_example_uri()) {
+                        // Just block UI here lol, not significant enough
+                        if let Some(path) = sqlite::find_cover_by_uri(uri, false)
+                            .ok()
+                            .flatten()
+                            .and_then(|cached_name| {
+                                let mut path = get_image_cache_path();
+                                path.push(cached_name);
+                                Some(path)
+                            })
+                        {
+                            gtk::FileLauncher::new(Some(&gio::File::for_path(path))).launch(
+                                Window::NONE,
+                                gio::Cancellable::NONE,
+                                |_| {},
+                            );
+                        }
+                    }
+                }
+            ));
+            self.cover.add_controller(cover_click_ctl);
 
             self.copy_mbid.connect_clicked(clone!(
                 #[weak(rename_to = this)]
