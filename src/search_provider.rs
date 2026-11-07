@@ -53,8 +53,6 @@ pub struct EuphonicaSearchProvider {
     // For now the only thing the provider does with the main thread is popping
     // the window open. Might add navigation to queue or content view later.
     main_thread_sender: Sender<()>,
-    /// Songs backing the most recent result set, keyed by URI (= ResultID)
-    song_cache: Mutex<HashMap<String, SongInfo>>,
 }
 
 /// Register the search provider on the session bus and start pumping it.
@@ -76,8 +74,7 @@ pub fn start(client: &MpdWrapper, app: &EuphonicaApplication) {
 
     let imp = EuphonicaSearchProvider {
         fg,
-        main_thread_sender: main_thread_send,
-        song_cache: Mutex::default(),
+        main_thread_sender: main_thread_send
     };
 
     // Actual run loop for the search provider. Since our application struct
