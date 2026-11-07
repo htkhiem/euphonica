@@ -312,6 +312,8 @@ impl MetadataProvider for TheAudioDbWrapper {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use super::*;
 
     #[test]
@@ -422,6 +424,8 @@ mod tests {
         let mut key = ArtistKey {
             name: "Coldplay".to_owned(),
             mbid: Some("cc197bad-dc9c-440d-a5b5-d52ba2e14234".to_owned()),
+            // TheAudioDB doesn't use this field so just use Default for the test
+            example_song: Arc::new(mpd::Song::default()),
         };
         let res = provider.get_artist_meta(&mut key, None).unwrap();
         let meta = res.expect("expected artist metadata");
