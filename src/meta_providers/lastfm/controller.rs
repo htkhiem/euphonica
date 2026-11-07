@@ -5,18 +5,20 @@ use std::time::SystemTime;
 use gtk::prelude::*;
 use reqwest::{blocking::Client, header::USER_AGENT};
 
-use crate::{
-    common::{AlbumInfo, ArtistInfo},
-    config::APPLICATION_USER_AGENT,
-    meta_providers::lastfm::models::LastfmErrorResponse,
-    utils::meta_provider_settings,
-};
-
 use super::models::{LastfmAlbumResponse, LastfmArtistResponse};
 use super::{
     super::{MetadataProvider, models, prelude::*},
     PROVIDER_KEY,
 };
+use crate::{
+    config::APPLICATION_USER_AGENT,
+    meta_providers::{
+        base::{AlbumKey, ArtistKey},
+        lastfm::models::LastfmErrorResponse,
+    },
+    utils::meta_provider_settings,
+};
+use mpd::song::Song as SongInfo;
 
 pub const API_ROOT: &str = "http://ws.audioscrobbler.com/2.0";
 
@@ -36,7 +38,7 @@ impl MetadataProvider for LastfmWrapper {
     /// Get album metadata from Last.fm.
     fn get_album_meta(
         &mut self,
-        key: &mut AlbumInfo,
+        key: &mut AlbumKey,
         existing: Option<models::AlbumMeta>,
     ) -> MetadataResult<Option<models::AlbumMeta>> {
         if meta_provider_settings(PROVIDER_KEY).boolean("enabled") {
@@ -48,7 +50,7 @@ impl MetadataProvider for LastfmWrapper {
                 let mut params: Vec<(&str, &str)> = Vec::new();
                 if let Some(id) = key.mbid.as_ref() {
                     params.push(("mbid", id));
-                } else if let (name, Some(artist)) = (&key.title, key.get_artist_tag().as_ref()) {
+                } else if let (name, Some(artist)) = (&key.title, &key.albumartist) {
                     params.push(("album", name));
                     params.push(("artist", artist));
                 } else {
@@ -87,7 +89,7 @@ impl MetadataProvider for LastfmWrapper {
                                     // Override album & artist names in case the returned values
                                     // are slightly different (casing, apostrophes, etc.), else
                                     // we won't be able to query it back using our own tags.
-                                    if let Some(artist) = key.get_artist_tag() {
+                                    if let Some(artist) = &key.albumartist {
                                         new.artist = Some(artist.to_owned());
                                     }
                                     if new.name != key.title {
@@ -134,7 +136,7 @@ impl MetadataProvider for LastfmWrapper {
     /// artist image URLs.
     fn get_artist_meta(
         &mut self,
-        key: &mut ArtistInfo,
+        key: &mut ArtistKey,
         existing: std::option::Option<models::ArtistMeta>,
     ) -> MetadataResult<Option<models::ArtistMeta>> {
         if meta_provider_settings(PROVIDER_KEY).boolean("enabled") {
@@ -221,10 +223,7 @@ impl MetadataProvider for LastfmWrapper {
     }
 
     /// Last.fm does not provide lyrics.
-    fn get_lyrics(
-        &mut self,
-        _key: &crate::common::SongInfo,
-    ) -> MetadataResult<Option<models::Lyrics>> {
+    fn get_lyrics(&mut self, _key: &SongInfo) -> MetadataResult<Option<models::Lyrics>> {
         Ok(None)
     }
 }

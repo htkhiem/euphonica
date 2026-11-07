@@ -1,12 +1,12 @@
-use std::time::SystemTime;
+use std::{path::Path, time::SystemTime};
 
 use crate::{
-    common::{AlbumInfo, ArtistInfo, SongInfo},
     config::APPLICATION_USER_AGENT,
+    meta_providers::base::{AlbumKey, ArtistKey},
     utils::meta_provider_settings,
 };
-
 use gtk::gio::prelude::SettingsExt;
+use mpd::Song as SongInfo;
 use reqwest::{blocking::Client, header::USER_AGENT};
 
 use super::{
@@ -32,7 +32,7 @@ impl MetadataProvider for LrcLibWrapper {
     /// LRCLIB only provides song lyrics.
     fn get_album_meta(
         &mut self,
-        _key: &mut AlbumInfo,
+        _key: &mut AlbumKey,
         existing: Option<models::AlbumMeta>,
     ) -> MetadataResult<Option<models::AlbumMeta>> {
         Ok(existing)
@@ -41,7 +41,7 @@ impl MetadataProvider for LrcLibWrapper {
     /// LRCLIB only provides song lyrics.
     fn get_artist_meta(
         &mut self,
-        _key: &mut ArtistInfo,
+        _key: &mut ArtistKey,
         existing: Option<models::ArtistMeta>,
     ) -> MetadataResult<Option<models::ArtistMeta>> {
         Ok(existing)
@@ -50,12 +50,23 @@ impl MetadataProvider for LrcLibWrapper {
     fn get_lyrics(&mut self, key: &SongInfo) -> MetadataResult<Option<models::Lyrics>> {
         if meta_provider_settings(PROVIDER_KEY).boolean("enabled") {
             let mut params: Vec<(&str, &str)> = Vec::new();
-            params.push(("track_name", &key.title));
-            if let Some(artists) = &key.artist_tag {
+            let title = key
+                .title
+                .as_deref()
+                .or(key.name.as_deref())
+                .or_else(|| {
+                    Path::new(&key.file)
+                        .file_stem()
+                        .map(|stem| stem.to_str())
+                        .flatten()
+                })
+                .unwrap_or_else(|| "");
+            params.push(("track_name", title));
+            if let Some(artists) = key.albumartists.get(0) {
                 params.push(("artist_name", artists));
             }
             if let Some(album) = &key.album {
-                params.push(("album_name", &album.title));
+                params.push(("album_name", album));
             }
             sleep_between_requests(self.last_request_time);
             self.last_request_time = SystemTime::now();

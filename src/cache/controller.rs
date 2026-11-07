@@ -5,22 +5,8 @@
 // - Images are stored as resized WebP files on disk.
 // - Text data is stored as BSON blobs in SQLite.
 extern crate bson;
-use asyncified::Asyncified;
-use gio::prelude::*;
-use gtk::{
-    gdk::{self, Texture},
-    gio,
-    glib::{self},
-};
-use image::ImageReader;
-use lru::LruCache;
-use once_cell::sync::Lazy;
-use std::{cmp, num::NonZeroUsize};
-use std::{fmt, fs::create_dir_all, rc::Rc, result, sync::Mutex};
-use time::OffsetDateTime;
-
 use crate::{
-    client::{Error as ClientError, ImageHandle, MpdWrapper},
+    client::{Error as ClientError, MpdWrapper},
     common::{AlbumInfo, ArtistInfo},
     meta_providers::{
         MetadataChain,
@@ -29,16 +15,32 @@ use crate::{
         utils::get_best_image,
     },
     utils::{
-        RegisteredImageBundle, get_app_cache_path, get_image_cache_path, register_image_as_failure,
-        save_and_register_image, settings_manager,
+        APP_THREAD_POOL, RegisteredImageBundle, get_app_cache_path, get_image_cache_path,
+        register_image_as_failure, save_and_register_image, settings_manager,
     },
     window::EuphonicaWindow,
 };
-use crate::{
-    common::{DynamicPlaylist, SongInfo},
-    meta_providers::models::Lyrics,
-    utils::strip_filename_linux,
+use crate::{common::DynamicPlaylist, meta_providers::models::Lyrics, utils::strip_filename_linux};
+use asyncified::Asyncified;
+use gio::prelude::*;
+use gtk::{
+    gdk::{self, Texture},
+    gio,
+    glib::{self, clone},
 };
+use image::ImageReader;
+use lru::LruCache;
+use mpd::song::Song as SongInfo;
+use once_cell::sync::Lazy;
+use std::{cmp, num::NonZeroUsize};
+use std::{
+    fmt,
+    fs::create_dir_all,
+    rc::Rc,
+    result,
+    sync::{Arc, Mutex},
+};
+use time::OffsetDateTime;
 
 use super::{CacheState, sqlite};
 
@@ -282,8 +284,6 @@ pub struct Cache {
     local: Asyncified<()>,
     // Same as above but for operations involving API calls (should sleep after each call).
     external: Asyncified<()>,
-    // Thread pool for parallelisable operations such as texture read from disk and resizing ops.
-    pool: glib::ThreadPool,
     // Cache state object for emitting signals.
     state: CacheState,
 }
@@ -324,10 +324,6 @@ impl Cache {
                         .await
                 }))
                 .unwrap(),
-            pool: glib::ThreadPool::shared(Some(
-                settings_manager().child("library").uint("n-image-threads"),
-            ))
-            .expect("Unable to start threadpool for cache operations"),
             state: CacheState::default(),
         };
 
@@ -345,37 +341,10 @@ impl Cache {
     /// Still failing that, it will try to get one from MPD or external metadata providers.
     pub async fn get_song_cover(
         self: Rc<Self>,
-        song: &SongInfo,
+        song: Arc<SongInfo>,
         thumbnail: bool,
     ) -> Result<Option<Texture>> {
-        let folder_uri = strip_filename_linux(&song.uri).to_owned();
-        let album = song.album.as_ref().cloned();
-        let res = self
-            .clone()
-            .get_cover_internal(&folder_uri, &song.uri, thumbnail, album)
-            .await;
-        res
-    }
-
-    /// Try to get a cover image for the given album. This prioritises the folder image
-    /// file over embedded covers of its tracks.
-    /// Returns a gdk::Texture from cache if available.
-    /// Failing that, we'll search local storage.
-    /// Still failing that, it will try to get one from MPD or external metadata providers.
-    pub async fn get_album_cover(
-        self: Rc<Self>,
-        album: &AlbumInfo,
-        thumbnail: bool,
-    ) -> Result<Option<Texture>> {
-        let res = self
-            .clone()
-            .get_cover_internal(
-                &album.folder_uri,
-                &album.example_uri,
-                thumbnail,
-                Some(album.to_owned()),
-            )
-            .await;
+        let res = self.clone().get_cover_internal(song, thumbnail).await;
         res
     }
 
@@ -387,60 +356,73 @@ impl Cache {
         example_uri: &str,
         thumbnail: bool,
     ) -> Result<Option<Texture>> {
+        let mut placeholder = SongInfo::default();
+        placeholder.file = example_uri.to_owned();
         let res = self
             .clone()
-            .get_cover_internal(
-                strip_filename_linux(example_uri),
-                example_uri,
-                thumbnail,
-                None,
-            )
+            .get_cover_internal(Arc::new(placeholder), thumbnail)
             .await;
         res
     }
 
     #[inline]
-    async fn process_image_handle(
+    async fn handle_mpd_image_res(
         &self,
-        handle: ImageHandle,
-        register_key: String,
-        additional_keys: Option<Vec<String>>,
+        res: Option<Option<Vec<u8>>>,
+        song: Arc<SongInfo>,
+        optimized_load: bool,
         thumbnail: bool,
-    ) -> Result<gdk::Texture> {
-        let bundle = match handle {
-            ImageHandle::Registered(bundle) => bundle,
-            ImageHandle::New(bytes) => {
-                // process in threadpool
-                let bundle = self
-                    .pool
+    ) -> Result<Option<gdk::Texture>> {
+        match res {
+            None => Ok(None),
+            Some(None) => {
+                // Another async call has just downloaded it => attempt DB load again
+                APP_THREAD_POOL
+                    .push_future(clone!(
+                        #[strong]
+                        song,
+                        move || {
+                            // Steps 1-2
+                            get_image_internal(strip_filename_linux(&song.file), None, thumbnail)
+                                .or_else(|_| get_image_internal(&song.file, None, thumbnail))
+                        }
+                    ))
+                    .expect("get_cover_internal: cache threadpool error")
+                    .await
+                    .expect("get_cover_internal: cache threadpool error")
+            }
+            Some(Some(bytes)) => {
+                let bundle = APP_THREAD_POOL
                     .push_future(move || -> Result<RegisteredImageBundle> {
                         Ok(save_and_register_image(
                             image::load_from_memory(&bytes).map_err(|_| Error::UnknownFormat)?,
-                            &register_key,
+                            if optimized_load {
+                                strip_filename_linux(&song.file)
+                            } else {
+                                &song.file
+                            },
                             None,
-                            additional_keys,
+                            None,
                         ))
                     })
                     .expect("maybe_register_image_handle: threadpool error")
                     .await
                     .expect("maybe_register_image_handle: threadpool error")?;
-                bundle
+                let tex = bundle.take_texture(thumbnail)?;
+                IMAGE_CACHE.lock().unwrap().put(
+                    if thumbnail {
+                        bundle.thumb.name.to_owned()
+                    } else {
+                        bundle.hires.name.to_owned()
+                    },
+                    tex.clone(),
+                );
+                Ok(Some(tex))
             }
-        };
-        let tex = bundle.take_texture(thumbnail)?;
-        IMAGE_CACHE.lock().unwrap().put(
-            if thumbnail {
-                bundle.thumb.name.to_owned()
-            } else {
-                bundle.hires.name.to_owned()
-            },
-            tex.clone(),
-        );
-        Ok(tex)
+        }
     }
 
-    /// Shared cover lookup. `folder_key` is the URI used for folder-level images,
-    /// `embedded_key` is the URI used for embedded (track-level) images.
+    /// Shared cover lookup.
     /// If `album` is provided, it is used for external metadata lookups.
     /// Sequence:
     // 1. Check by folder_key in in-mem cache.
@@ -455,26 +437,23 @@ impl Cache {
     #[inline]
     async fn get_cover_internal(
         self: Rc<Self>,
-        folder_key: &str,
-        embedded_key: &str,
+        song: Arc<SongInfo>,
         thumbnail: bool,
-        album: Option<AlbumInfo>,
     ) -> Result<Option<Texture>> {
         let mut failed_before = false;
-
         let optimized_load = settings_manager()
             .child("library")
             .boolean("optimize-embedded-cover-loading");
-
-        let folder_key_owned = folder_key.to_owned();
-        let embedded_key_owned = embedded_key.to_owned();
-        match self
-            .pool
-            .push_future(move || {
-                // Steps 1-2
-                get_image_internal(&folder_key_owned, None, thumbnail)
-                    .or_else(|_| get_image_internal(&embedded_key_owned, None, thumbnail))
-            })
+        match APP_THREAD_POOL
+            .push_future(clone!(
+                #[strong]
+                song,
+                move || {
+                    // Steps 1-2
+                    get_image_internal(strip_filename_linux(&song.file), None, thumbnail)
+                        .or_else(|_| get_image_internal(&song.file, None, thumbnail))
+                }
+            ))
             .expect("get_cover_internal: cache threadpool error")
             .await
             .expect("get_cover_internal: cache threadpool error")
@@ -492,64 +471,43 @@ impl Cache {
                 .boolean("mpd-download-album-art")
             {
                 // Step 5
-                match self
-                    .mpd_client
-                    .get_folder_cover(embedded_key.to_owned(), folder_key.to_owned())
-                    .await
-                {
+                match self.mpd_client.get_folder_cover(song.clone()).await {
                     Err(e) => {
                         dbg!(e);
                     }
-                    Ok(None) => {}
-                    Ok(Some(handle)) => {
+                    Ok(res) => {
                         return self
-                            .process_image_handle(handle, folder_key.to_owned(), None, thumbnail)
-                            .await
-                            .map(Some);
+                            .handle_mpd_image_res(res, song.clone(), optimized_load, thumbnail)
+                            .await;
                     }
                 }
                 // Step 6
-                match self
-                    .mpd_client
-                    .get_embedded_cover(embedded_key.to_owned())
-                    .await
-                {
+                match self.mpd_client.get_embedded_cover(song.clone()).await {
                     Err(e) => {
                         dbg!(e);
                     }
-                    Ok(None) => {}
-                    Ok(Some(handle)) => {
+                    Ok(res) => {
                         return self
-                            .process_image_handle(
-                                handle,
-                                if optimized_load {
-                                    folder_key.to_owned()
-                                } else {
-                                    embedded_key.to_owned()
-                                },
-                                None,
-                                thumbnail,
-                            )
-                            .await
-                            .map(Some);
+                            .handle_mpd_image_res(res, song.clone(), optimized_load, thumbnail)
+                            .await;
                     }
                 }
             }
 
             // Step 7: Go outside & scream
-            if let Some(album) = album
-                && let Some(meta) = self.get_album_meta(&album, true, false, None).await?
+            if let Some(album) = AlbumInfo::from_mpd_songs(vec![song.clone()])
+                && let Some(meta) = self
+                    .get_album_meta(Arc::new(album), true, false, None)
+                    .await?
             {
-                let folder_key_owned = folder_key.to_owned();
-                let embedded_key_owned = embedded_key.to_owned();
                 return self
                     .external
                     .call(move |_| {
                         download_image_from_provider(
                             if optimized_load {
-                                &folder_key_owned
+                                strip_filename_linux(&song.file)
                             } else {
-                                &embedded_key_owned
+                                &song.file
                             },
                             None,
                             &meta.0.image,
@@ -768,21 +726,26 @@ impl Cache {
     ///   2c: if both are available and equal (in sync), we'll read from local BUT return with MetaSource::Mpd, such that call site checks won't ask user to sync.
     async fn get_local_album_meta(
         &self,
-        album: &AlbumInfo,
+        album: Arc<AlbumInfo>,
     ) -> Result<Option<(models::AlbumMeta, OffsetDateTime, models::MetaSource)>> {
-        let title = album.title.to_owned();
-        let mbid = album.mbid.clone();
-        let artist = album.get_artist_tag().map(String::from);
         let filter_expr = album.get_filter_expression();
 
         let (mpd_ts, local_ts) = futures::join!(
             self.mpd_client
                 .get_meta_last_modified("filter", filter_expr.clone()),
             // For reads we'll use threadpool instead of the queued asyncified (concurrent reads are okay)
-            self.pool
-                .push_future(move || {
-                    sqlite::get_album_meta_last_modified(&title, mbid.as_deref(), artist.as_deref())
-                })
+            APP_THREAD_POOL
+                .push_future(clone!(
+                    #[strong]
+                    album,
+                    move || {
+                        sqlite::get_album_meta_last_modified(
+                            album.get_title(),
+                            album.get_mbid(),
+                            album.albumartists().next(),
+                        )
+                    }
+                ))
                 .expect("get_local_album_meta: threadpool error")
         );
         let mpd_ts = mpd_ts.ok().flatten();
@@ -797,14 +760,18 @@ impl Cache {
             match local_ts.cmp(&mpd_ts) {
                 cmp::Ordering::Greater => {
                     // 2a
-                    let title = album.title.to_owned();
-                    let mbid = album.mbid.clone();
-                    let artist = album.get_artist_tag().map(String::from);
-
-                    self.pool
-                        .push_future(move || {
-                            sqlite::get_album_meta(&title, mbid.as_deref(), artist.as_deref())
-                        })
+                    APP_THREAD_POOL
+                        .push_future(clone!(
+                            #[strong]
+                            album,
+                            move || {
+                                sqlite::get_album_meta(
+                                    album.get_title(),
+                                    album.get_mbid(),
+                                    album.albumartists().next(),
+                                )
+                            }
+                        ))
                         .expect("get_local_album_meta: threadpool error")
                         .await
                         .expect("get_local_album_meta: threadpool error")
@@ -819,24 +786,14 @@ impl Cache {
                         .await
                         .map_err(Error::Client)?;
 
-                    if let Some(meta) = from_mpd.as_ref() {
-                        let uri = album.folder_uri.to_owned();
-                        let title = album.title.to_owned();
-                        let mbid = album.mbid.clone();
-                        let artist = album.get_artist_tag().map(String::from);
-                        let to_local = meta.clone();
+                    if let Some(meta) = from_mpd.to_owned() {
                         // Store locally (skip on error)
                         if let Err(e) = self
                             .local
                             .call(move |_| {
-                                let mut info = AlbumInfo::default();
-                                info.folder_uri = uri;
-                                info.title = title;
-                                info.albumartist = artist;
-                                info.mbid = mbid;
                                 // Use mpd_ts such that future comparisons between this local copy and the MPD sticker version
                                 // will be exactly equal (2c).
-                                sqlite::write_album_meta(&info, &to_local, mpd_ts, true)
+                                sqlite::write_album_meta(&album, &meta, mpd_ts, true)
                             })
                             .await
                         {
@@ -847,13 +804,18 @@ impl Cache {
                 }
                 cmp::Ordering::Equal => {
                     // 2c
-                    let title = album.title.to_owned();
-                    let mbid = album.mbid.clone();
-                    let artist = album.get_artist_tag().map(String::from);
-                    self.pool
-                        .push_future(move || {
-                            sqlite::get_album_meta(&title, mbid.as_deref(), artist.as_deref())
-                        })
+                    APP_THREAD_POOL
+                        .push_future(clone!(
+                            #[strong]
+                            album,
+                            move || {
+                                sqlite::get_album_meta(
+                                    album.get_title(),
+                                    album.get_mbid(),
+                                    album.albumartists().next(),
+                                )
+                            }
+                        ))
                         .expect("get_local_album_meta: threadpool error")
                         .await
                         .expect("get_local_album_meta: threadpool error")
@@ -867,36 +829,38 @@ impl Cache {
 
     pub async fn get_album_meta(
         &self,
-        album: &AlbumInfo,
+        album: Arc<AlbumInfo>,
         external: bool,  // allow external fetching
         overwrite: bool, // overwrite existing with external if any (will also skip the exists check)
         window: Option<&EuphonicaWindow>,
     ) -> Result<Option<(models::AlbumMeta, OffsetDateTime, models::MetaSource)>> {
         if !(overwrite && external)
-            && let Ok(Some(local_res)) = self.get_local_album_meta(album).await
+            && let Ok(Some(local_res)) = self.get_local_album_meta(album.clone()).await
         {
             return Ok(Some(local_res));
         }
 
-        if external && (album.mbid.is_some() || album.albumartist.is_some()) {
-            if !overwrite && let Ok(Some(local_res)) = self.get_local_album_meta(album).await {
+        if external && (album.get_mbid().is_some() || album.albumartists().next().is_some()) {
+            if !overwrite
+                && let Ok(Some(local_res)) = self.get_local_album_meta(album.clone()).await
+            {
                 return Ok(Some(local_res));
             }
             if let Some(meta) = self
                 .meta_providers
-                .get_album_meta(album.clone(), None, window)
+                .get_album_meta(album.as_ref(), None, window)
                 .await
             {
                 let ts =
-                    sqlite::write_album_meta(album, &meta, None, true).map_err(Error::Sqlite)?;
+                    sqlite::write_album_meta(&album, &meta, None, true).map_err(Error::Sqlite)?;
                 Ok(Some((meta, ts, models::MetaSource::External)))
             } else {
                 // Push an empty AlbumMeta to block further calls for this album.
                 println!(
                     "No album meta could be found for {}. Pushing empty document...",
-                    &album.folder_uri
+                    album.get_folder_uri()
                 );
-                sqlite::write_album_meta(album, &models::AlbumMeta::from_key(album), None, false)
+                sqlite::write_album_meta(&album, &models::AlbumMeta::from_key(&album), None, false)
                     .map_err(Error::Sqlite)?;
                 Ok(None)
             }
@@ -968,27 +932,29 @@ impl Cache {
     /// Step 3: if no local/MPD copy and `external` is true, fetch from external providers.
     pub async fn get_artist_meta(
         &self,
-        artist: &ArtistInfo,
+        artist: Arc<ArtistInfo>,
         external: bool,
         overwrite: bool,
         window: Option<&EuphonicaWindow>,
     ) -> Result<Option<(models::ArtistMeta, OffsetDateTime, models::MetaSource)>> {
         if !(overwrite && external)
-            && let Ok(Some(local_res)) = self.get_local_artist_meta(artist).await
+            && let Ok(Some(local_res)) = self.get_local_artist_meta(artist.clone()).await
         {
             return Ok(Some(local_res));
         }
 
-        if external && artist.mbid.is_some() {
-            if !overwrite && let Ok(Some(local_res)) = self.get_local_artist_meta(artist).await {
+        if external && artist.get_mbid().is_some() {
+            if !overwrite
+                && let Ok(Some(local_res)) = self.get_local_artist_meta(artist.clone()).await
+            {
                 return Ok(Some(local_res));
             }
             if let Some(meta) = self
                 .meta_providers
-                .get_artist_meta(artist.clone(), None, window)
+                .get_artist_meta(artist.as_ref(), None, window)
                 .await
             {
-                let ts = sqlite::write_artist_meta(artist, &meta, true).map_err(Error::Sqlite)?;
+                let ts = sqlite::write_artist_meta(&artist, &meta, true).map_err(Error::Sqlite)?;
                 Ok(Some((meta, ts, models::MetaSource::External)))
             } else {
                 // Push an empty ArtistMeta to block further calls for this artist.
@@ -996,7 +962,7 @@ impl Cache {
                     "No artist meta could be found for {}. Pushing empty document...",
                     &artist.name
                 );
-                sqlite::write_artist_meta(artist, &models::ArtistMeta::from_key(artist), false)
+                sqlite::write_artist_meta(&artist, &models::ArtistMeta::from_key(&artist), false)
                     .map_err(Error::Sqlite)?;
                 Ok(None)
             }
@@ -1039,7 +1005,7 @@ impl Cache {
     /// Mirrors `get_local_album_meta` but uses `typ="filter"` and filter expression as URI.
     async fn get_local_artist_meta(
         &self,
-        artist: &ArtistInfo,
+        artist: Arc<ArtistInfo>,
     ) -> Result<Option<(models::ArtistMeta, OffsetDateTime, models::MetaSource)>> {
         let name = artist.name.to_owned();
         let mbid = artist.mbid.clone();
@@ -1048,7 +1014,7 @@ impl Cache {
         let (mpd_ts, local_ts) = futures::join!(
             self.mpd_client
                 .get_meta_last_modified("filter", filter_expr.clone()),
-            self.pool
+            APP_THREAD_POOL
                 .push_future(move || {
                     sqlite::get_artist_meta_last_modified(&name, mbid.as_deref())
                 })
@@ -1067,7 +1033,7 @@ impl Cache {
                 cmp::Ordering::Greater => {
                     let name = artist.name.to_owned();
                     let mbid = artist.mbid.clone();
-                    self.pool
+                    APP_THREAD_POOL
                         .push_future(move || sqlite::get_artist_meta(&name, mbid.as_deref()))
                         .expect("get_local_artist_meta: threadpool error")
                         .await
@@ -1086,7 +1052,6 @@ impl Cache {
 
                     if let Some(meta) = from_mpd.as_ref() {
                         let to_local = meta.clone();
-                        let artist = artist.to_owned();
                         if let Err(e) = self
                             .local
                             .call(move |_| sqlite::write_artist_meta(&artist, &to_local, true))
@@ -1101,7 +1066,7 @@ impl Cache {
                     // In sync
                     let name = artist.name.to_owned();
                     let mbid = artist.mbid.clone();
-                    self.pool
+                    APP_THREAD_POOL
                         .push_future(move || sqlite::get_artist_meta(&name, mbid.as_deref()))
                         .expect("get_local_artist_meta: threadpool error")
                         .await
@@ -1138,15 +1103,14 @@ impl Cache {
     /// Still failing that, if `external` is true, it will try to get one from external providers.
     pub async fn get_artist_avatar(
         self: Rc<Self>,
-        artist: &ArtistInfo,
+        artist: Arc<ArtistInfo>,
         thumbnail: bool,
         external: bool,
     ) -> Result<Option<Texture>> {
         // First try to get from cache, then from local storage
         let name = artist.name.to_owned();
         let mut failed_before = false;
-        match self
-            .pool
+        match APP_THREAD_POOL
             .push_future(move || get_image_internal(&name, Some("avatar"), thumbnail))
             .expect("get_artist_avatar: threadpool error")
             .await
@@ -1163,13 +1127,15 @@ impl Cache {
                 return Err(e);
             }
         }
+        let artist = artist.to_owned();
 
         // Failing the above, ask external providers
         if external
             && !failed_before
-            && let Some((meta, _, _)) = self.get_artist_meta(artist, true, false, None).await?
+            && let Some((meta, _, _)) = self
+                .get_artist_meta(artist.clone(), true, false, None)
+                .await?
         {
-            let artist = artist.to_owned();
             return self
                 .external
                 .call(move |_| {
@@ -1193,7 +1159,7 @@ impl Cache {
         is_dynamic_playlist: bool,
         thumbnail: bool,
     ) -> Result<Option<gdk::Texture>> {
-        self.pool
+        APP_THREAD_POOL
             .push_future(move || {
                 let prefix = Some(if is_dynamic_playlist {
                     "dynamic_playlist"
@@ -1270,14 +1236,21 @@ impl Cache {
 
     pub async fn get_lyrics(
         &self,
-        song: &SongInfo,
+        song: Arc<SongInfo>,
         external: bool,
         overwrite: bool, // only effective when external == true
         window: Option<&EuphonicaWindow>,
     ) -> Result<Option<Lyrics>> {
-        let uri = song.uri.to_owned();
         if !overwrite & !external {
-            match self.local.call(move |_| sqlite::find_lyrics(&uri)).await {
+            match self
+                .local
+                .call(clone!(
+                    #[strong]
+                    song,
+                    move |_| sqlite::find_lyrics(&song.file)
+                ))
+                .await
+            {
                 Ok(Some(lyrics)) => {
                     return Ok(Some(lyrics));
                 }
@@ -1292,7 +1265,6 @@ impl Cache {
         }
 
         if external {
-            let song = song.to_owned();
             println!("Fetching new lyrics...");
             let res = self.meta_providers.get_lyrics(song.clone(), window).await;
             sqlite::write_lyrics(&song, res.as_ref()).map_err(Error::Sqlite)?;

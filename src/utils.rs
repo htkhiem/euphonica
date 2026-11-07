@@ -40,6 +40,11 @@ static CONFIG_BASEPATH: Lazy<PathBuf> = Lazy::new(|| {
     res
 });
 
+pub static APP_THREAD_POOL: Lazy<glib::ThreadPool> = Lazy::new(|| {
+    glib::ThreadPool::shared(Some(settings_manager().uint("n-threads")))
+        .expect("Unable to start glib thread pool")
+});
+
 pub fn get_app_cache_path() -> PathBuf {
     APP_CACHE_PATH.clone()
 }
@@ -201,6 +206,32 @@ pub fn g_cmp_str_options(
     Ordering::from(s2.unwrap().to_lowercase().cmp(&s1.unwrap().to_lowercase()))
 }
 
+pub fn g_cmp_str_vecs(
+    s1: Vec<&str>,
+    s2: Vec<&str>,
+    nulls_first: bool,
+    asc: bool,
+    case_sensitive: bool,
+) -> Ordering {
+    if !nulls_first {
+        let s1_empty = s1.is_empty();
+        let s2_empty = s2.is_empty();
+        if s1_empty && !s2_empty {
+            return Ordering::Larger;
+        } else if s2_empty && !s1_empty {
+            return Ordering::Smaller;
+        }
+    }
+    let raw = if case_sensitive {
+        s1.iter()
+            .map(|s| s.to_lowercase())
+            .cmp(s2.iter().map(|s| s.to_lowercase()))
+    } else {
+        s1.cmp(&s2)
+    };
+    Ordering::from(if asc { raw } else { raw.reverse() })
+}
+
 pub fn g_search_substr(text: Option<&str>, term: &str, case_sensitive: bool) -> bool {
     if text.is_none() && term.is_empty() {
         return true;
@@ -213,6 +244,7 @@ pub fn g_search_substr(text: Option<&str>, term: &str, case_sensitive: bool) -> 
     false
 }
 
+#[inline]
 pub fn strip_filename_linux(path: &str) -> &str {
     // MPD insists on having a trailing slash so here we go
     if let Some(last_slash) = path.rfind('/') {

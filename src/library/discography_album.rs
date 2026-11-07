@@ -283,10 +283,8 @@ impl DiscographyAlbum {
                     row.set_thumbnail_visible(false);
 
                     row.set_name(song.get_name());
-                    row.set_first_attrib_text(song.get_artist_tag());
-                    row.set_duration(Some(&format_secs_as_duration(
-                        song.get_duration() as f64
-                    )));
+                    row.set_first_attrib_text(Some(&song.get_artist_string()));
+                    row.set_duration(Some(&format_secs_as_duration(song.get_duration() as f64)));
 
                     row.set_quality_grade(song.get_quality_grade());
                     let end_widget = RowAddButtons::new(&library);
@@ -486,14 +484,14 @@ impl DiscographyAlbum {
             .replace(Some(glib::spawn_future_local(async move {
                 // Wait first to give unmap() a chance to cancel this outright
                 glib::timeout_future(TEXTURE_LOAD_DELAY_MS).await;
-                if let Some(album) = this.album() {
+                if let Some(song) = this.album().map(|a| a.get_inner().first_song.clone()) {
                     match this
                         .imp()
                         .cache
                         .get()
                         .unwrap()
                         .clone()
-                        .get_album_cover(album.get_info(), false)
+                        .get_song_cover(song.clone(), false)
                         .await
                     {
                         Ok(Some(tex)) => {
@@ -506,8 +504,8 @@ impl DiscographyAlbum {
                             this.imp().cover.clear();
                             eprintln!(
                                 "Failed to read cover for album `{}` (URI `{}`):\n{:?}",
-                                album.get_title(),
-                                album.get_folder_uri(),
+                                song.album.as_deref().unwrap_or(""),
+                                &song.file,
                                 e
                             );
                         }

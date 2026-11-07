@@ -7,7 +7,7 @@ use mpd::{
         Error as MpdError, ErrorCode as MpdErrorCode, ProtoError, Result as MpdResult, ServerError,
     },
     search::Window,
-    song::PosIdChange,
+    song::{PosIdChange, Song as SongInfo},
 };
 use oneshot::Sender as OneShotSender;
 use rand::seq::SliceRandom;
@@ -16,21 +16,21 @@ use rustc_hash::FxHashSet;
 #[cfg(target_os = "linux")]
 use std::os::{linux::net::SocketAddrExt, unix::net::SocketAddr};
 use std::{
-    borrow::Cow, cell::RefCell, cmp::Ordering as StdOrdering, fs::File, io::Read, net::TcpStream,
-    ops::Range, os::unix::net::UnixStream, result,
+    borrow::Cow, cmp::Ordering as StdOrdering, fs::File, io::Read, net::TcpStream, ops::Range,
+    os::unix::net::UnixStream, result, sync::Arc,
 };
 
 use crate::{
     cache::sqlite,
     client::stream::StreamWrapper,
     common::{
-        AlbumInfo, DynamicPlaylist, SongInfo, Stickers,
+        DynamicPlaylist, Stickers,
         dynamic_playlist::{Ordering, QueryLhs, Rule, StickerObjectType, StickerOperation},
         inode::INodeInfo,
     },
     player::PlaybackFlow,
     server::{ManagedMpdError, config::MpdConfig},
-    utils::{self, get_standalone_config_path},
+    utils::{self, get_standalone_config_path, strip_filename_linux},
 };
 
 use super::StickerSetMode;
@@ -43,6 +43,17 @@ fn cmp_options_nulls_last<T: Ord>(a: Option<&T>, b: Option<&T>) -> StdOrdering {
         (None, Some(_)) => StdOrdering::Greater,
         (None, None) => StdOrdering::Equal,
     }
+}
+
+fn cmp_vecs_nulls_last<T: Ord>(a: &Vec<T>, b: &Vec<T>, reverse: bool) -> StdOrdering {
+    let a_empty = a.is_empty();
+    let b_empty = b.is_empty();
+    if a_empty && !b_empty {
+        return StdOrdering::Greater;
+    } else if b_empty && !a_empty {
+        return StdOrdering::Less;
+    }
+    if reverse { b.cmp(a) } else { a.cmp(b) }
 }
 
 // Reverse comparison, but still putting nulls last
@@ -73,36 +84,32 @@ pub fn build_comparator(
                 // Determine the ordering for the current rule's field.
                 // Nulls are always sorted last as it wouldn't really make sense otherwise in
                 // the dynamic playlist/all songs view cases.
+                let date_a = song_a.date.as_deref().or(song_a.original_date.as_deref());
+                let date_b = song_b.date.as_deref().or(song_b.original_date.as_deref());
                 let res = match *ordering {
-                    Ordering::AscAlbumTitle => cmp_options_nulls_last(
-                        song_a.album.as_ref().map(|album: &AlbumInfo| &album.title),
-                        song_b.album.as_ref().map(|album: &AlbumInfo| &album.title),
-                    ),
-                    Ordering::DescAlbumTitle => reverse_cmp_options_nulls_last(
-                        song_a.album.as_ref().map(|album: &AlbumInfo| &album.title),
-                        song_b.album.as_ref().map(|album: &AlbumInfo| &album.title),
-                    ),
+                    Ordering::AscAlbumTitle => {
+                        cmp_options_nulls_last(song_a.album.as_ref(), song_b.album.as_ref())
+                    }
+                    Ordering::DescAlbumTitle => {
+                        reverse_cmp_options_nulls_last(song_a.album.as_ref(), song_b.album.as_ref())
+                    }
                     Ordering::Track => {
-                        let track_a = song_a.track.unwrap_or(i64::MAX);
-                        let track_b = song_b.track.unwrap_or(i64::MAX);
+                        let track_a = song_a.track.unwrap_or(u32::MAX);
+                        let track_b = song_b.track.unwrap_or(u32::MAX);
                         track_a.cmp(&track_b)
                     }
-                    Ordering::AscReleaseDate => cmp_options_nulls_last(
-                        song_a.release_date.as_ref(),
-                        song_b.release_date.as_ref(),
-                    ),
-                    Ordering::DescReleaseDate => reverse_cmp_options_nulls_last(
-                        song_a.release_date.as_ref(),
-                        song_b.release_date.as_ref(),
-                    ),
-                    Ordering::AscArtistTag => cmp_options_nulls_last(
-                        song_a.artist_tag.as_ref(),
-                        song_b.artist_tag.as_ref(),
-                    ),
-                    Ordering::DescArtistTag => reverse_cmp_options_nulls_last(
-                        song_a.artist_tag.as_ref(),
-                        song_b.artist_tag.as_ref(),
-                    ),
+                    Ordering::AscReleaseDate => {
+                        cmp_options_nulls_last(date_a.as_ref(), date_b.as_ref())
+                    }
+                    Ordering::DescReleaseDate => {
+                        reverse_cmp_options_nulls_last(date_a.as_ref(), date_b.as_ref())
+                    }
+                    Ordering::AscArtistTag => {
+                        cmp_vecs_nulls_last(&song_a.artists, &song_b.artists, false)
+                    }
+                    Ordering::DescArtistTag => {
+                        cmp_vecs_nulls_last(&song_a.artists, &song_b.artists, true)
+                    }
                     Ordering::AscRating => cmp_options_nulls_last(
                         stickers_a.rating.as_ref(),
                         stickers_b.rating.as_ref(),
@@ -111,13 +118,12 @@ pub fn build_comparator(
                         stickers_a.rating.as_ref(),
                         stickers_b.rating.as_ref(),
                     ),
-                    Ordering::AscLastModified => cmp_options_nulls_last(
-                        song_a.last_modified.as_ref(),
-                        song_b.last_modified.as_ref(),
-                    ),
+                    Ordering::AscLastModified => {
+                        cmp_options_nulls_last(song_a.last_mod.as_ref(), song_b.last_mod.as_ref())
+                    }
                     Ordering::DescLastModified => reverse_cmp_options_nulls_last(
-                        song_a.last_modified.as_ref(),
-                        song_b.last_modified.as_ref(),
+                        song_a.last_mod.as_ref(),
+                        song_b.last_mod.as_ref(),
                     ),
                     Ordering::AscPlayCount => cmp_options_nulls_last(
                         stickers_a.play_count.as_ref(),
@@ -169,15 +175,6 @@ pub enum Error {
 pub type Result<T> = result::Result<T, Error>;
 
 pub type Responder<T> = OneShotSender<Result<T>>;
-
-/// maybe_download_image can either return a registered image bundle (ready for use)
-/// or, if newly downloaded from MPD, a raw bytes vector for processing. This is so
-/// that we can do said processing in a simple glib threadpool handled from the main
-/// thread & avoid blocking this one.
-pub enum ImageHandle {
-    Registered(utils::RegisteredImageBundle),
-    New(Vec<u8>), // image bytes in some format
-}
 
 /// The successor to BackgroundTask.
 pub enum Task {
@@ -343,22 +340,24 @@ pub enum Task {
     /// Get a song's embedded cover.
     /// Will try to download from MPD if one isn't already available locally.
     GetEmbeddedCover(
-        /// URI to song file
-        String,
-        /// Cache key to check before requesting. If None, will use the above URI.
-        Option<String>,
-        /// Full paths to high-resolution and low-resolution file, respectively
-        Responder<Option<ImageHandle>>,
+        /// Song
+        Arc<SongInfo>,
+        /// Nested Option to handle 3 outcomes:
+        /// - Some(Some(Vec)): newly downloaded data
+        /// - Sone(None): already in DB, skipped
+        /// - None: unavailable from MPD
+        Responder<Option<Option<Vec<u8>>>>,
     ),
     /// Get a song's folder cover (cover.jpg/png/webp in the same folder).
     /// Will try to download from MPD if one isn't already available locally.
     GetFolderCover(
-        /// URI to folder with trailing slash
-        String,
-        /// Cache key to check before requesting. If null, will use the above URI.
-        Option<String>,
-        /// Full paths to high-resolution and low-resolution file, respectively
-        Responder<Option<ImageHandle>>,
+        /// Song
+        Arc<SongInfo>,
+        /// Nested Option to handle 3 outcomes:
+        /// - Some(Some(Vec)): newly downloaded data
+        /// - Sone(None): already in DB, skipped
+        /// - None: unavailable from MPD
+        Responder<Option<Option<Vec<u8>>>>,
     ),
     /// Query distinct values of a tag, optionally grouped by another
     List(
@@ -652,50 +651,31 @@ impl Connection {
     /// Downloads an image or returns an already existing image for a given uri
     /// Will resp with 2 image names (not full paths): (high res, thumb).
     /// Note to self: no prefix handling here because all images downloaded from MPD are album arts.
+    /// Nested Option to handle 3 outcomes:
+    /// - Some(Some(Vec)): newly downloaded data
+    /// - Sone(None): already in DB, skipped
+    /// - None: unavailable from MPD
     fn maybe_download_image<F>(
         &mut self,
-        example_uri: String, // Must be a full URI (not the truncated folder_uri) to avoid problems with remote connections
+        // Must be a full URI (not the truncated folder_uri) to avoid problems with remote connections
+        example_uri: &String,
         download_func: F,
-        register_key: Option<String>, // defaults to folder-level URI of the above example_uri
-        resp: Responder<Option<ImageHandle>>,
+        resp: Responder<Option<Option<Vec<u8>>>>,
     ) where
         F: Fn(&mut Client<StreamWrapper>, &String) -> MpdResult<Vec<u8>>,
     {
-        // `register_key` overrides the key used for DB lookup and registration.
-        // This lets us store a folder-level key even when the fetch URI is track-level.
-        // unwrap_or_else to avoid having to run strip_filename_linux when register_key.is_some().
-        let key = register_key.as_deref().unwrap_or(&example_uri);
-
-        // Always check with our DB first, as multiple calls may be spawned
-        // asynchronously when no cover was locally available.
-        // Only one of those calls should cause a download; other calls
-        // should start using the local cached version as soon as possible.
-        let hires = sqlite::find_image_by_key(key, None, false).expect("Sqlite DB error");
-        let thumb = sqlite::find_image_by_key(key, None, true).expect("Sqlite DB error");
-        // The above might return empty strings verbatim. Normally we wouldn't even reach this if the strings were empty,
-        // but there might be some race conditions when there are multiple distinct album tags in the same folder?
-        if hires.as_ref().is_some_and(|s| !s.is_empty())
-            && thumb.as_ref().is_some_and(|s| !s.is_empty())
+        if sqlite::has_image_by_key(example_uri.as_str(), None).expect("sqlite error")
+            || sqlite::has_image_by_key(strip_filename_linux(example_uri.as_str()), None)
+                .expect("sqlite error")
         {
-            let (hires, thumb) = (hires.unwrap(), thumb.unwrap());
-            let _ = resp.send(Ok(Some(ImageHandle::Registered(
-                utils::RegisteredImageBundle {
-                    hires: utils::RegisteredImage {
-                        name: hires,
-                        img: RefCell::new(None),
-                    },
-                    thumb: utils::RegisteredImage {
-                        name: thumb,
-                        img: RefCell::new(None),
-                    },
-                },
-            ))));
+            let _ = resp.send(Ok(Some(None)));
+            return;
         } else {
             // Not available locally => try to download
             self.respond_with_client(
                 |c| {
-                    match download_func(c, &example_uri) {
-                        Ok(bytes) => Ok(Some(ImageHandle::New(bytes))),
+                    match download_func(c, example_uri) {
+                        Ok(bytes) => Ok(Some(Some(bytes))),
                         Err(MpdError::Proto(ProtoError::NotPair)) => {
                             // Empty output. Treat as not available.
                             Ok(None)
@@ -1161,20 +1141,16 @@ impl Connection {
                         },
                         resp,
                     ),
-                    Task::GetEmbeddedCover(uri, cache_key, resp) => self.maybe_download_image(
-                        uri,
+                    Task::GetEmbeddedCover(song, resp) => self.maybe_download_image(
+                        &song.file,
                         |client, uri| client.readpicture(uri),
-                        cache_key,
                         resp,
                     ),
-                    Task::GetFolderCover(example_uri, cache_key, resp) => {
-                        self.maybe_download_image(
-                            example_uri,
-                            |client, uri| client.albumart(uri),
-                            cache_key, // Always store by example_uri
-                            resp,
-                        )
-                    }
+                    Task::GetFolderCover(song, resp) => self.maybe_download_image(
+                        &song.file,
+                        |client, uri| client.albumart(uri),
+                        resp,
+                    ),
                     Task::List(term, query, groupby, resp) => {
                         self.respond_with_client(|c| c.list(&term, &query, groupby), resp)
                     }

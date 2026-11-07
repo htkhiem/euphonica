@@ -3,15 +3,9 @@ extern crate rusqlite;
 
 use std::{io::Cursor, str::FromStr};
 
-use once_cell::sync::Lazy;
-use r2d2_sqlite::SqliteConnectionManager;
-use rusqlite::{Error as SqliteError, OptionalExtension, Result, Row, params};
-use rustc_hash::FxHashSet;
-use time::OffsetDateTime;
-
 use crate::{
     common::{
-        AlbumInfo, ArtistInfo, DynamicPlaylist, INodeType, SongInfo,
+        AlbumInfo, ArtistInfo, DynamicPlaylist, INodeType,
         dynamic_playlist::{AutoRefresh, Ordering, Rule},
         inode::INodeInfo,
     },
@@ -20,6 +14,12 @@ use crate::{
         format_datetime_local_tz, get_doc_cache_path, get_image_cache_path, strip_filename_linux,
     },
 };
+use mpd::Song as SongInfo;
+use once_cell::sync::Lazy;
+use r2d2_sqlite::SqliteConnectionManager;
+use rusqlite::{Error as SqliteError, OptionalExtension, Result, Row, params};
+use rustc_hash::FxHashSet;
+use time::OffsetDateTime;
 
 pub static SQLITE_POOL: Lazy<r2d2::Pool<SqliteConnectionManager>> = Lazy::new(|| {
     let manager = SqliteConnectionManager::file(get_doc_cache_path());
@@ -652,10 +652,10 @@ pub fn write_album_meta(
         ON CONFLICT(title, artist) DO UPDATE SET mbid=?2, data=?6, last_modified=?5
         ",
         params![
-            &album.folder_uri,
-            &album.mbid,
-            &album.title,
-            &album.get_artist_tag(),
+            album.get_folder_uri(),
+            album.get_mbid(),
+            album.get_title(),
+            album.albumartists().next(),
             last_modified,
             bson::serialize_to_vec(&bson::serialize_to_document(meta).map_err(Error::ObjectToDoc)?)
                 .map_err(Error::DocToBytes)?
@@ -666,7 +666,7 @@ pub fn write_album_meta(
     // Also, when saving user edits to the doc, don't overwrite the tags table.
     if update_tags {
         write_album_tags(
-            &album.folder_uri,
+            &album.get_folder_uri(),
             &meta.tags,
             TagsInsertMode::DelsertMetaSupplied,
         )?;
@@ -921,12 +921,12 @@ pub fn find_lyrics(uri: &str) -> Result<Option<Lyrics>, Error> {
 pub fn write_lyrics(song: &SongInfo, lyrics: Option<&Lyrics>) -> Result<(), Error> {
     let mut conn = SQLITE_POOL.get().unwrap();
     let tx = conn.transaction().map_err(Error::Db)?;
-    tx.execute("delete from songs where uri = ?1", params![&song.uri])
+    tx.execute("delete from songs where uri = ?1", params![&song.file])
         .map_err(Error::Db)?;
     tx.execute(
         "insert into songs (uri, lyrics, synced, last_modified) values (?1,?2,?3,?4)",
         params![
-            &song.uri,
+            &song.file,
             &lyrics.map_or(String::from(""), |ly| ly.to_string()),
             lyrics.map_or(false, |ly| ly.synced),
             OffsetDateTime::now_utc()
@@ -935,6 +935,26 @@ pub fn write_lyrics(song: &SongInfo, lyrics: Option<&Lyrics>) -> Result<(), Erro
     .map_err(Error::Db)?;
     tx.commit().map_err(Error::Db)?;
     Ok(())
+}
+
+/// Fast path to check for disk cache availability without actually loading the path into RAM.
+pub fn has_image_by_key(key: &str, prefix: Option<&str>) -> Result<bool, Error> {
+    let query: Result<usize, SqliteError>;
+    let conn = SQLITE_POOL.get().unwrap();
+    let final_key = if let Some(prefix) = prefix {
+        &format!("{prefix}:{key}")
+    } else {
+        key
+    };
+    query = conn
+        .prepare("select count(*) from images where key = ?1 limit 1")
+        .unwrap()
+        .query_row(params![final_key], |r| r.get::<usize, usize>(0));
+    match query {
+        Ok(count) => Ok(count > 0),
+        Err(SqliteError::QueryReturnedNoRows) => Ok(false),
+        Err(e) => Err(Error::Db(e)),
+    }
 }
 
 pub fn find_image_by_key(
@@ -1039,16 +1059,16 @@ pub fn add_to_history(song: &SongInfo) -> Result<(), Error> {
     let ts = OffsetDateTime::now_utc();
     tx.execute(
         "insert into songs_history (uri, timestamp) values (?1, ?2)",
-        params![&song.uri, &ts],
+        params![&song.file, &ts],
     )
     .map_err(Error::Db)?;
-    if let Some(album) = song.album.as_ref() {
+    if let Some(album) = song.album.as_deref() {
         tx.execute(
             "insert into albums_history (title, mbid, artist, timestamp) values (?1, ?2, ?3, ?4)",
             params![
-                &album.title,
-                album.mbid.as_ref(),
-                album.albumartist.as_ref(),
+                album,
+                song.album_mbid.as_deref(),
+                song.albumartists.get(0).as_deref(),
                 &ts
             ],
         )
@@ -1057,7 +1077,7 @@ pub fn add_to_history(song: &SongInfo) -> Result<(), Error> {
     for artist in song.artists.iter() {
         tx.execute(
             "insert into artists_history(name, timestamp) values (?1, ?2)",
-            params![&artist.name, &ts],
+            params![artist, &ts],
         )
         .map_err(Error::Db)?;
     }
@@ -1291,7 +1311,7 @@ pub fn cache_dynamic_playlist_results(name: &str, songs: &[SongInfo]) -> Result<
     for song in songs.iter() {
         tx.execute(
             "insert into query_results (query_name, uri) values (?1,?2)",
-            params![name, song.uri],
+            params![name, song.file],
         )?;
     }
     // Update last_refresh

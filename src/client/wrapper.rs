@@ -24,21 +24,22 @@ use std::borrow::Cow;
 use std::hash::BuildHasherDefault;
 use std::io::Cursor;
 use std::num::NonZero;
+use std::sync::Arc;
 use std::thread;
 use std::{cell::RefCell, rc::Rc};
 use uuid::Uuid;
 
 use crate::cache::sqlite;
-use crate::client::connection::ImageHandle;
 use crate::common::{
     AlbumInfo, ArtistInfo, ConnectionState, DynamicPlaylist, split_genre_tag, tags,
 };
 use crate::utils::settings_manager;
 use crate::{
-    common::{Album, Artist, INode, Song, SongInfo, Stickers},
+    common::{Album, Artist, INode, Song, Stickers},
     player::PlaybackFlow,
     utils,
 };
+use mpd::song::{QueuePlace, Song as SongInfo};
 
 use super::connection::{Connection, Error as ClientError, Result as ClientResult, Task};
 use super::state::{ClientState, StickersSupportLevel};
@@ -698,7 +699,7 @@ impl MpdWrapper {
                         let mut res: Vec<Song> = Vec::with_capacity(song_infos.len());
                         // Cache
                         for mut song_info in song_infos.into_iter() {
-                            if let Some(id) = song_info.queue_id {
+                            if let Some(id) = song_info.place.map(|p| p.id.0) {
                                 let song = Song::from(std::mem::take(&mut song_info));
                                 res.push(song.clone()); // lightweight Rc
                                 self.song_cache.borrow_mut().put(id, song);
@@ -775,8 +776,11 @@ impl MpdWrapper {
                             // Queue has probably changed again. Push empty song &
                             // wait for next refresh.
                             let mut si = SongInfo::default();
-                            si.queue_id = Some(change.id.0);
-                            si.queue_pos = Some(change.pos);
+                            si.place = Some(QueuePlace {
+                                id: change.id,
+                                pos: change.pos,
+                                prio: 0,
+                            });
                             songs.push(si.into());
                         }
                     }
@@ -912,23 +916,23 @@ impl MpdWrapper {
         self.foreground(Task::GetSongCount(s), r).await
     }
 
-    pub async fn get_embedded_cover(&self, uri: String) -> ClientResult<Option<ImageHandle>> {
+    pub async fn get_embedded_cover(
+        &self,
+        song: Arc<SongInfo>,
+    ) -> ClientResult<Option<Option<Vec<u8>>>> {
         // Leave downloading to the background connection thread, but local operations
         // (resizing, transcoding, writing to disk) will be done with a threadpool, whose
         // handle is held by the this thread (the main one).
         let (s, r) = oneshot::channel();
-        self.background(Task::GetEmbeddedCover(uri, None, s), r)
-            .await
+        self.background(Task::GetEmbeddedCover(song, s), r).await
     }
 
     pub async fn get_folder_cover(
         &self,
-        example_uri: String,
-        folder_uri: String,
-    ) -> ClientResult<Option<ImageHandle>> {
+        song: Arc<SongInfo>,
+    ) -> ClientResult<Option<Option<Vec<u8>>>> {
         let (s, r) = oneshot::channel();
-        self.background(Task::GetFolderCover(example_uri, Some(folder_uri), s), r)
-            .await
+        self.background(Task::GetFolderCover(song, s), r).await
     }
 
     /// Fetch albums and albumartists together for efficiency.
@@ -1059,33 +1063,36 @@ impl MpdWrapper {
                     Vec::with_capacity(album_count);
 
                 for i in 0..songs.len() {
-                    if let Some(album_info) = std::mem::take(&mut songs[i]).into_album_info() {
-                        // Handle artist first
-                        let example_uri = &album_info.example_uri;
-                        for artist in album_info.artists.iter() {
+                    let mut song = std::mem::take(&mut songs[i]);
+                    if song.album.is_some() {
+                        // Handle artist first before surrendering the song instance to Album's Arc
+                        for artist in ArtistInfo::copy_from_song(&mut song, true) {
                             let comp_id = artist.get_comp_id();
                             let existing =
                                 albumartists.entry(comp_id.to_string()).or_insert_with(|| {
                                     // Haven't seen this artist before => push new
-                                    artist.to_owned()
+                                    artist
                                 });
 
-                            existing.insert_genres(&album_info.genres);
+                            existing.insert_genres(&song.genres);
 
                             // Slack off here (we'll not use all of them anyway; alloc only what's needed)
                             if existing.example_uris.len() < MAX_EXAMPLE_ALBUMS_PER_ALBUMARTIST {
-                                existing.example_uris.push(example_uri.to_owned());
+                                existing.example_uris.push(song.file.to_owned());
                             }
                         }
+                        // For our purposes just one song per album should be enough (here we only read
+                        // albumartist tags, which all songs within the same album are expected to be
+                        // tagged the same way).
+                        let album_info = AlbumInfo::from_mpd_songs(vec![Arc::new(song)]).unwrap();
                         let rating;
                         if fetch_stickers {
                             // Prefer new-style filter-based rating; fall back to legacy title-based rating.
                             // Force case-insensitive comparison for now as MPD mangles the expression string (all terms become uppercase there).
                             let filter_expr = album_info.get_filter_expression().to_lowercase();
-                            rating = ratings_map
-                                .get(&filter_expr)
-                                .cloned()
-                                .or_else(|| legacy_ratings_map.get(&album_info.title).cloned());
+                            rating = ratings_map.get(&filter_expr).cloned().or_else(|| {
+                                legacy_ratings_map.get(album_info.get_title()).cloned()
+                            });
                         } else {
                             rating = None;
                         }
@@ -1165,7 +1172,7 @@ impl MpdWrapper {
             )
             .await?
             .into_iter()
-            .map(|si| si.into_album_info())
+            .map(|si| AlbumInfo::from_mpd_songs(vec![Arc::new(si)]))
             .filter(|maybe_info| maybe_info.is_some())
             .map(|maybe_info| maybe_info.unwrap().into())
             .collect())
@@ -1315,16 +1322,16 @@ impl MpdWrapper {
         Ok(asyncified
             .call(move |_| {
                 let mut res: FxHashMap<String, ArtistInfo> = FxHashMap::default();
-                for (song, genres) in songs.into_iter().zip(genres) {
+                for (mut song, _genres) in songs.into_iter().zip(genres) {
                     // Here we're fetching song.artists instead of song.album.artists
-                    for artist in song.artists {
+                    for artist in ArtistInfo::take_from_song(&mut song, false) {
                         let existing =
                             res.entry(artist.get_comp_id().to_string())
                                 .or_insert_with(|| {
                                     // Haven't seen this artist before => push new
                                     artist
                                 });
-                        existing.insert_genres(&genres);
+                        existing.insert_genres(&song.genres);
                     }
                 }
                 res.into_iter()
@@ -1383,8 +1390,8 @@ impl MpdWrapper {
             .call(move |_| {
                 let mut res = Vec::with_capacity(recent_names_set.len());
                 let mut already_parsed: FxHashSet<String> = FxHashSet::default();
-                for song in songs {
-                    let artists = song.into_artist_infos();
+                for mut song in songs {
+                    let artists = ArtistInfo::take_from_song(&mut song, false);
                     for artist in artists.into_iter() {
                         if recent_names_set.contains(&artist.name)
                             && already_parsed.insert(artist.get_comp_id().to_owned())
@@ -1500,7 +1507,7 @@ impl MpdWrapper {
             if fetch_stickers {
                 // Error handling is already performed for us
                 let maybe_stickers = self
-                    .get_common_stickers("song", song.uri.to_owned())
+                    .get_common_stickers("song", song.file.to_owned())
                     .await
                     .ok();
                 Ok(Some((song, maybe_stickers)))
@@ -1549,9 +1556,10 @@ impl MpdWrapper {
         .await?
         .into_iter()
         .zip(ts)
-        .map(|(mut si, ts)| {
-            si.last_played = Some(ts);
-            Ok(si.into())
+        .map(|(si, ts)| {
+            let res: Song = si.into();
+            res.init_last_played(ts);
+            Ok(res)
         })
         .collect()
     }

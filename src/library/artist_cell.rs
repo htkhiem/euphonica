@@ -188,7 +188,7 @@ impl ArtistCell {
                     res,
                     move |_: CacheState, name: String, hires: gdk::Texture, thumb: gdk::Texture| {
                         let use_hires = this.imp().hires.get();
-                        if this.artist().is_some_and(|a| a.get_info().name == name) {
+                        if this.artist().is_some_and(|a| a.get_inner().name == name) {
                             this.imp().avatar.set_custom_image(Some(if use_hires {
                                 &hires
                             } else {
@@ -205,7 +205,7 @@ impl ArtistCell {
                     #[weak(rename_to = this)]
                     res,
                     move |_: CacheState, name: String| {
-                        if this.artist().is_some_and(|a| a.get_info().name == name) {
+                        if this.artist().is_some_and(|a| a.get_inner().name == name) {
                             this.imp()
                                 .avatar
                                 .set_custom_image(Option::<&gdk::Texture>::None);
@@ -223,13 +223,13 @@ impl ArtistCell {
                         let use_hires = this.imp().hires.get();
                         if this
                             .artist()
-                            .is_some_and(|a| !a.get_info().example_uris.is_empty())
+                            .is_some_and(|a| !a.get_inner().example_uris.is_empty())
                         {
                             let cover_fan = this.imp().covers.get();
                             for (i, example_uri) in this
                                 .artist()
                                 .unwrap()
-                                .get_info()
+                                .get_inner()
                                 .example_uris
                                 .iter()
                                 .take(3)
@@ -255,13 +255,13 @@ impl ArtistCell {
                     move |_: CacheState, uri: String| {
                         if this
                             .artist()
-                            .is_some_and(|a| !a.get_info().example_uris.is_empty())
+                            .is_some_and(|a| !a.get_inner().example_uris.is_empty())
                         {
                             let cover_fan = this.imp().covers.get();
                             for (i, example_uri) in this
                                 .artist()
                                 .unwrap()
-                                .get_info()
+                                .get_inner()
                                 .example_uris
                                 .iter()
                                 .take(3)
@@ -319,7 +319,7 @@ impl ArtistCell {
             let cache = self.imp().cache.get().unwrap();
             match cache
                 .clone()
-                .get_artist_avatar(artist.get_info(), use_thumbnail, false)
+                .get_artist_avatar(artist.get_inner_arc(), use_thumbnail, false)
                 .await
             {
                 Ok(maybe_tex) => {
@@ -330,7 +330,7 @@ impl ArtistCell {
                 }
             };
 
-            let example_uris = &artist.get_info().example_uris;
+            let example_uris = &artist.get_inner().example_uris;
             let cover_fan = self.imp().covers.get();
             self.set_cover_count(example_uris.len().min(3) as u8);
             for (i, uri) in example_uris.iter().take(3).enumerate() {

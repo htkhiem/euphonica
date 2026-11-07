@@ -8,12 +8,13 @@ use gtk::subclass::prelude::*;
 use mpd::search::Operation;
 use mpd::{Query, Term};
 use rustc_hash::FxHashSet;
-use std::cell::OnceCell;
+use std::sync::Arc;
 
-/// Artist struct, for use with both Artist and AlbumArtist tags.
+/// Unlike Album, an Artist entity still keeps its own data.
+/// This is because of the many-to-many relationships between Songs and Artists making things
+/// complicated, unlike the many-to-one relationships of Songs -> Albums.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ArtistInfo {
-    // TODO: Might want to refactor to Into<Cow<'a, str>>
     pub name: String,
     pub sort_tag: Option<String>,
     pub mbid: Option<String>,
@@ -45,12 +46,104 @@ impl ArtistInfo {
         }
     }
 
+    /// Destructively pull artist data from a Song, creating one or more Artist objects.
+    /// This reduces copies, but prepare thyself for perplexing bugs from incorrect usage.
+    /// Fields not exclusive to each individual (genres and example_uris), are NOT collected.
+    /// Insert them yourself after-the-fact.
+    /// TODO: candidate for moving to wrapper.rs since this is just too specific to that one's
+    /// use case.
+    pub fn take_from_song(song: &mut mpd::song::Song, generate_albumartists: bool) -> Vec<Self> {
+        let mut res: Vec<Self> = Vec::new();
+        let mut sort_tags = std::mem::take(if generate_albumartists {
+            &mut song.albumartistsorts
+        } else {
+            &mut song.artistsorts
+        });
+        let mut mbids = std::mem::take(if generate_albumartists {
+            &mut song.albumartist_mbids
+        } else {
+            &mut song.artist_mbids
+        });
+        let names = std::mem::take(if generate_albumartists {
+            &mut song.albumartists
+        } else {
+            &mut song.artists
+        });
+        for (i, name) in names
+            .iter()
+            .map(|s| parse_mb_artist_tag(s))
+            .flatten()
+            .enumerate()
+        {
+            res.push(ArtistInfo {
+                name: name.to_owned(),
+                sort_tag: sort_tags.get_mut(i).map(std::mem::take),
+                mbid: mbids.get_mut(i).map(std::mem::take),
+                genres: FxHashSet::default(),
+                example_uris: Vec::with_capacity(0),
+                is_composer: false,
+                is_albumartist: generate_albumartists,
+            });
+        }
+        res
+    }
+
+    /// Non-destructively create one or more Artist objects from a Song.
+    /// This requires copies of multiple strings.
+    /// Fields not exclusive to each individual (genres and example_uris), are NOT collected.
+    /// Insert them yourself after-the-fact.
+    pub fn copy_from_song(song: &mpd::song::Song, generate_albumartists: bool) -> Vec<Self> {
+        let mut res: Vec<Self> = Vec::new();
+        let sort_tags = if generate_albumartists {
+            &song.albumartistsorts
+        } else {
+            &song.artistsorts
+        };
+        let mbids = if generate_albumartists {
+            &song.albumartist_mbids
+        } else {
+            &song.artist_mbids
+        };
+        let names = if generate_albumartists {
+            &song.albumartists
+        } else {
+            &song.artists
+        };
+        for (i, name) in names
+            .iter()
+            .map(|s| parse_mb_artist_tag(s))
+            .flatten()
+            .enumerate()
+        {
+            res.push(ArtistInfo {
+                name: name.to_owned(),
+                sort_tag: sort_tags.get(i).map(ToOwned::to_owned),
+                mbid: mbids.get(i).map(ToOwned::to_owned),
+                genres: FxHashSet::default(),
+                example_uris: Vec::with_capacity(0),
+                is_composer: false,
+                is_albumartist: generate_albumartists,
+            });
+        }
+        res
+    }
+
     /// Get something to serve as this artist's internal ID for
     /// filtering/comparison purposes.
     /// If an artist has a MusicBrainz ID, use it. If not, fall
     /// back to their readable name.
     pub fn get_comp_id(&self) -> &str {
-        self.mbid.as_deref().unwrap_or(self.name.as_ref())
+        self.get_mbid().unwrap_or(self.get_name())
+    }
+
+    #[inline]
+    pub fn get_name(&self) -> &str {
+        self.name.as_str()
+    }
+
+    #[inline]
+    pub fn get_mbid(&self) -> Option<&str> {
+        self.mbid.as_deref()
     }
 
     /// Get MPD filter expression to find all songs by this artist.
@@ -84,7 +177,7 @@ impl ArtistInfo {
 
     /// Add genres as discovered from albums, maintaining uniqueness.
     /// Useful at page init time when we fetch all the artists.
-    pub fn insert_genres(&mut self, more_genres: &FxHashSet<String>) {
+    pub fn insert_genres(&mut self, more_genres: &[String]) {
         for genre in more_genres {
             // Clone only what's not already in
             if !self.genres.contains(genre) {
@@ -182,38 +275,16 @@ pub fn parse_mb_artist_tag(input: &str) -> Vec<&str> {
     }
 }
 
-pub fn artists_to_string(artists: &[ArtistInfo]) -> Option<String> {
-    if artists.is_empty() {
-        None
-    } else if artists.len() > 1 {
-        // For now assume that only the first artist in the list can be a composer
-        let mut res: String = "".to_owned();
-        for (i, artist) in artists.iter().enumerate() {
-            if i > 0 {
-                let sep = if artists[i - 1].is_composer {
-                    "; "
-                } else {
-                    ", "
-                };
-                res.push_str(sep);
-            }
-            res.push_str(artist.name.as_ref());
-        }
-        Some(res)
-    } else {
-        Some(artists[0].name.clone())
-    }
-}
-
 mod imp {
     use super::*;
     use glib::{ParamSpec, ParamSpecString};
     use gtk::glib::ParamSpecObject;
+    use once_arc::OnceArc;
     use once_cell::sync::Lazy;
 
     #[derive(Default, Debug)]
     pub struct Artist {
-        pub info: OnceCell<ArtistInfo>,
+        pub info: OnceArc<ArtistInfo>,
     }
 
     #[glib::object_subclass]
@@ -223,7 +294,7 @@ mod imp {
 
         fn new() -> Self {
             Self {
-                info: OnceCell::new(),
+                info: OnceArc::new(),
             }
         }
     }
@@ -250,8 +321,7 @@ mod imp {
                 "name" => obj.get_name().to_value(),
                 "sortable-name" => obj.get_sortable_name().to_value(),
                 "example-uris" => {
-                    glib::BoxedAnyObject::new(self.info.get().map(|info| info.example_uris.clone()))
-                        .to_value()
+                    glib::BoxedAnyObject::new(obj.get_inner().example_uris.clone()).to_value()
                 }
                 _ => unimplemented!(),
             }
@@ -264,25 +334,66 @@ glib::wrapper! {
 }
 
 impl Artist {
-    pub fn get_info(&self) -> &ArtistInfo {
-        self.imp().info.get().unwrap()
+    pub fn get_inner(&self) -> &ArtistInfo {
+        self.imp()
+            .info
+            .get(std::sync::atomic::Ordering::Relaxed)
+            .unwrap()
+    }
+
+    pub fn get_inner_arc(&self) -> Arc<ArtistInfo> {
+        self.imp()
+            .info
+            .load(std::sync::atomic::Ordering::Relaxed)
+            .unwrap()
     }
 
     pub fn get_name(&self) -> &str {
-        &self.get_info().name
+        &self.get_inner().name
     }
 
     pub fn get_sortable_name(&self) -> &str {
-        let info = self.get_info();
+        let info = self.get_inner();
         info.sort_tag.as_deref().unwrap_or(info.name.as_str())
     }
 
     pub fn get_mbid(&self) -> Option<&str> {
-        self.get_info().mbid.as_deref()
+        self.get_inner().mbid.as_deref()
     }
 
     pub fn is_composer(&self) -> bool {
-        self.get_info().is_composer
+        self.get_inner().is_composer
+    }
+
+    pub fn get_comp_id(&self) -> &str {
+        self.get_inner().get_comp_id()
+    }
+
+    /// Checks whether this Artist would be parsed from a given mpd::Song; in other words, a membership check
+    /// without having to fully parse Artist objects, avoiding most mem allocs.
+    pub fn is_in_song(&self, song: &mpd::song::Song, as_albumartist: bool) -> bool {
+        let mbids = if as_albumartist {
+            &song.albumartist_mbids
+        } else {
+            &song.artist_mbids
+        };
+        let names = if as_albumartist {
+            &song.albumartists
+        } else {
+            &song.artists
+        };
+        let this_comp_id = self.get_comp_id();
+        for (i, name) in names
+            .iter()
+            .map(|s| parse_mb_artist_tag(s))
+            .flatten()
+            .enumerate()
+        {
+            if mbids.get(i).map(|s| s.as_str()).unwrap_or(name) == this_comp_id {
+                return true;
+            }
+        }
+        false
     }
 }
 
@@ -295,7 +406,10 @@ impl Default for Artist {
 impl From<ArtistInfo> for Artist {
     fn from(info: ArtistInfo) -> Self {
         let res = glib::Object::builder::<Self>().build();
-        let _ = res.imp().info.set(info);
+        let _ = res
+            .imp()
+            .info
+            .store(Arc::new(info), std::sync::atomic::Ordering::Release);
         res
     }
 }

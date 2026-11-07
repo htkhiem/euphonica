@@ -931,7 +931,7 @@ dependencies = [
  "hsl",
  "idna",
  "image",
- "itertools 0.13.0",
+ "itertools 0.15.0",
  "libadwaita",
  "libblur",
  "libc",
@@ -941,6 +941,7 @@ dependencies = [
  "mpris-server",
  "musicbrainz_rs",
  "nohash-hasher",
+ "once-arc",
  "once_cell",
  "oneshot",
  "open",
@@ -1998,6 +1999,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "itertools"
+version = "0.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8b4baf93f58d4425749ca49a51c50ebab072c5df6994d08fed93541c331481dc"
+dependencies = [
+ "either",
+]
+
+[[package]]
 name = "itoa"
 version = "1.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2373,7 +2383,7 @@ dependencies = [
 [[package]]
 name = "mpd"
 version = "0.1.0"
-source = "git+https://github.com/htkhiem/rust-mpd.git?rev=a6ad65429648f0d214c495b2390b203d0672643d#a6ad65429648f0d214c495b2390b203d0672643d"
+source = "git+https://github.com/htkhiem/rust-mpd.git?rev=f45a531d4a2d2c6fce28eda3f703eee37e832d21#f45a531d4a2d2c6fce28eda3f703eee37e832d21"
 dependencies = [
  "bufstream",
  "fxhash",
@@ -2591,6 +2601,12 @@ checksum = "c92d4ddb4bd7b50d730c215ff871754d0da6b2178849f8a2a2ab69712d0c073b"
 dependencies = [
  "objc",
 ]
+
+[[package]]
+name = "once-arc"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5f322eaec8d16696fb4e8bfa9d2ce9e3d8c7d43bd4a9b2751da0b0bc82bf218b"
 
 [[package]]
 name = "once_cell"
