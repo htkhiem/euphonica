@@ -1,8 +1,9 @@
 extern crate bson;
 use crate::{
-    common::{AlbumInfo, ArtistInfo},
+    common::{AlbumInfo, ArtistInfo, Song},
     utils::settings_manager,
 };
+use std::sync::Arc;
 use gtk::prelude::*;
 use mpd::song::Song as SongInfo;
 use reqwest::{Error as ReqwestError, StatusCode, blocking::Client};
@@ -123,7 +124,10 @@ impl From<&AlbumInfo> for AlbumKey {
 /// to temporarily mutate it along the chain.
 pub struct ArtistKey {
     pub name: String,
+    /// Best option: supply artist MBID directly
     pub mbid: Option<String>,
+    // Disambiguation info in case MBID is not available from tags
+    pub example_song: Arc<SongInfo>
 }
 
 impl From<&ArtistInfo> for ArtistKey {
@@ -131,6 +135,7 @@ impl From<&ArtistInfo> for ArtistKey {
         Self {
             name: artist.name.to_owned(),
             mbid: artist.mbid.as_deref().map(|id| id.to_owned()),
+            example_song: artist.example_song.clone()
         }
     }
 }

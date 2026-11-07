@@ -1342,7 +1342,7 @@ impl AlbumContentView {
                             // artist MusicBrainz IDs. Album fetching now includes those IDs, so
                             // use the album artists rather than the first track's artists.
                             let first_song = song_list.item(0).and_downcast::<Song>().unwrap();
-                            ArtistInfo::copy_from_song(first_song.get_inner(), true)
+                            ArtistInfo::copy_from_song(first_song.get_inner_arc(), true)
                                 .into_iter()
                                 .map(|info| {
                                     ArtistTagButton::new(

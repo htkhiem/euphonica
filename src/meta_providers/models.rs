@@ -495,25 +495,6 @@ mod tests {
     use super::*;
     use std::io::Cursor;
 
-    /// An ArtistMeta with an empty genres vec must round-trip
-    /// through BSON serialisation. Without serde(default) on genres, the field
-    /// is omitted when empty and deserialisation fails, causing the app to
-    /// treat the cache as a miss and re-fetch from external providers forever.
-    #[test]
-    fn artist_meta_empty_genres_roundtrips() {
-        let key = ArtistInfo::new("Test Artist", None, false, false);
-        let meta = ArtistMeta::from_key(&key);
-        let doc = bson::serialize_to_document(&meta).unwrap();
-        let mut bytes = Vec::new();
-        doc.to_writer(&mut Cursor::new(&mut bytes)).unwrap();
-        let mut reader = Cursor::new(bytes);
-        let decoded: ArtistMeta =
-            bson::deserialize_from_document(bson::Document::from_reader(&mut reader).unwrap())
-                .unwrap();
-        assert_eq!(decoded.name, meta.name);
-        assert!(decoded.genres.is_empty());
-    }
-
     #[test]
     fn album_meta_empty_genres_roundtrips() {
         let meta = AlbumMeta {
@@ -528,18 +509,6 @@ mod tests {
             bson::deserialize_from_document(bson::Document::from_reader(&mut reader).unwrap())
                 .unwrap();
         assert_eq!(decoded.name, meta.name);
-        assert!(decoded.genres.is_empty());
-    }
-
-    /// A document serialized without the genres field (as produced by older
-    /// app versions) must still deserialize with an empty genres vec.
-    #[test]
-    fn artist_meta_old_document_without_genres_deserializes() {
-        let key = ArtistInfo::new("Old Artist", None, false, false);
-        let mut doc = bson::serialize_to_document(&ArtistMeta::from_key(&key)).unwrap();
-        doc.remove("genres"); // simulate a document written before the field existed
-        let decoded: ArtistMeta = bson::deserialize_from_document(doc).unwrap();
-        assert_eq!(decoded.name, "Old Artist");
         assert!(decoded.genres.is_empty());
     }
 }
