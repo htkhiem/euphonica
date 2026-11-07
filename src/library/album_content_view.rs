@@ -1283,13 +1283,10 @@ impl AlbumContentView {
                     Ok(()) => {
                         if song_list.n_items() > 0 {
                             stack.show_content();
-                            // Only now can we populate the artist tags, as the initial albuminfo
-                            // is stripped of artist MBID for album grid performance
-                            song_list
-                                .item(0)
-                                .unwrap()
-                                .downcast_ref::<Song>()
-                                .unwrap()
+                            // Previously used the first song because the initial AlbumInfo lacked
+                            // artist MusicBrainz IDs. Album fetching now includes those IDs, so
+                            // use the album artists rather than the first track's artists.
+                            album
                                 .get_artists()
                                 .iter()
                                 .map(|info| {
