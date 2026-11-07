@@ -14,13 +14,15 @@ use musicbrainz_rs::{
     prelude::*,
 };
 
-use mpd::Song as SongInfo;
 
 use crate::{
-    common::song::get_title_from_mpd_song, config::APPLICATION_USER_AGENT, meta_providers::{
+    common::song::get_title_from_mpd_song,
+    config::APPLICATION_USER_AGENT,
+    meta_providers::{
         base::{AlbumKey, ArtistKey},
         models::ImageMeta,
-    }, utils::{meta_provider_settings, settings_manager}
+    },
+    utils::{meta_provider_settings, settings_manager},
 };
 
 use super::{

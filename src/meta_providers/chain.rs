@@ -2,10 +2,9 @@ use std::sync::Arc;
 
 use asyncified::Asyncified;
 use gtk::gio::prelude::*;
-use mpd::Song as SongInfo;
 
 use crate::{
-    common::{AlbumInfo, ArtistInfo, Song},
+    common::{AlbumInfo, ArtistInfo},
     meta_providers::{
         base::{AlbumKey, ArtistKey},
         the_audio_db::TheAudioDbWrapper,
