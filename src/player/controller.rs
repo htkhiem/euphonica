@@ -128,9 +128,9 @@ impl PlaybackFlow {
     pub fn next_in_cycle(&self) -> Self {
         match *self {
             PlaybackFlow::Sequential => PlaybackFlow::Repeat,
-            PlaybackFlow::Repeat => PlaybackFlow::Single,
-            PlaybackFlow::Single => PlaybackFlow::RepeatSingle,
-            PlaybackFlow::RepeatSingle => PlaybackFlow::Sequential,
+            PlaybackFlow::Repeat => PlaybackFlow::RepeatSingle,
+            PlaybackFlow::RepeatSingle => PlaybackFlow::Single,
+            PlaybackFlow::Single => PlaybackFlow::Sequential,
         }
     }
 
