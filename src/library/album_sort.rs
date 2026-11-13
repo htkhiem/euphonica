@@ -1,9 +1,15 @@
-use gtk::Ordering;
+use gtk::{Ordering, gio, gio::prelude::SettingsExt};
 
 use crate::{
     common::Album,
     utils::{g_cmp_options, g_cmp_str_options},
 };
+
+pub const ALBUM_SORT_SETTINGS: [(&str, &str); 3] = [
+    ("sort-by", "sort-direction"),
+    ("sort-by-2", "sort-direction-2"),
+    ("sort-by-3", "sort-direction-3"),
+];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AlbumSortOrder {
@@ -35,31 +41,6 @@ impl AlbumSortOrder {
             8 => Some(Self::Rating),
             _ => None,
         }
-    }
-
-    /// Sort by `self` in `direction`, then by two ascending tiebreakers.
-    pub fn default_keys(self, direction: SortDirection) -> [AlbumSortKey; 3] {
-        use AlbumSortOrder::*;
-        let (second, third) = match self {
-            AlbumArtist => (ReleaseDate, AlbumTitle),
-            AlbumTitle => (AlbumArtist, ReleaseDate),
-            ReleaseDate => (AlbumArtist, AlbumTitle),
-            Rating => (AlbumArtist, ReleaseDate),
-        };
-        [
-            AlbumSortKey {
-                order: self,
-                direction,
-            },
-            AlbumSortKey {
-                order: second,
-                direction: SortDirection::Ascending,
-            },
-            AlbumSortKey {
-                order: third,
-                direction: SortDirection::Ascending,
-            },
-        ]
     }
 
     fn compare(
@@ -101,14 +82,28 @@ impl AlbumSortOrder {
     }
 }
 
+/// A tier whose `sort-by` value doesn't apply to albums is `None`.
+pub fn album_sort_keys(state: &gio::Settings) -> [Option<AlbumSortKey>; 3] {
+    ALBUM_SORT_SETTINGS.map(|(sort_by, sort_direction)| {
+        let order = AlbumSortOrder::from_sortby(state.enum_(sort_by))?;
+        let direction = if state.enum_(sort_direction) > 0 {
+            SortDirection::Ascending
+        } else {
+            SortDirection::Descending
+        };
+        Some(AlbumSortKey { order, direction })
+    })
+}
+
 pub fn compare_albums(
     a: &Album,
     b: &Album,
-    keys: &[AlbumSortKey; 3],
+    keys: &[Option<AlbumSortKey>; 3],
     nulls_first: bool,
     case_sensitive: bool,
 ) -> Ordering {
     keys.iter()
+        .flatten()
         .map(|key| {
             let ascending = key.direction == SortDirection::Ascending;
             key.order
