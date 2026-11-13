@@ -208,3 +208,8 @@ listview > row {
 	border-radius: 999px;
 	background: var(--accent-color);
 }
+
+.album-sort-dropdown listview > row {
+  padding-top: 6px;
+  padding-bottom: 6px;
+}

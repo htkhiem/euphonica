@@ -44,6 +44,9 @@
                                 </child>
                                 <child>
                                   <object class="GtkDropDown" id="sort_by">
+                                    <style>
+                                      <class name="album-sort-dropdown"/>
+                                    </style>
                                     <property name="model">
                                       <object class="GtkStringList">
                                         <items>
@@ -82,6 +85,9 @@
                                 </child>
                                 <child>
                                   <object class="GtkDropDown" id="sort_by_2">
+                                    <style>
+                                      <class name="album-sort-dropdown"/>
+                                    </style>
                                     <property name="model">
                                       <object class="GtkStringList">
                                         <items>
@@ -120,6 +126,9 @@
                                 </child>
                                 <child>
                                   <object class="GtkDropDown" id="sort_by_3">
+                                    <style>
+                                      <class name="album-sort-dropdown"/>
+                                    </style>
                                     <property name="model">
                                       <object class="GtkStringList">
                                         <items>
