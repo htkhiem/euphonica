@@ -515,7 +515,7 @@
 		</key>
 
 		<key name='sort-by-3' enum='io.github.htkhiem.Euphonica.sortby'>
-			<default>'album-title'</default>
+			<default>'album-artist'</default>
 			<summary>Album View third sort criterion</summary>
 		</key>
 

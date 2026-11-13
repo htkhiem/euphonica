@@ -309,7 +309,7 @@ impl UIPreferences {
             .mapping(clone!(
                 #[strong]
                 units,
-                move |v: &Variant, _| Some(units.find(&v.get::<String>()?).to_value()) 
+                move |v: &Variant, _| Some(units.find(&v.get::<String>()?).to_value())
             ))
             .set_mapping(clone!(
                 #[strong]

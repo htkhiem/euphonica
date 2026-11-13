@@ -12,7 +12,7 @@ pub const ALBUM_SORT_SETTINGS: [(&str, &str); 3] = [
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum AlbumSortOrder {
+pub enum AlbumSortCriterion {
     AlbumArtist,
     AlbumTitle,
     ReleaseDate,
@@ -26,12 +26,12 @@ pub enum SortDirection {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct AlbumSortKey {
-    pub order: AlbumSortOrder,
+pub struct AlbumSortTier {
+    pub criterion: AlbumSortCriterion,
     pub direction: SortDirection,
 }
 
-impl AlbumSortOrder {
+impl AlbumSortCriterion {
     /// In the order of the sort-by dropdown items in album-view.ui.
     pub const ALL: [Self; 4] = [
         Self::AlbumTitle,
@@ -51,7 +51,9 @@ impl AlbumSortOrder {
     }
 
     pub fn from_nick(nick: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|order| order.nick() == nick)
+        Self::ALL
+            .into_iter()
+            .find(|criterion| criterion.nick() == nick)
     }
 
     fn compare(
@@ -94,30 +96,34 @@ impl AlbumSortOrder {
 }
 
 /// A tier whose `sort-by` value doesn't apply to albums is `None`.
-pub fn album_sort_keys(state: &gio::Settings) -> [Option<AlbumSortKey>; 3] {
+pub fn album_sort_tiers(state: &gio::Settings) -> [Option<AlbumSortTier>; 3] {
     ALBUM_SORT_SETTINGS.map(|(sort_by, sort_direction)| {
-        let order = AlbumSortOrder::from_nick(&state.string(sort_by))?;
+        let criterion = AlbumSortCriterion::from_nick(&state.string(sort_by))?;
         let direction = if state.enum_(sort_direction) > 0 {
             SortDirection::Ascending
         } else {
             SortDirection::Descending
         };
-        Some(AlbumSortKey { order, direction })
+        Some(AlbumSortTier {
+            criterion,
+            direction,
+        })
     })
 }
 
 pub fn compare_albums(
     a: &Album,
     b: &Album,
-    keys: &[Option<AlbumSortKey>; 3],
+    tiers: &[Option<AlbumSortTier>; 3],
     nulls_first: bool,
     case_sensitive: bool,
 ) -> Ordering {
-    keys.iter()
+    tiers
+        .iter()
         .flatten()
-        .map(|key| {
-            let ascending = key.direction == SortDirection::Ascending;
-            key.order
+        .map(|tier| {
+            let ascending = tier.direction == SortDirection::Ascending;
+            tier.criterion
                 .compare(a, b, ascending, nulls_first, case_sensitive)
         })
         .find(|ordering| *ordering != Ordering::Equal)

@@ -10,7 +10,7 @@ use std::{cell::Cell, cmp::Ordering, rc::Rc, sync::OnceLock};
 
 use super::{
     AlbumCell, AlbumContentView, Library, TagsFilter,
-    album_sort::{ALBUM_SORT_SETTINGS, AlbumSortOrder, album_sort_keys, compare_albums},
+    album_sort::{ALBUM_SORT_SETTINGS, AlbumSortCriterion, album_sort_tiers, compare_albums},
 };
 use crate::{
     cache::{Cache, sqlite},
@@ -160,8 +160,10 @@ mod imp {
                 (self.sort_by_2.get(), self.reverse_2.get()),
                 (self.sort_by_3.get(), self.reverse_3.get()),
             ];
-            for (keys, (sort_by, reverse)) in ALBUM_SORT_SETTINGS.into_iter().zip(tier_widgets) {
-                constructed_bind_sort_tier(&state, keys, &sort_by, &reverse);
+            for (setting_keys, (sort_by, reverse)) in
+                ALBUM_SORT_SETTINGS.into_iter().zip(tier_widgets)
+            {
+                constructed_bind_sort_tier(&state, setting_keys, &sort_by, &reverse);
             }
 
             self.sorter.set_sort_func(clone!(
@@ -183,8 +185,8 @@ mod imp {
                     // Should nulls be put first or last?
                     let nulls_first = library_settings.boolean("sort-nulls-first");
 
-                    let keys = album_sort_keys(&state);
-                    compare_albums(album1, album2, &keys, nulls_first, case_sensitive)
+                    let tiers = album_sort_tiers(&state);
+                    compare_albums(album1, album2, &tiers, nulls_first, case_sensitive)
                 }
             ));
 
@@ -351,15 +353,15 @@ mod imp {
             .bind(sort_by_key, sort_by, "selected")
             .mapping(|nick, _| {
                 let nick = nick.get::<String>()?;
-                let idx = AlbumSortOrder::ALL
+                let idx = AlbumSortCriterion::ALL
                     .iter()
-                    .position(|order| order.nick() == nick)
+                    .position(|criterion| criterion.nick() == nick)
                     .map_or(gtk::INVALID_LIST_POSITION, |idx| idx as u32);
                 Some(idx.to_value())
             })
             .set_mapping(|idx, _| {
-                let order = AlbumSortOrder::ALL.get(idx.get::<u32>().ok()? as usize)?;
-                Some(order.nick().to_variant())
+                let criterion = AlbumSortCriterion::ALL.get(idx.get::<u32>().ok()? as usize)?;
+                Some(criterion.nick().to_variant())
             })
             .build();
         state
