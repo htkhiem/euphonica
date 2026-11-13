@@ -45,6 +45,12 @@
           </object>
         </child>
         <child>
+          <object class="AdwSwitchRow" id="is_touchscreen">
+            <property name="title" translatable="true">Optimise UI for touchscreen use</property>
+            <property name="subtitle" translatable="true">Forces all UI elements to be visible instead of on hover. Requires a restart.</property>
+          </object>
+        </child>
+        <child>
           <object class="AdwSwitchRow" id="auto_accent">
             <property name="title" translatable="true">Recolour accent to album art</property>
           </object>
@@ -127,6 +133,28 @@
           <object class="AdwSwitchRow" id="auto_scroll_to_playing">
             <property name="title" translatable="true">Auto-scroll to currently playing</property>
             <property name="subtitle" translatable="true">Automatically scroll the queue to highlight the currently playing song.</property>
+          </object>
+        </child>
+        <child>
+          <object class="AdwComboRow" id="action_on_row_double_press">
+            <style>
+              <class name="long-combo"/>
+            </style>
+            <property name="title" translatable="true">Action on row double-press</property>
+            <property name="subtitle" translatable="true">Applies to song and folder lists such as album, artist, playlist and folder views. Double-clicking on a playlist file in the folder view only queues that playlist alone to avoid duplicates.</property>
+            <property name="model">
+              <object class="GtkStringList">
+                <items>
+                  <item translatable="true">Do nothing</item>
+                  <item translatable="true">Append to queue</item>
+                  <item translatable="true">Append to queue &amp; play</item>
+                  <item translatable="true">Replace queue</item>
+                  <item translatable="true">Replace queue &amp; play</item>
+                  <item translatable="true">Replace queue with all songs in view &amp; play</item>
+                </items>
+              </object>
+            </property>
+            <property name="selected">5</property>
           </object>
         </child>
       </object>
@@ -238,6 +266,33 @@
                 <property name="value">1.0</property>
                 <property name="page-increment">1.0</property>
                 <property name="step-increment">0.1</property>
+              </object>
+            </property>
+          </object>
+        </child>
+      </object>
+    </child>
+    <child>
+      <object class="AdwPreferencesGroup">
+        <property name="title" translatable="true">Playback Controls</property>
+        <child>
+          <object class="AdwSwitchRow" id="show_seek_btns">
+            <property name="title" translatable="true">Show seek buttons</property>
+            <property name="subtitle" translatable="true">Seeking by increments is always possible via keyboard shortcuts.</property>
+          </object>
+        </child>
+        <child>
+          <object class="AdwSpinRow" id="seek_increment">
+            <property name="title" translatable="true">Seek increment</property>
+            <property name="subtitle" translatable="true">How many seconds to seek forward or backward when seek buttons or keyboard shortcuts are used.</property>
+            <property name="digits">0</property>
+            <property name="adjustment">
+              <object class="GtkAdjustment">
+                <property name="lower">1.0</property>
+                <property name="upper">20.0</property>
+                <property name="value">5.0</property>
+                <property name="page-increment">5.0</property>
+                <property name="step-increment">1.0</property>
               </object>
             </property>
           </object>

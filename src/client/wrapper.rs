@@ -1405,7 +1405,7 @@ impl MpdWrapper {
         let (s, r) = oneshot::channel();
         self.foreground(Task::LsInfo(path, s), r)
             .await
-            .map(|infos| infos.into_iter().map(INode::from).collect::<Vec<INode>>())
+            .map(|infos| dbg!(infos.into_iter().map(INode::from).collect::<Vec<INode>>()))
     }
 
     async fn get_playlist_song_infos<F>(&self, name: String, respond: &mut F) -> ClientResult<()>
@@ -1461,6 +1461,26 @@ impl MpdWrapper {
             )
         })
         .await
+    }
+
+    /// Fetch a single song by exact URI using the foreground client, returning the raw
+    /// rust-mpd Song struct unmodified. This lets callers access all tags and metadata
+    /// MPD returns, not just the subset we normally parse into SongInfos.
+    pub async fn get_raw_mpd_song_by_uri(
+        &self,
+        uri: String,
+    ) -> ClientResult<Option<mpd::song::Song>> {
+        let mut query = Query::new();
+        query.and(Term::File, uri);
+        let (s, r) = oneshot::channel();
+        let mut found_songs = self
+            .foreground(Task::FindRaw(query, Window::from((0, 1)), s), r)
+            .await?;
+        if !found_songs.is_empty() {
+            Ok(Some(std::mem::take(&mut found_songs[0])))
+        } else {
+            Ok(None)
+        }
     }
 
     /// Convenience function to get a single song by URI using the background client.

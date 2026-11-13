@@ -16,7 +16,7 @@ use std::{
 use super::{Library, tag_button::TagButton};
 use crate::{
     cache::{Cache, CacheState, Error as CacheError, placeholders::EMPTY_ARTIST_STRING},
-    common::{Album, Artist, ContentStack, RowAddButtons, Song, SongRow},
+    common::{Album, Artist, ContentStack, RowAddButtons, RowDoublePressAction, Song, SongRow},
     library::{Tag, add_to_playlist::AddToPlaylistButton, discography_year::DiscographyYear},
     meta_providers::models::{MetaSource, Wiki, artist_type_to_string},
     utils::{
@@ -718,6 +718,15 @@ impl ArtistContentView {
         self.imp().append_queue.set_sensitive(!queuing);
     }
 
+    /// Get all songs in the "All songs" subview, in displayed order.
+    #[inline]
+    fn all_songs(&self) -> Vec<Song> {
+        let store = &self.imp().song_list;
+        (0..store.n_items())
+            .map(|i| store.item(i).and_downcast::<Song>().unwrap())
+            .collect()
+    }
+
     /// Write the current tag list to the database.
     pub fn write_tags(&self) {
         if let (Some(cache), Some(artist)) =
@@ -1076,31 +1085,30 @@ impl ArtistContentView {
                     #[weak]
                     this,
                     async move {
-                        if let Some(artist) = this.artist() {
-                            this.set_is_queuing(true);
-                            let library = this.imp().library.upgrade().unwrap();
-                            if this.imp().selecting_all.get() {
-                                if let Err(e) =
-                                    library.queue_artist(&artist, false, true, true).await
-                                {
-                                    dbg!(e);
-                                }
-                            } else {
-                                let store = &this.imp().song_list;
-                                // Get list of selected songs
-                                let sel = &this.imp().song_sel_model.selection();
-                                let mut songs: Vec<Song> = Vec::with_capacity(sel.size() as usize);
-                                let (iter, first_idx) = gtk::BitsetIter::init_first(sel).unwrap();
-                                songs.push(store.item(first_idx).and_downcast::<Song>().unwrap());
-                                iter.for_each(|idx| {
-                                    songs.push(store.item(idx).and_downcast::<Song>().unwrap())
-                                });
-                                if let Err(e) = library.queue_songs(&songs, true, true).await {
-                                    dbg!(e);
-                                }
+                        this.set_is_queuing(true);
+                        let library = this.imp().library.upgrade().unwrap();
+                        if this.imp().selecting_all.get() {
+                            // Queue by what's in the local store, cuz it's a local merge of two queries.
+                            if let Err(e) =
+                                library.queue_songs(&this.all_songs(), true, Some(0)).await
+                            {
+                                dbg!(e);
                             }
-                            this.set_is_queuing(false);
+                        } else {
+                            let store = &this.imp().song_list;
+                            // Get list of selected songs
+                            let sel = &this.imp().song_sel_model.selection();
+                            let mut songs: Vec<Song> = Vec::with_capacity(sel.size() as usize);
+                            let (iter, first_idx) = gtk::BitsetIter::init_first(sel).unwrap();
+                            songs.push(store.item(first_idx).and_downcast::<Song>().unwrap());
+                            iter.for_each(|idx| {
+                                songs.push(store.item(idx).and_downcast::<Song>().unwrap())
+                            });
+                            if let Err(e) = library.queue_songs(&songs, true, Some(0)).await {
+                                dbg!(e);
+                            }
                         }
+                        this.set_is_queuing(false);
                     }
                 ));
             }
@@ -1114,28 +1122,27 @@ impl ArtistContentView {
                     #[weak]
                     this,
                     async move {
-                        if let Some(artist) = this.artist() {
-                            this.set_is_queuing(true);
-                            let library = this.imp().library.upgrade().unwrap();
-                            if this.imp().selecting_all.get() {
-                                if let Err(e) =
-                                    library.queue_artist(&artist, false, false, false).await
-                                {
-                                    dbg!(e);
-                                }
-                            } else {
-                                let store = &this.imp().song_list;
-                                // Get list of selected songs
-                                let sel = &this.imp().song_sel_model.selection();
-                                let mut songs: Vec<Song> = Vec::with_capacity(sel.size() as usize);
-                                let (iter, first_idx) = gtk::BitsetIter::init_first(sel).unwrap();
-                                songs.push(store.item(first_idx).and_downcast::<Song>().unwrap());
-                                iter.for_each(|idx| {
-                                    songs.push(store.item(idx).and_downcast::<Song>().unwrap())
-                                });
-                                if let Err(e) = library.queue_songs(&songs, false, false).await {
-                                    dbg!(e);
-                                }
+                        this.set_is_queuing(true);
+                        let library = this.imp().library.upgrade().unwrap();
+                        if this.imp().selecting_all.get() {
+                            // Queue by what's in the local store, cuz it's a local merge of two queries.
+                            if let Err(e) =
+                                library.queue_songs(&this.all_songs(), false, None).await
+                            {
+                                dbg!(e);
+                            }
+                        } else {
+                            let store = &this.imp().song_list;
+                            // Get list of selected songs
+                            let sel = &this.imp().song_sel_model.selection();
+                            let mut songs: Vec<Song> = Vec::with_capacity(sel.size() as usize);
+                            let (iter, first_idx) = gtk::BitsetIter::init_first(sel).unwrap();
+                            songs.push(store.item(first_idx).and_downcast::<Song>().unwrap());
+                            iter.for_each(|idx| {
+                                songs.push(store.item(idx).and_downcast::<Song>().unwrap())
+                            });
+                            if let Err(e) = library.queue_songs(&songs, false, None).await {
+                                dbg!(e);
                             }
                         }
                         this.set_is_queuing(false);
@@ -1144,9 +1151,80 @@ impl ArtistContentView {
             }
         ));
 
+        // Setup double-click action
+        self.imp().song_subview.connect_activate(clone!(
+            #[weak(rename_to = this)]
+            self,
+            move |_, pos| {
+                let action = RowDoublePressAction::from_settings();
+                if let Some(window) = this.imp().window.upgrade() {
+                    window.maybe_show_double_press_toast();
+                }
+                match action {
+                    RowDoublePressAction::DoNothing => {}
+                    RowDoublePressAction::Append
+                    | RowDoublePressAction::AppendAndPlay
+                    | RowDoublePressAction::Replace
+                    | RowDoublePressAction::ReplaceAndPlay => {
+                        let song = this
+                            .imp()
+                            .song_list
+                            .item(pos)
+                            .and_downcast::<Song>()
+                            .expect("The item has to be a `common::Song`.");
+                        let replace = matches!(
+                            action,
+                            RowDoublePressAction::Replace | RowDoublePressAction::ReplaceAndPlay
+                        );
+                        let play_from = match action {
+                            // Start playback at the appended song, which lands at the
+                            // end of the (not-yet-extended) queue.
+                            RowDoublePressAction::AppendAndPlay => {
+                                Some(this.imp().library.upgrade().unwrap().queue_len())
+                            }
+                            RowDoublePressAction::ReplaceAndPlay => Some(0),
+                            _ => None,
+                        };
+                        glib::spawn_future_local(clone!(
+                            #[weak]
+                            this,
+                            async move {
+                                this.set_is_queuing(true);
+                                let library = this.imp().library.upgrade().unwrap();
+                                if let Err(e) =
+                                    library.queue_songs(&[song], replace, play_from).await
+                                {
+                                    dbg!(e);
+                                }
+                                this.set_is_queuing(false);
+                            }
+                        ));
+                    }
+                    RowDoublePressAction::ReplaceViewAndPlay => {
+                        glib::spawn_future_local(clone!(
+                            #[weak]
+                            this,
+                            async move {
+                                this.set_is_queuing(true);
+                                let library = this.imp().library.upgrade().unwrap();
+                                if let Err(e) = library
+                                    .queue_songs(&this.all_songs(), true, Some(pos))
+                                    .await
+                                {
+                                    dbg!(e);
+                                }
+                                this.set_is_queuing(false);
+                            }
+                        ));
+                    }
+                }
+            }
+        ));
+
         // Set up factory
         let library = self.imp().library.upgrade().unwrap();
         let cache = self.imp().cache.get().unwrap();
+        let window = self.imp().window.upgrade();
         let factory = SignalListItemFactory::new();
 
         factory.connect_setup(clone!(
@@ -1158,29 +1236,27 @@ impl ArtistContentView {
                 let item = list_item
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
-                let row = SongRow::new(Some(cache), None);
+                let row = SongRow::new(Some(cache), None, window.as_ref(), Some(&library));
                 item.property_expression("item")
                     .chain_property::<Song>("name")
                     .bind(&row, "name", gtk::Widget::NONE);
 
-                row.set_first_attrib_icon_name(Some("library-music-symbolic"));
                 item.property_expression("item")
                     .chain_property::<Song>("album")
                     .bind(&row, "first-attrib-text", gtk::Widget::NONE);
 
-                row.set_second_attrib_icon_name(Some("hourglass-symbolic"));
                 item.property_expression("item")
                     .chain_property::<Song>("duration")
                     .chain_closure::<String>(closure_local!(|_: Option<glib::Object>, dur: u64| {
                         format_secs_as_duration(dur as f64)
                     }))
-                    .bind(&row, "second-attrib-text", gtk::Widget::NONE);
+                    .bind(&row, "duration", gtk::Widget::NONE);
 
                 item.property_expression("item")
                     .chain_property::<Song>("quality-grade")
                     .bind(&row, "quality-grade", gtk::Widget::NONE);
                 let end_widget = RowAddButtons::new(&library);
-                row.set_end_widget(Some(&end_widget.into()));
+                row.set_end_widget(&end_widget.into());
                 item.set_child(Some(&row));
             }
         ));

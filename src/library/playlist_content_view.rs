@@ -17,7 +17,10 @@ use super::Library;
 use crate::{
     cache::{Cache, CacheState},
     client::Error as ClientError,
-    common::{ContentStack, INode, ImageStack, RowAddButtons, RowEditButtons, Song, SongRow},
+    common::{
+        ContentStack, INode, ImageStack, RowAddButtons, RowDoublePressAction, RowEditButtons, Song,
+        SongRow,
+    },
     utils::{format_secs_as_duration, tokio_runtime},
     window::EuphonicaWindow,
 };
@@ -470,23 +473,20 @@ fn bind_editing_row_by_expressions(row: &SongRow, item: &ListItem) {
         .chain_property::<Song>("name")
         .bind(row, "name", gtk::Widget::NONE);
 
-    row.set_first_attrib_icon_name(Some("library-music-symbolic"));
     item.property_expression("item")
         .chain_property::<Song>("album")
         .bind(row, "first-attrib-text", gtk::Widget::NONE);
 
-    row.set_second_attrib_icon_name(Some("music-artist-symbolic"));
     item.property_expression("item")
         .chain_property::<Song>("artist")
         .bind(row, "second-attrib-text", gtk::Widget::NONE);
 
-    row.set_third_attrib_icon_name(Some("hourglass-symbolic"));
     item.property_expression("item")
         .chain_property::<Song>("duration")
         .chain_closure::<String>(closure_local!(|_: Option<glib::Object>, dur: u64| {
             format_secs_as_duration(dur as f64)
         }))
-        .bind(row, "third-attrib-text", gtk::Widget::NONE);
+        .bind(row, "duration", gtk::Widget::NONE);
 
     item.property_expression("item")
         .chain_property::<Song>("quality-grade")
@@ -536,7 +536,7 @@ impl PlaylistContentView {
                                     .queue_playlist(
                                         playlist.get_name().unwrap().to_owned(),
                                         true,
-                                        true,
+                                        Some(0),
                                     )
                                     .await
                                 {
@@ -552,7 +552,7 @@ impl PlaylistContentView {
                                 iter.for_each(|idx| {
                                     songs.push(store.item(idx).and_downcast::<Song>().unwrap())
                                 });
-                                if let Err(e) = library.queue_songs(&songs, true, true).await {
+                                if let Err(e) = library.queue_songs(&songs, true, Some(0)).await {
                                     dbg!(e);
                                 }
                             }
@@ -577,7 +577,7 @@ impl PlaylistContentView {
                                     .queue_playlist(
                                         playlist.get_name().unwrap().to_owned(),
                                         false,
-                                        false,
+                                        None,
                                     )
                                     .await
                                 {
@@ -593,7 +593,7 @@ impl PlaylistContentView {
                                 iter.for_each(|idx| {
                                     songs.push(store.item(idx).and_downcast::<Song>().unwrap())
                                 });
-                                if let Err(e) = library.queue_songs(&songs, false, false).await {
+                                if let Err(e) = library.queue_songs(&songs, false, None).await {
                                     dbg!(e);
                                 }
                             }
@@ -713,38 +713,37 @@ impl PlaylistContentView {
             library,
             #[weak]
             cache,
+            #[weak]
+            window,
             move |_, list_item| {
                 let item = list_item
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
-                let row = SongRow::new(Some(cache), None);
+                let row = SongRow::new(Some(cache), None, Some(&window), Some(&library));
                 item.property_expression("item")
                     .chain_property::<Song>("name")
                     .bind(&row, "name", gtk::Widget::NONE);
 
-                row.set_first_attrib_icon_name(Some("library-music-symbolic"));
                 item.property_expression("item")
                     .chain_property::<Song>("album")
                     .bind(&row, "first-attrib-text", gtk::Widget::NONE);
 
-                row.set_second_attrib_icon_name(Some("music-artist-symbolic"));
                 item.property_expression("item")
                     .chain_property::<Song>("artist")
                     .bind(&row, "second-attrib-text", gtk::Widget::NONE);
 
-                row.set_third_attrib_icon_name(Some("hourglass-symbolic"));
                 item.property_expression("item")
                     .chain_property::<Song>("duration")
                     .chain_closure::<String>(closure_local!(|_: Option<glib::Object>, dur: u64| {
                         format_secs_as_duration(dur as f64)
                     }))
-                    .bind(&row, "third-attrib-text", gtk::Widget::NONE);
+                    .bind(&row, "duration", gtk::Widget::NONE);
 
                 item.property_expression("item")
                     .chain_property::<Song>("quality-grade")
                     .bind(&row, "quality-grade", gtk::Widget::NONE);
                 let end_widget = RowAddButtons::new(&library);
-                row.set_end_widget(Some(&end_widget.into()));
+                row.set_end_widget(&end_widget.into());
                 item.set_child(Some(&row));
             }
         ));
@@ -757,7 +756,12 @@ impl PlaylistContentView {
                 let item = list_item
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
-                let row = SongRow::new(Some(cache), None);
+                let row = SongRow::new(
+                    Some(cache),
+                    None,
+                    this.imp().window.upgrade().as_ref(),
+                    this.imp().library.upgrade().as_ref(),
+                );
                 row.add_css_class("shift-on-hover");
                 bind_editing_row_by_expressions(&row, item);
                 let end_widget = RowEditButtons::new(
@@ -785,7 +789,7 @@ impl PlaylistContentView {
                         }
                     ),
                 );
-                row.set_end_widget(Some(&end_widget.into()));
+                row.set_end_widget(&end_widget.into());
                 item.set_child(Some(&row));
 
                 // Handle drag-n-drop (DnD)
@@ -817,7 +821,7 @@ impl PlaylistContentView {
                         // To avoid problems with hotspot positioning quirks (caused by other rows changing padding upon hover)
                         // the icon will be a standalone copy of the original row.
                         // Additional benefit: we get to customise how it looks.
-                        let drag_widget = SongRow::new(None, None);
+                        let drag_widget = SongRow::new(None, None, None, None);
                         // Give it the same size as the real row
                         drag_widget.set_size_request(row.width(), row.height());
                         drag_widget.set_thumbnail_visible(false);
@@ -1008,6 +1012,87 @@ impl PlaylistContentView {
         self.imp()
             .editing_content
             .set_factory(Some(&editing_factory));
+
+        // Setup double click action
+        self.imp().content.set_single_click_activate(false);
+        self.imp().content.connect_activate(clone!(
+            #[weak(rename_to = this)]
+            self,
+            move |_, position| {
+                let action = RowDoublePressAction::from_settings();
+                if let Some(window) = this.imp().window.upgrade() {
+                    window.maybe_show_double_press_toast();
+                }
+                match action {
+                    RowDoublePressAction::DoNothing => {}
+                    RowDoublePressAction::Append
+                    | RowDoublePressAction::AppendAndPlay
+                    | RowDoublePressAction::Replace
+                    | RowDoublePressAction::ReplaceAndPlay => {
+                        let song = this
+                            .imp()
+                            .song_list
+                            .item(position)
+                            .and_downcast::<Song>()
+                            .expect("The item has to be a `common::Song`.");
+                        let replace = matches!(
+                            action,
+                            RowDoublePressAction::Replace | RowDoublePressAction::ReplaceAndPlay
+                        );
+                        // Append-and-play starts playback at the appended song, which
+                        // lands at the end of the (not-yet-extended) queue.
+                        let play_from = match action {
+                            RowDoublePressAction::AppendAndPlay => this
+                                .imp()
+                                .library
+                                .upgrade()
+                                .expect("Library must be set")
+                                .queue_len(),
+                            RowDoublePressAction::ReplaceAndPlay => 0,
+                            _ => return,
+                        };
+                        let play_from = Some(play_from);
+                        glib::spawn_future_local(clone!(
+                            #[weak]
+                            this,
+                            async move {
+                                let Some(library) = this.imp().library.upgrade() else {
+                                    return;
+                                };
+                                if let Err(e) =
+                                    library.queue_songs(&[song], replace, play_from).await
+                                {
+                                    dbg!(e);
+                                }
+                            }
+                        ));
+                    }
+                    RowDoublePressAction::ReplaceViewAndPlay => {
+                        glib::spawn_future_local(clone!(
+                            #[weak]
+                            this,
+                            async move {
+                                if let (Some(library), Some(playlist)) = (
+                                    this.imp().library.upgrade(),
+                                    this.imp().playlist.borrow().clone(),
+                                ) {
+                                    if let Err(e) = library
+                                        .queue_playlist(
+                                            playlist.get_name().unwrap().to_owned(),
+                                            true,
+                                            Some(position),
+                                        )
+                                        .await
+                                    {
+                                        dbg!(e);
+                                    }
+                                }
+                            }
+                        ));
+                    }
+                }
+            }
+        ));
 
         // Disgusting workaround until I can pinpoint whenever this is a GTK problem.
         self.imp()

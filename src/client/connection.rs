@@ -368,6 +368,9 @@ pub enum Task {
         Responder<GroupedValues>,
     ),
     Find(Query<'static>, Window, Responder<Vec<SongInfo>>),
+    /// Like Find, but returns the raw rust-mpd Song structs without parsing them
+    /// into SongInfos, allowing callers to access every tag/metadata field MPD returns.
+    FindRaw(Query<'static>, Window, Responder<Vec<mpd::song::Song>>),
     /// Batched version of Find.
     FindMultiple(
         Vec<(Query<'static>, Window)>,
@@ -1183,6 +1186,9 @@ impl Connection {
                         },
                         resp,
                     ),
+                    Task::FindRaw(query, window, resp) => {
+                        self.respond_with_client(|c| c.find(&query, window), resp)
+                    }
                     Task::FindMultiple(queries_windows, tagtypes, resp) => self
                         .respond_with_client(
                             move |c| {

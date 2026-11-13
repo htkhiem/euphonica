@@ -786,6 +786,206 @@
                             </child>
 
                             <child>
+                              <object class="GtkButton" id="p3_next">
+                                <property name="sensitive">false</property>
+                                <property name="vexpand">true</property>
+                                <style>
+                                  <class name="pill"/>
+                                  <class name="suggested-action"/>
+                                </style>
+                                <property name="label" translatable="true">Next</property>
+                                <property name="hexpand">true</property>
+                              </object>
+                            </child>
+                          </object>
+                        </child>
+                      </object>
+                    </property>
+                  </object>
+                </child>
+
+                <!-- Page 4: touchscreen mode? -->
+                <child>
+                  <object class="AdwViewStackPage">
+                    <property name="name">touchscreen</property>
+                    <property name="child">
+                      <object class="GtkBox">
+                        <style>
+                          <class name="padding-12"/>
+                        </style>
+                        <property name="orientation">1</property>
+                        <child>
+                          <object class="GtkLabel">
+                            <property name="label" translatable="true">Is your device touchscreen-based?</property>
+                            <property name="wrap">true</property>
+                            <property name="justify">center</property>
+                            <style>
+                              <class name="title-2"/>
+                            </style>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkBox">
+                            <style>
+                              <class name="linked"/>
+                            </style>
+                            <property name="homogeneous">true</property>
+                            <property name="margin-top">12</property>
+                            <property name="vexpand">true</property>
+                            <property name="valign">end</property>
+                            <child>
+                              <object class="GtkButton" id="only_touchscreen_btn">
+                                <property name="hexpand">true</property>
+                                <property name="vexpand">false</property>
+                                <accessibility>
+                                  <property name="label" translatable="true">Only touchscreen</property>
+                                </accessibility>
+                                <child>
+                                  <object class="GtkBox">
+                                    <property name="orientation">1</property>
+                                    <property name="spacing">6</property>
+                                    <child>
+                                      <object class="GtkImage">
+                                        <style>
+                                          <class name="accent"/>
+                                          <class name="padding-12"/>
+                                        </style>
+                                        <property name="icon-name">phone-symbolic</property>
+                                        <property name="pixel-size">96</property>
+                                      </object>
+                                    </child>
+                                    <child>
+                                      <object class="GtkLabel">
+                                        <property name="label" translatable="true">Only touchscreen</property>
+                                        <property name="wrap">true</property>
+                                        <property name="justify">center</property>
+                                        <property name="margin-start">6</property>
+                                        <property name="margin-end">6</property>
+                                        <property name="vexpand">true</property>
+                                        <property name="valign">center</property>
+                                        <style>
+                                          <class name="heading"/>
+                                        </style>
+                                      </object>
+                                    </child>
+                                    <child>
+                                      <object class="GtkCheckButton" id="only_touchscreen">
+                                        <property name="halign">center</property>
+                                        <property name="margin-bottom">6</property>
+                                        <style>
+                                          <class name="selection-mode"/>
+                                        </style>
+                                        <accessibility>
+                                          <property name="label" translatable="true">Only touchscreen</property>
+                                        </accessibility>
+                                      </object>
+                                    </child>
+                                  </object>
+                                </child>
+                              </object>
+                            </child>
+                            <child>
+                              <object class="GtkButton" id="pointer_available_btn">
+                                <property name="hexpand">true</property>
+                                <property name="vexpand">false</property>
+                                <accessibility>
+                                  <property name="label" translatable="true">Mouse/touchpad available</property>
+                                </accessibility>
+                                <child>
+                                  <object class="GtkBox">
+                                    <property name="orientation">1</property>
+                                    <property name="spacing">6</property>
+                                    <child>
+                                      <object class="GtkImage">
+                                        <style>
+                                          <class name="padding-12"/>
+                                          <class name="accent"/>
+                                        </style>
+                                        <property name="icon-name">mouse-symbolic</property>
+                                        <property name="pixel-size">96</property>
+                                      </object>
+                                    </child>
+                                    <child>
+                                      <object class="GtkLabel">
+                                        <property name="label" translatable="true">Mouse/touchpad available</property>
+                                        <property name="wrap">true</property>
+                                        <property name="justify">center</property>
+                                        <property name="margin-start">6</property>
+                                        <property name="margin-end">6</property>
+                                        <property name="vexpand">true</property>
+                                        <property name="valign">center</property>
+                                        <style>
+                                          <class name="heading"/>
+                                        </style>
+                                      </object>
+                                    </child>
+                                    <child>
+                                      <object class="GtkCheckButton" id="pointer_available">
+                                        <property name="halign">center</property>
+                                        <property name="margin-bottom">6</property>
+                                        <style>
+                                          <class name="selection-mode"/>
+                                        </style>
+                                        <accessibility>
+                                          <property name="label" translatable="true">Mouse/touchpad available</property>
+                                        </accessibility>
+                                      </object>
+                                    </child>
+                                  </object>
+                                </child>
+                              </object>
+                            </child>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkListBox">
+                            <property name="selection-mode">0</property>
+                            <property name="margin-top">12</property>
+                            <style>
+                              <class name="boxed-list"/>
+                            </style>
+                            <child>
+                              <object class="AdwExpanderRow">
+                                <property name="title" translatable="true">Why does this matter?</property>
+                                <property name="expanded">false</property>
+                                <child>
+                                  <object class="GtkListBoxRow">
+                                    <property name="selectable">false</property>
+                                    <property name="activatable">false</property>
+                                    <child>
+                                      <object class="GtkLabel">
+                                        <property name="label" translatable="true">Some UI elements, such as play buttons on album covers and queue row controls, may be hidden until mouse hover to streamline the UI. If you only use a touchscreen, choose &lt;b&gt;Only touchscreen&lt;/b&gt; to force them to be always visible.</property>
+                                        <property name="use-markup">true</property>
+                                        <property name="wrap">true</property>
+                                        <property name="xalign">0</property>
+                                        <style>
+                                          <class name="padding-12"/>
+                                        </style>
+                                      </object>
+                                    </child>
+                                  </object>
+                                </child>
+                              </object>
+                            </child>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkBox">
+                            <property name="margin-top">12</property>
+                            <property name="spacing">12</property>
+                            <property name="valign">end</property>
+                            <property name="homogeneous">true</property>
+                            <child>
+                              <object class="GtkButton" id="p4_prev">
+                                <style>
+                                  <class name="pill"/>
+                                </style>
+                                <property name="label" translatable="true">Back</property>
+                                <property name="hexpand">true</property>
+                              </object>
+                            </child>
+
+                            <child>
                               <object class="GtkButton" id="finish_btn">
                                 <property name="sensitive">false</property>
                                 <property name="vexpand">true</property>
@@ -804,7 +1004,7 @@
                   </object>
                 </child>
 
-                <!-- Page 4: init DB. Scanning is only performed when starting in Standalone Mode.
+                <!-- Page 5: init DB. Scanning is only performed when starting in Standalone Mode.
                 This is a necessity as the internal MPD process needs to stay alive for long enough to complete a scan
                 and the user is likely to close Euphonica before that (plus before a full scan there'd be nothing to
                 show in the UI).

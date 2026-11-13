@@ -181,10 +181,9 @@
                             <property name="hexpand">true</property>
                             <property name="child">
                               <object class="GtkListView" id="queue">
-                                <property name="show-separators">true</property>
                                 <property name="single-click-activate">true</property>
                                 <style>
-                                  <class name="no-bg"/>
+                                  <class name="song-list"/>
                                 </style>
                               </object>
                             </property>

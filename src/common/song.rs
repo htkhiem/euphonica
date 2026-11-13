@@ -1,5 +1,5 @@
 use crate::cache::sqlite;
-use crate::common::tags;
+use crate::common::{DSD_EXTENSIONS, LOSSLESS_PCM_EXTENSIONS, tags};
 use crate::utils::{get_image_cache_path, get_time_ago_desc, strip_filename_linux};
 use core::time::Duration;
 use derivative::Derivative;
@@ -457,18 +457,32 @@ impl From<mpd::song::Song> for SongInfo {
             artists = Vec::with_capacity(0);
         }
 
+        let path = Path::new(&song.file);
         let name: String;
         if let Some(title) = song.title {
             name = title;
         } else if let Some(name_field) = song.name {
             // Used by streams
             name = name_field;
-        } else if let Some(stem) = Path::new(&song.file).file_stem() {
+        } else if let Some(stem) = path.file_stem() {
             // Extract from URI
             name = String::from(stem.to_str().unwrap());
         } else {
             name = String::from("");
         }
+
+        // Do this early cuz we're about to consume the underlying file field
+        let mut quality_grade = QualityGrade::Unknown;
+        let mut maybe_lossless_pcm = false;
+        if let Some(extension) = path.extension().and_then(OsStr::to_str) {
+            if DSD_EXTENSIONS.contains(&extension) {
+                // Is probably DSD
+                quality_grade = QualityGrade::DSD;
+            } else if LOSSLESS_PCM_EXTENSIONS.contains(&extension) {
+                maybe_lossless_pcm = true;
+            }
+        }
+
         let mut res = Self {
             uri: song.file,
             title: name,
@@ -481,7 +495,7 @@ impl From<mpd::song::Song> for SongInfo {
             track: None,
             disc: None,
             release_date: None,
-            quality_grade: QualityGrade::Unknown,
+            quality_grade,
             mbid: None,
             last_modified: song.last_mod,
             last_played: None,
@@ -504,13 +518,7 @@ impl From<mpd::song::Song> for SongInfo {
         // As such, DSD format description must be handled by the player controller,
         // working off the "format" attribute of the Status object.
         // The bits == 1 check only works with htkhiem's fork of rust-mpd with DSD correction
-        let maybe_extension = Path::new(&res.uri).extension().and_then(OsStr::to_str);
-        if let Some(extension) = maybe_extension
-            && ["dsf", "dff", "wsd"].contains(&extension)
-        {
-            // Is probably DSD
-            res.quality_grade = QualityGrade::DSD;
-        }
+
         let mut albumsort: Option<String> = None;
         let mut artist_mbids: Vec<String> = Vec::new();
         let mut artistsorts: Vec<String> = Vec::new();
@@ -556,11 +564,8 @@ impl From<mpd::song::Song> for SongInfo {
                 }
                 // "date" => res.imp().release_date.replace(Some(val.clone())),
                 tags::FORMAT => {
-                    if let Some(extension) = maybe_extension
-                        && let Ok(format) = val.parse::<AudioFormat>()
-                    {
-                        if ["flac", "alac", "wv", "ape"].contains(&extension) {
-                            // Is probably lossless PCM
+                    if let Ok(format) = val.parse::<AudioFormat>() {
+                        if maybe_lossless_pcm {
                             if format.rate > 48000 && format.bits >= 24 {
                                 res.quality_grade = QualityGrade::HiRes;
                             } else {

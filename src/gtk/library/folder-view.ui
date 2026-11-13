@@ -83,7 +83,7 @@
                     <property name="child">
                       <object class="GtkListView" id="list_view">
                         <property name="show-separators">true</property>
-                        <property name="single-click-activate">true</property>
+                        <property name="single-click-activate">false</property>
                         <style>
                           <class name="no-bg"/>
                         </style>

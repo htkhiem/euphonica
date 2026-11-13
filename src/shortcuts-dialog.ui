@@ -24,13 +24,13 @@
         </child>
         <child>
           <object class="AdwShortcutsItem">
-            <property name="title" translatable="yes">Seek Forward 10s</property>
+            <property name="title" translatable="yes">Seek Forward</property>
             <property name="action-name">app.seek-forward</property>
           </object>
         </child>
         <child>
           <object class="AdwShortcutsItem">
-            <property name="title" translatable="yes">Seek Backward 10s</property>
+            <property name="title" translatable="yes">Seek Backward</property>
             <property name="action-name">app.seek-backward</property>
           </object>
         </child>

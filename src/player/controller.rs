@@ -1761,6 +1761,22 @@ impl Player {
         old
     }
 
+    pub async fn seek_increment(&self, forward: bool) -> ClientResult<()> {
+        let curr = self.position();
+        let increment = settings_manager().child("player").double("seek-increment");
+        if forward {
+            // Leave 1s before end
+            let end = self.duration();
+            if end > 1 {
+                let max_pos = end - 1;
+                return self.send_seek((curr + increment).min(max_pos as f64)).await;
+            }
+        } else {
+            return self.send_seek((curr - increment).max(0.0)).await;
+        }
+        Ok(())
+    }
+
     pub async fn send_seek(&self, new_pos: f64) -> ClientResult<()> {
         self.client()?.seek_current_song(new_pos).await?;
         self.emit_by_name::<()>("seeked", &[&new_pos]);

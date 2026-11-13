@@ -7,12 +7,16 @@ use std::cell::OnceCell;
 #[derive(Clone, Copy, Debug, glib::Enum, PartialEq, Default)]
 #[enum_type(name = "EuphonicaINodeType")]
 pub enum INodeType {
+    /// Catch-all
     #[default]
-    Unknown, // Catch-all
+    Unknown,
     Song,
     Folder,
+    /// Saved playlist
     Playlist,
     DynamicPlaylist,
+    /// M3U in folder view
+    PlaylistFile,
 }
 
 impl INodeType {
@@ -20,7 +24,7 @@ impl INodeType {
         match self {
             Self::Folder => "folder-symbolic",
             Self::Song => "music-note-single-symbolic",
-            Self::Playlist | Self::DynamicPlaylist => "playlist-symbolic",
+            Self::Playlist | Self::DynamicPlaylist | Self::PlaylistFile => "playlist-symbolic",
             _ => "paper-symbolic",
         }
     }
@@ -67,6 +71,11 @@ impl From<LsInfoEntry> for INodeInfo {
                 last_modified: dir.last_mod,
                 inode_type: INodeType::Folder,
             },
+            LsInfoEntry::Playlist(pl) => Self {
+                uri: pl.name,
+                last_modified: pl.last_mod,
+                inode_type: INodeType::PlaylistFile,
+            },
         }
     }
 }
@@ -75,7 +84,7 @@ impl From<Playlist> for INodeInfo {
     fn from(playlist: Playlist) -> Self {
         Self {
             uri: playlist.name,
-            last_modified: Some(playlist.last_mod),
+            last_modified: playlist.last_mod,
             inode_type: INodeType::Playlist,
         }
     }

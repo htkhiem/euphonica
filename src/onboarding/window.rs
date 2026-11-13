@@ -136,9 +136,23 @@ mod imp {
         #[template_child]
         pub p3_prev: TemplateChild<gtk::Button>,
         #[template_child]
+        pub p3_next: TemplateChild<gtk::Button>,
+
+        // Page 4: Touchscreen mode
+        #[template_child]
+        pub only_touchscreen_btn: TemplateChild<gtk::Button>,
+        #[template_child]
+        pub pointer_available_btn: TemplateChild<gtk::Button>,
+        #[template_child]
+        pub only_touchscreen: TemplateChild<gtk::CheckButton>,
+        #[template_child]
+        pub pointer_available: TemplateChild<gtk::CheckButton>,
+        #[template_child]
+        pub p4_prev: TemplateChild<gtk::Button>,
+        #[template_child]
         pub finish_btn: TemplateChild<gtk::Button>,
 
-        // Page 4: init DB (shown only in Standalone Mode)
+        // Page 5: init DB (shown only in Standalone Mode)
         #[template_child]
         pub init_db_status: TemplateChild<adw::StatusPage>,
 
@@ -295,14 +309,21 @@ mod imp {
                                     this, // will end loop when window is destroyed or this handle is aborted.
                                     async move {
                                         loop {
-                                            if client.get_status().await.map(|status| status.updating_db).unwrap_or(None).is_none() {
+                                            if client
+                                                .get_status()
+                                                .await
+                                                .map(|status| status.updating_db)
+                                                .unwrap_or(None)
+                                                .is_none()
+                                            {
                                                 // Temporary. Ideally we should go back to the config page.
                                                 this.onboard_success.set(true);
                                                 this.obj().close();
                                             }
                                             if let Ok(n) = client.count_songs().await {
-                                                this.init_db_status
-                                                    .set_description(Some(&format!("Found {} song(s)", n)));
+                                                this.init_db_status.set_description(Some(
+                                                    &format!("Found {} song(s)", n),
+                                                ));
                                             }
                                             glib::timeout_future_seconds(5).await;
                                         }
@@ -321,6 +342,21 @@ mod imp {
                 self,
                 move |_| {
                     this.goto_page("server_conn");
+                }
+            ));
+
+            self.p3_next.connect_clicked(clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |_| {
+                    this.goto_page("touchscreen");
+                }
+            ));
+            self.p4_prev.connect_clicked(clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |_| {
+                    this.goto_page("library");
                 }
             ));
 
@@ -544,6 +580,31 @@ mod imp {
                     self.release_folder_library_mode.get(),
                 ),
                 (self.mixed_library_btn.get(), self.mixed_library_mode.get()),
+            ] {
+                let next_btn = self.p3_next.get();
+                btn.connect_clicked(move |_| {
+                    next_btn.set_sensitive(true);
+                    option.set_active(true);
+                });
+            }
+
+            // Page 4
+            let ui_settings = settings_manager().child("ui");
+            ui_settings
+                .bind(
+                    "is-touchscreen",
+                    &self.only_touchscreen.get(),
+                    "active",
+                )
+                .flags(gio::SettingsBindFlags::SET)
+                .build();
+
+            for (btn, option) in [
+                (
+                    self.only_touchscreen_btn.get(),
+                    self.only_touchscreen.get(),
+                ),
+                (self.pointer_available_btn.get(), self.pointer_available.get()),
             ] {
                 let finish_btn = self.finish_btn.get();
                 btn.connect_clicked(move |_| {

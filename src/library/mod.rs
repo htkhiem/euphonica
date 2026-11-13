@@ -31,6 +31,9 @@ mod add_to_playlist;
 mod generic_row;
 mod tags_filter;
 
+// Recommendation algorithms. Sounds grand but right now they're just SQLite queries :)
+mod recommendations;
+
 // The Library controller itself
 mod controller;
 

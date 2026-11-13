@@ -2,8 +2,8 @@ use super::{DynamicPlaylistView, Library};
 use crate::{
     cache::{Cache, CacheState, sqlite},
     common::{
-        ContentStack, ContentView, DynamicPlaylist, INodeType, ImageStack, Song, SongRow,
-        dynamic_playlist::AutoRefresh, inode::INodeInfo,
+        ContentStack, ContentView, DynamicPlaylist, INodeType, ImageStack, RowDoublePressAction,
+        Song, SongRow, dynamic_playlist::AutoRefresh, inode::INodeInfo,
     },
     utils::{self, format_secs_as_duration, get_time_ago_desc},
     window::EuphonicaWindow,
@@ -17,7 +17,7 @@ use glib::WeakRef;
 use glib::{clone, closure_local};
 use gtk::{CompositeTemplate, ListItem, SignalListItemFactory, gdk, gio, glib};
 use std::{
-    cell::{OnceCell, RefCell},
+    cell::{Cell, OnceCell, RefCell},
     rc::Rc,
 };
 use time::OffsetDateTime;
@@ -74,6 +74,7 @@ mod imp {
         pub window: WeakRef<EuphonicaWindow>,
         pub cache: OnceCell<Rc<Cache>>,
         pub cover_signal_ids: RefCell<Option<(glib::SignalHandlerId, glib::SignalHandlerId)>>,
+        pub queuing: Cell<bool>,
     }
 
     #[glib::object_subclass]
@@ -104,8 +105,97 @@ mod imp {
 
         fn constructed(&self) {
             self.parent_constructed();
-            self.content
-                .set_model(Some(&gtk::NoSelection::new(Some(self.song_list.clone()))));
+            // Use SingleSelection (rather than NoSelection) so rows are activatable
+            let sel_model = gtk::SingleSelection::new(Some(self.song_list.clone()));
+            self.content.set_model(Some(&sel_model));
+            // Double-click to activate a row (single click only highlights)
+            self.content.set_single_click_activate(false);
+            // Setup click action. Default: replace queue with this dynamic playlist
+            // & start playing from the clicked track.
+            self.content.connect_activate(clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |_, position| {
+                    if this.queuing.get() {
+                        // Don't queue from a partially (re)built song list while refreshing
+                        return;
+                    }
+                    let action = RowDoublePressAction::from_settings();
+                    if let Some(window) = this.window.upgrade() {
+                        window.maybe_show_double_press_toast();
+                    }
+                    match action {
+                        RowDoublePressAction::DoNothing => {}
+                        RowDoublePressAction::Append
+                        | RowDoublePressAction::AppendAndPlay
+                        | RowDoublePressAction::Replace
+                        | RowDoublePressAction::ReplaceAndPlay => {
+                            let song = this
+                                .song_list
+                                .item(position)
+                                .and_downcast::<Song>()
+                                .expect("The item has to be a `common::Song`.");
+                            let replace = matches!(
+                                action,
+                                RowDoublePressAction::Replace
+                                    | RowDoublePressAction::ReplaceAndPlay
+                            );
+                            // Append-and-play starts playback at the appended song, which
+                            // lands at the end of the (not-yet-extended) queue.
+                            let play_from = match action {
+                                RowDoublePressAction::AppendAndPlay => this
+                                    .library
+                                    .upgrade()
+                                    .expect("Library must be set")
+                                    .queue_len(),
+                                RowDoublePressAction::ReplaceAndPlay => 0,
+                                _ => return,
+                            };
+                            let play_from = Some(play_from);
+                            glib::spawn_future_local(clone!(
+                                #[weak]
+                                this,
+                                async move {
+                                    let Some(library) = this.library.upgrade() else {
+                                        return;
+                                    };
+                                    this.obj().set_is_queuing(true);
+                                    if let Err(e) =
+                                        library.queue_songs(&[song], replace, play_from).await
+                                    {
+                                        dbg!(e);
+                                    }
+                                    this.obj().set_is_queuing(false);
+                                }
+                            ));
+                        }
+                        RowDoublePressAction::ReplaceViewAndPlay => {
+                            glib::spawn_future_local(clone!(
+                                #[weak]
+                                this,
+                                async move {
+                                    if let (Some(library), Some(dp)) =
+                                        (this.library.upgrade(), this.dp.borrow().as_ref().cloned())
+                                    {
+                                        this.obj().set_is_queuing(true);
+                                        if let Err(e) = library
+                                            .queue_cached_dynamic_playlist(
+                                                dp.name.to_owned(),
+                                                true,
+                                                Some(position),
+                                            )
+                                            .await
+                                        {
+                                            dbg!(e);
+                                        }
+                                        this.obj().set_is_queuing(false);
+                                    }
+                                }
+                            ));
+                        }
+                    }
+                }
+            ));
 
             self.refresh_btn.connect_clicked(clone!(
                 #[weak(rename_to = this)]
@@ -136,7 +226,11 @@ mod imp {
                             {
                                 this.obj().set_is_queuing(true);
                                 if let Err(e) = library
-                                    .queue_cached_dynamic_playlist(dp.name.to_owned(), true, true)
+                                    .queue_cached_dynamic_playlist(
+                                        dp.name.to_owned(),
+                                        true,
+                                        Some(0),
+                                    )
                                     .await
                                 {
                                     dbg!(e);
@@ -161,7 +255,7 @@ mod imp {
                             {
                                 this.obj().set_is_queuing(true);
                                 if let Err(e) = library
-                                    .queue_cached_dynamic_playlist(dp.name.to_owned(), false, false)
+                                    .queue_cached_dynamic_playlist(dp.name.to_owned(), false, None)
                                     .await
                                 {
                                     dbg!(e);
@@ -337,6 +431,7 @@ impl DynamicPlaylistContentView {
     }
 
     fn set_is_queuing(&self, queuing: bool) {
+        self.imp().queuing.set(queuing);
         self.imp().replace_queue.set_sensitive(!queuing);
         self.imp().append_queue.set_sensitive(!queuing);
     }
@@ -373,11 +468,15 @@ impl DynamicPlaylistContentView {
         factory.connect_setup(clone!(
             #[weak]
             cache,
+            #[weak]
+            window,
+            #[weak]
+            library,
             move |_, list_item| {
                 let item = list_item
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
-                let row = SongRow::new(Some(cache), None);
+                let row = SongRow::new(Some(cache), None, Some(&window), Some(&library));
                 row.set_index_visible(false);
                 row.set_thumbnail_visible(true);
                 item.property_expression("item")
@@ -388,23 +487,20 @@ impl DynamicPlaylistContentView {
                     .chain_property::<Song>("name")
                     .bind(&row, "name", gtk::Widget::NONE);
 
-                row.set_first_attrib_icon_name(Some("library-music-symbolic"));
                 item.property_expression("item")
                     .chain_property::<Song>("album")
                     .bind(&row, "first-attrib-text", gtk::Widget::NONE);
 
-                row.set_second_attrib_icon_name(Some("music-artist-symbolic"));
                 item.property_expression("item")
                     .chain_property::<Song>("artist")
                     .bind(&row, "second-attrib-text", gtk::Widget::NONE);
 
-                row.set_third_attrib_icon_name(Some("hourglass-symbolic"));
                 item.property_expression("item")
                     .chain_property::<Song>("duration")
                     .chain_closure::<String>(closure_local!(|_: Option<glib::Object>, dur: u64| {
                         format_secs_as_duration(dur as f64)
                     }))
-                    .bind(&row, "third-attrib-text", gtk::Widget::NONE);
+                    .bind(&row, "duration", gtk::Widget::NONE);
 
                 item.property_expression("item")
                     .chain_property::<Song>("quality-grade")

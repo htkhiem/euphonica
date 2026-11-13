@@ -21,8 +21,9 @@ use crate::{
     cache::Cache,
     client::{ClientState, Error as ClientError},
     common::{ContentStack, RowEditButtons, Song, SongRow},
+    library::Library,
     player::controller::SwapDirection,
-    utils::{LazyInit, SearchableView, g_search_substr, settings_manager},
+    utils::{LazyInit, SearchableView, format_secs_as_duration, g_search_substr, settings_manager},
     window::EuphonicaWindow,
 };
 
@@ -76,6 +77,8 @@ mod imp {
         pub save_confirm: TemplateChild<gtk::Button>,
 
         pub window: WeakRef<EuphonicaWindow>,
+
+        pub library: WeakRef<Library>,
 
         #[property(get, set)]
         pub pane_collapsed: Cell<bool>,
@@ -369,24 +372,26 @@ fn format_song_count(count: u32) -> Option<String> {
 
 fn bind_row_by_expressions(row: &SongRow, item: &ListItem) {
     row.set_index_visible(false);
-    row.set_playing_indicator_visible(true);
 
     item.property_expression("item")
         .chain_property::<Song>("name")
         .bind(row, "name", gtk::Widget::NONE);
 
-    row.set_first_attrib_icon_name(Some("library-music-symbolic"));
     item.property_expression("item")
         .chain_property::<Song>("album")
-        .bind(row, "first-attrib-text", gtk::Widget::NONE);
-    row.set_second_attrib_icon_name(Some("music-artist-symbolic"));
+        .bind(row, "second-attrib-text", gtk::Widget::NONE);
     item.property_expression("item")
         .chain_property::<Song>("artist")
-        .bind(row, "second-attrib-text", gtk::Widget::NONE);
-
+        .bind(row, "first-attrib-text", gtk::Widget::NONE);
     item.property_expression("item")
         .chain_property::<Song>("quality-grade")
         .bind(row, "quality-grade", gtk::Widget::NONE);
+    item.property_expression("item")
+        .chain_property::<Song>("duration")
+        .chain_closure::<String>(closure_local!(|_: Option<glib::Object>, dur: u64| {
+            format_secs_as_duration(dur as f64)
+        }))
+        .bind(row, "duration", gtk::Widget::NONE);
 }
 
 impl QueueView {
@@ -428,7 +433,7 @@ impl QueueView {
         let factory = SignalListItemFactory::new();
 
         factory.connect_setup(clone!(
-            #[weak(rename_to = _this)]
+            #[weak(rename_to = this)]
             self,
             #[weak]
             player,
@@ -438,7 +443,12 @@ impl QueueView {
                 let item = list_item
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
-                let row = SongRow::new(Some(cache.clone()), Some(&player));
+                let row = SongRow::new(
+                    Some(cache.clone()),
+                    Some(&player),
+                    this.imp().window.upgrade().as_ref(),
+                    this.imp().library.upgrade().as_ref(),
+                );
                 bind_row_by_expressions(&row, item);
                 row.add_css_class("shift-on-hover");
                 let end_widget = RowEditButtons::new(
@@ -503,7 +513,7 @@ impl QueueView {
                         }
                     ),
                 );
-                row.set_end_widget(Some(&end_widget.into()));
+                row.set_end_widget(&end_widget.into());
                 item.set_child(Some(&row));
 
                 // Handle drag-n-drop (DnD)
@@ -535,7 +545,7 @@ impl QueueView {
                         // To avoid problems with hotspot positioning quirks (caused by other rows changing padding upon hover)
                         // the icon will be a standalone copy of the original row.
                         // Additional benefit: we get to customise how it looks.
-                        let drag_widget = SongRow::new(None, None);
+                        let drag_widget = SongRow::new(None, None, None, None);
                         // Give it the same size as the real row
                         drag_widget.set_size_request(row.width(), row.height());
                         drag_widget.set_thumbnail_visible(false);
@@ -977,11 +987,13 @@ impl QueueView {
     pub fn setup(
         &self,
         player: &Player,
+        library: &Library,
         cache: Rc<Cache>,
         client_state: &ClientState,
         window: &EuphonicaWindow,
     ) {
         self.imp().window.set(Some(window));
+        self.imp().library.set(Some(library));
         self.setup_listview(player, cache.clone());
         self.imp()
             .player_pane

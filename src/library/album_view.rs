@@ -455,7 +455,7 @@ impl AlbumView {
             .window
             .set(weak)
             .expect("AlbumView window already set");
-        self.setup_gridview(cache.clone());
+        self.setup_gridview(library, cache.clone());
 
         // Set up genres and tags filters
         self.imp().genres_filter_widget.setup(
@@ -537,7 +537,7 @@ impl AlbumView {
         }
     }
 
-    fn setup_gridview(&self, cache: Rc<Cache>) {
+    fn setup_gridview(&self, library: &Library, cache: Rc<Cache>) {
         let settings = settings_manager().child("ui");
         // Setup search bar
         let album_list = self.imp().library.upgrade().unwrap().albums();
@@ -582,11 +582,13 @@ impl AlbumView {
         factory.connect_setup(clone!(
             #[weak]
             cache,
+            #[weak]
+            library,
             move |_, list_item| {
                 let item = list_item
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
-                let album_cell = AlbumCell::new(item, cache, None);
+                let album_cell = AlbumCell::new(item, Some(&library), cache, None);
                 item.set_child(Some(&album_cell));
             }
         ));

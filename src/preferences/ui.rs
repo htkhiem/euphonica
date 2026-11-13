@@ -7,7 +7,7 @@ use gtk::{
 
 use crate::{
     common::{
-        View,
+        RowDoublePressAction, View,
         list_models::{DualStringList, DualStringObject},
         marquee::MarqueeWrapMode,
     },
@@ -26,6 +26,8 @@ mod imp {
         #[template_child]
         pub recent_playlists_count: TemplateChild<adw::SpinRow>,
         #[template_child]
+        pub is_touchscreen: TemplateChild<adw::SwitchRow>,
+        #[template_child]
         pub max_columns: TemplateChild<adw::SpinRow>,
         #[template_child]
         pub auto_accent: TemplateChild<adw::SwitchRow>,
@@ -41,6 +43,8 @@ mod imp {
         pub title_wrap_mode: TemplateChild<adw::ComboRow>,
         #[template_child]
         pub auto_scroll_to_playing: TemplateChild<adw::SwitchRow>,
+        #[template_child]
+        pub action_on_row_double_press: TemplateChild<adw::ComboRow>,
 
         #[template_child]
         pub use_album_art_as_bg: TemplateChild<adw::ExpanderRow>,
@@ -63,6 +67,11 @@ mod imp {
         pub artist_collapse_discography_albums: TemplateChild<adw::SwitchRow>,
         #[template_child]
         pub artist_sort_discography_years_asc: TemplateChild<adw::SwitchRow>,
+
+        #[template_child]
+        pub show_seek_btns: TemplateChild<adw::SwitchRow>,
+        #[template_child]
+        pub seek_increment: TemplateChild<adw::SpinRow>,
 
         #[template_child]
         pub use_visualizer: TemplateChild<adw::ExpanderRow>,
@@ -154,6 +163,11 @@ impl UIPreferences {
             .bind("recent-playlists-count", &recent_playlists_count, "value")
             .build();
 
+        let is_touchscreen = imp.is_touchscreen.get();
+        ui_settings
+            .bind("is-touchscreen", &is_touchscreen, "active")
+            .build();
+
         let max_columns = imp.max_columns.get();
         ui_settings
             .bind("max-columns", &max_columns, "value")
@@ -215,6 +229,30 @@ impl UIPreferences {
         let auto_scroll_to_playing = imp.auto_scroll_to_playing.get();
         ui_settings
             .bind("auto-scroll-to-playing", &auto_scroll_to_playing, "active")
+            .build();
+        let action_on_row_double_press = imp.action_on_row_double_press.get();
+        ui_settings
+            .bind(
+                "action-on-row-double-press",
+                &action_on_row_double_press,
+                "selected",
+            )
+            .mapping(|v: &Variant, _| {
+                Some(
+                    RowDoublePressAction::try_from(v.get::<String>().unwrap().as_str())
+                        .unwrap_or_default()
+                        .as_idx()
+                        .to_value(),
+                )
+            })
+            .set_mapping(|v: &Value, _| {
+                Some(
+                    RowDoublePressAction::try_from(v.get::<u32>().unwrap())
+                        .unwrap_or_default()
+                        .as_str()
+                        .into(),
+                )
+            })
             .build();
         ui_settings
             .bind(
@@ -309,7 +347,7 @@ impl UIPreferences {
             .mapping(clone!(
                 #[strong]
                 units,
-                move |v: &Variant, _| Some(units.find(&v.get::<String>()?).to_value()) 
+                move |v: &Variant, _| Some(units.find(&v.get::<String>()?).to_value())
             ))
             .set_mapping(clone!(
                 #[strong]
@@ -327,6 +365,13 @@ impl UIPreferences {
 
         ui_settings
             .bind("vol-knob-sensitivity", &vol_knob_sensitivity, "value")
+            .build();
+
+        ui_settings
+            .bind("show-seek-buttons", &imp.show_seek_btns.get(), "active")
+            .build();
+        player_settings
+            .bind("seek-increment", &imp.seek_increment.get(), "value")
             .build();
 
         ui_settings

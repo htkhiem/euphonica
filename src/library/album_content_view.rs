@@ -7,7 +7,10 @@ use crate::utils::settings_manager;
 use crate::{
     cache::{Cache, CacheState, Error as CacheError, placeholders::EMPTY_ALBUM_STRING},
     client::{ClientState, state::StickersSupportLevel},
-    common::{Album, Artist, ContentStack, ImageStack, Rating, RowAddButtons, Song, SongRow},
+    common::{
+        Album, Artist, ContentStack, ImageStack, Rating, RowAddButtons, RowDoublePressAction, Song,
+        SongRow,
+    },
     library::{add_to_playlist::AddToPlaylistButton, tag_button::TagButton},
     utils::{format_secs_as_duration, tokio_runtime},
     window::EuphonicaWindow,
@@ -624,7 +627,7 @@ impl AlbumContentView {
             {
                 // If has album & all tracks are selected, use queue_album.
                 if let Err(e) = library
-                    .queue_album(album.clone(), replace, play, None)
+                    .queue_album(album.clone(), replace, if play { Some(0) } else { None })
                     .await
                 {
                     dbg!(e);
@@ -632,7 +635,11 @@ impl AlbumContentView {
             } else {
                 // Catch-all: manually queue each song.
                 if let Err(e) = library
-                    .queue_songs(&self.selected_songs(), replace, play)
+                    .queue_songs(
+                        &self.selected_songs(),
+                        replace,
+                        if play { Some(0) } else { None },
+                    )
                     .await
                 {
                     dbg!(e);
@@ -1082,59 +1089,102 @@ impl AlbumContentView {
         ));
 
         // Set up ListBox — bind directly to song_list (no MultiSelection needed)
+        let window = self.imp().window.upgrade();
         self.imp().content.bind_model(
             Some(&self.imp().song_list),
             clone!(
                 #[weak]
                 library,
                 #[upgrade_or]
-                SongRow::new(None, None).into(),
+                SongRow::new(None, None, None, None).into(),
                 move |song_obj| {
                     let song = song_obj
                         .downcast_ref::<Song>()
                         .expect("Must be a common::Song");
-                    let row = SongRow::new(None, None);
+                    let row = SongRow::new(None, None, window.as_ref(), Some(&library));
+                    row.on_bind(song);
                     row.set_index_visible(true);
                     row.set_index(&song.get_track().to_string());
                     row.set_thumbnail_visible(false);
 
                     row.set_name(song.get_name());
-                    row.set_first_attrib_icon_name(Some("music-artist-symbolic"));
                     row.set_first_attrib_text(song.get_artist_tag());
-
-                    row.set_second_attrib_icon_name(Some("hourglass-symbolic"));
-                    row.set_second_attrib_text(Some(&format_secs_as_duration(
+                    row.set_duration(Some(&format_secs_as_duration(
                         song.get_duration() as f64
                     )));
 
                     row.set_quality_grade(song.get_quality_grade());
                     let end_widget = RowAddButtons::new(&library);
                     end_widget.set_song(Some(song));
-                    row.set_end_widget(Some(&end_widget.into()));
+                    row.set_end_widget(&end_widget.into());
                     row.into()
                 }
             ),
         );
 
-        // Setup click action
+        // Setup double-click action
         self.imp().content.connect_row_activated(clone!(
             #[weak(rename_to = this)]
             self,
             move |_, row| {
                 let idx = row.index() as u32;
-                glib::spawn_future_local(clone!(
-                    #[weak]
-                    this,
-                    async move {
-                        if let (Some(album), Some(library)) = (this.album(), this.library())
-                            && let Err(e) = library
-                                .queue_album(album.clone(), true, true, Some(idx))
-                                .await
-                        {
-                            dbg!(e);
-                        }
+                let action = RowDoublePressAction::from_settings();
+                if let Some(window) = this.imp().window.upgrade() {
+                    window.maybe_show_double_press_toast();
+                }
+                match action {
+                    RowDoublePressAction::DoNothing => {}
+                    RowDoublePressAction::Append
+                    | RowDoublePressAction::AppendAndPlay
+                    | RowDoublePressAction::Replace
+                    | RowDoublePressAction::ReplaceAndPlay => {
+                        let song = this
+                            .imp()
+                            .song_list
+                            .item(idx)
+                            .and_downcast::<Song>()
+                            .expect("The item has to be a `common::Song`.");
+                        let replace = matches!(
+                            action,
+                            RowDoublePressAction::Replace | RowDoublePressAction::ReplaceAndPlay
+                        );
+                        // Append-and-play starts playback at the appended song, which
+                        // lands at the end of the (not-yet-extended) queue.
+                        let play_from = match action {
+                            RowDoublePressAction::AppendAndPlay => {
+                                Some(this.library().unwrap().queue_len())
+                            }
+                            RowDoublePressAction::ReplaceAndPlay => Some(0),
+                            _ => None,
+                        };
+                        glib::spawn_future_local(clone!(
+                            #[weak]
+                            this,
+                            async move {
+                                if let Some(library) = this.library()
+                                    && let Err(e) =
+                                        library.queue_songs(&[song], replace, play_from).await
+                                {
+                                    dbg!(e);
+                                }
+                            }
+                        ));
                     }
-                ));
+                    RowDoublePressAction::ReplaceViewAndPlay => {
+                        glib::spawn_future_local(clone!(
+                            #[weak]
+                            this,
+                            async move {
+                                if let (Some(album), Some(library)) = (this.album(), this.library())
+                                    && let Err(e) =
+                                        library.queue_album(album.clone(), true, Some(idx)).await
+                                {
+                                    dbg!(e);
+                                }
+                            }
+                        ));
+                    }
+                }
             }
         ));
     }
