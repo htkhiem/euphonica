@@ -175,47 +175,55 @@ fn clear_image_internal(key: &str, key_prefix: Option<&'static str>) -> Result<b
 }
 
 #[inline]
+fn find_image_filename(
+    key: &str,
+    prefix: Option<&'static str>,
+    thumbnail: bool,
+) -> Result<Option<String>> {
+    match sqlite::find_image_by_key(key, prefix, thumbnail).map_err(Error::Sqlite)? {
+        // empty filename-> already previously failed to fetch the embedded art.
+        // Should not try again.
+        Some(filename) if filename.is_empty() => Err(Error::PriorFailure),
+        filename => Ok(filename),
+    }
+}
+
+#[inline]
+fn find_image_in_memory(
+    key: &str,
+    prefix: Option<&'static str>,
+    thumbnail: bool,
+) -> Result<Option<gdk::Texture>> {
+    Ok(find_image_filename(key, prefix, thumbnail)?
+        .and_then(|filename| IMAGE_CACHE.lock().unwrap().get(&filename).cloned()))
+}
+
+#[inline]
 fn get_image_internal(
     key: &str,
     prefix: Option<&'static str>,
     thumbnail: bool,
 ) -> Result<Option<gdk::Texture>> {
-    if let Some(filename) =
-        sqlite::find_image_by_key(key, prefix, thumbnail).map_err(Error::Sqlite)?
-    {
-        if !filename.is_empty() {
-            let tex;
-            {
-                // Cloning GObjects is cheap since they're just references
-                tex = IMAGE_CACHE.lock().unwrap().get(&filename).cloned();
-            }
-            if tex.is_some() {
-                Ok(tex)
-            } else {
-                let mut cover_path = get_image_cache_path();
-                cover_path.push(&filename);
-                match Texture::from_filename(&cover_path).map_err(Error::from) {
-                    Ok(tex) => {
-                        IMAGE_CACHE.lock().unwrap().put(filename, tex.clone());
-                        Ok(Some(tex))
-                    }
-                    Err(Error::NotFound) => {
-                        // File no longer exists (maybe user had removed it). Unregister it from DB.
-                        sqlite::unregister_image_key(key, prefix, thumbnail)
-                            .map_err(Error::Sqlite)?;
-                        Ok(None)
-                    }
-                    Err(error) => Err(error),
-                }
-            }
-        } else {
-            // There is an entry, but it's an empty string. This is our indication that we've
-            // failed to fetch the embedded art from MPD once before, so don't try again
-            // (will not succeed unless the files have been re-tagged).
-            Err(Error::PriorFailure)
+    let Some(filename) = find_image_filename(key, prefix, thumbnail)? else {
+        return Ok(None);
+    };
+    let tex = IMAGE_CACHE.lock().unwrap().get(&filename).cloned();
+    if tex.is_some() {
+        return Ok(tex);
+    }
+    let mut cover_path = get_image_cache_path();
+    cover_path.push(&filename);
+    match Texture::from_filename(&cover_path).map_err(Error::from) {
+        Ok(tex) => {
+            IMAGE_CACHE.lock().unwrap().put(filename, tex.clone());
+            Ok(Some(tex))
         }
-    } else {
-        Ok(None)
+        Err(Error::NotFound) => {
+            // File no longer exists (maybe user had removed it). Unregister it from DB.
+            sqlite::unregister_image_key(key, prefix, thumbnail).map_err(Error::Sqlite)?;
+            Ok(None)
+        }
+        Err(error) => Err(error),
     }
 }
 
@@ -377,6 +385,20 @@ impl Cache {
             )
             .await;
         res
+    }
+
+    /// Synchronous version of get_album_cover that only returns covers already in memory.
+    /// It never reads image files from disk or fetches anything, so it can run on the main thread.
+    pub fn get_album_cover_from_memory(
+        &self,
+        album: &AlbumInfo,
+        thumbnail: bool,
+    ) -> Option<Texture> {
+        // Same lookup order as steps 1-2 of get_cover_internal
+        find_image_in_memory(&album.folder_uri, None, thumbnail)
+            .or_else(|_| find_image_in_memory(&album.example_uri, None, thumbnail))
+            .ok()
+            .flatten()
     }
 
     /// Lite version of get_album_cover that only takes an example URI.

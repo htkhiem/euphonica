@@ -368,7 +368,7 @@ impl AlbumCell {
         // add a short delay on the map() signal. If unmap() comes in quick succession then we
         // can just cancel the load before it happens.
         res.connect_map(|res| {
-            res.load_textures_with_delay();
+            res.load_textures();
         });
 
         res.connect_unmap(|res| {
@@ -391,72 +391,98 @@ impl AlbumCell {
         imp.cover.clear();
     }
 
-    #[inline]
-    async fn load_textures(&self) {
+    fn is_bound_to(&self, album: &Album) -> bool {
+        self.album()
+            .is_some_and(|a| a.get_info().get_comp_id() == album.get_info().get_comp_id())
+    }
+
+    /// Shows the cover right away if it's already in memory.
+    /// Otherwise, loads it with a delay to allow early cancel.
+    fn load_textures(&self) {
+        let imp = self.imp();
+        if let Some(handle) = imp.texture_load_handle.take() {
+            handle.abort();
+        }
         let Some(album) = self.album() else {
             return;
         };
-        let cache = self.imp().cache.get().unwrap();
-        let cover = self.imp().cover.get();
-        // The cell might have been bound to a different album while awaiting.
-        let is_still_bound = || {
-            self.album()
-                .is_some_and(|a| a.get_info().get_comp_id() == album.get_info().get_comp_id())
-        };
-        let print_error = |e: Error| {
-            eprintln!(
-                "Failed to read cover for album `{}` (URI `{}`):\n{:?}",
-                album.get_title(),
-                album.get_folder_uri(),
-                e
-            );
-        };
-
-        // Decoding a hires texture is slow,
-        // so always show the thumbnail first and swap in the hires one later.
-        cover.show_spinner();
-        let thumb = cache.clone().get_album_cover(album.get_info(), true).await;
-        if !is_still_bound() {
+        let cache = imp.cache.get().unwrap();
+        let hires = imp.hires.get();
+        if hires && let Some(tex) = cache.get_album_cover_from_memory(album.get_info(), false) {
+            imp.cover.show(&tex);
             return;
         }
-        match thumb {
-            Ok(Some(tex)) => cover.show(&tex),
-            Ok(None) => {
-                cover.clear();
-                return;
-            }
-            Err(e) => {
-                cover.clear();
-                print_error(e);
+        let thumbnail = cache.get_album_cover_from_memory(album.get_info(), true);
+        if let Some(tex) = &thumbnail {
+            imp.cover.show(tex);
+            if !hires {
                 return;
             }
         }
 
-        if !self.imp().hires.get() {
-            return;
-        }
-        // On failure, keep showing the thumbnail.
-        match cache.clone().get_album_cover(album.get_info(), false).await {
-            Ok(Some(tex)) if is_still_bound() => cover.show(&tex),
-            Ok(_) => {}
-            Err(e) => print_error(e),
-        }
-    }
-
-    /// Load with a delay to allow early cancel
-    fn load_textures_with_delay(&self) {
-        if let Some(handle) = self.imp().texture_load_handle.take() {
-            handle.abort();
-        }
         let this = self.clone();
-        let _ = self
-            .imp()
+        let _ = imp
             .texture_load_handle
             .replace(Some(glib::spawn_future_local(async move {
                 // Wait first to give unmap() a chance to cancel this outright
                 glib::timeout_future(TEXTURE_LOAD_DELAY_MS).await;
-                this.load_textures().await;
+                // Decoding a hires texture is slow,
+                // so always show the thumbnail first and swap in the hires one later.
+                if (thumbnail.is_some() || this.load_textures_thumbnail(&album).await)
+                    && this.imp().hires.get()
+                {
+                    this.load_textures_hires(&album).await;
+                }
             })));
+    }
+
+    /// Returns whether the (lowres) thumbnail is currently being shown.
+    async fn load_textures_thumbnail(&self, album: &Album) -> bool {
+        let cover = self.imp().cover.get();
+        cover.show_spinner();
+        let res = self
+            .imp()
+            .cache
+            .get()
+            .unwrap()
+            .clone()
+            .get_album_cover(album.get_info(), true)
+            .await;
+        if !self.is_bound_to(album) {
+            return false;
+        }
+        match res {
+            Ok(Some(tex)) => {
+                cover.show(&tex);
+                true
+            }
+            Ok(None) => {
+                cover.clear();
+                false
+            }
+            Err(e) => {
+                cover.clear();
+                print_cover_error(album, e);
+                false
+            }
+        }
+    }
+
+    async fn load_textures_hires(&self, album: &Album) {
+        let res = self
+            .imp()
+            .cache
+            .get()
+            .unwrap()
+            .clone()
+            .get_album_cover(album.get_info(), false)
+            .await;
+        // On failure, keep showing the thumbnail.
+        match res {
+            Ok(Some(tex)) if self.is_bound_to(album) => self.imp().cover.show(&tex),
+            Ok(_) => {}
+            Err(e) => print_cover_error(album, e),
+        }
     }
 
     pub fn bind(&self, album: &Album) {
@@ -490,7 +516,16 @@ impl AlbumCell {
             self.imp().cover.set_is_thumbnail(!new);
             self.notify("hires");
 
-            self.load_textures_with_delay()
+            self.load_textures()
         }
     }
+}
+
+fn print_cover_error(album: &Album, e: Error) {
+    eprintln!(
+        "Failed to read cover for album `{}` (URI `{}`):\n{:?}",
+        album.get_title(),
+        album.get_folder_uri(),
+        e
+    );
 }
