@@ -105,12 +105,11 @@ impl SongInfoDialog {
         let imp = res.imp();
         // The fork's Song parser hoists some keys out of `tags` into struct fields:
         // - `title`/`artist`/`last_mod` only keep the LAST value of repeated keys
-        // - `Time` (deprecated, low-precision `duration`) is discarded entirely
-        let (file, title, last_mod, artist, duration, tags) = (
+        let (file, title, last_mod, artists, duration, tags) = (
             song.file,
             song.title,
             song.last_mod,
-            song.artist,
+            song.artists,
             song.duration,
             song.tags,
         );
@@ -123,6 +122,27 @@ impl SongInfoDialog {
         // (all subtitles below are escaped)
         imp.raw_path.replace(file.clone());
         imp.path.set_subtitle(&escape(&file));
+
+        // Starting from v1.0 we now parse these fields right from rust-mpd
+        // As always, DSD has to be handled early and specially...
+        let extension: Option<&str> = path.extension().and_then(OsStr::to_str);
+        if extension.is_some_and(|ext| DSD_EXTENSIONS.contains(&ext)) {
+            imp.format.set_subtitle(DSD_DISPLAY_NAME);
+        }
+        if let Some(format) = song.format {
+            if let Some(extension) = extension {
+                if LOSSLESS_PCM_EXTENSIONS.contains(&extension) {
+                    imp.format
+                        .set_subtitle(&format!("Lossless {}", prettify_audio_format(&format)));
+                } else if format.bits == 1 {
+                    // As of v0.24 MPD doesn't return a Format key when it's DSD, but who knows, put this here just in case they
+                    // decide to in the future.
+                    imp.format.set_subtitle(DSD_DISPLAY_NAME);
+                } else {
+                    imp.format.set_subtitle(&prettify_audio_format(&format))
+                }
+            }
+        }
 
         // Duration is an MPD-computed value (in seconds), displayed with an "s" suffix.
         if let Some(duration) = duration {
@@ -138,38 +158,13 @@ impl SongInfoDialog {
             imp.last_modified.set_subtitle(last_mod);
         }
 
-        // As always, DSD has to be handled early and specially...
-        let extension: Option<&str> = path.extension().and_then(OsStr::to_str);
-        if extension.is_some_and(|ext| DSD_EXTENSIONS.contains(&ext)) {
-            imp.format.set_subtitle(DSD_DISPLAY_NAME);
-        }
-
-        // Unlike SongInfo's constructor we'll show repeated tags here & will also parse way more tags.
-        // Groups tag values by lowercased name, preserving both first-seen order and all values, so
-        // duplicated tags are all displayed to let the user spot broken metadata.
+        // Catch-all (not parsed by rust-mpd & simply shoved into that vec<string, string>)
         let mut tag_values: Vec<(String, Vec<String>)> = Vec::new();
         for (tag, val) in tags {
             let lowered = tag.to_lowercase();
             // The following are guaranteed that there are at most one each. They aren't tags but rather
             // MPD's own metadata fields, displayed in the File group.
-            if lowered == tags::FORMAT {
-                if let Ok(format) = val.parse::<AudioFormat>() {
-                    if let Some(extension) = extension {
-                        if LOSSLESS_PCM_EXTENSIONS.contains(&extension) {
-                            imp.format.set_subtitle(&format!(
-                                "Lossless {}",
-                                prettify_audio_format(&format)
-                            ));
-                        } else if format.bits == 1 {
-                            // As of v0.24 MPD doesn't return a Format key when it's DSD, but who knows, put this here just in case they
-                            // decide to in the future.
-                            imp.format.set_subtitle(DSD_DISPLAY_NAME);
-                        } else {
-                            imp.format.set_subtitle(&prettify_audio_format(&format))
-                        }
-                    }
-                }
-            } else if lowered == tags::ADDED {
+            if lowered == tags::ADDED {
                 // Just display verbatim
                 imp.added.set_subtitle(&val);
             }
@@ -180,27 +175,74 @@ impl SongInfoDialog {
         }
 
         // Build the Metadata group's rows dynamically, in MPD's first-seen order.
+
         // Title & Artist come from the struct instead (see above).
         let metadata = &*imp.metadata;
         if let Some(title) = &title {
-            let row = make_property_row("Title", false);
-            row.set_subtitle(&escape(title));
+            let row = make_property_row("Title", title, false);
             metadata.add(&row);
         }
-        if let Some(artist) = &artist {
-            let row = make_property_row("Artist", false);
-            row.set_subtitle(&escape(artist));
+        // The reason why these are dynamically created is that these used to be in the vec<string, string>
+        // too and not already parsed into their own fields like now.
+        // I'm way too lazy to update the template so this will have to do.
+        if let Some(mbid) = song.mbid {
+            let row = make_property_row("MusicBrainz Track ID", &mbid, false);
             metadata.add(&row);
         }
+        if let Some(album) = song.album {
+            let row = make_property_row("Album", &album, false);
+            metadata.add(&row);
+        }
+        if let Some(album) = song.albumsort {
+            let row = make_property_row("AlbumSort", &album, false);
+            metadata.add(&row);
+        }
+        if let Some(mbid) = song.album_mbid {
+            let row = make_property_row("MusicBrainz Album ID", &mbid, false);
+            metadata.add(&row);
+        }
+        if let Some(date) = song.date {
+            let row = make_property_row("Release date", &date, false);
+            metadata.add(&row);
+        }
+        if let Some(date) = song.original_date {
+            let row = make_property_row("Original release date", &date, false);
+            metadata.add(&row);
+        }
+        for artist in artists {
+            let row = make_property_row("Artist", &artist, false);
+            metadata.add(&row);
+        }
+        for artist in song.artistsorts {
+            let row = make_property_row("ArtistSort", &artist, false);
+            metadata.add(&row);
+        }
+        for mbid in song.artist_mbids {
+            let row = make_property_row("MusicBrainz Artist ID", &mbid, false);
+            metadata.add(&row);
+        }
+        for albumartist in song.albumartists {
+            let row = make_property_row("AlbumArtist", &albumartist, false);
+            metadata.add(&row);
+        }
+        for albumartist in song.albumartistsorts {
+            let row = make_property_row("AlbumArtistSort", &albumartist, false);
+            metadata.add(&row);
+        }
+        for mbid in song.albumartist_mbids {
+            let row = make_property_row("MusicBrainz AlbumArtist ID", &mbid, false);
+            metadata.add(&row);
+        }
+        for genre in song.genres {
+            let row = make_property_row("Genre", &genre, false);
+            metadata.add(&row);
+        }
+
+        // Catch-all
         for (name, vals) in tag_values {
-            // Already displayed in the File group
-            if name == tags::FORMAT || name == tags::ADDED || name == tags::LAST_MODIFIED {
-                continue;
-            }
             // MusicBrainz ID rows get prettied-up titles & a copy button
             let copyable = name.starts_with("musicbrainz_");
-            let row = make_property_row(&tags::prettify_tag_name(&name), copyable);
-            row.set_subtitle(&escape(&vals.join("\n")));
+            let row = make_property_row(&tags::prettify_tag_name(&name), &escape(vals.join("\n")), copyable);
             metadata.add(&row);
         }
 
@@ -215,8 +257,11 @@ impl SongInfoDialog {
 
 /// Creates a `property`-styled ActionRow with a title, optionally with a copy-to-clipboard
 /// suffix button that copies the row's subtitle.
-fn make_property_row(title: &str, copyable: bool) -> adw::ActionRow {
-    let row = adw::ActionRow::builder().title(title).build();
+fn make_property_row(title: &str, subtitle: &str, copyable: bool) -> adw::ActionRow {
+    let row = adw::ActionRow::builder()
+        .title(title)
+        .subtitle(escape(subtitle))
+        .build();
     row.add_css_class("property");
     if copyable {
         let button = gtk::Button::builder()
@@ -239,3 +284,4 @@ fn make_property_row(title: &str, copyable: bool) -> adw::ActionRow {
     }
     row
 }
+

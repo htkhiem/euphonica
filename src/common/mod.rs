@@ -24,7 +24,7 @@ pub mod tags;
 pub mod theme_selector;
 
 pub use album::{Album, AlbumInfo};
-pub use artist::{Artist, ArtistInfo, artists_to_string, parse_mb_artist_tag};
+pub use artist::{Artist, ArtistInfo};
 pub use content_stack::ContentStack;
 pub use content_view::ContentView;
 pub use cover_fan::CoverFan;
@@ -40,11 +40,12 @@ pub use picture_stack::PictureStack;
 pub use rating::Rating;
 pub use row_add_buttons::RowAddButtons;
 pub use row_edit_buttons::RowEditButtons;
-pub use song::{QualityGrade, Song, SongInfo};
+pub use song::{QualityGrade, Song};
 pub use song_info::SongInfoDialog;
 pub use song_row::SongRow;
 pub use sticker::Stickers;
 pub use theme_selector::ThemeSelector;
+use time::{Date, Month};
 
 #[derive(Default, Debug, Copy, Clone, PartialEq, Eq, glib::Enum)]
 #[enum_type(name = "EuphonicaConnectionState")]
@@ -239,3 +240,34 @@ impl RowDoublePressAction {
 
 pub static DSD_EXTENSIONS: [&str; 3] = ["dsf", "dff", "wsd"];
 pub static LOSSLESS_PCM_EXTENSIONS: [&str; 4] = ["flac", "alac", "wv", "ape"];
+
+pub fn parse_date(datestr: &str) -> Option<Date> {
+    // MPD uses yyyy-MM-dd but the month and day may be optional.
+    let mut comps = datestr.split('-');
+    let mut year_val: Option<i32> = None;
+    let mut month_val: Month = Month::January;
+    let mut day_val: u8 = 1;
+
+    let year_str = comps.next()?;
+    if let Ok(year) = year_str.parse::<i32>() {
+        let _ = year_val.replace(year);
+    } else {
+        return None;
+    }
+
+    if let Some(month_str) = comps.next()
+        && let Ok(month) = month_str.parse::<u8>()
+        && let Ok(month_enum) = Month::try_from(month)
+    {
+        month_val = month_enum;
+    }
+    if let Some(day_str) = comps.next()
+        && let Ok(day) = day_str.parse::<u8>()
+    {
+        day_val = day;
+    }
+    if let Ok(date) = Date::from_calendar_date(year_val.unwrap(), month_val, day_val) {
+        return Some(date);
+    }
+    None
+}

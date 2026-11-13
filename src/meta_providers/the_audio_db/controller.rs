@@ -1,10 +1,6 @@
 use std::time::SystemTime;
 
-use crate::{
-    common::{AlbumInfo, ArtistInfo},
-    config::APPLICATION_USER_AGENT,
-    utils::meta_provider_settings,
-};
+use crate::{config::APPLICATION_USER_AGENT, utils::meta_provider_settings};
 use gtk::prelude::*;
 use reqwest::{
     Error,
@@ -17,7 +13,12 @@ use super::models::{
     TheAudioDbAlbum, TheAudioDbAlbumResponse, TheAudioDbArtist, TheAudioDbArtistResponse,
 };
 use super::{
-    super::{MetadataProvider, models, prelude::*},
+    super::{
+        MetadataProvider,
+        base::{AlbumKey, ArtistKey},
+        models,
+        prelude::*,
+    },
     PROVIDER_KEY,
 };
 
@@ -134,7 +135,7 @@ impl MetadataProvider for TheAudioDbWrapper {
     /// If MBID is provided, use lookup, else search.
     fn get_album_meta(
         &mut self,
-        key: &mut AlbumInfo,
+        key: &mut AlbumKey,
         existing: Option<models::AlbumMeta>,
     ) -> MetadataResult<Option<models::AlbumMeta>> {
         if meta_provider_settings(PROVIDER_KEY).boolean("enabled") {
@@ -202,7 +203,7 @@ impl MetadataProvider for TheAudioDbWrapper {
                             // Override album & artist names in case the returned values
                             // are slightly different (casing, apostrophes, etc.), else
                             // we won't be able to query it back using our own tags.
-                            if let Some(artist) = key.get_artist_tag() {
+                            if let Some(artist) = &key.albumartist {
                                 new.artist = Some(artist.to_owned());
                             }
                             if new.name != key.title {
@@ -232,7 +233,7 @@ impl MetadataProvider for TheAudioDbWrapper {
     /// If MBID is provided, use lookup, else search.
     fn get_artist_meta(
         &mut self,
-        key: &mut ArtistInfo,
+        key: &mut ArtistKey,
         existing: Option<models::ArtistMeta>,
     ) -> MetadataResult<Option<models::ArtistMeta>> {
         if meta_provider_settings(PROVIDER_KEY).boolean("enabled") {
@@ -304,10 +305,7 @@ impl MetadataProvider for TheAudioDbWrapper {
     }
 
     /// TheAudioDB does not provide lyrics.
-    fn get_lyrics(
-        &mut self,
-        _key: &crate::common::SongInfo,
-    ) -> MetadataResult<Option<models::Lyrics>> {
+    fn get_lyrics(&mut self, _key: &mpd::Song) -> MetadataResult<Option<models::Lyrics>> {
         Ok(None)
     }
 }
@@ -315,8 +313,6 @@ impl MetadataProvider for TheAudioDbWrapper {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::common::{AlbumInfo, ArtistInfo, QualityGrade};
-    use rustc_hash::FxHashSet;
 
     #[test]
     fn v1_url_search_artist() {
@@ -423,14 +419,9 @@ mod tests {
         settings.set_string("api-key", &api_key).unwrap();
         settings.set_enum("api-version", 1).unwrap();
         let mut provider = TheAudioDbWrapper::new();
-        let mut key = ArtistInfo {
+        let mut key = ArtistKey {
             name: "Coldplay".to_owned(),
-            sort_tag: None,
             mbid: Some("cc197bad-dc9c-440d-a5b5-d52ba2e14234".to_owned()),
-            genres: FxHashSet::default(),
-            example_uris: Vec::new(),
-            is_composer: false,
-            is_albumartist: true,
         };
         let res = provider.get_artist_meta(&mut key, None).unwrap();
         let meta = res.expect("expected artist metadata");
@@ -456,19 +447,9 @@ mod tests {
         settings.set_string("api-key", &api_key).unwrap();
         settings.set_enum("api-version", 1).unwrap();
         let mut provider = TheAudioDbWrapper::new();
-        let mut key = AlbumInfo {
+        let mut key = AlbumKey {
             title: "Parachutes".to_owned(),
-            albumsort: None,
-            example_uri: String::new(),
-            folder_uri: String::new(),
-            artists: Vec::new(),
             albumartist: Some("Coldplay".to_owned()),
-            albumartistsort: None,
-            genres: FxHashSet::default(),
-            cover: None,
-            release_date: None,
-            date_tag: None,
-            quality_grade: QualityGrade::default(),
             mbid: None,
         };
         let res = provider.get_album_meta(&mut key, None).unwrap();
