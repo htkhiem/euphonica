@@ -131,7 +131,6 @@ mod imp {
         pub album: InitOnceArc<Option<AlbumInfo>>,
         pub stickers: RefCell<Stickers>,
         pub queue_pos: Cell<u32>,
-        pub is_playing: Cell<bool>,
         pub last_played: OnceCell<OffsetDateTime>,
     }
 
@@ -150,7 +149,6 @@ mod imp {
                 album: InitOnceArc::new(),
                 stickers: RefCell::new(Stickers::default()),
                 queue_pos: Cell::new(0),
-                is_playing: Cell::new(false),
                 last_played: OnceCell::new(),
             }
         }
@@ -176,7 +174,6 @@ mod imp {
                     ParamSpecUInt::builder("queue-id").build(),
                     ParamSpecUInt::builder("queue-pos").build(),
                     ParamSpecBoolean::builder("is-queued").read_only().build(),
-                    ParamSpecBoolean::builder("is-playing").read_only().build(),
                     ParamSpecString::builder("album").read_only().build(),
                     ParamSpecInt64::builder("track").read_only().build(),
                     ParamSpecInt64::builder("disc").read_only().build(),
@@ -209,7 +206,6 @@ mod imp {
                 "queue-id" => obj.get_queue_id().to_value(),
                 "queue-pos" => obj.get_queue_pos().to_value(),
                 "is-queued" => obj.is_queued().to_value(),
-                "is-playing" => obj.is_playing().to_value(),
                 "album" => obj.get_album_title().to_value(),
                 "track" => obj.get_track().to_value(),
                 "disc" => obj.get_disc().to_value(),
@@ -349,17 +345,6 @@ impl Song {
     /// Starts from 1
     pub fn get_disc(&self) -> u32 {
         self.get_inner().disc.unwrap_or(0)
-    }
-
-    pub fn is_playing(&self) -> bool {
-        self.imp().is_playing.get()
-    }
-
-    pub fn set_is_playing(&self, new: bool) {
-        let old = self.imp().is_playing.replace(new);
-        if old != new {
-            self.notify("is-playing");
-        }
     }
 
     pub fn get_quality_grade(&self) -> QualityGrade {
