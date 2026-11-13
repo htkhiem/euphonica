@@ -21,6 +21,16 @@ use crate::{
     window::EuphonicaWindow,
 };
 
+fn sorter_change_on_direction_flip(state: &gtk::gio::Settings) -> gtk::SorterChange {
+    // AlbumArtist sorts its secondary keys ascending regardless of direction,
+    // so flipping the direction is not a pure reversal there.
+    if state.enum_("sort-by") == 4 {
+        gtk::SorterChange::Different
+    } else {
+        gtk::SorterChange::Inverted
+    }
+}
+
 mod imp {
     use super::*;
 
@@ -186,7 +196,7 @@ mod imp {
                         let idx = param.parse::<i32>().unwrap();
 
                         if state.set_enum("sort-direction", idx).is_ok() {
-                            this.sorter.changed(gtk::SorterChange::Inverted);
+                            this.sorter.changed(sorter_change_on_direction_flip(&state));
                             action.set_state(&param.to_variant());
                         }
                     }
@@ -228,12 +238,31 @@ mod imp {
                             )
                         }
                         4 => {
-                            // AlbumArtist
-                            g_cmp_str_options(
+                            // AlbumArtist, then release date and title (always ascending)
+                            let by_artist = g_cmp_str_options(
                                 album1.get_sortable_artist_tag(),
                                 album2.get_sortable_artist_tag(),
                                 nulls_first,
                                 asc,
+                                case_sensitive,
+                            );
+                            if by_artist != gtk::Ordering::Equal {
+                                return by_artist;
+                            }
+                            let by_date = g_cmp_options(
+                                album1.get_release_date().as_ref(),
+                                album2.get_release_date().as_ref(),
+                                nulls_first,
+                                true,
+                            );
+                            if by_date != gtk::Ordering::Equal {
+                                return by_date;
+                            }
+                            g_cmp_str_options(
+                                Some(album1.get_sortable_title()),
+                                Some(album2.get_sortable_title()),
+                                nulls_first,
+                                true,
                                 case_sensitive,
                             )
                         }
@@ -276,9 +305,9 @@ mod imp {
                 clone!(
                     #[weak(rename_to = this)]
                     self,
-                    move |_, _| {
-                        // Don't actually sort, just flip the results :)
-                        this.sorter.changed(gtk::SorterChange::Inverted);
+                    move |state, _| {
+                        // Where possible, don't actually sort, just flip the results :)
+                        this.sorter.changed(sorter_change_on_direction_flip(state));
                     }
                 ),
             )));
