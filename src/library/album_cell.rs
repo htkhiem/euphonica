@@ -16,7 +16,7 @@ use std::{
 
 use crate::{
     cache::{
-        Cache, CacheState,
+        Cache, CacheState, Error,
         placeholders::{EMPTY_ALBUM_STRING, EMPTY_ARTIST_STRING},
     },
     common::{
@@ -327,11 +327,15 @@ impl AlbumCell {
                 closure_local!(
                     #[weak(rename_to = this)]
                     res,
-                    move |_: CacheState, uri: String, _: gdk::Texture, thumb: gdk::Texture| {
+                    move |_: CacheState, uri: String, hires: gdk::Texture, thumb: gdk::Texture| {
                         if this.imp().album.upgrade().is_some_and(|a| {
                             a.get_folder_uri() == uri || a.get_example_uri() == uri
                         }) {
-                            this.imp().cover.show(&thumb);
+                            this.imp().cover.show(if this.imp().hires.get() {
+                                &hires
+                            } else {
+                                &thumb
+                            });
                         }
                     }
                 ),
@@ -388,38 +392,54 @@ impl AlbumCell {
     }
 
     #[inline]
-    async fn load_textures(&self, use_thumbnail: bool) {
-        if let Some(album) = self.album() {
-            let cache = self.imp().cache.get().unwrap();
-            self.imp().cover.show_spinner();
-            let res = cache
-                .clone()
-                .get_album_cover(album.get_info(), use_thumbnail)
-                .await;
-            // Check again as cell might have been bound to a different album
-            // while awaiting
-            if self
-                .album()
+    async fn load_textures(&self) {
+        let Some(album) = self.album() else {
+            return;
+        };
+        let cache = self.imp().cache.get().unwrap();
+        let cover = self.imp().cover.get();
+        // The cell might have been bound to a different album while awaiting.
+        let is_still_bound = || {
+            self.album()
                 .is_some_and(|a| a.get_info().get_comp_id() == album.get_info().get_comp_id())
-            {
-                match res {
-                    Ok(Some(tex)) => {
-                        self.imp().cover.show(&tex);
-                    }
-                    Ok(None) => {
-                        self.imp().cover.clear();
-                    }
-                    Err(e) => {
-                        self.imp().cover.clear();
-                        eprintln!(
-                            "Failed to read cover for album `{}` (URI `{}`):\n{:?}",
-                            album.get_title(),
-                            album.get_folder_uri(),
-                            e
-                        );
-                    }
-                }
+        };
+        let print_error = |e: Error| {
+            eprintln!(
+                "Failed to read cover for album `{}` (URI `{}`):\n{:?}",
+                album.get_title(),
+                album.get_folder_uri(),
+                e
+            );
+        };
+
+        // Decoding a hires texture is slow,
+        // so always show the thumbnail first and swap in the hires one later.
+        cover.show_spinner();
+        let thumb = cache.clone().get_album_cover(album.get_info(), true).await;
+        if !is_still_bound() {
+            return;
+        }
+        match thumb {
+            Ok(Some(tex)) => cover.show(&tex),
+            Ok(None) => {
+                cover.clear();
+                return;
             }
+            Err(e) => {
+                cover.clear();
+                print_error(e);
+                return;
+            }
+        }
+
+        if !self.imp().hires.get() {
+            return;
+        }
+        // On failure, keep showing the thumbnail.
+        match cache.clone().get_album_cover(album.get_info(), false).await {
+            Ok(Some(tex)) if is_still_bound() => cover.show(&tex),
+            Ok(_) => {}
+            Err(e) => print_error(e),
         }
     }
 
@@ -435,7 +455,7 @@ impl AlbumCell {
             .replace(Some(glib::spawn_future_local(async move {
                 // Wait first to give unmap() a chance to cancel this outright
                 glib::timeout_future(TEXTURE_LOAD_DELAY_MS).await;
-                this.load_textures(!this.imp().hires.get()).await;
+                this.load_textures().await;
             })));
     }
 
