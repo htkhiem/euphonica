@@ -26,7 +26,130 @@
                     </child>
                     <child type="end">
                       <object class="GtkMenuButton" id="view_options_btn">
-                        <property name="menu-model">view_options_model</property>
+                        <property name="popover">
+                          <object class="GtkPopover">
+                            <child>
+                              <object class="GtkGrid">
+                                <property name="row-spacing">6</property>
+                                <property name="column-spacing">12</property>
+                                <child>
+                                  <object class="GtkLabel">
+                                    <property name="label" translatable="yes">Sort by</property>
+                                    <property name="xalign">0</property>
+                                    <layout>
+                                      <property name="column">0</property>
+                                      <property name="row">0</property>
+                                    </layout>
+                                  </object>
+                                </child>
+                                <child>
+                                  <object class="GtkDropDown" id="sort_by">
+                                    <property name="model">
+                                      <object class="GtkStringList">
+                                        <items>
+                                          <!-- Rust code matches by index, see ALBUM_SORT_BY_NICKS. -->
+                                          <item translatable="yes">Album Title</item>
+                                          <item>AlbumArtist</item>  <!-- Don't translate this as this is referring to the tag itself -->
+                                          <item translatable="yes">Release Date</item>
+                                          <item translatable="yes">Rating</item>
+                                        </items>
+                                      </object>
+                                    </property>
+                                    <layout>
+                                      <property name="column">1</property>
+                                      <property name="row">0</property>
+                                    </layout>
+                                  </object>
+                                </child>
+                                <child>
+                                  <object class="GtkCheckButton" id="reverse">
+                                    <property name="label" translatable="yes">Reverse</property>
+                                    <layout>
+                                      <property name="column">2</property>
+                                      <property name="row">0</property>
+                                    </layout>
+                                  </object>
+                                </child>
+                                <child>
+                                  <object class="GtkLabel">
+                                    <property name="label" translatable="yes">Then by</property>
+                                    <property name="xalign">0</property>
+                                    <layout>
+                                      <property name="column">0</property>
+                                      <property name="row">1</property>
+                                    </layout>
+                                  </object>
+                                </child>
+                                <child>
+                                  <object class="GtkDropDown" id="sort_by_2">
+                                    <property name="model">
+                                      <object class="GtkStringList">
+                                        <items>
+                                          <!-- Rust code matches by index, see ALBUM_SORT_BY_NICKS. -->
+                                          <item translatable="yes">Album Title</item>
+                                          <item>AlbumArtist</item>  <!-- Don't translate this as this is referring to the tag itself -->
+                                          <item translatable="yes">Release Date</item>
+                                          <item translatable="yes">Rating</item>
+                                        </items>
+                                      </object>
+                                    </property>
+                                    <layout>
+                                      <property name="column">1</property>
+                                      <property name="row">1</property>
+                                    </layout>
+                                  </object>
+                                </child>
+                                <child>
+                                  <object class="GtkCheckButton" id="reverse_2">
+                                    <property name="label" translatable="yes">Reverse</property>
+                                    <layout>
+                                      <property name="column">2</property>
+                                      <property name="row">1</property>
+                                    </layout>
+                                  </object>
+                                </child>
+                                <child>
+                                  <object class="GtkLabel">
+                                    <property name="label" translatable="yes">Finally by</property>
+                                    <property name="xalign">0</property>
+                                    <layout>
+                                      <property name="column">0</property>
+                                      <property name="row">2</property>
+                                    </layout>
+                                  </object>
+                                </child>
+                                <child>
+                                  <object class="GtkDropDown" id="sort_by_3">
+                                    <property name="model">
+                                      <object class="GtkStringList">
+                                        <items>
+                                          <!-- Rust code matches by index, see ALBUM_SORT_BY_NICKS. -->
+                                          <item translatable="yes">Album Title</item>
+                                          <item>AlbumArtist</item>  <!-- Don't translate this as this is referring to the tag itself -->
+                                          <item translatable="yes">Release Date</item>
+                                          <item translatable="yes">Rating</item>
+                                        </items>
+                                      </object>
+                                    </property>
+                                    <layout>
+                                      <property name="column">1</property>
+                                      <property name="row">2</property>
+                                    </layout>
+                                  </object>
+                                </child>
+                                <child>
+                                  <object class="GtkCheckButton" id="reverse_3">
+                                    <property name="label" translatable="yes">Reverse</property>
+                                    <layout>
+                                      <property name="column">2</property>
+                                      <property name="row">2</property>
+                                    </layout>
+                                  </object>
+                                </child>
+                              </object>
+                            </child>
+                          </object>
+                        </property>
                         <property name="icon-name">view-sort-ascending-symbolic</property>
                       </object>
                     </child>
@@ -149,115 +272,5 @@
         </child>
       </object>
     </child>
-    <menu id="view_options_model">
-      <section>
-        <attribute name="label" translatable="yes">Sort By</attribute>
-        <item>
-          <attribute name="label" translatable="true">Album Title</attribute>
-          <attribute name="action">album-view.sort-by</attribute>
-          <attribute name="target">album-title</attribute>
-        </item>
-        <item>
-          <attribute name="label">AlbumArtist</attribute>  <!-- Don't translate this as this is referring to the tag itself -->
-          <attribute name="action">album-view.sort-by</attribute>
-          <attribute name="target">album-artist</attribute>
-        </item>
-        <item>
-          <attribute name="label" translatable="true">Release Date</attribute>
-          <attribute name="action">album-view.sort-by</attribute>
-          <attribute name="target">release-date</attribute>
-        </item>
-        <item>
-          <attribute name="label" translatable="true">Rating</attribute>
-          <attribute name="action">album-view.sort-by</attribute>
-          <attribute name="target">rating</attribute>
-        </item>
-      </section>
-      <section>
-        <attribute name="label" translatable="yes">Sort Direction</attribute>
-        <item>
-          <attribute name="label" translatable="true">Ascending</attribute>
-          <attribute name="action">album-view.sort-direction</attribute>
-          <attribute name="target">asc</attribute>
-        </item>
-        <item>
-          <attribute name="label" translatable="true">Descending</attribute>
-          <attribute name="action">album-view.sort-direction</attribute>
-          <attribute name="target">desc</attribute>
-        </item>
-      </section>
-      <section>
-        <attribute name="label" translatable="yes">Then By</attribute>
-        <item>
-          <attribute name="label" translatable="true">Album Title</attribute>
-          <attribute name="action">album-view.sort-by-2</attribute>
-          <attribute name="target">album-title</attribute>
-        </item>
-        <item>
-          <attribute name="label">AlbumArtist</attribute>  <!-- Don't translate this as this is referring to the tag itself -->
-          <attribute name="action">album-view.sort-by-2</attribute>
-          <attribute name="target">album-artist</attribute>
-        </item>
-        <item>
-          <attribute name="label" translatable="true">Release Date</attribute>
-          <attribute name="action">album-view.sort-by-2</attribute>
-          <attribute name="target">release-date</attribute>
-        </item>
-        <item>
-          <attribute name="label" translatable="true">Rating</attribute>
-          <attribute name="action">album-view.sort-by-2</attribute>
-          <attribute name="target">rating</attribute>
-        </item>
-      </section>
-      <section>
-        <attribute name="label" translatable="yes">Direction</attribute>
-        <item>
-          <attribute name="label" translatable="true">Ascending</attribute>
-          <attribute name="action">album-view.sort-direction-2</attribute>
-          <attribute name="target">asc</attribute>
-        </item>
-        <item>
-          <attribute name="label" translatable="true">Descending</attribute>
-          <attribute name="action">album-view.sort-direction-2</attribute>
-          <attribute name="target">desc</attribute>
-        </item>
-      </section>
-      <section>
-        <attribute name="label" translatable="yes">Finally By</attribute>
-        <item>
-          <attribute name="label" translatable="true">Album Title</attribute>
-          <attribute name="action">album-view.sort-by-3</attribute>
-          <attribute name="target">album-title</attribute>
-        </item>
-        <item>
-          <attribute name="label">AlbumArtist</attribute>  <!-- Don't translate this as this is referring to the tag itself -->
-          <attribute name="action">album-view.sort-by-3</attribute>
-          <attribute name="target">album-artist</attribute>
-        </item>
-        <item>
-          <attribute name="label" translatable="true">Release Date</attribute>
-          <attribute name="action">album-view.sort-by-3</attribute>
-          <attribute name="target">release-date</attribute>
-        </item>
-        <item>
-          <attribute name="label" translatable="true">Rating</attribute>
-          <attribute name="action">album-view.sort-by-3</attribute>
-          <attribute name="target">rating</attribute>
-        </item>
-      </section>
-      <section>
-        <attribute name="label" translatable="yes">Direction</attribute>
-        <item>
-          <attribute name="label" translatable="true">Ascending</attribute>
-          <attribute name="action">album-view.sort-direction-3</attribute>
-          <attribute name="target">asc</attribute>
-        </item>
-        <item>
-          <attribute name="label" translatable="true">Descending</attribute>
-          <attribute name="action">album-view.sort-direction-3</attribute>
-          <attribute name="target">desc</attribute>
-        </item>
-      </section>
-    </menu>
   </template>
 </interface>

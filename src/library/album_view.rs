@@ -37,6 +37,18 @@ mod imp {
         #[template_child]
         pub view_options_btn: TemplateChild<gtk::MenuButton>,
         #[template_child]
+        pub sort_by: TemplateChild<gtk::DropDown>,
+        #[template_child]
+        pub sort_by_2: TemplateChild<gtk::DropDown>,
+        #[template_child]
+        pub sort_by_3: TemplateChild<gtk::DropDown>,
+        #[template_child]
+        pub reverse: TemplateChild<gtk::CheckButton>,
+        #[template_child]
+        pub reverse_2: TemplateChild<gtk::CheckButton>,
+        #[template_child]
+        pub reverse_3: TemplateChild<gtk::CheckButton>,
+        #[template_child]
         pub search_btn: TemplateChild<gtk::ToggleButton>,
         #[template_child]
         pub search_mode: TemplateChild<gtk::DropDown>,
@@ -144,6 +156,14 @@ mod imp {
                     _ => Some("view-sort-descending-symbolic".to_value()),
                 })
                 .build();
+            let tier_widgets = [
+                (self.sort_by.get(), self.reverse.get()),
+                (self.sort_by_2.get(), self.reverse_2.get()),
+                (self.sort_by_3.get(), self.reverse_3.get()),
+            ];
+            for (keys, (sort_by, reverse)) in ALBUM_SORT_SETTINGS.into_iter().zip(tier_widgets) {
+                constructed_bind_sort_tier(&state, keys, &sort_by, &reverse);
+            }
 
             self.sorter.set_sort_func(clone!(
                 #[strong]
@@ -315,6 +335,8 @@ mod imp {
 
             // Create a new action group and add actions to it
             let actions = SimpleActionGroup::new();
+            // The sort popover binds to the settings directly.
+            // These actions are kept so keybinds or other UI can use them later.
             for (sort_by, sort_direction) in ALBUM_SORT_SETTINGS {
                 actions.add_action(&state.create_action(sort_by));
                 actions.add_action(&state.create_action(sort_direction));
@@ -326,6 +348,47 @@ mod imp {
             static SIGNALS: OnceLock<Vec<Signal>> = OnceLock::new();
             SIGNALS.get_or_init(|| vec![Signal::builder("show-sidebar-clicked").build()])
         }
+    }
+
+    // Order matches the items of the sort-by dropdowns in album-view.ui.
+    const ALBUM_SORT_BY_NICKS: [&str; 4] =
+        ["album-title", "album-artist", "release-date", "rating"];
+
+    fn constructed_bind_sort_tier(
+        state: &gio::Settings,
+        (sort_by_key, sort_direction_key): (&str, &str),
+        sort_by: &gtk::DropDown,
+        reverse: &gtk::CheckButton,
+    ) {
+        // A failing get mapping would make GSettings show the key's default instead,
+        // so a value without a dropdown item (e.g. `filename`) clears the selection.
+        state
+            .bind(sort_by_key, sort_by, "selected")
+            .mapping(|nick, _| {
+                let nick = nick.get::<String>()?;
+                let idx = ALBUM_SORT_BY_NICKS
+                    .iter()
+                    .position(|n| *n == nick)
+                    .map_or(gtk::INVALID_LIST_POSITION, |idx| idx as u32);
+                Some(idx.to_value())
+            })
+            .set_mapping(|idx, _| {
+                let nick = ALBUM_SORT_BY_NICKS.get(idx.get::<u32>().ok()? as usize)?;
+                Some(nick.to_variant())
+            })
+            .build();
+        state
+            .bind(sort_direction_key, reverse, "active")
+            .mapping(|dir, _| Some((dir.get::<String>()? == "desc").to_value()))
+            .set_mapping(|reverse, _| {
+                let dir = if reverse.get::<bool>().ok()? {
+                    "desc"
+                } else {
+                    "asc"
+                };
+                Some(dir.to_variant())
+            })
+            .build();
     }
 
     impl WidgetImpl for AlbumView {}
