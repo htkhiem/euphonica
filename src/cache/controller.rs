@@ -943,7 +943,8 @@ impl Cache {
             return Ok(Some(local_res));
         }
 
-        if external && artist.get_mbid().is_some() {
+        if external {
+            // Check again since after the above await another call might have fetched this.
             if !overwrite
                 && let Ok(Some(local_res)) = self.get_local_artist_meta(artist.clone()).await
             {

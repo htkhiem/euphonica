@@ -4,7 +4,6 @@ use crate::utils::{get_image_cache_path, get_time_ago_desc, strip_filename_linux
 use gtk::glib;
 use gtk::prelude::*;
 use gtk::subclass::prelude::*;
-use itertools::Itertools;
 use mpd::song::Song as SongInfo;
 use mpris_server::{Time, zbus::zvariant::ObjectPath};
 use once_arc::OnceArc;
@@ -76,63 +75,16 @@ impl QualityGrade {
 
 /// Starting from v1.0 most of the song data pre-processing has been moved up to the rust-mpd fork.
 /// As such, the Song GObject now wraps mpd::song::Song directly.
-// #[derive(Debug, Clone, Derivative)]
-// #[derivative(Default)]
-// pub struct SongInfo {
-//     // TODO: Might want to refactor to Into<Cow<'a, str>>
-//     #[derivative(Default(value = "String::from(\"\")"))]
-//     pub uri: String,
-//     #[derivative(Default(value = "String::from(\"Untitled Song\")"))]
-//     pub title: String, // Might just be filename
-//     // last_mod: RefCell<Option<u64>>,
-//     pub artists: Vec<ArtistInfo>,
-//     pub duration: Option<Duration>, // Default to 0 if somehow the option in mpd's Song is None
-//     pub queue_id: Option<u32>,
-//     pub queue_pos: Option<u32>, // Only set once at creation. Subsequent updates are kept in the Song GObject.
-//     // range: Option<Range>,
-//     pub album: Option<AlbumInfo>,
-//     pub track: Option<i64>,
-//     pub disc: Option<i64>,
-//     // TODO: add albumsort
-//     // Store Date instead of string to save a tiny bit of memory.
-//     // Also gives us formatting flexibility in the future.
-//     pub release_date: Option<Date>,
-//     // TODO: Add more fields for managing classical music, such as composer, ensemble and movement number
-//     quality_grade: QualityGrade,
-//     // MusicBrainz stuff
-//     pub mbid: Option<String>,
-//     pub last_modified: Option<String>,
-//     pub last_played: Option<OffsetDateTime>,
-// }
 
-// impl SongInfo {
-//     pub fn new() -> Self {
-//         Self::default()
-//     }
-
-//     pub fn into_album_info(self) -> Option<AlbumInfo> {
-//         self.album
-//     }
-
-//     pub fn into_artist_infos(self) -> Vec<ArtistInfo> {
-//         self.artists
-//     }
-
-//     /// Get something to serve as this song's internal ID for
-//     /// filtering/comparison purposes.
-//     /// Order of preference:
-//     /// 1. MBID
-//     /// 2. URI
-//     pub fn get_comp_id(&self) -> &str {
-//         self.mbid.as_deref().unwrap_or(self.uri.as_ref())
-//     }
-
-//     /// Efficient replacement for the "original artist tag" field which doesn't work correctly for songs
-//     /// with multiple Artist tags.
-//     pub fn artist_names(&self) -> impl Iterator<Item = &str> {
-//         self.artists.iter().map(|ai| ai.name.as_str())
-//     }
-// }
+pub fn get_title_from_mpd_song(song: &SongInfo) -> String {
+    let path = Path::new(&song.file);
+    song.title
+        .as_deref()
+        .or(song.name.as_deref())
+        .or_else(|| path.file_stem().map(|stem| stem.to_str()).flatten())
+        .unwrap_or_else(|| "")
+        .to_string()
+}
 
 mod imp {
     use std::cell::RefCell;
@@ -320,17 +272,9 @@ impl Song {
 
     /// Display name for this song (or stream)
     pub fn get_name(&self) -> &str {
-        self.imp().name.get_or_init(|| {
-            let inner = self.get_inner();
-            let path = Path::new(&inner.file);
-            inner
-                .title
-                .as_deref()
-                .or(inner.name.as_deref())
-                .or_else(|| path.file_stem().map(|stem| stem.to_str()).flatten())
-                .unwrap_or_else(|| "")
-                .to_string()
-        })
+        self.imp()
+            .name
+            .get_or_init(|| get_title_from_mpd_song(self.get_inner()))
     }
 
     pub fn get_last_modified(&self) -> Option<&str> {
@@ -357,61 +301,6 @@ impl Song {
         }
         0
     }
-
-    // pub async fn get_artists_lazy(&self) -> Box<dyn Fn() -> Arc<Vec<ArtistInfo>>> {
-    //     let inner = self.get_inner_arc();
-    //     let artists_arc = self.imp().artists.clone();
-    //     Box::new(move || {
-    //         artists_arc.init(|| {
-    //             // Flatten artist tag only since it's usually the less standardised one.
-    //             // ArtistSort and musicbrainz_artistid are expected to follow the Vorbis
-    //             // standard since they're likely tagged by proper autotagging software.
-    //             let mut res: Vec<ArtistInfo> = Vec::new();
-    //             let sort_tags = &inner.artistsorts;
-    //             let mbids = &inner.artist_mbids;
-    //             for (i, name) in inner
-    //                 .artists
-    //                 .iter()
-    //                 .map(|s| parse_mb_artist_tag(s))
-    //                 .flatten()
-    //                 .enumerate()
-    //             {
-    //                 res.push(ArtistInfo {
-    //                     name: name.to_owned(),
-    //                     sort_tag: sort_tags.get(i).map(ToOwned::to_owned),
-    //                     mbid: mbids.get(i).map(ToOwned::to_owned),
-    //                     genres: FxHashSet::default(),
-    //                     example_uris: Vec::with_capacity(0),
-    //                     is_composer: false,
-    //                     is_albumartist: false,
-    //                 });
-    //             }
-    //             res
-    //         })
-    //     })
-    //     // if let Some(artists) = self.imp().artists.load(Ordering::Acquire) {
-    //     //     artists
-    //     // } else {
-    //     //     // Temporarily take out then put back in again since Shared future handles ain't Copy.
-    //     //     match self.imp().artists_init.take() {
-    //     //         InitState::Pending(fut) => {
-    //     //             // SYNCHRONOUS PLZ
-    //     //             self.imp().artists_init.set(InitState::Pending(fut.clone()));
-    //     //             // Safe to await now
-    //     //             fut.await;
-    //     //         }
-    //     //         InitState::Uninitialized => {
-    //     //             let fut = self.init_artists().shared();
-    //     //             self.imp().artists_init.set(InitState::Pending(
-    //     //                 fut.clone()
-    //     //             ));  // tell other callers to await with us
-    //     //             // Safe to await now
-    //     //             fut.await;
-    //     //         }
-    //     //     }
-    //     //     self.imp().artists.load(Ordering::Acquire).unwrap()
-    //     // }
-    // }
 
     /// Get artist names separated by commas. Will look weird if a song was from artists
     /// whose names contain commas themselves, like Earth, Wind & Fire.
@@ -446,74 +335,6 @@ impl Song {
     /// Just returns a "reader class". No actual data cloning.
     pub fn get_album_info(&self) -> Option<AlbumInfo> {
         AlbumInfo::from_mpd_songs(vec![self.get_inner_arc()])
-        // self.imp().album.init(|| {
-        //     Arc::new(if let Some(title) = inner.album.as_deref() {
-        //     // Parse albumartists
-        //     // let mut albumartists: Vec<ArtistInfo> = Vec::new();
-        //     // let sort_tags = &inner.albumartistsorts;
-        //     // let mbids = &inner.albumartist_mbids;
-        //     // // Flatten artist tag only since it's usually the less standardised one.
-        //     // // ArtistSort and musicbrainz_artistid are expected to follow the Vorbis
-        //     // // standard since they're likely tagged by proper autotagging software.
-        //     // for name in inner.albumartists
-        //     //     .iter()
-        //     //     .map(|s| parse_mb_artist_tag(s))
-        //     //     .flatten()
-        //     //     .enumerate()
-        //     // {
-        //     //     albumartists.push(ArtistInfo {
-        //     //         name: name.to_owned(),
-        //     //         sort_tag: sort_tags.get(i).map(ToOwned::to_owned),
-        //     //         mbid: mbids.get(i).map(ToOwned::to_owned),
-        //     //         genres: FxHashSet::default(),
-        //     //         example_uris: Vec::with_capacity(0),
-        //     //         is_composer: false,
-        //     //         is_albumartist: false,
-        //     //     });
-        //     // }
-        //     Some(AlbumInfo {
-        //         title,
-        //         albumsort: inner.albumsort.clone(),
-        //         example_uri: inner.file.clone(),
-        //         albumartists: inner.albumartists.clone(),
-        //         albumartistsorts: inner.albumartistsorts.clone(),
-        //         genres: inner.genres.clone(),
-        //         cover: None,
-        //         release_date: inner.release_date.as_deref().or(inner.original_date.as_deref()).map(|s| s.to_owned()),
-
-        //     })
-
-        //     if let Some(album) = res.album.as_mut() {
-        //         album.mbid = album_mbid;
-        //         album.albumsort = albumsort; //.or_else(|| {res.artist_tag.clone()});
-        //         album.albumartistsort = albumartistsort;
-        //         album.release_date = res.release_date;
-        //         album.date_tag = date_tag;
-        //         if !genre_tags.is_empty() {
-        //             album.add_genres_from_tags(&genre_tags);
-        //         }
-        //         // Assume the albumartist IDs are given in the same order as the albumartist tags
-        //         if let Some(album_artist_str) =
-        //             albumartist.as_ref().or_else(|| res.artist_tag.as_ref())
-        //         {
-        //             album.add_artists_from_string(album_artist_str);
-        //         }
-        //         album.albumartist = albumartist;
-        //         for (idx, id) in album_artist_mbids.drain(..).enumerate() {
-        //             if idx < album.artists.len() {
-        //                 let _ = album.artists[idx].mbid.replace(id);
-        //             }
-        //         }
-        //     }
-        //     Arc::new(Some(AlbumInfo::new(&song.file))>
-        // } else {
-        //     None
-        // })
-        // })
-        // let res = APP_THREAD_POOL.push_future(move || {
-        //     let mut album_info: Option<AlbumInfo> =
-        // }).expect("glib threadpool error").await.expect("glib threadpool error");
-        // self.imp().artists.store(Arc::new(res), Ordering::Relaxed);
     }
 
     pub fn get_album_title(&self) -> Option<&str> {

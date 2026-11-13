@@ -1063,10 +1063,10 @@ impl MpdWrapper {
                     Vec::with_capacity(album_count);
 
                 for i in 0..songs.len() {
-                    let mut song = std::mem::take(&mut songs[i]);
+                    let song = Arc::new(std::mem::take(&mut songs[i]));
                     if song.album.is_some() {
                         // Handle artist first before surrendering the song instance to Album's Arc
-                        for artist in ArtistInfo::copy_from_song(&mut song, true) {
+                        for artist in ArtistInfo::copy_from_song(song.clone(), true) {
                             let comp_id = artist.get_comp_id();
                             let existing =
                                 albumartists.entry(comp_id.to_string()).or_insert_with(|| {
@@ -1084,7 +1084,7 @@ impl MpdWrapper {
                         // For our purposes just one song per album should be enough (here we only read
                         // albumartist tags, which all songs within the same album are expected to be
                         // tagged the same way).
-                        let album_info = AlbumInfo::from_mpd_songs(vec![Arc::new(song)]).unwrap();
+                        let album_info = AlbumInfo::from_mpd_songs(vec![song]).unwrap();
                         let rating;
                         if fetch_stickers {
                             // Prefer new-style filter-based rating; fall back to legacy title-based rating.
@@ -1322,16 +1322,17 @@ impl MpdWrapper {
         Ok(asyncified
             .call(move |_| {
                 let mut res: FxHashMap<String, ArtistInfo> = FxHashMap::default();
-                for (mut song, _genres) in songs.into_iter().zip(genres) {
+                for (song, _genres) in songs.into_iter().zip(genres) {
                     // Here we're fetching song.artists instead of song.album.artists
-                    for artist in ArtistInfo::take_from_song(&mut song, false) {
+                    let genres = song.genres.clone();
+                    for artist in ArtistInfo::take_from_song(song, false) {
                         let existing =
                             res.entry(artist.get_comp_id().to_string())
                                 .or_insert_with(|| {
                                     // Haven't seen this artist before => push new
                                     artist
                                 });
-                        existing.insert_genres(&song.genres);
+                        existing.insert_genres(&genres);
                     }
                 }
                 res.into_iter()
@@ -1390,8 +1391,8 @@ impl MpdWrapper {
             .call(move |_| {
                 let mut res = Vec::with_capacity(recent_names_set.len());
                 let mut already_parsed: FxHashSet<String> = FxHashSet::default();
-                for mut song in songs {
-                    let artists = ArtistInfo::take_from_song(&mut song, false);
+                for song in songs {
+                    let artists = ArtistInfo::take_from_song(song, false);
                     for artist in artists.into_iter() {
                         if recent_names_set.contains(&artist.name)
                             && already_parsed.insert(artist.get_comp_id().to_owned())
