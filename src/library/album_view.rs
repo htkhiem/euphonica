@@ -347,7 +347,7 @@ mod imp {
         sort_by: &gtk::DropDown,
         reverse: &gtk::CheckButton,
     ) {
-        // A failing get mapping would make GSettings show the key's default instead,
+        // Failure to get mapping would make GSettings show the key's default instead,
         // so a value without a dropdown item (e.g. `filename`) clears the selection.
         state
             .bind(sort_by_key, sort_by, "selected")

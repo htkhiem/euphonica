@@ -95,7 +95,6 @@ impl AlbumSortCriterion {
     }
 }
 
-/// A tier whose `sort-by` value doesn't apply to albums is `None`.
 pub fn album_sort_tiers(state: &gio::Settings) -> [Option<AlbumSortTier>; 3] {
     ALBUM_SORT_SETTINGS.map(|(sort_by, sort_direction)| {
         let criterion = AlbumSortCriterion::from_nick(&state.string(sort_by))?;
