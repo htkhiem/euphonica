@@ -9,27 +9,17 @@ use gtk::{
 use std::cell::{OnceCell, RefCell};
 use std::{cell::Cell, cmp::Ordering, rc::Rc, sync::OnceLock};
 
-use super::{AlbumCell, AlbumContentView, Library, TagsFilter};
+use super::{
+    AlbumCell, AlbumContentView, Library, TagsFilter,
+    album_sort::{AlbumSortOrder, SortDirection, compare_albums},
+};
 use crate::{
     cache::{Cache, sqlite},
     client::ClientState,
     common::{Album, ContentStack, Rating},
-    utils::{
-        LazyInit, SearchableView, g_cmp_options, g_cmp_str_options, g_search_substr,
-        settings_manager,
-    },
+    utils::{LazyInit, SearchableView, g_search_substr, settings_manager},
     window::EuphonicaWindow,
 };
-
-fn sorter_change_on_direction_flip(state: &gtk::gio::Settings) -> gtk::SorterChange {
-    // AlbumArtist sorts its secondary keys ascending regardless of direction,
-    // so flipping the direction is not a pure reversal there.
-    if state.enum_("sort-by") == 4 {
-        gtk::SorterChange::Different
-    } else {
-        gtk::SorterChange::Inverted
-    }
-}
 
 mod imp {
     use super::*;
@@ -196,7 +186,7 @@ mod imp {
                         let idx = param.parse::<i32>().unwrap();
 
                         if state.set_enum("sort-direction", idx).is_ok() {
-                            this.sorter.changed(sorter_change_on_direction_flip(&state));
+                            this.sorter.changed(gtk::SorterChange::Different);
                             action.set_state(&param.to_variant());
                         }
                     }
@@ -217,75 +207,21 @@ mod imp {
                         .downcast_ref::<Album>()
                         .expect("Sort obj has to be a common::Album.");
 
-                    // Should we sort ascending?
-                    let asc = state.enum_("sort-direction") > 0;
+                    let direction = if state.enum_("sort-direction") > 0 {
+                        SortDirection::Ascending
+                    } else {
+                        SortDirection::Descending
+                    };
                     // Should the sorting be case-sensitive, i.e. uppercase goes first?
                     let case_sensitive = library_settings.boolean("sort-case-sensitive");
                     // Should nulls be put first or last?
                     let nulls_first = library_settings.boolean("sort-nulls-first");
 
-                    // Vary behaviour depending on sort menu
-                    match state.enum_("sort-by") {
-                        // Refer to the io.github.htkhiem.Euphonica.sortby enum the gschema
-                        3 => {
-                            // Album title
-                            g_cmp_str_options(
-                                Some(album1.get_sortable_title()),
-                                Some(album2.get_sortable_title()),
-                                nulls_first,
-                                asc,
-                                case_sensitive,
-                            )
-                        }
-                        4 => {
-                            // AlbumArtist, then release date and title (always ascending)
-                            let by_artist = g_cmp_str_options(
-                                album1.get_sortable_artist_tag(),
-                                album2.get_sortable_artist_tag(),
-                                nulls_first,
-                                asc,
-                                case_sensitive,
-                            );
-                            if by_artist != gtk::Ordering::Equal {
-                                return by_artist;
-                            }
-                            let by_date = g_cmp_options(
-                                album1.get_release_date().as_ref(),
-                                album2.get_release_date().as_ref(),
-                                nulls_first,
-                                true,
-                            );
-                            if by_date != gtk::Ordering::Equal {
-                                return by_date;
-                            }
-                            g_cmp_str_options(
-                                Some(album1.get_sortable_title()),
-                                Some(album2.get_sortable_title()),
-                                nulls_first,
-                                true,
-                                case_sensitive,
-                            )
-                        }
-                        5 => {
-                            // Release date
-                            g_cmp_options(
-                                album1.get_release_date().as_ref(),
-                                album2.get_release_date().as_ref(),
-                                nulls_first,
-                                asc,
-                            )
-                        }
-                        8 => {
-                            // Rating
-                            g_cmp_options(
-                                album1.get_rating().as_ref(),
-                                album2.get_rating().as_ref(),
-                                nulls_first,
-                                asc,
-                            )
-                        }
-                        _ => unreachable!(),
-                    }
+                    let Some(primary) = AlbumSortOrder::from_sortby(state.enum_("sort-by")) else {
+                        unreachable!()
+                    };
+                    let keys = primary.default_keys(direction);
+                    compare_albums(album1, album2, &keys, nulls_first, case_sensitive)
                 }
             ));
 
@@ -305,9 +241,9 @@ mod imp {
                 clone!(
                     #[weak(rename_to = this)]
                     self,
-                    move |state, _| {
-                        // Where possible, don't actually sort, just flip the results :)
-                        this.sorter.changed(sorter_change_on_direction_flip(state));
+                    move |_, _| {
+                        // Not Inverted: the tiebreaker keys keep their own direction
+                        this.sorter.changed(gtk::SorterChange::Different);
                     }
                 ),
             )));
