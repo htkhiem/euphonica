@@ -1,8 +1,7 @@
 use adw::prelude::*;
 use adw::subclass::prelude::*;
 use gtk::{
-    CompositeTemplate, ListItem, SignalListItemFactory, SingleSelection,
-    gio::{self, SimpleActionGroup},
+    CompositeTemplate, ListItem, SignalListItemFactory, SingleSelection, gio,
     glib::{self},
     glib::{Properties, SignalHandlerId, WeakRef, clone, subclass::Signal},
 };
@@ -332,16 +331,6 @@ mod imp {
                 .transform_to(|_, val: u32| Some(val > 0))
                 .sync_create()
                 .build();
-
-            // Create a new action group and add actions to it
-            let actions = SimpleActionGroup::new();
-            // The sort popover binds to the settings directly.
-            // These actions are kept so keybinds or other UI can use them later.
-            for (sort_by, sort_direction) in ALBUM_SORT_SETTINGS {
-                actions.add_action(&state.create_action(sort_by));
-                actions.add_action(&state.create_action(sort_direction));
-            }
-            self.obj().insert_action_group("album-view", Some(&actions));
         }
 
         fn signals() -> &'static [Signal] {
