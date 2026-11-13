@@ -11,6 +11,7 @@ use mpd::{
 use std::{
     cell::{Cell, OnceCell, RefCell},
     cmp::Ordering,
+    collections::HashMap,
     rc::Rc,
     sync::OnceLock,
 };
@@ -27,6 +28,34 @@ use crate::{
 };
 
 use super::Player;
+
+// Swapping Song objects also moves the highlighted row away from the mouse.
+// GTK then moves the highlight back on the next frame, briefly highlighting both rows.
+// To avoid this, we keep one item per queue position and change its song instead.
+mod queue_row_imp {
+    use super::*;
+
+    #[derive(Debug, Default, Properties)]
+    #[properties(wrapper_type = super::QueueRow)]
+    pub struct QueueRow {
+        #[property(get, set)]
+        pub song: RefCell<Option<Song>>,
+        pub row: WeakRef<SongRow>,
+    }
+
+    #[glib::object_subclass]
+    impl ObjectSubclass for QueueRow {
+        const NAME: &'static str = "EuphonicaQueueRow";
+        type Type = super::QueueRow;
+    }
+
+    #[glib::derived_properties]
+    impl ObjectImpl for QueueRow {}
+}
+
+glib::wrapper! {
+    pub struct QueueRow(ObjectSubclass<queue_row_imp::QueueRow>);
+}
 
 mod imp {
     use super::*;
@@ -102,6 +131,9 @@ mod imp {
         pub player_queue_id_id: RefCell<Option<SignalHandlerId>>,
 
         pub sel_model: OnceCell<SingleSelection>,
+        // The selection model holds the row store instead of the filter, so we need to
+        // keep the filter alive here to continue receiving changes from the player's queue.
+        pub filter_model: OnceCell<gtk::FilterListModel>,
 
         // Avoid multiple inits running concurrently
         pub initializing: Cell<bool>,
@@ -370,23 +402,21 @@ fn format_song_count(count: u32) -> Option<String> {
 fn bind_row_by_expressions(row: &SongRow, item: &ListItem) {
     row.set_index_visible(false);
     row.set_playing_indicator_visible(true);
-
-    item.property_expression("item")
-        .chain_property::<Song>("name")
-        .bind(row, "name", gtk::Widget::NONE);
-
     row.set_first_attrib_icon_name(Some("library-music-symbolic"));
-    item.property_expression("item")
-        .chain_property::<Song>("album")
-        .bind(row, "first-attrib-text", gtk::Widget::NONE);
     row.set_second_attrib_icon_name(Some("music-artist-symbolic"));
-    item.property_expression("item")
-        .chain_property::<Song>("artist")
-        .bind(row, "second-attrib-text", gtk::Widget::NONE);
 
-    item.property_expression("item")
-        .chain_property::<Song>("quality-grade")
-        .bind(row, "quality-grade", gtk::Widget::NONE);
+    let song = item
+        .property_expression("item")
+        .chain_property::<QueueRow>("song");
+    for (source, target) in [
+        ("name", "name"),
+        ("album", "first-attrib-text"),
+        ("artist", "second-attrib-text"),
+        ("quality-grade", "quality-grade"),
+    ] {
+        song.chain_property::<Song>(source)
+            .bind(row, target, gtk::Widget::NONE);
+    }
 }
 
 impl QueueView {
@@ -394,13 +424,47 @@ impl QueueView {
         Self::default()
     }
 
-    pub fn setup_listview(&self, player: &Player, cache: Rc<Cache>) {
-        // Enable/disable clear queue button depending on whether the queue is empty or not
-        // Set selection mode
-        // TODO: Allow click to jump to song
-        let queue_model = player.queue().clone();
+    fn update_queue_rows(
+        filtered: &gtk::FilterListModel,
+        rows: &gio::ListStore,
+        position: u32,
+        removed: u32,
+        added: u32,
+    ) {
+        let songs = (position..position + added)
+            .map(|index| filtered.item(index).and_downcast::<Song>().unwrap());
+        if removed != added {
+            let replacements: Vec<QueueRow> = songs
+                .map(|song| glib::Object::builder().property("song", &song).build())
+                .collect();
+            rows.splice(position, removed, &replacements);
+            return;
+        }
 
-        // Setup search bar
+        let slots = (position..position + removed)
+            .map(|index| rows.item(index).and_downcast::<QueueRow>().unwrap());
+        // Snapshot the covers before changing any songs, otherwise rebinding one row could
+        // overwrite the cover we still need for another. This lets us move the loaded
+        // covers with their songs instead of fetching them again and showing spinners.
+        let thumbnails: HashMap<_, _> = slots
+            .clone()
+            .filter_map(|slot| {
+                let row = slot.imp().row.upgrade()?;
+                Some((slot.song()?, row.thumbnail_snapshot()?))
+            })
+            .collect();
+        for (slot, song) in slots.zip(songs) {
+            if slot.song().as_ref() == Some(&song) {
+                continue;
+            }
+            slot.set_song(&song);
+            if let Some(row) = slot.imp().row.upgrade() {
+                row.on_bind_with_thumbnail(&song, thumbnails.get(&song));
+            }
+        }
+    }
+
+    pub fn setup_listview(&self, player: &Player, cache: Rc<Cache>) {
         let search_bar = self.imp().search_bar.get();
         let search_entry = self.imp().search_entry.get();
         search_bar.connect_entry(&search_entry);
@@ -412,16 +476,28 @@ impl QueueView {
             .bidirectional()
             .build();
 
-        // Chain filter
         let filter_model = gtk::FilterListModel::new(
-            Some(queue_model.clone()),
+            Some(player.queue().clone()),
             Some(self.imp().search_filter.clone()),
         );
-        filter_model.set_incremental(true);
-        let sel_model = SingleSelection::new(Some(filter_model));
-        if let Err(e) = self.imp().sel_model.set(sel_model.clone()) {
-            dbg!(e);
-        }
+        // Incremental filtering briefly removes the swapped songs before adding them
+        // back in an idle callback, which changes selection and reloads their covers.
+        // We need to finish filtering synchronously so the rows stay visible during swaps.
+        filter_model.set_incremental(false);
+        let rows = gio::ListStore::new::<QueueRow>();
+        let sel_model = SingleSelection::new(Some(rows.clone()));
+        self.imp()
+            .sel_model
+            .set(sel_model.clone())
+            .expect("Queue selection is only initialized once");
+        self.imp()
+            .filter_model
+            .set(filter_model.clone())
+            .expect("Queue filter is only initialized once");
+        Self::update_queue_rows(&filter_model, &rows, 0, 0, filter_model.n_items());
+        filter_model.connect_items_changed(move |filtered, position, removed, added| {
+            Self::update_queue_rows(filtered, &rows, position, removed, added);
+        });
         self.imp().queue.set_model(Some(&sel_model));
 
         // Set up factory
@@ -441,13 +517,42 @@ impl QueueView {
                 let row = SongRow::new(Some(cache.clone()), Some(&player));
                 bind_row_by_expressions(&row, item);
                 row.add_css_class("shift-on-hover");
+                // The row position may come from a filtered list, so capture the song itself
+                // and look up its position in the player's queue when the task runs.
+                let reorder = |direction: SwapDirection| {
+                    clone!(
+                        #[weak]
+                        player,
+                        #[weak]
+                        row,
+                        move |_: &gtk::Button| {
+                            let Some(song) = row.song() else {
+                                return;
+                            };
+                            glib::spawn_future_local(clone!(
+                                #[weak]
+                                player,
+                                async move {
+                                    if let Err(e) = player.swap_dir(&song, direction).await {
+                                        dbg!(e);
+                                    }
+                                }
+                            ));
+                        }
+                    )
+                };
                 let end_widget = RowEditButtons::new(
-                    item,
-                    // Raise action
+                    reorder(SwapDirection::Up),
+                    reorder(SwapDirection::Down),
                     clone!(
                         #[weak]
                         player,
-                        move |btn, idx| {
+                        #[weak]
+                        row,
+                        move |btn| {
+                            let Some(song) = row.song() else {
+                                return;
+                            };
                             glib::spawn_future_local(clone!(
                                 #[weak]
                                 btn,
@@ -455,46 +560,7 @@ impl QueueView {
                                 player,
                                 async move {
                                     btn.set_sensitive(false);
-                                    if let Err(e) = player.swap_dir(idx, SwapDirection::Up).await {
-                                        dbg!(e);
-                                    }
-                                    btn.set_sensitive(true);
-                                }
-                            ));
-                        }
-                    ),
-                    clone!(
-                        #[weak]
-                        player,
-                        move |btn, idx| {
-                            glib::spawn_future_local(clone!(
-                                #[weak]
-                                btn,
-                                #[weak]
-                                player,
-                                async move {
-                                    btn.set_sensitive(false);
-                                    if let Err(e) = player.swap_dir(idx, SwapDirection::Down).await
-                                    {
-                                        dbg!(e);
-                                    }
-                                    btn.set_sensitive(true);
-                                }
-                            ));
-                        }
-                    ),
-                    clone!(
-                        #[weak]
-                        player,
-                        move |btn, idx| {
-                            glib::spawn_future_local(clone!(
-                                #[weak]
-                                btn,
-                                #[weak]
-                                player,
-                                async move {
-                                    btn.set_sensitive(false);
-                                    if let Err(e) = player.remove_pos(idx).await {
+                                    if let Err(e) = player.remove_song(&song).await {
                                         dbg!(e);
                                     }
                                     btn.set_sensitive(true);
@@ -503,6 +569,14 @@ impl QueueView {
                         }
                     ),
                 );
+                // Keep the arrows enabled while waiting for MPD so the clicked arrow doesn't
+                // lose its hover and pressed state.
+                player
+                    .queue()
+                    .bind_property("n-items", &end_widget.reorder_buttons(), "sensitive")
+                    .transform_to(|_, size: u32| Some(size > 1))
+                    .sync_create()
+                    .build();
                 row.set_end_widget(Some(&end_widget.into()));
                 item.set_child(Some(&row));
 
@@ -511,18 +585,14 @@ impl QueueView {
                 drag_source.set_actions(gdk::DragAction::COPY); // TODO: probably not needed? not moving files across apps
                 drag_source.connect_prepare(clone!(
                     #[weak]
-                    item,
+                    row,
                     #[upgrade_or]
                     None,
                     move |_, _x, _y| {
                         // FIXME: nonzero hotspots cause the drag icon to fly off-screen.
                         // Pass the whole song GObject
-                        if let Some(song) = item.item().and_downcast::<Song>() {
-                            song.set_queue_pos(item.position()); // Ensure the Song object contains the up-to-date queue pos for local updating
-                            Some(gdk::ContentProvider::for_value(&song.to_value()))
-                        } else {
-                            None
-                        }
+                        row.song()
+                            .map(|song| gdk::ContentProvider::for_value(&song.to_value()))
                     }
                 ));
                 drag_source.connect_drag_begin(clone!(
@@ -607,36 +677,27 @@ impl QueueView {
                     #[weak]
                     row,
                     #[weak]
-                    item,
-                    #[weak]
                     player,
                     #[upgrade_or]
                     false,
                     move |_, song, _x, y| {
                         row.set_floating(false);
-                        if !row.is_floating() {
-                            if let Ok(song) = song.get::<Song>() {
-                                // Get queue pos of row being dropped onto
-                                let target_pos = item.position()
-                                    + if y > row.height() as f64 / 2.0 {
-                                        // If is lower half, place dropped song after this one
-                                        1
-                                    } else {
-                                        0
-                                    };
-                                glib::spawn_future_local(async move {
-                                    if let Err(e) = player.move_to(&song, target_pos).await {
-                                        dbg!(e);
-                                    }
-                                });
-                                true
-                            } else {
-                                false
-                            }
-                        } else {
-                            // Ignore if dropped atop itself
-                            false
+                        let Ok(song) = song.get::<Song>() else {
+                            return false;
+                        };
+                        let Some(target) = row.song() else {
+                            return false;
+                        };
+                        if song == target {
+                            return false;
                         }
+                        let after = y > row.height() as f64 / 2.0;
+                        glib::spawn_future_local(async move {
+                            if let Err(e) = player.move_to(&song, &target, after).await {
+                                dbg!(e);
+                            }
+                        });
+                        true
                     }
                 ));
 
@@ -649,19 +710,18 @@ impl QueueView {
             move |_, list_item| {
                 let item = list_item
                     .downcast_ref::<ListItem>()
-                    .expect("Needs to be ListItem")
+                    .expect("Needs to be ListItem");
+                let slot = item
                     .item()
-                    .and_downcast::<Song>()
-                    .expect("The item has to be a common::Song.");
-                let child = list_item
-                    .downcast_ref::<ListItem>()
-                    .expect("Needs to be ListItem")
+                    .and_downcast::<QueueRow>()
+                    .expect("The item has to be a QueueRow.");
+                let row = item
                     .child()
                     .and_downcast::<SongRow>()
                     .expect("The child has to be a `SongRow`.");
 
-                // Within this binding fn is where the cached album art texture gets used.
-                child.on_bind(&item);
+                slot.imp().row.set(Some(&row));
+                row.on_bind(&slot.song().unwrap());
 
                 this.imp()
                     .last_scroll_pos
@@ -673,13 +733,16 @@ impl QueueView {
         // When row goes out of sight, unbind from item to allow reuse with another.
         // Remember to also unset the thumbnail widget's texture to potentially free it from memory.
         factory.connect_unbind(move |_, list_item| {
-            let child = list_item
+            let item = list_item
                 .downcast_ref::<ListItem>()
-                .expect("Needs to be ListItem")
+                .expect("Needs to be ListItem");
+            let slot = item.item().and_downcast::<QueueRow>().unwrap();
+            slot.imp().row.set(None::<&SongRow>);
+            let row = item
                 .child()
                 .and_downcast::<SongRow>()
                 .expect("The child has to be a `SongRow`.");
-            child.on_unbind();
+            row.on_unbind();
         });
 
         factory.connect_teardown(clone!(
@@ -703,17 +766,18 @@ impl QueueView {
             #[weak]
             player,
             move |queue, position| {
+                let Some(song) = queue
+                    .model()
+                    .and_then(|model| model.item(position))
+                    .and_downcast::<QueueRow>()
+                    .and_then(|slot| slot.song())
+                else {
+                    return;
+                };
                 glib::spawn_future_local(clone!(
                     #[weak]
                     player,
-                    #[weak]
-                    queue,
                     async move {
-                        let model = queue.model().expect("The model has to exist.");
-                        let song = model
-                            .item(position)
-                            .and_downcast::<Song>()
-                            .expect("The item has to be a `common::Song`.");
                         if let Err(e) = player.on_song_clicked(song).await {
                             dbg!(e);
                         }

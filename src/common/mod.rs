@@ -31,7 +31,7 @@ pub use dynamic_playlist::DynamicPlaylist;
 pub use fading_scrolled_window::FadingScrolledWindow;
 pub use genre::split_genre_tag;
 use gtk::glib;
-pub use image_stack::ImageStack;
+pub use image_stack::{ImageSnapshot, ImageStack};
 pub use inode::{INode, INodeType};
 pub use marquee::Marquee;
 pub use picture_stack::PictureStack;

@@ -96,6 +96,7 @@ impl FftStatus {
     }
 }
 
+#[derive(Clone, Copy)]
 pub enum SwapDirection {
     Up,
     Down,
@@ -1963,75 +1964,69 @@ impl Player {
     }
 
     /// Remove given song from queue.
-    pub async fn remove_pos(&self, pos: u32) -> ClientResult<()> {
+    pub async fn remove_song(&self, song: &Song) -> ClientResult<()> {
+        let queue = self.queue();
+        let Some(pos) = queue.find(song) else {
+            return Ok(());
+        };
         self.register_local_queue_changes(1);
-        self.queue().remove(pos);
-        self.client()?.delete_at_pos(pos).await?;
-        Ok(())
+        queue.remove(pos);
+        self.client()?.delete_at_pos(pos).await
     }
 
-    pub async fn swap_dir(&self, pos: u32, direction: SwapDirection) -> ClientResult<()> {
-        self.register_local_queue_changes(1);
-        let target = self.imp().queue.item(pos).and_downcast::<Song>().unwrap();
-        match direction {
-            SwapDirection::Up => {
-                if pos > 0 {
-                    let upper = self
-                        .imp()
-                        .queue
-                        .item(pos - 1)
-                        .and_downcast::<Song>()
-                        .unwrap();
-                    self.imp().queue.splice(
-                        pos - 1,
-                        2,
-                        &[
-                            target.clone().upcast::<glib::Object>(),
-                            upper.upcast::<glib::Object>(),
-                        ],
-                    );
-                    self.client()?.swap_pos(pos, pos - 1).await?;
-                }
-            }
-            SwapDirection::Down => {
-                if pos < self.imp().queue.n_items() - 1 {
-                    let lower = self
-                        .imp()
-                        .queue
-                        .item(pos + 1)
-                        .and_downcast::<Song>()
-                        .unwrap();
-                    self.imp().queue.splice(
-                        pos,
-                        2,
-                        &[
-                            lower.upcast::<glib::Object>(),
-                            target.clone().upcast::<glib::Object>(),
-                        ],
-                    );
-                    self.client()?.swap_pos(pos, pos + 1).await?;
-                }
-            }
+    async fn move_song(&self, song: &Song, from_pos: u32, to_pos: u32) -> ClientResult<()> {
+        if from_pos == to_pos {
+            return Ok(());
         }
-        Ok(())
+        let queue = self.queue();
+        let first = from_pos.min(to_pos);
+        let count = from_pos.abs_diff(to_pos) + 1;
+        let mut songs: Vec<Song> = (first..first + count)
+            .map(|index| queue.item(index).and_downcast::<Song>().unwrap())
+            .collect();
+        if from_pos < to_pos {
+            songs.rotate_left(1);
+        } else {
+            songs.rotate_right(1);
+        }
+        // Update the queue atomically so GTK doesn't see it shrink between removal
+        // and insertion, which would reset the rows' hover state and covers.
+        self.register_local_queue_changes(1);
+        queue.splice(first, count, &songs);
+        self.client()?
+            .move_id(song.get_queue_id(), to_pos as usize)
+            .await
     }
 
-    pub async fn move_to(&self, song: &Song, to_pos: u32) -> ClientResult<()> {
-        self.register_local_queue_changes(1);
-        // Perform local update first
-        // We need to remove the item from the liststore, then add it back in.
-        // After removal, if the item precedes the target pos, the target pos would
-        // be one behind the original one.
-        let local_new_pos = if song.get_queue_pos() < to_pos {
+    pub async fn swap_dir(&self, song: &Song, direction: SwapDirection) -> ClientResult<()> {
+        let queue = self.queue();
+        let Some(pos) = queue.find(song) else {
+            return Ok(());
+        };
+        let len = queue.n_items();
+        let to = match direction {
+            SwapDirection::Up if pos == 0 => len - 1,
+            SwapDirection::Down if pos == len - 1 => 0,
+            SwapDirection::Up => pos - 1,
+            SwapDirection::Down => pos + 1,
+        };
+        self.move_song(song, pos, to).await
+    }
+
+    pub async fn move_to(&self, song: &Song, target: &Song, after: bool) -> ClientResult<()> {
+        let queue = self.queue();
+        let (Some(from_pos), Some(target_pos)) = (queue.find(song), queue.find(target)) else {
+            return Ok(());
+        };
+        let to_pos = target_pos + u32::from(after);
+        // Removing the song shifts any later drop position back by one, so we need
+        // to adjust it before updating the local queue and sending it to MPD.
+        let new_pos = if from_pos < to_pos {
             to_pos - 1
         } else {
             to_pos
         };
-        self.imp().queue.remove(song.get_queue_pos());
-        self.imp().queue.insert(local_new_pos, song);
-        self.client()?
-            .move_id(song.get_queue_id(), to_pos as usize)
-            .await
+        self.move_song(song, from_pos, new_pos).await
     }
 
     pub async fn save_queue(&self, name: String, save_mode: SaveMode) -> ClientResult<()> {
