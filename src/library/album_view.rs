@@ -2,7 +2,7 @@ use adw::prelude::*;
 use adw::subclass::prelude::*;
 use gtk::{
     CompositeTemplate, ListItem, SignalListItemFactory, SingleSelection,
-    gio::{self, ActionEntry, SimpleActionGroup},
+    gio::{self, SimpleActionGroup},
     glib::{self},
     glib::{Properties, SignalHandlerId, WeakRef, clone, subclass::Signal},
 };
@@ -143,52 +143,6 @@ mod imp {
                     "asc" => Some("view-sort-ascending-symbolic".to_value()),
                     _ => Some("view-sort-descending-symbolic".to_value()),
                 })
-                .build();
-            // Note to self: to work with menus, an action's state must be boolean or string.
-            let action_sort_by = ActionEntry::builder("sort-by")
-                .parameter_type(Some(&String::static_variant_type()))
-                .state(state.enum_("sort-by").to_string().into())
-                .activate(clone!(
-                    #[weak(rename_to = this)]
-                    self,
-                    #[strong]
-                    state,
-                    move |_, action, param| {
-                        let param = param
-                            .expect("Could not get parameter.")
-                            .get::<String>()
-                            .expect("The value needs to be of type `String`.");
-                        let idx = param.parse::<i32>().unwrap();
-
-                        if state.set_enum("sort-by", idx).is_ok() {
-                            this.sorter.changed(gtk::SorterChange::Different);
-                            action.set_state(&param.to_variant());
-                        }
-                    }
-                ))
-                .build();
-
-            let action_sort_direction = ActionEntry::builder("sort-direction")
-                .parameter_type(Some(&String::static_variant_type()))
-                .state(state.enum_("sort-direction").to_string().into())
-                .activate(clone!(
-                    #[weak(rename_to = this)]
-                    self,
-                    #[strong]
-                    state,
-                    move |_, action, param| {
-                        let param = param
-                            .expect("Could not get parameter.")
-                            .get::<String>()
-                            .expect("The value needs to be of type `String`.");
-                        let idx = param.parse::<i32>().unwrap();
-
-                        if state.set_enum("sort-direction", idx).is_ok() {
-                            this.sorter.changed(gtk::SorterChange::Different);
-                            action.set_state(&param.to_variant());
-                        }
-                    }
-                ))
                 .build();
 
             self.sorter.set_sort_func(clone!(
@@ -361,7 +315,10 @@ mod imp {
 
             // Create a new action group and add actions to it
             let actions = SimpleActionGroup::new();
-            actions.add_action_entries([action_sort_by, action_sort_direction]);
+            for (sort_by, sort_direction) in ALBUM_SORT_SETTINGS {
+                actions.add_action(&state.create_action(sort_by));
+                actions.add_action(&state.create_action(sort_direction));
+            }
             self.obj().insert_action_group("album-view", Some(&actions));
         }
 
