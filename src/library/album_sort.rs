@@ -32,15 +32,26 @@ pub struct AlbumSortKey {
 }
 
 impl AlbumSortOrder {
-    /// Map a value of the `io.github.htkhiem.Euphonica.sortby` enum in the gschema.
-    pub fn from_sortby(value: i32) -> Option<Self> {
-        match value {
-            3 => Some(Self::AlbumTitle),
-            4 => Some(Self::AlbumArtist),
-            5 => Some(Self::ReleaseDate),
-            8 => Some(Self::Rating),
-            _ => None,
+    /// In the order of the sort-by dropdown items in album-view.ui.
+    pub const ALL: [Self; 4] = [
+        Self::AlbumTitle,
+        Self::AlbumArtist,
+        Self::ReleaseDate,
+        Self::Rating,
+    ];
+
+    /// The nick in the gschema's `io.github.htkhiem.Euphonica.sortby` enum.
+    pub fn nick(self) -> &'static str {
+        match self {
+            Self::AlbumTitle => "album-title",
+            Self::AlbumArtist => "album-artist",
+            Self::ReleaseDate => "release-date",
+            Self::Rating => "rating",
         }
+    }
+
+    pub fn from_nick(nick: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|order| order.nick() == nick)
     }
 
     fn compare(
@@ -85,7 +96,7 @@ impl AlbumSortOrder {
 /// A tier whose `sort-by` value doesn't apply to albums is `None`.
 pub fn album_sort_keys(state: &gio::Settings) -> [Option<AlbumSortKey>; 3] {
     ALBUM_SORT_SETTINGS.map(|(sort_by, sort_direction)| {
-        let order = AlbumSortOrder::from_sortby(state.enum_(sort_by))?;
+        let order = AlbumSortOrder::from_nick(&state.string(sort_by))?;
         let direction = if state.enum_(sort_direction) > 0 {
             SortDirection::Ascending
         } else {

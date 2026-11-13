@@ -11,7 +11,7 @@ use std::{cell::Cell, cmp::Ordering, rc::Rc, sync::OnceLock};
 
 use super::{
     AlbumCell, AlbumContentView, Library, TagsFilter,
-    album_sort::{ALBUM_SORT_SETTINGS, album_sort_keys, compare_albums},
+    album_sort::{ALBUM_SORT_SETTINGS, AlbumSortOrder, album_sort_keys, compare_albums},
 };
 use crate::{
     cache::{Cache, sqlite},
@@ -350,10 +350,6 @@ mod imp {
         }
     }
 
-    // Order matches the items of the sort-by dropdowns in album-view.ui.
-    const ALBUM_SORT_BY_NICKS: [&str; 4] =
-        ["album-title", "album-artist", "release-date", "rating"];
-
     fn constructed_bind_sort_tier(
         state: &gio::Settings,
         (sort_by_key, sort_direction_key): (&str, &str),
@@ -366,15 +362,15 @@ mod imp {
             .bind(sort_by_key, sort_by, "selected")
             .mapping(|nick, _| {
                 let nick = nick.get::<String>()?;
-                let idx = ALBUM_SORT_BY_NICKS
+                let idx = AlbumSortOrder::ALL
                     .iter()
-                    .position(|n| *n == nick)
+                    .position(|order| order.nick() == nick)
                     .map_or(gtk::INVALID_LIST_POSITION, |idx| idx as u32);
                 Some(idx.to_value())
             })
             .set_mapping(|idx, _| {
-                let nick = ALBUM_SORT_BY_NICKS.get(idx.get::<u32>().ok()? as usize)?;
-                Some(nick.to_variant())
+                let order = AlbumSortOrder::ALL.get(idx.get::<u32>().ok()? as usize)?;
+                Some(order.nick().to_variant())
             })
             .build();
         state
