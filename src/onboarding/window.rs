@@ -295,14 +295,21 @@ mod imp {
                                     this, // will end loop when window is destroyed or this handle is aborted.
                                     async move {
                                         loop {
-                                            if client.get_status().await.map(|status| status.updating_db).unwrap_or(None).is_none() {
+                                            if client
+                                                .get_status()
+                                                .await
+                                                .map(|status| status.updating_db)
+                                                .unwrap_or(None)
+                                                .is_none()
+                                            {
                                                 // Temporary. Ideally we should go back to the config page.
                                                 this.onboard_success.set(true);
                                                 this.obj().close();
                                             }
                                             if let Ok(n) = client.count_songs().await {
-                                                this.init_db_status
-                                                    .set_description(Some(&format!("Found {} song(s)", n)));
+                                                this.init_db_status.set_description(Some(
+                                                    &format!("Found {} song(s)", n),
+                                                ));
                                             }
                                             glib::timeout_future_seconds(5).await;
                                         }
