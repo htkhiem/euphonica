@@ -2,7 +2,7 @@ use adw::prelude::*;
 use adw::subclass::prelude::*;
 use gtk::{
     CompositeTemplate, ListItem, SignalListItemFactory, SingleSelection,
-    gio::{ActionEntry, SimpleActionGroup},
+    gio::{self, ActionEntry, SimpleActionGroup},
     glib::{self},
     glib::{Properties, SignalHandlerId, WeakRef, clone, subclass::Signal},
 };
@@ -11,7 +11,7 @@ use std::{cell::Cell, cmp::Ordering, rc::Rc, sync::OnceLock};
 
 use super::{
     AlbumCell, AlbumContentView, Library, TagsFilter,
-    album_sort::{AlbumSortOrder, SortDirection, compare_albums},
+    album_sort::{ALBUM_SORT_SETTINGS, album_sort_keys, compare_albums},
 };
 use crate::{
     cache::{Cache, sqlite},
@@ -75,8 +75,7 @@ mod imp {
         // if they now match.
         pub last_search_len: Cell<usize>,
         pub library: WeakRef<Library>,
-        pub sort_by_id: RefCell<Option<SignalHandlerId>>,
-        pub sort_direction_id: RefCell<Option<SignalHandlerId>>,
+        pub sort_handlers: RefCell<Option<(gio::Settings, Vec<SignalHandlerId>)>>,
 
         #[property(get, set)]
         pub collapsed: Cell<bool>,
@@ -107,11 +106,10 @@ mod imp {
             while let Some(child) = self.obj().first_child() {
                 child.unparent();
             }
-            if let Some(id) = self.sort_by_id.take() {
-                self.sorter.disconnect(id);
-            }
-            if let Some(id) = self.sort_direction_id.take() {
-                self.sorter.disconnect(id);
+            if let Some((state, ids)) = self.sort_handlers.take() {
+                for id in ids {
+                    state.disconnect(id);
+                }
             }
         }
 
@@ -207,46 +205,36 @@ mod imp {
                         .downcast_ref::<Album>()
                         .expect("Sort obj has to be a common::Album.");
 
-                    let direction = if state.enum_("sort-direction") > 0 {
-                        SortDirection::Ascending
-                    } else {
-                        SortDirection::Descending
-                    };
                     // Should the sorting be case-sensitive, i.e. uppercase goes first?
                     let case_sensitive = library_settings.boolean("sort-case-sensitive");
                     // Should nulls be put first or last?
                     let nulls_first = library_settings.boolean("sort-nulls-first");
 
-                    let Some(primary) = AlbumSortOrder::from_sortby(state.enum_("sort-by")) else {
-                        unreachable!()
-                    };
-                    let keys = primary.default_keys(direction);
+                    let keys = album_sort_keys(&state);
                     compare_albums(album1, album2, &keys, nulls_first, case_sensitive)
                 }
             ));
 
-            // Update when changing sort settings
-            self.sort_by_id.replace(Some(state.connect_changed(
-                Some("sort-by"),
-                clone!(
-                    #[weak(rename_to = this)]
-                    self,
-                    move |_, _| {
-                        this.sorter.changed(gtk::SorterChange::Different);
-                    }
-                ),
-            )));
-            self.sort_direction_id.replace(Some(state.connect_changed(
-                Some("sort-direction"),
-                clone!(
-                    #[weak(rename_to = this)]
-                    self,
-                    move |_, _| {
-                        // Not Inverted: the tiebreaker keys keep their own direction
-                        this.sorter.changed(gtk::SorterChange::Different);
-                    }
-                ),
-            )));
+            // Update when changing sort settings.
+            // Not Inverted on a direction flip: the other tiers keep their own direction.
+            let sort_handler_ids = ALBUM_SORT_SETTINGS
+                .iter()
+                .flat_map(|(sort_by, sort_direction)| [sort_by, sort_direction])
+                .map(|name| {
+                    state.connect_changed(
+                        Some(name),
+                        clone!(
+                            #[weak(rename_to = this)]
+                            self,
+                            move |_, _| {
+                                this.sorter.changed(gtk::SorterChange::Different);
+                            }
+                        ),
+                    )
+                })
+                .collect();
+            self.sort_handlers
+                .replace(Some((state.clone(), sort_handler_ids)));
 
             // Set up search
             self.search_filter.set_filter_func(clone!(
