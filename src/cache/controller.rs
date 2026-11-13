@@ -139,12 +139,14 @@ fn set_image_internal(
     let hires_tex = bundle.hires.take_texture()?;
     let thumb_tex = bundle.thumb.take_texture()?;
 
-    {
-        let mut cache = IMAGE_CACHE.lock().unwrap();
-
-        cache.put(bundle.hires.name, hires_tex.clone());
-        cache.put(bundle.thumb.name, thumb_tex.clone());
-    }
+    image_cache(false)
+        .lock()
+        .unwrap()
+        .put(bundle.hires.name, hires_tex.clone());
+    image_cache(true)
+        .lock()
+        .unwrap()
+        .put(bundle.thumb.name, thumb_tex.clone());
     Ok((hires_tex, thumb_tex))
 }
 
@@ -157,7 +159,7 @@ fn clear_image_internal(key: &str, key_prefix: Option<&'static str>) -> Result<b
         let mut hires_path = get_image_cache_path();
         hires_path.push(&hires_name);
         sqlite::unregister_image_key(key, key_prefix, false).map_err(Error::Sqlite)?;
-        IMAGE_CACHE.lock().unwrap().pop(&hires_name);
+        image_cache(false).lock().unwrap().pop(&hires_name);
         removed = std::fs::remove_file(hires_path).is_ok();
     }
     if let Some(thumb_name) =
@@ -166,7 +168,7 @@ fn clear_image_internal(key: &str, key_prefix: Option<&'static str>) -> Result<b
         let mut thumb_path = get_image_cache_path();
         thumb_path.push(&thumb_name);
         sqlite::unregister_image_key(key, key_prefix, true).map_err(Error::Sqlite)?;
-        IMAGE_CACHE.lock().unwrap().pop(&thumb_name);
+        image_cache(true).lock().unwrap().pop(&thumb_name);
         removed = std::fs::remove_file(thumb_path)
             .map_err(|_| Error::Io)
             .is_ok();
@@ -194,8 +196,15 @@ fn find_image_in_memory(
     prefix: Option<&'static str>,
     thumbnail: bool,
 ) -> Result<Option<gdk::Texture>> {
-    Ok(find_image_filename(key, prefix, thumbnail)?
-        .and_then(|filename| IMAGE_CACHE.lock().unwrap().get(&filename).cloned()))
+    Ok(
+        find_image_filename(key, prefix, thumbnail)?.and_then(|filename| {
+            image_cache(thumbnail)
+                .lock()
+                .unwrap()
+                .get(&filename)
+                .cloned()
+        }),
+    )
 }
 
 #[inline]
@@ -207,7 +216,11 @@ fn get_image_internal(
     let Some(filename) = find_image_filename(key, prefix, thumbnail)? else {
         return Ok(None);
     };
-    let tex = IMAGE_CACHE.lock().unwrap().get(&filename).cloned();
+    let tex = image_cache(thumbnail)
+        .lock()
+        .unwrap()
+        .get(&filename)
+        .cloned();
     if tex.is_some() {
         return Ok(tex);
     }
@@ -215,7 +228,10 @@ fn get_image_internal(
     cover_path.push(&filename);
     match Texture::from_filename(&cover_path).map_err(Error::from) {
         Ok(tex) => {
-            IMAGE_CACHE.lock().unwrap().put(filename, tex.clone());
+            image_cache(thumbnail)
+                .lock()
+                .unwrap()
+                .put(filename, tex.clone());
             Ok(Some(tex))
         }
         Err(Error::NotFound) => {
@@ -263,20 +279,31 @@ fn download_image_from_provider(
     }
 }
 
-// In-memory image cache.
+// In-memory image caches.
 // gdk::Textures are GObjects, which by themselves are boxed reference-counted.
-// This means that even if a texture is evicted from this cache, as long as there
+// This means that even if a texture is evicted from these caches, as long as there
 // is a widget on screen still using it, it will not actually leave RAM.
-// This cache merely holds an additional reference to each texture to keep them
+// These caches merely hold an additional reference to each texture to keep them
 // around when no widget using them are being displayed, so as to reduce disk
 // thrashing while quickly scrolling through like a million albums.
-// This cache's keys are the filenames themselves.
-
-// Keeping ~1024 textures around doesn't mean there can only be 1024 on screen at any time.
-// This cache merely keeps an additional strong ref alive in case a texture goes out of view.
+// Their keys are the filenames themselves.
+// Keeping ~1024 thumbnails around doesn't mean there can only be 1024 on screen at any time.
 // As long as one is in view it is held by the widget displaying it.
-static IMAGE_CACHE: Lazy<Mutex<LruCache<String, Texture>>> =
+// A hires texture takes up about 64x the memory of a thumbnail,
+// so only a few recently used ones are kept around.
+static THUMBNAIL_CACHE: Lazy<Mutex<LruCache<String, Texture>>> =
     Lazy::new(|| Mutex::new(LruCache::new(NonZeroUsize::new(1024).unwrap())));
+static HIRES_CACHE: Lazy<Mutex<LruCache<String, Texture>>> =
+    Lazy::new(|| Mutex::new(LruCache::new(NonZeroUsize::new(32).unwrap())));
+
+#[inline]
+fn image_cache(thumbnail: bool) -> &'static Mutex<LruCache<String, Texture>> {
+    if thumbnail {
+        &THUMBNAIL_CACHE
+    } else {
+        &HIRES_CACHE
+    }
+}
 
 // We use an Asyncified container to queue tasks, such that two requests for the
 // same texture are never run concurrently. This allows one request to cache the
@@ -450,7 +477,7 @@ impl Cache {
             }
         };
         let tex = bundle.take_texture(thumbnail)?;
-        IMAGE_CACHE.lock().unwrap().put(
+        image_cache(thumbnail).lock().unwrap().put(
             if thumbnail {
                 bundle.thumb.name.to_owned()
             } else {
