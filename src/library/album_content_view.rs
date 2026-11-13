@@ -1337,27 +1337,21 @@ impl AlbumContentView {
                     Ok(()) => {
                         if song_list.n_items() > 0 {
                             stack.show_content();
-                            // Only now can we populate the artist tags, as the initial albuminfo
-                            // is stripped of artist MBID for album grid performance
-                            ArtistInfo::take_from_song(
-                                &mut song_list
-                                    .item(0)
-                                    .unwrap()
-                                    .downcast_ref::<Song>()
-                                    .unwrap()
-                                    .get_inner()
-                                    .clone(),
-                                true,
-                            )
-                            .into_iter()
-                            .map(|info| {
-                                ArtistTagButton::new(
-                                    Artist::from(info),
-                                    this.imp().cache.get().unwrap().clone(),
-                                    &this.imp().window.upgrade().unwrap(),
-                                )
-                            })
-                            .for_each(|tag| artists_box.append(&tag));
+
+                            // Previously used the first song because the initial AlbumInfo lacked
+                            // artist MusicBrainz IDs. Album fetching now includes those IDs, so
+                            // use the album artists rather than the first track's artists.
+                            let first_song = song_list.item(0).and_downcast::<Song>().unwrap();
+                            ArtistInfo::copy_from_song(first_song.get_inner(), true)
+                                .into_iter()
+                                .map(|info| {
+                                    ArtistTagButton::new(
+                                        info.into(),
+                                        this.imp().cache.get().unwrap().clone(),
+                                        &this.imp().window.upgrade().unwrap(),
+                                    )
+                                })
+                                .for_each(|tag| artists_box.append(&tag));
                         } else {
                             stack.show_placeholder();
                         }
