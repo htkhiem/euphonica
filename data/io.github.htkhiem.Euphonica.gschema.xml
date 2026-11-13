@@ -503,6 +503,26 @@
 			<default>'asc'</default>
 			<summary>Album View sort direction</summary>
 		</key>
+
+		<key name='sort-by-2' enum='io.github.htkhiem.Euphonica.sortby'>
+			<default>'release-date'</default>
+			<summary>Album View second sort criterion</summary>
+		</key>
+
+		<key name="sort-direction-2" enum='io.github.htkhiem.Euphonica.sortdir'>
+			<default>'asc'</default>
+			<summary>Album View second sort direction</summary>
+		</key>
+
+		<key name='sort-by-3' enum='io.github.htkhiem.Euphonica.sortby'>
+			<default>'album-title'</default>
+			<summary>Album View third sort criterion</summary>
+		</key>
+
+		<key name="sort-direction-3" enum='io.github.htkhiem.Euphonica.sortdir'>
+			<default>'asc'</default>
+			<summary>Album View third sort direction</summary>
+		</key>
 	</schema>
 
 	<schema id="io.github.htkhiem.Euphonica.state.artistview" path="/io/github/htkhiem/Euphonica/state/artistview/">
