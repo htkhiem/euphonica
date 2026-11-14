@@ -190,21 +190,47 @@ fn find_image_filename(
     }
 }
 
-#[inline]
-fn find_image_in_memory(
-    key: &str,
-    prefix: Option<&'static str>,
+/// the key to load the cover by, and its filename.
+fn find_cover_filename<'a>(
+    folder_key: &'a str,
+    embedded_key: &'a str,
     thumbnail: bool,
-) -> Result<Option<gdk::Texture>> {
-    Ok(
-        find_image_filename(key, prefix, thumbnail)?.and_then(|filename| {
-            image_cache(thumbnail)
-                .lock()
-                .unwrap()
-                .get(&filename)
-                .cloned()
-        }),
-    )
+) -> Result<Option<(&'a str, String)>> {
+    let find_embedded = || {
+        find_image_filename(embedded_key, None, thumbnail)
+            .map(|filename| filename.map(|filename| (embedded_key, filename)))
+    };
+    match find_image_filename(folder_key, None, thumbnail) {
+        Ok(Some(filename)) => Ok(Some((folder_key, filename))),
+        Ok(None) => Ok(find_embedded().ok().flatten()),
+        Err(_) => find_embedded(),
+    }
+}
+
+fn get_cover_image(
+    folder_key: &str,
+    embedded_key: &str,
+    thumbnail: bool,
+) -> Result<Option<Texture>> {
+    match find_cover_filename(folder_key, embedded_key, thumbnail)? {
+        Some((key, filename)) => load_image(key, None, thumbnail, filename),
+        None => Ok(None),
+    }
+}
+
+fn find_cover_in_memory(folder_key: &str, embedded_key: &str, thumbnail: bool) -> Option<Texture> {
+    let (_, filename) = find_cover_filename(folder_key, embedded_key, thumbnail)
+        .ok()
+        .flatten()?;
+    texture_in_memory(&filename, thumbnail)
+}
+
+fn texture_in_memory(filename: &str, thumbnail: bool) -> Option<Texture> {
+    image_cache(thumbnail)
+        .lock()
+        .unwrap()
+        .get(filename)
+        .cloned()
 }
 
 #[inline]
@@ -213,16 +239,21 @@ fn get_image_internal(
     prefix: Option<&'static str>,
     thumbnail: bool,
 ) -> Result<Option<gdk::Texture>> {
-    let Some(filename) = find_image_filename(key, prefix, thumbnail)? else {
-        return Ok(None);
-    };
-    let tex = image_cache(thumbnail)
-        .lock()
-        .unwrap()
-        .get(&filename)
-        .cloned();
-    if tex.is_some() {
-        return Ok(tex);
+    match find_image_filename(key, prefix, thumbnail)? {
+        Some(filename) => load_image(key, prefix, thumbnail, filename),
+        None => Ok(None),
+    }
+}
+
+#[inline]
+fn load_image(
+    key: &str,
+    prefix: Option<&'static str>,
+    thumbnail: bool,
+    filename: String,
+) -> Result<Option<gdk::Texture>> {
+    if let Some(tex) = texture_in_memory(&filename, thumbnail) {
+        return Ok(Some(tex));
     }
     let mut cover_path = get_image_cache_path();
     cover_path.push(&filename);
@@ -421,11 +452,7 @@ impl Cache {
         album: &AlbumInfo,
         thumbnail: bool,
     ) -> Option<Texture> {
-        // Same lookup order as steps 1-2 of get_cover_internal
-        find_image_in_memory(&album.folder_uri, None, thumbnail)
-            .or_else(|_| find_image_in_memory(&album.example_uri, None, thumbnail))
-            .ok()
-            .flatten()
+        find_cover_in_memory(&album.folder_uri, &album.example_uri, thumbnail)
     }
 
     /// Lite version of get_album_cover that only takes an example URI.
@@ -493,7 +520,7 @@ impl Cache {
     /// If `album` is provided, it is used for external metadata lookups.
     /// Sequence:
     // 1. Check by folder_key in in-mem cache.
-    // 2. If not available, check by embedded_key too.
+    // 2. If folder_key has no image registered, or its lookup fails, check by embedded_key too.
     // 3. Check by folder_key on disk. If hits, cache by folder_key.
     // 4. Check by embedded_key on disk too. If hits, cache by embedded_key.
     // 5. Try fetching cover file from MPD. If hits, cache by folder key.
@@ -521,8 +548,7 @@ impl Cache {
             .pool
             .push_future(move || {
                 // Steps 1-2
-                get_image_internal(&folder_key_owned, None, thumbnail)
-                    .or_else(|_| get_image_internal(&embedded_key_owned, None, thumbnail))
+                get_cover_image(&folder_key_owned, &embedded_key_owned, thumbnail)
             })
             .expect("get_cover_internal: cache threadpool error")
             .await
