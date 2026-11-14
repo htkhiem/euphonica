@@ -139,12 +139,14 @@ fn set_image_internal(
     let hires_tex = bundle.hires.take_texture()?;
     let thumb_tex = bundle.thumb.take_texture()?;
 
-    {
-        let mut cache = IMAGE_CACHE.lock().unwrap();
-
-        cache.put(bundle.hires.name, hires_tex.clone());
-        cache.put(bundle.thumb.name, thumb_tex.clone());
-    }
+    image_cache(false)
+        .lock()
+        .unwrap()
+        .put(bundle.hires.name, hires_tex.clone());
+    image_cache(true)
+        .lock()
+        .unwrap()
+        .put(bundle.thumb.name, thumb_tex.clone());
     Ok((hires_tex, thumb_tex))
 }
 
@@ -157,7 +159,7 @@ fn clear_image_internal(key: &str, key_prefix: Option<&'static str>) -> Result<b
         let mut hires_path = get_image_cache_path();
         hires_path.push(&hires_name);
         sqlite::unregister_image_key(key, key_prefix, false).map_err(Error::Sqlite)?;
-        IMAGE_CACHE.lock().unwrap().pop(&hires_name);
+        image_cache(false).lock().unwrap().pop(&hires_name);
         removed = std::fs::remove_file(hires_path).is_ok();
     }
     if let Some(thumb_name) =
@@ -166,7 +168,7 @@ fn clear_image_internal(key: &str, key_prefix: Option<&'static str>) -> Result<b
         let mut thumb_path = get_image_cache_path();
         thumb_path.push(&thumb_name);
         sqlite::unregister_image_key(key, key_prefix, true).map_err(Error::Sqlite)?;
-        IMAGE_CACHE.lock().unwrap().pop(&thumb_name);
+        image_cache(true).lock().unwrap().pop(&thumb_name);
         removed = std::fs::remove_file(thumb_path)
             .map_err(|_| Error::Io)
             .is_ok();
@@ -175,47 +177,69 @@ fn clear_image_internal(key: &str, key_prefix: Option<&'static str>) -> Result<b
 }
 
 #[inline]
+fn find_image_filename(
+    key: &str,
+    prefix: Option<&'static str>,
+    thumbnail: bool,
+) -> Result<Option<String>> {
+    match sqlite::find_image_by_key(key, prefix, thumbnail).map_err(Error::Sqlite)? {
+        // empty filename-> already previously failed to fetch the embedded art.
+        // Should not try again.
+        Some(filename) if filename.is_empty() => Err(Error::PriorFailure),
+        filename => Ok(filename),
+    }
+}
+
+#[inline]
+fn find_image_in_memory(
+    key: &str,
+    prefix: Option<&'static str>,
+    thumbnail: bool,
+) -> Result<Option<gdk::Texture>> {
+    Ok(
+        find_image_filename(key, prefix, thumbnail)?.and_then(|filename| {
+            image_cache(thumbnail)
+                .lock()
+                .unwrap()
+                .get(&filename)
+                .cloned()
+        }),
+    )
+}
+
+#[inline]
 fn get_image_internal(
     key: &str,
     prefix: Option<&'static str>,
     thumbnail: bool,
 ) -> Result<Option<gdk::Texture>> {
-    if let Some(filename) =
-        sqlite::find_image_by_key(key, prefix, thumbnail).map_err(Error::Sqlite)?
-    {
-        if !filename.is_empty() {
-            let tex;
-            {
-                // Cloning GObjects is cheap since they're just references
-                tex = IMAGE_CACHE.lock().unwrap().get(&filename).cloned();
-            }
-            if tex.is_some() {
-                Ok(tex)
-            } else {
-                let mut cover_path = get_image_cache_path();
-                cover_path.push(&filename);
-                match Texture::from_filename(&cover_path).map_err(Error::from) {
-                    Ok(tex) => {
-                        IMAGE_CACHE.lock().unwrap().put(filename, tex.clone());
-                        Ok(Some(tex))
-                    }
-                    Err(Error::NotFound) => {
-                        // File no longer exists (maybe user had removed it). Unregister it from DB.
-                        sqlite::unregister_image_key(key, prefix, thumbnail)
-                            .map_err(Error::Sqlite)?;
-                        Ok(None)
-                    }
-                    Err(error) => Err(error),
-                }
-            }
-        } else {
-            // There is an entry, but it's an empty string. This is our indication that we've
-            // failed to fetch the embedded art from MPD once before, so don't try again
-            // (will not succeed unless the files have been re-tagged).
-            Err(Error::PriorFailure)
+    let Some(filename) = find_image_filename(key, prefix, thumbnail)? else {
+        return Ok(None);
+    };
+    let tex = image_cache(thumbnail)
+        .lock()
+        .unwrap()
+        .get(&filename)
+        .cloned();
+    if tex.is_some() {
+        return Ok(tex);
+    }
+    let mut cover_path = get_image_cache_path();
+    cover_path.push(&filename);
+    match Texture::from_filename(&cover_path).map_err(Error::from) {
+        Ok(tex) => {
+            image_cache(thumbnail)
+                .lock()
+                .unwrap()
+                .put(filename, tex.clone());
+            Ok(Some(tex))
         }
-    } else {
-        Ok(None)
+        Err(Error::NotFound) => {
+            // File no longer exists (maybe user had removed it). Unregister it from DB.
+            sqlite::unregister_image_key(key, prefix, thumbnail).map_err(Error::Sqlite)?;
+            Ok(None)
+        }
+        Err(error) => Err(error),
     }
 }
 
@@ -255,20 +279,31 @@ fn download_image_from_provider(
     }
 }
 
-// In-memory image cache.
+// In-memory image caches.
 // gdk::Textures are GObjects, which by themselves are boxed reference-counted.
-// This means that even if a texture is evicted from this cache, as long as there
+// This means that even if a texture is evicted from these caches, as long as there
 // is a widget on screen still using it, it will not actually leave RAM.
-// This cache merely holds an additional reference to each texture to keep them
+// These caches merely hold an additional reference to each texture to keep them
 // around when no widget using them are being displayed, so as to reduce disk
 // thrashing while quickly scrolling through like a million albums.
-// This cache's keys are the filenames themselves.
-
-// Keeping ~1024 textures around doesn't mean there can only be 1024 on screen at any time.
-// This cache merely keeps an additional strong ref alive in case a texture goes out of view.
+// Their keys are the filenames themselves.
+// Keeping ~1024 thumbnails around doesn't mean there can only be 1024 on screen at any time.
 // As long as one is in view it is held by the widget displaying it.
-static IMAGE_CACHE: Lazy<Mutex<LruCache<String, Texture>>> =
+// A hires texture takes up about 64x the memory of a thumbnail,
+// so only a few recently used ones are kept around.
+static THUMBNAIL_CACHE: Lazy<Mutex<LruCache<String, Texture>>> =
     Lazy::new(|| Mutex::new(LruCache::new(NonZeroUsize::new(1024).unwrap())));
+static HIRES_CACHE: Lazy<Mutex<LruCache<String, Texture>>> =
+    Lazy::new(|| Mutex::new(LruCache::new(NonZeroUsize::new(32).unwrap())));
+
+#[inline]
+fn image_cache(thumbnail: bool) -> &'static Mutex<LruCache<String, Texture>> {
+    if thumbnail {
+        &THUMBNAIL_CACHE
+    } else {
+        &HIRES_CACHE
+    }
+}
 
 // We use an Asyncified container to queue tasks, such that two requests for the
 // same texture are never run concurrently. This allows one request to cache the
@@ -379,6 +414,20 @@ impl Cache {
         res
     }
 
+    /// Synchronous version of get_album_cover that only returns covers already in memory.
+    /// It never reads image files from disk or fetches anything, so it can run on the main thread.
+    pub fn get_album_cover_from_memory(
+        &self,
+        album: &AlbumInfo,
+        thumbnail: bool,
+    ) -> Option<Texture> {
+        // Same lookup order as steps 1-2 of get_cover_internal
+        find_image_in_memory(&album.folder_uri, None, thumbnail)
+            .or_else(|_| find_image_in_memory(&album.example_uri, None, thumbnail))
+            .ok()
+            .flatten()
+    }
+
     /// Lite version of get_album_cover that only takes an example URI.
     /// Used by widgets with limited access to album metadata, such as ArtistCells.
     /// Since it does not take the full album metadata, external fetch is not supported.
@@ -428,7 +477,7 @@ impl Cache {
             }
         };
         let tex = bundle.take_texture(thumbnail)?;
-        IMAGE_CACHE.lock().unwrap().put(
+        image_cache(thumbnail).lock().unwrap().put(
             if thumbnail {
                 bundle.thumb.name.to_owned()
             } else {
