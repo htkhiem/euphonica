@@ -325,7 +325,7 @@ fn download_image_from_provider(
 static THUMBNAIL_CACHE: Lazy<Mutex<LruCache<String, Texture>>> =
     Lazy::new(|| Mutex::new(LruCache::new(NonZeroUsize::new(1024).unwrap())));
 static HIRES_CACHE: Lazy<Mutex<LruCache<String, Texture>>> =
-    Lazy::new(|| Mutex::new(LruCache::new(NonZeroUsize::new(32).unwrap())));
+    Lazy::new(|| Mutex::new(LruCache::new(NonZeroUsize::new(128).unwrap())));
 
 #[inline]
 fn image_cache(thumbnail: bool) -> &'static Mutex<LruCache<String, Texture>> {
