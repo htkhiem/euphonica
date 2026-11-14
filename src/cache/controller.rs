@@ -183,7 +183,7 @@ fn find_image_filename(
     thumbnail: bool,
 ) -> Result<Option<String>> {
     match sqlite::find_image_by_key(key, prefix, thumbnail).map_err(Error::Sqlite)? {
-        // empty filename-> already previously failed to fetch the embedded art.
+        // An empty filename marks a key whose image an external provider already failed to supply previously.
         // Should not try again.
         Some(filename) if filename.is_empty() => Err(Error::PriorFailure),
         filename => Ok(filename),
@@ -320,7 +320,8 @@ fn download_image_from_provider(
 // Their keys are the filenames themselves.
 // Keeping ~1024 thumbnails around doesn't mean there can only be 1024 on screen at any time.
 // As long as one is in view it is held by the widget displaying it.
-// A hires texture takes up about 64x the memory of a thumbnail,
+// At the default settings, a square hires texture takes up 64x the memory of a thumbnail
+// (1024² against 128² pixels), and more if max-image-resolution is raised,
 // so only a few recently used ones are kept around.
 static THUMBNAIL_CACHE: Lazy<Mutex<LruCache<String, Texture>>> =
     Lazy::new(|| Mutex::new(LruCache::new(NonZeroUsize::new(1024).unwrap())));
@@ -446,7 +447,8 @@ impl Cache {
     }
 
     /// Synchronous version of get_album_cover that only returns covers already in memory.
-    /// It never reads image files from disk or fetches anything, so it can run on the main thread.
+    /// It looks up the filename in SQLite, but never decodes image files or fetches anything,
+    /// so it can run on the main thread.
     pub fn get_album_cover_from_memory(
         &self,
         album: &AlbumInfo,

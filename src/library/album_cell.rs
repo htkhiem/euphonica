@@ -364,9 +364,10 @@ impl AlbumCell {
         // HOWEVER, map() seems to ALWAYS FIRE ONCE upon widget creation (maybe due to every new
         // widget being created somewhere within the viewport, then moved out? or something to do
         // with filtering being iterative?). Afterwards for widgets that end up outside of the
-        // viewport, unmap() will be fired. To avoid flooding the cache controller on startup we
-        // add a short delay on the map() signal. If unmap() comes in quick succession then we
-        // can just cancel the load before it happens.
+        // viewport, unmap() will be fired. To avoid flooding the cache controller on startup,
+        // map() only shows covers that are already in memory right away,
+        // and loads the rest after a short delay.
+        // If unmap() comes in quick succession then we can just cancel the load before it happens.
         res.connect_map(|res| {
             res.load_textures();
         });
@@ -397,7 +398,8 @@ impl AlbumCell {
     }
 
     /// Shows the cover right away if it's already in memory.
-    /// Otherwise, loads it with a delay to allow early cancel.
+    /// If not, first the thumbnail, then the hires texture (if `hires` is set)
+    /// is is loaded after a delay to allow early cancel.
     fn load_textures(&self) {
         let imp = self.imp();
         if let Some(handle) = imp.texture_load_handle.take() {
