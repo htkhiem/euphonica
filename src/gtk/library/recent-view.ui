@@ -3,124 +3,257 @@
   <requires lib="gtk" version="4.0"/>
   <template class="EuphonicaRecentView" parent="GtkWidget">
     <child>
-      <object class="AdwNavigationView" id="nav_view">
+      <object class="AdwBreakpointBin">
+        <property name="width-request">240</property>
+        <property name="height-request">240</property>
         <child>
-          <object class="AdwNavigationPage">
-            <!-- Renamed to Home since v1.0 but I'm too lazy to fix the filenames and the like. -->
-            <property name="title">Home</property>
-            <child>
-              <object class="AdwToolbarView">
-                <child type="top">
-                  <object class="AdwHeaderBar">
-                    <property name="show-title">false</property>
-                    <child type="start">
-                      <object class="GtkButton" id="show_sidebar">
-                        <property name="icon-name">dock-left-symbolic</property>
-                        <property name="tooltip-text" translatable="true">Show sidebar</property>
-                        <property name="visible">false</property>
-                      </object>
-                    </child>
-                    <child type="end">
-                      <object class="GtkButton" id="clear">
-                        <style>
-                          <class name="destructive-action"/>
-                        </style>
-                        <property name="icon-name">user-trash-symbolic</property>
-                        <property name="tooltip-text" translatable="true">Clear history</property>
-                      </object>
-                    </child>
-                  </object>
-                </child>
-                <property name="content">
-                  <!-- <object class="GtkBox">
-                    <property name="orientation">1</property>
-                    <property name="hexpand">true</property>
-                    <property name="vexpand">true</property>
-                    <property name="spacing">12</property>
+          <object class="AdwBreakpoint">
+            <condition>max-width: 500px</condition>
+            <setter object="multi_layout_view" property="layout-name">narrow</setter>
+            <setter object="rediscover_multi_layout_view" property="layout-name">narrow</setter>
+          </object>
+        </child>
+        <child>
+          <object class="AdwBreakpoint">
+            <condition>max-width: 900px</condition>
+            <setter object="multi_layout_view" property="layout-name">medium</setter>
+            <setter object="rediscover_multi_layout_view" property="layout-name">medium</setter>
+          </object>
+        </child>
+        <property name="child">
+          <object class="AdwToolbarView">
+            <property name="hexpand">true</property>
+            <property name="vexpand">true</property>
+            <child type="top">
+              <object class="AdwHeaderBar" id="header_bar">
+                <property name="show-title">false</property>
+              </object>
+            </child>
+            <property name="content">
+              <object class="GtkScrolledWindow">
+                <property name="hscrollbar-policy">never</property>
+                <property name="vexpand">true</property>
+                <property name="hexpand">true</property>
+                <property name="propagate-natural-height">true</property>
 
-                    <child>
-                      <object class="Gtk"
-                    </child>
-                  </object> -->
+                <child>
+                  <object class="AdwMultiLayoutView" id="multi_layout_view">
+                    <child type="greeting">
+                      <object class="GtkBox">
+                        <property name="orientation">1</property>
+                        <property name="spacing">6</property>
+                        <child>
+                          <object class="GtkLabel" id="greeting">
+                            <!-- Good morning, good afternoon, good evening -->
+                            <!-- Rare todo: customisable greetings? -->
+                            <style>
+                              <class name="title-2"/>
+                            </style>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="AdwWrapBox">
+                            <property name="child-spacing">6</property>
+                            <property name="line-spacing">6</property>
+                            <property name="justify">0</property>
+                            <property name="justify-last-line">false</property>
+                            <property name="align">0.0</property>
 
-                  <object class="EuphonicaContentStack" id="stack">
-                    <property name="placeholder">
-                      <object class="AdwStatusPage">
-                        <property name="title" translatable="true">No Recent Songs</property>
-                        <property name="description" translatable="true">Songs, albums and artists played while Euphonica is running will appear here.</property>
-                        <property name="icon-name">recent-symbolic</property>
-                      </object>
-                    </property>
-                    <property name="content">
-                      <object class="GtkScrolledWindow">
-                        <property name="hscrollbar-policy">never</property>
-                        <property name="vscrollbar-policy">automatic</property>
-                        <property name="propagate-natural-height">true</property>
-                        <property name="has-frame">false</property>
-                        <property name="vexpand">true</property>
-                        <property name="child">
-                          <object class="GtkBox">
-                            <property name="hexpand">true</property>
-                            <property name="orientation">1</property>
                             <child>
-                              <object class="GtkBox">
-                                <property name="hexpand">true</property>
-                                <property name="orientation">1</property>
+                              <object class="GtkButton" id="albums_badge">
                                 <child>
-                                  <object class="GtkCenterBox">
-                                    <property name="margin-start">12</property>
-                                    <property name="margin-end">12</property>
-                                    <property name="start-widget">
-                                      <object class="GtkBox">
-                                        <property name="spacing">6</property>
-                                        <child>
-                                          <object class="GtkImage">
-                                            <property name="icon_name">library-music-symbolic</property>
-                                            <style>
-                                              <class name="title-3"/>
-                                            </style>
-                                          </object>
-                                        </child>
-                                        <child>
-                                          <object class="GtkLabel">
-                                            <property name="label" translatable="true">Albums</property>
-                                            <style>
-                                              <class name="title-3"/>
-                                            </style>
-                                          </object>
-                                        </child>
-                                      </object>
-                                    </property>
-                                    <property name="end-widget">
-                                      <object class="GtkToggleButton" id="collapse_albums">
-                                        <property name="icon-name">up-symbolic</property>
+                                  <object class="GtkBox">
+                                    <property name="orientation">1</property>
+                                    <!-- <property name="spacing">6</property> -->
+                                    <child>
+                                      <object class="GtkLabel">
                                         <style>
-                                          <class name="flat"/>
+                                          <class name="title-4"/>
                                         </style>
+                                        <property name="label" translatable="true">Albums</property>
                                       </object>
-                                    </property>
+                                    </child>
+                                    <child>
+                                      <object class="GtkLabel" id="albums_count">
+                                        <style>
+                                          <class name="title-1"/>
+                                        </style>
+                                        <property name="vexpand">true</property>
+                                        <property name="halign">start</property>
+                                        <property name="valign">end</property>
+                                        <property name="label">-</property>
+                                      </object>
+                                    </child>
                                   </object>
                                 </child>
+                              </object>
+                            </child>
+
+                            <child>
+                              <object class="GtkButton" id="artists_badge">
                                 <child>
-                                  <object class="GtkRevealer" id="album_revealer">
-                                    <property name="transition-type">5</property>
+                                  <object class="GtkBox">
+                                    <property name="orientation">1</property>
+                                    <!-- <property name="spacing">6</property> -->
                                     <child>
-                                      <object class="GtkStack" id="album_row_stack">
+                                      <object class="GtkLabel">
+                                        <style>
+                                          <class name="title-4"/>
+                                        </style>
+                                        <property name="label" translatable="true">Artists</property>
+                                      </object>
+                                    </child>
+                                    <child>
+                                      <object class="GtkLabel" id="artists_count">
+                                        <style>
+                                          <class name="title-1"/>
+                                        </style>
+                                        <property name="vexpand">true</property>
+                                        <property name="halign">start</property>
+                                        <property name="valign">end</property>
+                                        <property name="label">-</property>
+                                      </object>
+                                    </child>
+                                  </object>
+                                </child>
+                              </object>
+                            </child>
+
+                            <child>
+                              <object class="GtkButton" id="songs_badge">
+                                <child>
+                                  <object class="GtkBox">
+                                    <property name="orientation">1</property>
+                                    <!-- <property name="spacing">6</property> -->
+                                    <child>
+                                      <object class="GtkLabel">
+                                        <style>
+                                          <class name="title-4"/>
+                                        </style>
+                                        <property name="label" translatable="true">Songs</property>
+                                      </object>
+                                    </child>
+                                    <child>
+                                      <object class="GtkLabel" id="songs_count">
+                                        <style>
+                                          <class name="title-1"/>
+                                        </style>
+                                        <property name="vexpand">true</property>
+                                        <property name="halign">start</property>
+                                        <property name="valign">end</property>
+                                        <property name="label">-</property>
+                                      </object>
+                                    </child>
+                                  </object>
+                                </child>
+                              </object>
+                            </child>
+
+                            <!-- might display later: elapsed playback time, total DB play time, last DB update timestamp -->
+
+                          </object>
+                        </child>
+                      </object>
+                    </child>
+
+                    <!-- Rediscover section consists of album and artist subections.
+                    In the narrow layout they're horizontally scrollable rows just like the old Recent View Album and Artist sections.
+                    Starting from the medium layout they're expanded to reflowing grids.
+                    On the wider layout they're two grids arranged side by side.
+                     -->
+                    <child type="rediscover">
+                      <object class="GtkBox">
+                        <property name="orientation">1</property>
+                        <property name="spacing">6</property>
+                        <child>
+                          <object class="GtkLabel">
+                            <style>
+                              <class name="title-2"/>
+                            </style>
+                            <property name="label" translatable="true">Rediscover</property>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="EuphonicaContentStack" id="rediscover_content_stack">
+                            <property name="placeholder">
+                              <object class="AdwStatusPage">
+                                <property name="title" translatable="true">Rediscover is Empty</property>
+                                <property name="description" translatable="true">Grow your playback history for a few months first.</property>
+                                <property name="icon-name">recent-symbolic</property>
+                              </object>
+                            </property>
+
+                            <property name="content">
+                              <object class="AdwMultiLayoutView" id="rediscover_multi_layout_view">
+                                <child type="rediscover-albums">
+                                  <object class="AdwWrapBox" id="rediscover_albums">
+                                    <property name="width-request">240</property>
+                                  </object>
+                                </child>
+
+                                <child type="rediscover-artists">
+                                  <object class="AdwWrapBox" id="rediscover_artists">
+                                    <property name="width-request">240</property>
+                                  </object>
+                                </child>
+
+                                <child>
+                                  <object class="AdwLayout">
+                                    <!-- Default layout put first -->
+                                    <property name="name">wide</property>
+                                    <child>
+                                      <object class="GtkBox">
+                                        <property name="spacing">12</property>
                                         <child>
-                                          <object class="GtkStackPage">
-                                            <property name="name">loading</property>
-                                            <property name="child">
-                                              <object class="AdwSpinner">
-                                                <property name="width-request">48</property>
-                                                <property name="height-request">48</property>
-                                              </object>
-                                            </property>
+                                          <object class="AdwLayoutSlot">
+                                            <property name="id">rediscover_albums</property>
                                           </object>
                                         </child>
                                         <child>
-                                          <object class="GtkStackPage">
-                                            <property name="name">content</property>
-                                            <property name="child">
+                                          <object class="AdwLayoutSlot">
+                                            <property name="id">rediscover_artists</property>
+                                          </object>
+                                        </child>
+                                      </object>
+                                    </child>
+                                  </object>
+                                </child>
+
+                                <child>
+                                  <object class="AdwLayout">
+                                    <property name="name">medium</property>
+                                    <child>
+                                      <object class="GtkBox">
+                                        <property name="orientation">1</property>
+                                        <property name="spacing">12</property>
+                                        <child>
+                                          <object class="AdwLayoutSlot">
+                                            <property name="id">rediscover_albums</property>
+                                          </object>
+                                        </child>
+                                        <child>
+                                          <object class="AdwLayoutSlot">
+                                            <property name="id">rediscover_artists</property>
+                                          </object>
+                                        </child>
+                                      </object>
+                                    </child>
+                                  </object>
+                                </child>
+
+                                <child>
+                                  <object class="AdwLayout">
+                                    <property name="name">narrow</property>
+                                    <child>
+                                      <object class="GtkBox">
+                                        <property name="orientation">1</property>
+                                        <property name="spacing">12</property>
+                                        <child>
+                                          <object class="EuphonicaFadingScrolledWindow">
+                                            <property name="vertical">true</property>
+                                            <property name="vexpand">true</property>
+                                            <property name="hexpand">true</property>
+                                            <property name="inner">
                                               <object class="GtkScrolledWindow">
                                                 <property name="hscrollbar-policy">automatic</property>
                                                 <property name="vscrollbar-policy">never</property>
@@ -128,108 +261,30 @@
                                                 <property name="has-frame">false</property>
                                                 <property name="hexpand">true</property>
                                                 <child>
-                                                  <object class="GtkGridView" id="album_row">
-                                                    <style>
-                                                      <class name="no-bg"/>
-                                                    </style>
-                                                    <property name="single-click-activate">true</property>
-                                                    <property name="hscroll-policy">0</property>
-                                                    <property name="orientation">0</property>
-                                                    <property name="min-columns">1</property>
-                                                    <property name="max-columns">1</property>
+                                                  <object class="AdwLayoutSlot">
+                                                    <property name="id">rediscover_albums</property>
                                                   </object>
                                                 </child>
                                               </object>
                                             </property>
                                           </object>
                                         </child>
-                                      </object>
-                                    </child>
-                                  </object>
-                                </child>
-                              </object>
-                            </child>
-                            <child>
-                              <object class="GtkSeparator">
-                                <property name="margin-top">6px</property>
-                                <property name="margin-bottom">6px</property>
-                              </object>
-                            </child>
-                            <child>
-                              <object class="GtkBox">
-                                <property name="hexpand">true</property>
-                                <property name="orientation">1</property>
-                                <child>
-                                  <object class="GtkCenterBox">
-                                    <property name="margin-start">12</property>
-                                    <property name="margin-end">12</property>
-                                    <property name="start-widget">
-                                      <object class="GtkBox">
-                                        <property name="spacing">6</property>
+
                                         <child>
-                                          <object class="GtkImage">
-                                            <property name="icon_name">music-artist-symbolic</property>
-                                            <style>
-                                              <class name="title-3"/>
-                                            </style>
-                                          </object>
-                                        </child>
-                                        <child>
-                                          <object class="GtkLabel">
-                                            <property name="label" translatable="true">Artists</property>
-                                            <style>
-                                              <class name="title-3"/>
-                                            </style>
-                                          </object>
-                                        </child>
-                                      </object>
-                                    </property>
-                                    <property name="end-widget">
-                                      <object class="GtkToggleButton" id="collapse_artists">
-                                        <property name="icon-name">up-symbolic</property>
-                                        <style>
-                                          <class name="flat"/>
-                                        </style>
-                                      </object>
-                                    </property>
-                                  </object>
-                                </child>
-                                <child>
-                                  <object class="GtkRevealer" id="artist_revealer">
-                                    <property name="transition-type">5</property>
-                                    <child>
-                                      <object class="GtkStack" id="artist_row_stack">
-                                        <child>
-                                          <object class="GtkStackPage">
-                                            <property name="name">loading</property>
-                                            <property name="child">
-                                              <object class="AdwSpinner">
-                                                <property name="width-request">48</property>
-                                                <property name="height-request">48</property>
-                                              </object>
-                                            </property>
-                                          </object>
-                                        </child>
-                                        <child>
-                                          <object class="GtkStackPage">
-                                            <property name="name">content</property>
-                                            <property name="child">
-                                              <object class="GtkScrolledWindow" id="artist_window">
+                                          <object class="EuphonicaFadingScrolledWindow">
+                                            <property name="vertical">true</property>
+                                            <property name="vexpand">true</property>
+                                            <property name="hexpand">true</property>
+                                            <property name="inner">
+                                              <object class="GtkScrolledWindow">
                                                 <property name="hscrollbar-policy">automatic</property>
                                                 <property name="vscrollbar-policy">never</property>
                                                 <property name="propagate-natural-width">true</property>
                                                 <property name="has-frame">false</property>
                                                 <property name="hexpand">true</property>
                                                 <child>
-                                                  <object class="GtkGridView" id="artist_row">
-                                                    <style>
-                                                      <class name="no-bg"/>
-                                                    </style>
-                                                    <property name="single-click-activate">true</property>
-                                                    <property name="hscroll-policy">0</property>
-                                                    <property name="orientation">0</property>
-                                                    <property name="min-columns">1</property>
-                                                    <property name="max-columns">1</property>
+                                                  <object class="AdwLayoutSlot">
+                                                    <property name="id">rediscover_artists</property>
                                                   </object>
                                                 </child>
                                               </object>
@@ -241,78 +296,239 @@
                                   </object>
                                 </child>
                               </object>
-                            </child>
-                            <child>
-                              <object class="GtkSeparator">
-                                <property name="margin-top">6px</property>
-                                <property name="margin-bottom">6px</property>
-                              </object>
-                            </child>
-                            <child>
+                            </property>
+                          </object>
+                        </child>
+                      </object>
+                    </child>
+
+                    <child type="recent">
+                      <object class="GtkBox">
+                        <property name="width-request">240</property>
+                        <property name="orientation">1</property>
+                        <property name="spacing">6</property>
+                        <child>
+                          <object class="GtkCenterBox">
+                            <property name="start-widget">
                               <object class="GtkBox">
-                                <property name="hexpand">true</property>
-                                <property name="orientation">1</property>
+                                <property name="spacing">6</property>
                                 <child>
-                                  <object class="GtkCenterBox">
-                                    <property name="margin-start">12</property>
-                                    <property name="margin-end">12</property>
-                                    <property name="start-widget">
-                                      <object class="GtkBox">
-                                        <property name="spacing">6</property>
-                                        <child>
-                                          <object class="GtkImage">
-                                            <property name="icon_name">music-note-single-symbolic</property>
-                                            <style>
-                                              <class name="title-3"/>
-                                            </style>
-                                          </object>
-                                        </child>
-                                        <child>
-                                          <object class="GtkLabel">
-                                            <property name="label" translatable="true">Songs</property>
-                                            <style>
-                                              <class name="title-3"/>
-                                            </style>
-                                          </object>
-                                        </child>
-                                      </object>
-                                    </property>
-                                    <property name="end-widget">
-                                      <object class="GtkToggleButton" id="collapse_songs">
-                                        <property name="icon-name">up-symbolic</property>
-                                        <style>
-                                          <class name="flat"/>
-                                        </style>
-                                      </object>
-                                    </property>
+                                  <object class="GtkLabel">
+                                    <style>
+                                      <class name="title-2"/>
+                                    </style>
+                                    <property name="label" translatable="true">Recent</property>
                                   </object>
                                 </child>
+
                                 <child>
-                                  <object class="GtkRevealer" id="song_revealer">
-                                    <property name="transition-type">5</property>
+                                  <object class="AdwInlineViewSwitcher" id="recent_subview">
+                                    <property name="stack">recent_subview_stack</property>
                                     <child>
-                                      <object class="GtkListBox" id="song_list">
-                                        <style>
-                                          <class name="no-bg"/>
-                                        </style>
-                                        <property name="show-separators">true</property>
-                                        <property name="activate-on-single-click">false</property>
+                                      <object class="AdwToggle">
+                                        <property name="icon-name">library-music-symbolic</property>
+                                        <property name="tooltip" translatable="true">Recent albums</property>
+                                      </object>
+                                    </child>
+                                    <child>
+                                      <object class="AdwToggle">
+                                        <property name="icon-name">music-artist-symbolic</property>
+                                        <property name="tooltip" translatable="true">Recent artists</property>
+                                      </object>
+                                    </child>
+                                    <child>
+                                      <object class="AdwToggle">
+                                        <property name="icon-name">music-note-single-symbolic</property>
+                                        <property name="tooltip" translatable="true">Recent songs</property>
                                       </object>
                                     </child>
                                   </object>
                                 </child>
                               </object>
+                            </property>
+                            <property name="end-widget">
+                              <object class="GtkButton" id="clear">
+                                <style>
+                                  <class name="destructive-action"/>
+                                </style>
+                                <property name="icon-name">user-trash-symbolic</property>
+                                <property name="tooltip-text" translatable="true">Clear history</property>
+                              </object>
+                            </property>
+                          </object>
+                          <child>
+                            <object class="EuphonicaContentStack" id="recent_content_stack">
+                              <property name="placeholder">
+                                <object class="AdwStatusPage">
+                                  <property name="title" translatable="true">No Recent Songs</property>
+                                  <property name="description" translatable="true">Songs, albums and artists played while Euphonica is running will appear here.</property>
+                                  <property name="icon-name">recent-symbolic</property>
+                                </object>
+                              </property>
+                              <property name="content">
+                                <object class="AdwViewStack" id="recent_subview_stack">
+                                  <child>
+                                    <object class="AdwViewStackPage">
+                                      <property name="name">recent-albums</property>
+                                      <property name="title">Recent Albums</property>
+                                      <property name="child">
+                                        <object class="AdwWrapBox" id="recent_albums"/>
+                                      </property>
+                                    </object>
+                                  </child>
+
+                                  <child>
+                                    <object class="AdwViewStackPage">
+                                      <property name="name">recent-artists</property>
+                                      <property name="title">Recent Artists</property>
+                                      <property name="child">
+                                        <object class="AdwWrapBox" id="recent_artists"/>
+                                      </property>
+                                    </object>
+                                  </child>
+
+                                  <child>
+                                    <object class="AdwViewStackPage">
+                                      <property name="name">recent-songs</property>
+                                      <property name="title">Recent Songs</property>
+                                      <property name="child">
+                                        <object class="GtkListBox" id="recent_songs"/>
+                                      </property>
+                                    </object>
+                                  </child>
+                                </object>
+                              </property>
+                            </object>
+                          </child>
+                        </child>
+                        <child>
+                        </child>
+                      </object>
+                    </child>
+
+                    <child>
+                      <!-- Default layout put first -->
+                      <object class="AdwLayout">
+                        <property name="name">wide</property>
+                        <!-- Wide layout: Revisit (and other recommender-based sections) to the left, stacked vertically
+                        & in their full sizes; recent section to the right running the whole height, taking up at most 600px. -->
+                        <child>
+                          <object class="GtkBox">
+                            <property name="vexpand">true</property>
+                            <property name="hexpand">true</property>
+                            <property name="spacing">12</property>
+                            <!-- Left: recommender sections -->
+                            <child>
+                              <object class="GtkBox">
+                                <property name="orientation">1</property>
+                                <property name="hexpand">1</property>
+                                <property name="spacing">12</property>
+
+                                <child>
+                                  <object class="AdwLayoutSlot">
+                                    <property name="id">greeting</property>
+                                  </object>
+                                </child>
+
+                                <!-- For now there's only Rediscover -->
+                                <child>
+                                  <object class="AdwLayoutSlot">
+                                    <property name="id">rediscover</property>
+                                  </object>
+                                </child>
+                              </object>
+                            </child>
+
+                            <!-- Right: Recent section -->
+                            <child>
+                              <object class="AdwClamp">
+                                <property name="maximum-size">600</property>
+                                <property name="width-request">300</property>
+                                <property name="child">
+                                  <object class="AdwLayoutSlot">
+                                    <property name="id">recent</property>
+                                  </object>
+                                </property>
+                              </object>
                             </child>
                           </object>
-                        </property>
+                        </child>
                       </object>
-                    </property>
+                    </child>
+
+                    <child>
+                      <object class="AdwLayout">
+                        <property name="name">medium</property>
+                        <!-- Medium layout: Vertical scroll, but sections are now more "expanded" -->
+                        <child>
+                          <object class="GtkBox">
+                            <property name="vexpand">true</property>
+                            <property name="hexpand">true</property>
+                            <property name="spacing">12</property>
+                            <property name="orientation">1</property>
+
+                            <child>
+                              <object class="AdwLayoutSlot">
+                                <property name="id">greeting</property>
+                              </object>
+                            </child>
+
+                            <!-- For now there's only Rediscover -->
+                            <child>
+                              <object class="AdwLayoutSlot">
+                                <property name="id">rediscover</property>
+                              </object>
+                            </child>
+
+                            <child>
+                              <object class="AdwLayoutSlot">
+                                <property name="id">recent</property>
+                              </object>
+                            </child>
+                          </object>
+                        </child>
+                      </object>
+                    </child>
+
+                    <child>
+                      <object class="AdwLayout">
+                        <property name="name">narrow</property>
+                        <!-- Narrow layout: sections conserve vertical height to avoid excessive scrolling -->
+                        <child>
+                          <object class="GtkBox">
+                            <property name="vexpand">true</property>
+                            <property name="hexpand">true</property>
+                            <property name="spacing">12</property>
+                            <property name="orientation">1</property>
+
+                            <child>
+                              <object class="AdwLayoutSlot">
+                                <property name="id">greeting</property>
+                              </object>
+                            </child>
+
+                            <!-- For now there's only Rediscover -->
+                            <child>
+                              <object class="AdwLayoutSlot">
+                                <property name="id">rediscover</property>
+                              </object>
+                            </child>
+
+                            <child>
+                              <object class="AdwLayoutSlot">
+                                <property name="id">recent</property>
+                              </object>
+                            </child>
+                          </object>
+                        </child>
+                      </object>
+                    </child>
                   </object>
-                </property>
+                </child>
               </object>
-            </child>
+            </property>
           </object>
-        </child>
+        </property>
       </object>
     </child>
   </template>
