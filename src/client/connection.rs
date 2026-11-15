@@ -187,6 +187,7 @@ pub enum Task {
         Responder<()>,
     ),
     Ping(Responder<()>),
+    Stats(Responder<mpd::Stats>),
     /// Send a message to the inter-client channel
     SendMessage(
         /// Content
@@ -976,6 +977,9 @@ impl Connection {
                     }
                     Task::Ping(resp) => {
                         self.respond_with_client(move |c| c.ping(), resp);
+                    }
+                    Task::Stats(resp) => {
+                        self.respond_with_client(move |c| c.stats(), resp);
                     }
                     Task::SendMessage(content, resp) => {
                         let wake_channel = self.wake_channel.clone();

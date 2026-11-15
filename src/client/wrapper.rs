@@ -416,6 +416,11 @@ impl MpdWrapper {
             .await
     }
 
+    pub async fn stats(&self) -> ClientResult<mpd::Stats> {
+        let (s, r) = oneshot::channel();
+        self.foreground(Task::Stats(s), r).await
+    }
+
     pub async fn get_volume(&self) -> ClientResult<i8> {
         let (s, r) = oneshot::channel();
         self.foreground(Task::GetVolume(s), r).await
@@ -972,36 +977,37 @@ impl MpdWrapper {
             )
             .await?;
 
-        let (album_count, chunked_queries_windows): (usize, Vec<Vec<(Query, Window)>>) = APP_THREAD_POOL
-            .push_future(move || {
-                let mut all_queries_windows = Vec::new();
-                for (key, tags) in grouped_vals.groups.into_iter() {
-                    all_queries_windows.reserve(tags.len());
-                    for tag in tags.into_iter() {
-                        // Only care if tag is not empty
-                        if !tag.is_empty() {
-                            let mut query = Query::new();
-                            query.and(Term::Tag(Cow::Borrowed(tags::ALBUM)), tag);
-                            query.and(Term::Tag(Cow::Borrowed(tags::ALBUMARTIST)), key.clone());
-                            all_queries_windows.push((query, Window::from((0, 1))));
+        let (album_count, chunked_queries_windows): (usize, Vec<Vec<(Query, Window)>>) =
+            APP_THREAD_POOL
+                .push_future(move || {
+                    let mut all_queries_windows = Vec::new();
+                    for (key, tags) in grouped_vals.groups.into_iter() {
+                        all_queries_windows.reserve(tags.len());
+                        for tag in tags.into_iter() {
+                            // Only care if tag is not empty
+                            if !tag.is_empty() {
+                                let mut query = Query::new();
+                                query.and(Term::Tag(Cow::Borrowed(tags::ALBUM)), tag);
+                                query.and(Term::Tag(Cow::Borrowed(tags::ALBUMARTIST)), key.clone());
+                                all_queries_windows.push((query, Window::from((0, 1))));
+                            }
                         }
                     }
-                }
-                // Chunk the queries to avoid timing out on slow servers. The below messy code actually
-                // gives owned chunks without cloning.
-                (
-                    all_queries_windows.len(),
-                    all_queries_windows
-                        .into_iter()
-                        .chunks(256)
-                        .into_iter()
-                        .map(|chunk| chunk.collect())
-                        .collect(),
-                )
-            })
-            .unwrap()
-            .await
-            .unwrap();
+                    // Chunk the queries to avoid timing out on slow servers. The below messy code actually
+                    // gives owned chunks without cloning.
+                    (
+                        all_queries_windows.len(),
+                        all_queries_windows
+                            .into_iter()
+                            .chunks(256)
+                            .into_iter()
+                            .map(|chunk| chunk.collect())
+                            .collect(),
+                    )
+                })
+                .unwrap()
+                .await
+                .unwrap();
 
         // Now we can fetch song entries chunk by chunk.
         let mut songs: Vec<SongInfo> = Vec::with_capacity(album_count);
@@ -1064,7 +1070,8 @@ impl MpdWrapper {
         }
 
         // Yet more off thread work
-        let (album_infos_and_ratings, artist_infos) = APP_THREAD_POOL.push_future(move || {
+        let (album_infos_and_ratings, artist_infos) = APP_THREAD_POOL
+            .push_future(move || {
                 let mut albumartists: FxHashMap<String, ArtistInfo> = FxHashMap::default();
                 let mut album_infos_and_ratings: Vec<(AlbumInfo, Option<String>)> =
                     Vec::with_capacity(album_count);
@@ -1394,7 +1401,8 @@ impl MpdWrapper {
             usize,
             Vec<Vec<(Query, Window)>>,
             Vec<FxHashSet<String>>,
-        ) = APP_THREAD_POOL.push_future(move || {
+        ) = APP_THREAD_POOL
+            .push_future(move || {
                 let mut all_queries_windows: Vec<(Query, mpd::search::Window)> =
                     Vec::with_capacity(grouped_vals.groups.len());
                 // Same order as the upcoming songs, so there's no need to use a hash table
@@ -1508,7 +1516,13 @@ impl MpdWrapper {
             .foreground(
                 Task::FindMultiple(
                     queries_windows,
-                    Some(vec![tags::ARTIST, tags::ARTIST_MBID]),
+                    Some(vec![
+                        tags::ARTIST,
+                        tags::ARTIST_MBID,
+                        tags::TITLE,
+                        tags::ALBUM_MBID,
+                        tags::ALBUM,
+                    ]),
                     s,
                 ),
                 r,

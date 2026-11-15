@@ -41,8 +41,6 @@ mod imp {
     pub struct Library {
         pub client: OnceCell<Rc<MpdWrapper>>,
         pub recent_initialized: Cell<bool>,
-        #[derivative(Default(value = "gio::ListStore::new::<Song>()"))]
-        pub recent_songs: gio::ListStore,
         #[derivative(Default(value = "gio::ListStore::new::<INode>()"))]
         pub playlists: gio::ListStore,
         pub playlists_initialized: Cell<bool>,
@@ -53,8 +51,6 @@ mod imp {
         pub albums: gio::ListStore,
         #[derivative(Default(value = "gio::ListStore::new::<Tag>()"))]
         pub album_tags: gio::ListStore,
-        #[derivative(Default(value = "gio::ListStore::new::<Album>()"))]
-        pub recent_albums: gio::ListStore,
         // AlbumArtists are always initialised along with Albums as fetching one requires the other anyway.
         #[derivative(Default(value = "gio::ListStore::new::<Artist>()"))]
         pub albumartists: gio::ListStore,
@@ -64,8 +60,6 @@ mod imp {
         pub artists_initialized: Cell<bool>,
         #[derivative(Default(value = "gio::ListStore::new::<Tag>()"))]
         pub artist_tags: gio::ListStore,
-        #[derivative(Default(value = "gio::ListStore::new::<Artist>()"))]
-        pub recent_artists: gio::ListStore,
         #[derivative(Default(value = "gio::ListStore::new::<Tag>()"))]
         pub genres: gio::ListStore,
         pub genres_initialized: Cell<bool>,
@@ -228,18 +222,15 @@ impl Library {
     }
 
     pub fn clear(&self) {
-        self.imp().recent_songs.remove_all();
         self.imp().genres.remove_all();
         self.imp().genres_initialized.set(false);
         self.imp().albums.remove_all();
         self.imp().album_tags.remove_all();
-        self.imp().recent_albums.remove_all();
         self.imp().artists.remove_all();
         self.imp().artist_tags.remove_all();
         self.imp().artists_initialized.set(false);
         self.imp().albumartists.remove_all();
         self.imp().albums_and_albumartists_initialized.set(false);
-        self.imp().recent_artists.remove_all();
         self.imp().playlists.remove_all();
         self.imp().playlists_initialized.set(false);
         self.imp().dyn_playlists.remove_all();
@@ -269,6 +260,10 @@ impl Library {
 
     fn player(&self) -> &Player {
         self.imp().player.get().unwrap()
+    }
+
+    pub async fn stats(&self) -> ClientResult<mpd::Stats> {
+        self.imp().client.get().unwrap().stats().await
     }
 
     pub async fn get_album_songs<F>(&self, album: &Album, respond: &mut F) -> ClientResult<()>
@@ -510,13 +505,7 @@ impl Library {
         Ok(())
     }
 
-    /// Get a reference to the local recent songs store
-    pub fn recent_songs(&self) -> gio::ListStore {
-        self.imp().recent_songs.clone()
-    }
-
-    pub async fn clear_recent_songs(&self) -> ClientResult<()> {
-        self.imp().recent_songs.remove_all(); // Will make Recent View switch to the empty StatusPage
+    pub async fn clear_history(&self) -> ClientResult<()> {
         gio::spawn_blocking(sqlite::clear_history)
             .await
             .unwrap()
@@ -553,11 +542,6 @@ impl Library {
         self.imp().artist_tags.clone()
     }
 
-    /// Get a reference to the local recent albums store
-    pub fn recent_albums(&self) -> gio::ListStore {
-        self.imp().recent_albums.clone()
-    }
-
     /// Get a reference to the local artists store
     pub fn artists(&self) -> gio::ListStore {
         self.imp().artists.clone()
@@ -566,11 +550,6 @@ impl Library {
     /// Get a reference to the local album artists store
     pub fn album_artists(&self) -> gio::ListStore {
         self.imp().albumartists.clone()
-    }
-
-    /// Get a reference to the local recent artists store
-    pub fn recent_artists(&self) -> gio::ListStore {
-        self.imp().recent_artists.clone()
     }
 
     /// Retrieve songs in a playlist
@@ -712,28 +691,22 @@ impl Library {
         Ok(())
     }
 
-    pub async fn init_recent(&self, refresh: bool) -> ClientResult<()> {
-        if !self.imp().recent_initialized.get() || refresh {
-            self.imp().recent_initialized.set(true);
-            let model = self.imp().recent_songs.clone();
-            model.remove_all();
-            let settings = settings_manager().child("library");
-            model.extend_from_slice(
-                &self
-                    .client()
-                    .get_recent_songs(settings.uint("n-recent-songs"))
-                    .await?,
-            );
+    pub async fn get_recent(&self) -> ClientResult<(Vec<Album>, Vec<Artist>, Vec<Song>)> {
+        let settings = settings_manager().child("library");
+        Ok((
+            self.client().get_recent_albums().await?,
+            self.client().get_recent_artists().await?,
+            self.client()
+                .get_recent_songs(settings.uint("n-recent-songs"))
+                .await?,
+        ))
+    }
 
-            let model = self.imp().recent_albums.clone();
-            model.remove_all();
-            model.extend_from_slice(&self.client().get_recent_albums().await?);
-
-            let model = self.imp().recent_artists.clone();
-            model.remove_all();
-            model.extend_from_slice(&self.client().get_recent_artists().await?);
-        }
-        Ok(())
+    /// TODO: Implement this then refactor recent albums & artists to stop using the listview + liststore approach here.
+    pub async fn get_rediscover_albums_and_artists(
+        &self,
+    ) -> ClientResult<(Vec<Album>, Vec<Artist>)> {
+        self.client().get_rediscover_albums_and_artists().await
     }
 
     pub async fn init_genres(&self) -> ClientResult<()> {
