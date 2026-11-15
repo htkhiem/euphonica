@@ -94,7 +94,6 @@ listview > row {
 
 .song-list {
   background-color: unset;
-  padding: 6px;
 }
 
 .song-list row:selected, .song-list row:hover {

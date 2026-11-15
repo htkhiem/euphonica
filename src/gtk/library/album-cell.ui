@@ -76,6 +76,9 @@
                 </property>
                 <property name="end-widget">
                   <object class="GtkImage" id="quality_grade">
+                    <style>
+                      <class name="dimmed"/>
+                    </style>
                     <property name="icon-name">format-base-symbolic</property>
                   </object>
                 </property>

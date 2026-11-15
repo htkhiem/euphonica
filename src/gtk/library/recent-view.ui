@@ -8,18 +8,12 @@
         <property name="height-request">240</property>
         <child>
           <object class="AdwBreakpoint">
-            <condition>max-width: 500px</condition>
-            <setter object="multi_layout_view" property="layout-name">narrow</setter>
-            <setter object="rediscover_multi_layout_view" property="layout-name">narrow</setter>
+            <condition>min-width: 900px</condition>
+            <setter object="multi_layout_view" property="layout-name">wide</setter>
+            <setter object="rediscover_multi_layout_view" property="layout-name">wide</setter>
           </object>
         </child>
-        <child>
-          <object class="AdwBreakpoint">
-            <condition>max-width: 900px</condition>
-            <setter object="multi_layout_view" property="layout-name">medium</setter>
-            <setter object="rediscover_multi_layout_view" property="layout-name">medium</setter>
-          </object>
-        </child>
+
         <property name="child">
           <object class="AdwToolbarView">
             <property name="hexpand">true</property>
@@ -41,7 +35,7 @@
                 <child type="greeting">
                   <object class="GtkBox">
                     <property name="orientation">1</property>
-                    <property name="spacing">6</property>
+                    <property name="spacing">12</property>
                     <child>
                       <object class="GtkLabel" id="greeting">
                         <!-- Good morning, good afternoon, good evening -->
@@ -56,9 +50,7 @@
                         <property name="child-spacing">6</property>
                         <property name="line-spacing">6</property>
                         <property name="justify">0</property>
-                        <property name="justify-last-line">false</property>
-                        <property name="align">0.0</property>
-
+                        <property name="align">0.5</property>
                         <child>
                           <object class="GtkButton" id="albums_badge">
                             <child>
@@ -68,7 +60,7 @@
                                 <child>
                                   <object class="GtkLabel">
                                     <style>
-                                      <class name="title-4"/>
+                                      <class name="accent"/>
                                     </style>
                                     <property name="label" translatable="true">Albums</property>
                                   </object>
@@ -77,8 +69,8 @@
                                   <object class="GtkLabel" id="albums_count">
                                     <style>
                                       <class name="title-1"/>
+                                      <class name="numeric"/>
                                     </style>
-                                    <property name="halign">start</property>
                                     <property name="valign">end</property>
                                     <property name="label">-</property>
                                   </object>
@@ -97,7 +89,7 @@
                                 <child>
                                   <object class="GtkLabel">
                                     <style>
-                                      <class name="title-4"/>
+                                      <class name="accent"/>
                                     </style>
                                     <property name="label" translatable="true">Artists</property>
                                   </object>
@@ -106,8 +98,8 @@
                                   <object class="GtkLabel" id="artists_count">
                                     <style>
                                       <class name="title-1"/>
+                                      <class name="numeric"/>
                                     </style>
-                                    <property name="halign">start</property>
                                     <property name="valign">end</property>
                                     <property name="label">-</property>
                                   </object>
@@ -126,7 +118,7 @@
                                 <child>
                                   <object class="GtkLabel">
                                     <style>
-                                      <class name="title-4"/>
+                                      <class name="accent"/>
                                     </style>
                                     <property name="label" translatable="true">Songs</property>
                                   </object>
@@ -135,8 +127,8 @@
                                   <object class="GtkLabel" id="songs_count">
                                     <style>
                                       <class name="title-1"/>
+                                      <class name="numeric"/>
                                     </style>
-                                    <property name="halign">start</property>
                                     <property name="valign">end</property>
                                     <property name="label">-</property>
                                   </object>
@@ -164,6 +156,9 @@
                     <property name="spacing">6</property>
                     <child>
                       <object class="GtkCenterBox">
+                        <!-- Align start of text with visible content since most content rows/cells have a 6px padding already -->
+                        <property name="margin-start">6</property>
+                        <property name="margin-end">6</property>
                         <property name="start-widget">
                           <object class="GtkLabel">
                             <style>
@@ -198,39 +193,22 @@
                             <child type="rediscover-albums">
                               <object class="AdwWrapBox" id="rediscover_albums">
                                 <property name="width-request">240</property>
+                                <property name="justify">spread</property>
+                                <property name="align">0.5</property>
                               </object>
                             </child>
 
                             <child type="rediscover-artists">
                               <object class="AdwWrapBox" id="rediscover_artists">
                                 <property name="width-request">240</property>
+                                <property name="justify">spread</property>
+                                <property name="align">0.5</property>
                               </object>
                             </child>
 
                             <child>
                               <object class="AdwLayout">
                                 <!-- Default layout put first -->
-                                <property name="name">wide</property>
-                                <child>
-                                  <object class="GtkBox">
-                                    <property name="spacing">12</property>
-                                    <child>
-                                      <object class="AdwLayoutSlot">
-                                        <property name="id">rediscover-albums</property>
-                                      </object>
-                                    </child>
-                                    <child>
-                                      <object class="AdwLayoutSlot">
-                                        <property name="id">rediscover-artists</property>
-                                      </object>
-                                    </child>
-                                  </object>
-                                </child>
-                              </object>
-                            </child>
-
-                            <child>
-                              <object class="AdwLayout">
                                 <property name="name">medium</property>
                                 <child>
                                   <object class="GtkBox">
@@ -253,6 +231,27 @@
 
                             <child>
                               <object class="AdwLayout">
+                                <property name="name">wide</property>
+                                <child>
+                                  <object class="GtkBox">
+                                    <property name="spacing">12</property>
+                                    <child>
+                                      <object class="AdwLayoutSlot">
+                                        <property name="id">rediscover-albums</property>
+                                      </object>
+                                    </child>
+                                    <child>
+                                      <object class="AdwLayoutSlot">
+                                        <property name="id">rediscover-artists</property>
+                                      </object>
+                                    </child>
+                                  </object>
+                                </child>
+                              </object>
+                            </child>
+
+                            <!-- <child>
+                              <object class="AdwLayout">
                                 <property name="name">narrow</property>
                                 <child>
                                   <object class="GtkBox">
@@ -260,7 +259,7 @@
                                     <property name="spacing">12</property>
                                     <child>
                                       <object class="EuphonicaFadingScrolledWindow">
-                                        <property name="vertical">true</property>
+                                        <property name="vertical">false</property>
                                         <property name="vexpand">true</property>
                                         <property name="hexpand">true</property>
                                         <property name="inner">
@@ -282,7 +281,7 @@
 
                                     <child>
                                       <object class="EuphonicaFadingScrolledWindow">
-                                        <property name="vertical">true</property>
+                                        <property name="vertical">false</property>
                                         <property name="vexpand">true</property>
                                         <property name="hexpand">true</property>
                                         <property name="inner">
@@ -304,7 +303,7 @@
                                   </object>
                                 </child>
                               </object>
-                            </child>
+                            </child> -->
                           </object>
                         </property>
                       </object>
@@ -319,6 +318,9 @@
                     <property name="spacing">6</property>
                     <child>
                       <object class="GtkCenterBox">
+                        <!-- Align start of text with visible content since most content rows/cells have a 6px padding already -->
+                        <property name="margin-start">6</property>
+                        <property name="margin-end">6</property>
                         <property name="start-widget">
                           <object class="GtkBox">
                             <property name="spacing">6</property>
@@ -352,6 +354,7 @@
                     </child>
                     <child>
                       <object class="EuphonicaContentStack" id="recent_content_stack">
+                        <property name="hexpand">true</property>
                         <property name="placeholder">
                           <object class="AdwStatusPage">
                             <property name="title" translatable="true">No Recent Songs</property>
@@ -367,7 +370,10 @@
                                 <property name="icon-name">library-music-symbolic</property>
                                 <property name="title">Recent Albums</property>
                                 <property name="child">
-                                  <object class="AdwWrapBox" id="recent_albums"/>
+                                  <object class="AdwWrapBox" id="recent_albums">
+                                    <property name="justify">spread</property>
+                                    <property name="align">0.5</property>
+                                  </object>
                                 </property>
                               </object>
                             </child>
@@ -378,7 +384,10 @@
                                 <property name="icon-name">music-artist-symbolic</property>
                                 <property name="title">Recent Artists</property>
                                 <property name="child">
-                                  <object class="AdwWrapBox" id="recent_artists"/>
+                                  <object class="AdwWrapBox" id="recent_artists">
+                                    <property name="justify">spread</property>
+                                    <property name="align">0.5</property>
+                                  </object>
                                 </property>
                               </object>
                             </child>
@@ -403,72 +412,7 @@
                       </object>
                     </child>
                   </object>
-                </child>
 
-                <child>
-                  <!-- Default layout put first -->
-                  <object class="AdwLayout">
-                    <property name="name">wide</property>
-                    <!-- Wide layout: Revisit (and other recommender-based sections) to the left, stacked vertically
-                        & in their full sizes; recent section to the right running the whole height, taking up at most 600px. -->
-                    <child>
-                      <object class="GtkBox">
-                        <property name="vexpand">true</property>
-                        <property name="hexpand">true</property>
-                        <property name="spacing">12</property>
-                        <!-- Left: recommender sections -->
-                        <child>
-                          <object class="GtkScrolledWindow">
-                            <property name="hscrollbar-policy">never</property>
-                            <property name="vexpand">true</property>
-                            <property name="hexpand">true</property>
-                            <property name="propagate-natural-height">true</property>
-                            <child>
-                              <object class="GtkBox">
-                                <property name="orientation">1</property>
-                                <property name="hexpand">1</property>
-                                <property name="spacing">12</property>
-
-                                <child>
-                                  <object class="AdwLayoutSlot">
-                                    <property name="id">greeting</property>
-                                  </object>
-                                </child>
-
-                                <!-- For now there's only Rediscover -->
-                                <child>
-                                  <object class="AdwLayoutSlot">
-                                    <property name="id">rediscover</property>
-                                  </object>
-                                </child>
-                              </object>
-                            </child>
-                          </object>
-                        </child>
-
-                        <!-- Right: Recent section -->
-                        <child>
-                          <object class="AdwClamp">
-                            <property name="maximum-size">600</property>
-                            <property name="width-request">300</property>
-                            <property name="child">
-                              <object class="GtkScrolledWindow">
-                                <property name="hscrollbar-policy">never</property>
-                                <property name="vexpand">true</property>
-                                <property name="hexpand">true</property>
-                                <property name="propagate-natural-height">true</property>
-                                <child>
-                                  <object class="AdwLayoutSlot">
-                                    <property name="id">recent</property>
-                                  </object>
-                                </child>
-                              </object>
-                            </property>
-                          </object>
-                        </child>
-                      </object>
-                    </child>
-                  </object>
                 </child>
 
                 <child>
@@ -490,19 +434,33 @@
 
                             <child>
                               <object class="AdwLayoutSlot">
+                                <property name="margin-start">6</property>
+                                <property name="margin-end">6</property>
                                 <property name="id">greeting</property>
                               </object>
+                            </child>
+
+                            <child>
+                              <object class="GtkSeparator"/>
                             </child>
 
                             <!-- For now there's only Rediscover -->
                             <child>
                               <object class="AdwLayoutSlot">
+                                <property name="margin-start">6</property>
+                                <property name="margin-end">6</property>
                                 <property name="id">rediscover</property>
                               </object>
                             </child>
 
                             <child>
+                              <object class="GtkSeparator"/>
+                            </child>
+
+                            <child>
                               <object class="AdwLayoutSlot">
+                                <property name="margin-start">6</property>
+                                <property name="margin-end">6</property>
                                 <property name="id">recent</property>
                               </object>
                             </child>
@@ -515,8 +473,69 @@
 
                 <child>
                   <object class="AdwLayout">
+                    <property name="name">wide</property>
+                    <!-- Wide layout: Revisit (and other recommender-based sections) to the left, stacked vertically
+                        & in their full sizes; recent section to the right running the whole height, taking up at most 600px. -->
+                    <child>
+                      <object class="GtkScrolledWindow">
+                        <property name="hscrollbar-policy">never</property>
+                        <property name="vexpand">true</property>
+                        <property name="hexpand">true</property>
+                        <property name="propagate-natural-height">true</property>
+                        <child>
+                          <object class="GtkBox">
+                            <property name="orientation">1</property>
+                            <property name="spacing">12</property>
+                            <child>
+                              <object class="AdwLayoutSlot">
+                                <property name="id">greeting</property>
+                              </object>
+                            </child>
+                            <child>
+                              <object class="GtkPaned">
+                                <property name="start-child">
+                                  <!-- Left: Recommenders -->
+                                  <object class="GtkBox">
+                                    <property name="orientation">1</property>
+                                    <property name="hexpand">1</property>
+                                    <property name="spacing">12</property>
+
+                                    <!-- For now there's only Rediscover -->
+                                    <child>
+                                      <object class="AdwLayoutSlot">
+                                        <property name="id">rediscover</property>
+                                        <style>
+                                          <class name="padding-12"/>
+                                        </style>
+                                      </object>
+                                    </child>
+                                  </object>
+                                </property>
+                                <property name="end-child">
+                                  <!-- Right: Recent section -->
+                                  <object class="AdwLayoutSlot">
+                                    <property name="hexpand">true</property>
+                                    <property name="id">recent</property>
+                                    <style>
+                                      <class name="padding-12"/>
+                                    </style>
+                                  </object>
+                                </property>
+                              </object>
+                            </child>
+                          </object>
+                        </child>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+
+                <!-- Narrow layout: for some reason horizontal scrolling doesn't work -->
+                <!--
+                <child>
+                  <object class="AdwLayout">
                     <property name="name">narrow</property>
-                    <!-- Narrow layout: sections conserve vertical height to avoid excessive scrolling -->
+
                     <child>
                       <object class="GtkScrolledWindow">
                         <property name="hscrollbar-policy">never</property>
@@ -536,7 +555,6 @@
                               </object>
                             </child>
 
-                            <!-- For now there's only Rediscover -->
                             <child>
                               <object class="AdwLayoutSlot">
                                 <property name="id">rediscover</property>
@@ -554,6 +572,8 @@
                     </child>
                   </object>
                 </child>
+                -->
+
               </object>
             </property>
           </object>

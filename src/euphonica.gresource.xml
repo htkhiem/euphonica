@@ -154,5 +154,6 @@
     <file preprocess="xml-stripblanks" alias="mouse-symbolic.svg">gtk/icons/mouse-symbolic.svg</file>
     <file preprocess="xml-stripblanks" alias="cd-symbolic.svg">gtk/icons/cd-symbolic.svg</file>
     <file preprocess="xml-stripblanks" alias="arrow-clockwise-symbolic.svg">gtk/icons/arrow-clockwise-symbolic.svg</file>
+    <file preprocess="xml-stripblanks" alias="go-home-symbolic.svg">gtk/icons/go-home-symbolic.svg</file>
   </gresource>
 </gresources>

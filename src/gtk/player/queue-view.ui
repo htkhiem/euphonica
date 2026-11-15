@@ -184,6 +184,7 @@
                                 <property name="valign">start</property>
                                 <style>
                                   <class name="song-list"/>
+                                  <class name="padding-6"/>
                                 </style>
                               </object>
                             </property>

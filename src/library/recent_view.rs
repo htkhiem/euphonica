@@ -341,7 +341,7 @@ impl RecentView {
             self.imp().recent_content_stack.show_placeholder();
             let recent_albums = self.imp().recent_albums.get();
             let recent_artists = self.imp().recent_artists.get();
-            let recent_songs = self.imp().recent_songs.get();
+            let recent_songs = &self.imp().recent_songs_list;  // this one is a model :)
             recent_albums.remove_all();
             recent_artists.remove_all();
             recent_songs.remove_all();
@@ -400,7 +400,7 @@ impl RecentView {
                     recent_artists.append(&cell_btn);
                 }
                 let _ = self.imp().recent_artists_list.replace(artists);
-                self.imp().recent_songs_list.extend_from_slice(&songs);
+                recent_songs.extend_from_slice(&songs);
                 self.imp().recent_content_stack.show_content();
             }
         }
