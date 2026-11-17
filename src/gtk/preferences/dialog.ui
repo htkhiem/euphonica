@@ -14,7 +14,7 @@
 			<object class="EuphonicaIntegrationsPreferences" id="integrations_tab"/>
 		</child>
 		<child>
-			<object class="EuphonicaLibraryPreferences" id="library_tab"/>
+			<object class="EuphonicaAppPreferences" id="app_tab"/>
 		</child>
 		<child>
 			<object class="EuphonicaUIPreferences" id="ui_tab"/>

@@ -134,6 +134,7 @@ impl UIPreferences {
         let imp = self.imp();
         // Populate with current gsettings values
         let settings = utils::settings_manager();
+
         let player_settings = settings.child("player");
         let ui_settings = settings.child("ui");
         let state = settings.child("state");

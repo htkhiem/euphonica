@@ -11,8 +11,8 @@ mod imp {
     use super::*;
 
     #[derive(Debug, Default, CompositeTemplate)]
-    #[template(resource = "/io/github/htkhiem/Euphonica/gtk/preferences/library.ui")]
-    pub struct LibraryPreferences {
+    #[template(resource = "/io/github/htkhiem/Euphonica/gtk/preferences/app.ui")]
+    pub struct AppPreferences {
         #[template_child]
         pub sort_nulls_first: TemplateChild<adw::SwitchRow>,
         #[template_child]
@@ -59,8 +59,6 @@ mod imp {
         pub refresh_cache_stats_btn: TemplateChild<gtk::Button>,
 
         #[template_child]
-        pub n_image_threads: TemplateChild<adw::SpinRow>,
-        #[template_child]
         pub store_lossless_images: TemplateChild<adw::SwitchRow>,
         #[template_child]
         pub max_image_resolution: TemplateChild<gtk::Scale>,
@@ -71,13 +69,16 @@ mod imp {
         #[template_child]
         pub clear_cache_dialog: TemplateChild<adw::AlertDialog>,
 
+        #[template_child]
+        pub n_threads: TemplateChild<adw::SpinRow>,
+
         pub n_async_in_progress: Cell<u8>,
     }
 
     #[glib::object_subclass]
-    impl ObjectSubclass for LibraryPreferences {
-        const NAME: &'static str = "EuphonicaLibraryPreferences";
-        type Type = super::LibraryPreferences;
+    impl ObjectSubclass for AppPreferences {
+        const NAME: &'static str = "EuphonicaAppPreferences";
+        type Type = super::AppPreferences;
         type ParentType = adw::PreferencesPage;
 
         fn class_init(klass: &mut Self::Class) {
@@ -89,7 +90,7 @@ mod imp {
         }
     }
 
-    impl ObjectImpl for LibraryPreferences {
+    impl ObjectImpl for AppPreferences {
         fn constructed(&self) {
             self.parent_constructed();
 
@@ -106,27 +107,32 @@ mod imp {
             });
         }
     }
-    impl WidgetImpl for LibraryPreferences {}
-    impl PreferencesPageImpl for LibraryPreferences {}
+    impl WidgetImpl for AppPreferences {}
+    impl PreferencesPageImpl for AppPreferences {}
 }
 
 glib::wrapper! {
-    pub struct LibraryPreferences(ObjectSubclass<imp::LibraryPreferences>)
+    pub struct AppPreferences(ObjectSubclass<imp::AppPreferences>)
         @extends adw::PreferencesPage,
     @implements gtk::Accessible, gtk::Buildable, gtk::ConstraintTarget, gtk::Widget;
 }
 
-impl Default for LibraryPreferences {
+impl Default for AppPreferences {
     fn default() -> Self {
         glib::Object::new()
     }
 }
 
-impl LibraryPreferences {
+impl AppPreferences {
     pub fn setup(&self, cache: Rc<Cache>) {
         let imp = self.imp();
         // Populate with current gsettings values
         let settings = utils::settings_manager();
+
+        settings
+            .bind("n-threads", &imp.n_threads.get(), "value")
+            .build();
+
         // Set up library settings
         let library_settings = settings.child("library");
         let sort_nulls_first = imp.sort_nulls_first.get();
@@ -152,11 +158,6 @@ impl LibraryPreferences {
             .build();
         library_settings
             .bind("pause-recent", &imp.pause_recent.get(), "active")
-            .build();
-
-        // Image processing settings
-        library_settings
-            .bind("n-image-threads", &imp.n_image_threads.get(), "value")
             .build();
 
         library_settings
