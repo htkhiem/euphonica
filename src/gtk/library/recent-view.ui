@@ -366,7 +366,7 @@
                           <object class="AdwViewStack" id="recent_subview_stack">
                             <child>
                               <object class="AdwViewStackPage">
-                                <property name="name">recent-albums</property>
+                                <property name="name">albums</property>
                                 <property name="icon-name">library-music-symbolic</property>
                                 <property name="title">Recent Albums</property>
                                 <property name="child">
@@ -380,7 +380,7 @@
 
                             <child>
                               <object class="AdwViewStackPage">
-                                <property name="name">recent-artists</property>
+                                <property name="name">artists</property>
                                 <property name="icon-name">music-artist-symbolic</property>
                                 <property name="title">Recent Artists</property>
                                 <property name="child">
@@ -394,7 +394,7 @@
 
                             <child>
                               <object class="AdwViewStackPage">
-                                <property name="name">recent-songs</property>
+                                <property name="name">songs</property>
                                 <property name="icon-name">music-note-single-symbolic</property>
                                 <property name="title">Recent Songs</property>
                                 <property name="child">

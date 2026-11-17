@@ -33,7 +33,9 @@ use derivative::Derivative;
 use mpd::Stats;
 mod imp {
 
-    use super::*;
+    use crate::utils::settings_manager;
+
+use super::*;
 
     #[derive(Debug, CompositeTemplate, Properties, Derivative)]
     #[derivative(Default)]
@@ -73,6 +75,8 @@ mod imp {
         pub rediscover_artists_list: RefCell<Vec<Artist>>,
 
         // Recent
+        #[template_child]
+        pub recent_subview_stack: TemplateChild<adw::ViewStack>,
         #[template_child]
         pub recent_content_stack: TemplateChild<ContentStack>,
         #[template_child]
@@ -192,6 +196,25 @@ mod imp {
                     ));
                 }
             ));
+
+            let settings = settings_manager().child("state").child("homeview");
+            self.recent_subview_stack.set_visible_child_name(match settings.enum_("recent-subview") {
+                0 => "albums",
+                1 => "artists",
+                2 => "songs",
+                _ => unreachable!()
+            });
+
+            self.recent_subview_stack.connect_visible_child_name_notify(move |stack| {
+                if let Some(name) = stack.visible_child_name().map(|s| s.to_string()).as_deref() {
+                    let _ = settings.set_enum("recent-subview", match name {
+                        "albums" => 0,
+                        "artists" => 1,
+                        "songs" => 2,
+                        _ => unreachable!()
+                    });
+                }
+            });
         }
 
         fn signals() -> &'static [Signal] {
