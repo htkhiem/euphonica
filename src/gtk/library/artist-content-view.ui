@@ -560,6 +560,8 @@
                                               <object class="AdwLayoutSlot">
                                                 <property name="hexpand">true</property>
                                                 <property name="id">discography</property>
+                                                <property name="vexpand-set">true</property>
+                                                <property name="valign">start</property>
                                               </object>
                                             </child>
                                             <child>
@@ -654,6 +656,7 @@
                                         <child>
                                           <object class="GtkRevealer" id="metadata_revealer">
                                             <property name="transition-type">5</property>
+                                            <property name="vexpand-set">true</property>
                                             <property name="child">
                                               <object class="AdwLayoutSlot">
                                                 <property name="margin-top">12</property>
@@ -668,6 +671,7 @@
                                     <child>
                                       <object class="AdwLayoutSlot">
                                         <property name="id">discography</property>
+                                        <property name="vexpand-set">true</property>
                                       </object>
                                     </child>
 
@@ -792,9 +796,8 @@
                         <property name="orientation">1</property>
                         <child>
                           <object class="GtkCenterBox">
-                            <style>
-                              <class name="padding-6"/>
-                            </style>
+                            <property name="margin-start">12</property>
+                            <property name="margin-end">12</property>
                             <property name="start-widget">
                               <object class="GtkBox" id="action_btns">
                                 <property name="spacing">6</property>
