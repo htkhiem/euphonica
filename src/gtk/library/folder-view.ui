@@ -157,10 +157,10 @@
                     <property name="vexpand">true</property>
                     <property name="child">
                       <object class="GtkListView" id="list_view">
-                        <property name="show-separators">true</property>
                         <property name="single-click-activate">false</property>
                         <style>
-                          <class name="no-bg"/>
+                          <class name="song-list"/>
+                          <class name="padding-12"/>
                         </style>
                       </object>
                     </property>

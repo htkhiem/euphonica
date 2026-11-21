@@ -19,17 +19,6 @@ pub enum INodeType {
     PlaylistFile,
 }
 
-impl INodeType {
-    pub fn icon_name(&self) -> &'static str {
-        match self {
-            Self::Folder => "folder-symbolic",
-            Self::Song => "music-note-single-symbolic",
-            Self::Playlist | Self::DynamicPlaylist | Self::PlaylistFile => "playlist-symbolic",
-            _ => "paper-symbolic",
-        }
-    }
-}
-
 //  TODO: more detailed fields
 #[derive(Debug, Clone, PartialEq)]
 pub struct INodeInfo {

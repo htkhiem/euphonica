@@ -1,14 +1,43 @@
 use adw::prelude::*;
 use glib::{Object, WeakRef, clone};
-use gtk::{CompositeTemplate, gdk, gio, glib, subclass::prelude::*};
-use std::cell::{OnceCell, RefCell};
+use gtk::{CompositeTemplate, gdk, gio, glib::{self, closure_local}, subclass::prelude::*};
+use time::OffsetDateTime;
+use std::cell::{LazyCell, OnceCell, RefCell};
+use time::format_description::well_known::Iso8601;
 
 use crate::{
-    common::{INode, INodeType, SongInfoDialog},
-    window::EuphonicaWindow,
+    common::{INode, INodeType, SongInfoDialog}, utils::format_datetime_local_tz, window::EuphonicaWindow
 };
 
 use super::Library;
+
+thread_local! {
+    static FOLDER_ICON: LazyCell<gtk::IconPaintable> = LazyCell::new(|| {
+        let theme: gtk::IconTheme = gdk::Display::default().map(|disp| gtk::IconTheme::for_display(&disp)).unwrap_or_default();
+
+        dbg!(theme.lookup_icon(
+            "inode-directory",
+            &["folder", "folder-symbolic"],
+            32,
+            1, // scale
+            gtk::TextDirection::None,
+            gtk::IconLookupFlags::NONE,
+        ))
+    });
+
+    static PLAYLIST_ICON: LazyCell<gtk::IconPaintable> = LazyCell::new(|| {
+        let theme: gtk::IconTheme = gdk::Display::default().map(|disp| gtk::IconTheme::for_display(&disp)).unwrap_or_default();
+
+        theme.lookup_icon(
+            "audio-x-generic",
+            &["text-x-generic"],
+            32,
+            1, // scale
+            gtk::TextDirection::None,
+            gtk::IconLookupFlags::NONE,
+        )
+    });
+}
 
 mod imp {
     use std::cell::Cell;
@@ -232,8 +261,28 @@ mod imp {
                 }
                 "inode-type" => {
                     if let Ok(it) = value.get::<INodeType>() {
+                        match it {
+                            INodeType::Folder => {
+                                self.thumbnail
+                                    .set_paintable(Some(&FOLDER_ICON.with(|icon| (*icon).clone())));
+                            }
+                            INodeType::Playlist
+                            | INodeType::PlaylistFile
+                            | INodeType::DynamicPlaylist => {
+                                self.thumbnail.set_paintable(Some(
+                                    &PLAYLIST_ICON.with(|icon| (*icon).clone()),
+                                ));
+                            }
+                            INodeType::Song => {
+                                self.thumbnail
+                                    .set_icon_name(Some("music-note-single-symbolic"));
+                            }
+                            _ => {
+                                self.thumbnail.set_icon_name(Some("paper-symbolic"));
+                            }
+                        }
                         self.inode_type.replace(it);
-                        self.thumbnail.set_icon_name(Some(it.icon_name()));
+
                         if it == INodeType::Folder
                             || it == INodeType::Song
                             || it == INodeType::Playlist
@@ -246,8 +295,7 @@ mod imp {
                             self.append_queue.set_visible(false);
                         }
                     } else {
-                        self.thumbnail
-                            .set_icon_name(Some(INodeType::default().icon_name()));
+                        self.thumbnail.set_icon_name(Some("paper-symbolic"));
                         self.replace_queue.set_visible(false);
                         self.append_queue.set_visible(false);
                     }
@@ -381,6 +429,13 @@ impl GenericRow {
 
         item.property_expression("item")
             .chain_property::<INode>("last-modified")
+            .chain_closure::<String>(closure_local!(
+                |_: Option<glib::Object>, last_mod: Option<&str>| {
+                    last_mod.and_then(|s| {
+                        OffsetDateTime::parse(s, &Iso8601::PARSING).ok()
+                    }).map(format_datetime_local_tz).unwrap_or(String::from(""))
+                }
+            ))
             .bind(self, "last-modified", gtk::Widget::NONE);
 
         item.property_expression("item")

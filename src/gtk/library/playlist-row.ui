@@ -26,7 +26,6 @@
 				<property name="start-widget">
 					<object class="GtkBox">
 						<property name="orientation">vertical</property>
-						<property name="spacing">6</property>
 						<property name="margin-start">6</property>
 						<child>
 							<object class="GtkLabel" id="name">
