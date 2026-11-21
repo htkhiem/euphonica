@@ -69,9 +69,7 @@ mod imp {
         #[template_child]
         pub add_bio_btn: TemplateChild<gtk::Button>, // now opens the metadata editor dialog
         #[template_child]
-        pub bio_fader: TemplateChild<FadingScrolledWindow>,
-        #[template_child]
-        pub bio_text: TemplateChild<gtk::Label>,
+        pub bio_text: TemplateChild<gtk::TextView>,
         #[template_child]
         pub bio_link: TemplateChild<gtk::LinkButton>,
         #[template_child]
@@ -79,6 +77,10 @@ mod imp {
 
         #[template_child]
         pub meta_last_updated: TemplateChild<gtk::Label>,
+        #[template_child]
+        pub metadata_revealer: TemplateChild<gtk::Revealer>,
+        #[template_child]
+        pub collapse_metadata_btn: TemplateChild<gtk::Button>,
 
         // Edit dialog
         #[template_child]
@@ -399,6 +401,31 @@ mod imp {
                     this.update_discography_layout();
                 }
             ));
+
+            let revealer = self.metadata_revealer.get();
+            revealer
+                .bind_property(
+                    "reveal-child",
+                    &self.collapse_metadata_btn.get(),
+                    "icon-name",
+                )
+                .transform_to(|_, is_revealed: bool| {
+                    Some(
+                        if is_revealed {
+                            "down-symbolic"
+                        } else {
+                            "up-symbolic"
+                        }
+                        .to_value(),
+                    )
+                })
+                .bidirectional()
+                .sync_create()
+                .build();
+
+            self.collapse_metadata_btn.connect_clicked(move |_| {
+                revealer.set_reveal_child(!revealer.is_child_revealed());
+            });
 
             self.song_list
                 .bind_property("n-items", &self.track_count.get(), "label")
@@ -758,7 +785,7 @@ impl ArtistContentView {
             let bio_link = self.imp().bio_link.get();
             let bio_attrib = self.imp().bio_attrib.get();
             self.imp().bio_stack.show_content();
-            bio_text.set_label(&bio.content);
+            bio_text.buffer().set_text(&bio.content);
             if let Some(url) = bio.url.as_ref() {
                 bio_link.set_visible(true);
                 bio_link.set_uri(url);

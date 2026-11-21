@@ -102,6 +102,8 @@
                         <property name="wrap">true</property>
                         <property name="justify">left</property>
                         <property name="label">Untitled Album</property>
+                        <property name="lines">3</property>
+                        <property name="ellipsize">3</property>
                         <style>
                           <class name="title-1"/>
                         </style>
@@ -652,7 +654,6 @@
                         </property>
                       </object>
                     </child>
-
 
                     <!-- Narrow layout: a single column, with metadata box hidden by default -->
                     <child>
