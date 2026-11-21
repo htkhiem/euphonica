@@ -54,6 +54,8 @@ mod imp {
         pub back_btn: TemplateChild<gtk::Button>,
         #[template_child]
         pub forward_btn: TemplateChild<gtk::Button>,
+        #[template_child]
+        pub home_btn: TemplateChild<gtk::Button>,
 
         #[template_child]
         pub stack: TemplateChild<ContentStack>,
@@ -153,6 +155,24 @@ mod imp {
                         async move {
                             if let Some(lib) = this.library.upgrade() {
                                 if let Err(e) = lib.folder_forward().await {
+                                    dbg!(e);
+                                }
+                            }
+                        }
+                    ));
+                }
+            ));
+
+            self.home_btn.connect_clicked(clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |_| {
+                    glib::spawn_future_local(clone!(
+                        #[weak]
+                        this,
+                        async move {
+                            if let Some(lib) = this.library.upgrade() {
+                                if let Err(e) = lib.folder_root().await {
                                     dbg!(e);
                                 }
                             }

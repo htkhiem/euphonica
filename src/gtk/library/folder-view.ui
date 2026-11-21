@@ -14,6 +14,27 @@
                 <property name="visible">false</property>
               </object>
             </child>
+            <child type="start">
+              <object class="GtkButton" id="back_btn">
+                <property name="icon-name">go-previous-symbolic</property>
+                <property name="tooltip-text" translatable="true">Back</property>
+                <property name="sensitive">false</property>
+              </object>
+            </child>
+            <child type="start">
+              <object class="GtkButton" id="forward_btn">
+                <property name="icon-name">go-next-symbolic</property>
+                <property name="tooltip-text" translatable="true">Forward</property>
+                <property name="sensitive">false</property>
+              </object>
+            </child>
+            <child type="start">
+              <object class="GtkButton" id="home_btn">
+                <property name="icon-name">go-home-symbolic</property>
+                <property name="tooltip-text" translatable="true">Back to library root</property>
+                <property name="sensitive" bind-source="back_btn" bind-property="sensitive" bind-flags="sync-create"/>
+              </object>
+            </child>
             <child type="end">
               <object class="GtkToggleButton" id="search_btn">
                 <property name="icon-name">edit-find-symbolic</property>
@@ -46,18 +67,6 @@
                 <style>
                   <class name="toolbar"/>
                 </style>
-                <child>
-                  <object class="GtkButton" id="back_btn">
-                    <property name="icon-name">left-symbolic</property>
-                    <property name="sensitive">false</property>
-                  </object>
-                </child>
-                <child>
-                  <object class="GtkButton" id="forward_btn">
-                    <property name="icon-name">right-symbolic</property>
-                    <property name="sensitive">false</property>
-                  </object>
-                </child>
                 <child>
                   <object class="GtkLabel" id="path_widget">
                     <property name="hexpand">true</property>

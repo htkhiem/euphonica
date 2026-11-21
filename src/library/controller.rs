@@ -440,6 +440,15 @@ impl Library {
         Ok(())
     }
 
+    pub async fn folder_root(&self) -> ClientResult<()> {
+        self.imp().folder_curr_idx.set(0);
+        self.imp().folder_inodes_initialized.set(false);
+        self.get_folder_contents().await?;
+        self.notify("folder-curr-idx");
+        self.notify("folder-path");
+        Ok(())
+    }
+
     pub async fn navigate_to(&self, name: &str) -> ClientResult<()> {
         let curr_idx = self.imp().folder_curr_idx.get();
         {
@@ -851,7 +860,7 @@ impl Library {
                 .get_song_infos_by_query(query_albumartist_tag, true, &mut |batch| {
                     batch
                         .into_iter()
-                        .filter(|s| s.album.as_ref().is_some() && artist.is_in_song(s, true))
+                        .filter(|s: &SongInfo| s.album.as_ref().is_some() && artist.is_in_song(s, true))
                         .for_each(|si| {
                             songs.insert(si.file.clone(), si);
                         });
