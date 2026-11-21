@@ -280,6 +280,7 @@ impl DiscographyAlbum {
                     row.on_bind(song);
                     row.set_index_visible(true);
                     row.set_index(&song.get_track().to_string());
+                    row.set_disc(&song.get_disc().to_string());
                     row.set_thumbnail_visible(false);
 
                     row.set_name(song.get_name());

@@ -2,7 +2,7 @@
 <interface>
 	<requires lib="gtk" version="4.0" />
 	<requires lib="Adw" version="1.0" />
-	<template class="EuphonicaLibraryPreferences" parent="AdwPreferencesPage">
+	<template class="EuphonicaAppPreferences" parent="AdwPreferencesPage">
 		<object class="AdwAlertDialog" id="clear_cache_dialog">
 			<property name="heading" translatable="yes">Clear all cached images?</property>
 			<property name="body" translatable="yes">This action cannot be undone.</property>
@@ -13,8 +13,8 @@
 				<response id="clear" translatable="yes" appearance="destructive">C_lear</response>
 			</responses>
 		</object>
-		<property name="title" translatable="true">Library</property>
-		<property name="icon-name">library-music-symbolic</property>
+		<property name="title" translatable="true">App</property>
+		<property name="icon-name">speedometer-symbolic</property>
 		<child>
 			<object class="AdwPreferencesGroup">
 				<property name="title" translatable="true">Searching &amp;amp; Sorting</property>
@@ -264,33 +264,18 @@
 						<property name="icon-name">view-refresh-symbolic</property>
 					</object>
 				</property>
-		<child>
-				<object class="AdwSpinRow" id="n_image_threads">
-					<property name="title" translatable="true">Image processing thread count</property>
-					<property name="subtitle" translatable="true">Number of threads used for parallel image processing (resizing, encoding, decoding). More threads does not always mean better performance. Requires restart to take effect.</property>
-					<property name="adjustment">
-						<object class="GtkAdjustment">
-							<property name="lower">1</property>
-							<property name="upper">24</property>
-							<property name="value">4</property>
-							<property name="page-increment">1</property>
-							<property name="step-increment">1</property>
-						</object>
-					</property>
-				</object>
-			</child>
-			<child>
-				<object class="AdwSwitchRow" id="optimize_embedded_cover_loading">
-					<property name="title" translatable="true">Optimise embedded cover loading</property>
-					<property name="subtitle" translatable="true">If enabled, will attempt to download only one embedded cover per folder. Ineffective if said folder already has a dedicated cover file, which always take priority. Will not work correctly if tracks from different releases share folders. Image cache MUST be cleared after changing this.</property>
-				</object>
-			</child>
-			<child>
-				<object class="AdwSwitchRow" id="store_lossless_images">
-					<property name="title" translatable="true">Store images as lossless</property>
-					<property name="subtitle" translatable="true">WebP supports both lossy and lossless. Lossless files are much larger but may look slightly better. Requires redownloading.</property>
-				</object>
-			</child>
+				<child>
+					<object class="AdwSwitchRow" id="optimize_embedded_cover_loading">
+						<property name="title" translatable="true">Optimise embedded cover loading</property>
+						<property name="subtitle" translatable="true">If enabled, will attempt to download only one embedded cover per folder. Ineffective if said folder already has a dedicated cover file, which always take priority. Will not work correctly if tracks from different releases share folders. Image cache MUST be cleared after changing this.</property>
+					</object>
+				</child>
+				<child>
+					<object class="AdwSwitchRow" id="store_lossless_images">
+						<property name="title" translatable="true">Store images as lossless</property>
+						<property name="subtitle" translatable="true">WebP supports both lossy and lossless. Lossless files are much larger but may look slightly better. Requires redownloading.</property>
+					</object>
+				</child>
 				<child>
 					<object class="AdwActionRow">
 						<property name="title" translatable="true">Maximum resolution</property>
@@ -356,6 +341,27 @@
 					<object class="AdwButtonRow" id="open_cache_folder">
 						<property name="title" translatable="true">Open cache folder</property>
 						<property name="end-icon-name">right-symbolic</property>
+					</object>
+				</child>
+			</object>
+		</child>
+
+		<child>
+			<object class="AdwPreferencesGroup">
+				<property name="title" translatable="true">Advanced</property>
+				<child>
+					<object class="AdwSpinRow" id="n_threads">
+						<property name="title" translatable="true">Threadpool size</property>
+						<property name="subtitle" translatable="true">Number of threads used for various operations in the app, including image processing. More threads does not always mean better performance. Requires restart to take effect.</property>
+						<property name="adjustment">
+							<object class="GtkAdjustment">
+								<property name="lower">1</property>
+								<property name="upper">24</property>
+								<property name="value">4</property>
+								<property name="page-increment">1</property>
+								<property name="step-increment">1</property>
+							</object>
+						</property>
 					</object>
 				</child>
 			</object>

@@ -7,10 +7,10 @@
     <property name="spacing">6</property>
     <child>
       <object class="GtkGrid" id="index_area">
-        <property name="width-request">45</property>
         <property name="valign">center</property>
         <property name="halign">start</property>
         <property name="visible">false</property>
+        <property name="column-spacing">6</property>
         <style>
           <class name="dimmed"/>
         </style>

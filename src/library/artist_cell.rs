@@ -287,6 +287,144 @@ impl ArtistCell {
         res
     }
 
+    pub fn new_static(artist: &Artist, cache: Rc<Cache>) -> Self {
+        let res: Self = Object::builder().build();
+        let cache_state = cache.get_cache_state();
+        res.imp()
+            .cache
+            .set(cache)
+            .expect("ArtistCell cannot bind to cache");
+        let imp = res.imp();
+        let name = artist.get_name();
+        imp.name.set_label(if name.is_empty() {*EMPTY_ARTIST_STRING} else {name});
+        let ui_settings = settings_manager().child("ui");
+        ui_settings
+            .bind("use-hires-for-album-cells", &res, "hires")
+            .get_only()
+            .build();
+
+        // Set up dynamic texture loading/unloading
+        res.connect_map(|res| {
+            res.load_textures_with_delay();
+        });
+
+        res.connect_unmap(|res| {
+            res.unload_textures(!res.imp().hires.get());
+        });
+
+        // Update avatar and album covers live when set/cleared.
+        let state = cache_state;
+        let (avatar_set_id, avatar_cleared_id, cover_set_id, cover_cleared_id) = (
+            state.connect_closure(
+                "artist-avatar-set",
+                false,
+                closure_local!(
+                    #[weak(rename_to = this)]
+                    res,
+                    move |_: CacheState, name: String, hires: gdk::Texture, thumb: gdk::Texture| {
+                        let use_hires = this.imp().hires.get();
+                        if this.artist().is_some_and(|a| a.get_inner().name == name) {
+                            this.imp().avatar.set_custom_image(Some(if use_hires {
+                                &hires
+                            } else {
+                                &thumb
+                            }));
+                        }
+                    }
+                ),
+            ),
+            state.connect_closure(
+                "artist-avatar-cleared",
+                false,
+                closure_local!(
+                    #[weak(rename_to = this)]
+                    res,
+                    move |_: CacheState, name: String| {
+                        if this.artist().is_some_and(|a| a.get_inner().name == name) {
+                            this.imp()
+                                .avatar
+                                .set_custom_image(Option::<&gdk::Texture>::None);
+                        }
+                    }
+                ),
+            ),
+            state.connect_closure(
+                "album-cover-set",
+                false,
+                closure_local!(
+                    #[weak(rename_to = this)]
+                    res,
+                    move |_: CacheState, uri: String, hires: gdk::Texture, thumb: gdk::Texture| {
+                        let use_hires = this.imp().hires.get();
+                        if this
+                            .artist()
+                            .is_some_and(|a| !a.get_inner().example_uris.is_empty())
+                        {
+                            let cover_fan = this.imp().covers.get();
+                            for (i, example_uri) in this
+                                .artist()
+                                .unwrap()
+                                .get_inner()
+                                .example_uris
+                                .iter()
+                                .take(3)
+                                .enumerate()
+                            {
+                                if *example_uri == uri {
+                                    cover_fan.set_cover(
+                                        i as u8,
+                                        if use_hires { &hires } else { &thumb },
+                                    );
+                                }
+                            }
+                        }
+                    }
+                ),
+            ),
+            state.connect_closure(
+                "album-cover-cleared",
+                false,
+                closure_local!(
+                    #[weak(rename_to = this)]
+                    res,
+                    move |_: CacheState, uri: String| {
+                        if this
+                            .artist()
+                            .is_some_and(|a| !a.get_inner().example_uris.is_empty())
+                        {
+                            let cover_fan = this.imp().covers.get();
+                            for (i, example_uri) in this
+                                .artist()
+                                .unwrap()
+                                .get_inner()
+                                .example_uris
+                                .iter()
+                                .take(3)
+                                .enumerate()
+                            {
+                                if *example_uri == uri {
+                                    cover_fan.clear_cover(i as u8, this.imp().hires.get());
+                                }
+                            }
+                        }
+                    }
+                ),
+            ),
+        );
+        let _ = res.imp().cache_state.set(Some(&state));
+        let _ = res.imp().cover_signal_ids.replace(Some((
+            avatar_set_id,
+            avatar_cleared_id,
+            cover_set_id,
+            cover_cleared_id,
+        )));
+
+        // Static bind
+        imp.artist.set(Some(artist));
+
+        res
+    }
+
     fn artist(&self) -> Option<Artist> {
         self.imp().artist.upgrade()
     }

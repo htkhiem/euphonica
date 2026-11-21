@@ -5,14 +5,19 @@ use std::{cell::Cell, sync::OnceLock};
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
+use chrono::DateTime;
+use chrono::Local;
+use chrono::Timelike;
 use gtk::{
-    CompositeTemplate, ListItem, SignalListItemFactory, SingleSelection,
+    CompositeTemplate, ListItem, SignalListItemFactory, SingleSelection, gio,
     glib::{self},
 };
 
 use glib::{Properties, SignalHandlerId, WeakRef, clone, closure_local, subclass::Signal};
 
 use super::{AlbumCell, ArtistCell, Library};
+use crate::common::FadingScrolledWindow;
+use crate::library::recommendations;
 use crate::{
     cache::Cache,
     client::Result as ClientResult,
@@ -24,58 +29,80 @@ use crate::{
     utils::LazyInit,
     window::EuphonicaWindow,
 };
-
+use derivative::Derivative;
+use mpd::Stats;
 mod imp {
-    use super::*;
 
-    #[derive(Debug, CompositeTemplate, Properties, Default)]
+    use crate::utils::settings_manager;
+
+use super::*;
+
+    #[derive(Debug, CompositeTemplate, Properties, Derivative)]
+    #[derivative(Default)]
     #[properties(wrapper_type = super::RecentView)]
     #[template(resource = "/io/github/htkhiem/Euphonica/gtk/library/recent-view.ui")]
     pub struct RecentView {
         #[template_child]
-        pub nav_view: TemplateChild<adw::NavigationView>,
-        #[template_child]
         pub show_sidebar: TemplateChild<gtk::Button>,
-        #[template_child]
-        pub clear: TemplateChild<gtk::Button>,
-        #[template_child]
-        pub stack: TemplateChild<ContentStack>,
 
-        // Albums row
+        // Greetings
         #[template_child]
-        pub collapse_albums: TemplateChild<gtk::ToggleButton>,
+        pub greeting: TemplateChild<gtk::Label>,
         #[template_child]
-        pub album_revealer: TemplateChild<gtk::Revealer>,
+        pub albums_badge: TemplateChild<gtk::Button>,
         #[template_child]
-        pub album_row_stack: TemplateChild<gtk::Stack>,
+        pub albums_count: TemplateChild<gtk::Label>,
         #[template_child]
-        pub album_row: TemplateChild<gtk::GridView>,
+        pub artists_badge: TemplateChild<gtk::Button>,
+        #[template_child]
+        pub artists_count: TemplateChild<gtk::Label>,
+        #[template_child]
+        pub songs_badge: TemplateChild<gtk::Button>,
+        #[template_child]
+        pub songs_count: TemplateChild<gtk::Label>,
 
-        // Artists row
+        // Rediscover
         #[template_child]
-        pub collapse_artists: TemplateChild<gtk::ToggleButton>,
+        pub refresh_rediscover: TemplateChild<gtk::Button>,
         #[template_child]
-        pub artist_revealer: TemplateChild<gtk::Revealer>,
+        pub rediscover_content_stack: TemplateChild<ContentStack>,
         #[template_child]
-        pub artist_row_stack: TemplateChild<gtk::Stack>,
+        pub rediscover_albums: TemplateChild<adw::WrapBox>,
         #[template_child]
-        pub artist_row: TemplateChild<gtk::GridView>,
+        pub rediscover_artists: TemplateChild<adw::WrapBox>,
+        // Keep its content alive
+        pub rediscover_albums_list: RefCell<Vec<Album>>,
+        pub rediscover_artists_list: RefCell<Vec<Artist>>,
 
-        // Songs list
+        // Recent
         #[template_child]
-        pub collapse_songs: TemplateChild<gtk::ToggleButton>,
+        pub recent_subview_stack: TemplateChild<adw::ViewStack>,
         #[template_child]
-        pub song_revealer: TemplateChild<gtk::Revealer>,
+        pub recent_content_stack: TemplateChild<ContentStack>,
         #[template_child]
-        pub song_list: TemplateChild<gtk::ListBox>,
+        pub clear_history: TemplateChild<gtk::Button>,
+        #[template_child]
+        pub recent_albums: TemplateChild<adw::WrapBox>,
+        #[template_child]
+        pub recent_artists: TemplateChild<adw::WrapBox>,
+        #[template_child]
+        pub recent_songs: TemplateChild<gtk::ListBox>,
+        // Keep its content alive
+        pub recent_albums_list: RefCell<Vec<Album>>,
+        pub recent_artists_list: RefCell<Vec<Artist>>,
+        #[derivative(Default(value = "gio::ListStore::new::<Song>()"))]
+        pub recent_songs_list: gio::ListStore,
 
         pub library: WeakRef<Library>,
+        pub cache: OnceCell<Rc<Cache>>,
         pub player: WeakRef<Player>,
         pub history_changed_id: RefCell<Option<SignalHandlerId>>,
 
         #[property(get, set)]
         pub collapsed: Cell<bool>,
-        pub window: OnceCell<WeakRef<EuphonicaWindow>>,
+
+        pub initialized: Cell<bool>,
+        pub window: WeakRef<EuphonicaWindow>,
     }
 
     #[glib::object_subclass]
@@ -85,6 +112,9 @@ mod imp {
         type ParentType = gtk::Widget;
 
         fn class_init(klass: &mut Self::Class) {
+            // Let the builder know what a fadingscrolledwindow is
+            // Previously we'd put it as a templatechild but this is cleaner
+            FadingScrolledWindow::ensure_type();
             Self::bind_template(klass);
             klass.set_layout_manager_type::<gtk::BinLayout>();
         }
@@ -109,7 +139,6 @@ mod imp {
 
         fn constructed(&self) {
             self.parent_constructed();
-            self.stack.show_placeholder();
 
             self.obj()
                 .bind_property("collapsed", &self.show_sidebar.get(), "visible")
@@ -124,79 +153,68 @@ mod imp {
                 }
             ));
 
-            self.clear.connect_clicked(clone!(
+            // Rediscover section
+            self.refresh_rediscover.connect_clicked(clone!(
                 #[weak(rename_to = this)]
                 self,
-                move |_| {
+                move |btn| {
                     glib::spawn_future_local(clone!(
                         #[weak]
                         this,
+                        #[weak]
+                        btn,
                         async move {
-                            if let Err(e) =
-                                this.library.upgrade().unwrap().clear_recent_songs().await
-                            {
-                                dbg!(e);
-                            } else {
-                                this.obj().on_history_changed();
-                            }
+                            btn.set_sensitive(false);
+                            this.obj().refresh_rediscover().await;
+                            btn.set_sensitive(true);
                         }
                     ));
                 }
             ));
 
-            self.collapse_albums
-                .bind_property("active", &self.album_revealer.get(), "reveal-child")
-                .invert_boolean()
-                .sync_create()
-                .build();
+            // Recent section
+            self.clear_history.connect_clicked(clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |btn| {
+                    glib::spawn_future_local(clone!(
+                        #[weak]
+                        this,
+                        #[weak]
+                        btn,
+                        async move {
+                            btn.set_sensitive(false);
+                            if let Err(e) =
+                                this.library.upgrade().unwrap().clear_history().await
+                            {
+                                dbg!(e);
+                            } else {
+                                this.obj().on_history_changed();
+                            }
+                            btn.set_sensitive(true);
+                        }
+                    ));
+                }
+            ));
 
-            self.album_revealer
-                .bind_property("child-revealed", &self.collapse_albums.get(), "icon-name")
-                .transform_to(|_, is_revealed| {
-                    if is_revealed {
-                        Some("up-symbolic".to_value())
-                    } else {
-                        Some("down-symbolic".to_value())
-                    }
-                })
-                .sync_create()
-                .build();
+            let settings = settings_manager().child("state").child("homeview");
+            self.recent_subview_stack.set_visible_child_name(match settings.enum_("recent-subview") {
+                0 => "albums",
+                1 => "artists",
+                2 => "songs",
+                _ => unreachable!()
+            });
 
-            self.collapse_artists
-                .bind_property("active", &self.artist_revealer.get(), "reveal-child")
-                .invert_boolean()
-                .sync_create()
-                .build();
-
-            self.artist_revealer
-                .bind_property("child-revealed", &self.collapse_artists.get(), "icon-name")
-                .transform_to(|_, is_revealed| {
-                    if is_revealed {
-                        Some("up-symbolic".to_value())
-                    } else {
-                        Some("down-symbolic".to_value())
-                    }
-                })
-                .sync_create()
-                .build();
-
-            self.collapse_songs
-                .bind_property("active", &self.song_revealer.get(), "reveal-child")
-                .invert_boolean()
-                .sync_create()
-                .build();
-
-            self.song_revealer
-                .bind_property("child-revealed", &self.collapse_songs.get(), "icon-name")
-                .transform_to(|_, is_revealed| {
-                    if is_revealed {
-                        Some("up-symbolic".to_value())
-                    } else {
-                        Some("down-symbolic".to_value())
-                    }
-                })
-                .sync_create()
-                .build();
+            self.recent_subview_stack.connect_visible_child_name_notify(move |stack| {
+                if let Some(name) = stack.visible_child_name().map(|s| s.to_string()).as_deref() {
+                    let _ = settings.set_enum("recent-subview", match name {
+                        "albums" => 0,
+                        "artists" => 1,
+                        "songs" => 2,
+                        _ => unreachable!()
+                    });
+                }
+            });
         }
 
         fn signals() -> &'static [Signal] {
@@ -236,12 +254,8 @@ impl RecentView {
     ) {
         self.imp().library.set(Some(library));
         self.imp().player.set(Some(player));
-        let weak = WeakRef::new();
-        weak.set(Some(window));
-        self.imp()
-            .window
-            .set(weak)
-            .expect("RecentView window already set");
+        let _ = self.imp().cache.set(cache.clone());
+        self.imp().window.set(Some(window));
 
         self.imp()
             .history_changed_id
@@ -256,10 +270,7 @@ impl RecentView {
                     }
                 ),
             )));
-
-        self.setup_album_row(window, library, cache.clone());
-        self.setup_artist_row(window, cache.clone());
-        self.setup_song_list(cache);
+        self.setup_recent_songs(cache);
     }
 
     pub fn on_history_changed(&self) {
@@ -267,222 +278,164 @@ impl RecentView {
             #[weak(rename_to = this)]
             self,
             async move {
-                if let Err(e) = this.init_recent(true).await {
-                    dbg!(e);
-                }
+                this.refresh_recent().await;
             }
         ));
     }
 
-    fn setup_album_row(&self, window: &EuphonicaWindow, library: &Library, cache: Rc<Cache>) {
-        let album_list = self.imp().library.upgrade().unwrap().recent_albums();
+    async fn refresh_rediscover(&self) {
+        if let (Some(library), Some(cache), Some(win)) = (
+            self.imp().library.upgrade(),
+            self.imp().cache.get(),
+            self.imp().window.upgrade(),
+        ) {
+            self.imp().rediscover_content_stack.show_placeholder();
+            let rediscover_albums = self.imp().rediscover_albums.get();
+            let rediscover_artists = self.imp().rediscover_artists.get();
+            rediscover_albums.remove_all();
+            rediscover_artists.remove_all();
 
-        album_list
-            .bind_property(
-                "n-items",
-                &self.imp().album_row_stack.get(),
-                "visible-child-name",
-            )
-            .transform_to(|_, n: u32| {
-                if n > 0 {
-                    Some("content".to_value())
-                } else {
-                    Some("loading".to_value())
+            if let Ok((albums, artists)) = library.get_rediscover_albums_and_artists().await {
+                if albums.is_empty() && artists.is_empty() {
+                    self.imp().rediscover_content_stack.show_placeholder();
+                    return;
                 }
-            })
-            .sync_create()
-            .build();
-
-        let sel_model = SingleSelection::new(Some(album_list));
-        self.imp().album_row.set_model(Some(&sel_model));
-
-        // Set up factory
-        let factory = SignalListItemFactory::new();
-        let adj = self.imp().album_row.hadjustment().unwrap();
-
-        // Create an empty `AlbumCell` during setup.
-        // Reset scroll position to zero every time a new item is created such that
-        // upon startup or insertion of a new just-listened album we'll be at the
-        // start of the row.
-        factory.connect_setup(clone!(
-            #[weak]
-            cache,
-            #[weak]
-            library,
-            #[weak]
-            adj,
-            move |_, list_item| {
-                let item = list_item
-                    .downcast_ref::<ListItem>()
-                    .expect("Needs to be ListItem");
-                let album_cell =
-                    AlbumCell::new(item, Some(&library), cache, Some(MarqueeWrapMode::Scroll));
-                // propagating the tallest cell's height to the revealer if said row wasn't
-                // the first initialised.
-                item.set_child(Some(&album_cell));
-                adj.set_value(0.0);
+                self.imp().rediscover_content_stack.show_spinner();
+                for album in albums.iter() {
+                    // RecentView has to use WrapBoxes for layout reasons. Since WrapBoxes don't do selection models like ListBoxes or GridViews we'll
+                    // have to capture clicks ourselves by wrapping each AlbumCell inside a button. Sucks I know but on the bright side the ugly
+                    // always-on highlight is gone.
+                    let cell = AlbumCell::new_static(
+                        album,
+                        Some(&library),
+                        cache.clone(),
+                        Some(MarqueeWrapMode::Scroll),
+                    );
+                    let cell_btn = gtk::Button::builder()
+                        .css_classes(["padding-0", "flat"])
+                        .child(&cell)
+                        .build();
+                    cell_btn.connect_clicked(clone!(
+                        #[weak]
+                        win,
+                        #[weak]
+                        album,
+                        move |_| {
+                            win.goto_album(&album);
+                        }
+                    ));
+                    rediscover_albums.append(&cell_btn);
+                }
+                let _ = self.imp().rediscover_albums_list.replace(albums);
+                for artist in artists.iter() {
+                    // RecentView has to use WrapBoxes for layout reasons. Since WrapBoxes don't do selection models like ListBoxes or GridViews we'll
+                    // have to capture clicks ourselves by wrapping each AlbumCell inside a button. Sucks I know but on the bright side the ugly
+                    // always-on highlight is gone.
+                    let cell = ArtistCell::new_static(artist, cache.clone());
+                    let cell_btn = gtk::Button::builder()
+                        .css_classes(["padding-0", "flat"])
+                        .child(&cell)
+                        .build();
+                    cell_btn.connect_clicked(clone!(
+                        #[weak]
+                        win,
+                        #[weak]
+                        artist,
+                        move |_| {
+                            win.goto_artist(&artist);
+                        }
+                    ));
+                    rediscover_artists.append(&cell_btn);
+                }
+                let _ = self.imp().rediscover_artists_list.replace(artists);
+                self.imp().rediscover_content_stack.show_content();
+            } else {
+                self.imp().rediscover_content_stack.show_placeholder();
             }
-        ));
-
-        // Tell factory how to bind `AlbumCell` to one of our Album GObjects.
-        // If this cell is being bound to an album, that means it might be displayed.
-        // As such, we'll also make it listen to the cache controller for any new
-        // album art downloads. This ensures we will never have to iterate through
-        // the entire grid to update album arts (only visible or nearly visible cells
-        // will be updated, thus yielding a constant update cost).
-        factory.connect_bind(move |_, list_item| {
-            // Get `Album` from `ListItem` (that is, the data side)
-            let item: Album = list_item
-                .downcast_ref::<ListItem>()
-                .expect("Needs to be ListItem")
-                .item()
-                .and_downcast::<Album>()
-                .expect("The item has to be a common::Album.");
-
-            // Get `AlbumCell` from `ListItem` (the UI widget)
-            let child: AlbumCell = list_item
-                .downcast_ref::<ListItem>()
-                .expect("Needs to be ListItem")
-                .child()
-                .and_downcast::<AlbumCell>()
-                .expect("The child has to be an `AlbumCell`.");
-            child.bind(&item);
-        });
-
-        // When cell goes out of sight, unbind from item to allow reuse with another.
-        // Remember to also unset the thumbnail widget's texture to potentially free it from memory.
-        factory.connect_unbind(move |_, list_item| {
-            // Get `AlbumCell` from `ListItem` (the UI widget)
-            let child: AlbumCell = list_item
-                .downcast_ref::<ListItem>()
-                .expect("Needs to be ListItem")
-                .child()
-                .and_downcast::<AlbumCell>()
-                .expect("The child has to be an `AlbumCell`.");
-            child.unbind();
-        });
-
-        // Set the factory of the list view
-        self.imp().album_row.set_factory(Some(&factory));
-
-        // Setup click action
-        self.imp().album_row.connect_activate(clone!(
-            #[weak]
-            window,
-            move |grid_view, position| {
-                let model = grid_view.model().expect("The model has to exist.");
-                let album = model
-                    .item(position)
-                    .and_downcast::<Album>()
-                    .expect("The item has to be a `common::Album`.");
-                window.goto_album(&album);
-            }
-        ));
+        }
     }
 
-    fn setup_artist_row(&self, window: &EuphonicaWindow, cache: Rc<Cache>) {
-        let artist_list = self.imp().library.upgrade().unwrap().recent_artists();
+    async fn refresh_recent(&self) {
+        if let (Some(library), Some(cache), Some(win)) = (
+            self.imp().library.upgrade(),
+            self.imp().cache.get(),
+            self.imp().window.upgrade(),
+        ) {
+            self.imp().recent_content_stack.show_placeholder();
+            let recent_albums = self.imp().recent_albums.get();
+            let recent_artists = self.imp().recent_artists.get();
+            let recent_songs = &self.imp().recent_songs_list;  // this one is a model :)
+            recent_albums.remove_all();
+            recent_artists.remove_all();
+            recent_songs.remove_all();
 
-        artist_list
-            .bind_property(
-                "n-items",
-                &self.imp().artist_row_stack.get(),
-                "visible-child-name",
-            )
-            .transform_to(|_, n: u32| {
-                if n > 0 {
-                    Some("content".to_value())
-                } else {
-                    Some("loading".to_value())
+            if let Ok((albums, artists, songs)) = library.get_recent().await {
+                // If there are no songs then there is nothing else either.
+                if songs.is_empty() {
+                    self.imp().recent_content_stack.show_placeholder();
+                    return;
                 }
-            })
-            .sync_create()
-            .build();
-
-        let sel_model = SingleSelection::new(Some(artist_list));
-        self.imp().artist_row.set_model(Some(&sel_model));
-
-        // Set up factory
-        let factory = SignalListItemFactory::new();
-        let adj = self.imp().artist_row.hadjustment().unwrap();
-
-        // Set the factory of the list view
-        let artist_row = self.imp().artist_row.get();
-
-        // Create an empty `ArtistCell` during setup
-        factory.connect_setup(clone!(
-            #[weak]
-            cache,
-            #[weak]
-            adj,
-            move |_, list_item| {
-                let item = list_item
-                    .downcast_ref::<ListItem>()
-                    .expect("Needs to be ListItem");
-                let artist_cell = ArtistCell::new(item, cache);
-                item.set_child(Some(&artist_cell));
-                adj.set_value(0.0);
-                adj.set_value(0.0);
-                adj.set_value(0.0);
+                self.imp().recent_content_stack.show_spinner();
+                for album in albums.iter() {
+                    // RecentView has to use WrapBoxes for layout reasons. Since WrapBoxes don't do selection models like ListBoxes or GridViews we'll
+                    // have to capture clicks ourselves by wrapping each AlbumCell inside a button. Sucks I know but on the bright side the ugly
+                    // always-on highlight is gone.
+                    let cell = AlbumCell::new_static(
+                        album,
+                        Some(&library),
+                        cache.clone(),
+                        Some(MarqueeWrapMode::Scroll),
+                    );
+                    let cell_btn = gtk::Button::builder()
+                        .css_classes(["padding-0", "flat"])
+                        .child(&cell)
+                        .build();
+                    cell_btn.connect_clicked(clone!(
+                        #[weak]
+                        win,
+                        #[weak]
+                        album,
+                        move |_| {
+                            win.goto_album(&album);
+                        }
+                    ));
+                    recent_albums.append(&cell_btn);
+                }
+                let _ = self.imp().recent_albums_list.replace(albums);
+                for artist in artists.iter() {
+                    // RecentView has to use WrapBoxes for layout reasons. Since WrapBoxes don't do selection models like ListBoxes or GridViews we'll
+                    // have to capture clicks ourselves by wrapping each AlbumCell inside a button. Sucks I know but on the bright side the ugly
+                    // always-on highlight is gone.
+                    let cell = ArtistCell::new_static(&artist, cache.clone());
+                    let cell_btn = gtk::Button::builder()
+                        .css_classes(["padding-0", "flat"])
+                        .child(&cell)
+                        .build();
+                    cell_btn.connect_clicked(clone!(
+                        #[weak]
+                        win,
+                        #[weak]
+                        artist,
+                        move |_| {
+                            win.goto_artist(&artist);
+                        }
+                    ));
+                    recent_artists.append(&cell_btn);
+                }
+                let _ = self.imp().recent_artists_list.replace(artists);
+                recent_songs.extend_from_slice(&songs);
+                self.imp().recent_content_stack.show_content();
             }
-        ));
-
-        factory.connect_bind(move |_, list_item| {
-            // Get `Artist` from `ListItem` (that is, the data side)
-            let item: Artist = list_item
-                .downcast_ref::<ListItem>()
-                .expect("Needs to be ListItem")
-                .item()
-                .and_downcast::<Artist>()
-                .expect("The item has to be a common::Artist.");
-
-            // Get `ArtistCell` from `ListItem` (the UI widget)
-            let child: ArtistCell = list_item
-                .downcast_ref::<ListItem>()
-                .expect("Needs to be ListItem")
-                .child()
-                .and_downcast::<ArtistCell>()
-                .expect("The child has to be an `ArtistCell`.");
-            child.bind(&item);
-        });
-
-        // When cell goes out of sight, unbind from item to allow reuse with another.
-        // Remember to also unset the thumbnail widget's texture to potentially free it from memory.
-        factory.connect_unbind(move |_, list_item| {
-            // Get `ArtistCell` from `ListItem` (the UI widget)
-            let child: ArtistCell = list_item
-                .downcast_ref::<ListItem>()
-                .expect("Needs to be ListItem")
-                .child()
-                .and_downcast::<ArtistCell>()
-                .expect("The child has to be an `ArtistCell`.");
-            child.unbind();
-        });
-
-        artist_row.set_factory(Some(&factory));
-
-        // Setup click action
-        self.imp().artist_row.connect_activate(clone!(
-            #[weak]
-            window,
-            move |grid_view, position| {
-                let model = grid_view.model().expect("The model has to exist.");
-                let artist = model
-                    .item(position)
-                    .and_downcast::<Artist>()
-                    .expect("The item has to be a `common::Artist`.");
-                window.goto_artist(&artist);
-            }
-        ));
+        }
     }
 
-    fn setup_song_list(&self, cache: Rc<Cache>) {
-        let library = self.imp().library.upgrade().unwrap().clone();
-        let song_list = library.recent_songs();
-        let window = self.imp().window.get().and_then(|w| w.upgrade());
+    fn setup_recent_songs(&self, cache: Rc<Cache>) {
+        let library = self.imp().library.upgrade().unwrap();
+        let song_list = self.imp().recent_songs_list.clone();
+        let window = self.imp().window.upgrade();
 
         self.imp()
-            .song_list
+            .recent_songs
             .bind_model(Some(&song_list), move |obj| {
                 let song = obj.downcast_ref::<Song>().unwrap();
                 let row = SongRow::new(Some(cache.clone()), None, window.as_ref(), Some(&library));
@@ -502,13 +455,13 @@ impl RecentView {
             });
 
         // Setup double-click action
-        self.imp().song_list.connect_row_activated(clone!(
+        self.imp().recent_songs.connect_row_activated(clone!(
             #[weak(rename_to = this)]
             self,
             move |_, row| {
                 let idx = row.index() as u32;
                 let action = RowDoublePressAction::from_settings();
-                if let Some(window) = this.imp().window.get().and_then(|w| w.upgrade()) {
+                if let Some(window) = this.imp().window.upgrade() {
                     window.maybe_show_double_press_toast();
                 }
                 match action {
@@ -520,8 +473,7 @@ impl RecentView {
                         let Some(library) = this.imp().library.upgrade() else {
                             return;
                         };
-                        let song = library
-                            .recent_songs()
+                        let song = this.imp().recent_songs_list
                             .item(idx)
                             .and_downcast::<Song>()
                             .expect("The item has to be a `common::Song`.");
@@ -547,7 +499,7 @@ impl RecentView {
                             return;
                         };
                         // Queue all songs in the view, in displayed order.
-                        let store = library.recent_songs();
+                        let store = &this.imp().recent_songs_list;
                         let songs: Vec<Song> = (0..store.n_items())
                             .map(|i| store.item(i).and_downcast::<Song>().unwrap())
                             .collect();
@@ -561,29 +513,35 @@ impl RecentView {
             }
         ));
     }
-
-    async fn init_recent(&self, refresh: bool) -> ClientResult<()> {
-        let stack = self.imp().stack.get();
-        stack.show_spinner();
-        let library = self.imp().library.upgrade().unwrap();
-        let res = library.init_recent(refresh).await;
-        if library.recent_songs().n_items() > 0 {
-            stack.show_content();
-        } else {
-            stack.show_placeholder();
-        }
-        res
-    }
 }
 
 impl LazyInit for RecentView {
     fn populate(&self) {
+        // Update greeting every time every time we navigate to it
+        let greeting = self.imp().greeting.get();
+        let hour = Local::now().hour();
+        if hour >= 5 && hour < 12 {
+            greeting.set_label("Good morning");
+        } else if hour >= 12 && hour < 19 {
+            greeting.set_label("Good afternoon");
+        } else {
+            greeting.set_label("Good evening");
+        }
         glib::spawn_future_local(clone!(
             #[weak(rename_to = this)]
             self,
             async move {
-                if let Err(e) = this.init_recent(false).await {
-                    dbg!(e);
+                if let Some(l) = this.imp().library.upgrade() {
+                    if let Ok(stats) = l.stats().await {
+                        this.imp().albums_count.set_label(&stats.albums.to_string());
+                        this.imp().artists_count.set_label(&stats.artists.to_string());
+                        this.imp().songs_count.set_label(&stats.songs.to_string());
+                    }
+                }
+                // Do this only once
+                if !this.imp().initialized.replace(true) {
+                    this.refresh_rediscover().await;
+                    this.refresh_recent().await;
                 }
             }
         ));

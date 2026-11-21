@@ -956,6 +956,7 @@ dependencies = [
  "ringbuffer",
  "rusqlite",
  "rustc-hash",
+ "search-provider",
  "serde",
  "serde_json",
  "spectrum-analyzer",
@@ -3413,6 +3414,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
 
 [[package]]
+name = "search-provider"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7f88fcdf66eca3bbbfed07ee934196dc0ce048888a3c014eb83a81cf9373cc97"
+dependencies = [
+ "async-channel",
+ "serde",
+ "zbus 5.18.0",
+]
+
+[[package]]
 name = "security-framework"
 version = "3.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4561,8 +4573,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fe18fb60dc696039e738717b76eaea21e7a4489bbb1885020b43c94236d7e98a"
 dependencies = [
  "async-broadcast",
+ "async-executor",
+ "async-io",
+ "async-lock",
+ "async-process",
  "async-recursion",
+ "async-task",
  "async-trait",
+ "blocking",
  "enumflags2",
  "event-listener",
  "futures-core",

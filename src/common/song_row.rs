@@ -27,6 +27,8 @@ mod imp {
     #[template(resource = "/io/github/htkhiem/Euphonica/gtk/song-row.ui")]
     pub struct SongRow {
         #[template_child]
+        pub index_area: TemplateChild<gtk::Grid>,
+        #[template_child]
         pub disc: TemplateChild<gtk::Label>,
         #[template_child]
         pub index: TemplateChild<gtk::Label>,
@@ -119,9 +121,9 @@ mod imp {
 
         fn property(&self, _id: usize, pspec: &ParamSpec) -> glib::Value {
             match pspec.name() {
-                "index-visible" => self.thumbnail.is_visible().to_value(),
+                "index-visible" => self.index_area.is_visible().to_value(),
                 "index" => self.index.label().to_value(),
-                "disc" => self.index.label().to_value(),
+                "disc" => self.disc.label().to_value(),
                 "thumbnail-visible" => self.thumbnail.is_visible().to_value(),
                 "name" => self.name.label().label().to_value(),
                 "quality-grade" => self.quality_grade.icon_name().to_value(),
@@ -138,12 +140,12 @@ mod imp {
             match pspec.name() {
                 "index-visible" => {
                     if let Ok(vis) = value.get::<bool>() {
-                        self.index.set_visible(vis);
+                        obj.set_index_visible(vis);
                     }
                 }
                 "index" => {
                     if let Ok(idx) = value.get::<&str>() {
-                        self.index.set_label(idx);
+                        obj.set_index(idx);
                     }
                 }
                 "disc" => {
@@ -415,7 +417,7 @@ impl SongRow {
     }
 
     pub fn set_index_visible(&self, vis: bool) {
-        self.imp().index.set_visible(vis);
+        self.imp().index_area.set_visible(vis);
     }
 
     pub fn set_index(&self, val: &str) {

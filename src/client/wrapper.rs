@@ -1,5 +1,4 @@
 use async_channel::{Receiver, Sender};
-use asyncified::Asyncified;
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use futures::executor;
@@ -33,7 +32,8 @@ use crate::cache::sqlite;
 use crate::common::{
     AlbumInfo, ArtistInfo, ConnectionState, DynamicPlaylist, split_genre_tag, tags,
 };
-use crate::utils::settings_manager;
+use crate::library::recommendations;
+use crate::utils::{APP_THREAD_POOL, settings_manager};
 use crate::{
     common::{Album, Artist, INode, Song, Stickers},
     player::PlaybackFlow,
@@ -171,6 +171,13 @@ impl MpdWrapper {
 
     pub fn get_client_state(&self) -> ClientState {
         self.state.clone()
+    }
+
+    /// A clone of the foreground client's task channel sender, for
+    /// consumers that cannot hold onto the wrapper itself, e.g.
+    /// the GNOME Shell search provider running on a tokio task.
+    pub fn fg_sender(&self) -> Sender<Task> {
+        self.fg_sender.clone()
     }
 
     fn setup_channel(self: Rc<Self>, idle_receiver: Receiver<Subsystem>) {
@@ -407,6 +414,11 @@ impl MpdWrapper {
             .await;
         self.handle_error(receiver.await.expect("Broken oneshot receiver"))
             .await
+    }
+
+    pub async fn stats(&self) -> ClientResult<mpd::Stats> {
+        let (s, r) = oneshot::channel();
+        self.foreground(Task::Stats(s), r).await
     }
 
     pub async fn get_volume(&self) -> ClientResult<i8> {
@@ -950,8 +962,7 @@ impl MpdWrapper {
         fetch_stickers: bool,
     ) -> ClientResult<(Vec<Album>, Vec<Artist>)> {
         // TODO: batched windowed retrieval
-        // Most of the below logic are asyncified to avoid blocking the main UI thread.
-        let asyncified = Asyncified::builder().build_ok(|| ()).await;
+        // Most of the below logic are run on the app-wide threadpool.
 
         let (s, r) = oneshot::channel();
         let grouped_vals = self
@@ -966,34 +977,37 @@ impl MpdWrapper {
             )
             .await?;
 
-        let (album_count, chunked_queries_windows): (usize, Vec<Vec<(Query, Window)>>) = asyncified
-            .call(move |_| {
-                let mut all_queries_windows = Vec::new();
-                for (key, tags) in grouped_vals.groups.into_iter() {
-                    all_queries_windows.reserve(tags.len());
-                    for tag in tags.into_iter() {
-                        // Only care if tag is not empty
-                        if !tag.is_empty() {
-                            let mut query = Query::new();
-                            query.and(Term::Tag(Cow::Borrowed(tags::ALBUM)), tag);
-                            query.and(Term::Tag(Cow::Borrowed(tags::ALBUMARTIST)), key.clone());
-                            all_queries_windows.push((query, Window::from((0, 1))));
+        let (album_count, chunked_queries_windows): (usize, Vec<Vec<(Query, Window)>>) =
+            APP_THREAD_POOL
+                .push_future(move || {
+                    let mut all_queries_windows = Vec::new();
+                    for (key, tags) in grouped_vals.groups.into_iter() {
+                        all_queries_windows.reserve(tags.len());
+                        for tag in tags.into_iter() {
+                            // Only care if tag is not empty
+                            if !tag.is_empty() {
+                                let mut query = Query::new();
+                                query.and(Term::Tag(Cow::Borrowed(tags::ALBUM)), tag);
+                                query.and(Term::Tag(Cow::Borrowed(tags::ALBUMARTIST)), key.clone());
+                                all_queries_windows.push((query, Window::from((0, 1))));
+                            }
                         }
                     }
-                }
-                // Chunk the queries to avoid timing out on slow servers. The below messy code actually
-                // gives owned chunks without cloning.
-                (
-                    all_queries_windows.len(),
-                    all_queries_windows
-                        .into_iter()
-                        .chunks(256)
-                        .into_iter()
-                        .map(|chunk| chunk.collect())
-                        .collect(),
-                )
-            })
-            .await;
+                    // Chunk the queries to avoid timing out on slow servers. The below messy code actually
+                    // gives owned chunks without cloning.
+                    (
+                        all_queries_windows.len(),
+                        all_queries_windows
+                            .into_iter()
+                            .chunks(256)
+                            .into_iter()
+                            .map(|chunk| chunk.collect())
+                            .collect(),
+                    )
+                })
+                .unwrap()
+                .await
+                .unwrap();
 
         // Now we can fetch song entries chunk by chunk.
         let mut songs: Vec<SongInfo> = Vec::with_capacity(album_count);
@@ -1056,8 +1070,8 @@ impl MpdWrapper {
         }
 
         // Yet more off thread work
-        let (album_infos_and_ratings, artist_infos) = asyncified
-            .call(move |_| {
+        let (album_infos_and_ratings, artist_infos) = APP_THREAD_POOL
+            .push_future(move || {
                 let mut albumartists: FxHashMap<String, ArtistInfo> = FxHashMap::default();
                 let mut album_infos_and_ratings: Vec<(AlbumInfo, Option<String>)> =
                     Vec::with_capacity(album_count);
@@ -1108,7 +1122,9 @@ impl MpdWrapper {
                         .collect::<Vec<ArtistInfo>>(),
                 )
             })
-            .await;
+            .unwrap()
+            .await
+            .unwrap();
         Ok((
             album_infos_and_ratings
                 .into_iter()
@@ -1139,9 +1155,8 @@ impl MpdWrapper {
         let n = settings.uint("n-recent-albums");
 
         // Build queries off-thread from SQLite results
-        let asyncified = Asyncified::builder().build_ok(|| ()).await;
-        let queries_windows: Vec<(Query, Window)> = asyncified
-            .call(move |_| {
+        let queries_windows: Vec<(Query, Window)> = APP_THREAD_POOL
+            .push_future(move || {
                 let recent_albums = sqlite::get_last_n_albums(n).expect("Sqlite DB error");
                 recent_albums
                     .into_iter()
@@ -1158,7 +1173,9 @@ impl MpdWrapper {
                     })
                     .collect()
             })
-            .await;
+            .unwrap()
+            .await
+            .unwrap();
 
         let (s, r) = oneshot::channel();
         Ok(self
@@ -1178,11 +1195,128 @@ impl MpdWrapper {
             .collect())
     }
 
+    pub async fn get_rediscover_albums_and_artists(
+        &self,
+    ) -> ClientResult<(Vec<Album>, Vec<Artist>)> {
+        // let settings = utils::settings_manager().child("library");
+        // let n = settings.uint("n-recent-albums");
+        let n = 20;
+
+        // Build queries off-thread from SQLite results
+        let (album_queries_windows, artist_queries_windows, artist_names_set): (
+            Vec<(Query, Window)>,
+            Vec<(Query, Window)>,
+            FxHashSet<String>,
+        ) = APP_THREAD_POOL
+            .push_future(move || {
+                let (album_keys, artist_keys) =
+                    recommendations::rediscover(n).expect("Sqlite DB error");
+                let artist_names_set: FxHashSet<String> = artist_keys.iter().cloned().collect();
+                (
+                    album_keys
+                        .into_iter()
+                        .map(|(album, artist, mbid)| {
+                            let mut query = Query::new();
+                            query.and(Term::Tag(tags::ALBUM.into()), album);
+                            if let Some(a) = artist {
+                                query.and(Term::Tag(tags::ALBUMARTIST.into()), a);
+                            }
+                            if let Some(m) = mbid {
+                                query.and(Term::Tag(tags::ALBUM_MBID.into()), m);
+                            }
+                            (query, Window::from((0, 1)))
+                        })
+                        .collect(),
+                    artist_keys
+                        .into_iter()
+                        .map(|name| {
+                            let mut query = Query::new();
+                            query.and_with_op(
+                                Term::Tag(Cow::Borrowed("artist")),
+                                QueryOperation::Contains,
+                                name,
+                            );
+                            (query, Window::from((0, 1)))
+                        })
+                        .collect(),
+                    artist_names_set,
+                )
+            })
+            .expect("get_rediscover_albums_artists: threadpool error")
+            .await
+            .expect("get_rediscover_albums_artists: threadpool error");
+
+        let (album_s, album_r) = oneshot::channel();
+        let (artist_s, artist_r) = oneshot::channel();
+        Ok((
+            self.foreground(
+                Task::FindMultiple(
+                    album_queries_windows,
+                    Some(vec![tags::ALBUM, tags::ALBUMARTIST, tags::ALBUM_MBID]),
+                    album_s,
+                ),
+                album_r,
+            )
+            .await?
+            .into_iter()
+            .map(|si| AlbumInfo::from_mpd_songs(vec![Arc::new(si)]))
+            .filter(|maybe_info| maybe_info.is_some())
+            .map(|maybe_info| maybe_info.unwrap().into())
+            .collect(),
+            // Artists are more complicated, I'll just write this as a block lol
+            {
+                let songs = self
+                    .foreground(
+                        Task::FindMultiple(
+                            artist_queries_windows,
+                            // From now on we need more info to disambiguate artists
+                            Some(vec![
+                                tags::ARTIST,
+                                tags::ARTIST_MBID,
+                                tags::TITLE,
+                                tags::ALBUM_MBID,
+                                tags::ALBUM,
+                            ]),
+                            artist_s,
+                        ),
+                        artist_r,
+                    )
+                    .await?;
+
+                // Deduplicate artists by comp_id, filtering to only those whose names
+                // appear in the recent names set.
+                APP_THREAD_POOL
+                    .push_future(move || {
+                        let mut res = Vec::with_capacity(artist_names_set.len());
+                        let mut already_parsed: FxHashSet<String> = FxHashSet::default();
+                        for song in songs {
+                            let artists = ArtistInfo::take_from_song(song, false);
+                            for artist in artists.into_iter() {
+                                if artist_names_set.contains(&artist.name)
+                                    && already_parsed.insert(artist.get_comp_id().to_owned())
+                                {
+                                    res.push(artist)
+                                }
+                            }
+                        }
+                        res
+                    })
+                    .expect("get_rediscover_albums_artists: threadpool error")
+                    .await
+                    .expect("get_rediscover_albums_artists: threadpool error")
+                    .into_iter()
+                    .map(Artist::from)
+                    .collect()
+            },
+        ))
+    }
+
     /// Alternative to get_songs_by_query that does not wrap SongInfos in GObjects for efficiency
     /// in downstream processing.
     ///
     /// By default this is run on the background client. Pass use_fg = true to make use of the
     /// foreground client, e.g. when responding to user interactions.
+    /// TODO: allow specifying tagtypes to fetch
     pub async fn get_song_infos_by_query<F>(
         &self,
         query: Query<'static>,
@@ -1198,10 +1332,10 @@ impl MpdWrapper {
             let (s, r) = oneshot::channel();
             let win = Window::from((curr_len as u32, (curr_len + BATCH_SIZE) as u32));
             let songs = if use_fg {
-                self.foreground(Task::Find(query.clone(), win, s), r)
+                self.foreground(Task::Find(query.clone(), win, None, s), r)
                     .await?
             } else {
-                self.background(Task::Find(query.clone(), win, s), r)
+                self.background(Task::Find(query.clone(), win, None, s), r)
                     .await?
             };
             if !songs.is_empty() {
@@ -1263,13 +1397,12 @@ impl MpdWrapper {
             )
             .await?;
 
-        let asyncified = Asyncified::builder().build_ok(|| ()).await;
         let (artist_tag_count, chunked_queries_windows, genres): (
             usize,
             Vec<Vec<(Query, Window)>>,
             Vec<FxHashSet<String>>,
-        ) = asyncified
-            .call(move |_| {
+        ) = APP_THREAD_POOL
+            .push_future(move || {
                 let mut all_queries_windows: Vec<(Query, mpd::search::Window)> =
                     Vec::with_capacity(grouped_vals.groups.len());
                 // Same order as the upcoming songs, so there's no need to use a hash table
@@ -1299,7 +1432,9 @@ impl MpdWrapper {
                     genres,
                 )
             })
-            .await;
+            .unwrap()
+            .await
+            .unwrap();
 
         // Now we can fetch song entries chunk by chunk, then zip with genres.
         // THIS WILL BREAK if the number of returned songs is different from the length of the genres vec.
@@ -1319,8 +1454,8 @@ impl MpdWrapper {
         }
 
         // Yet more off thread work
-        Ok(asyncified
-            .call(move |_| {
+        Ok(APP_THREAD_POOL
+            .push_future(move || {
                 let mut res: FxHashMap<String, ArtistInfo> = FxHashMap::default();
                 for (song, _genres) in songs.into_iter().zip(genres) {
                     // Here we're fetching song.artists instead of song.album.artists
@@ -1339,7 +1474,9 @@ impl MpdWrapper {
                     .map(|(_, info)| info)
                     .collect::<Vec<ArtistInfo>>()
             })
+            .unwrap()
             .await
+            .unwrap()
             .into_iter()
             .map(Artist::from)
             .collect::<Vec<Artist>>())
@@ -1350,10 +1487,9 @@ impl MpdWrapper {
         let n = settings.uint("n-recent-artists");
 
         // Build queries off-thread from SQLite results
-        let asyncified = Asyncified::builder().build_ok(|| ()).await;
         let (queries_windows, recent_names_set): (Vec<(Query, Window)>, FxHashSet<String>) =
-            asyncified
-                .call(move |_| {
+            APP_THREAD_POOL
+                .push_future(move || {
                     let recent_names = sqlite::get_last_n_artists(n).expect("Sqlite DB error");
                     let recent_names_set: FxHashSet<String> =
                         recent_names.iter().cloned().collect();
@@ -1371,14 +1507,22 @@ impl MpdWrapper {
                         .collect();
                     (queries_windows, recent_names_set)
                 })
-                .await;
+                .unwrap()
+                .await
+                .unwrap();
 
         let (s, r) = oneshot::channel();
         let songs = self
             .foreground(
                 Task::FindMultiple(
                     queries_windows,
-                    Some(vec![tags::ARTIST, tags::ARTIST_MBID]),
+                    Some(vec![
+                        tags::ARTIST,
+                        tags::ARTIST_MBID,
+                        tags::TITLE,
+                        tags::ALBUM_MBID,
+                        tags::ALBUM,
+                    ]),
                     s,
                 ),
                 r,
@@ -1387,8 +1531,8 @@ impl MpdWrapper {
 
         // Deduplicate artists by comp_id, filtering to only those whose names
         // appear in the recent names set.
-        Ok(asyncified
-            .call(move |_| {
+        Ok(APP_THREAD_POOL
+            .push_future(move || {
                 let mut res = Vec::with_capacity(recent_names_set.len());
                 let mut already_parsed: FxHashSet<String> = FxHashSet::default();
                 for song in songs {
@@ -1403,7 +1547,9 @@ impl MpdWrapper {
                 }
                 res
             })
+            .unwrap()
             .await
+            .unwrap()
             .into_iter()
             .map(Artist::from)
             .collect())
@@ -1492,6 +1638,7 @@ impl MpdWrapper {
     }
 
     /// Convenience function to get a single song by URI using the background client.
+    /// TODO: allow specifying tagtypes to fetch
     async fn get_song_by_uri(
         &self,
         uri: String,
@@ -1501,7 +1648,7 @@ impl MpdWrapper {
         query.and(Term::File, uri.clone());
         let (s, r) = oneshot::channel();
         let mut found_songs = self
-            .foreground(Task::Find(query, Window::from((0, 1)), s), r)
+            .foreground(Task::Find(query, Window::from((0, 1)), None, s), r)
             .await?;
         if !found_songs.is_empty() {
             let song = std::mem::take(&mut found_songs[0]);
@@ -1521,9 +1668,8 @@ impl MpdWrapper {
     }
 
     pub async fn get_recent_songs(&self, n: u32) -> ClientResult<Vec<Song>> {
-        let asyncified = Asyncified::builder().build_ok(|| ()).await;
-        let (queries_windows, ts): (Vec<(Query, Window)>, Vec<OffsetDateTime>) = asyncified
-            .call(move |_| {
+        let (queries_windows, ts): (Vec<(Query, Window)>, Vec<OffsetDateTime>) = APP_THREAD_POOL
+            .push_future(move || {
                 let resp = sqlite::get_last_n_songs(n).expect("Sqlite DB error");
                 let ts = resp.iter().map(|(_, ts)| ts.to_owned()).collect();
                 (
@@ -1537,13 +1683,16 @@ impl MpdWrapper {
                     ts,
                 )
             })
-            .await;
+            .unwrap()
+            .await
+            .unwrap();
 
         let (s, r) = oneshot::channel();
         self.foreground(
             Task::FindMultiple(
                 queries_windows,
                 Some(vec![
+                    tags::TITLE,
                     tags::ALBUM,
                     tags::ARTIST,
                     tags::ALBUM_MBID,

@@ -15,7 +15,7 @@
               <object class="GtkStringList">
                 <items>
                   <item translatable="true">Last-opened view</item>
-                  <item translatable="true">Recents</item>
+                  <item translatable="true">Home</item>
                   <item translatable="true">Albums</item>
                   <item translatable="true">Artists</item>
                   <item translatable="true">Folders</item>

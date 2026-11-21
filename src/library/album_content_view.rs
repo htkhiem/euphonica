@@ -7,7 +7,7 @@ use crate::utils::format_datetime_local_tz;
 use crate::utils::settings_manager;
 use crate::utils::strip_filename_linux;
 use crate::{
-    cache::{Cache, CacheState, Error as CacheError, placeholders::EMPTY_ALBUM_STRING},
+    cache::{Cache, CacheState, Error as CacheError, placeholders::EMPTY_ALBUM_STRING, sqlite},
     client::{ClientState, state::StickersSupportLevel},
     common::{
         Album, Artist, ContentStack, ImageStack, Rating, RowAddButtons, RowDoublePressAction, Song,
@@ -32,6 +32,10 @@ use std::{
 use time::{Date, OffsetDateTime, format_description};
 
 mod imp {
+
+    use adw::Window;
+
+    use crate::utils::get_image_cache_path;
 
     use super::*;
 
@@ -58,6 +62,10 @@ mod imp {
         pub rating: TemplateChild<Rating>,
         #[template_child]
         pub rating_readout: TemplateChild<gtk::Label>,
+        #[template_child]
+        pub metadata_revealer: TemplateChild<gtk::Revealer>,
+        #[template_child]
+        pub collapse_metadata_btn: TemplateChild<gtk::Button>,
 
         // Wiki display (read-only)
         #[template_child]
@@ -65,9 +73,7 @@ mod imp {
         #[template_child]
         pub add_wiki_btn: TemplateChild<gtk::Button>,
         #[template_child]
-        pub wiki_fader: TemplateChild<FadingScrolledWindow>,
-        #[template_child]
-        pub wiki_text: TemplateChild<gtk::Label>,
+        pub wiki_text: TemplateChild<gtk::TextView>,
         #[template_child]
         pub wiki_link: TemplateChild<gtk::LinkButton>,
         #[template_child]
@@ -184,6 +190,34 @@ mod imp {
 
         fn constructed(&self) {
             self.parent_constructed();
+
+            let cover_click_ctl = gtk::GestureClick::new();
+            cover_click_ctl.connect_released(clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |_, _, _, _| {
+                    // Need to look into SQLite again here
+                    if let Some(uri) = this.album.borrow().as_ref().map(|s| s.get_example_uri()) {
+                        // Just block UI here lol, not significant enough
+                        if let Some(path) = sqlite::find_cover_by_uri(uri, false)
+                            .ok()
+                            .flatten()
+                            .and_then(|cached_name| {
+                                let mut path = get_image_cache_path();
+                                path.push(cached_name);
+                                Some(path)
+                            })
+                        {
+                            gtk::FileLauncher::new(Some(&gio::File::for_path(path))).launch(
+                                Window::NONE,
+                                gio::Cancellable::NONE,
+                                |_| {},
+                            );
+                        }
+                    }
+                }
+            ));
+            self.cover.add_controller(cover_click_ctl);
 
             self.copy_mbid.connect_clicked(clone!(
                 #[weak(rename_to = this)]
@@ -335,6 +369,31 @@ mod imp {
                     this.obj().write_tags();
                 }
             ));
+
+            let revealer = self.metadata_revealer.get();
+            revealer
+                .bind_property(
+                    "reveal-child",
+                    &self.collapse_metadata_btn.get(),
+                    "icon-name",
+                )
+                .transform_to(|_, is_revealed: bool| {
+                    Some(
+                        if is_revealed {
+                            "down-symbolic"
+                        } else {
+                            "up-symbolic"
+                        }
+                        .to_value(),
+                    )
+                })
+                .bidirectional()
+                .sync_create()
+                .build();
+
+            self.collapse_metadata_btn.connect_clicked(move |_| {
+                revealer.set_reveal_child(!revealer.is_child_revealed());
+            });
 
             // Add wiki button opens the metadata editor dialog
             self.add_wiki_btn.connect_clicked(clone!(
@@ -849,7 +908,7 @@ impl AlbumContentView {
                                 let wiki_link = this.imp().wiki_link.get();
                                 let wiki_attrib = this.imp().wiki_attrib.get();
                                 this.imp().wiki_stack.show_content();
-                                wiki_text.set_label(&wiki.content);
+                                wiki_text.buffer().set_text(&wiki.content);
                                 if let Some(url) = wiki.url.as_ref() {
                                     wiki_link.set_visible(true);
                                     wiki_link.set_uri(url);
@@ -1107,6 +1166,7 @@ impl AlbumContentView {
                     row.on_bind(song);
                     row.set_index_visible(true);
                     row.set_index(&song.get_track().to_string());
+                    row.set_disc(&song.get_disc().to_string());
                     row.set_thumbnail_visible(false);
 
                     row.set_name(song.get_name());

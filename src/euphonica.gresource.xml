@@ -61,7 +61,7 @@
     <file preprocess="xml-stripblanks">gtk/preferences/audio-format-box.ui</file>
     <file preprocess="xml-stripblanks">gtk/preferences/path-row.ui</file>
     <file preprocess="xml-stripblanks">gtk/preferences/outputs.ui</file>
-    <file preprocess="xml-stripblanks">gtk/preferences/library.ui</file>
+    <file preprocess="xml-stripblanks">gtk/preferences/app.ui</file>
     <file preprocess="xml-stripblanks">gtk/preferences/ui.ui</file>
     <file>gtk/style.css</file>
     <file preprocess="xml-stripblanks" alias="albumart-placeholder.svg">gtk/textures/albumart-placeholder.svg</file>
@@ -153,5 +153,8 @@
     <file preprocess="xml-stripblanks" alias="phone-symbolic.svg">gtk/icons/phone-symbolic.svg</file>
     <file preprocess="xml-stripblanks" alias="mouse-symbolic.svg">gtk/icons/mouse-symbolic.svg</file>
     <file preprocess="xml-stripblanks" alias="cd-symbolic.svg">gtk/icons/cd-symbolic.svg</file>
+    <file preprocess="xml-stripblanks" alias="arrow-clockwise-symbolic.svg">gtk/icons/arrow-clockwise-symbolic.svg</file>
+    <file preprocess="xml-stripblanks" alias="go-home-symbolic.svg">gtk/icons/go-home-symbolic.svg</file>
+    <file preprocess="xml-stripblanks" alias="speedometer-symbolic.svg">gtk/icons/speedometer-symbolic.svg</file>
   </gresource>
 </gresources>

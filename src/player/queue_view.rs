@@ -340,6 +340,45 @@ mod imp {
                     }
                 ),
             );
+
+            // Set song on mouse release.
+            // Why not ListView::activate? We'd like to use the :selected pseudoclass to signify the playing
+            // song AND also have single-click-to-switch-track. If we use single-click-activate on the
+            // ListView, the :selected pseudoclass is applied UPON HOVER, ruining the current-song
+            // highlight. So we need to use double-click activate, which means ::activate won't fire until
+            // the second click. Directly binding to the selection-changed signal of the sel model won't
+            // work either as that fires both on user interaction and on programmatic changes.
+            // To differentiate between user clicks and automatic updates (like MPD switching tracks), all
+            // non-user changes must mute this handler.
+            let queue_release_ctl = gtk::GestureClick::builder()
+                // Run once the release signal has bubbled back up to the ListView.
+                // That tells the callback AFTER the selection model has received the click-release signal,
+                // such that it gets the updated selection and not the previous one.
+                .propagation_phase(gtk::PropagationPhase::Bubble)
+                .build();
+            queue_release_ctl.connect_released(clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |_, _, _, _| {
+                    eprintln!("RELEASED");
+                    let (Some(player), Some(song)) = (
+                        dbg!(this.player.upgrade()),
+                        dbg!(
+                            this.sel_model
+                                .get()
+                                .and_then(|model| model.selected_item().and_downcast::<Song>())
+                        ),
+                    ) else {
+                        return;
+                    };
+                    glib::spawn_future_local(async move {
+                        if let Err(e) = player.on_song_clicked(song).await {
+                            dbg!(e);
+                        }
+                    });
+                }
+            ));
+            self.queue.add_controller(queue_release_ctl);
         }
 
         fn signals() -> &'static [Signal] {
@@ -428,6 +467,8 @@ impl QueueView {
         );
         filter_model.set_incremental(true);
         let sel_model = SingleSelection::new(Some(filter_model));
+        sel_model.set_autoselect(false); // stopped state does not have a current song
+        sel_model.set_can_unselect(true);
         if let Err(e) = self.imp().sel_model.set(sel_model.clone()) {
             dbg!(e);
         }
@@ -711,30 +752,6 @@ impl QueueView {
 
         // Set the factory of the list view
         self.imp().queue.set_factory(Some(&factory));
-
-        // Setup click action
-        self.imp().queue.connect_activate(clone!(
-            #[weak]
-            player,
-            move |queue, position| {
-                glib::spawn_future_local(clone!(
-                    #[weak]
-                    player,
-                    #[weak]
-                    queue,
-                    async move {
-                        let model = queue.model().expect("The model has to exist.");
-                        let song = model
-                            .item(position)
-                            .and_downcast::<Song>()
-                            .expect("The item has to be a `common::Song`.");
-                        if let Err(e) = player.on_song_clicked(song).await {
-                            dbg!(e);
-                        }
-                    }
-                ));
-            }
-        ));
     }
 
     async fn show_save_error_dialog(&self, name: String, player: Player) {
@@ -979,9 +996,24 @@ impl QueueView {
                     #[weak(rename_to = this)]
                     self,
                     move |_, _| {
-                        let settings = settings_manager().child("ui");
-                        if settings.boolean("auto-scroll-to-playing") {
-                            this.scroll_to_playing();
+                        let (Some(model), Some(player)) =
+                            (this.imp().sel_model.get(), this.imp().player.upgrade())
+                        else {
+                            return;
+                        };
+                        let n = model.n_items();
+                        if let Some(pos) = player.queue_pos()
+                            && pos < n
+                        {
+                            // Won't fire ListView's activate signal, but WILL
+                            // fire selection-changed signal.
+                            model.set_selected(pos);
+                            let settings = settings_manager().child("ui");
+                            if settings.boolean("auto-scroll-to-playing") {
+                                this.scroll_to_playing();
+                            }
+                        } else {
+                            model.unselect_all();
                         }
                     }
                 ),

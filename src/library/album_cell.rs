@@ -408,6 +408,115 @@ impl AlbumCell {
         res
     }
 
+    pub fn new_static(
+        album: &Album,
+        library: Option<&Library>,
+        cache: Rc<Cache>,
+        wrap_mode: Option<MarqueeWrapMode>,
+    ) -> Self {
+        let res: Self = Object::builder().build();
+        let imp = res.imp();
+        imp.library.set(library);
+        let cache_state = cache.get_cache_state();
+        imp
+            .cache
+            .set(cache)
+            .expect("AlbumCell cannot bind to cache");
+        let title = album.get_title();
+        imp.title.label().set_label(
+            if title.is_empty() {
+                *EMPTY_ALBUM_STRING
+            } else {
+                title
+            }
+        );
+        let ui_settings = settings_manager().child("ui");
+        if let Some(wrap_mode) = wrap_mode {
+            // Some views, like the Recent View, requires a specific mode due to UI constraints.
+            res.imp().title.set_wrap_mode(wrap_mode);
+        } else {
+            // If unspecified, bind to GSettings
+            ui_settings
+                .bind("title-wrap-mode", &res.imp().title.get(), "wrap-mode")
+                .mapping(|var, _| {
+                    Some(
+                        MarqueeWrapMode::try_from(var.get::<String>().unwrap().as_ref())
+                            .expect("Invalid title-wrap-mode setting value")
+                            .into(),
+                    )
+                })
+                .get_only()
+                .build();
+        }
+        ui_settings
+            .bind("use-hires-for-album-cells", &res, "hires")
+            .get_only()
+            .build();
+
+        imp.artist.set_label(
+            album.get_albumartists_str().unwrap_or(*EMPTY_ARTIST_STRING)
+        );
+
+        res.set_property("quality-grade", album.property::<Option<String>>("quality-grade"));
+        res.set_property("rating", album.property::<i8>("rating"));
+
+        let _ = res.imp().cover_signal_ids.replace(Some((
+            cache_state.connect_closure(
+                "album-cover-set",
+                false,
+                closure_local!(
+                    #[weak(rename_to = this)]
+                    res,
+                    move |_: CacheState, uri: String, _: gdk::Texture, thumb: gdk::Texture| {
+                        if this.imp().album.upgrade().is_some_and(|a| {
+                            a.get_folder_uri() == uri || a.get_example_uri() == uri
+                        }) {
+                            this.imp().cover.show(&thumb);
+                        }
+                    }
+                ),
+            ),
+            cache_state.connect_closure(
+                "album-cover-cleared",
+                false,
+                closure_local!(
+                    #[weak(rename_to = this)]
+                    res,
+                    move |_: CacheState, uri: String| {
+                        if this.imp().album.upgrade().is_some_and(|a| {
+                            a.get_folder_uri() == uri || a.get_example_uri() == uri
+                        }) {
+                            this.imp().cover.clear();
+                        }
+                    }
+                ),
+            ),
+        )));
+
+        // Set up dynamic texture loading/unloading.
+        // Prev implementation was painfully clunky. I've since discovered the map() and unmap()
+        // signals. These fire as soon as a widget comes within/out of 10px of the viewport,
+        // i.e. almost ideal for texture loading.
+        // HOWEVER, map() seems to ALWAYS FIRE ONCE upon widget creation (maybe due to every new
+        // widget being created somewhere within the viewport, then moved out? or something to do
+        // with filtering being iterative?). Afterwards for widgets that end up outside of the
+        // viewport, unmap() will be fired. To avoid flooding the cache controller on startup we
+        // add a short delay on the map() signal. If unmap() comes in quick succession then we
+        // can just cancel the load before it happens.
+        res.connect_map(|res| {
+            res.load_textures_with_delay();
+        });
+
+        res.connect_unmap(|res| {
+            res.unload_textures();
+        });
+
+        // Static version: just bind directly here
+        imp.album.set(Some(album));
+
+        res
+    }
+
     fn update_play_btn_visibility(&self, hovered: bool) {
         self.imp()
             .play_btn_revealer

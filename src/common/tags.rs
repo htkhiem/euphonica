@@ -1,3 +1,4 @@
+pub const TITLE: &str = "title";
 pub const ALBUM: &str = "album";
 pub const ARTIST: &str = "artist";
 pub const ALBUMSORT: &str = "albumsort";

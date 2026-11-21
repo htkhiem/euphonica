@@ -20,7 +20,11 @@
 						<property name="halign">center</property>
 						<property name="valign">end</property>
 						<property name="show-initials">true</property>
-						<property name="size">96</property>
+						<!-- To make a cover-less artistcell have the same width as a minimal album cell, use 104px.
+						AlbumCells uses 128px covers with 6px padding on the sides for a total of 140px.
+						ArtistCells use 18px paddings on the sides.
+						 -->
+						<property name="size">104</property>
 					</object>
 				</child>
 
@@ -50,13 +54,13 @@
 										<property name="id">avatar</property>
 									</object>
 								</child>
-							</object>				
+							</object>
 						</child>
 					</object>
 				</child>
 			</object>
-		</child>	
-		
+		</child>
+
 		<child>
 			<object class="GtkLabel" id="name">
 				<property name="wrap">false</property>

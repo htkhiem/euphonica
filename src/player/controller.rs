@@ -1153,7 +1153,9 @@ impl Player {
             }
         }
 
-        // Update playing status of songs in the queue
+        // Check if current song has changed.
+        // From v1.0 onward the new Song struct doesn't have an is_playing field anymore,
+        // and is-playing indication is now simply that row in the Queue View being selected.
         if let Some(new_queue_place) = status.song {
             let needs_refresh: bool;
             let prev_uri: Option<String>;
@@ -1361,6 +1363,7 @@ impl Player {
                 self.notify("album");
                 self.notify("rating");
                 self.notify("duration");
+                self.notify("queue-id");
                 cover_changed = Some(true);
                 // Update MPRIS side
                 if self.imp().mpris_enabled.get() {

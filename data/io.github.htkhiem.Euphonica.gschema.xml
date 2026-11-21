@@ -66,6 +66,12 @@
 		<value nick="queue" value="7"/>
 	</enum>
 
+	<enum id="io.github.htkhiem.Euphonica.recentsubview">
+		<value nick="albums" value="0"/>
+		<value nick="artists" value="1"/>
+		<value nick="songs" value="2"/>
+	</enum>
+
 	<!-- Unused, but kept for compatibility -->
 	<enum id="io.github.htkhiem.Euphonica.imageformat">
 		<value nick="jpeg" value="0"/>
@@ -209,12 +215,6 @@
 		<key name="max-image-resolution" type="u">
 			<default>1024</default>
 			<summary>Maximum resolution for cached images</summary>
-		</key>
-
-		<key name="n-image-threads" type="u">
-			<default>4</default>
-			<summary>Number of threads for image processing operations</summary>
-			<description>Controls the number of threads used for parallel image processing (resizing, encoding, decoding). More threads does not always mean better performance. Requires restart to take effect.</description>
 		</key>
 
 		<key name="optimize-embedded-cover-loading" type="b">
@@ -477,6 +477,7 @@
 	</schema>
 
 	<schema id="io.github.htkhiem.Euphonica.state" path="/io/github/htkhiem/Euphonica/state/">
+		<child schema="io.github.htkhiem.Euphonica.state.homeview" name="homeview"/>
 		<child schema="io.github.htkhiem.Euphonica.state.albumview" name="albumview"/>
 		<child schema="io.github.htkhiem.Euphonica.state.artistview" name="artistview"/>
 		<child schema="io.github.htkhiem.Euphonica.state.folderview" name="folderview"/>
@@ -521,6 +522,14 @@
 		<key name="on-exit-action" enum='io.github.htkhiem.Euphonica.onexitaction'>
 			<default>'nothing'</default>
 			<summary>Action to perform on MPD when Euphonica exits</summary>
+		</key>
+	</schema>
+
+	<schema id="io.github.htkhiem.Euphonica.state.homeview" path="/io/github/htkhiem/Euphonica/state/homeview/">
+		<!-- Album view state -->
+		<key name='recent-subview' enum='io.github.htkhiem.Euphonica.recentsubview'>
+			<default>'songs'</default>
+			<summary>Last selected subview of Recent section</summary>
 		</key>
 	</schema>
 

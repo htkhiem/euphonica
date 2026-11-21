@@ -27,6 +27,9 @@ test('Validate appstream file', appstreamcli,
 install_data('io.github.htkhiem.Euphonica.gschema.xml',
   install_dir: get_option('datadir') / 'glib-2.0' / 'schemas'
 )
+install_data('io.github.htkhiem.Euphonica.SearchProvider.ini',
+  install_dir: get_option('datadir') / 'gnome-shell' / 'search-providers'
+)
 
 compile_schemas = find_program('glib-compile-schemas', required: false, disabler: true)
 test('Validate schema file',

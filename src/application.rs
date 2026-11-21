@@ -28,6 +28,7 @@ use crate::{
     onboarding::EuphonicaOnboardingWindow,
     player::{Player, get_next_replaygain},
     preferences::Preferences,
+    search_provider,
     server::{ManagedMpdError, ManagedMpdServer},
     utils::{settings_manager, tokio_runtime},
 };
@@ -282,6 +283,10 @@ mod imp {
                     }
                 }
             ));
+
+            // Register the GNOME Shell search provider on the session bus.
+            // It stays active for as long as the app runs, even in the background.
+            search_provider::start(client, &self.obj());
 
             client.get_client_state().connect_closure(
                 "idle",

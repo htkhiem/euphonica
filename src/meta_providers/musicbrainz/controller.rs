@@ -14,7 +14,6 @@ use musicbrainz_rs::{
     prelude::*,
 };
 
-
 use crate::{
     common::song::get_title_from_mpd_song,
     config::APPLICATION_USER_AGENT,
