@@ -493,6 +493,8 @@
                             </child>
                             <child>
                               <object class="GtkPaned">
+                                <property name="shrink-start-child">false</property>
+                                <property name="shrink-end-child">false</property>
                                 <property name="start-child">
                                   <!-- Left: Recommenders -->
                                   <object class="GtkBox">

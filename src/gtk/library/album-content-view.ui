@@ -8,22 +8,16 @@
         <property name="height-request">240</property>
         <child>
           <object class="AdwBreakpoint">
-            <condition>max-width: 500px</condition>
+            <condition>max-width: 900px</condition>
             <setter object="multi_layout_view" property="layout-name">narrow</setter>
-            <!-- <setter object="cover" property="size">128</setter>
-            <setter object="cover" property="halign">center</setter>
+            <setter object="cover" property="size">96</setter>
             <setter object="replace_queue_text" property="visible">false</setter>
             <setter object="add_to_playlist" property="collapsed">true</setter>
-            <setter object="title" property="halign">fill</setter>
-            <setter object="title" property="justify">center</setter>
-            <setter object="artists_box" property="halign">center</setter>
-            <setter object="artists_box" property="align">0.5</setter>
-            <setter object="meta_last_updated" property="halign">center</setter> -->
           </object>
         </child>
         <child>
           <object class="AdwBreakpoint">
-            <condition>min-width: 900px</condition>
+            <condition>min-width: 1500px</condition>
             <setter object="multi_layout_view" property="layout-name">wide</setter>
           </object>
         </child>
@@ -96,7 +90,7 @@
                         </style>
                         <child>
                           <object class="EuphonicaImageStack" id="cover">
-                            <property name="size">290</property>
+                            <property name="size">300</property>
                           </object>
                         </child>
                       </object>
@@ -145,7 +139,7 @@
                               <object class="GtkBox">
                                 <property name="spacing">6</property>
                                 <property name="orientation">1</property>
-                                <property name="valign">center</property>
+                                <property name="valign">start</property>
                                 <child>
                                   <object class="GtkLabel">
                                     <property name="label" translatable="true">No wiki text yet.</property>
@@ -451,9 +445,7 @@
                               </object>
                             </child>
                             <child>
-                              <object class="EuphonicaTagsSection" id="tags_widget">
-                                <property name="vexpand">true</property>
-                              </object>
+                              <object class="EuphonicaTagsSection" id="tags_widget"/>
                             </child>
                           </object>
                         </child>
@@ -476,9 +468,8 @@
                         <!-- The always-visible action row -->
                         <child>
                           <object class="GtkCenterBox">
-                            <style>
-                              <class name="padding-12"/>
-                            </style>
+                            <property name="margin-start">12</property>
+                            <property name="margin-end">12</property>
                             <property name="hexpand">true</property>
                             <property name="start-widget">
                               <object class="GtkBox" id="action_btns">
@@ -560,9 +551,9 @@
                               <object class="GtkListBox" id="content">
                                 <property name="selection-mode">3</property>
                                 <property name="activate-on-single-click">false</property>
-                                <property name="show-separators">true</property>
                                 <style>
-                                  <class name="no-bg"/>
+                                  <class name="padding-12"/>
+                                  <class name="song-list"/>
                                 </style>
                               </object>
                             </property>
@@ -583,53 +574,50 @@
                             <!-- Title area -->
                             <child>
                               <object class="GtkBox">
-                                <property name="spacing">12</property>
-
+                                <property name="hexpand">true</property>
+                                <property name="orientation">1</property>
+                                <property name="spacing">6</property>
+                                <property name="margin-start">12</property>
+                                <property name="margin-end">12</property>
                                 <child>
                                   <object class="AdwLayoutSlot">
-                                    <property name="id">cover</property>
+                                    <property name="id">title</property>
                                   </object>
                                 </child>
-
                                 <child>
-                                  <object class="GtkBox">
-                                    <property name="hexpand">true</property>
-                                    <property name="orientation">1</property>
-                                    <property name="spacing">6</property>
-
-                                    <child>
-                                      <object class="AdwLayoutSlot">
-                                        <property name="id">title</property>
-                                      </object>
-                                    </child>
-
-                                    <child>
-                                      <object class="GtkSeparator"/>
-                                    </child>
-
-                                    <child>
-                                      <object class="AdwLayoutSlot">
-                                        <property name="id">artists</property>
-                                      </object>
-                                    </child>
+                                  <object class="AdwLayoutSlot">
+                                    <property name="id">artists</property>
                                   </object>
                                 </child>
+
                               </object>
                             </child>
 
                             <!-- Content area -->
                             <child>
                               <object class="GtkPaned">
+                                <!-- Keep sidebar at constant width unless user manually resizes it -->
+                                <property name="resize-start-child">false</property>
+                                <property name="shrink-start-child">false</property>
+                                <property name="shrink-end-child">false</property>
+                                <property name="position">324</property>
                                 <property name="start-child">
                                   <!-- Left: metadata -->
                                   <object class="GtkBox">
                                     <property name="orientation">1</property>
-                                    <property name="hexpand">1</property>
                                     <property name="spacing">12</property>
-
+                                    <property name="margin-start">12</property>
+                                    <property name="margin-end">12</property>
+                                    <child>
+                                      <object class="AdwLayoutSlot">
+                                        <property name="id">cover</property>
+                                        <property name="halign">center</property>
+                                      </object>
+                                    </child>
                                     <child>
                                       <object class="AdwLayoutSlot">
                                         <property name="id">metadata-box</property>
+                                        <property name="width-request">300</property>
                                       </object>
                                     </child>
                                   </object>
@@ -645,10 +633,12 @@
                                         <property name="id">song-list</property>
                                       </object>
                                     </child>
-                                    <object class="AdwLayoutSlot">
-                                      <property name="id">wiki-box</property>
-                                    </object>
                                     <child>
+                                      <object class="AdwLayoutSlot">
+                                        <property name="margin-start">12</property>
+                                        <property name="margin-end">12</property>
+                                        <property name="id">wiki-box</property>
+                                      </object>
                                     </child>
                                   </object>
                                 </property>
@@ -663,7 +653,7 @@
                     <!-- Narrow layout: a single column, with metadata box hidden by default -->
                     <child>
                       <object class="AdwLayout">
-                        <property name="name">wide</property>
+                        <property name="name">narrow</property>
                         <property name="content">
                           <object class="GtkBox">
                             <property name="spacing">12</property>
@@ -672,6 +662,8 @@
                             <!-- Cover art and title side by side -->
                             <child>
                               <object class="GtkBox">
+                                <property name="margin-start">12</property>
+                                <property name="margin-end">12</property>
                                 <property name="spacing">12</property>
 
                                 <child>
@@ -683,6 +675,7 @@
                                 <child>
                                   <object class="AdwLayoutSlot">
                                     <property name="id">title</property>
+                                    <property name="hexpand">true</property>
                                   </object>
                                 </child>
                               </object>
@@ -691,11 +684,13 @@
                             <!-- Artists on the next row -->
                             <child>
                               <object class="GtkScrolledWindow">
-                                <property name="hscrollbar-policy">always</property>
+                                <property name="hscrollbar-policy">auto</property>
                                 <property name="vscrollbar-policy">never</property>
                                 <property name="propagate-natural-width">true</property>
                                 <child>
                                   <object class="AdwLayoutSlot">
+                                    <property name="margin-start">12</property>
+                                    <property name="margin-end">12</property>
                                     <property name="id">artists</property>
                                   </object>
                                 </child>
@@ -706,6 +701,8 @@
                             <child>
                               <object class="GtkBox">
                                 <property name="orientation">1</property>
+                                <property name="margin-start">12</property>
+                                <property name="margin-end">12</property>
                                 <!-- No spacing here; we use margin-top on content instead so it can be hidden along content. -->
                                 <child>
                                   <object class="GtkCenterBox">
@@ -738,6 +735,7 @@
                                     <property name="transition-type">5</property>
                                     <property name="child">
                                       <object class="AdwLayoutSlot">
+                                        <property name="margin-top">12</property>
                                         <property name="id">metadata-box</property>
                                       </object>
                                     </property>
@@ -755,6 +753,8 @@
                             <!-- Wiki last, no need to scroll or reveal anymore since it's not pushing important down -->
                             <child>
                               <object class="AdwLayoutSlot">
+                                <property name="margin-start">12</property>
+                                <property name="margin-end">12</property>
                                 <property name="id">wiki-box</property>
                               </object>
                             </child>
@@ -776,53 +776,50 @@
                             <!-- Title area -->
                             <child>
                               <object class="GtkBox">
-                                <property name="spacing">12</property>
-
+                                <property name="hexpand">true</property>
+                                <property name="orientation">1</property>
+                                <property name="spacing">6</property>
+                                <property name="margin-start">12</property>
+                                <property name="margin-end">12</property>
                                 <child>
                                   <object class="AdwLayoutSlot">
-                                    <property name="id">cover</property>
+                                    <property name="id">title</property>
                                   </object>
                                 </child>
-
                                 <child>
-                                  <object class="GtkBox">
-                                    <property name="hexpand">true</property>
-                                    <property name="orientation">1</property>
-                                    <property name="spacing">6</property>
-
-                                    <child>
-                                      <object class="AdwLayoutSlot">
-                                        <property name="id">title</property>
-                                      </object>
-                                    </child>
-
-                                    <child>
-                                      <object class="GtkSeparator"/>
-                                    </child>
-
-                                    <child>
-                                      <object class="AdwLayoutSlot">
-                                        <property name="id">artists</property>
-                                      </object>
-                                    </child>
+                                  <object class="AdwLayoutSlot">
+                                    <property name="id">artists</property>
                                   </object>
                                 </child>
+
                               </object>
                             </child>
 
                             <!-- Content area -->
                             <child>
                               <object class="GtkPaned">
+                                <!-- Keep sidebar at constant width unless user manually resizes it -->
+                                <property name="resize-start-child">false</property>
+                                <property name="shrink-start-child">false</property>
+                                <property name="shrink-end-child">false</property>
+                                <property name="position">324</property>
                                 <property name="start-child">
                                   <!-- Left: metadata -->
                                   <object class="GtkBox">
                                     <property name="orientation">1</property>
-                                    <property name="hexpand">1</property>
                                     <property name="spacing">12</property>
-
+                                    <property name="margin-start">12</property>
+                                    <property name="margin-end">12</property>
+                                    <child>
+                                      <object class="AdwLayoutSlot">
+                                        <property name="id">cover</property>
+                                        <property name="halign">center</property>
+                                      </object>
+                                    </child>
                                     <child>
                                       <object class="AdwLayoutSlot">
                                         <property name="id">metadata-box</property>
+                                        <property name="width-request">300</property>
                                       </object>
                                     </child>
                                   </object>
@@ -830,6 +827,11 @@
                                 <property name="end-child">
                                   <!-- Right: song list and wiki, as nested pane -->
                                   <object class="GtkPaned">
+                                    <property name="shrink-start-child">false</property>
+                                    <!-- Wiki reflowing looks annoying -->
+                                    <property name="resize-end-child">false</property>
+                                    <property name="shrink-end-child">false</property>
+                                    <property name="position">700</property>
                                     <property name="start-child">
                                       <object class="AdwLayoutSlot">
                                         <property name="id">song-list</property>
@@ -838,6 +840,8 @@
 
                                     <property name="end-child">
                                       <object class="AdwLayoutSlot">
+                                        <property name="margin-start">12</property>
+                                        <property name="margin-end">12</property>
                                         <property name="id">wiki-box</property>
                                       </object>
                                     </property>

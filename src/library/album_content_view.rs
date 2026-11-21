@@ -62,14 +62,16 @@ mod imp {
         pub rating: TemplateChild<Rating>,
         #[template_child]
         pub rating_readout: TemplateChild<gtk::Label>,
+        #[template_child]
+        pub metadata_revealer: TemplateChild<gtk::Revealer>,
+        #[template_child]
+        pub collapse_metadata_btn: TemplateChild<gtk::Button>,
 
         // Wiki display (read-only)
         #[template_child]
         pub wiki_stack: TemplateChild<ContentStack>,
         #[template_child]
         pub add_wiki_btn: TemplateChild<gtk::Button>,
-        #[template_child]
-        pub wiki_fader: TemplateChild<FadingScrolledWindow>,
         #[template_child]
         pub wiki_text: TemplateChild<gtk::Label>,
         #[template_child]
@@ -367,6 +369,31 @@ mod imp {
                     this.obj().write_tags();
                 }
             ));
+
+            let revealer = self.metadata_revealer.get();
+            revealer
+                .bind_property(
+                    "reveal-child",
+                    &self.collapse_metadata_btn.get(),
+                    "icon-name",
+                )
+                .transform_to(|_, is_revealed: bool| {
+                    Some(
+                        if is_revealed {
+                            "down-symbolic"
+                        } else {
+                            "up-symbolic"
+                        }
+                        .to_value(),
+                    )
+                })
+                .bidirectional()
+                .sync_create()
+                .build();
+
+            self.collapse_metadata_btn.connect_clicked(move |_| {
+                revealer.set_reveal_child(!revealer.is_child_revealed());
+            });
 
             // Add wiki button opens the metadata editor dialog
             self.add_wiki_btn.connect_clicked(clone!(
