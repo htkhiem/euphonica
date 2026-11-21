@@ -16,6 +16,13 @@
                 <property name="icon-name">left-symbolic</property>
                 <property name="tooltip-text" translatable="true">Back</property>
               </object>
+            </child>
+            <child type="start">
+              <object class="GtkButton">
+                <property name="action-name">win.navigate-forward</property>
+                <property name="icon-name">right-symbolic</property>
+                <property name="tooltip-text" translatable="true">Forward</property>
+              </object>
             </child>            
           </object>
         </child>

@@ -287,9 +287,11 @@ mod imp {
         // Browser-style navigation. Views keep their own page widgets, while this
         // history records the logical page that was visited across all of them.
         pub(super) navigation_history: RefCell<Vec<NavigationTarget>>,
+        pub(super) forward_history: RefCell<Vec<NavigationTarget>>,
         pub(super) current_navigation_target: RefCell<Option<NavigationTarget>>,
         pub(super) applying_navigation_target: Cell<bool>,
         pub(super) navigate_back_action: OnceCell<gio::SimpleAction>,
+        pub(super) navigate_forward_action: OnceCell<gio::SimpleAction>,
 
         // Single async loop that emits "check-visible" periodically to drive
         // visibility checks for all AlbumCell instances
@@ -1465,13 +1467,14 @@ impl EuphonicaWindow {
                             .as_ref()
                             .is_none_or(|current| current.key() != target_key)
                         {
+                            this.imp().forward_history.borrow_mut().clear();
                             if let Some(current) =
                                 this.imp().current_navigation_target.borrow().clone()
                             {
                                 this.imp().navigation_history.borrow_mut().push(current);
                             }
                             this.imp().current_navigation_target.replace(Some(target));
-                            this.update_navigate_back_action();
+                            this.update_navigation_actions();
                         }
                     }
                 }
@@ -1924,6 +1927,7 @@ impl EuphonicaWindow {
             eprintln!("Unknown view: {view_name}");
             return;
         };
+        self.imp().forward_history.borrow_mut().clear();
         self.navigate_to(NavigationTarget::Root(view_name), false);
     }
 
@@ -1967,6 +1971,7 @@ impl EuphonicaWindow {
                 if history.len() > 100 {
                     history.remove(0);
                 }
+            self.imp().forward_history.borrow_mut().clear();
             }
         }
 
@@ -2006,7 +2011,7 @@ impl EuphonicaWindow {
         }
         self.imp().applying_navigation_target.set(false);
         self.imp().current_navigation_target.replace(Some(target));
-        self.update_navigate_back_action();
+        self.update_navigation_actions();
     }
 
     fn navigate_back(&self) {
@@ -2021,14 +2026,31 @@ impl EuphonicaWindow {
 
         let target = self.imp().navigation_history.borrow_mut().pop();
         if let Some(target) = target {
+            if let Some(current) = self.imp().current_navigation_target.borrow().clone() {
+                self.imp().forward_history.borrow_mut().push(current);
+            }
             self.navigate_to(target, false);
         }
-        self.update_navigate_back_action();
+        self.update_navigation_actions();
     }
 
-    fn update_navigate_back_action(&self) {
+    fn navigate_forward(&self) {
+        let target = self.imp().forward_history.borrow_mut().pop();
+        if let Some(target) = target {
+            if let Some(current) = self.imp().current_navigation_target.borrow().clone() {
+                self.imp().navigation_history.borrow_mut().push(current);
+            }
+            self.navigate_to(target, false);
+        }
+        self.update_navigation_actions();
+    }
+
+    fn update_navigation_actions(&self) {
         if let Some(action) = self.imp().navigate_back_action.get() {
             action.set_enabled(!self.imp().navigation_history.borrow().is_empty());
+        }
+        if let Some(action) = self.imp().navigate_forward_action.get() {
+            action.set_enabled(!self.imp().forward_history.borrow().is_empty());
         }
     }
 
@@ -2046,6 +2068,19 @@ impl EuphonicaWindow {
         self.imp()
             .navigate_back_action
             .set(navigate_back_action)
+            .expect("Cannot set up navigation action twice");
+
+        let navigate_forward_action = gio::SimpleAction::new("navigate-forward", None);
+        navigate_forward_action.set_enabled(false);
+        navigate_forward_action.connect_activate(clone!(
+            #[weak(rename_to = this)]
+            self,
+            move |_, _| this.navigate_forward()
+        ));
+        self.add_action(&navigate_forward_action);
+        self.imp()
+            .navigate_forward_action
+            .set(navigate_forward_action)
             .expect("Cannot set up navigation action twice");
 
         let view_recent_action = gio::ActionEntry::builder("view-recent")

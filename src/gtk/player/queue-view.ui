@@ -76,6 +76,13 @@
                         <property name="tooltip-text" translatable="true">Back</property>
                       </object>
                     </child>
+                    <child type="start">
+                      <object class="GtkButton">
+                        <property name="action-name">win.navigate-forward</property>
+                        <property name="icon-name">right-symbolic</property>
+                        <property name="tooltip-text" translatable="true">Forward</property>
+                      </object>
+                    </child>
                     <property name="title-widget">
                       <object class="AdwWindowTitle" id="queue_title">
                         <property name="title" translatable="true">Queue</property>
