@@ -73,7 +73,7 @@ mod imp {
         #[template_child]
         pub add_wiki_btn: TemplateChild<gtk::Button>,
         #[template_child]
-        pub wiki_text: TemplateChild<gtk::Label>,
+        pub wiki_text: TemplateChild<gtk::TextView>,
         #[template_child]
         pub wiki_link: TemplateChild<gtk::LinkButton>,
         #[template_child]
@@ -908,7 +908,7 @@ impl AlbumContentView {
                                 let wiki_link = this.imp().wiki_link.get();
                                 let wiki_attrib = this.imp().wiki_attrib.get();
                                 this.imp().wiki_stack.show_content();
-                                wiki_text.set_label(&wiki.content);
+                                wiki_text.buffer().set_text(&wiki.content);
                                 if let Some(url) = wiki.url.as_ref() {
                                     wiki_link.set_visible(true);
                                     wiki_link.set_uri(url);

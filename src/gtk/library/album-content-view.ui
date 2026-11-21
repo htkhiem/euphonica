@@ -165,14 +165,18 @@
                                 <property name="orientation">1</property>
                                 <property name="valign">start</property>
                                 <child>
-                                  <object class="GtkLabel" id="wiki_text">
+                                  <!-- Wiki text can get super long. GtkLabel causes massive frame drops in that case.
+                                  GtkTextView is better for perf but requires more restyling. -->
+                                  <object class="GtkTextView" id="wiki_text">
                                     <style>
                                       <class name="document"/>
+                                      <class name="no-bg"/>
                                     </style>
-                                    <property name="wrap">true</property>
-                                    <property name="justify">fill</property>
-                                    <property name="halign">start</property>
+                                    <property name="editable">false</property>
+                                    <property name="cursor-visible">false</property>
+                                    <property name="justification">3</property>
                                     <property name="hexpand">true</property>
+                                    <property name="wrap-mode">3</property>
                                   </object>
                                 </child>
                                 <child>
