@@ -17,6 +17,57 @@ use once_cell::sync::Lazy;
 use std::cell::RefCell;
 use std::{cell::Cell, cmp::Ordering, rc::Rc, sync::OnceLock};
 
+// Path buttons à la Nautilus.
+// Too insignificant to warrant its own custom widget so we'll just use helper functions here.
+fn create_path_button<F>(name: &str, callback: F) -> gtk::Box
+where
+    F: Fn() + 'static,
+{
+    let res = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    res.append(
+        &gtk::Label::builder()
+            .label("/")
+            .margin_start(3)
+            .margin_end(3)
+            .css_classes(["dimmed", "heading"])
+            .build(),
+    );
+    let btn = gtk::Button::builder()
+        .label(name)
+        .css_classes(["dimmed", "flat"])
+        .build();
+    btn.connect_clicked(move |_| {
+        callback();
+    });
+    res.append(&btn);
+    res
+}
+
+fn rename_path_button(outer: &gtk::Box, name: &str) {
+    // Will just try to set the label of the second child.
+    if let Some(btn) = outer
+        .first_child()
+        .and_then(|c| c.next_sibling())
+        .and_downcast::<gtk::Button>()
+    {
+        btn.set_label(name);
+    }
+}
+
+fn set_path_button_raised(outer: &gtk::Box, raised: bool) {
+    if let Some(btn) = outer
+        .first_child()
+        .and_then(|c| c.next_sibling())
+        .and_downcast::<gtk::Button>()
+    {
+        if raised && btn.has_css_class("dimmed") {
+            btn.remove_css_class("dimmed");
+        } else if !btn.has_css_class("dimmed") {
+            btn.add_css_class("dimmed");
+        }
+    }
+}
+
 // Folder view implementation
 // Unlike other views, here we use a single ListView and update its contents as we browse.
 // The back and forward buttons are disasbled/enabled as follows:
@@ -49,13 +100,24 @@ mod imp {
         #[template_child]
         pub show_sidebar: TemplateChild<gtk::Button>,
         #[template_child]
-        pub path_widget: TemplateChild<gtk::Label>,
-        #[template_child]
         pub back_btn: TemplateChild<gtk::Button>,
         #[template_child]
         pub forward_btn: TemplateChild<gtk::Button>,
         #[template_child]
         pub home_btn: TemplateChild<gtk::Button>,
+
+        #[template_child]
+        pub path_stack: TemplateChild<gtk::Stack>,
+        #[template_child]
+        pub enter_path: TemplateChild<gtk::Button>,
+        #[template_child]
+        pub enter_path_cancel: TemplateChild<gtk::Button>,
+        #[template_child]
+        pub path_buttons: TemplateChild<gtk::Box>,
+        #[template_child]
+        pub path_buttons_scroller: TemplateChild<gtk::ScrolledWindow>,
+        #[template_child]
+        pub path_entry: TemplateChild<gtk::Entry>,
 
         #[template_child]
         pub stack: TemplateChild<ContentStack>,
@@ -73,6 +135,9 @@ mod imp {
         // Content
         #[template_child]
         pub list_view: TemplateChild<gtk::ListView>,
+
+        #[template_child]
+        pub invalid_path_dialog: TemplateChild<adw::AlertDialog>,
 
         // Search & filter models
         pub search_filter: gtk::StringFilter,
@@ -172,12 +237,68 @@ mod imp {
                         this,
                         async move {
                             if let Some(lib) = this.library.upgrade() {
-                                if let Err(e) = lib.folder_root().await {
+                                if let Err(e) = lib.folder_at_step(0).await {
                                     dbg!(e);
                                 }
                             }
                         }
                     ));
+                }
+            ));
+
+            let path_stack = self.path_stack.get();
+            let path_entry = self.path_entry.get();
+            self.enter_path.connect_clicked(clone!(
+                #[weak(rename_to = this)]
+                self,
+                #[weak]
+                path_stack,
+                #[weak]
+                path_entry,
+                move |_| {
+                    if path_stack
+                        .visible_child_name()
+                        .is_some_and(|c| c != "entry")
+                    {
+                        // Init entry to current path
+                        if let Some(library) = this.library.upgrade() {
+                            path_entry.buffer().set_text(library.folder_path());
+                            path_stack.set_visible_child_name("entry");
+                            path_entry.grab_focus();
+                        }
+                    }
+                }
+            ));
+
+            self.enter_path_cancel.connect_clicked(clone!(
+                #[weak]
+                path_stack,
+                move |_| {
+                    if path_stack
+                        .visible_child_name()
+                        .is_some_and(|c| c != "buttons")
+                    {
+                        path_stack.set_visible_child_name("buttons");
+                    }
+                }
+            ));
+
+            self.path_entry.connect_activate(clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |entry| {
+
+                    if let Some(library) = this.library.upgrade() {
+                        let text = entry.buffer().text().to_string();
+                        if this.path_stack.visible_child_name().is_some_and(|name| name != "buttons") {
+                            let _ = this.path_stack.set_visible_child_name("buttons");
+                        }
+                        glib::spawn_future_local(async move {
+                            if dbg!(library.goto_path(text).await).is_err() {
+                                this.invalid_path_dialog.present(this.window.upgrade().as_ref());
+                            }
+                        });
+                    }
                 }
             ));
 
@@ -456,10 +577,51 @@ impl FolderView {
         self.imp().window.set(Some(window));
         self.setup_listview(cache.clone(), library.clone());
 
-        library
-            .bind_property("folder-path", &self.imp().path_widget.get(), "label")
-            .sync_create()
-            .build();
+        library.connect_notify_local(
+            Some("folder-path"),
+            clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |library, _| {
+                    // Update button list as follows:
+                    // Step through each history index of the controller
+                    // If we've got a button at that index already, just update its name
+                    // Else create a new one
+                    // After the loop ends, remove all leftover buttons
+                    let buttons = this.imp().path_buttons.get();
+                    // First child is the home button so skip it immediately.
+                    let mut curr_btn = buttons.first_child().and_then(|w| w.next_sibling());
+                    for (i, hist_step) in library.folder_history().iter().enumerate() {
+                        if let Some(btn) = curr_btn.clone().and_downcast::<gtk::Box>() {
+                            rename_path_button(&btn, hist_step);
+                        } else {
+                            let btn: gtk::Widget = create_path_button(
+                                hist_step,
+                                clone!(
+                                    #[weak]
+                                    library,
+                                    move || {
+                                        glib::spawn_future_local(async move {
+                                            let _ = library.folder_at_step(i as u32 + 1).await;
+                                        });
+                                    }
+                                ),
+                            )
+                            .into();
+                            curr_btn = Some(btn.clone());
+                            buttons.append(&btn);
+                        }
+                        curr_btn = curr_btn.and_then(|w| w.next_sibling());
+                    }
+
+                    // If we exited the loop with some leftover buttons, truncate them all
+                    while let Some(btn) = curr_btn.as_ref() {
+                        buttons.remove(btn);
+                        curr_btn = btn.next_sibling();
+                    }
+                }
+            ),
+        );
 
         self.imp().update_nav_btn_sensitivity();
         library.connect_notify_local(
@@ -467,8 +629,23 @@ impl FolderView {
             clone!(
                 #[weak(rename_to = this)]
                 self,
-                move |_, _| {
+                move |library, _| {
+                    let target_idx = library.folder_curr_idx();
+                    if target_idx == 0 {
+                        this.imp().home_btn.remove_css_class("dimmed");
+                    } else {
+                        this.imp().home_btn.add_css_class("dimmed");
+                    }
                     this.imp().update_nav_btn_sensitivity();
+                    let buttons = this.imp().path_buttons.get();
+                    // Ignore home button
+                    let mut curr_btn = buttons.first_child().and_then(|w| w.next_sibling());
+                    let mut curr_idx = 1;
+                    while let Some(btn) = curr_btn.clone().and_downcast::<gtk::Box>() {
+                        set_path_button_raised(&btn, curr_idx == target_idx);
+                        curr_idx += 1;
+                        curr_btn = btn.next_sibling();
+                    }
                 }
             ),
         );

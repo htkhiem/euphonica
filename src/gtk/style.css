@@ -29,6 +29,14 @@ listview > row {
   padding: 6px;
 }
 
+.padding-3 {
+  padding: 3px;
+}
+
+.padding-0 {
+    padding: 0px;
+}
+
 .shift-on-hover {
   transition: padding 0.2s ease-out;
 }
@@ -54,10 +62,6 @@ listview > row {
 .plain-tag > box {
     padding-left: 4px;
     padding-right: 4px;
-}
-
-.padding-0 {
-    padding: 0px;
 }
 
 .play-button {
@@ -86,6 +90,16 @@ listview > row {
 
 .border-radius-0 {
   border-radius: 0px;
+}
+
+.path-bar {
+  background-color: var(--card-bg-color);
+  border-radius: 12px 0px 0px 12px;
+}
+
+.path-bar button {
+  padding-top: 0px;
+  padding-bottom: 0px;
 }
 
 .no-bg {

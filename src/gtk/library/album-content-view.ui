@@ -689,7 +689,7 @@
                             <!-- Artists on the next row -->
                             <child>
                               <object class="GtkScrolledWindow">
-                                <property name="hscrollbar-policy">auto</property>
+                                <property name="hscrollbar-policy">external</property>
                                 <property name="vscrollbar-policy">never</property>
                                 <property name="propagate-natural-width">true</property>
                                 <child>

@@ -406,6 +406,11 @@ impl Library {
         self.imp().folder_history.borrow().len() as u32
     }
 
+    // For simplicity just clone...perf hit is minuscule here
+    pub fn folder_history(&self) -> Vec<String> {
+        self.imp().folder_history.borrow().clone()
+    }
+
     pub fn folder_path(&self) -> String {
         let history = self.imp().folder_history.borrow();
         let curr_idx = self.imp().folder_curr_idx.get();
@@ -422,8 +427,9 @@ impl Library {
             self.imp().folder_curr_idx.set(curr_idx - 1);
             self.imp().folder_inodes_initialized.set(false);
             self.get_folder_contents().await?;
-            self.notify("folder-curr-idx");
+            // NOTIFY FOLDER-CURR-IDX AFTER FOLDER-PATH so the folder view can have buttons to highlight
             self.notify("folder-path");
+            self.notify("folder-curr-idx");
         }
         Ok(())
     }
@@ -434,19 +440,51 @@ impl Library {
             self.imp().folder_curr_idx.set(curr_idx + 1);
             self.imp().folder_inodes_initialized.set(false);
             self.get_folder_contents().await?;
-            self.notify("folder-curr-idx");
             self.notify("folder-path");
+            self.notify("folder-curr-idx");
         }
         Ok(())
     }
 
-    pub async fn folder_root(&self) -> ClientResult<()> {
-        self.imp().folder_curr_idx.set(0);
+    pub async fn folder_at_step(&self, idx: u32) -> ClientResult<()> {
+        self.imp().folder_curr_idx.set(idx);
         self.imp().folder_inodes_initialized.set(false);
         self.get_folder_contents().await?;
-        self.notify("folder-curr-idx");
         self.notify("folder-path");
+        self.notify("folder-curr-idx");
         Ok(())
+    }
+
+    pub async fn goto_path(&self, path: String) -> ClientResult<()> {
+        // Split by / first
+        let steps = dbg!(
+            path.split("/")
+                .filter(|s| !s.is_empty())
+                .map(|s| s.to_string())
+                .collect::<Vec<String>>()
+        );
+        let len = steps.len();
+        let old_path = self.imp().folder_history.replace(steps);
+        let old_idx = self
+            .imp()
+            .folder_curr_idx
+            .replace(len.min(u32::MAX as usize) as u32);
+        // Fetch this path, falling back to the old one if incorrect.
+        self.imp().folder_inodes_initialized.set(false);
+        match self.get_folder_contents().await {
+            Ok(_) => {
+                self.notify("folder-path");
+                self.notify("folder-curr-idx");
+                Ok(())
+            }
+            Err(_) => {
+                // Undo the above
+                self.imp().folder_history.replace(old_path);
+                self.imp().folder_curr_idx.set(old_idx);
+                self.get_folder_contents().await?;
+                Err(ClientError::NoExist)
+            }
+        }
     }
 
     pub async fn navigate_to(&self, name: &str) -> ClientResult<()> {
@@ -860,7 +898,9 @@ impl Library {
                 .get_song_infos_by_query(query_albumartist_tag, true, &mut |batch| {
                     batch
                         .into_iter()
-                        .filter(|s: &SongInfo| s.album.as_ref().is_some() && artist.is_in_song(s, true))
+                        .filter(|s: &SongInfo| {
+                            s.album.as_ref().is_some() && artist.is_in_song(s, true)
+                        })
                         .for_each(|si| {
                             songs.insert(si.file.clone(), si);
                         });
