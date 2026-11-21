@@ -693,8 +693,7 @@ impl PlaylistContentView {
                                 .window
                                 .upgrade()
                                 .unwrap()
-                                .get_playlist_view()
-                                .pop();
+                                .replace_current_view("playlists");
                             let _ = library
                                 .delete_playlist(playlist.get_name().unwrap().to_owned())
                                 .await;

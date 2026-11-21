@@ -111,6 +111,7 @@ mod imp {
 
         fn constructed(&self) {
             self.parent_constructed();
+            self.nav_view.action_set_enabled("navigation.pop", false);
             self.stack.show_placeholder();
 
             self.obj()
@@ -420,8 +421,11 @@ impl DynamicPlaylistView {
 
     pub async fn delete(&self, name: &str) {
         if let Some(library) = self.imp().library.upgrade() {
-            self.imp().nav_view.pop();
-            self.imp().content_view.unbind();
+            if let Some(window) = self.imp().window.upgrade() {
+                window.replace_current_view("dynamic_playlists");
+            } else {
+                self.show_list();
+            }
             match sqlite::delete_dynamic_playlist(name) {
                 Ok(_) => {
                     if let Err(e) = library.init_dyn_playlists(true).await {
@@ -509,7 +513,7 @@ impl DynamicPlaylistView {
             .set(cache.clone())
             .expect("Cannot init DynamicPlaylistView with cache controller");
         self.imp().window.set(Some(window));
-        self.setup_listview();
+        self.setup_listview(window);
 
         self.imp()
             .conn_state_id
@@ -624,7 +628,11 @@ impl DynamicPlaylistView {
         ));
     }
 
-    fn setup_listview(&self) {
+    pub fn show_list(&self) {
+        self.imp().nav_view.pop_to_tag("list");
+    }
+
+    fn setup_listview(&self, window: &EuphonicaWindow) {
         let library = self.imp().library.upgrade().unwrap();
         let cache = self.imp().cache.get().unwrap();
         // Setup search bar
@@ -693,15 +701,15 @@ impl DynamicPlaylistView {
 
         // Setup click action
         self.imp().list_view.connect_activate(clone!(
-            #[weak(rename_to = this)]
-            self,
+            #[weak]
+            window,
             move |grid_view, position| {
                 let model = grid_view.model().expect("The model has to exist.");
                 let inode = model
                     .item(position)
                     .and_downcast::<INode>()
                     .expect("The item has to be a `common::INode`.");
-                this.on_playlist_clicked(&inode);
+                window.goto_dynamic_playlist(&inode);
             }
         ));
     }

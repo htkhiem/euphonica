@@ -3,6 +3,17 @@
   <object class="AdwShortcutsDialog" id="shortcuts_dialog">
     <child>
       <object class="AdwShortcutsSection">
+        <property name="title" translatable="yes">Navigation</property>
+        <child>
+          <object class="AdwShortcutsItem">
+            <property name="title" translatable="yes">Back</property>
+            <property name="action-name">win.navigate-back</property>
+          </object>
+        </child>
+      </object>
+    </child>
+    <child>
+      <object class="AdwShortcutsSection">
         <property name="title" translatable="yes">Playback &amp; Output Control</property>
         <child>
           <object class="AdwShortcutsItem">

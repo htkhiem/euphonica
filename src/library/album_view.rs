@@ -6,7 +6,7 @@ use gtk::{
     glib::{self},
     glib::{Properties, SignalHandlerId, WeakRef, clone, subclass::Signal},
 };
-use std::cell::{OnceCell, RefCell};
+use std::cell::RefCell;
 use std::{cell::Cell, cmp::Ordering, rc::Rc, sync::OnceLock};
 
 use super::{AlbumCell, AlbumContentView, Library, TagsFilter};
@@ -82,7 +82,6 @@ mod imp {
         pub collapsed: Cell<bool>,
 
         pub initializing: Cell<bool>,
-        pub window: OnceCell<WeakRef<EuphonicaWindow>>,
     }
 
     #[glib::object_subclass]
@@ -117,6 +116,7 @@ mod imp {
 
         fn constructed(&self) {
             self.parent_constructed();
+            self.nav_view.action_set_enabled("navigation.pop", false);            
             self.stack.show_placeholder();
 
             self.obj()
@@ -448,14 +448,7 @@ impl AlbumView {
         window: &EuphonicaWindow,
     ) {
         self.imp().library.set(Some(library));
-        let weak = WeakRef::new();
-        weak.set(Some(window));
-
-        self.imp()
-            .window
-            .set(weak)
-            .expect("AlbumView window already set");
-        self.setup_gridview(cache.clone());
+        self.setup_gridview(cache.clone(), window);
 
         // Set up genres and tags filters
         self.imp().genres_filter_widget.setup(
@@ -537,7 +530,11 @@ impl AlbumView {
         }
     }
 
-    fn setup_gridview(&self, cache: Rc<Cache>) {
+    pub fn show_list(&self) {
+        self.imp().nav_view.pop_to_tag("list");
+    }
+
+    fn setup_gridview(&self, cache: Rc<Cache>, window: &EuphonicaWindow) {
         let settings = settings_manager().child("ui");
         // Setup search bar
         let album_list = self.imp().library.upgrade().unwrap().albums();
@@ -634,15 +631,15 @@ impl AlbumView {
 
         // Setup click action
         self.imp().grid_view.connect_activate(clone!(
-            #[weak(rename_to = this)]
-            self,
+            #[weak]
+            window,
             move |grid_view, position| {
                 let model = grid_view.model().expect("The model has to exist.");
                 let album = model
                     .item(position)
                     .and_downcast::<Album>()
                     .expect("The item has to be a `common::Album`.");
-                this.on_album_clicked(&album);
+                window.goto_album(&album);
             }
         ));
     }

@@ -7,6 +7,7 @@
         <child>
           <object class="AdwNavigationPage">
             <property name="title">Playlists</property>
+            <property name="tag">list</property>
             <child>
               <object class="AdwToolbarView">
                 <child type="top">

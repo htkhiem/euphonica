@@ -915,6 +915,9 @@ impl DynamicPlaylistEditorView {
         }
     }
 
+    pub fn request_exit(&self) {
+        self.exit(false);
+    }
     pub fn init(&self, dp: DynamicPlaylist) {
         glib::spawn_future_local(clone!(
             #[weak(rename_to = this)]
