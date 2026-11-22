@@ -18,7 +18,7 @@ use crate::{
     player::{ratio_center_box::RatioCenterBox, seekbar2::Seekbar},
 };
 
-use super::{OutputControls, PlaybackControls, PlaybackState, Player, VolumeKnob};
+use super::{OutputControls, PlaybackControls, PlaybackState, Player, VolumeControl, VolumeKnob};
 
 mod imp {
     use super::*;
@@ -62,6 +62,10 @@ mod imp {
         pub goto_pane: TemplateChild<gtk::Button>,
         #[template_child]
         pub vol_knob: TemplateChild<VolumeKnob>,
+        #[template_child]
+        pub gtk_volume_control: TemplateChild<VolumeControl>,
+        #[template_child]
+        pub volume_controls: TemplateChild<gtk::Box>,
 
         pub player: WeakRef<Player>,
         pub cover_changed_id: RefCell<Option<SignalHandlerId>>,
@@ -94,6 +98,14 @@ mod imp {
         fn constructed(&self) {
             self.parent_constructed();
             let obj = self.obj();
+            let ui_settings = crate::utils::settings_manager().child("ui");
+            ui_settings
+                .bind("use-gtk-volume-control", &self.gtk_volume_control.get(), "visible")
+                .build();
+            ui_settings
+                .bind("use-gtk-volume-control", &self.vol_knob.get(), "visible")
+                .mapping(|v: &gtk::glib::Variant, _| Some((!v.get::<bool>().unwrap()).to_value()))
+                .build();
 
             obj.bind_property("layout", &self.multi_layout_view.get(), "layout-name")
                 .transform_to(|_, layout: u32| match layout {
@@ -149,7 +161,7 @@ mod imp {
                 .sync_create()
                 .build();
 
-            obj.bind_property("layout", &self.vol_knob.get(), "visible")
+            obj.bind_property("layout", &self.volume_controls.get(), "visible")
                 .transform_to(|_, layout: u32| Some((layout > 1).to_value()))
                 .sync_create()
                 .build();
@@ -219,6 +231,7 @@ impl PlayerBar {
         let imp = self.imp();
 
         self.imp().vol_knob.setup(player);
+        self.imp().gtk_volume_control.setup(player);
 
         let infobox_revealer = imp.infobox_revealer.get();
         let seekbar_revealer = imp.seekbar_revealer.get();

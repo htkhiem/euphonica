@@ -57,6 +57,8 @@ mod imp {
         #[template_child]
         pub vol_knob_unit: TemplateChild<adw::ComboRow>,
         #[template_child]
+        pub use_gtk_volume_control: TemplateChild<adw::SwitchRow>,
+        #[template_child]
         pub vol_knob_sensitivity: TemplateChild<adw::SpinRow>,
 
         #[template_child]
@@ -343,6 +345,9 @@ impl UIPreferences {
         vol_knob_unit.set_factory(Some(&unit_factory));
 
         let vol_knob_sensitivity = imp.vol_knob_sensitivity.get();
+        ui_settings
+            .bind("use-gtk-volume-control", &imp.use_gtk_volume_control.get(), "active")
+            .build();
         ui_settings
             .bind("vol-knob-unit", &vol_knob_unit, "selected")
             .mapping(clone!(

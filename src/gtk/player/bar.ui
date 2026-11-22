@@ -207,7 +207,15 @@
                       </object>
                     </child>
                     <child>
-                      <object class="EuphonicaVolumeKnob" id="vol_knob"/>
+                      <object class="GtkBox" id="volume_controls">
+                        <property name="orientation">horizontal</property>
+                        <child>
+                          <object class="EuphonicaVolumeKnob" id="vol_knob"/>
+                        </child>
+                        <child>
+                          <object class="EuphonicaVolumeControl" id="gtk_volume_control"/>
+                        </child>
+                      </object>
                     </child>
                   </object>
                 </property>
