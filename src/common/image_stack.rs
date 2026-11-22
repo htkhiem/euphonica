@@ -156,4 +156,12 @@ impl ImageStack {
         }
         self.set_state(ImageState::Image);
     }
+
+    pub fn paintable(&self) -> Option<gdk::Paintable> {
+        if self.get_state() == ImageState::Image {
+            self.imp().image.paintable()
+        } else {
+            None
+        }
+    }
 }

@@ -29,6 +29,14 @@ listview > row {
   padding: 6px;
 }
 
+.padding-3 {
+  padding: 3px;
+}
+
+.padding-0 {
+    padding: 0px;
+}
+
 .shift-on-hover {
   transition: padding 0.2s ease-out;
 }
@@ -54,10 +62,6 @@ listview > row {
 .plain-tag > box {
     padding-left: 4px;
     padding-right: 4px;
-}
-
-.padding-0 {
-    padding: 0px;
 }
 
 .play-button {
@@ -88,9 +92,32 @@ listview > row {
   border-radius: 0px;
 }
 
-.no-bg {
-    background-color: unset;
+.path-bar {
+  background-color: var(--card-bg-color);
+  border-radius: 12px 0px 0px 12px;
 }
+
+.path-bar button {
+  padding-top: 0px;
+  padding-bottom: 0px;
+}
+
+.no-bg {
+  background-color: unset;
+}
+
+.song-list {
+  background-color: unset;
+}
+
+.song-list row:selected, .song-list row:hover {
+  border-radius: 12px;
+}
+
+/* .song-list row:nth-child(even):not(:selected) {
+	border-radius: 12px;
+	background-color: alpha(currentColor, 0.05);
+} */
 
 .player-bar {
     border-top: 1px solid @borders;
@@ -207,4 +234,9 @@ listview > row {
 .discography-line {
 	border-radius: 999px;
 	background: var(--accent-color);
+}
+
+/* For combo rows with a lot to say */
+.long-combo > .header > .suffixes {
+	min-width: 120px;
 }

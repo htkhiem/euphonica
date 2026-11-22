@@ -1,24 +1,24 @@
 use crate::cache::sqlite;
-use crate::common::tags;
+use crate::common::{DSD_EXTENSIONS, LOSSLESS_PCM_EXTENSIONS, parse_date};
 use crate::utils::{get_image_cache_path, get_time_ago_desc, strip_filename_linux};
-use core::time::Duration;
-use derivative::Derivative;
 use gtk::glib;
 use gtk::prelude::*;
 use gtk::subclass::prelude::*;
-use mpd::status::AudioFormat;
+use mpd::song::Song as SongInfo;
 use mpris_server::{Time, zbus::zvariant::ObjectPath};
-use rustc_hash::FxHashSet;
+use once_arc::OnceArc;
 use std::cell::Ref;
+use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use std::{
     cell::{Cell, OnceCell},
     ffi::OsStr,
     path::Path,
 };
-use time::{Date, Month, OffsetDateTime};
+use time::{Date, OffsetDateTime};
 
 use super::Stickers;
-use super::{AlbumInfo, ArtistInfo, artists_to_string, parse_mb_artist_tag};
+use super::{AlbumInfo, ArtistInfo};
 
 // Mostly for eyecandy
 #[derive(Clone, Copy, Debug, glib::Enum, PartialEq, Default)]
@@ -35,6 +35,33 @@ pub enum QualityGrade {
 }
 
 impl QualityGrade {
+    pub fn of_mpd_song(song: &mpd::song::Song) -> Self {
+        let path = Path::new(&song.file);
+        // Parse quality grade
+        let mut quality_grade = QualityGrade::Unknown;
+        let mut maybe_lossless_pcm = false;
+        if let Some(extension) = path.extension().and_then(OsStr::to_str) {
+            if DSD_EXTENSIONS.contains(&extension) {
+                // Is probably DSD
+                quality_grade = QualityGrade::DSD;
+            } else if LOSSLESS_PCM_EXTENSIONS.contains(&extension) {
+                maybe_lossless_pcm = true;
+            }
+        }
+        if let Some(format) = &song.format {
+            if maybe_lossless_pcm {
+                if format.rate > 48000 && format.bits >= 24 {
+                    quality_grade = QualityGrade::HiRes;
+                } else {
+                    quality_grade = QualityGrade::CD;
+                }
+            } else {
+                quality_grade = QualityGrade::Lossy;
+            }
+        }
+        quality_grade
+    }
+
     pub fn to_icon_name(self) -> Option<&'static str> {
         match self {
             Self::Unknown => None,
@@ -46,90 +73,17 @@ impl QualityGrade {
     }
 }
 
-fn parse_date(datestr: &str) -> Option<Date> {
-    // MPD uses yyyy-MM-dd but the month and day may be optional.
-    let mut comps = datestr.split('-');
-    let mut year_val: Option<i32> = None;
-    let mut month_val: Month = Month::January;
-    let mut day_val: u8 = 1;
+/// Starting from v1.0 most of the song data pre-processing has been moved up to the rust-mpd fork.
+/// As such, the Song GObject now wraps mpd::song::Song directly.
 
-    let year_str = comps.next()?;
-    if let Ok(year) = year_str.parse::<i32>() {
-        let _ = year_val.replace(year);
-    } else {
-        return None;
-    }
-
-    if let Some(month_str) = comps.next()
-        && let Ok(month) = month_str.parse::<u8>()
-        && let Ok(month_enum) = Month::try_from(month)
-    {
-        month_val = month_enum;
-    }
-    if let Some(day_str) = comps.next()
-        && let Ok(day) = day_str.parse::<u8>()
-    {
-        day_val = day;
-    }
-    if let Ok(date) = Date::from_calendar_date(year_val.unwrap(), month_val, day_val) {
-        return Some(date);
-    }
-    None
-}
-
-/// We define our own Song struct for more convenient handling, especially with
-/// regards to optional fields and tags such as albums.
-#[derive(Debug, Clone, Derivative)]
-#[derivative(Default)]
-pub struct SongInfo {
-    // TODO: Might want to refactor to Into<Cow<'a, str>>
-    #[derivative(Default(value = "String::from(\"\")"))]
-    pub uri: String,
-    #[derivative(Default(value = "String::from(\"Untitled Song\")"))]
-    pub title: String, // Might just be filename
-    // last_mod: RefCell<Option<u64>>,
-    pub artists: Vec<ArtistInfo>,
-    pub artist_tag: Option<String>, // Original tag, with all the linkages and formatting
-    pub duration: Option<Duration>, // Default to 0 if somehow the option in mpd's Song is None
-    pub queue_id: Option<u32>,
-    pub queue_pos: Option<u32>, // Only set once at creation. Subsequent updates are kept in the Song GObject.
-    // range: Option<Range>,
-    pub album: Option<AlbumInfo>,
-    pub track: Option<i64>,
-    pub disc: Option<i64>,
-    // TODO: add albumsort
-    // Store Date instead of string to save a tiny bit of memory.
-    // Also gives us formatting flexibility in the future.
-    pub release_date: Option<Date>,
-    // TODO: Add more fields for managing classical music, such as composer, ensemble and movement number
-    quality_grade: QualityGrade,
-    // MusicBrainz stuff
-    pub mbid: Option<String>,
-    pub last_modified: Option<String>,
-    pub last_played: Option<OffsetDateTime>,
-}
-
-impl SongInfo {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn into_album_info(self) -> Option<AlbumInfo> {
-        self.album
-    }
-
-    pub fn into_artist_infos(self) -> Vec<ArtistInfo> {
-        self.artists
-    }
-
-    /// Get something to serve as this song's internal ID for
-    /// filtering/comparison purposes.
-    /// Order of preference:
-    /// 1. MBID
-    /// 2. URI
-    pub fn get_comp_id(&self) -> &str {
-        self.mbid.as_deref().unwrap_or(self.uri.as_ref())
-    }
+pub fn get_title_from_mpd_song(song: &SongInfo) -> String {
+    let path = Path::new(&song.file);
+    song.title
+        .as_deref()
+        .or(song.name.as_deref())
+        .or_else(|| path.file_stem().map(|stem| stem.to_str()).flatten())
+        .unwrap_or_else(|| "")
+        .to_string()
 }
 
 mod imp {
@@ -140,6 +94,7 @@ mod imp {
         ParamSpec, ParamSpecBoolean, ParamSpecChar, ParamSpecInt64, ParamSpecObject,
         ParamSpecString, ParamSpecUInt, ParamSpecUInt64,
     };
+    use once_arc::InitOnceArc;
     use once_cell::sync::Lazy;
 
     /// The GObject Song wrapper.
@@ -148,12 +103,35 @@ mod imp {
     /// struct to a mutable variable, modify it, then create a new Song wrapper
     /// from the modified SongInfo struct (no copy required this time).
     /// This design also avoids a RefCell.
-    #[derive(Debug)]
     pub struct Song {
-        pub info: OnceCell<SongInfo>,
+        /// OnceArc is roughly a more efficient OnceLock<Arc<>> that solves many problems by only
+        /// allowing it to be set once.
+        /// OnceArc is safe here as initial assignment happens exactly on new(), i.e. not lazy.
+        /// The sole reason why this has to be "Once" is that this inner struct is created before
+        /// new()'s code runs, so it always starts empty. Same issue with a tonne of other fields
+        /// (Cells, RefCells, etc).
+        /// The "Arc" side of OnceArc is needed since many of its users delegate work to threadpools.
+        pub info: OnceArc<SongInfo>,
+        pub quality_grade: Cell<QualityGrade>,
+        /// Cached name resolution. Not Arc since the lazy init is synchronous.
+        pub name: OnceCell<String>,
+        /// Cached concatenation of artist names.
+        pub artist_string: OnceCell<String>,
+        /// Cached parsed ArtistInfo structs. Use InitOnceArc instead of OnceArc to ensure only
+        /// one init job can run at any time. Said init job will be BLOCKING so clone the whole
+        /// InitOnceArc to a child thread first before running!
+        /// The init job itself keeps a ref to the above rust-mpd Song.
+        pub artists: InitOnceArc<Vec<ArtistInfo>>,
+        /// Cached parsed AlbumInfo. Nested inside an Option as we need to record three states:
+        /// Haven't been parsed yet
+        /// Parsed but no album info found
+        /// Parsed into album info.
+        /// The album itself is also lazy. The initial parsing to get AlbumInfo is therefore light-
+        /// weight enough to be synchronous on the main thread.
+        pub album: InitOnceArc<Option<AlbumInfo>>,
         pub stickers: RefCell<Stickers>,
         pub queue_pos: Cell<u32>,
-        pub is_playing: Cell<bool>,
+        pub last_played: OnceCell<OffsetDateTime>,
     }
 
     #[glib::object_subclass]
@@ -163,10 +141,15 @@ mod imp {
 
         fn new() -> Self {
             Self {
-                info: OnceCell::new(),
+                info: OnceArc::new(),
+                quality_grade: Cell::default(),
+                name: OnceCell::new(),
+                artist_string: OnceCell::new(),
+                artists: InitOnceArc::new(),
+                album: InitOnceArc::new(),
                 stickers: RefCell::new(Stickers::default()),
                 queue_pos: Cell::new(0),
-                is_playing: Cell::new(false),
+                last_played: OnceCell::new(),
             }
         }
     }
@@ -179,18 +162,18 @@ mod imp {
 
     impl ObjectImpl for Song {
         fn properties() -> &'static [ParamSpec] {
+            // Only existing or synchronously-initialised fields here.
             static PROPERTIES: Lazy<Vec<ParamSpec>> = Lazy::new(|| {
                 vec![
                     ParamSpecString::builder("uri").read_only().build(),
                     ParamSpecString::builder("name").read_only().build(),
-                    // ParamSpecString::builder("last_mod").build(),
+                    // All artist tags concatenated with ", ".
                     ParamSpecString::builder("artist").read_only().build(),
                     ParamSpecUInt64::builder("duration").read_only().build(),
                     ParamSpecChar::builder("rating").read_only().build(),
                     ParamSpecUInt::builder("queue-id").build(),
                     ParamSpecUInt::builder("queue-pos").build(),
                     ParamSpecBoolean::builder("is-queued").read_only().build(),
-                    ParamSpecBoolean::builder("is-playing").read_only().build(),
                     ParamSpecString::builder("album").read_only().build(),
                     ParamSpecInt64::builder("track").read_only().build(),
                     ParamSpecInt64::builder("disc").read_only().build(),
@@ -217,15 +200,12 @@ mod imp {
                 "uri" => obj.get_uri().to_value(),
                 "name" => obj.get_name().to_value(),
                 // "last_mod" => obj.get_last_mod().to_value(),
-                // Represented in MusicBrainz format, i.e. Composer; Performer, Performer,...
-                // The composer part is optional.
-                "artist" => obj.get_artist_tag().to_value(),
+                "artist" => obj.get_artist_string().to_value(),
                 "duration" => obj.get_duration().to_value(),
                 "rating" => obj.get_rating().unwrap_or(-1).to_value(),
                 "queue-id" => obj.get_queue_id().to_value(),
                 "queue-pos" => obj.get_queue_pos().to_value(),
                 "is-queued" => obj.is_queued().to_value(),
-                "is-playing" => obj.is_playing().to_value(),
                 "album" => obj.get_album_title().to_value(),
                 "track" => obj.get_track().to_value(),
                 "disc" => obj.get_disc().to_value(),
@@ -237,13 +217,6 @@ mod imp {
                 _ => unimplemented!(),
             }
         }
-
-        // fn set_property(&self, _id: usize, value: &glib::Value, pspec: &ParamSpec) {
-        //     let obj = self.obj();
-        //     match pspec.name() {
-        //         _ => unimplemented!(),
-        //     }
-        // }
     }
 }
 
@@ -277,24 +250,35 @@ impl Song {
     }
 
     // ALL of the getters below require that the info field be initialised!
-    pub fn get_info(&self) -> &SongInfo {
-        self.imp().info.get().unwrap()
+    pub fn get_inner(&self) -> &SongInfo {
+        self.imp().info.get(Ordering::Relaxed).unwrap()
+    }
+
+    pub fn get_inner_arc(&self) -> Arc<SongInfo> {
+        self.imp().info.load(Ordering::Relaxed).unwrap()
     }
 
     pub fn get_uri(&self) -> &str {
-        &self.get_info().uri
+        &self.get_inner().file
     }
 
     pub fn get_folder_uri(&self) -> &str {
         strip_filename_linux(self.get_uri())
     }
 
+    /// Display name for this song (or stream)
     pub fn get_name(&self) -> &str {
-        &self.get_info().title
+        self.imp()
+            .name
+            .get_or_init(|| get_title_from_mpd_song(self.get_inner()))
     }
 
     pub fn get_last_modified(&self) -> Option<&str> {
-        self.get_info().last_modified.as_deref()
+        self.get_inner().last_mod.as_deref()
+    }
+
+    pub fn init_last_played(&self, ts: OffsetDateTime) {
+        let _ = self.imp().last_played.set(ts);
     }
 
     pub fn get_last_played_desc(&self) -> Option<String> {
@@ -303,35 +287,33 @@ impl Song {
             .map(|then| get_time_ago_desc(then.unix_timestamp()))
     }
 
-    pub fn get_last_played(&self) -> Option<OffsetDateTime> {
-        self.get_info().last_played
+    pub fn get_last_played(&self) -> Option<&OffsetDateTime> {
+        self.imp().last_played.get()
     }
 
     pub fn get_duration(&self) -> u64 {
-        if let Some(dur) = self.get_info().duration.as_ref() {
+        if let Some(dur) = self.get_inner().duration.as_ref() {
             return dur.as_secs();
         }
         0
     }
 
-    pub fn get_artists(&self) -> &[ArtistInfo] {
-        &self.get_info().artists
+    /// Get artist names separated by commas. Will look weird if a song was from artists
+    /// whose names contain commas themselves, like Earth, Wind & Fire.
+    pub fn get_artist_string(&self) -> &str {
+        self.imp()
+            .artist_string
+            .get_or_init(|| self.get_inner().artists.join(", "))
+            .as_str()
     }
 
-    /// Get artist names separated by commas. If the first artist listed is a composer,
-    /// the next separator will be a semicolon instead. The quality of this output depends
-    /// on whether all delimiters are specified by the user.
-    pub fn get_artist_str(&self) -> Option<String> {
-        artists_to_string(&self.get_info().artists)
-    }
-
-    /// Get the original artist tag before any parsing.
-    pub fn get_artist_tag(&self) -> Option<&str> {
-        self.get_info().artist_tag.as_deref()
+    /// Get an iterator over artist tags for comparison/sorting purposes.
+    pub fn get_artists(&self) -> impl Iterator<Item = &String> {
+        self.get_inner().artists.iter()
     }
 
     pub fn get_queue_id(&self) -> u32 {
-        self.get_info().queue_id.unwrap_or(0)
+        self.get_inner().place.map(|p| p.id.0).unwrap_or(0)
     }
 
     pub fn get_queue_pos(&self) -> u32 {
@@ -343,50 +325,44 @@ impl Song {
     }
 
     pub fn is_queued(&self) -> bool {
-        self.get_info().queue_id.is_some()
+        self.get_inner().place.is_some()
     }
 
-    pub fn get_album(&self) -> Option<&AlbumInfo> {
-        self.get_info().album.as_ref()
+    /// Just returns a "reader class". No actual data cloning.
+    pub fn get_album_info(&self) -> Option<AlbumInfo> {
+        AlbumInfo::from_mpd_songs(vec![self.get_inner_arc()])
     }
 
     pub fn get_album_title(&self) -> Option<&str> {
-        if let Some(album) = &self.get_info().album {
-            Some(album.title.as_ref())
-        } else {
-            None
-        }
+        self.get_inner().album.as_deref()
     }
 
-    pub fn get_track(&self) -> i64 {
-        self.get_info().track.unwrap_or(-1)
+    /// Starts from 1
+    pub fn get_track(&self) -> u32 {
+        self.get_inner().track.unwrap_or(0)
     }
 
-    pub fn get_disc(&self) -> i64 {
-        self.get_info().disc.unwrap_or(-1)
-    }
-
-    pub fn is_playing(&self) -> bool {
-        self.imp().is_playing.get()
-    }
-
-    pub fn set_is_playing(&self, new: bool) {
-        let old = self.imp().is_playing.replace(new);
-        if old != new {
-            self.notify("is-playing");
-        }
+    /// Starts from 1
+    pub fn get_disc(&self) -> u32 {
+        self.get_inner().disc.unwrap_or(0)
     }
 
     pub fn get_quality_grade(&self) -> QualityGrade {
-        self.get_info().quality_grade
+        self.imp().quality_grade.get()
     }
 
     pub fn get_release_date(&self) -> Option<Date> {
-        self.get_info().release_date
+        let inner = self.get_inner();
+        inner
+            .date
+            .as_deref()
+            .or(inner.original_date.as_deref())
+            .map(parse_date)
+            .flatten()
     }
 
     pub fn get_mbid(&self) -> Option<&str> {
-        self.get_info().mbid.as_deref()
+        self.get_inner().mbid.as_deref()
     }
 
     pub fn get_mpris_metadata(&self) -> mpris_server::Metadata {
@@ -398,31 +374,20 @@ impl Song {
             )))
             .length(Time::from_secs(self.get_duration() as i64))
             .build();
-        if let Some(album) = self.get_album() {
-            meta.set_album(Some(&album.title));
-            if !album.artists.is_empty() {
-                meta.set_album_artist(Some(
-                    album
-                        .artists
-                        .iter()
-                        .map(|a| a.name.as_ref())
-                        .collect::<Vec<&str>>(),
-                ));
+        let inner = self.get_inner();
+        if let Some(album) = inner.album.as_deref() {
+            meta.set_album(Some(album));
+            if !inner.albumartists.is_empty() {
+                meta.set_album_artist(Some(&inner.albumartists));
             }
         }
-        let artists = self.get_artists();
-        if !artists.is_empty() {
-            meta.set_artist(Some(
-                artists
-                    .iter()
-                    .map(|a| a.name.as_ref())
-                    .collect::<Vec<&str>>(),
-            ))
+        if inner.artists.is_empty() {
+            meta.set_artist(Some(&inner.artists))
         }
 
         // Album art, if available
         if let Some(thumbnail_name) =
-            sqlite::find_cover_by_uri(self.get_uri(), true).expect("Sqlite DB error")
+            sqlite::find_cover_by_uri(&inner.file, true).expect("Sqlite DB error")
         {
             let mut thumbnail_path = get_image_cache_path();
             thumbnail_path.push(thumbnail_name);
@@ -436,6 +401,29 @@ impl Song {
         // TODO: disc & track num
         meta
     }
+
+    pub fn get_comp_id(&self) -> &str {
+        let inner = self.get_inner();
+        inner.mbid.as_deref().unwrap_or(inner.file.as_ref())
+    }
+
+    /// Get something to serve as this song's album's internal ID for
+    /// filtering/comparison purposes.
+    /// If an album has a MusicBrainz ID, use it. If not, fall
+    /// back to their folder URI.
+    /// This is a shortcut to compare songs by their albums without actually
+    /// parsing into Album objects themselves.
+    pub fn album_comp_id(&self) -> Option<&str> {
+        let inner = self.get_inner();
+        if inner.album.is_some() {
+            inner
+                .album_mbid
+                .as_deref()
+                .or(Some(strip_filename_linux(&inner.file)))
+        } else {
+            None
+        }
+    }
 }
 
 impl Default for Song {
@@ -444,235 +432,93 @@ impl Default for Song {
     }
 }
 
-impl From<mpd::song::Song> for SongInfo {
-    fn from(song: mpd::song::Song) -> Self {
-        let artists: Vec<ArtistInfo>;
-        if let Some(artist_str) = &song.artist {
-            // TODO: Find a way to detect classical works
-            artists = parse_mb_artist_tag(artist_str)
-                .iter()
-                .map(|s| ArtistInfo::new(s, None, false, false))
-                .collect();
-        } else {
-            artists = Vec::with_capacity(0);
-        }
-
-        let name: String;
-        if let Some(title) = song.title {
-            name = title;
-        } else if let Some(name_field) = song.name {
-            // Used by streams
-            name = name_field;
-        } else if let Some(stem) = Path::new(&song.file).file_stem() {
-            // Extract from URI
-            name = String::from(stem.to_str().unwrap());
-        } else {
-            name = String::from("");
-        }
-        let mut res = Self {
-            uri: song.file,
-            title: name,
-            artists,
-            artist_tag: song.artist,
-            duration: song.duration,
-            queue_id: None,
-            queue_pos: None,
-            album: None,
-            track: None,
-            disc: None,
-            release_date: None,
-            quality_grade: QualityGrade::Unknown,
-            mbid: None,
-            last_modified: song.last_mod,
-            last_played: None,
-        };
-
-        if let Some(place) = song.place {
-            let _ = res.queue_id.replace(place.id.0);
-            let _ = res.queue_pos.replace(place.pos);
-        }
-
-        // The various date tags. Release date will be picked from the first
-        // available in the listed order.
-        let mut original_date: Option<Date> = None;
-        let mut date: Option<Date> = None;
-        let mut date_tag: Option<String> = None;
-
-        // Search tags vector for additional fields we can use.
-        // Again we're using iter() here to avoid cloning everything.
-        // Limitation: MPD cannot parse DSD song format UNTIL PLAYED.
-        // As such, DSD format description must be handled by the player controller,
-        // working off the "format" attribute of the Status object.
-        // The bits == 1 check only works with htkhiem's fork of rust-mpd with DSD correction
-        let maybe_extension = Path::new(&res.uri).extension().and_then(OsStr::to_str);
-        if let Some(extension) = maybe_extension
-            && ["dsf", "dff", "wsd"].contains(&extension)
-        {
-            // Is probably DSD
-            res.quality_grade = QualityGrade::DSD;
-        }
-        let mut albumsort: Option<String> = None;
-        let mut artist_mbids: Vec<String> = Vec::new();
-        let mut artistsorts: Vec<String> = Vec::new();
-        let mut albumartist: Option<String> = None;
-        let mut albumartistsort: Option<String> = None;
-        let mut genre_tags: Vec<String> = Vec::new();
-        let mut album_artist_mbids: Vec<String> = Vec::new();
-        let mut album_mbid: Option<String> = None;
-        for (tag, val) in song.tags.into_iter() {
-            match tag.to_lowercase().as_str() {
-                tags::ALBUM => {
-                    if res.album.is_none() {
-                        let _ = res.album.replace(AlbumInfo::new(
-                            &res.uri,
-                            &val,
-                            None,
-                            None,
-                            None,
-                            FxHashSet::default(),
-                            Vec::with_capacity(0),
-                            res.quality_grade,
-                        ));
-                    } else {
-                        println!(
-                            "[WARNING] Multiple Album tags found. Only keeping the first one."
-                        );
-                    }
-                }
-                tags::ALBUMSORT => {
-                    albumsort.replace(val);
-                }
-                tags::ALBUMARTIST => {
-                    albumartist.replace(val);
-                }
-                tags::ARTISTSORT => {
-                    artistsorts.push(val);
-                }
-                tags::ALBUMARTISTSORT => {
-                    albumartistsort.replace(val);
-                }
-                tags::GENRE => {
-                    genre_tags.push(val);
-                }
-                // "date" => res.imp().release_date.replace(Some(val.clone())),
-                tags::FORMAT => {
-                    if let Some(extension) = maybe_extension
-                        && let Ok(format) = val.parse::<AudioFormat>()
-                    {
-                        if ["flac", "alac", "wv", "ape"].contains(&extension) {
-                            // Is probably lossless PCM
-                            if format.rate > 48000 && format.bits >= 24 {
-                                res.quality_grade = QualityGrade::HiRes;
-                            } else {
-                                res.quality_grade = QualityGrade::CD;
-                            }
-                        } else {
-                            res.quality_grade = QualityGrade::Lossy;
-                        }
-                    }
-                }
-                tags::ORIGINAL_DATE => {
-                    original_date = parse_date(val.as_ref());
-                }
-                tags::DATE => {
-                    date = parse_date(val.as_ref());
-                    date_tag = Some(val);
-                }
-                tags::TRACK => {
-                    if let Ok(idx) = val.parse::<i64>() {
-                        let _ = res.track.replace(idx);
-                    }
-                }
-                tags::DISC => {
-                    if let Ok(idx) = val.parse::<i64>() {
-                        let _ = res.disc.replace(idx);
-                    }
-                }
-                // Beets might use uppercase versions of these keys but we're
-                // converting all to lowercase
-                tags::SONG_MBID => {
-                    let _ = res.mbid.replace(val);
-                }
-                tags::ALBUM_MBID => {
-                    // Can encounter this before initialising the album object
-                    if album_mbid.is_none() {
-                        let _ = album_mbid.replace(val);
-                    } else {
-                        println!(
-                            "[WARNING] Multiple musicbrainz_albumid tags found. Only keeping the first one."
-                        );
-                    }
-                }
-                tags::ARTIST_MBID => {
-                    // Can encounter this multiple times and/or before
-                    // initialising the artist objects
-                    artist_mbids.push(val);
-                }
-                tags::ALBUMARTIST_MBID => {
-                    // Can encounter this multiple times and/or before
-                    // initialising the albumartist objects
-                    album_artist_mbids.push(val);
-                }
-                _ => {}
-            }
-        }
-
-        // Coalesce release date
-        res.release_date = original_date.or(date);
-
-        // Assume the artist IDs and artistsort tags are given in the same order as the artist tags
-        for (idx, id) in artist_mbids.drain(..).enumerate() {
-            if idx < res.artists.len() {
-                let _ = res.artists[idx].mbid.replace(id);
-            }
-        }
-
-        for (idx, tag) in artistsorts.drain(..).enumerate() {
-            if idx < res.artists.len() {
-                let _ = res.artists[idx].sort_tag.replace(tag);
-            }
-        }
-
-        if let Some(album) = res.album.as_mut() {
-            album.mbid = album_mbid;
-            album.albumsort = albumsort; //.or_else(|| {res.artist_tag.clone()});
-            album.albumartistsort = albumartistsort;
-            album.release_date = res.release_date;
-            album.date_tag = date_tag;
-            if !genre_tags.is_empty() {
-                album.add_genres_from_tags(&genre_tags);
-            }
-            // Assume the albumartist IDs are given in the same order as the albumartist tags
-            if let Some(album_artist_str) = albumartist.as_ref().or_else(|| res.artist_tag.as_ref())
-            {
-                album.add_artists_from_string(album_artist_str);
-            }
-            album.albumartist = albumartist;
-            for (idx, id) in album_artist_mbids.drain(..).enumerate() {
-                if idx < album.artists.len() {
-                    let _ = album.artists[idx].mbid.replace(id);
-                }
-            }
-        }
-
-        res
-    }
-}
-
-impl From<mpd::song::Song> for Song {
-    fn from(song: mpd::song::Song) -> Self {
-        let info = SongInfo::from(song);
-        Self::from(info)
-    }
-}
-
 impl From<SongInfo> for Song {
-    fn from(info: SongInfo) -> Self {
-        let res = glib::Object::new::<Self>();
-        if let Some(pos) = info.queue_pos {
-            res.imp().queue_pos.set(pos);
+    fn from(song: SongInfo) -> Self {
+        // Most of the parsing is now done by our rust-mpd fork.
+        // This from() implementation now only takes care of Euphonica-specific stuff.
+
+        // // Parse artists
+        // let artists: Vec<ArtistInfo> = zip_longest(
+        //     // Flatten artist tag only since it's usually the less standardised one.
+        //     // ArtistSort and musicbrainz_artistid are expected to follow the Vorbis
+        //     // standard since they're likely tagged by proper autotagging software.
+        //     song.artists
+        //         .into_iter()
+        //         .map(|s| parse_mb_artist_tag(&s))
+        //         .flatten()
+        //         .map(|s| s.to_owned()),
+        //     zip_longest(song.artistsorts, song.artist_mbids),
+        // )
+        // .map(|(name, (sort_tag, mbid))| ArtistInfo {
+        //     name,
+        //     sort_tag,
+        //     mbid,
+        //     genres: FxHashSet::default(),
+        //     example_uris: Vec::with_capacity(0),
+        //     is_composer: false,
+        //     is_albumartist: false,
+        // })
+        // .collect();
+
+        // Parse album information
+        // let mut album_info: Option<AlbumInfo> = if let Some(album) = song.album {
+        //     // Parse albumartists
+        //     let albumartists: Vec<ArtistInfo> = zip_longest(
+        //         // Flatten artist tag only since it's usually the less standardised one.
+        //         // ArtistSort and musicbrainz_artistid are expected to follow the Vorbis
+        //         // standard since they're likely tagged by proper autotagging software.
+        //         song.albumartists
+        //             .into_iter()
+        //             .map(|s| parse_mb_artist_tag(&s))
+        //             .flatten()
+        //             .map(|s| s.to_owned()),
+        //         zip_longest(song.albumartistsorts, song.albumartist_mbids),
+        //     )
+        //     .map(|(name, (sort_tag, mbid))| ArtistInfo {
+        //         name,
+        //         sort_tag,
+        //         mbid,
+        //         genres: FxHashSet::default(),
+        //         example_uris: Vec::with_capacity(0),
+        //         is_composer: false,
+        //         is_albumartist: true,
+        //     })
+        //     .collect();
+        //     if let Some(album) = res.album.as_mut() {
+        //         album.mbid = album_mbid;
+        //         album.albumsort = albumsort; //.or_else(|| {res.artist_tag.clone()});
+        //         album.albumartistsort = albumartistsort;
+        //         album.release_date = res.release_date;
+        //         album.date_tag = date_tag;
+        //         if !genre_tags.is_empty() {
+        //             album.add_genres_from_tags(&genre_tags);
+        //         }
+        //         // Assume the albumartist IDs are given in the same order as the albumartist tags
+        //         if let Some(album_artist_str) =
+        //             albumartist.as_ref().or_else(|| res.artist_tag.as_ref())
+        //         {
+        //             album.add_artists_from_string(album_artist_str);
+        //         }
+        //         album.albumartist = albumartist;
+        //         for (idx, id) in album_artist_mbids.drain(..).enumerate() {
+        //             if idx < album.artists.len() {
+        //                 let _ = album.artists[idx].mbid.replace(id);
+        //             }
+        //         }
+        //     }
+        //     Some(AlbumInfo::new(&song.file))
+        // } else {
+        //     None
+        // };
+
+        let res: Self = glib::Object::new();
+        let imp = res.imp();
+        if let Some(place) = &song.place {
+            imp.queue_pos.set(place.pos);
         }
-        let _ = res.imp().info.set(info);
+        imp.quality_grade.set(QualityGrade::of_mpd_song(&song));
+        let _ = imp.info.store(Arc::new(song), Ordering::Release);
+
         res
     }
 }

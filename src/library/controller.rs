@@ -4,10 +4,10 @@ use crate::{
         Error as ClientError, MpdWrapper, Result as ClientResult, StickerSetMode,
         state::StickersSupportLevel,
     },
-    common::{Album, Artist, DynamicPlaylist, INode, Song, SongInfo, Stickers, tags},
+    common::{Album, Artist, DynamicPlaylist, INode, Song, Stickers, parse_date, tags},
     library::Tag,
     player::Player,
-    utils::settings_manager,
+    utils::{APP_THREAD_POOL, settings_manager},
 };
 use chrono::Local;
 use derivative::Derivative;
@@ -29,7 +29,9 @@ use once_cell::sync::Lazy;
 
 use adw::subclass::prelude::*;
 
-use mpd::{EditAction, Query, SaveMode, Term, search::Operation as QueryOperation};
+use mpd::{
+    EditAction, Query, SaveMode, Song as SongInfo, Term, search::Operation as QueryOperation,
+};
 
 mod imp {
     use super::*;
@@ -39,8 +41,6 @@ mod imp {
     pub struct Library {
         pub client: OnceCell<Rc<MpdWrapper>>,
         pub recent_initialized: Cell<bool>,
-        #[derivative(Default(value = "gio::ListStore::new::<Song>()"))]
-        pub recent_songs: gio::ListStore,
         #[derivative(Default(value = "gio::ListStore::new::<INode>()"))]
         pub playlists: gio::ListStore,
         pub playlists_initialized: Cell<bool>,
@@ -51,8 +51,6 @@ mod imp {
         pub albums: gio::ListStore,
         #[derivative(Default(value = "gio::ListStore::new::<Tag>()"))]
         pub album_tags: gio::ListStore,
-        #[derivative(Default(value = "gio::ListStore::new::<Album>()"))]
-        pub recent_albums: gio::ListStore,
         // AlbumArtists are always initialised along with Albums as fetching one requires the other anyway.
         #[derivative(Default(value = "gio::ListStore::new::<Artist>()"))]
         pub albumartists: gio::ListStore,
@@ -62,8 +60,6 @@ mod imp {
         pub artists_initialized: Cell<bool>,
         #[derivative(Default(value = "gio::ListStore::new::<Tag>()"))]
         pub artist_tags: gio::ListStore,
-        #[derivative(Default(value = "gio::ListStore::new::<Artist>()"))]
-        pub recent_artists: gio::ListStore,
         #[derivative(Default(value = "gio::ListStore::new::<Tag>()"))]
         pub genres: gio::ListStore,
         pub genres_initialized: Cell<bool>,
@@ -226,18 +222,15 @@ impl Library {
     }
 
     pub fn clear(&self) {
-        self.imp().recent_songs.remove_all();
         self.imp().genres.remove_all();
         self.imp().genres_initialized.set(false);
         self.imp().albums.remove_all();
         self.imp().album_tags.remove_all();
-        self.imp().recent_albums.remove_all();
         self.imp().artists.remove_all();
         self.imp().artist_tags.remove_all();
         self.imp().artists_initialized.set(false);
         self.imp().albumartists.remove_all();
         self.imp().albums_and_albumartists_initialized.set(false);
-        self.imp().recent_artists.remove_all();
         self.imp().playlists.remove_all();
         self.imp().playlists_initialized.set(false);
         self.imp().dyn_playlists.remove_all();
@@ -252,12 +245,25 @@ impl Library {
         self.imp().recent_initialized.set(false);
     }
 
+    /// Fetch a raw rust-mpd Song struct by exact URI, or None if not found.
+    /// Thin passthrough to MpdWrapper; see its documentation.
+    pub async fn get_raw_mpd_song_by_uri(
+        &self,
+        uri: String,
+    ) -> ClientResult<Option<mpd::song::Song>> {
+        self.client().get_raw_mpd_song_by_uri(uri).await
+    }
+
     fn client(&self) -> &Rc<MpdWrapper> {
         self.imp().client.get().unwrap()
     }
 
     fn player(&self) -> &Player {
         self.imp().player.get().unwrap()
+    }
+
+    pub async fn stats(&self) -> ClientResult<mpd::Stats> {
+        self.imp().client.get().unwrap().stats().await
     }
 
     pub async fn get_album_songs<F>(&self, album: &Album, respond: &mut F) -> ClientResult<()>
@@ -270,32 +276,55 @@ impl Library {
             query.and(Term::Tag(tags::ALBUM_MBID.into()), mbid.to_owned());
         } else {
             query.and(Term::Tag(tags::ALBUM.into()), album.get_title().to_owned());
-            if let Some(albumartist) = album.get_artist_tag() {
-                query.and(Term::Tag(tags::ALBUMARTIST.into()), albumartist.to_owned());
+            if let Some(albumartist) = album.get_albumartists().next() {
+                query.and(
+                    Term::Tag(tags::ALBUMARTIST.into()),
+                    (*albumartist).to_owned(),
+                );
             }
         }
         self.client().get_songs_by_query(query, true, respond).await
     }
 
+    /// Current number of songs in the queue, as tracked by the player.
+    /// 0 until the first status update has been fetched.
+    pub fn queue_len(&self) -> u32 {
+        self.player().queue().n_items()
+    }
+
     /// Queue specific songs
-    pub async fn queue_songs(&self, songs: &[Song], replace: bool, play: bool) -> ClientResult<()> {
+    pub async fn queue_songs(
+        &self,
+        songs: &[Song],
+        replace: bool,
+        play_from: Option<u32>,
+    ) -> ClientResult<()> {
+        self.queue_uris(
+            songs
+                .iter()
+                .map(|s| s.get_uri().to_owned())
+                .collect::<Vec<String>>(),
+            replace,
+            play_from,
+        )
+        .await
+    }
+
+    /// Queue a list of MPD URIs in the given order.
+    pub async fn queue_uris(
+        &self,
+        uris: Vec<String>,
+        replace: bool,
+        play_from: Option<u32>,
+    ) -> ClientResult<()> {
         // TODO: support executing this atomically as a command list
         let client = self.client();
         if replace {
             client.clear_queue().await?;
         }
-        client
-            .add_multi(
-                songs
-                    .iter()
-                    .map(|s| s.get_uri().to_owned())
-                    .collect::<Vec<String>>(),
-                false,
-                None,
-            )
-            .await?;
-        if play {
-            client.play_at(0, false).await?;
+        client.add_multi(uris, false, None).await?;
+        if let Some(pos) = play_from {
+            client.play_at(pos, false).await?;
         }
         Ok(())
     }
@@ -325,7 +354,6 @@ impl Library {
         &self,
         album: Album,
         replace: bool,
-        play: bool,
         play_from: Option<u32>,
     ) -> ClientResult<()> {
         let client = self.client();
@@ -334,21 +362,21 @@ impl Library {
         }
         let mut query = Query::new();
         query.and(Term::Tag(tags::ALBUM.into()), album.get_title().to_owned());
-        if let Some(artist) = album.get_artist_tag() {
-            query.and(Term::Tag(tags::ALBUMARTIST.into()), artist.to_owned());
+        if let Some(artist) = album.get_albumartists().next() {
+            query.and(Term::Tag(tags::ALBUMARTIST.into()), (*artist).to_owned());
         }
         if let Some(mbid) = album.get_mbid() {
             query.and(Term::Tag(tags::ALBUM_MBID.into()), mbid.to_owned());
         }
         client.find_add(query).await?;
-        if play {
-            client.play_at(play_from.unwrap_or(0), false).await?;
+        if let Some(pos) = play_from {
+            client.play_at(pos, false).await?;
         }
         Ok(())
     }
 
     pub async fn rate_album(&self, album: &Album, score: Option<i8>) -> ClientResult<()> {
-        let filter_expr = album.get_info().get_filter_expression();
+        let filter_expr = album.get_inner().get_filter_expression();
         if let Some(score) = score {
             self.client()
                 .set_sticker(
@@ -366,35 +394,6 @@ impl Library {
         }
     }
 
-    /// Queue all songs of an artist. TODO: allow specifying order.
-    pub async fn queue_artist(
-        &self,
-        artist: &Artist,
-        use_albumartist: bool,
-        replace: bool,
-        play: bool,
-    ) -> ClientResult<()> {
-        let client = self.client();
-        if replace {
-            client.clear_queue().await?;
-        }
-        let mut query = Query::new();
-        query.and_with_op(
-            Term::Tag(Cow::Borrowed(if use_albumartist {
-                tags::ALBUMARTIST
-            } else {
-                tags::ARTIST
-            })),
-            QueryOperation::Contains,
-            artist.get_name().to_owned(),
-        );
-        client.find_add(query).await?;
-        if play {
-            client.play_at(0, false).await?;
-        }
-        Ok(())
-    }
-
     pub fn folder_inodes(&self) -> gio::ListStore {
         self.imp().folder_inodes.clone()
     }
@@ -405,6 +404,11 @@ impl Library {
 
     pub fn folder_history_len(&self) -> u32 {
         self.imp().folder_history.borrow().len() as u32
+    }
+
+    // For simplicity just clone...perf hit is minuscule here
+    pub fn folder_history(&self) -> Vec<String> {
+        self.imp().folder_history.borrow().clone()
     }
 
     pub fn folder_path(&self) -> String {
@@ -423,8 +427,9 @@ impl Library {
             self.imp().folder_curr_idx.set(curr_idx - 1);
             self.imp().folder_inodes_initialized.set(false);
             self.get_folder_contents().await?;
-            self.notify("folder-curr-idx");
+            // NOTIFY FOLDER-CURR-IDX AFTER FOLDER-PATH so the folder view can have buttons to highlight
             self.notify("folder-path");
+            self.notify("folder-curr-idx");
         }
         Ok(())
     }
@@ -435,10 +440,51 @@ impl Library {
             self.imp().folder_curr_idx.set(curr_idx + 1);
             self.imp().folder_inodes_initialized.set(false);
             self.get_folder_contents().await?;
-            self.notify("folder-curr-idx");
             self.notify("folder-path");
+            self.notify("folder-curr-idx");
         }
         Ok(())
+    }
+
+    pub async fn folder_at_step(&self, idx: u32) -> ClientResult<()> {
+        self.imp().folder_curr_idx.set(idx);
+        self.imp().folder_inodes_initialized.set(false);
+        self.get_folder_contents().await?;
+        self.notify("folder-path");
+        self.notify("folder-curr-idx");
+        Ok(())
+    }
+
+    pub async fn goto_path(&self, path: String) -> ClientResult<()> {
+        // Split by / first
+        let steps = dbg!(
+            path.split("/")
+                .filter(|s| !s.is_empty())
+                .map(|s| s.to_string())
+                .collect::<Vec<String>>()
+        );
+        let len = steps.len();
+        let old_path = self.imp().folder_history.replace(steps);
+        let old_idx = self
+            .imp()
+            .folder_curr_idx
+            .replace(len.min(u32::MAX as usize) as u32);
+        // Fetch this path, falling back to the old one if incorrect.
+        self.imp().folder_inodes_initialized.set(false);
+        match self.get_folder_contents().await {
+            Ok(_) => {
+                self.notify("folder-path");
+                self.notify("folder-curr-idx");
+                Ok(())
+            }
+            Err(_) => {
+                // Undo the above
+                self.imp().folder_history.replace(old_path);
+                self.imp().folder_curr_idx.set(old_idx);
+                self.get_folder_contents().await?;
+                Err(ClientError::NoExist)
+            }
+        }
     }
 
     pub async fn navigate_to(&self, name: &str) -> ClientResult<()> {
@@ -506,13 +552,7 @@ impl Library {
         Ok(())
     }
 
-    /// Get a reference to the local recent songs store
-    pub fn recent_songs(&self) -> gio::ListStore {
-        self.imp().recent_songs.clone()
-    }
-
-    pub async fn clear_recent_songs(&self) -> ClientResult<()> {
-        self.imp().recent_songs.remove_all(); // Will make Recent View switch to the empty StatusPage
+    pub async fn clear_history(&self) -> ClientResult<()> {
         gio::spawn_blocking(sqlite::clear_history)
             .await
             .unwrap()
@@ -549,11 +589,6 @@ impl Library {
         self.imp().artist_tags.clone()
     }
 
-    /// Get a reference to the local recent albums store
-    pub fn recent_albums(&self) -> gio::ListStore {
-        self.imp().recent_albums.clone()
-    }
-
     /// Get a reference to the local artists store
     pub fn artists(&self) -> gio::ListStore {
         self.imp().artists.clone()
@@ -562,11 +597,6 @@ impl Library {
     /// Get a reference to the local album artists store
     pub fn album_artists(&self) -> gio::ListStore {
         self.imp().albumartists.clone()
-    }
-
-    /// Get a reference to the local recent artists store
-    pub fn recent_artists(&self) -> gio::ListStore {
-        self.imp().recent_artists.clone()
     }
 
     /// Retrieve songs in a playlist
@@ -582,15 +612,15 @@ impl Library {
         &self,
         name: String,
         replace: bool,
-        play: bool,
+        play_from: Option<u32>,
     ) -> ClientResult<()> {
         let client = self.client();
         if replace {
             client.clear_queue().await?;
         }
         client.load_playlist(name).await?;
-        if play {
-            client.play_at(0, false).await?;
+        if let Some(pos) = play_from {
+            client.play_at(pos, false).await?;
         }
         Ok(())
     }
@@ -643,15 +673,15 @@ impl Library {
         &self,
         name: String,
         replace: bool,
-        play: bool,
+        play_from: Option<u32>,
     ) -> ClientResult<()> {
         let client = self.client();
         if replace {
             client.clear_queue().await?;
         }
         client.queue_cached_dynamic_playlist(name).await?;
-        if play {
-            client.play_at(0, false).await?;
+        if let Some(pos) = play_from {
+            client.play_at(pos, false).await?;
         }
         Ok(())
     }
@@ -708,28 +738,22 @@ impl Library {
         Ok(())
     }
 
-    pub async fn init_recent(&self, refresh: bool) -> ClientResult<()> {
-        if !self.imp().recent_initialized.get() || refresh {
-            self.imp().recent_initialized.set(true);
-            let model = self.imp().recent_songs.clone();
-            model.remove_all();
-            let settings = settings_manager().child("library");
-            model.extend_from_slice(
-                &self
-                    .client()
-                    .get_recent_songs(settings.uint("n-recent-songs"))
-                    .await?,
-            );
+    pub async fn get_recent(&self) -> ClientResult<(Vec<Album>, Vec<Artist>, Vec<Song>)> {
+        let settings = settings_manager().child("library");
+        Ok((
+            self.client().get_recent_albums().await?,
+            self.client().get_recent_artists().await?,
+            self.client()
+                .get_recent_songs(settings.uint("n-recent-songs"))
+                .await?,
+        ))
+    }
 
-            let model = self.imp().recent_albums.clone();
-            model.remove_all();
-            model.extend_from_slice(&self.client().get_recent_albums().await?);
-
-            let model = self.imp().recent_artists.clone();
-            model.remove_all();
-            model.extend_from_slice(&self.client().get_recent_artists().await?);
-        }
-        Ok(())
+    /// TODO: Implement this then refactor recent albums & artists to stop using the listview + liststore approach here.
+    pub async fn get_rediscover_albums_and_artists(
+        &self,
+    ) -> ClientResult<(Vec<Album>, Vec<Artist>)> {
+        self.client().get_rediscover_albums_and_artists().await
     }
 
     pub async fn init_genres(&self) -> ClientResult<()> {
@@ -842,8 +866,8 @@ impl Library {
         Vec<Song>,
         Vec<(Option<i32>, Vec<(Option<Album>, Vec<Song>)>)>,
     )> {
-        let comp_id = artist.get_info().get_comp_id();
-        let mut songs: FxHashMap<String, SongInfo> = FxHashMap::default();
+        let _comp_id = artist.get_inner().get_comp_id();
+        let mut songs: FxHashMap<String, mpd::song::Song> = FxHashMap::default();
 
         if fetch_by_artist_tag {
             let mut query_artist_tag = Query::new();
@@ -856,9 +880,9 @@ impl Library {
                 .get_song_infos_by_query(query_artist_tag, true, &mut |batch| {
                     batch
                         .into_iter()
-                        .filter(|s| s.artists.iter().any(|a| a.get_comp_id() == comp_id))
+                        .filter(|s| artist.is_in_song(s, false))
                         .for_each(|si| {
-                            songs.insert(si.uri.clone(), si);
+                            songs.insert(si.file.clone(), si.into());
                         });
                 })
                 .await?;
@@ -874,13 +898,11 @@ impl Library {
                 .get_song_infos_by_query(query_albumartist_tag, true, &mut |batch| {
                     batch
                         .into_iter()
-                        .filter(|s| {
-                            s.album.as_ref().is_some_and(|a| {
-                                a.artists.iter().any(|a| a.get_comp_id() == comp_id)
-                            })
+                        .filter(|s: &SongInfo| {
+                            s.album.as_ref().is_some() && artist.is_in_song(s, true)
                         })
                         .for_each(|si| {
-                            songs.insert(si.uri.clone(), si);
+                            songs.insert(si.file.clone(), si);
                         });
                 })
                 .await?;
@@ -894,69 +916,83 @@ impl Library {
             return Ok((Vec::with_capacity(0), Vec::with_capacity(0)));
         }
 
-        let songs: Vec<Song> = songs
-            .into_iter()
-            .map(|p| p.1)
-            .sorted_by(|s1, s2| {
-                let cmp_date_available = s1.release_date.is_some().cmp(&s2.release_date.is_some());
-                if cmp_date_available != Ordering::Equal {
-                    return cmp_date_available.reverse(); // nulls last
-                }
-
-                if s1.release_date.is_some() {
-                    // Both Some => compare release year first
-                    let cmp_date = s1
-                        .release_date
-                        .unwrap()
-                        .year()
-                        .cmp(&s2.release_date.unwrap().year());
-                    if cmp_date != Ordering::Equal {
-                        return cmp_date.reverse(); // descending year
-                    }
-                }
-
-                // Same release date or both None => check album availability
-                let cmp_album_available = s1.album.is_some().cmp(&s2.album.is_some());
-                if cmp_album_available != Ordering::Equal {
-                    return cmp_album_available.reverse(); // nulls last
-                }
-                if s1.album.is_some() {
-                    // Both has albums
-                    let cmp_album_title = s1
-                        .album
-                        .as_ref()
-                        .map(|a| a.title.as_str())
-                        .cmp(&s2.album.as_ref().map(|a| a.title.as_ref()));
-                    if cmp_album_title != Ordering::Equal {
-                        return cmp_album_title; // ascending title sort
-                    }
-
-                    // Same album => sort by track number.
-                    // Only available if both have the same album tags, else we skip straight to URI.
-                    let cmp_track_num_available = s1.track.is_some().cmp(&s2.track.is_some());
-                    if cmp_track_num_available != Ordering::Equal {
-                        return cmp_track_num_available.reverse(); // nulls last
-                    }
-                    if s1.track.is_some() {
-                        let cmp_track_num = s1.track.unwrap().cmp(&s2.track.unwrap());
-                        if cmp_track_num != Ordering::Equal {
-                            return cmp_track_num; // don't reverse here (ascending sort as usual)
+        let songs: Vec<Song> = APP_THREAD_POOL
+            .push_future(move || {
+                songs
+                    .into_iter()
+                    .map(|p| p.1)
+                    .sorted_by(|s1, s2| {
+                        let (s1_date, s2_date) = (
+                            s1.date
+                                .as_deref()
+                                .or(s1.original_date.as_deref())
+                                .map(parse_date)
+                                .flatten(),
+                            s2.date
+                                .as_deref()
+                                .or(s2.original_date.as_deref())
+                                .map(parse_date)
+                                .flatten(),
+                        );
+                        let cmp_date_available = s1_date.is_some().cmp(&s2_date.is_some());
+                        if cmp_date_available != Ordering::Equal {
+                            return cmp_date_available.reverse(); // nulls last
                         }
-                    }
-                }
-                s1.uri.as_str().cmp(s2.uri.as_str())
+
+                        if let (Some(s1_date), Some(s2_date)) = (s1_date, s2_date) {
+                            // Both Some => compare release year first
+                            let cmp_date = s1_date.year().cmp(&s2_date.year());
+                            if cmp_date != Ordering::Equal {
+                                return cmp_date.reverse(); // descending year
+                            }
+                        }
+
+                        // Same release date or both None => check album availability
+                        let (s1_album, s2_album) = (s1.album.as_deref(), s2.album.as_deref());
+                        let cmp_album_available = s1_album.is_some().cmp(&s2_album.is_some());
+                        if cmp_album_available != Ordering::Equal {
+                            return cmp_album_available.reverse(); // nulls last
+                        }
+                        if let (Some(s1_album), Some(s2_album)) = (s1_album, s2_album) {
+                            // Both has albums
+                            let cmp_album_title = s1_album.cmp(&s2_album);
+                            if cmp_album_title != Ordering::Equal {
+                                return cmp_album_title; // ascending title sort
+                            }
+
+                            // Same album => sort by track number.
+                            // Only available if both have the same album tags, else we skip straight to URI.
+                            let cmp_track_num_available =
+                                s1.track.is_some().cmp(&s2.track.is_some());
+                            if cmp_track_num_available != Ordering::Equal {
+                                return cmp_track_num_available.reverse(); // nulls last
+                            }
+                            if s1.track.is_some() {
+                                let cmp_track_num = s1.track.unwrap().cmp(&s2.track.unwrap());
+                                if cmp_track_num != Ordering::Equal {
+                                    return cmp_track_num; // don't reverse here (ascending sort as usual)
+                                }
+                            }
+                        }
+                        s1.file.as_str().cmp(s2.file.as_str())
+                    })
+                    .collect::<Vec<SongInfo>>()
             })
+            .unwrap()
+            .await
+            .unwrap()
+            .into_iter()
             .map(Song::from)
             .collect();
 
         // At this point we'll have a well-sorted song list to efficiently organise into the return format
         let mut years: Vec<(Option<i32>, Vec<(Option<Album>, Vec<Song>)>)> = Vec::new();
         let mut curr_year = songs[0].get_release_date().map(|d| d.year());
-        let mut curr_album_id = songs[0].get_album().map(|a| a.get_comp_id());
+        let mut curr_album_id = songs[0].album_comp_id();
         years.push((
             curr_year,
             vec![(
-                songs[0].get_album().map(|a| Album::from(a.clone())),
+                songs[0].get_album_info().map(Album::from),
                 vec![songs[0].clone()],
             )],
         ));
@@ -964,24 +1000,24 @@ impl Library {
         for song in songs.iter().skip(1) {
             // If different year, append new entry
             let year = song.get_release_date().map(|d| d.year());
-            let album = song.get_album();
             if year != curr_year {
                 curr_year = year;
-                curr_album_id = album.map(|a| a.get_comp_id());
+                curr_album_id = song.album_comp_id();
                 years.push((
                     curr_year,
-                    vec![(album.map(|a| Album::from(a.clone())), vec![song.clone()])],
+                    vec![(song.get_album_info().map(Album::from), vec![song.clone()])],
                 ));
             } else {
                 // Same year
                 let years_len = years.len();
                 let year_vec = &mut years[years_len - 1].1;
                 // Check if different album
-                if album.map(|a| a.get_comp_id()) != curr_album_id {
-                    curr_album_id = album.map(|a| a.get_comp_id());
-                    year_vec.push((album.map(|a| Album::from(a.clone())), vec![song.clone()]));
+                let new_album_comp_id = song.album_comp_id();
+                if new_album_comp_id != curr_album_id {
+                    curr_album_id = new_album_comp_id;
+                    year_vec.push((song.get_album_info().map(Album::from), vec![song.clone()]));
                 } else {
-                    // Same album too, or equally album-less => just push
+                    // Same album too, or equally album-less => just push.
                     let year_vec_len = year_vec.len();
                     let year_album_vec = &mut year_vec[year_vec_len - 1].1;
                     year_album_vec.push(song.clone());

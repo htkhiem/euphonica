@@ -136,7 +136,6 @@
                         <property name="height-request">400</property>
                         <property name="child">
                           <object class="GtkGridView" id="grid_view">
-                            <property name="orientation">1</property>
                             <property name="min-columns">1</property>
                             <property name="single-click-activate">true</property>
                             <style>

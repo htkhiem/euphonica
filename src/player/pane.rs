@@ -736,7 +736,7 @@ impl PlayerPane {
                     if let Some(song) = player.current_song() {
                         btn.set_visible(false);
                         let res = cache
-                            .get_lyrics(song.get_info(), true, true, Some(&win))
+                            .get_lyrics(song.get_inner_arc(), true, true, Some(&win))
                             .await;
                         btn.set_visible(true);
                         match res {
@@ -889,7 +889,7 @@ impl PlayerPane {
             async move {
                 if let Some(song) = song {
                     this.imp().albumart.show_spinner();
-                    let cover = cache.get_song_cover(song.get_info(), false).await;
+                    let cover = cache.get_song_cover(song.get_inner_arc(), false).await;
                     // Check again as the song may have changed while awaiting.
                     // A slow fetch for the previous track could overwrite the new
                     // track's artwork. Keyed on the album (comp_id) so we can avoid
@@ -900,9 +900,7 @@ impl PlayerPane {
                         .player
                         .upgrade()
                         .and_then(|p| p.current_song())
-                        .is_some_and(|cur| {
-                            cur.get_info().get_comp_id() == song.get_info().get_comp_id()
-                        })
+                        .is_some_and(|cur| cur.get_comp_id() == song.get_comp_id())
                     {
                         match cover {
                             Ok(Some(tex)) => this.imp().albumart.show(&tex),
@@ -928,7 +926,7 @@ impl PlayerPane {
         automatic_transition: bool,
     ) {
         self.imp().albumart_paintable.set_duration(
-            song.and_then(|song| song.get_info().duration)
+            song.and_then(|song| song.get_inner().duration)
                 .map_or(0.0, |duration| duration.as_secs_f64()),
         );
         if !cover_changed && automatic_transition {

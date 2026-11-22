@@ -24,6 +24,16 @@
       </object>
     </child>
     <child>
+      <object class="GtkButton" id="seek_backward_btn">
+        <property name="valign">center</property>
+        <property name="icon-name">media-seek-backward-symbolic</property>
+        <style>
+          <class name="circular"/>
+          <class name="flat"/>
+        </style>
+      </object>
+    </child>
+    <child>
       <object class="GtkButton" id="play_pause_btn">
         <style>
           <class name="pill"/>
@@ -66,6 +76,16 @@
             </child>
           </object>
         </child>
+      </object>
+    </child>
+    <child>
+      <object class="GtkButton" id="seek_forward_btn">
+        <property name="valign">center</property>
+        <property name="icon-name">media-seek-forward-symbolic</property>
+        <style>
+          <class name="circular"/>
+          <class name="flat"/>
+        </style>
       </object>
     </child>
     <child>

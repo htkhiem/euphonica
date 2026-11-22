@@ -1002,7 +1002,7 @@ impl Player {
             .current_song
             .borrow()
             .as_ref()
-            .and_then(|song| song.get_info().duration)
+            .and_then(|song| song.get_inner().duration)
             .is_some_and(|duration| {
                 Duration::from_secs_f64(self.position())
                     + at.saturating_duration_since(self.imp().position_sampled_at.get())
@@ -1153,7 +1153,9 @@ impl Player {
             }
         }
 
-        // Update playing status of songs in the queue
+        // Check if current song has changed.
+        // From v1.0 onward the new Song struct doesn't have an is_playing field anymore,
+        // and is-playing indication is now simply that row in the Queue View being selected.
         if let Some(new_queue_place) = status.song {
             let needs_refresh: bool;
             let prev_uri: Option<String>;
@@ -1243,11 +1245,10 @@ impl Player {
                                     .cache
                                     .get()
                                     .unwrap()
-                                    .get_lyrics(new_song.get_info(), true, false, None) // overwrite == false means upsert
+                                    .get_lyrics(new_song.get_inner_arc(), true, false, None) // overwrite == false means upsert
                                     .await;
                                 if !this.current_song().is_some_and(|song| {
-                                    song.get_info().get_comp_id()
-                                        == new_song.get_info().get_comp_id()
+                                    song.get_comp_id() == new_song.get_comp_id()
                                 }) {
                                     return;
                                 }
@@ -1323,7 +1324,7 @@ impl Player {
                             && (new_position_dur.as_secs_f32() / dur >= 0.5
                                 || new_position_dur.as_secs_f32() >= 240.0)
                         {
-                            match sqlite::add_to_history(curr_song.get_info()) {
+                            match sqlite::add_to_history(curr_song.get_inner()) {
                                 Ok(()) => {
                                     self.emit_by_name::<()>("history-changed", &[]);
                                 }
@@ -1362,6 +1363,7 @@ impl Player {
                 self.notify("album");
                 self.notify("rating");
                 self.notify("duration");
+                self.notify("queue-id");
                 cover_changed = Some(true);
                 // Update MPRIS side
                 if self.imp().mpris_enabled.get() {
@@ -1659,14 +1661,15 @@ impl Player {
     }
 
     pub fn artist(&self) -> Option<String> {
-        self.current_song().and_then(|s| s.get_artist_str())
+        self.current_song()
+            .map(|s| s.get_artist_string().to_owned())
     }
 
     pub fn album(&self) -> Option<String> {
         self.current_song()
             .as_ref()
-            .and_then(|s| s.get_album())
-            .map(|a| a.title.to_owned())
+            .and_then(|s| s.get_album_title())
+            .map(ToOwned::to_owned)
     }
 
     pub async fn current_song_cover_path(&self, thumbnail: bool) -> ClientResult<Option<PathBuf>> {
@@ -1759,6 +1762,22 @@ impl Player {
             self.notify("position");
         }
         old
+    }
+
+    pub async fn seek_increment(&self, forward: bool) -> ClientResult<()> {
+        let curr = self.position();
+        let increment = settings_manager().child("player").double("seek-increment");
+        if forward {
+            // Leave 1s before end
+            let end = self.duration();
+            if end > 1 {
+                let max_pos = end - 1;
+                return self.send_seek((curr + increment).min(max_pos as f64)).await;
+            }
+        } else {
+            return self.send_seek((curr - increment).max(0.0)).await;
+        }
+        Ok(())
     }
 
     pub async fn send_seek(&self, new_pos: f64) -> ClientResult<()> {
@@ -2078,7 +2097,7 @@ impl Player {
             && let Ok(lyrics) = Lyrics::try_from_synced_lrclib_str(text)
                 .or_else(|_| Lyrics::try_from_plain_lrclib_str(text))
         {
-            sqlite::write_lyrics(curr_song.get_info(), Some(&lyrics))
+            sqlite::write_lyrics(curr_song.get_inner(), Some(&lyrics))
                 .expect("Unable to import lyrics into SQLite DB");
             self.abort_lyrics_fetch();
             self.update_lyrics(Some(lyrics));
@@ -2087,7 +2106,7 @@ impl Player {
 
     pub fn import_lyrics_obj(&self, lyrics: Lyrics) {
         if let Some(curr_song) = self.current_song() {
-            sqlite::write_lyrics(curr_song.get_info(), Some(&lyrics))
+            sqlite::write_lyrics(curr_song.get_inner(), Some(&lyrics))
                 .expect("Unable to import lyrics into SQLite DB");
             self.abort_lyrics_fetch();
             self.update_lyrics(Some(lyrics));
@@ -2096,7 +2115,7 @@ impl Player {
 
     pub fn clear_lyrics(&self) {
         if let Some(curr_song) = self.current_song() {
-            sqlite::write_lyrics(curr_song.get_info(), None)
+            sqlite::write_lyrics(curr_song.get_inner(), None)
                 .expect("Unable to clear lyrics from DB");
             self.abort_lyrics_fetch();
             self.update_lyrics(None);

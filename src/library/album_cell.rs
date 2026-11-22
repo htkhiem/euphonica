@@ -23,6 +23,7 @@ use crate::{
         Album, PictureStack, Rating, TEXTURE_LOAD_DELAY_MS,
         marquee::{Marquee, MarqueeWrapMode},
     },
+    library::Library,
     utils::settings_manager,
 };
 
@@ -45,11 +46,16 @@ mod imp {
         pub quality_grade: TemplateChild<Image>,
         #[template_child]
         pub rating: TemplateChild<Rating>,
+        #[template_child]
+        pub play_btn_revealer: TemplateChild<gtk::Revealer>,
+        #[template_child]
+        pub play_btn: TemplateChild<gtk::Button>,
         #[derivative(Default(value = "Cell::new(128)"))]
         pub image_size: Cell<i32>,
         #[derivative(Default(value = "Cell::new(-1)"))]
         pub rating_val: Cell<i8>,
         pub album: WeakRef<Album>,
+        pub library: WeakRef<Library>,
         // Vector holding the bindings to properties of the Album GObject
         pub cover_signal_ids: RefCell<Option<(SignalHandlerId, SignalHandlerId)>>,
         pub cache: OnceCell<Rc<Cache>>,
@@ -111,6 +117,48 @@ mod imp {
                 .build();
 
             self.cover.set_is_thumbnail(true);
+
+            self.play_btn.connect_clicked(clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |_| {
+                    let (Some(library), Some(album)) =
+                        (this.library.upgrade(), this.album.upgrade())
+                    else {
+                        return;
+                    };
+                    glib::spawn_future_local(async move {
+                        // Default behaviour: replace queue & play immediately
+                        if let Err(e) = library.queue_album(album, true, Some(0)).await {
+                            dbg!(e);
+                        }
+                    });
+                }
+            ));
+
+            let this = self.obj();
+            this.update_play_btn_visibility(false);
+            let hover_ctl = gtk::EventControllerMotion::new();
+            hover_ctl.connect_enter(clone!(
+                #[weak]
+                this,
+                move |_, _x, _y| {
+                    this.update_play_btn_visibility(true);
+                    if this.imp().title.wrap_mode() == MarqueeWrapMode::Scroll {
+                        this.imp().title.set_should_run_and_check(true);
+                    }
+                }
+            ));
+
+            hover_ctl.connect_leave(clone!(
+                #[weak]
+                this,
+                move |_| {
+                    this.update_play_btn_visibility(false);
+                    this.imp().title.set_should_run_and_check(false);
+                }
+            ));
+            this.add_controller(hover_ctl);
         }
 
         fn properties() -> &'static [ParamSpec] {
@@ -239,8 +287,14 @@ glib::wrapper! {
 }
 
 impl AlbumCell {
-    pub fn new(item: &gtk::ListItem, cache: Rc<Cache>, wrap_mode: Option<MarqueeWrapMode>) -> Self {
+    pub fn new(
+        item: &gtk::ListItem,
+        library: Option<&Library>,
+        cache: Rc<Cache>,
+        wrap_mode: Option<MarqueeWrapMode>,
+    ) -> Self {
         let res: Self = Object::builder().build();
+        res.imp().library.set(library);
         let cache_state = cache.get_cache_state();
         res.imp()
             .cache
@@ -300,26 +354,6 @@ impl AlbumCell {
             .chain_property::<Album>("rating")
             .bind(&res, "rating", gtk::Widget::NONE);
 
-        // Run only while hovered
-        let hover_ctl = gtk::EventControllerMotion::new();
-        hover_ctl.set_propagation_phase(gtk::PropagationPhase::Capture);
-        hover_ctl.connect_enter(clone!(
-            #[weak(rename_to = this)]
-            res,
-            move |_, _, _| {
-                if this.imp().title.wrap_mode() == MarqueeWrapMode::Scroll {
-                    this.imp().title.set_should_run_and_check(true);
-                }
-            }
-        ));
-        hover_ctl.connect_leave(clone!(
-            #[weak(rename_to = this)]
-            res,
-            move |_| {
-                this.imp().title.set_should_run_and_check(false);
-            }
-        ));
-        res.add_controller(hover_ctl);
         let _ = res.imp().cover_signal_ids.replace(Some((
             cache_state.connect_closure(
                 "album-cover-set",
@@ -374,6 +408,121 @@ impl AlbumCell {
         res
     }
 
+    pub fn new_static(
+        album: &Album,
+        library: Option<&Library>,
+        cache: Rc<Cache>,
+        wrap_mode: Option<MarqueeWrapMode>,
+    ) -> Self {
+        let res: Self = Object::builder().build();
+        let imp = res.imp();
+        imp.library.set(library);
+        let cache_state = cache.get_cache_state();
+        imp
+            .cache
+            .set(cache)
+            .expect("AlbumCell cannot bind to cache");
+        let title = album.get_title();
+        imp.title.label().set_label(
+            if title.is_empty() {
+                *EMPTY_ALBUM_STRING
+            } else {
+                title
+            }
+        );
+        let ui_settings = settings_manager().child("ui");
+        if let Some(wrap_mode) = wrap_mode {
+            // Some views, like the Recent View, requires a specific mode due to UI constraints.
+            res.imp().title.set_wrap_mode(wrap_mode);
+        } else {
+            // If unspecified, bind to GSettings
+            ui_settings
+                .bind("title-wrap-mode", &res.imp().title.get(), "wrap-mode")
+                .mapping(|var, _| {
+                    Some(
+                        MarqueeWrapMode::try_from(var.get::<String>().unwrap().as_ref())
+                            .expect("Invalid title-wrap-mode setting value")
+                            .into(),
+                    )
+                })
+                .get_only()
+                .build();
+        }
+        ui_settings
+            .bind("use-hires-for-album-cells", &res, "hires")
+            .get_only()
+            .build();
+
+        imp.artist.set_label(
+            album.get_albumartists_str().unwrap_or(*EMPTY_ARTIST_STRING)
+        );
+
+        res.set_property("quality-grade", album.property::<Option<String>>("quality-grade"));
+        res.set_property("rating", album.property::<i8>("rating"));
+
+        let _ = res.imp().cover_signal_ids.replace(Some((
+            cache_state.connect_closure(
+                "album-cover-set",
+                false,
+                closure_local!(
+                    #[weak(rename_to = this)]
+                    res,
+                    move |_: CacheState, uri: String, _: gdk::Texture, thumb: gdk::Texture| {
+                        if this.imp().album.upgrade().is_some_and(|a| {
+                            a.get_folder_uri() == uri || a.get_example_uri() == uri
+                        }) {
+                            this.imp().cover.show(&thumb);
+                        }
+                    }
+                ),
+            ),
+            cache_state.connect_closure(
+                "album-cover-cleared",
+                false,
+                closure_local!(
+                    #[weak(rename_to = this)]
+                    res,
+                    move |_: CacheState, uri: String| {
+                        if this.imp().album.upgrade().is_some_and(|a| {
+                            a.get_folder_uri() == uri || a.get_example_uri() == uri
+                        }) {
+                            this.imp().cover.clear();
+                        }
+                    }
+                ),
+            ),
+        )));
+
+        // Set up dynamic texture loading/unloading.
+        // Prev implementation was painfully clunky. I've since discovered the map() and unmap()
+        // signals. These fire as soon as a widget comes within/out of 10px of the viewport,
+        // i.e. almost ideal for texture loading.
+        // HOWEVER, map() seems to ALWAYS FIRE ONCE upon widget creation (maybe due to every new
+        // widget being created somewhere within the viewport, then moved out? or something to do
+        // with filtering being iterative?). Afterwards for widgets that end up outside of the
+        // viewport, unmap() will be fired. To avoid flooding the cache controller on startup we
+        // add a short delay on the map() signal. If unmap() comes in quick succession then we
+        // can just cancel the load before it happens.
+        res.connect_map(|res| {
+            res.load_textures_with_delay();
+        });
+
+        res.connect_unmap(|res| {
+            res.unload_textures();
+        });
+
+        // Static version: just bind directly here
+        imp.album.set(Some(album));
+
+        res
+    }
+
+    fn update_play_btn_visibility(&self, hovered: bool) {
+        self.imp()
+            .play_btn_revealer
+            .set_reveal_child(hovered || settings_manager().child("ui").boolean("is-touchscreen"));
+    }
+
     fn album(&self) -> Option<Album> {
         self.imp().album.upgrade()
     }
@@ -394,13 +543,13 @@ impl AlbumCell {
             self.imp().cover.show_spinner();
             let res = cache
                 .clone()
-                .get_album_cover(album.get_info(), use_thumbnail)
+                .get_song_cover(album.get_inner().first_song.clone(), use_thumbnail)
                 .await;
             // Check again as cell might have been bound to a different album
             // while awaiting
             if self
                 .album()
-                .is_some_and(|a| a.get_info().get_comp_id() == album.get_info().get_comp_id())
+                .is_some_and(|a| a.get_inner().get_comp_id() == album.get_inner().get_comp_id())
             {
                 match res {
                     Ok(Some(tex)) => {
