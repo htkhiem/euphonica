@@ -1,8 +1,9 @@
 use super::{Library, generic_row::GenericRow};
 use crate::{
     cache::Cache,
-    common::{ContentStack, INode, INodeType},
+    common::{ContentStack, INode, INodeType, RowDoublePressAction},
     utils::{LazyInit, SearchableView, g_cmp_str_options, settings_manager},
+    window::EuphonicaWindow,
 };
 use adw::prelude::*;
 use adw::subclass::prelude::*;
@@ -15,6 +16,57 @@ use gtk::{
 use once_cell::sync::Lazy;
 use std::cell::RefCell;
 use std::{cell::Cell, cmp::Ordering, rc::Rc, sync::OnceLock};
+
+// Path buttons à la Nautilus.
+// Too insignificant to warrant its own custom widget so we'll just use helper functions here.
+fn create_path_button<F>(name: &str, callback: F) -> gtk::Box
+where
+    F: Fn() + 'static,
+{
+    let res = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    res.append(
+        &gtk::Label::builder()
+            .label("/")
+            .margin_start(3)
+            .margin_end(3)
+            .css_classes(["dimmed", "heading"])
+            .build(),
+    );
+    let btn = gtk::Button::builder()
+        .label(name)
+        .css_classes(["dimmed", "flat"])
+        .build();
+    btn.connect_clicked(move |_| {
+        callback();
+    });
+    res.append(&btn);
+    res
+}
+
+fn rename_path_button(outer: &gtk::Box, name: &str) {
+    // Will just try to set the label of the second child.
+    if let Some(btn) = outer
+        .first_child()
+        .and_then(|c| c.next_sibling())
+        .and_downcast::<gtk::Button>()
+    {
+        btn.set_label(name);
+    }
+}
+
+fn set_path_button_raised(outer: &gtk::Box, raised: bool) {
+    if let Some(btn) = outer
+        .first_child()
+        .and_then(|c| c.next_sibling())
+        .and_downcast::<gtk::Button>()
+    {
+        if raised && btn.has_css_class("dimmed") {
+            btn.remove_css_class("dimmed");
+        } else if !btn.has_css_class("dimmed") {
+            btn.add_css_class("dimmed");
+        }
+    }
+}
 
 // Folder view implementation
 // Unlike other views, here we use a single ListView and update its contents as we browse.
@@ -48,11 +100,24 @@ mod imp {
         #[template_child]
         pub show_sidebar: TemplateChild<gtk::Button>,
         #[template_child]
-        pub path_widget: TemplateChild<gtk::Label>,
-        #[template_child]
         pub back_btn: TemplateChild<gtk::Button>,
         #[template_child]
         pub forward_btn: TemplateChild<gtk::Button>,
+        #[template_child]
+        pub home_btn: TemplateChild<gtk::Button>,
+
+        #[template_child]
+        pub path_stack: TemplateChild<gtk::Stack>,
+        #[template_child]
+        pub enter_path: TemplateChild<gtk::Button>,
+        #[template_child]
+        pub enter_path_cancel: TemplateChild<gtk::Button>,
+        #[template_child]
+        pub path_buttons: TemplateChild<gtk::Box>,
+        #[template_child]
+        pub path_buttons_scroller: TemplateChild<gtk::ScrolledWindow>,
+        #[template_child]
+        pub path_entry: TemplateChild<gtk::Entry>,
 
         #[template_child]
         pub stack: TemplateChild<ContentStack>,
@@ -71,9 +136,15 @@ mod imp {
         #[template_child]
         pub list_view: TemplateChild<gtk::ListView>,
 
+        #[template_child]
+        pub invalid_path_dialog: TemplateChild<adw::AlertDialog>,
+
         // Search & filter models
         pub search_filter: gtk::StringFilter,
         pub sorter: gtk::CustomSorter,
+        // The sorted (unfiltered) list of inodes at the current level, kept around
+        // so we can queue the whole level in displayed order.
+        pub sorted_inodes: gtk::SortListModel,
         // Keep last length to optimise search
         // If search term is now longer, only further filter still-matching
         // items.
@@ -81,6 +152,7 @@ mod imp {
         // if they now match.
         pub last_search_len: Cell<usize>,
         pub library: WeakRef<Library>,
+        pub window: WeakRef<EuphonicaWindow>,
         pub sort_by_id: RefCell<Option<SignalHandlerId>>,
         pub sort_direction_id: RefCell<Option<SignalHandlerId>>,
         pub collapsed: Cell<bool>,
@@ -153,6 +225,80 @@ mod imp {
                             }
                         }
                     ));
+                }
+            ));
+
+            self.home_btn.connect_clicked(clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |_| {
+                    glib::spawn_future_local(clone!(
+                        #[weak]
+                        this,
+                        async move {
+                            if let Some(lib) = this.library.upgrade() {
+                                if let Err(e) = lib.folder_at_step(0).await {
+                                    dbg!(e);
+                                }
+                            }
+                        }
+                    ));
+                }
+            ));
+
+            let path_stack = self.path_stack.get();
+            let path_entry = self.path_entry.get();
+            self.enter_path.connect_clicked(clone!(
+                #[weak(rename_to = this)]
+                self,
+                #[weak]
+                path_stack,
+                #[weak]
+                path_entry,
+                move |_| {
+                    if path_stack
+                        .visible_child_name()
+                        .is_some_and(|c| c != "entry")
+                    {
+                        // Init entry to current path
+                        if let Some(library) = this.library.upgrade() {
+                            path_entry.buffer().set_text(library.folder_path());
+                            path_stack.set_visible_child_name("entry");
+                            path_entry.grab_focus();
+                        }
+                    }
+                }
+            ));
+
+            self.enter_path_cancel.connect_clicked(clone!(
+                #[weak]
+                path_stack,
+                move |_| {
+                    if path_stack
+                        .visible_child_name()
+                        .is_some_and(|c| c != "buttons")
+                    {
+                        path_stack.set_visible_child_name("buttons");
+                    }
+                }
+            ));
+
+            self.path_entry.connect_activate(clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |entry| {
+
+                    if let Some(library) = this.library.upgrade() {
+                        let text = entry.buffer().text().to_string();
+                        if this.path_stack.visible_child_name().is_some_and(|name| name != "buttons") {
+                            let _ = this.path_stack.set_visible_child_name("buttons");
+                        }
+                        glib::spawn_future_local(async move {
+                            if dbg!(library.goto_path(text).await).is_err() {
+                                this.invalid_path_dialog.present(this.window.upgrade().as_ref());
+                            }
+                        });
+                    }
                 }
             ));
 
@@ -426,14 +572,56 @@ impl FolderView {
         self.imp().library.upgrade().unwrap()
     }
 
-    pub fn setup(&self, library: &Library, cache: Rc<Cache>) {
+    pub fn setup(&self, library: &Library, cache: Rc<Cache>, window: &EuphonicaWindow) {
         self.imp().library.set(Some(library));
+        self.imp().window.set(Some(window));
         self.setup_listview(cache.clone(), library.clone());
 
-        library
-            .bind_property("folder-path", &self.imp().path_widget.get(), "label")
-            .sync_create()
-            .build();
+        library.connect_notify_local(
+            Some("folder-path"),
+            clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |library, _| {
+                    // Update button list as follows:
+                    // Step through each history index of the controller
+                    // If we've got a button at that index already, just update its name
+                    // Else create a new one
+                    // After the loop ends, remove all leftover buttons
+                    let buttons = this.imp().path_buttons.get();
+                    // First child is the home button so skip it immediately.
+                    let mut curr_btn = buttons.first_child().and_then(|w| w.next_sibling());
+                    for (i, hist_step) in library.folder_history().iter().enumerate() {
+                        if let Some(btn) = curr_btn.clone().and_downcast::<gtk::Box>() {
+                            rename_path_button(&btn, hist_step);
+                        } else {
+                            let btn: gtk::Widget = create_path_button(
+                                hist_step,
+                                clone!(
+                                    #[weak]
+                                    library,
+                                    move || {
+                                        glib::spawn_future_local(async move {
+                                            let _ = library.folder_at_step(i as u32 + 1).await;
+                                        });
+                                    }
+                                ),
+                            )
+                            .into();
+                            curr_btn = Some(btn.clone());
+                            buttons.append(&btn);
+                        }
+                        curr_btn = curr_btn.and_then(|w| w.next_sibling());
+                    }
+
+                    // If we exited the loop with some leftover buttons, truncate them all
+                    while let Some(btn) = curr_btn.as_ref() {
+                        buttons.remove(btn);
+                        curr_btn = btn.next_sibling();
+                    }
+                }
+            ),
+        );
 
         self.imp().update_nav_btn_sensitivity();
         library.connect_notify_local(
@@ -441,8 +629,23 @@ impl FolderView {
             clone!(
                 #[weak(rename_to = this)]
                 self,
-                move |_, _| {
+                move |library, _| {
+                    let target_idx = library.folder_curr_idx();
+                    if target_idx == 0 {
+                        this.imp().home_btn.remove_css_class("dimmed");
+                    } else {
+                        this.imp().home_btn.add_css_class("dimmed");
+                    }
                     this.imp().update_nav_btn_sensitivity();
+                    let buttons = this.imp().path_buttons.get();
+                    // Ignore home button
+                    let mut curr_btn = buttons.first_child().and_then(|w| w.next_sibling());
+                    let mut curr_idx = 1;
+                    while let Some(btn) = curr_btn.clone().and_downcast::<gtk::Box>() {
+                        set_path_button_raised(&btn, curr_idx == target_idx);
+                        curr_idx += 1;
+                        curr_btn = btn.next_sibling();
+                    }
                 }
             ),
         );
@@ -459,7 +662,8 @@ impl FolderView {
     }
 
     pub fn on_inode_clicked(&self, inode: &INode) {
-        // - Upon receiving click signal, get the list item at the indicated activate index.
+        // - Upon receiving double-click (row activation), get the list item at the indicated
+        //   activate index.
         // - Extract inode from that list item.
         // - If this inode is a folder:
         //   - If we're not currently at the head of the history, truncate history to be curr_idx long.
@@ -467,29 +671,143 @@ impl FolderView {
         //   - Increment curr_idx
         //   - Send an lsinfo query with the newly-updated URI.
         //   - Switch to loading page.
-        // - Else: do nothing (adding songs and playlists are done with buttons to the right of each row).
-        glib::spawn_future_local(clone!(
-            #[weak(rename_to = this)]
-            self,
-            #[weak]
-            inode,
-            async move {
-                if let Some(name) = inode.get_name()
-                    && inode.get_info().inode_type == INodeType::Folder
-                {
-                    let stack = this.imp().stack.get();
-                    stack.show_spinner();
-                    if let Err(e) = this.library().navigate_to(name).await {
-                        dbg!(e);
+        // - If it's a song: perform the configured "action on row double-press".
+        // Double-clicking on a folder simply navigates.
+        match inode.get_info().inode_type {
+            INodeType::Folder => {
+                glib::spawn_future_local(clone!(
+                    #[weak(rename_to = this)]
+                    self,
+                    #[weak]
+                    inode,
+                    async move {
+                        if let Some(name) = inode.get_name() {
+                            let stack = this.imp().stack.get();
+                            stack.show_spinner();
+                            if let Err(e) = this.library().navigate_to(name).await {
+                                dbg!(e);
+                            }
+                            if this.library().folder_inodes().n_items() > 0 {
+                                stack.show_content();
+                            } else {
+                                stack.show_placeholder();
+                            }
+                        }
                     }
-                    if this.library().folder_inodes().n_items() > 0 {
-                        stack.show_content();
-                    } else {
-                        stack.show_placeholder();
+                ));
+            }
+            INodeType::Song => {
+                let action = RowDoublePressAction::from_settings();
+                if let Some(window) = self.imp().window.upgrade() {
+                    window.maybe_show_double_press_toast();
+                }
+                match action {
+                    RowDoublePressAction::DoNothing => {}
+                    RowDoublePressAction::Append
+                    | RowDoublePressAction::AppendAndPlay
+                    | RowDoublePressAction::Replace
+                    | RowDoublePressAction::ReplaceAndPlay => {
+                        let uri = inode.get_uri().to_owned();
+                        let replace = matches!(
+                            action,
+                            RowDoublePressAction::Replace | RowDoublePressAction::ReplaceAndPlay
+                        );
+                        // Append-and-play starts playback at the appended song, which
+                        // lands at the end of the (not-yet-extended) queue.
+                        let play_from = match action {
+                            RowDoublePressAction::AppendAndPlay => Some(self.library().queue_len()),
+                            RowDoublePressAction::ReplaceAndPlay => Some(0),
+                            _ => return,
+                        };
+                        glib::spawn_future_local(clone!(
+                            #[weak(rename_to = this)]
+                            self,
+                            async move {
+                                if let Err(e) = this
+                                    .library()
+                                    .queue_uris(vec![uri], replace, play_from)
+                                    .await
+                                {
+                                    dbg!(e);
+                                }
+                            }
+                        ));
+                    }
+                    RowDoublePressAction::ReplaceViewAndPlay => {
+                        // Collect the current level's songs in displayed (sorted) order,
+                        // skipping folders & playlist files, & find the clicked inode's
+                        // position among them.
+                        let sorted = &self.imp().sorted_inodes;
+                        let target_uri = inode.get_uri().to_owned();
+                        let mut uris: Vec<String> = Vec::new();
+                        let mut play_from: Option<u32> = None;
+                        for i in 0..sorted.n_items() {
+                            if let Some(item) = sorted.item(i).and_downcast::<INode>()
+                                && item.get_info().inode_type == INodeType::Song
+                            {
+                                if item.get_uri() == target_uri {
+                                    play_from = Some(uris.len() as u32);
+                                }
+                                uris.push(item.get_uri().to_owned());
+                            }
+                        }
+                        glib::spawn_future_local(clone!(
+                            #[weak(rename_to = this)]
+                            self,
+                            async move {
+                                if let Err(e) =
+                                    this.library().queue_uris(uris, true, play_from).await
+                                {
+                                    dbg!(e);
+                                }
+                            }
+                        ));
                     }
                 }
             }
-        ));
+            INodeType::PlaylistFile => {
+                // A single playlist file acts like multiple song files bundled together.
+                let action = RowDoublePressAction::from_settings();
+                if let Some(window) = self.imp().window.upgrade() {
+                    window.maybe_show_double_press_toast();
+                }
+                match action {
+                    RowDoublePressAction::DoNothing => {}
+                    _ => {
+                        // ReplaceViewAndPlay only works within this playlist file since it's common to have this file
+                        // sit in the same folder as the tracks themselves. Queuing everything in view easily leads
+                        // to queuing a track many times (once by itself and once for every playlist containing it).
+                        let uri = inode.get_uri().to_owned();
+                        let replace = matches!(
+                            action,
+                            RowDoublePressAction::Replace
+                                | RowDoublePressAction::ReplaceAndPlay
+                                | RowDoublePressAction::ReplaceViewAndPlay
+                        );
+                        let play_from = match action {
+                            RowDoublePressAction::AppendAndPlay => Some(self.library().queue_len()),
+                            RowDoublePressAction::ReplaceAndPlay
+                            | RowDoublePressAction::ReplaceViewAndPlay => Some(0),
+                            _ => None,
+                        };
+                        glib::spawn_future_local(clone!(
+                            #[weak(rename_to = this)]
+                            self,
+                            async move {
+                                if let Err(e) =
+                                    this.library().queue_playlist(uri, replace, play_from).await
+                                {
+                                    dbg!(e);
+                                }
+                            }
+                        ));
+                    }
+                }
+            }
+            _ => {
+                // No action for folders (just navigate)
+            }
+        }
     }
 
     pub fn search_bar(&self) -> gtk::SearchBar {
@@ -515,15 +833,18 @@ impl FolderView {
             Some(self.imp().search_filter.clone()),
         );
         search_model.set_incremental(true);
-        let sort_model =
-            gtk::SortListModel::new(Some(search_model), Some(self.imp().sorter.clone()));
-        sort_model.set_incremental(true);
-        let sel_model = SingleSelection::new(Some(sort_model));
+        self.imp().sorted_inodes.set_model(Some(&search_model));
+        let sorter = self.imp().sorter.clone();
+        self.imp().sorted_inodes.set_sorter(Some(&sorter));
+        self.imp().sorted_inodes.set_incremental(true);
+        let sorted_inodes = self.imp().sorted_inodes.clone();
+        let sel_model = SingleSelection::new(Some(sorted_inodes));
 
         self.imp().list_view.set_model(Some(&sel_model));
 
         // Set up factory
         let factory = SignalListItemFactory::new();
+        let window = self.imp().window.upgrade();
 
         // Create an empty `INodeCell` during setup
         factory.connect_setup(clone!(
@@ -533,7 +854,7 @@ impl FolderView {
                 let item = list_item
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
-                let folder_row = GenericRow::new(library, item);
+                let folder_row = GenericRow::new(library, item, window.as_ref());
                 item.set_child(Some(&folder_row));
             }
         ));

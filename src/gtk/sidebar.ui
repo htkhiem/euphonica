@@ -9,8 +9,8 @@
 					<object class="AdwSidebarSection">
 						<child>
 							<object class="AdwSidebarItem" id="recent_btn">
-								<property name="title" translatable="true">Recent</property>
-								<property name="icon-name">recent-symbolic</property>
+								<property name="title" translatable="true">Home</property>
+								<property name="icon-name">go-home-symbolic</property>
 							</object>
 						</child>
 					</object>

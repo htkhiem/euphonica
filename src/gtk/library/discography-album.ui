@@ -151,12 +151,10 @@
                         <property name="overflow">hidden</property>
                         <property name="selection-mode">3</property>
                         <property name="activate-on-single-click">false</property>
-                        <property name="show-separators">true</property>
                         <property name="valign">start</property>
                         <style>
-                          <class name="no-bg"/>
-                          <class name="frame"/>
-                          <class name="border-radius-6"/>
+                          <class name="song-list"/>
+                          <!-- <class name="padding-12"/> -->
                         </style>
                       </object>
                     </property>

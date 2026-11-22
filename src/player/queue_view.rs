@@ -21,8 +21,9 @@ use crate::{
     cache::Cache,
     client::{ClientState, Error as ClientError},
     common::{ContentStack, RowEditButtons, Song, SongRow},
+    library::Library,
     player::controller::SwapDirection,
-    utils::{LazyInit, SearchableView, g_search_substr, settings_manager},
+    utils::{LazyInit, SearchableView, format_secs_as_duration, g_search_substr, settings_manager},
     window::EuphonicaWindow,
 };
 
@@ -76,6 +77,8 @@ mod imp {
         pub save_confirm: TemplateChild<gtk::Button>,
 
         pub window: WeakRef<EuphonicaWindow>,
+
+        pub library: WeakRef<Library>,
 
         #[property(get, set)]
         pub pane_collapsed: Cell<bool>,
@@ -282,7 +285,7 @@ mod imp {
                             // Match either title or artist
                             g_search_substr(Some(song.get_name()), &search_term, case_sensitive)
                                 || g_search_substr(
-                                    song.get_artist_tag(),
+                                    Some(song.get_artist_string()),
                                     &search_term,
                                     case_sensitive,
                                 )
@@ -293,7 +296,11 @@ mod imp {
                         }
                         2 => {
                             // Match only artist
-                            g_search_substr(song.get_artist_tag(), &search_term, case_sensitive)
+                            g_search_substr(
+                                Some(song.get_artist_string()),
+                                &search_term,
+                                case_sensitive,
+                            )
                         }
                         _ => true,
                     }
@@ -333,6 +340,45 @@ mod imp {
                     }
                 ),
             );
+
+            // Set song on mouse release.
+            // Why not ListView::activate? We'd like to use the :selected pseudoclass to signify the playing
+            // song AND also have single-click-to-switch-track. If we use single-click-activate on the
+            // ListView, the :selected pseudoclass is applied UPON HOVER, ruining the current-song
+            // highlight. So we need to use double-click activate, which means ::activate won't fire until
+            // the second click. Directly binding to the selection-changed signal of the sel model won't
+            // work either as that fires both on user interaction and on programmatic changes.
+            // To differentiate between user clicks and automatic updates (like MPD switching tracks), all
+            // non-user changes must mute this handler.
+            let queue_release_ctl = gtk::GestureClick::builder()
+                // Run once the release signal has bubbled back up to the ListView.
+                // That tells the callback AFTER the selection model has received the click-release signal,
+                // such that it gets the updated selection and not the previous one.
+                .propagation_phase(gtk::PropagationPhase::Bubble)
+                .build();
+            queue_release_ctl.connect_released(clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |_, _, _, _| {
+                    eprintln!("RELEASED");
+                    let (Some(player), Some(song)) = (
+                        dbg!(this.player.upgrade()),
+                        dbg!(
+                            this.sel_model
+                                .get()
+                                .and_then(|model| model.selected_item().and_downcast::<Song>())
+                        ),
+                    ) else {
+                        return;
+                    };
+                    glib::spawn_future_local(async move {
+                        if let Err(e) = player.on_song_clicked(song).await {
+                            dbg!(e);
+                        }
+                    });
+                }
+            ));
+            self.queue.add_controller(queue_release_ctl);
         }
 
         fn signals() -> &'static [Signal] {
@@ -369,24 +415,26 @@ fn format_song_count(count: u32) -> Option<String> {
 
 fn bind_row_by_expressions(row: &SongRow, item: &ListItem) {
     row.set_index_visible(false);
-    row.set_playing_indicator_visible(true);
 
     item.property_expression("item")
         .chain_property::<Song>("name")
         .bind(row, "name", gtk::Widget::NONE);
 
-    row.set_first_attrib_icon_name(Some("library-music-symbolic"));
     item.property_expression("item")
         .chain_property::<Song>("album")
-        .bind(row, "first-attrib-text", gtk::Widget::NONE);
-    row.set_second_attrib_icon_name(Some("music-artist-symbolic"));
+        .bind(row, "second-attrib-text", gtk::Widget::NONE);
     item.property_expression("item")
         .chain_property::<Song>("artist")
-        .bind(row, "second-attrib-text", gtk::Widget::NONE);
-
+        .bind(row, "first-attrib-text", gtk::Widget::NONE);
     item.property_expression("item")
         .chain_property::<Song>("quality-grade")
         .bind(row, "quality-grade", gtk::Widget::NONE);
+    item.property_expression("item")
+        .chain_property::<Song>("duration")
+        .chain_closure::<String>(closure_local!(|_: Option<glib::Object>, dur: u64| {
+            format_secs_as_duration(dur as f64)
+        }))
+        .bind(row, "duration", gtk::Widget::NONE);
 }
 
 impl QueueView {
@@ -419,6 +467,8 @@ impl QueueView {
         );
         filter_model.set_incremental(true);
         let sel_model = SingleSelection::new(Some(filter_model));
+        sel_model.set_autoselect(false); // stopped state does not have a current song
+        sel_model.set_can_unselect(true);
         if let Err(e) = self.imp().sel_model.set(sel_model.clone()) {
             dbg!(e);
         }
@@ -428,7 +478,7 @@ impl QueueView {
         let factory = SignalListItemFactory::new();
 
         factory.connect_setup(clone!(
-            #[weak(rename_to = _this)]
+            #[weak(rename_to = this)]
             self,
             #[weak]
             player,
@@ -438,7 +488,12 @@ impl QueueView {
                 let item = list_item
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
-                let row = SongRow::new(Some(cache.clone()), Some(&player));
+                let row = SongRow::new(
+                    Some(cache.clone()),
+                    Some(&player),
+                    this.imp().window.upgrade().as_ref(),
+                    this.imp().library.upgrade().as_ref(),
+                );
                 bind_row_by_expressions(&row, item);
                 row.add_css_class("shift-on-hover");
                 let end_widget = RowEditButtons::new(
@@ -503,7 +558,7 @@ impl QueueView {
                         }
                     ),
                 );
-                row.set_end_widget(Some(&end_widget.into()));
+                row.set_end_widget(&end_widget.into());
                 item.set_child(Some(&row));
 
                 // Handle drag-n-drop (DnD)
@@ -535,7 +590,7 @@ impl QueueView {
                         // To avoid problems with hotspot positioning quirks (caused by other rows changing padding upon hover)
                         // the icon will be a standalone copy of the original row.
                         // Additional benefit: we get to customise how it looks.
-                        let drag_widget = SongRow::new(None, None);
+                        let drag_widget = SongRow::new(None, None, None, None);
                         // Give it the same size as the real row
                         drag_widget.set_size_request(row.width(), row.height());
                         drag_widget.set_thumbnail_visible(false);
@@ -697,30 +752,6 @@ impl QueueView {
 
         // Set the factory of the list view
         self.imp().queue.set_factory(Some(&factory));
-
-        // Setup click action
-        self.imp().queue.connect_activate(clone!(
-            #[weak]
-            player,
-            move |queue, position| {
-                glib::spawn_future_local(clone!(
-                    #[weak]
-                    player,
-                    #[weak]
-                    queue,
-                    async move {
-                        let model = queue.model().expect("The model has to exist.");
-                        let song = model
-                            .item(position)
-                            .and_downcast::<Song>()
-                            .expect("The item has to be a `common::Song`.");
-                        if let Err(e) = player.on_song_clicked(song).await {
-                            dbg!(e);
-                        }
-                    }
-                ));
-            }
-        ));
     }
 
     async fn show_save_error_dialog(&self, name: String, player: Player) {
@@ -965,9 +996,24 @@ impl QueueView {
                     #[weak(rename_to = this)]
                     self,
                     move |_, _| {
-                        let settings = settings_manager().child("ui");
-                        if settings.boolean("auto-scroll-to-playing") {
-                            this.scroll_to_playing();
+                        let (Some(model), Some(player)) =
+                            (this.imp().sel_model.get(), this.imp().player.upgrade())
+                        else {
+                            return;
+                        };
+                        let n = model.n_items();
+                        if let Some(pos) = player.queue_pos()
+                            && pos < n
+                        {
+                            // Won't fire ListView's activate signal, but WILL
+                            // fire selection-changed signal.
+                            model.set_selected(pos);
+                            let settings = settings_manager().child("ui");
+                            if settings.boolean("auto-scroll-to-playing") {
+                                this.scroll_to_playing();
+                            }
+                        } else {
+                            model.unselect_all();
                         }
                     }
                 ),
@@ -977,11 +1023,13 @@ impl QueueView {
     pub fn setup(
         &self,
         player: &Player,
+        library: &Library,
         cache: Rc<Cache>,
         client_state: &ClientState,
         window: &EuphonicaWindow,
     ) {
         self.imp().window.set(Some(window));
+        self.imp().library.set(Some(library));
         self.setup_listview(player, cache.clone());
         self.imp()
             .player_pane

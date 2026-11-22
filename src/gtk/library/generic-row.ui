@@ -26,10 +26,12 @@
 				<property name="start-widget">
 					<object class="GtkBox">
 						<property name="orientation">vertical</property>
-						<property name="spacing">6</property>
 						<property name="margin-start">6</property>
 						<child>
 							<object class="GtkLabel" id="title">
+								<style>
+									<class name="heading"/>
+								</style>
 								<property name="halign">start</property>
 								<property name="ellipsize">start</property>
 							</object>

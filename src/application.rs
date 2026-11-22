@@ -28,6 +28,7 @@ use crate::{
     onboarding::EuphonicaOnboardingWindow,
     player::{Player, get_next_replaygain},
     preferences::Preferences,
+    search_provider,
     server::{ManagedMpdError, ManagedMpdServer},
     utils::{settings_manager, tokio_runtime},
 };
@@ -255,8 +256,6 @@ mod imp {
             obj.set_accels_for_action("app.toggle-playback", &["<Ctrl>p"]);
             obj.set_accels_for_action("app.next-song", &["<Shift>greater"]);
             obj.set_accels_for_action("app.prev-song", &["<Shift>less"]);
-            obj.set_accels_for_action("app.seek-forward", &["<Ctrl><Shift>f"]);
-            obj.set_accels_for_action("app.seek-backward", &["<Ctrl><Shift>b"]);
             obj.set_accels_for_action("app.stop", &["<Ctrl><Shift>s"]);
             obj.set_accels_for_action("app.toggle-random", &["<Alt>z"]);
             obj.set_accels_for_action("app.cycle-flow", &["<Alt>r"]);
@@ -265,6 +264,9 @@ mod imp {
             obj.set_accels_for_action("app.cycle-crossfade", &["<Alt>x"]);
             obj.set_accels_for_action("app.volume-up", &["<Ctrl><Shift>Up"]);
             obj.set_accels_for_action("app.volume-down", &["<Ctrl><Shift>Down"]);
+            // Allow both
+            obj.set_accels_for_action("app.seek-forward", &["<Ctrl>Right", "<Ctrl><Shift>f"]);
+            obj.set_accels_for_action("app.seek-backward", &["<Ctrl>Left", "<Ctrl><Shift>b"]);
             obj.set_accels_for_action("app.toggle-mute", &["<Ctrl>m"]);
             obj.set_accels_for_action("app.next-output", &["<Ctrl><Shift>Right"]);
             obj.set_accels_for_action("app.prev-output", &["<Ctrl><Shift>Left"]);
@@ -281,6 +283,10 @@ mod imp {
                     }
                 }
             ));
+
+            // Register the GNOME Shell search provider on the session bus.
+            // It stays active for as long as the app runs, even in the background.
+            search_provider::start(client, &self.obj());
 
             client.get_client_state().connect_closure(
                 "idle",
@@ -443,8 +449,7 @@ impl EuphonicaApplication {
             .activate(move |this: &Self, _, _| {
                 let player = this.get_player().clone();
                 glib::spawn_future_local(async move {
-                    let pos = player.position() + 10.0;
-                    if let Err(e) = player.send_seek(pos).await {
+                    if let Err(e) = player.seek_increment(true).await {
                         dbg!(e);
                     }
                 });
@@ -455,10 +460,7 @@ impl EuphonicaApplication {
             .activate(move |this: &Self, _, _| {
                 let player = this.get_player().clone();
                 glib::spawn_future_local(async move {
-                    let pos = player.position() - 10.0;
-                    if pos < 0.0 {
-                        let _ = player.send_seek(0.0).await;
-                    } else if let Err(e) = player.send_seek(pos).await {
+                    if let Err(e) = player.seek_increment(false).await {
                         dbg!(e);
                     }
                 });

@@ -40,6 +40,15 @@
 		<value nick="stop-and-clear" value="3"/>
 	</enum>
 
+	<enum id="io.github.htkhiem.Euphonica.rowdoublepressaction">
+		<value nick="do-nothing" value="0"/>
+		<value nick="append" value="1"/>
+		<value nick="append-and-play" value="2"/>
+		<value nick="replace" value="3"/>
+		<value nick="replace-and-play" value="4"/>
+		<value nick="replace-view-and-play" value="5"/>
+	</enum>
+
 	<!-- Order matches combobox in Preferences/UI tab, while nick matches stackpage name. -->
 	<enum id="io.github.htkhiem.Euphonica.theaudiodbapiversion">
 		<value nick="v1" value="1"/>
@@ -55,6 +64,12 @@
 		<value nick="playlists" value="5"/>
 		<value nick="dyn-playlists" value="6"/>
 		<value nick="queue" value="7"/>
+	</enum>
+
+	<enum id="io.github.htkhiem.Euphonica.recentsubview">
+		<value nick="albums" value="0"/>
+		<value nick="artists" value="1"/>
+		<value nick="songs" value="2"/>
 	</enum>
 
 	<!-- Unused, but kept for compatibility -->
@@ -73,6 +88,10 @@
 
 		<key name="background-portal-available" type="b">
 			<default>true</default>
+		</key>
+
+		<key name="n-threads" type="u">
+			<default>4</default>
 		</key>
 	</schema>
 
@@ -198,12 +217,6 @@
 			<summary>Maximum resolution for cached images</summary>
 		</key>
 
-		<key name="n-image-threads" type="u">
-			<default>4</default>
-			<summary>Number of threads for image processing operations</summary>
-			<description>Controls the number of threads used for parallel image processing (resizing, encoding, decoding). More threads does not always mean better performance. Requires restart to take effect.</description>
-		</key>
-
 		<key name="optimize-embedded-cover-loading" type="b">
 			<default>false</default>
 		</key>
@@ -321,6 +334,10 @@
 			<default>true</default>
 		</key>
 
+		<key name="seek-increment" type="d">
+			<default>5.0</default>
+		</key>
+
 		<key name="visualizer-fft-samples" type="u">
 			<default>2048</default>
 		</key>
@@ -350,6 +367,12 @@
 	</schema>
 
 	<schema id="io.github.htkhiem.Euphonica.ui" path="/io/github/htkhiem/Euphonica/ui/">
+		<key name="is-touchscreen" type="b">
+			<default>true</default>
+		</key>
+		<key name="show-seek-buttons" type="b">
+			<default>true</default>
+		</key>
 		<key name="colorscheme" type="s">
 			<default>'follow'</default>
 		</key>
@@ -431,6 +454,10 @@
 			<default>true</default>
 			<summary>Automatically scroll to the currently playing song in the queue</summary>
 		</key>
+		<key name="action-on-row-double-press" enum='io.github.htkhiem.Euphonica.rowdoublepressaction'>
+			<default>'replace-view-and-play'</default>
+			<summary>Action to perform when a song or folder row is double-pressed</summary>
+		</key>
 		<key name="artist-show-all-songs" type="b">
             <default>false</default>
             <summary>If true, artist content view opens in All Songs tab.</summary>
@@ -450,6 +477,7 @@
 	</schema>
 
 	<schema id="io.github.htkhiem.Euphonica.state" path="/io/github/htkhiem/Euphonica/state/">
+		<child schema="io.github.htkhiem.Euphonica.state.homeview" name="homeview"/>
 		<child schema="io.github.htkhiem.Euphonica.state.albumview" name="albumview"/>
 		<child schema="io.github.htkhiem.Euphonica.state.artistview" name="artistview"/>
 		<child schema="io.github.htkhiem.Euphonica.state.folderview" name="folderview"/>
@@ -459,6 +487,11 @@
 
 		<key name="onboarded" type="b">
 			<default>false</default>
+		</key>
+
+		<key name="row-double-press-toast-shown" type="b">
+			<default>false</default>
+			<summary>Whether the one-time row double-press hint toast has been shown</summary>
 		</key>
 
 		<!-- Remember last window size -->
@@ -489,6 +522,14 @@
 		<key name="on-exit-action" enum='io.github.htkhiem.Euphonica.onexitaction'>
 			<default>'nothing'</default>
 			<summary>Action to perform on MPD when Euphonica exits</summary>
+		</key>
+	</schema>
+
+	<schema id="io.github.htkhiem.Euphonica.state.homeview" path="/io/github/htkhiem/Euphonica/state/homeview/">
+		<!-- Album view state -->
+		<key name='recent-subview' enum='io.github.htkhiem.Euphonica.recentsubview'>
+			<default>'songs'</default>
+			<summary>Last selected subview of Recent section</summary>
 		</key>
 	</schema>
 

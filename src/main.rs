@@ -28,6 +28,7 @@ mod meta_providers;
 mod onboarding;
 mod player;
 mod preferences;
+mod search_provider;
 mod server;
 mod settings;
 mod sidebar;

@@ -5,7 +5,7 @@ use gtk::{CompositeTemplate, glib};
 
 use crate::{application::EuphonicaApplication, cache::Cache, player::Player};
 
-use super::{ClientPreferences, IntegrationsPreferences, LibraryPreferences, UIPreferences};
+use super::{ClientPreferences, IntegrationsPreferences, AppPreferences, UIPreferences};
 
 mod imp {
     use super::*;
@@ -20,7 +20,7 @@ mod imp {
         pub integrations_tab: TemplateChild<IntegrationsPreferences>,
 
         #[template_child]
-        pub library_tab: TemplateChild<LibraryPreferences>,
+        pub app_tab: TemplateChild<AppPreferences>,
 
         #[template_child]
         pub ui_tab: TemplateChild<UIPreferences>,
@@ -65,14 +65,14 @@ impl Preferences {
         let res = Self::default();
 
         res.imp().client_tab.get().setup(app, player, &res);
-        res.imp().library_tab.get().setup(cache.clone());
+        res.imp().app_tab.get().setup(cache.clone());
         res.imp().ui_tab.get().setup();
-        res.imp().integrations_tab.get().setup(cache);
+        res.imp().integrations_tab.get().setup(cache.clone());
 
         res
     }
 
     pub fn update(&self) {
-        self.imp().library_tab.get().refresh_cache_stats();
+        self.imp().app_tab.get().refresh_cache_stats();
     }
 }

@@ -22,6 +22,8 @@ use crate::{
 };
 
 mod imp {
+    use crate::utils::g_cmp_str_vecs;
+
     use super::*;
 
     #[derive(Debug, CompositeTemplate, Properties, Default)]
@@ -229,9 +231,9 @@ mod imp {
                         }
                         4 => {
                             // AlbumArtist
-                            g_cmp_str_options(
-                                album1.get_sortable_artist_tag(),
-                                album2.get_sortable_artist_tag(),
+                            g_cmp_str_vecs(
+                                album1.get_albumartists().collect(),
+                                album2.get_albumartists().collect(),
                                 nulls_first,
                                 asc,
                                 case_sensitive,
@@ -325,7 +327,7 @@ mod imp {
                             // Match either album title or AlbumArtist (not artist tag)
                             g_search_substr(Some(album.get_title()), &search_term, case_sensitive)
                                 || g_search_substr(
-                                    album.get_artist_tag(),
+                                    album.get_albumartists_str(),
                                     &search_term,
                                     case_sensitive,
                                 )
@@ -336,7 +338,11 @@ mod imp {
                         }
                         2 => {
                             // Match only AlbumArtist (albums without such tag will never match)
-                            g_search_substr(album.get_artist_tag(), &search_term, case_sensitive)
+                            g_search_substr(
+                                album.get_albumartists_str(),
+                                &search_term,
+                                case_sensitive,
+                            )
                         }
                         _ => true,
                     }
@@ -455,7 +461,7 @@ impl AlbumView {
             .window
             .set(weak)
             .expect("AlbumView window already set");
-        self.setup_gridview(cache.clone());
+        self.setup_gridview(library, cache.clone());
 
         // Set up genres and tags filters
         self.imp().genres_filter_widget.setup(
@@ -467,7 +473,10 @@ impl AlbumView {
                     if !genres.is_empty() {
                         this.imp().genres_filter.set_filter_func(move |obj| {
                             let album = obj.downcast_ref::<Album>().unwrap();
-                            !genres.is_disjoint(album.get_genres())
+                            album
+                                .get_genres()
+                                .into_iter()
+                                .any(|genre| genres.contains(genre))
                         });
                         this.imp()
                             .genres_filter
@@ -537,7 +546,7 @@ impl AlbumView {
         }
     }
 
-    fn setup_gridview(&self, cache: Rc<Cache>) {
+    fn setup_gridview(&self, library: &Library, cache: Rc<Cache>) {
         let settings = settings_manager().child("ui");
         // Setup search bar
         let album_list = self.imp().library.upgrade().unwrap().albums();
@@ -567,7 +576,8 @@ impl AlbumView {
 
         let sort_model = gtk::SortListModel::new(Some(tags_model), Some(self.imp().sorter.clone()));
         sort_model.set_incremental(true);
-        let sel_model = SingleSelection::new(Some(sort_model));
+        // NoSelection hides the default selection highlight. Still lets you select via activating :)
+        let sel_model = gtk::NoSelection::new(Some(sort_model));
 
         let grid_view = self.imp().grid_view.get();
         grid_view.set_model(Some(&sel_model));
@@ -582,11 +592,13 @@ impl AlbumView {
         factory.connect_setup(clone!(
             #[weak]
             cache,
+            #[weak]
+            library,
             move |_, list_item| {
                 let item = list_item
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
-                let album_cell = AlbumCell::new(item, cache, None);
+                let album_cell = AlbumCell::new(item, Some(&library), cache, None);
                 item.set_child(Some(&album_cell));
             }
         ));

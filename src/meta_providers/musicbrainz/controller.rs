@@ -5,15 +5,22 @@ extern crate bson;
 
 use musicbrainz_rs::{
     client::MusicBrainzClient,
-    entity::{artist::*, release::*},
+    entity::{
+        artist::*,
+        recording::{Recording, RecordingSearchQuery},
+        release::*,
+    },
     error::Error as MBError,
     prelude::*,
 };
 
 use crate::{
-    common::{AlbumInfo, ArtistInfo},
+    common::song::get_title_from_mpd_song,
     config::APPLICATION_USER_AGENT,
-    meta_providers::models::ImageMeta,
+    meta_providers::{
+        base::{AlbumKey, ArtistKey},
+        models::ImageMeta,
+    },
     utils::{meta_provider_settings, settings_manager},
 };
 
@@ -56,7 +63,7 @@ impl MetadataProvider for MusicBrainzWrapper {
     /// A signal will be emitted to notify the caller when the result arrives.
     fn get_album_meta(
         &mut self,
-        key: &mut AlbumInfo,
+        key: &mut AlbumKey,
         existing: Option<models::AlbumMeta>,
     ) -> MetadataResult<Option<models::AlbumMeta>> {
         sleep_between_requests(self.last_request_time);
@@ -84,7 +91,7 @@ impl MetadataProvider for MusicBrainzWrapper {
             }
         }
         // Else there must be an artist tag before we can search reliably
-        else if let (title, Some(artist)) = (&key.title, key.get_artist_tag()) {
+        else if let (title, Some(artist)) = (&key.title, &key.albumartist) {
             // Ensure linkages match those on MusicBrainz.
             // TODO: use multiple ORed artist clauses instead.
             println!("[MusicBrainz] Searching release with title = {title} and artist = {artist}");
@@ -143,7 +150,7 @@ impl MetadataProvider for MusicBrainzWrapper {
     /// algorithm.
     fn get_artist_meta(
         &mut self,
-        key: &mut ArtistInfo,
+        key: &mut ArtistKey,
         existing: std::option::Option<models::ArtistMeta>,
     ) -> MetadataResult<Option<models::ArtistMeta>> {
         sleep_between_requests(self.last_request_time);
@@ -171,34 +178,71 @@ impl MetadataProvider for MusicBrainzWrapper {
                     }
                 }
             }
-            // If MBID is not available we'll need to search solely by artist name.
-            // TODO: add some more clues, such as a song or album name.
+            // If MBID is not available we'll look up by artist name plus an example song for disambiguation.
             else {
-                let name = &key.name;
-                println!("[MusicBrainz] Fetching artist with name = {}", &name);
-                self.last_request_time = SystemTime::now();
-                match Artist::search(ArtistSearchQuery::query_builder().artist(name).build())
+                let example_song = key.example_song.clone();
+                println!(
+                    "[MusicBrainz] Fetching artist with name = {} and example song {}",
+                    &key.name, &example_song.file
+                );
+                let mut recording_query = RecordingSearchQuery::query_builder();
+                recording_query
+                    .recording(&get_title_from_mpd_song(example_song.as_ref()))
+                    .artist_name(&key.name);
+                if let Some(album_mbid) = example_song.album_mbid.as_deref() {
+                    recording_query.reid(album_mbid);
+                } else if let Some(album) = example_song.album.as_deref() {
+                    recording_query.release(album);
+                }
+
+                let mb_artist;
+                match Recording::search(recording_query.build())
                     .with_url_relations()
                     .execute_with_client(&self.client)
                 {
-                    Ok(found) => {
-                        if let Some(first) = found.entities.into_iter().nth(0) {
-                            let new: models::ArtistMeta = first.into();
-                            // If there is existing data, merge new data to it
-                            Ok(Some(if let Some(old) = existing {
-                                old.merge(new)
-                            } else {
-                                new
-                            }))
+                    Ok(found_recordings) => {
+                        if let Some(recording) = found_recordings.entities.into_iter().next() {
+                            let lower_name = key.name.to_lowercase();
+                            // First, try looking in the credited artists of this example song
+                            mb_artist = recording
+                                    .artist_credit
+                                    .and_then(|vec| {
+                                        vec.into_iter()
+                                            .map(|cred| cred.artist)
+                                            .find(|a| a.name.to_lowercase().contains(&lower_name))
+                                    })
+                                    .or_else(|| {
+                                        eprintln!("[MusicBrainz] artist not found in example song's credits; looking in first found release.");
+                                        // Failing that, look in the first Release's credited artists
+                                        recording
+                                            .releases
+                                            .and_then(|vec| vec.into_iter().next())
+                                            .and_then(|release| release.artist_credit)
+                                            .and_then(|vec| {
+                                                vec.into_iter().map(|cred| cred.artist).find(|a| {
+                                                    a.name.to_lowercase().contains(&lower_name)
+                                                })
+                                            })
+                                    });
                         } else {
-                            println!("[MusicBrainz] No artist metadata found for {name}");
-                            Err(MetadataError::NotFound(existing))
+                            mb_artist = None;
                         }
                     }
                     Err(e) => {
                         println!("[MusicBrainz] Could not fetch artist metadata: {:?}", &e);
-                        Err(pack_error(existing, e))
+                        return Err(pack_error(existing, e));
                     }
+                };
+
+                if let Some(new) = mb_artist.map(models::ArtistMeta::from) {
+                    Ok(Some(if let Some(old) = existing {
+                        old.merge(new)
+                    } else {
+                        new
+                    }))
+                } else {
+                    eprintln!("[MusicBrainz] No artist metadata found for {}", key.name);
+                    Err(MetadataError::NotFound(existing))
                 }
             }
         } else {
@@ -207,10 +251,7 @@ impl MetadataProvider for MusicBrainzWrapper {
     }
 
     /// MusicBrainz does not provide lyrics.
-    fn get_lyrics(
-        &mut self,
-        _key: &crate::common::SongInfo,
-    ) -> MetadataResult<Option<models::Lyrics>> {
+    fn get_lyrics(&mut self, _key: &mpd::Song) -> MetadataResult<Option<models::Lyrics>> {
         Ok(None)
     }
 }

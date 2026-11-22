@@ -1,13 +1,18 @@
 use super::{Library, Tag, TagsSection, artist_tag_button::ArtistTagButton};
+use crate::common::ArtistInfo;
 use crate::common::FadingScrolledWindow;
 use crate::meta_providers::models::AlbumMeta;
 use crate::meta_providers::models::MetaSource;
 use crate::utils::format_datetime_local_tz;
 use crate::utils::settings_manager;
+use crate::utils::strip_filename_linux;
 use crate::{
-    cache::{Cache, CacheState, Error as CacheError, placeholders::EMPTY_ALBUM_STRING},
+    cache::{Cache, CacheState, Error as CacheError, placeholders::EMPTY_ALBUM_STRING, sqlite},
     client::{ClientState, state::StickersSupportLevel},
-    common::{Album, Artist, ContentStack, ImageStack, Rating, RowAddButtons, Song, SongRow},
+    common::{
+        Album, Artist, ContentStack, ImageStack, Rating, RowAddButtons, RowDoublePressAction, Song,
+        SongRow,
+    },
     library::{add_to_playlist::AddToPlaylistButton, tag_button::TagButton},
     utils::{format_secs_as_duration, tokio_runtime},
     window::EuphonicaWindow,
@@ -27,6 +32,10 @@ use std::{
 use time::{Date, OffsetDateTime, format_description};
 
 mod imp {
+
+    use adw::Window;
+
+    use crate::utils::get_image_cache_path;
 
     use super::*;
 
@@ -53,6 +62,10 @@ mod imp {
         pub rating: TemplateChild<Rating>,
         #[template_child]
         pub rating_readout: TemplateChild<gtk::Label>,
+        #[template_child]
+        pub metadata_revealer: TemplateChild<gtk::Revealer>,
+        #[template_child]
+        pub collapse_metadata_btn: TemplateChild<gtk::Button>,
 
         // Wiki display (read-only)
         #[template_child]
@@ -60,9 +73,7 @@ mod imp {
         #[template_child]
         pub add_wiki_btn: TemplateChild<gtk::Button>,
         #[template_child]
-        pub wiki_fader: TemplateChild<FadingScrolledWindow>,
-        #[template_child]
-        pub wiki_text: TemplateChild<gtk::Label>,
+        pub wiki_text: TemplateChild<gtk::TextView>,
         #[template_child]
         pub wiki_link: TemplateChild<gtk::LinkButton>,
         #[template_child]
@@ -180,6 +191,34 @@ mod imp {
         fn constructed(&self) {
             self.parent_constructed();
 
+            let cover_click_ctl = gtk::GestureClick::new();
+            cover_click_ctl.connect_released(clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |_, _, _, _| {
+                    // Need to look into SQLite again here
+                    if let Some(uri) = this.album.borrow().as_ref().map(|s| s.get_example_uri()) {
+                        // Just block UI here lol, not significant enough
+                        if let Some(path) = sqlite::find_cover_by_uri(uri, false)
+                            .ok()
+                            .flatten()
+                            .and_then(|cached_name| {
+                                let mut path = get_image_cache_path();
+                                path.push(cached_name);
+                                Some(path)
+                            })
+                        {
+                            gtk::FileLauncher::new(Some(&gio::File::for_path(path))).launch(
+                                Window::NONE,
+                                gio::Cancellable::NONE,
+                                |_| {},
+                            );
+                        }
+                    }
+                }
+            ));
+            self.cover.add_controller(cover_click_ctl);
+
             self.copy_mbid.connect_clicked(clone!(
                 #[weak(rename_to = this)]
                 self,
@@ -279,7 +318,7 @@ mod imp {
                             new_meta.mbid = Some(mbid.to_string());
                         }
                         // Might want to make this async?
-                        match cache.set_album_meta(album.get_info(), &new_meta, false) {
+                        match cache.set_album_meta(album.get_inner(), &new_meta, false) {
                             Ok(ts) => {
                                 let _ = this.meta.replace(Some(new_meta));
                                 let _ = this.new_last_modified.replace(Some(dbg!(ts)));
@@ -330,6 +369,31 @@ mod imp {
                     this.obj().write_tags();
                 }
             ));
+
+            let revealer = self.metadata_revealer.get();
+            revealer
+                .bind_property(
+                    "reveal-child",
+                    &self.collapse_metadata_btn.get(),
+                    "icon-name",
+                )
+                .transform_to(|_, is_revealed: bool| {
+                    Some(
+                        if is_revealed {
+                            "down-symbolic"
+                        } else {
+                            "up-symbolic"
+                        }
+                        .to_value(),
+                    )
+                })
+                .bidirectional()
+                .sync_create()
+                .build();
+
+            self.collapse_metadata_btn.connect_clicked(move |_| {
+                revealer.set_reveal_child(!revealer.is_child_revealed());
+            });
 
             // Add wiki button opens the metadata editor dialog
             self.add_wiki_btn.connect_clicked(clone!(
@@ -624,7 +688,7 @@ impl AlbumContentView {
             {
                 // If has album & all tracks are selected, use queue_album.
                 if let Err(e) = library
-                    .queue_album(album.clone(), replace, play, None)
+                    .queue_album(album.clone(), replace, if play { Some(0) } else { None })
                     .await
                 {
                     dbg!(e);
@@ -632,7 +696,11 @@ impl AlbumContentView {
             } else {
                 // Catch-all: manually queue each song.
                 if let Err(e) = library
-                    .queue_songs(&self.selected_songs(), replace, play)
+                    .queue_songs(
+                        &self.selected_songs(),
+                        replace,
+                        if play { Some(0) } else { None },
+                    )
                     .await
                 {
                     dbg!(e);
@@ -672,8 +740,8 @@ impl AlbumContentView {
             (self.imp().cache.get(), self.imp().album.borrow().as_ref())
         {
             let tags = self.imp().tags_widget.get_tags();
-            let folder_uri = album.get_info().folder_uri.clone();
-            if let Err(e) = cache.set_album_tags(&folder_uri, &tags) {
+            let folder_uri = album.get_folder_uri();
+            if let Err(e) = cache.set_album_tags(folder_uri, &tags) {
                 dbg!(e);
             }
         }
@@ -715,7 +783,7 @@ impl AlbumContentView {
 
             let res = cache
                 .backup_album_meta(
-                    album.get_info(),
+                    album.get_inner(),
                     &meta,
                     old_last_modified,
                     overwrite,
@@ -818,11 +886,11 @@ impl AlbumContentView {
                 self.imp().wiki_stack.show_spinner();
                 self.imp().tags_widget.remove_all(true);
                 let cache = self.imp().cache.get().unwrap().clone();
-                let folder_uri = album.get_info().folder_uri.clone();
+                let folder_uri = album.get_folder_uri();
 
                 let res = cache
                     .get_album_meta(
-                        album.get_info(),
+                        album.get_inner_arc(),
                         true,
                         overwrite,
                         self.imp().window.upgrade().as_ref(),
@@ -840,7 +908,7 @@ impl AlbumContentView {
                                 let wiki_link = this.imp().wiki_link.get();
                                 let wiki_attrib = this.imp().wiki_attrib.get();
                                 this.imp().wiki_stack.show_content();
-                                wiki_text.set_label(&wiki.content);
+                                wiki_text.buffer().set_text(&wiki.content);
                                 if let Some(url) = wiki.url.as_ref() {
                                     wiki_link.set_visible(true);
                                     wiki_link.set_uri(url);
@@ -881,7 +949,7 @@ impl AlbumContentView {
                         }
 
                         // Load tags from DB
-                        let tags = cache.get_album_tags(&folder_uri);
+                        let tags = cache.get_album_tags(folder_uri);
                         if let Ok(tags) = tags {
                             if tags.is_empty() {
                                 self.imp().tags_widget.show_placeholder();
@@ -1082,59 +1150,101 @@ impl AlbumContentView {
         ));
 
         // Set up ListBox — bind directly to song_list (no MultiSelection needed)
+        let window = self.imp().window.upgrade();
         self.imp().content.bind_model(
             Some(&self.imp().song_list),
             clone!(
                 #[weak]
                 library,
                 #[upgrade_or]
-                SongRow::new(None, None).into(),
+                SongRow::new(None, None, None, None).into(),
                 move |song_obj| {
                     let song = song_obj
                         .downcast_ref::<Song>()
                         .expect("Must be a common::Song");
-                    let row = SongRow::new(None, None);
+                    let row = SongRow::new(None, None, window.as_ref(), Some(&library));
+                    row.on_bind(song);
                     row.set_index_visible(true);
                     row.set_index(&song.get_track().to_string());
+                    row.set_disc(&song.get_disc().to_string());
                     row.set_thumbnail_visible(false);
 
                     row.set_name(song.get_name());
-                    row.set_first_attrib_icon_name(Some("music-artist-symbolic"));
-                    row.set_first_attrib_text(song.get_artist_tag());
-
-                    row.set_second_attrib_icon_name(Some("hourglass-symbolic"));
-                    row.set_second_attrib_text(Some(&format_secs_as_duration(
-                        song.get_duration() as f64
-                    )));
+                    row.set_first_attrib_text(Some(&song.get_artist_string()));
+                    row.set_duration(Some(&format_secs_as_duration(song.get_duration() as f64)));
 
                     row.set_quality_grade(song.get_quality_grade());
                     let end_widget = RowAddButtons::new(&library);
                     end_widget.set_song(Some(song));
-                    row.set_end_widget(Some(&end_widget.into()));
+                    row.set_end_widget(&end_widget.into());
                     row.into()
                 }
             ),
         );
 
-        // Setup click action
+        // Setup double-click action
         self.imp().content.connect_row_activated(clone!(
             #[weak(rename_to = this)]
             self,
             move |_, row| {
                 let idx = row.index() as u32;
-                glib::spawn_future_local(clone!(
-                    #[weak]
-                    this,
-                    async move {
-                        if let (Some(album), Some(library)) = (this.album(), this.library())
-                            && let Err(e) = library
-                                .queue_album(album.clone(), true, true, Some(idx))
-                                .await
-                        {
-                            dbg!(e);
-                        }
+                let action = RowDoublePressAction::from_settings();
+                if let Some(window) = this.imp().window.upgrade() {
+                    window.maybe_show_double_press_toast();
+                }
+                match action {
+                    RowDoublePressAction::DoNothing => {}
+                    RowDoublePressAction::Append
+                    | RowDoublePressAction::AppendAndPlay
+                    | RowDoublePressAction::Replace
+                    | RowDoublePressAction::ReplaceAndPlay => {
+                        let song = this
+                            .imp()
+                            .song_list
+                            .item(idx)
+                            .and_downcast::<Song>()
+                            .expect("The item has to be a `common::Song`.");
+                        let replace = matches!(
+                            action,
+                            RowDoublePressAction::Replace | RowDoublePressAction::ReplaceAndPlay
+                        );
+                        // Append-and-play starts playback at the appended song, which
+                        // lands at the end of the (not-yet-extended) queue.
+                        let play_from = match action {
+                            RowDoublePressAction::AppendAndPlay => {
+                                Some(this.library().unwrap().queue_len())
+                            }
+                            RowDoublePressAction::ReplaceAndPlay => Some(0),
+                            _ => None,
+                        };
+                        glib::spawn_future_local(clone!(
+                            #[weak]
+                            this,
+                            async move {
+                                if let Some(library) = this.library()
+                                    && let Err(e) =
+                                        library.queue_songs(&[song], replace, play_from).await
+                                {
+                                    dbg!(e);
+                                }
+                            }
+                        ));
                     }
-                ));
+                    RowDoublePressAction::ReplaceViewAndPlay => {
+                        glib::spawn_future_local(clone!(
+                            #[weak]
+                            this,
+                            async move {
+                                if let (Some(album), Some(library)) = (this.album(), this.library())
+                                    && let Err(e) =
+                                        library.queue_album(album.clone(), true, Some(idx)).await
+                                {
+                                    dbg!(e);
+                                }
+                            }
+                        ));
+                    }
+                }
             }
         ));
     }
@@ -1151,19 +1261,23 @@ impl AlbumContentView {
 
     async fn schedule_cover(&self, overwrite: bool) {
         self.imp().cover.show_spinner();
-        if let Some(info) = self.album().as_ref().map(|a| a.get_info()) {
+        if let Some(info) = self
+            .album()
+            .as_ref()
+            .map(|a| a.get_inner_arc().first_song.clone())
+        {
             let cache = self.imp().cache.get().unwrap().clone();
             // Remove existing entry in SQLite, which might be an empty "do not retry" placeholder.
             if overwrite {
                 // Don't notify, else we'd interrupt the spinner
                 if let Err(e) = cache
-                    .clear_album_cover(&info.folder_uri, self.uris(), false)
+                    .clear_album_cover(strip_filename_linux(&info.file), self.uris(), false)
                     .await
                 {
                     self.show_cache_error("Couldn't clear cover", e);
                 }
             }
-            match cache.get_album_cover(info, false).await {
+            match cache.get_song_cover(info, false).await {
                 Ok(Some(tex)) => {
                     self.update_cover(tex);
                 }
@@ -1206,10 +1320,10 @@ impl AlbumContentView {
             let genres_stack = self.imp().genres_stack.get();
             let window = self.imp().window.upgrade().unwrap();
             genres
-                .iter()
+                .into_iter()
                 .map(|genre| {
                     TagButton::new(
-                        &Tag::new(genre.clone(), None, None, false, false),
+                        &Tag::new(genre.to_owned(), None, None, false, false),
                         &genres_box,
                         &window,
                         |_| {},
@@ -1283,15 +1397,16 @@ impl AlbumContentView {
                     Ok(()) => {
                         if song_list.n_items() > 0 {
                             stack.show_content();
+
                             // Previously used the first song because the initial AlbumInfo lacked
                             // artist MusicBrainz IDs. Album fetching now includes those IDs, so
                             // use the album artists rather than the first track's artists.
-                            album
-                                .get_artists()
-                                .iter()
+                            let first_song = song_list.item(0).and_downcast::<Song>().unwrap();
+                            ArtistInfo::copy_from_song(first_song.get_inner_arc(), true)
+                                .into_iter()
                                 .map(|info| {
                                     ArtistTagButton::new(
-                                        &Artist::from(info.clone()),
+                                        info.into(),
                                         this.imp().cache.get().unwrap().clone(),
                                         &this.imp().window.upgrade().unwrap(),
                                     )

@@ -1257,9 +1257,13 @@ impl EuphonicaWindow {
 
         // Construct all views first
         win.restore_window_state();
-        win.imp()
-            .queue_view
-            .setup(app.get_player(), app.get_cache(), &client_state, &win);
+        win.imp().queue_view.setup(
+            app.get_player(),
+            app.get_library(),
+            app.get_cache(),
+            &client_state,
+            &win,
+        );
         win.imp()
             .recent_view
             .setup(app.get_library(), app.get_player(), app.get_cache(), &win);
@@ -1274,7 +1278,7 @@ impl EuphonicaWindow {
             .setup(app.get_library(), app.get_cache(), &win);
         win.imp()
             .folder_view
-            .setup(app.get_library(), app.get_cache());
+            .setup(app.get_library(), app.get_cache(), &win);
         win.imp().dyn_playlist_view.setup(
             app.get_library(),
             app.get_cache(),
@@ -1472,6 +1476,20 @@ impl EuphonicaWindow {
     pub fn send_simple_toast(&self, title: &str, timeout: u32) {
         let toast = adw::Toast::builder().title(title).timeout(timeout).build();
         self.imp().toast_overlay.add_toast(toast);
+    }
+
+    /// Shows a one-time toast pointing users to the row double-press setting.
+    /// Longer timeout than regular toasts since it needs a moment to digest.
+    pub fn maybe_show_double_press_toast(&self) {
+        let state = settings_manager().child("state");
+        if state.boolean("row-double-press-toast-shown") {
+            return;
+        }
+        let _ = state.set_boolean("row-double-press-toast-shown", true);
+        self.send_simple_toast(
+            &gettextrs::gettext("Control double-press behaviour in Preferences"),
+            6,
+        );
     }
 
     fn update_window_title(&self, player: &Player) {

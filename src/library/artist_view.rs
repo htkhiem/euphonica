@@ -167,7 +167,7 @@ impl ArtistView {
                     if !genres.is_empty() {
                         this.imp().genres_filter.set_filter_func(move |obj| {
                             let artist = obj.downcast_ref::<Artist>().unwrap();
-                            !artist.get_info().genres.is_disjoint(&genres)
+                            !artist.get_inner().genres.is_disjoint(&genres)
                         });
                         this.imp()
                             .genres_filter
@@ -462,7 +462,8 @@ impl ArtistView {
         tags_model.set_incremental(true);
         let sort_model = gtk::SortListModel::new(Some(tags_model), Some(self.imp().sorter.clone()));
         sort_model.set_incremental(true);
-        let sel_model = SingleSelection::new(Some(sort_model));
+        // NoSelection hides the default selection highlight. Still lets you select via activating :)
+        let sel_model = gtk::NoSelection::new(Some(sort_model));
 
         let grid_view = self.imp().grid_view.get();
         grid_view.set_model(Some(&sel_model));

@@ -1,70 +1,51 @@
-use gtk::gdk::Texture;
 use gtk::glib;
 use gtk::prelude::*;
 use gtk::subclass::prelude::*;
+use itertools::Itertools;
 use mpd::Query;
 use mpd::Term;
-use rustc_hash::FxHashSet;
 use std::cell::{OnceCell, RefCell};
+use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use time::Date;
 
-use crate::common::split_genre_tag;
+use crate::common::parse_date;
 use crate::common::tags;
 use crate::utils::mpd_args_to_string;
 use crate::utils::strip_filename_linux;
 
-use super::{ArtistInfo, QualityGrade, SongInfo, Stickers, artists_to_string, parse_mb_artist_tag};
+use super::{QualityGrade, Stickers};
 
-// This is a model class for queue view displays.
-// It does not contain any actual song in terms of data.
-
+/// From v1.0 the AlbumInfo class is just a "reader class", in that it simply keeps a strong ref to
+/// one or more mpd::song::Song objects from which it reads its data.
 #[derive(Debug, Clone, PartialEq)]
 pub struct AlbumInfo {
-    // TODO: Might want to refactor to Into<Cow<'a, str>>
-    pub title: String,
-    pub albumsort: Option<String>,
-    // Example track-level URI, acquired from the first song found with this album's tag.
-    // This facilitates falling back to embedded covers in case there's no cover file in the folder.
-    pub example_uri: String,
-    // The above but with filename removed, for looking up folder-level covers.
-    pub folder_uri: String,
-    pub artists: Vec<ArtistInfo>, // parse from AlbumArtist tag please, not Artist.
-    pub albumartist: Option<String>,
-    pub albumartistsort: Option<String>,
-    pub genres: FxHashSet<String>,
-    pub cover: Option<Texture>,
-    pub release_date: Option<Date>,
-    pub date_tag: Option<String>,
-    pub quality_grade: QualityGrade,
-    pub mbid: Option<String>,
+    pub first_song: Arc<mpd::song::Song>, // keep a ref straight to the first one to reduce indirection
+    pub songs: Vec<Arc<mpd::song::Song>>,
 }
 
 impl AlbumInfo {
-    pub fn new(
-        example_uri: &str,
-        title: &str,
-        albumsort: Option<&str>,
-        artist_tag: Option<&str>,
-        albumartistsort: Option<&str>,
-        genres: FxHashSet<String>,
-        artists: Vec<ArtistInfo>,
-        quality_grade: QualityGrade,
-    ) -> Self {
-        Self {
-            example_uri: example_uri.to_owned(),
-            folder_uri: strip_filename_linux(example_uri).to_owned(),
-            albumsort: albumsort.map(|s| s.to_owned()),
-            artists,
-            albumartist: artist_tag.map(str::to_owned),
-            albumartistsort: albumartistsort.map(str::to_owned),
-            genres,
-            title: title.to_owned(),
-            cover: None,
-            release_date: None,
-            date_tag: None,
-            quality_grade,
-            mbid: None,
+    /// Build a thin Album wrapper around mpd::song::Song structs.
+    /// Note that the FIRST song in the list MUST have an album tag.
+    /// Most info will be read off the first song. Some will be from all songs.
+    pub fn from_mpd_songs(songs: Vec<Arc<mpd::song::Song>>) -> Option<Self> {
+        assert!(!songs.is_empty());
+        if songs[0].album.is_some() {
+            Some(Self {
+                first_song: songs[0].clone(),
+                songs,
+            })
+        } else {
+            None
         }
+    }
+
+    pub fn get_folder_uri(&self) -> &str {
+        strip_filename_linux(&self.first_song.file)
+    }
+
+    pub fn get_title(&self) -> &str {
+        self.first_song.album.as_deref().unwrap_or("")
     }
 
     /// Get something to serve as this album's internal ID for
@@ -72,7 +53,21 @@ impl AlbumInfo {
     /// If an album has a MusicBrainz ID, use it. If not, fall
     /// back to their folder URI.
     pub fn get_comp_id(&self) -> &str {
-        self.mbid.as_deref().unwrap_or(self.folder_uri.as_ref())
+        self.first_song
+            .mbid
+            .as_deref()
+            .unwrap_or_else(|| self.get_folder_uri())
+    }
+
+    pub fn get_date(&self) -> Option<&str> {
+        self.first_song
+            .date
+            .as_deref()
+            .or(self.first_song.original_date.as_deref())
+    }
+
+    pub fn get_mbid(&self) -> Option<&str> {
+        self.first_song.album_mbid.as_deref()
     }
 
     /// Get MPD filter expression to find all songs by this album.
@@ -82,90 +77,56 @@ impl AlbumInfo {
     /// See https://github.com/jcorporation/mpd-stickers/discussions/10.
     pub fn get_filter_expression(&self) -> String {
         let mut q = Query::new();
-        if let Some(mbid) = self.mbid.as_deref() {
+        let song = &self.first_song;
+        if let Some(mbid) = song.mbid.as_deref() {
             q.and(Term::Tag(tags::ALBUM_MBID.into()), mbid.to_owned());
         } else {
             q.and(
                 Term::Tag(tags::ALBUMARTIST.into()),
-                self.albumartist.as_deref().unwrap_or(""),
+                // For now only key by the first
+                song.albumartists.get(0).map(|s| s.as_str()).unwrap_or(""),
             );
-            q.and(Term::Tag(tags::ALBUM.into()), &self.title);
             q.and(
-                Term::Tag(tags::DATE.into()),
-                self.date_tag.as_deref().unwrap_or(""),
+                Term::Tag(tags::ALBUM.into()),
+                song.album.as_deref().unwrap_or(""),
             );
+            if let Some(date) = song.date.as_deref() {
+                q.and(Term::Tag(tags::DATE.into()), date);
+            } else if let Some(date) = song.original_date.as_deref() {
+                q.and(Term::Tag(tags::ORIGINAL_DATE.into()), date);
+            }
         }
         mpd_args_to_string(&q)
     }
 
-    /// Add artists from more artist tags, separated from existing ones by simple commas.
-    pub fn add_artists_from_string(&mut self, tag: &str) {
-        if let Some(existing_tag) = &mut self.albumartist {
-            existing_tag.push_str(", ");
-            existing_tag.push_str(tag);
-        } else {
-            self.albumartist = Some(tag.to_owned());
-        }
+    /// Only comes from the first song.
+    pub fn albumartists(&self) -> impl Iterator<Item = &str> {
+        self.first_song.albumartists.iter().map(|s| s.as_str())
+    }
 
-        let mut new_artists: Vec<ArtistInfo> = parse_mb_artist_tag(tag)
+    /// Only comes from the first song.
+    pub fn albumartistsorts(&self) -> impl Iterator<Item = &str> {
+        self.first_song.albumartistsorts.iter().map(|s| s.as_str())
+    }
+
+    /// Should be cached
+    pub fn get_unique_genres(&self) -> impl Iterator<Item = &str> {
+        self.songs
             .iter()
-            .map(|s| ArtistInfo::new(s, None, false, true))
-            .collect();
-
-        self.artists.append(&mut new_artists);
+            .map(|song| song.genres.iter().map(|s| s.as_str()))
+            .flatten()
+            .unique()
     }
 
-    pub fn get_artist_str(&self) -> Option<String> {
-        artists_to_string(&self.artists)
-    }
-
-    pub fn get_artist_tag(&self) -> Option<&str> {
-        self.albumartist.as_deref()
-    }
-
-    pub fn add_genres_from_tags(&mut self, tags: &[String]) {
-        // This can get heavy so be sure to run on another thread.
-        for genre_tag in tags {
-            for genre in split_genre_tag(&genre_tag) {
-                let _ = self.genres.insert(genre.to_owned());
-            }
-        }
-    }
-
-    pub fn get_example_uri(&self) -> &str {
-        &self.example_uri
-    }
-}
-
-impl Default for AlbumInfo {
-    fn default() -> Self {
-        AlbumInfo {
-            title: "".to_owned(),
-            albumsort: None,
-            example_uri: "".to_owned(),
-            folder_uri: "".to_owned(),
-            artists: Vec::with_capacity(0),
-            albumartist: None,
-            albumartistsort: None,
-            genres: FxHashSet::default(),
-            cover: None,
-            release_date: None,
-            date_tag: None,
-            quality_grade: QualityGrade::Unknown,
-            mbid: None,
-        }
-    }
-}
-
-impl From<SongInfo> for AlbumInfo {
-    fn from(song_info: SongInfo) -> Self {
-        song_info.into_album_info().unwrap()
+    pub fn example_uri(&self) -> &str {
+        &self.first_song.file
     }
 }
 
 mod imp {
     use super::*;
     use glib::{ParamSpec, ParamSpecChar, ParamSpecObject, ParamSpecString};
+    use once_arc::OnceArc;
     use once_cell::sync::Lazy;
 
     /// The GObject Song wrapper.
@@ -180,7 +141,11 @@ mod imp {
     /// This is to facilitate fallback between folder cover and embedded track cover.
     #[derive(Default, Debug)]
     pub struct Album {
-        pub info: OnceCell<AlbumInfo>,
+        pub info: OnceArc<AlbumInfo>,
+        pub albumartists_string: OnceCell<Option<String>>,
+        pub albumartistsorts_string: OnceCell<Option<String>>,
+        pub date: OnceCell<Option<Date>>,
+        pub genres: OnceCell<Vec<String>>,
         pub stickers: RefCell<Stickers>,
     }
 
@@ -191,7 +156,11 @@ mod imp {
 
         fn new() -> Self {
             Self {
-                info: OnceCell::new(),
+                info: OnceArc::new(),
+                albumartists_string: OnceCell::new(),
+                albumartistsorts_string: OnceCell::new(),
+                date: OnceCell::new(),
+                genres: OnceCell::new(),
                 stickers: RefCell::new(Stickers::default()),
             }
         }
@@ -225,7 +194,7 @@ mod imp {
                 "uri" => obj.get_folder_uri().to_value(),
                 "title" => obj.get_title().to_value(),
                 "sortable-title" => obj.get_sortable_title().to_value(),
-                "artist" => obj.get_artist_tag().to_value(),
+                "artist" => obj.get_albumartists_str().to_value(),
                 "rating" => obj.get_rating().unwrap_or(-1).to_value(),
                 "release-date" => glib::BoxedAnyObject::new(obj.get_release_date()).to_value(),
                 "quality-grade" => obj.get_quality_grade().to_icon_name().to_value(),
@@ -257,62 +226,102 @@ glib::wrapper! {
 
 impl Album {
     // ALL of the getters below require that the info field be initialised!
-    pub fn get_info(&self) -> &AlbumInfo {
-        self.imp().info.get().unwrap()
+    pub fn get_inner(&self) -> &AlbumInfo {
+        self.imp().info.get(Ordering::Relaxed).unwrap()
+    }
+
+    pub fn get_inner_arc(&self) -> Arc<AlbumInfo> {
+        self.imp().info.load(Ordering::Relaxed).unwrap()
     }
 
     pub fn get_folder_uri(&self) -> &str {
-        &self.get_info().folder_uri
+        &self.get_inner().get_folder_uri()
     }
 
     pub fn get_example_uri(&self) -> &str {
-        &self.get_info().example_uri
+        &self.get_inner().example_uri()
     }
 
     pub fn get_title(&self) -> &str {
-        &self.get_info().title
+        &self.get_inner().get_title()
     }
 
     pub fn get_sortable_title(&self) -> &str {
-        let info = self.get_info();
-        info.albumsort.as_deref().unwrap_or(info.title.as_str())
+        let inner = self.get_inner();
+        inner
+            .first_song
+            .albumsort
+            .as_deref()
+            .unwrap_or_else(|| inner.get_title())
     }
 
-    pub fn get_artists(&self) -> &[ArtistInfo] {
-        &self.get_info().artists
+    pub fn get_albumartists(&self) -> impl Iterator<Item = &str> {
+        self.get_inner().albumartists()
     }
 
-    pub fn get_genres(&self) -> &FxHashSet<String> {
-        &self.get_info().genres
+    pub fn get_albumartistsorts(&self) -> impl Iterator<Item = &str> {
+        self.get_inner().albumartistsorts()
     }
 
-    /// Get the original albumartist tag before any parsing.
-    pub fn get_artist_tag(&self) -> Option<&str> {
-        self.get_info().albumartist.as_deref()
+    /// Cached, hence no longer impl Iterator.
+    pub fn get_genres(&self) -> Vec<&str> {
+        self.imp()
+            .genres
+            .get_or_init(|| {
+                self.get_inner()
+                    .get_unique_genres()
+                    .map(|s| s.to_owned())
+                    .collect()
+            })
+            .iter()
+            .map(|s| s.as_str())
+            .collect()
     }
 
-    /// Get the original ALBUMARTISTSORT tag.
+    /// Concatenated version, cached for sorting and filtering
+    pub fn get_albumartists_str(&self) -> Option<&str> {
+        self.imp()
+            .albumartists_string
+            .get_or_init(|| {
+                let aa: Vec<&str> = self.get_inner().albumartists().collect();
+                if aa.is_empty() {
+                    None
+                } else {
+                    Some(aa.join(", "))
+                }
+            })
+            .as_deref()
+    }
+
+    /// Get the original ALBUMARTISTSORT tags.
     pub fn get_sortable_artist_tag(&self) -> Option<&str> {
-        let info = self.get_info();
-        if let Some(albumartistsort) = info.albumartistsort.as_deref() {
-            Some(albumartistsort)
-        } else if let Some(albumartist) = info.albumartist.as_deref() {
-            Some(albumartist)
-        } else {
-            None
-        }
+        self.imp()
+            .albumartistsorts_string
+            .get_or_init(|| {
+                let aa: Vec<&str> = self.get_inner().albumartistsorts().collect();
+                if aa.is_empty() {
+                    None
+                } else {
+                    Some(aa.join(", "))
+                }
+            })
+            .as_deref()
     }
 
     pub fn get_mbid(&self) -> Option<&str> {
-        self.get_info().mbid.as_deref()
+        self.get_inner().get_mbid()
     }
 
+    /// Cached due to nontrivial parsing
     pub fn get_release_date(&self) -> Option<Date> {
-        self.get_info().release_date
+        *self
+            .imp()
+            .date
+            .get_or_init(|| self.get_inner().get_date().map(parse_date).flatten())
     }
 
     pub fn get_quality_grade(&self) -> QualityGrade {
-        self.get_info().quality_grade
+        QualityGrade::of_mpd_song(self.get_inner().first_song.as_ref())
     }
 
     pub fn get_rating(&self) -> Option<i8> {
@@ -343,7 +352,7 @@ impl Album {
     /// Checks if the given genre substring is in any of this album's genre strings.
     /// Genre-less albums always return false.
     pub fn has_genre(&self, genre_substr: &str) -> bool {
-        self.get_genres().contains(genre_substr)
+        self.get_genres().contains(&genre_substr)
     }
 }
 
@@ -356,7 +365,7 @@ impl Default for Album {
 impl From<AlbumInfo> for Album {
     fn from(info: AlbumInfo) -> Self {
         let res = glib::Object::builder::<Self>().build();
-        let _ = res.imp().info.set(info);
+        let _ = res.imp().info.store(Arc::new(info), Ordering::Release);
         res
     }
 }
