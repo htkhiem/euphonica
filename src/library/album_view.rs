@@ -576,7 +576,8 @@ impl AlbumView {
 
         let sort_model = gtk::SortListModel::new(Some(tags_model), Some(self.imp().sorter.clone()));
         sort_model.set_incremental(true);
-        let sel_model = SingleSelection::new(Some(sort_model));
+        // NoSelection hides the default selection highlight. Still lets you select via activating :)
+        let sel_model = gtk::NoSelection::new(Some(sort_model));
 
         let grid_view = self.imp().grid_view.get();
         grid_view.set_model(Some(&sel_model));

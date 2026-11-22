@@ -191,18 +191,20 @@
                         <property name="content">
                           <object class="AdwMultiLayoutView" id="rediscover_multi_layout_view">
                             <child type="rediscover-albums">
-                              <object class="AdwWrapBox" id="rediscover_albums">
-                                <property name="width-request">240</property>
-                                <property name="justify">spread</property>
-                                <property name="align">0.5</property>
+                              <object class="GtkGridView" id="rediscover_albums">
+                                <property name="single-click-activate">true</property>
+                                <style>
+                                  <class name="no-bg"/>
+                                </style>
                               </object>
                             </child>
 
                             <child type="rediscover-artists">
-                              <object class="AdwWrapBox" id="rediscover_artists">
-                                <property name="width-request">240</property>
-                                <property name="justify">spread</property>
-                                <property name="align">0.5</property>
+                              <object class="GtkGridView" id="rediscover_artists">
+                                <property name="single-click-activate">true</property>
+                                <style>
+                                  <class name="no-bg"/>
+                                </style>
                               </object>
                             </child>
 
@@ -370,9 +372,11 @@
                                 <property name="icon-name">library-music-symbolic</property>
                                 <property name="title">Recent Albums</property>
                                 <property name="child">
-                                  <object class="AdwWrapBox" id="recent_albums">
-                                    <property name="justify">spread</property>
-                                    <property name="align">0.5</property>
+                                  <object class="GtkGridView" id="recent_albums">
+                                    <property name="single-click-activate">true</property>
+                                    <style>
+                                      <class name="no-bg"/>
+                                    </style>
                                   </object>
                                 </property>
                               </object>
@@ -384,9 +388,11 @@
                                 <property name="icon-name">music-artist-symbolic</property>
                                 <property name="title">Recent Artists</property>
                                 <property name="child">
-                                  <object class="AdwWrapBox" id="recent_artists">
-                                    <property name="justify">spread</property>
-                                    <property name="align">0.5</property>
+                                  <object class="GtkGridView" id="recent_artists">
+                                    <property name="single-click-activate">true</property>
+                                    <style>
+                                      <class name="no-bg"/>
+                                    </style>
                                   </object>
                                 </property>
                               </object>
