@@ -13,6 +13,15 @@
             <setter object="rediscover_multi_layout_view" property="layout-name">wide</setter>
           </object>
         </child>
+        <child>
+          <object class="AdwBreakpoint">
+            <condition>max-width: 500px</condition>
+            <!-- <setter object="multi_layout_view" property="layout-name">narrow</setter> -->
+            <setter object="rediscover_multi_layout_view" property="layout-name">narrow</setter>
+            <setter object="rediscover_albums" property="orientation">0</setter>
+            <setter object="rediscover_artists" property="orientation">0</setter>
+          </object>
+        </child>
 
         <property name="child">
           <object class="AdwToolbarView">
@@ -252,7 +261,7 @@
                               </object>
                             </child>
 
-                            <!-- <child>
+                            <child>
                               <object class="AdwLayout">
                                 <property name="name">narrow</property>
                                 <child>
@@ -266,7 +275,7 @@
                                         <property name="hexpand">true</property>
                                         <property name="inner">
                                           <object class="GtkScrolledWindow">
-                                            <property name="hscrollbar-policy">automatic</property>
+                                            <property name="hscrollbar-policy">external</property>
                                             <property name="vscrollbar-policy">never</property>
                                             <property name="propagate-natural-width">true</property>
                                             <property name="has-frame">false</property>
@@ -288,7 +297,7 @@
                                         <property name="hexpand">true</property>
                                         <property name="inner">
                                           <object class="GtkScrolledWindow">
-                                            <property name="hscrollbar-policy">automatic</property>
+                                            <property name="hscrollbar-policy">external</property>
                                             <property name="vscrollbar-policy">never</property>
                                             <property name="propagate-natural-width">true</property>
                                             <property name="has-frame">false</property>
@@ -305,7 +314,7 @@
                                   </object>
                                 </child>
                               </object>
-                            </child> -->
+                            </child>
                           </object>
                         </property>
                       </object>

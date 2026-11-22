@@ -253,12 +253,17 @@ fn setup_album_gridview(
     model: gio::ListStore,
     cache: Rc<Cache>,
     library: &Library,
+    max_cols: Option<u32>,
     win: &EuphonicaWindow,
 ) {
-    let settings = utils::settings_manager().child("ui");
     let sel_model = gtk::NoSelection::new(Some(model));
     view.set_model(Some(&sel_model));
-    settings.bind("max-columns", view, "max-columns").build();
+    if let Some(max_cols) = max_cols {
+        view.set_max_columns(max_cols);
+    } else {
+        let settings = utils::settings_manager().child("ui");
+        settings.bind("max-columns", view, "max-columns").build();
+    }
 
     let factory = SignalListItemFactory::new();
     factory.connect_setup(clone!(
@@ -328,14 +333,17 @@ fn setup_artist_gridview(
     view: &gtk::GridView,
     model: gio::ListStore,
     cache: Rc<Cache>,
-    library: &Library,
+    max_cols: Option<u32>,
     win: &EuphonicaWindow,
 ) {
-    let settings = utils::settings_manager().child("ui");
     let sel_model = gtk::NoSelection::new(Some(model));
+    if let Some(max_cols) = max_cols {
+        view.set_max_columns(max_cols);
+    } else {
+        let settings = utils::settings_manager().child("ui");
+        settings.bind("max-columns", view, "max-columns").build();
+    }
     view.set_model(Some(&sel_model));
-    settings.bind("max-columns", view, "max-columns").build();
-
     let factory = SignalListItemFactory::new();
     factory.connect_setup(clone!(
         #[weak]
@@ -436,11 +444,40 @@ impl RecentView {
                     }
                 ),
             )));
-        setup_album_gridview(&self.imp().rediscover_albums, self.imp().rediscover_albums_list.clone(), cache.clone(), library, window);
-        setup_album_gridview(&self.imp().recent_albums, self.imp().recent_albums_list.clone(), cache.clone(), library, window);
 
-        setup_artist_gridview(&self.imp().rediscover_artists, self.imp().rediscover_artists_list.clone(), cache.clone(), library, window);
-        setup_artist_gridview(&self.imp().recent_artists, self.imp().recent_artists_list.clone(), cache.clone(), library, window);
+        // Rediscover gridviews are hardcoded to 20 cols max.
+        // This is because the narrow layout lays them out over a single row.
+        setup_album_gridview(
+            &self.imp().rediscover_albums,
+            self.imp().rediscover_albums_list.clone(),
+            cache.clone(),
+            library,
+            Some(20),
+            window,
+        );
+        setup_album_gridview(
+            &self.imp().recent_albums,
+            self.imp().recent_albums_list.clone(),
+            cache.clone(),
+            library,
+            None,
+            window,
+        );
+
+        setup_artist_gridview(
+            &self.imp().rediscover_artists,
+            self.imp().rediscover_artists_list.clone(),
+            cache.clone(),
+            Some(20),
+            window,
+        );
+        setup_artist_gridview(
+            &self.imp().recent_artists,
+            self.imp().recent_artists_list.clone(),
+            cache.clone(),
+            None,
+            window,
+        );
 
         self.setup_recent_songs(cache);
     }
