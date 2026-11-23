@@ -47,7 +47,6 @@
                                     <style>
                                       <class name="album-sort-dropdown"/>
                                     </style>
-                                    <property name="model">album_sort_by_model</property>
                                     <layout>
                                       <property name="column">1</property>
                                       <property name="row">0</property>
@@ -78,7 +77,6 @@
                                     <style>
                                       <class name="album-sort-dropdown"/>
                                     </style>
-                                    <property name="model">album_sort_by_model</property>
                                     <layout>
                                       <property name="column">1</property>
                                       <property name="row">1</property>
@@ -109,7 +107,6 @@
                                     <style>
                                       <class name="album-sort-dropdown"/>
                                     </style>
-                                    <property name="model">album_sort_by_model</property>
                                     <layout>
                                       <property name="column">1</property>
                                       <property name="row">2</property>
@@ -251,13 +248,4 @@
       </object>
     </child>
   </template>
-  <!-- Rust code matches by index, see AlbumSortOrder::ALL. -->
-  <object class="GtkStringList" id="album_sort_by_model">
-    <items>
-      <item translatable="yes">Album Title</item>
-      <item>AlbumArtist</item>  <!-- Don't translate this as this is referring to the tag itself -->
-      <item translatable="yes">Release Date</item>
-      <item translatable="yes">Rating</item>
-    </items>
-  </object>
 </interface>

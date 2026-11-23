@@ -1,4 +1,5 @@
 use gtk::{Ordering, gio, gio::prelude::SettingsExt};
+use strum_macros::{Display, EnumMessage, EnumString, VariantArray};
 
 use crate::{
     common::Album,
@@ -11,11 +12,18 @@ pub const ALBUM_SORT_SETTINGS: [(&str, &str); 3] = [
     ("sort-by-3", "sort-direction-3"),
 ];
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// Variants are in the order of the sort-by dropdown items.
+/// `serialize` is the nick in the gschema's `io.github.htkhiem.Euphonica.sortby` enum,
+/// and `to_string` is the dropdown label.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Display, EnumMessage, EnumString, VariantArray)]
 pub enum AlbumSortCriterion {
-    AlbumArtist,
+    #[strum(serialize = "album-title", to_string = "Album Title")]
     AlbumTitle,
+    #[strum(serialize = "album-artist", to_string = "AlbumArtist")]
+    AlbumArtist,
+    #[strum(serialize = "release-date", to_string = "Release Date")]
     ReleaseDate,
+    #[strum(serialize = "rating", to_string = "Rating")]
     Rating,
 }
 
@@ -32,30 +40,6 @@ pub struct AlbumSortTier {
 }
 
 impl AlbumSortCriterion {
-    /// In the order of the sort-by dropdown items in album-view.ui.
-    pub const ALL: [Self; 4] = [
-        Self::AlbumTitle,
-        Self::AlbumArtist,
-        Self::ReleaseDate,
-        Self::Rating,
-    ];
-
-    /// The nick in the gschema's `io.github.htkhiem.Euphonica.sortby` enum.
-    pub fn nick(self) -> &'static str {
-        match self {
-            Self::AlbumTitle => "album-title",
-            Self::AlbumArtist => "album-artist",
-            Self::ReleaseDate => "release-date",
-            Self::Rating => "rating",
-        }
-    }
-
-    pub fn from_nick(nick: &str) -> Option<Self> {
-        Self::ALL
-            .into_iter()
-            .find(|criterion| criterion.nick() == nick)
-    }
-
     fn compare(
         self,
         a: &Album,
@@ -97,7 +81,7 @@ impl AlbumSortCriterion {
 
 pub fn album_sort_tiers(state: &gio::Settings) -> [Option<AlbumSortTier>; 3] {
     ALBUM_SORT_SETTINGS.map(|(sort_by, sort_direction)| {
-        let criterion = AlbumSortCriterion::from_nick(&state.string(sort_by))?;
+        let criterion = state.string(sort_by).parse().ok()?;
         let direction = if state.enum_(sort_direction) > 0 {
             SortDirection::Ascending
         } else {

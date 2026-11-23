@@ -7,6 +7,7 @@ use gtk::{
 };
 use std::cell::{OnceCell, RefCell};
 use std::{cell::Cell, cmp::Ordering, rc::Rc, sync::OnceLock};
+use strum::{EnumMessage, VariantArray};
 
 use super::{
     AlbumCell, AlbumContentView, Library, TagsFilter,
@@ -155,6 +156,10 @@ mod imp {
                     _ => Some("view-sort-descending-symbolic".to_value()),
                 })
                 .build();
+            let sort_by_model: gtk::StringList = AlbumSortCriterion::VARIANTS
+                .iter()
+                .map(ToString::to_string)
+                .collect();
             let tier_widgets = [
                 (self.sort_by.get(), self.reverse.get()),
                 (self.sort_by_2.get(), self.reverse_2.get()),
@@ -163,6 +168,7 @@ mod imp {
             for (setting_keys, (sort_by, reverse)) in
                 ALBUM_SORT_SETTINGS.into_iter().zip(tier_widgets)
             {
+                sort_by.set_model(Some(&sort_by_model));
                 constructed_bind_sort_tier(&state, setting_keys, &sort_by, &reverse);
             }
 
@@ -356,16 +362,15 @@ mod imp {
         state
             .bind(sort_by_key, sort_by, "selected")
             .mapping(|nick, _| {
-                let nick = nick.get::<String>()?;
-                let idx = AlbumSortCriterion::ALL
-                    .iter()
-                    .position(|criterion| criterion.nick() == nick)
-                    .map_or(gtk::INVALID_LIST_POSITION, |idx| idx as u32);
+                let idx = nick
+                    .get::<String>()?
+                    .parse::<AlbumSortCriterion>()
+                    .map_or(gtk::INVALID_LIST_POSITION, |criterion| criterion as u32);
                 Some(idx.to_value())
             })
             .set_mapping(|idx, _| {
-                let criterion = AlbumSortCriterion::ALL.get(idx.get::<u32>().ok()? as usize)?;
-                Some(criterion.nick().to_variant())
+                let criterion = AlbumSortCriterion::VARIANTS.get(idx.get::<u32>().ok()? as usize)?;
+                Some(criterion.get_serializations()[0].to_variant())
             })
             .build();
         state
