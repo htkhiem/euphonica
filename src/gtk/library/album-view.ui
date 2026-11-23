@@ -56,7 +56,6 @@
                                     </child>
                                     <child>
                                       <object class="GtkToggleButton" id="descending">
-                                        <property name="icon-name">view-sort-descending-symbolic</property>
                                         <property name="tooltip-text" translatable="yes">Sort descending</property>
                                       </object>
                                     </child>
@@ -90,7 +89,6 @@
                                     </child>
                                     <child>
                                       <object class="GtkToggleButton" id="descending_2">
-                                        <property name="icon-name">view-sort-descending-symbolic</property>
                                         <property name="tooltip-text" translatable="yes">Sort descending</property>
                                       </object>
                                     </child>
@@ -124,7 +122,6 @@
                                     </child>
                                     <child>
                                       <object class="GtkToggleButton" id="descending_3">
-                                        <property name="icon-name">view-sort-descending-symbolic</property>
                                         <property name="tooltip-text" translatable="yes">Sort descending</property>
                                       </object>
                                     </child>

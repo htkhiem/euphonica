@@ -147,15 +147,7 @@ mod imp {
             let library_settings = settings.child("library");
 
             // Setup sorting
-            let view_options_btn = self.view_options_btn.get();
-            state
-                .bind("sort-direction", &view_options_btn, "icon-name")
-                .get_only()
-                .mapping(|dir, _| match dir.get::<String>().unwrap().as_ref() {
-                    "asc" => Some("view-sort-ascending-symbolic".to_value()),
-                    _ => Some("view-sort-descending-symbolic".to_value()),
-                })
-                .build();
+            bind_sort_direction_icon(&state, "sort-direction", &self.view_options_btn.get());
             let sort_by_model: gtk::StringList = AlbumSortCriterion::VARIANTS
                 .iter()
                 .map(ToString::to_string)
@@ -351,6 +343,21 @@ mod imp {
         }
     }
 
+    fn bind_sort_direction_icon(
+        state: &gio::Settings,
+        sort_direction_key: &str,
+        widget: &impl IsA<glib::Object>,
+    ) {
+        state
+            .bind(sort_direction_key, widget, "icon-name")
+            .get_only()
+            .mapping(|dir, _| match dir.get::<String>().unwrap().as_ref() {
+                "asc" => Some("view-sort-ascending-symbolic".to_value()),
+                _ => Some("view-sort-descending-symbolic".to_value()),
+            })
+            .build();
+    }
+
     fn constructed_bind_sort_tier(
         state: &gio::Settings,
         (sort_by_key, sort_direction_key): (&str, &str),
@@ -373,6 +380,7 @@ mod imp {
                 Some(criterion.get_serializations()[0].to_variant())
             })
             .build();
+        bind_sort_direction_icon(state, sort_direction_key, descending);
         state
             .bind(sort_direction_key, descending, "active")
             .mapping(|dir, _| Some((dir.get::<String>()? == "desc").to_value()))
