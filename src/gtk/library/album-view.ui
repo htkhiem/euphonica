@@ -34,8 +34,7 @@
                                 <property name="column-spacing">12</property>
                                 <child>
                                   <object class="GtkLabel">
-                                    <property name="label" translatable="yes">Sort by</property>
-                                    <property name="xalign">0</property>
+                                    <property name="label">#1</property>
                                     <layout>
                                       <property name="column">0</property>
                                       <property name="row">0</property>
@@ -43,10 +42,24 @@
                                   </object>
                                 </child>
                                 <child>
-                                  <object class="GtkDropDown" id="sort_by">
+                                  <object class="GtkBox">
                                     <style>
-                                      <class name="album-sort-dropdown"/>
+                                      <class name="linked"/>
                                     </style>
+                                    <child>
+                                      <object class="GtkDropDown" id="sort_by">
+                                        <property name="hexpand">true</property>
+                                        <style>
+                                          <class name="album-sort-dropdown"/>
+                                        </style>
+                                      </object>
+                                    </child>
+                                    <child>
+                                      <object class="GtkToggleButton" id="descending">
+                                        <property name="icon-name">view-sort-descending-symbolic</property>
+                                        <property name="tooltip-text" translatable="yes">Sort descending</property>
+                                      </object>
+                                    </child>
                                     <layout>
                                       <property name="column">1</property>
                                       <property name="row">0</property>
@@ -54,18 +67,8 @@
                                   </object>
                                 </child>
                                 <child>
-                                  <object class="GtkCheckButton" id="reverse">
-                                    <property name="label" translatable="yes">Reverse</property>
-                                    <layout>
-                                      <property name="column">2</property>
-                                      <property name="row">0</property>
-                                    </layout>
-                                  </object>
-                                </child>
-                                <child>
                                   <object class="GtkLabel">
-                                    <property name="label" translatable="yes">Then by</property>
-                                    <property name="xalign">0</property>
+                                    <property name="label">#2</property>
                                     <layout>
                                       <property name="column">0</property>
                                       <property name="row">1</property>
@@ -73,10 +76,24 @@
                                   </object>
                                 </child>
                                 <child>
-                                  <object class="GtkDropDown" id="sort_by_2">
+                                  <object class="GtkBox">
                                     <style>
-                                      <class name="album-sort-dropdown"/>
+                                      <class name="linked"/>
                                     </style>
+                                    <child>
+                                      <object class="GtkDropDown" id="sort_by_2">
+                                        <property name="hexpand">true</property>
+                                        <style>
+                                          <class name="album-sort-dropdown"/>
+                                        </style>
+                                      </object>
+                                    </child>
+                                    <child>
+                                      <object class="GtkToggleButton" id="descending_2">
+                                        <property name="icon-name">view-sort-descending-symbolic</property>
+                                        <property name="tooltip-text" translatable="yes">Sort descending</property>
+                                      </object>
+                                    </child>
                                     <layout>
                                       <property name="column">1</property>
                                       <property name="row">1</property>
@@ -84,18 +101,8 @@
                                   </object>
                                 </child>
                                 <child>
-                                  <object class="GtkCheckButton" id="reverse_2">
-                                    <property name="label" translatable="yes">Reverse</property>
-                                    <layout>
-                                      <property name="column">2</property>
-                                      <property name="row">1</property>
-                                    </layout>
-                                  </object>
-                                </child>
-                                <child>
                                   <object class="GtkLabel">
-                                    <property name="label" translatable="yes">Finally by</property>
-                                    <property name="xalign">0</property>
+                                    <property name="label">#3</property>
                                     <layout>
                                       <property name="column">0</property>
                                       <property name="row">2</property>
@@ -103,21 +110,26 @@
                                   </object>
                                 </child>
                                 <child>
-                                  <object class="GtkDropDown" id="sort_by_3">
+                                  <object class="GtkBox">
                                     <style>
-                                      <class name="album-sort-dropdown"/>
+                                      <class name="linked"/>
                                     </style>
+                                    <child>
+                                      <object class="GtkDropDown" id="sort_by_3">
+                                        <property name="hexpand">true</property>
+                                        <style>
+                                          <class name="album-sort-dropdown"/>
+                                        </style>
+                                      </object>
+                                    </child>
+                                    <child>
+                                      <object class="GtkToggleButton" id="descending_3">
+                                        <property name="icon-name">view-sort-descending-symbolic</property>
+                                        <property name="tooltip-text" translatable="yes">Sort descending</property>
+                                      </object>
+                                    </child>
                                     <layout>
                                       <property name="column">1</property>
-                                      <property name="row">2</property>
-                                    </layout>
-                                  </object>
-                                </child>
-                                <child>
-                                  <object class="GtkCheckButton" id="reverse_3">
-                                    <property name="label" translatable="yes">Reverse</property>
-                                    <layout>
-                                      <property name="column">2</property>
                                       <property name="row">2</property>
                                     </layout>
                                   </object>

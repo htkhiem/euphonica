@@ -43,11 +43,11 @@ mod imp {
         #[template_child]
         pub sort_by_3: TemplateChild<gtk::DropDown>,
         #[template_child]
-        pub reverse: TemplateChild<gtk::CheckButton>,
+        pub descending: TemplateChild<gtk::ToggleButton>,
         #[template_child]
-        pub reverse_2: TemplateChild<gtk::CheckButton>,
+        pub descending_2: TemplateChild<gtk::ToggleButton>,
         #[template_child]
-        pub reverse_3: TemplateChild<gtk::CheckButton>,
+        pub descending_3: TemplateChild<gtk::ToggleButton>,
         #[template_child]
         pub search_btn: TemplateChild<gtk::ToggleButton>,
         #[template_child]
@@ -161,15 +161,15 @@ mod imp {
                 .map(ToString::to_string)
                 .collect();
             let tier_widgets = [
-                (self.sort_by.get(), self.reverse.get()),
-                (self.sort_by_2.get(), self.reverse_2.get()),
-                (self.sort_by_3.get(), self.reverse_3.get()),
+                (self.sort_by.get(), self.descending.get()),
+                (self.sort_by_2.get(), self.descending_2.get()),
+                (self.sort_by_3.get(), self.descending_3.get()),
             ];
-            for (setting_keys, (sort_by, reverse)) in
+            for (setting_keys, (sort_by, descending)) in
                 ALBUM_SORT_SETTINGS.into_iter().zip(tier_widgets)
             {
                 sort_by.set_model(Some(&sort_by_model));
-                constructed_bind_sort_tier(&state, setting_keys, &sort_by, &reverse);
+                constructed_bind_sort_tier(&state, setting_keys, &sort_by, &descending);
             }
 
             self.sorter.set_sort_func(clone!(
@@ -355,7 +355,7 @@ mod imp {
         state: &gio::Settings,
         (sort_by_key, sort_direction_key): (&str, &str),
         sort_by: &gtk::DropDown,
-        reverse: &gtk::CheckButton,
+        descending: &gtk::ToggleButton,
     ) {
         // Failure to get mapping would make GSettings show the key's default instead,
         // so a value without a dropdown item (e.g. `filename`) clears the selection.
@@ -374,10 +374,10 @@ mod imp {
             })
             .build();
         state
-            .bind(sort_direction_key, reverse, "active")
+            .bind(sort_direction_key, descending, "active")
             .mapping(|dir, _| Some((dir.get::<String>()? == "desc").to_value()))
-            .set_mapping(|reverse, _| {
-                let dir = if reverse.get::<bool>().ok()? {
+            .set_mapping(|descending, _| {
+                let dir = if descending.get::<bool>().ok()? {
                     "desc"
                 } else {
                     "asc"
