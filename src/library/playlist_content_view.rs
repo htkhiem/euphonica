@@ -295,7 +295,7 @@ mod imp {
                 move |sel_model, _, _| {
                     // TODO: this can be slow, might consider redesigning
                     let n_sel = sel_model.selection().size();
-                    if n_sel == 0 || (n_sel as u32) == sel_model.model().unwrap().n_items() {
+                    if n_sel == 0 || (n_sel as u32) == sel_model.n_items() {
                         this.selecting_all.replace(true);
                         this.replace_queue_text.set_label("Play all");
                         this.append_queue_text.set_label("Queue all");

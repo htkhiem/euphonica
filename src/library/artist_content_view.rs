@@ -616,7 +616,7 @@ mod imp {
             let sel_model = &self.song_sel_model;
             // TODO: self can be slow, might consider redesigning
             let n_sel = sel_model.selection().size();
-            if n_sel == 0 || (n_sel as u32) == sel_model.model().unwrap().n_items() {
+            if n_sel == 0 || (n_sel as u32) == sel_model.n_items() {
                 self.selecting_all.replace(true);
                 self.replace_queue_text.set_label("Play all");
                 self.append_queue_text.set_label("Queue all");

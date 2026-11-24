@@ -297,32 +297,33 @@ impl Library {
         self.player().queue().n_items()
     }
 
-    /// Queue specific songs
+    /// Queue specific songs. Will pass Arcs of SongInfos to client threads to avoid copying.
+    /// Batching is handled internally by the clients. This is probably the most reliable
+    /// and least-blocking way of queuing large numbers of songs.
     pub async fn queue_songs(
         &self,
         songs: &[Song],
         replace: bool,
         play_from: Option<u32>,
     ) -> ClientResult<()> {
-        self.queue_uris(
-            songs
-                .iter()
-                .map(|s| s.get_uri().to_owned())
-                .collect::<Vec<String>>(),
-            replace,
-            play_from,
-        )
-        .await
+        let client = self.client();
+        if replace {
+            client.clear_queue().await?;
+        }
+        client.add_multi_arc(songs.iter().map(|s| s.get_inner_arc()).collect(), false, None).await?;
+        if let Some(pos) = play_from {
+            client.play_at(pos, false).await?;
+        }
+        Ok(())
     }
 
-    /// Queue a list of MPD URIs in the given order.
+    /// Queue a list of MPD URIs in the given order. Will pack into command lists.
     pub async fn queue_uris(
         &self,
         uris: Vec<String>,
         replace: bool,
         play_from: Option<u32>,
     ) -> ClientResult<()> {
-        // TODO: support executing this atomically as a command list
         let client = self.client();
         if replace {
             client.clear_queue().await?;
@@ -569,7 +570,6 @@ impl Library {
             // TODO: LIMIT TAGTYPES FOR PERF
             self.client()
                 .get_songs_by_query(query, true, None, &mut |batch| {
-                    eprintln!("ADDING {} SONGS TO LIST", batch.len());
                     list.extend_from_slice(&batch);
                 })
                 .await

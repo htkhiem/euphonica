@@ -1,13 +1,3 @@
-use adw::prelude::*;
-use adw::subclass::prelude::*;
-use gtk::{
-    CompositeTemplate, ListItem, SignalListItemFactory, SingleSelection, gio,
-    glib::{self, Properties, SignalHandlerId, WeakRef, clone, closure_local, subclass::Signal},
-};
-use std::cell::{OnceCell, RefCell};
-use std::{cell::Cell, cmp::Ordering, rc::Rc, sync::OnceLock};
-use strum::{EnumMessage, VariantArray};
-
 use super::{
     AlbumCell, AlbumContentView, Library, TagsFilter,
     album_sort::{ALBUM_SORT_SETTINGS, AlbumSortCriterion, album_sort_tiers, compare_albums},
@@ -19,18 +9,31 @@ use crate::{
     utils::{LazyInit, SearchableView, format_secs_as_duration, g_search_substr, settings_manager},
     window::EuphonicaWindow,
 };
+use adw::prelude::*;
+use adw::subclass::prelude::*;
+use gtk::{
+    CompositeTemplate, ListItem, SignalListItemFactory, SingleSelection, gio,
+    glib::{self, Properties, SignalHandlerId, WeakRef, clone, closure_local, subclass::Signal},
+};
+use itertools::Itertools;
+use std::cell::{OnceCell, RefCell};
+use std::{cell::Cell, cmp::Ordering, rc::Rc, sync::OnceLock};
+use strum::{EnumMessage, VariantArray};
 
 mod imp {
-    use crate::{
+    use derivative::Derivative;
+
+use crate::{
         common::Song,
-        library::song_sort::{
+        library::{add_to_playlist::AddToPlaylistButton, song_sort::{
             SONG_SORT_SETTINGS, SongSortCriterion, compare_songs, song_sort_tiers,
-        },
+        }},
     };
 
     use super::*;
 
-    #[derive(Debug, CompositeTemplate, Properties, Default)]
+    #[derive(Debug, CompositeTemplate, Properties, Derivative)]
+    #[derivative(Default)]
     #[properties(wrapper_type = super::SongView)]
     #[template(resource = "/io/github/htkhiem/Euphonica/gtk/library/song-view.ui")]
     pub struct SongView {
@@ -70,6 +73,22 @@ mod imp {
         // Currently tags are associated with albums and artists only.
         // To search in both might be too slow.
 
+        // Action bar
+        #[template_child]
+        pub replace_queue: TemplateChild<gtk::Button>,
+        #[template_child]
+        pub replace_queue_text: TemplateChild<gtk::Label>,
+        #[template_child]
+        pub append_queue: TemplateChild<gtk::Button>,
+        #[template_child]
+        pub append_queue_text: TemplateChild<gtk::Label>,
+        #[template_child]
+        pub add_to_playlist: TemplateChild<AddToPlaylistButton>,
+        #[template_child]
+        pub sel_all: TemplateChild<gtk::Button>,
+        #[template_child]
+        pub sel_none: TemplateChild<gtk::Button>,
+
         // Content
         #[template_child]
         pub stack: TemplateChild<ContentStack>,
@@ -87,7 +106,10 @@ mod imp {
         // if they now match.
         pub last_search_len: Cell<usize>,
         pub library: WeakRef<Library>,
+        #[derivative(Default(value = "gtk::MultiSelection::new(Option::<gio::ListStore>::None)"))]
+        pub sel_model: gtk::MultiSelection,
         pub sort_handlers: RefCell<Option<(gio::Settings, Vec<SignalHandlerId>)>>,
+        pub is_queuing: Cell<bool>,
 
         #[property(get, set)]
         pub collapsed: Cell<bool>,
@@ -355,6 +377,13 @@ mod imp {
                 .transform_to(|_, val: u32| Some(val > 0))
                 .sync_create()
                 .build();
+
+            // Change button labels depending on selection state
+            self.sel_model.connect_selection_changed(clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |_, _, _| this.on_song_selection_changed()
+            ));
         }
 
         fn signals() -> &'static [Signal] {
@@ -416,6 +445,24 @@ mod imp {
     }
 
     impl WidgetImpl for SongView {}
+
+    impl SongView {
+        pub fn on_song_selection_changed(&self) {
+            let sel_model = &self.sel_model;
+            // TODO: self can be slow, might consider redesigning
+            let n_sel = sel_model.selection().size();
+            if n_sel == 0 || (n_sel as u32) == sel_model.n_items() {
+                self.replace_queue_text.set_label("Play all");
+                self.append_queue_text.set_label("Queue all");
+            } else {
+                // TODO: l10n
+                self.replace_queue_text
+                    .set_label(format!("Play {n_sel}").as_str());
+                self.append_queue_text
+                    .set_label(format!("Queue {n_sel}").as_str());
+            }
+        }
+    }
 }
 
 glib::wrapper! {
@@ -437,16 +484,9 @@ impl SongView {
         res
     }
 
-    pub fn setup(
-        &self,
-        library: &Library,
-        cache: Rc<Cache>,
-        window: &EuphonicaWindow,
-    ) {
+    pub fn setup(&self, library: &Library, cache: Rc<Cache>, window: &EuphonicaWindow) {
         self.imp().library.set(Some(library));
-        self.imp()
-            .window
-            .set(Some(window));
+        self.imp().window.set(Some(window));
         self.setup_listview(library, cache.clone(), window);
 
         // Set up genres filter
@@ -459,9 +499,7 @@ impl SongView {
                     if !genres.is_empty() {
                         this.imp().genres_filter.set_filter_func(move |obj| {
                             let song = obj.downcast_ref::<Song>().unwrap();
-                            song
-                                .get_genres()
-                                .any(|genre| genres.contains(genre))
+                            song.get_genres().any(|genre| genres.contains(genre))
                         });
                         this.imp()
                             .genres_filter
@@ -482,7 +520,119 @@ impl SongView {
         self.imp().search_bar.get()
     }
 
+    #[inline]
+    fn set_is_queuing(&self, queuing: bool) {
+        self.imp().is_queuing.set(queuing);
+    }
+
+    async fn queue_songs(&self, replace: bool, play_from: Option<u32>) {
+        if let Some(library) = self.imp().library.upgrade() {
+            let sel_model = &self.imp().sel_model;
+            let sel = sel_model.selection();
+            let n_selected = sel.size();
+            if n_selected == 0 || n_selected == sel_model.n_items() as u64 {
+                // Fast path for select-all (cowabunga it is)
+                // NOTE: SELECT FROM THE SEL MODEL INSTEAD OF THE STORE SINCE
+                // THE STORE HAS EVERYTHING, NOT JUST WHAT PASSED THE CURRENT FILTER.
+                if let Err(e) = library
+                    .queue_songs(
+                        &sel_model.iter::<glib::Object>()
+                            .filter(|r| r.is_ok())
+                            .map(|r| r.unwrap().downcast::<Song>().unwrap())
+                            .collect::<Vec<Song>>(),
+                        replace,
+                        play_from
+                    )
+                    .await
+                {
+                    dbg!(e);
+                }
+            } else {
+                let mut songs = Vec::with_capacity(sel.size() as usize);
+                // Need to go thru bitset iter. Guaranteed to have at least one song selected
+                // since the zero-selected case goes into the above already.
+                let (iter, first_idx) = gtk::BitsetIter::init_first(&sel).unwrap();
+                songs.push(sel_model.item(first_idx).and_downcast::<Song>().unwrap());
+                iter.for_each(|idx| {
+                    songs.push(sel_model.item(idx).and_downcast::<Song>().unwrap())
+                });
+                if let Err(e) = library.queue_songs(&songs, replace, play_from).await {
+                    dbg!(e);
+                }
+            }
+        }
+    }
+
     fn setup_listview(&self, library: &Library, cache: Rc<Cache>, window: &EuphonicaWindow) {
+        // Hook up buttons
+        let replace_queue_btn = self.imp().replace_queue.get();
+        replace_queue_btn.connect_clicked(clone!(
+            #[weak(rename_to = this)]
+            self,
+            move |_| {
+                glib::spawn_future_local(clone!(
+                    #[weak]
+                    this,
+                    async move {
+                        this.set_is_queuing(true);
+                        let library = this.imp().library.upgrade().unwrap();
+                        this.queue_songs(true, Some(0)).await;
+                        this.set_is_queuing(false);
+                    }
+                ));
+            }
+        ));
+        let append_queue_btn = self.imp().append_queue.get();
+        append_queue_btn.connect_clicked(clone!(
+            #[weak(rename_to = this)]
+            self,
+            move |_| {
+                glib::spawn_future_local(clone!(
+                    #[weak]
+                    this,
+                    async move {
+                        this.set_is_queuing(true);
+                        let library = this.imp().library.upgrade().unwrap();
+                        this.queue_songs(false, None).await;
+                        this.set_is_queuing(false);
+                    }
+                ));
+            }
+        ));
+
+        // Setup double-click action
+        self.imp().list_view.connect_activate(clone!(
+            #[weak(rename_to = this)]
+            self,
+            move |_, pos| {
+                // Song View might display hundreds of thousands of songs.
+                // Should anyone want to "queue everything" there's the action bar at the top.
+                // Double-click action should then only do something non-destructive and lightweight.
+                // For now that's fixed to Append And Play.
+                let song = this
+                    .imp()
+                    .sel_model
+                    .item(pos)
+                    .and_downcast::<Song>()
+                    .expect("The item has to be a `common::Song`.");
+                let play_from = Some(this.imp().library.upgrade().unwrap().queue_len());
+                glib::spawn_future_local(clone!(
+                    #[weak]
+                    this,
+                    async move {
+                        this.set_is_queuing(true);
+                        let library = this.imp().library.upgrade().unwrap();
+                        if let Err(e) =
+                            library.queue_songs(&[song], false, play_from).await
+                        {
+                            dbg!(e);
+                        }
+                        this.set_is_queuing(false);
+                    }
+                ));
+            }
+        ));
+
         // Setup search bar
         let song_list = self.imp().library.upgrade().unwrap().songs();
         let search_bar = self.imp().search_bar.get();
@@ -506,12 +656,32 @@ impl SongView {
             gtk::FilterListModel::new(Some(search_model), Some(self.imp().genres_filter.clone()));
         genres_model.set_incremental(true);
 
-        let sort_model = gtk::SortListModel::new(Some(genres_model), Some(self.imp().sorter.clone()));
+        let sort_model =
+            gtk::SortListModel::new(Some(genres_model), Some(self.imp().sorter.clone()));
         sort_model.set_incremental(true);
-        let sel_model = gtk::MultiSelection::new(Some(sort_model));
+        let sel_model = &self.imp().sel_model;
+        sel_model.set_model(Some(&sort_model));
 
         let list_view = self.imp().list_view.get();
-        list_view.set_model(Some(&sel_model));
+        list_view.set_model(Some(sel_model));
+        self.imp()
+            .add_to_playlist
+            .bind_model(library, sel_model);
+
+        self.imp().sel_all.connect_clicked(clone!(
+            #[weak]
+            sel_model,
+            move |_| {
+                sel_model.select_all();
+            }
+        ));
+        self.imp().sel_none.connect_clicked(clone!(
+            #[weak]
+            sel_model,
+            move |_| {
+                sel_model.unselect_all();
+            }
+        ));
 
         // Set up factory
         let factory = SignalListItemFactory::new();
@@ -612,16 +782,18 @@ impl LazyInit for SongView {
             self.imp().initializing.set(true);
             let stack = self.imp().stack.get();
             let this = self.clone();
-            stack.show_spinner();
+            // Don't show spinner here: just let the song list appear gradually
+            stack.show_content();
+            // In return, disable queue buttons while we're loading songs.
+            self.set_is_queuing(true);
             glib::spawn_future_local(async move {
                 // Just get basic info first to reduce spinner time
                 let _ = library.init_songs(false).await;
-                if library.songs().n_items() > 0 {
-                    stack.show_content();
-                } else {
+                if library.songs().n_items() == 0 {
                     stack.show_placeholder();
                 }
                 this.imp().initializing.set(false);
+                this.set_is_queuing(false);
                 // Now populate genres
                 let _ = library.init_genres().await;
             });

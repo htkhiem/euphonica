@@ -397,11 +397,19 @@ pub enum Task {
     /// Append multiple URIs to the queue.
     /// This utilises commandlists for better efficiency.
     AddMultiple(Vec<String>, Responder<Vec<Id>>),
+    /// Append multiple URIs to the queue.
+    /// This utilises commandlists for better efficiency.
+    /// It also takes Arcs of SongInfos to avoid cloning strings.
+    AddMultipleArc(Vec<Arc<SongInfo>>, Responder<Vec<Id>>),
     /// Insert song at URI into queue at given position.
     Insert(String, usize, Responder<usize>),
     /// Insert multiple URIs into given position on queue.
     /// This utilises commandlists for better efficiency.
     InsertMultiple(Vec<String>, usize, Responder<Vec<usize>>),
+    /// Insert multiple URIs into given position on queue.
+    /// This utilises commandlists for better efficiency.
+    /// It also takes Arcs of SongInfos to avoid cloning strings.
+    InsertMultipleArc(Vec<Arc<SongInfo>>, usize, Responder<Vec<usize>>),
     FindAdd(Query<'static>, Responder<()>),
     // ClearTagTypes(Responder<()>),
     // EnableTagTypes(
@@ -1222,11 +1230,23 @@ impl Connection {
                     Task::AddMultiple(uris, resp) => {
                         self.respond_with_client(|c| c.push_multiple(&uris), resp)
                     }
+                    Task::AddMultipleArc(songs, resp) => {
+                        self.respond_with_client(|c| {
+                            let uris = songs.iter().map(|si| &si.file).collect::<Vec<&String>>();
+                            c.push_multiple(&uris)
+                        }, resp)
+                    }
                     Task::Insert(uri, pos, resp) => {
                         self.respond_with_client(|c| c.insert(&uri, pos), resp)
                     }
                     Task::InsertMultiple(uris, pos, resp) => {
                         self.respond_with_client(|c| c.insert_multiple(&uris, pos), resp)
+                    }
+                    Task::InsertMultipleArc(songs, pos, resp) => {
+                        self.respond_with_client(|c| {
+                            let uris = songs.iter().map(|si| &si.file).collect::<Vec<&String>>();
+                            c.insert_multiple(&uris, pos)
+                        }, resp)
                     }
                     Task::FindAdd(query, resp) => {
                         self.respond_with_client(|c| c.findadd(&query), resp)

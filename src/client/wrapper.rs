@@ -1807,6 +1807,53 @@ impl MpdWrapper {
         Ok(())
     }
 
+    /// Same as above but takes SongInfo Arcs to avoid cloning strings.
+    pub async fn add_multi_arc(
+        &self,
+        mut songs: Vec<Arc<SongInfo>>,
+        recursive: bool,
+        insert_pos: Option<usize>,
+    ) -> ClientResult<()> {
+        if songs.is_empty() {
+            return Ok(());
+        }
+        if songs.len() > 1 {
+            // Batch by batch to avoid holding the server up too long (and timing out)
+            let mut inserted: usize = 0;
+            while inserted < songs.len() {
+                let to_insert = (songs.len() - inserted).min(BATCH_SIZE);
+                let batch = songs[inserted..(inserted + to_insert)]
+                    .iter_mut()
+                    .map(std::mem::take)
+                    .collect();
+                if let Some(pos) = insert_pos {
+                    let (s, r) = oneshot::channel();
+                    self.background(Task::InsertMultipleArc(batch, pos, s), r)
+                        .await?;
+                } else {
+                    let (s, r) = oneshot::channel();
+                    self.background(Task::AddMultipleArc(batch, s), r).await?;
+                }
+                inserted += to_insert;
+            }
+        } else if recursive {
+            // TODO: support inserting at specific location in queue
+            let mut query = Query::new();
+            query.and(Term::Base, songs[0].file.to_owned());
+            self.find_add(query).await?;
+        } else if let Some(pos) = insert_pos {
+            let (s, r) = oneshot::channel();
+            self.foreground(Task::Insert(songs[0].file.to_owned(), pos, s), r)
+                .await?;
+        } else {
+            let (s, r) = oneshot::channel();
+            self.foreground(Task::Add(songs[0].file.to_owned(), s), r)
+                .await?;
+        }
+
+        Ok(())
+    }
+
     pub async fn get_dynamic_playlist_songs(
         &self,
         dp: DynamicPlaylist,

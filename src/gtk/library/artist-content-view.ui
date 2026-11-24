@@ -798,8 +798,9 @@
                         <property name="orientation">1</property>
                         <child>
                           <object class="GtkCenterBox">
-                            <property name="margin-start">12</property>
-                            <property name="margin-end">12</property>
+                            <style>
+                              <class name="padding-6"/>
+                            </style>
                             <property name="start-widget">
                               <object class="GtkBox" id="action_btns">
                                 <property name="spacing">6</property>
@@ -900,9 +901,10 @@
                                 <property name="child">
                                   <object class="GtkListView" id="song_subview">
                                     <property name="single-click-activate">false</property>
+                                    <property name="margin-start">6</property>
+                                    <property name="margin-end">6</property>
                                     <style>
                                       <class name="song-list"/>
-                                      <class name="padding-12"/>
                                     </style>
                                   </object>
                                 </property>
