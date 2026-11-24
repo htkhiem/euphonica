@@ -241,7 +241,9 @@ listview > row {
 	min-width: 120px;
 }
 
-.album-sort-dropdown listview > row {
+.padded-dropdown listview > row {
+  padding-left: 3px;
   padding-top: 6px;
   padding-bottom: 6px;
+  padding-right: 3px;
 }

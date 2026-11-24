@@ -124,7 +124,7 @@
                                 </style>
                                 <child>
                                   <object class="EuphonicaImageStack" id="cover">
-                                    <property name="size">36</property>  <!-- FIXME: find a better way than hardcoding Entry height with h3 style. -->
+                                    <property name="size">36</property>                                    <!-- FIXME: find a better way than hardcoding Entry height with h3 style. -->
                                   </object>
                                 </child>
                               </object>
@@ -135,7 +135,8 @@
                                 <property name="hexpand">true</property>
                                 <style>
                                   <class name="title-2"/>
-                                  <class name="error"/> <!-- Upon creation the title is empty which is invalid -->
+                                  <class name="error"/>
+                                  <!-- Upon creation the title is empty which is invalid -->
                                 </style>
                               </object>
                             </child>
@@ -274,7 +275,7 @@
                                             <property name="adjustment">
                                               <object class="GtkAdjustment">
                                                 <property name="lower">1</property>
-                                                <property name="upper">65536</property> <!-- Any more kind of defeats the purpose of a limit -->
+                                                <property name="upper">65536</property>                                                <!-- Any more kind of defeats the purpose of a limit -->
                                                 <property name="value">10</property>
                                                 <property name="page-increment">1</property>
                                                 <property name="step-increment">10</property>
@@ -411,9 +412,9 @@
                             <property name="vexpand">true</property>
                             <property name="child">
                               <object class="GtkListView" id="content">
-                                <property name="show-separators">true</property>
                                 <style>
-                                  <class name="no-bg"/>
+                                  <class name="song-list"/>
+                                  <class name="padding-6"/>
                                 </style>
                               </object>
                             </property>

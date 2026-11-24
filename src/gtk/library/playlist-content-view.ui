@@ -434,9 +434,9 @@
                                 <property name="vexpand">true</property>
                                 <property name="child">
                                   <object class="GtkListView" id="content">
-                                    <property name="show-separators">true</property>
                                     <style>
-                                      <class name="no-bg"/>
+                                      <class name="song-list"/>
+                                      <class name="padding-6"/>
                                     </style>
                                   </object>
                                 </property>
@@ -460,9 +460,9 @@
                             <property name="vexpand">true</property>
                             <property name="child">
                               <object class="GtkListView" id="editing_content">
-                                <property name="show-separators">true</property>
                                 <style>
-                                  <class name="no-bg"/>
+                                  <class name="song-list"/>
+                                  <class name="padding-6"/>
                                 </style>
                               </object>
                             </property>

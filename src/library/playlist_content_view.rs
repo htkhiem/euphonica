@@ -295,7 +295,7 @@ mod imp {
                 move |sel_model, _, _| {
                     // TODO: this can be slow, might consider redesigning
                     let n_sel = sel_model.selection().size();
-                    if n_sel == 0 || (n_sel as u32) == sel_model.model().unwrap().n_items() {
+                    if n_sel == 0 || (n_sel as u32) == sel_model.n_items() {
                         this.selecting_all.replace(true);
                         this.replace_queue_text.set_label("Play all");
                         this.append_queue_text.set_label("Queue all");
@@ -719,7 +719,7 @@ impl PlaylistContentView {
                 let item = list_item
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
-                let row = SongRow::new(Some(cache), None, Some(&window), Some(&library));
+                let row = SongRow::new(Some(cache), Some(&window), Some(&library));
                 item.property_expression("item")
                     .chain_property::<Song>("name")
                     .bind(&row, "name", gtk::Widget::NONE);
@@ -758,7 +758,6 @@ impl PlaylistContentView {
                     .expect("Needs to be ListItem");
                 let row = SongRow::new(
                     Some(cache),
-                    None,
                     this.imp().window.upgrade().as_ref(),
                     this.imp().library.upgrade().as_ref(),
                 );
@@ -821,7 +820,7 @@ impl PlaylistContentView {
                         // To avoid problems with hotspot positioning quirks (caused by other rows changing padding upon hover)
                         // the icon will be a standalone copy of the original row.
                         // Additional benefit: we get to customise how it looks.
-                        let drag_widget = SongRow::new(None, None, None, None);
+                        let drag_widget = SongRow::new(None, None, None);
                         // Give it the same size as the real row
                         drag_widget.set_size_request(row.width(), row.height());
                         drag_widget.set_thumbnail_visible(false);
@@ -948,7 +947,7 @@ impl PlaylistContentView {
                 .and_downcast::<RowAddButtons>()
                 .unwrap()
                 .set_song(Some(&item));
-            child.on_bind(&item);
+            child.bind(&item);
         });
 
         editing_factory.connect_bind(|_, list_item| {
@@ -966,7 +965,7 @@ impl PlaylistContentView {
                 .and_downcast::<SongRow>()
                 .expect("The child has to be an `SongRow`.");
 
-            child.on_bind(&item);
+            child.bind(&item);
         });
 
         factory.connect_unbind(|_, list_item| {
@@ -981,7 +980,7 @@ impl PlaylistContentView {
                 .and_downcast::<RowAddButtons>()
                 .unwrap()
                 .set_song(None);
-            child.on_unbind();
+            child.unbind();
         });
 
         editing_factory.connect_unbind(|_, list_item| {
@@ -991,7 +990,7 @@ impl PlaylistContentView {
                 .child()
                 .and_downcast::<SongRow>()
                 .expect("The child has to be an `SongRow`.");
-            child.on_unbind();
+            child.unbind();
         });
 
         editing_factory.connect_teardown(clone!(

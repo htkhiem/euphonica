@@ -344,8 +344,7 @@ impl Cache {
         song: Arc<SongInfo>,
         thumbnail: bool,
     ) -> Result<Option<Texture>> {
-        let res = self.clone().get_cover_internal(song, thumbnail).await;
-        res
+        self.clone().get_cover_internal(song, thumbnail).await
     }
 
     /// Lite version of get_album_cover that only takes an example URI.

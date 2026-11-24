@@ -1321,6 +1321,7 @@ impl MpdWrapper {
         &self,
         query: Query<'static>,
         use_fg: bool,
+        tagtypes: Option<Vec<&'static str>>,
         respond: &mut F,
     ) -> ClientResult<()>
     where
@@ -1332,10 +1333,10 @@ impl MpdWrapper {
             let (s, r) = oneshot::channel();
             let win = Window::from((curr_len as u32, (curr_len + BATCH_SIZE) as u32));
             let songs = if use_fg {
-                self.foreground(Task::Find(query.clone(), win, None, s), r)
+                self.foreground(Task::Find(query.clone(), win, tagtypes.clone(), s), r)
                     .await?
             } else {
-                self.background(Task::Find(query.clone(), win, None, s), r)
+                self.background(Task::Find(query.clone(), win, tagtypes.clone(), s), r)
                     .await?
             };
             if !songs.is_empty() {
@@ -1354,12 +1355,13 @@ impl MpdWrapper {
         &self,
         query: Query<'static>,
         use_fg: bool,
+        tagtypes: Option<Vec<&'static str>>,
         respond: &mut F,
     ) -> ClientResult<()>
     where
         F: FnMut(Vec<Song>),
     {
-        self.get_song_infos_by_query(query, use_fg, &mut |song_infos| {
+        self.get_song_infos_by_query(query, use_fg, tagtypes, &mut |song_infos| {
             respond(
                 song_infos
                     .into_iter()
@@ -1799,6 +1801,53 @@ impl MpdWrapper {
         } else {
             let (s, r) = oneshot::channel();
             self.foreground(Task::Add(std::mem::take(&mut uris[0]), s), r)
+                .await?;
+        }
+
+        Ok(())
+    }
+
+    /// Same as above but takes SongInfo Arcs to avoid cloning strings.
+    pub async fn add_multi_arc(
+        &self,
+        mut songs: Vec<Arc<SongInfo>>,
+        recursive: bool,
+        insert_pos: Option<usize>,
+    ) -> ClientResult<()> {
+        if songs.is_empty() {
+            return Ok(());
+        }
+        if songs.len() > 1 {
+            // Batch by batch to avoid holding the server up too long (and timing out)
+            let mut inserted: usize = 0;
+            while inserted < songs.len() {
+                let to_insert = (songs.len() - inserted).min(BATCH_SIZE);
+                let batch = songs[inserted..(inserted + to_insert)]
+                    .iter_mut()
+                    .map(std::mem::take)
+                    .collect();
+                if let Some(pos) = insert_pos {
+                    let (s, r) = oneshot::channel();
+                    self.background(Task::InsertMultipleArc(batch, pos, s), r)
+                        .await?;
+                } else {
+                    let (s, r) = oneshot::channel();
+                    self.background(Task::AddMultipleArc(batch, s), r).await?;
+                }
+                inserted += to_insert;
+            }
+        } else if recursive {
+            // TODO: support inserting at specific location in queue
+            let mut query = Query::new();
+            query.and(Term::Base, songs[0].file.to_owned());
+            self.find_add(query).await?;
+        } else if let Some(pos) = insert_pos {
+            let (s, r) = oneshot::channel();
+            self.foreground(Task::Insert(songs[0].file.to_owned(), pos, s), r)
+                .await?;
+        } else {
+            let (s, r) = oneshot::channel();
+            self.foreground(Task::Add(songs[0].file.to_owned(), s), r)
                 .await?;
         }
 

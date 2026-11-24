@@ -111,7 +111,7 @@
                               </object>
                             </child>
                             <child>
-                              <object class="GtkLabel" id="rule_count"> <!-- Count both filter and order rules -->
+                              <object class="GtkLabel" id="rule_count">                                <!-- Count both filter and order rules -->
                                 <property name="label">-</property>
                                 <style>
                                   <class name="caption"/>
@@ -263,9 +263,9 @@
                     <property name="vexpand">true</property>
                     <property name="child">
                       <object class="GtkListView" id="content">
-                        <property name="show-separators">true</property>
                         <style>
-                          <class name="no-bg"/>
+                          <class name="song-list"/>
+                          <class name="padding-6"/>
                         </style>
                       </object>
                     </property>

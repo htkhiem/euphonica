@@ -10,7 +10,7 @@
             <child>
               <object class="AdwToolbarView">
                 <child type="top">
-					        <object class="AdwHeaderBar">
+                  <object class="AdwHeaderBar">
                     <property name="show-title">false</property>
                     <child type="start">
                       <object class="GtkButton" id="show_sidebar">
@@ -50,7 +50,7 @@
                                       <object class="GtkDropDown" id="sort_by">
                                         <property name="hexpand">true</property>
                                         <style>
-                                          <class name="album-sort-dropdown"/>
+                                          <class name="padded-dropdown"/>
                                         </style>
                                       </object>
                                     </child>
@@ -83,7 +83,7 @@
                                       <object class="GtkDropDown" id="sort_by_2">
                                         <property name="hexpand">true</property>
                                         <style>
-                                          <class name="album-sort-dropdown"/>
+                                          <class name="padded-dropdown"/>
                                         </style>
                                       </object>
                                     </child>
@@ -116,7 +116,7 @@
                                       <object class="GtkDropDown" id="sort_by_3">
                                         <property name="hexpand">true</property>
                                         <style>
-                                          <class name="album-sort-dropdown"/>
+                                          <class name="padded-dropdown"/>
                                         </style>
                                       </object>
                                     </child>
@@ -143,76 +143,84 @@
                 <child type="top">
                   <object class="GtkSearchBar" id="search_bar">
                     <child>
-                      <object class="GtkScrolledWindow">
-                        <property name="has-frame">false</property>
-                        <property name="propagate-natural-width">true</property>
-                        <property name="vscrollbar-policy">2</property>
-                        <child>
-                          <object class="GtkBox">
-                            <property name="spacing">6</property>
+                      <object class="EuphonicaFadingScrolledWindow">
+                        <property name="vertical">false</property>
+                        <property name="vexpand">true</property>
+                        <property name="hexpand">true</property>
+                        <property name="inner">
+                          <object class="GtkScrolledWindow">
+                            <property name="has-frame">false</property>
+                            <property name="propagate-natural-width">true</property>
+                            <property name="hscrollbar-policy">external</property>
+                            <property name="vscrollbar-policy">never</property>
                             <child>
-                              <object class="GtkDropDown" id="search_mode">
-                                <property name="model">
-                                  <object class="GtkStringList">
-                                    <items>
-                                      <!-- Rust code matches by index, not string content, to avoid string comparisons.-->
-                                      <item translatable="yes">Either</item>
-                                      <item translatable="yes">Album title</item>
-                                      <item translatable="yes">AlbumArtist tag</item>
-                                    </items>
+                              <object class="GtkBox">
+                                <property name="spacing">6</property>
+                                <child>
+                                  <object class="GtkDropDown" id="search_mode">
+                                    <property name="model">
+                                      <object class="GtkStringList">
+                                        <items>
+                                          <!-- Rust code matches by index, not string content, to avoid string comparisons.-->
+                                          <item translatable="yes">Either</item>
+                                          <item translatable="yes">Album title</item>
+                                          <item translatable="yes">AlbumArtist tag</item>
+                                        </items>
+                                      </object>
+                                    </property>
                                   </object>
-                                </property>
-                              </object>
-                            </child>
-                            <child>
-                              <object class="GtkSearchEntry" id="search_entry">
-                                <property name="search-delay">150</property>
-                                <property name="width-request">100</property>
-                              </object>
-                            </child>
-                            <child>
-                              <object class="GtkSeparator"/>
-                            </child>
-                            <child>
-                              <object class="GtkDropDown" id="rating_mode">
-                                <property name="model">
-                                  <object class="GtkStringList">
-                                    <items>
-                                      <!-- Rust code matches by index, not string content, to avoid string comparisons.-->
-                                      <item translatable="yes">Any rating</item>
-                                      <item translatable="yes">At least</item>
-                                      <item translatable="yes">Below</item>
-                                      <item translatable="yes">Exactly</item>
-                                    </items>
+                                </child>
+                                <child>
+                                  <object class="GtkSearchEntry" id="search_entry">
+                                    <property name="search-delay">150</property>
+                                    <property name="width-request">200</property>
                                   </object>
-                                </property>
-                              </object>
-                            </child>
-                            <child>
-                              <object class="EuphonicaRating" id="rating">
-                                <property name="editable">true</property>
-                              </object>
-                            </child>
-                            <child>
-                              <object class="GtkSeparator"/>
-                            </child>
-                            <child>
-                              <object class="EuphonicaTagsFilter" id="genres_filter_widget">
-                                <property name="label-text" translatable="true">Genres</property>
-                              </object>
-                            </child>
-                            <child>
-                              <object class="EuphonicaTagsFilter" id="tags_filter_widget">
-                                <property name="label-text" translatable="true">Tags</property>
+                                </child>
+                                <child>
+                                  <object class="GtkSeparator"/>
+                                </child>
+                                <child>
+                                  <object class="GtkDropDown" id="rating_mode">
+                                    <property name="model">
+                                      <object class="GtkStringList">
+                                        <items>
+                                          <!-- Rust code matches by index, not string content, to avoid string comparisons.-->
+                                          <item translatable="yes">Any rating</item>
+                                          <item translatable="yes">At least</item>
+                                          <item translatable="yes">Below</item>
+                                          <item translatable="yes">Exactly</item>
+                                        </items>
+                                      </object>
+                                    </property>
+                                  </object>
+                                </child>
+                                <child>
+                                  <object class="EuphonicaRating" id="rating">
+                                    <property name="editable">true</property>
+                                  </object>
+                                </child>
+                                <child>
+                                  <object class="GtkSeparator"/>
+                                </child>
+                                <child>
+                                  <object class="EuphonicaTagsFilter" id="genres_filter_widget">
+                                    <property name="label-text" translatable="true">Genres</property>
+                                  </object>
+                                </child>
+                                <child>
+                                  <object class="EuphonicaTagsFilter" id="tags_filter_widget">
+                                    <property name="label-text" translatable="true">Tags</property>
+                                  </object>
+                                </child>
                               </object>
                             </child>
                           </object>
-                        </child>
+                        </property>
                       </object>
                     </child>
                   </object>
                 </child>
-				        <property name="content">
+                <property name="content">
                   <object class="EuphonicaContentStack" id="stack">
                     <property name="placeholder">
                       <object class="AdwStatusPage">
@@ -240,8 +248,8 @@
                       </object>
                     </property>
                   </object>
-				        </property>
-			        </object>
+                </property>
+              </object>
             </child>
           </object>
         </child>

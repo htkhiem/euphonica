@@ -6,7 +6,6 @@ pub const ALBUMARTIST: &str = "albumartist";
 pub const ARTISTSORT: &str = "artistsort";
 pub const ALBUMARTISTSORT: &str = "albumartistsort";
 pub const GENRE: &str = "genre";
-pub const FORMAT: &str = "format";
 pub const ORIGINAL_DATE: &str = "originaldate";
 pub const DATE: &str = "date";
 pub const TRACK: &str = "track";
@@ -22,7 +21,6 @@ pub const RELEASEGROUP_MBID: &str = "musicbrainz_releasegroupid";
 pub const RELEASETRACK_MBID: &str = "musicbrainz_releasetrackid";
 pub const WORK_MBID: &str = "musicbrainz_workid";
 pub const ADDED: &str = "added";
-pub const LAST_MODIFIED: &str = "last-modified";
 
 /// Returns a human-friendly title for a lowercased MPD tag name.
 /// String return for later translatability.

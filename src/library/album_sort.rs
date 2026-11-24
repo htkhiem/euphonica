@@ -3,6 +3,7 @@ use strum_macros::{Display, EnumMessage, EnumString, VariantArray};
 
 use crate::{
     common::Album,
+    library::{SortCriterion, SortDirection, SortTier},
     utils::{g_cmp_options, g_cmp_str_options, g_cmp_str_vecs},
 };
 
@@ -27,17 +28,7 @@ pub enum AlbumSortCriterion {
     Rating,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum SortDirection {
-    Ascending,
-    Descending,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct AlbumSortTier {
-    pub criterion: AlbumSortCriterion,
-    pub direction: SortDirection,
-}
+impl SortCriterion for AlbumSortCriterion {}
 
 impl AlbumSortCriterion {
     fn compare(
@@ -79,7 +70,7 @@ impl AlbumSortCriterion {
     }
 }
 
-pub fn album_sort_tiers(state: &gio::Settings) -> [Option<AlbumSortTier>; 3] {
+pub fn album_sort_tiers(state: &gio::Settings) -> [Option<SortTier<AlbumSortCriterion>>; 3] {
     ALBUM_SORT_SETTINGS.map(|(sort_by, sort_direction)| {
         let criterion = state.string(sort_by).parse().ok()?;
         let direction = if state.enum_(sort_direction) > 0 {
@@ -87,7 +78,7 @@ pub fn album_sort_tiers(state: &gio::Settings) -> [Option<AlbumSortTier>; 3] {
         } else {
             SortDirection::Descending
         };
-        Some(AlbumSortTier {
+        Some(SortTier {
             criterion,
             direction,
         })
@@ -97,7 +88,7 @@ pub fn album_sort_tiers(state: &gio::Settings) -> [Option<AlbumSortTier>; 3] {
 pub fn compare_albums(
     a: &Album,
     b: &Album,
-    tiers: &[Option<AlbumSortTier>; 3],
+    tiers: &[Option<SortTier<AlbumSortCriterion>>; 3],
     nulls_first: bool,
     case_sensitive: bool,
 ) -> Ordering {

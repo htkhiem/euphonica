@@ -221,8 +221,6 @@ impl SongRow {
     pub fn new(
         // If not given, will not set up thumbnail fetching
         cache: Option<Rc<Cache>>,
-        // If not given, will not set up is-playing indicator
-        _player: Option<&Player>,
         // If not given, will not set up the right-click context menu
         window: Option<&EuphonicaWindow>,
         library: Option<&Library>,
@@ -396,12 +394,12 @@ impl SongRow {
         ));
     }
 
-    pub fn on_bind(&self, song: &Song) {
+    pub fn bind(&self, song: &Song) {
         self.imp().song.set(Some(song));
         self.schedule_thumbnail();
     }
 
-    pub fn on_unbind(&self) {
+    pub fn unbind(&self) {
         self.imp().thumbnail.clear();
         self.imp().song.set(None);
     }
@@ -476,6 +474,7 @@ impl SongRow {
             .end_stack
             .visible_child_name()
             .is_some_and(|curr_name| curr_name.as_str() != new_name)
+            && self.imp().end_stack.child_by_name(new_name).is_some()
         {
             self.imp().end_stack.set_visible_child_name(new_name);
         }

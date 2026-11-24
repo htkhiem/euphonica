@@ -1,11 +1,11 @@
 use adw::prelude::*;
 use adw::subclass::prelude::*;
 use gtk::{
-    CompositeTemplate, ListItem, SignalListItemFactory, SingleSelection, gio,
+    CompositeTemplate, ListItem, SignalListItemFactory, gio,
     glib::{self},
     glib::{Properties, SignalHandlerId, WeakRef, clone, subclass::Signal},
 };
-use std::cell::{OnceCell, RefCell};
+use std::cell::RefCell;
 use std::{cell::Cell, cmp::Ordering, rc::Rc, sync::OnceLock};
 use strum::{EnumMessage, VariantArray};
 
@@ -93,7 +93,7 @@ mod imp {
         pub collapsed: Cell<bool>,
 
         pub initializing: Cell<bool>,
-        pub window: OnceCell<WeakRef<EuphonicaWindow>>,
+        pub window: WeakRef<EuphonicaWindow>,
     }
 
     #[glib::object_subclass]
@@ -425,13 +425,7 @@ impl AlbumView {
         window: &EuphonicaWindow,
     ) {
         self.imp().library.set(Some(library));
-        let weak = WeakRef::new();
-        weak.set(Some(window));
-
-        self.imp()
-            .window
-            .set(weak)
-            .expect("AlbumView window already set");
+        self.imp().window.set(Some(window));
         self.setup_gridview(library, cache.clone());
 
         // Set up genres and tags filters

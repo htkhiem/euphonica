@@ -32,7 +32,6 @@ mod imp {
     use time::OffsetDateTime;
 
     use crate::{
-        common::FadingScrolledWindow,
         library::{TagsSection, discography_album::DiscographyAlbum},
         meta_providers::models::{ArtistMeta, artist_type_to_index, index_to_artist_type},
         utils::g_cmp_options,
@@ -616,7 +615,7 @@ mod imp {
             let sel_model = &self.song_sel_model;
             // TODO: self can be slow, might consider redesigning
             let n_sel = sel_model.selection().size();
-            if n_sel == 0 || (n_sel as u32) == sel_model.model().unwrap().n_items() {
+            if n_sel == 0 || (n_sel as u32) == sel_model.n_items() {
                 self.selecting_all.replace(true);
                 self.replace_queue_text.set_label("Play all");
                 self.append_queue_text.set_label("Queue all");
@@ -1264,7 +1263,7 @@ impl ArtistContentView {
                 let item = list_item
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
-                let row = SongRow::new(Some(cache), None, window.as_ref(), Some(&library));
+                let row = SongRow::new(Some(cache), window.as_ref(), Some(&library));
                 item.property_expression("item")
                     .chain_property::<Song>("name")
                     .bind(&row, "name", gtk::Widget::NONE);
@@ -1310,7 +1309,7 @@ impl ArtistContentView {
                 .and_downcast::<RowAddButtons>()
                 .unwrap()
                 .set_song(Some(&item));
-            child.on_bind(&item);
+            child.bind(&item);
         });
 
         // When row goes out of sight, unbind from item to allow reuse with another.
@@ -1327,7 +1326,7 @@ impl ArtistContentView {
                 .and_downcast::<RowAddButtons>()
                 .unwrap()
                 .set_song(None);
-            child.on_unbind();
+            child.unbind();
         });
 
         // Set the factory of the list view

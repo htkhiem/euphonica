@@ -418,18 +418,15 @@ impl AlbumCell {
         let imp = res.imp();
         imp.library.set(library);
         let cache_state = cache.get_cache_state();
-        imp
-            .cache
+        imp.cache
             .set(cache)
             .expect("AlbumCell cannot bind to cache");
         let title = album.get_title();
-        imp.title.label().set_label(
-            if title.is_empty() {
-                *EMPTY_ALBUM_STRING
-            } else {
-                title
-            }
-        );
+        imp.title.label().set_label(if title.is_empty() {
+            *EMPTY_ALBUM_STRING
+        } else {
+            title
+        });
         let ui_settings = settings_manager().child("ui");
         if let Some(wrap_mode) = wrap_mode {
             // Some views, like the Recent View, requires a specific mode due to UI constraints.
@@ -453,11 +450,13 @@ impl AlbumCell {
             .get_only()
             .build();
 
-        imp.artist.set_label(
-            album.get_albumartists_str().unwrap_or(*EMPTY_ARTIST_STRING)
-        );
+        imp.artist
+            .set_label(album.get_albumartists_str().unwrap_or(*EMPTY_ARTIST_STRING));
 
-        res.set_property("quality-grade", album.property::<Option<String>>("quality-grade"));
+        res.set_property(
+            "quality-grade",
+            album.property::<Option<String>>("quality-grade"),
+        );
         res.set_property("rating", album.property::<i8>("rating"));
 
         let _ = res.imp().cover_signal_ids.replace(Some((

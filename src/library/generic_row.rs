@@ -1,12 +1,18 @@
 use adw::prelude::*;
 use glib::{Object, WeakRef, clone};
-use gtk::{CompositeTemplate, gdk, gio, glib::{self, closure_local}, subclass::prelude::*};
-use time::OffsetDateTime;
+use gtk::{
+    CompositeTemplate, gdk, gio,
+    glib::{self, closure_local},
+    subclass::prelude::*,
+};
 use std::cell::{LazyCell, OnceCell, RefCell};
+use time::OffsetDateTime;
 use time::format_description::well_known::Iso8601;
 
 use crate::{
-    common::{INode, INodeType, SongInfoDialog}, utils::format_datetime_local_tz, window::EuphonicaWindow
+    common::{INode, INodeType, SongInfoDialog},
+    utils::format_datetime_local_tz,
+    window::EuphonicaWindow,
 };
 
 use super::Library;
@@ -15,14 +21,14 @@ thread_local! {
     static FOLDER_ICON: LazyCell<gtk::IconPaintable> = LazyCell::new(|| {
         let theme: gtk::IconTheme = gdk::Display::default().map(|disp| gtk::IconTheme::for_display(&disp)).unwrap_or_default();
 
-        dbg!(theme.lookup_icon(
+        theme.lookup_icon(
             "inode-directory",
             &["folder", "folder-symbolic"],
             32,
             1, // scale
             gtk::TextDirection::None,
             gtk::IconLookupFlags::NONE,
-        ))
+        )
     });
 
     static PLAYLIST_ICON: LazyCell<gtk::IconPaintable> = LazyCell::new(|| {
@@ -431,9 +437,10 @@ impl GenericRow {
             .chain_property::<INode>("last-modified")
             .chain_closure::<String>(closure_local!(
                 |_: Option<glib::Object>, last_mod: Option<&str>| {
-                    last_mod.and_then(|s| {
-                        OffsetDateTime::parse(s, &Iso8601::PARSING).ok()
-                    }).map(format_datetime_local_tz).unwrap_or(String::from(""))
+                    last_mod
+                        .and_then(|s| OffsetDateTime::parse(s, &Iso8601::PARSING).ok())
+                        .map(format_datetime_local_tz)
+                        .unwrap_or(String::from(""))
                 }
             ))
             .bind(self, "last-modified", gtk::Widget::NONE);

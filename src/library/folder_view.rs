@@ -287,15 +287,19 @@ mod imp {
                 #[weak(rename_to = this)]
                 self,
                 move |entry| {
-
                     if let Some(library) = this.library.upgrade() {
                         let text = entry.buffer().text().to_string();
-                        if this.path_stack.visible_child_name().is_some_and(|name| name != "buttons") {
+                        if this
+                            .path_stack
+                            .visible_child_name()
+                            .is_some_and(|name| name != "buttons")
+                        {
                             let _ = this.path_stack.set_visible_child_name("buttons");
                         }
                         glib::spawn_future_local(async move {
                             if dbg!(library.goto_path(text).await).is_err() {
-                                this.invalid_path_dialog.present(this.window.upgrade().as_ref());
+                                this.invalid_path_dialog
+                                    .present(this.window.upgrade().as_ref());
                             }
                         });
                     }
