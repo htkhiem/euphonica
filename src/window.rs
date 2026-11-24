@@ -1284,6 +1284,9 @@ impl EuphonicaWindow {
         win.imp()
             .folder_view
             .setup(app.get_library(), app.get_cache(), &win);
+        win.imp()
+            .song_view
+            .setup(app.get_library(), app.get_cache(), &win);
         win.imp().dyn_playlist_view.setup(
             app.get_library(),
             app.get_cache(),

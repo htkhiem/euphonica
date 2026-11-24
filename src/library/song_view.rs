@@ -2,8 +2,7 @@ use adw::prelude::*;
 use adw::subclass::prelude::*;
 use gtk::{
     CompositeTemplate, ListItem, SignalListItemFactory, SingleSelection, gio,
-    glib::{self},
-    glib::{Properties, SignalHandlerId, WeakRef, clone, subclass::Signal},
+    glib::{self, Properties, SignalHandlerId, WeakRef, clone, closure_local, subclass::Signal},
 };
 use std::cell::{OnceCell, RefCell};
 use std::{cell::Cell, cmp::Ordering, rc::Rc, sync::OnceLock};
@@ -16,8 +15,8 @@ use super::{
 use crate::{
     cache::{Cache, sqlite},
     client::ClientState,
-    common::{Album, ContentStack, Rating, Song, SongRow},
-    utils::{LazyInit, SearchableView, g_search_substr, settings_manager},
+    common::{Album, ContentStack, Rating, RowAddButtons, Song, SongRow},
+    utils::{LazyInit, SearchableView, format_secs_as_duration, g_search_substr, settings_manager},
     window::EuphonicaWindow,
 };
 
@@ -392,12 +391,12 @@ mod imp {
             .mapping(|nick, _| {
                 let idx = nick
                     .get::<String>()?
-                    .parse::<AlbumSortCriterion>()
+                    .parse::<SongSortCriterion>()
                     .map_or(gtk::INVALID_LIST_POSITION, |criterion| criterion as u32);
                 Some(idx.to_value())
             })
             .set_mapping(|idx, _| {
-                let criterion = AlbumSortCriterion::VARIANTS.get(idx.get::<u32>().ok()? as usize)?;
+                let criterion = SongSortCriterion::VARIANTS.get(idx.get::<u32>().ok()? as usize)?;
                 Some(criterion.get_serializations()[0].to_variant())
             })
             .build();
@@ -442,7 +441,6 @@ impl SongView {
         &self,
         library: &Library,
         cache: Rc<Cache>,
-        client_state: &ClientState,
         window: &EuphonicaWindow,
     ) {
         self.imp().library.set(Some(library));
@@ -486,7 +484,7 @@ impl SongView {
 
     fn setup_listview(&self, library: &Library, cache: Rc<Cache>, window: &EuphonicaWindow) {
         // Setup search bar
-        let album_list = self.imp().library.upgrade().unwrap().albums();
+        let song_list = self.imp().library.upgrade().unwrap().songs();
         let search_bar = self.imp().search_bar.get();
         let search_entry = self.imp().search_entry.get();
         search_bar.connect_entry(&search_entry);
@@ -500,7 +498,7 @@ impl SongView {
 
         // Chain order: substring search -> genres -> tags
         let search_model = gtk::FilterListModel::new(
-            Some(album_list.clone()),
+            Some(song_list.clone()),
             Some(self.imp().search_filter.clone()),
         );
         search_model.set_incremental(true);
@@ -518,24 +516,45 @@ impl SongView {
         // Set up factory
         let factory = SignalListItemFactory::new();
 
-        // Create an empty `SongRow` during setup
         factory.connect_setup(clone!(
+            #[weak]
+            library,
             #[weak]
             cache,
             #[weak]
             window,
-            #[weak]
-            library,
             move |_, list_item| {
                 let item = list_item
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
-                let row = SongRow::new(Some(cache.clone()), Some(&window), Some(&library));
+                let row = SongRow::new(Some(cache), Some(&window), Some(&library));
+                item.property_expression("item")
+                    .chain_property::<Song>("name")
+                    .bind(&row, "name", gtk::Widget::NONE);
+
+                item.property_expression("item")
+                    .chain_property::<Song>("album")
+                    .bind(&row, "first-attrib-text", gtk::Widget::NONE);
+
+                item.property_expression("item")
+                    .chain_property::<Song>("artist")
+                    .bind(&row, "second-attrib-text", gtk::Widget::NONE);
+
+                item.property_expression("item")
+                    .chain_property::<Song>("duration")
+                    .chain_closure::<String>(closure_local!(|_: Option<glib::Object>, dur: u64| {
+                        format_secs_as_duration(dur as f64)
+                    }))
+                    .bind(&row, "duration", gtk::Widget::NONE);
+
+                item.property_expression("item")
+                    .chain_property::<Song>("quality-grade")
+                    .bind(&row, "quality-grade", gtk::Widget::NONE);
+                let end_widget = RowAddButtons::new(&library);
+                row.set_end_widget(&end_widget.into());
                 item.set_child(Some(&row));
             }
         ));
-
-        // Tell factory how to bind `SongRow` to one of our Song GObjects.
         factory.connect_bind(move |_, list_item| {
             // Get `Song` from `ListItem` (that is, the data side)
             let item: Song = list_item
@@ -551,17 +570,30 @@ impl SongView {
                 .expect("Needs to be ListItem")
                 .child()
                 .and_downcast::<SongRow>()
-                .expect("The child has to be an `SongRow`.");
+                .expect("The child has to be a `SongRow`.");
+
+            child
+                .end_widget()
+                .and_downcast::<RowAddButtons>()
+                .unwrap()
+                .set_song(Some(&item));
             child.bind(&item);
         });
 
+        // When row goes out of sight, unbind from item to allow reuse with another.
         factory.connect_unbind(move |_, list_item| {
+            // Get `SongRow` from `ListItem` (the UI widget)
             let child: SongRow = list_item
                 .downcast_ref::<ListItem>()
                 .expect("Needs to be ListItem")
                 .child()
                 .and_downcast::<SongRow>()
-                .expect("The child has to be an `SongRow`.");
+                .expect("The child has to be a `SongRow`.");
+            child
+                .end_widget()
+                .and_downcast::<RowAddButtons>()
+                .unwrap()
+                .set_song(None);
             child.unbind();
         });
 
@@ -584,7 +616,7 @@ impl LazyInit for SongView {
             glib::spawn_future_local(async move {
                 // Just get basic info first to reduce spinner time
                 let _ = library.init_songs(false).await;
-                if library.albums().n_items() > 0 {
+                if library.songs().n_items() > 0 {
                     stack.show_content();
                 } else {
                     stack.show_placeholder();

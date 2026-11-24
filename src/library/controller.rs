@@ -288,7 +288,7 @@ impl Library {
                 );
             }
         }
-        self.client().get_songs_by_query(query, true, respond).await
+        self.client().get_songs_by_query(query, true, None, respond).await
     }
 
     /// Current number of songs in the queue, as tracked by the player.
@@ -563,8 +563,13 @@ impl Library {
             self.imp().songs_initialized.set(true);
             let list = self.imp().songs.clone(); // note: refcounted
             list.remove_all();
+            let mut query = Query::new();
+            query.and(Term::Base, Cow::Borrowed(""));
+
+            // TODO: LIMIT TAGTYPES FOR PERF
             self.client()
-                .get_songs_by_query(Query::new(), false, &mut |batch| {
+                .get_songs_by_query(query, true, None, &mut |batch| {
+                    eprintln!("ADDING {} SONGS TO LIST", batch.len());
                     list.extend_from_slice(&batch);
                 })
                 .await
@@ -618,6 +623,11 @@ impl Library {
     /// Get a reference to the local album artists store
     pub fn album_artists(&self) -> gio::ListStore {
         self.imp().albumartists.clone()
+    }
+
+    /// Get a reference to the local songs store
+    pub fn songs(&self) -> gio::ListStore {
+        self.imp().songs.clone()
     }
 
     /// Retrieve songs in a playlist
@@ -898,7 +908,7 @@ impl Library {
                 artist.get_name().to_owned(),
             );
             self.client()
-                .get_song_infos_by_query(query_artist_tag, true, &mut |batch| {
+                .get_song_infos_by_query(query_artist_tag, true, None,&mut |batch| {
                     batch
                         .into_iter()
                         .filter(|s| artist.is_in_song(s, false))
@@ -916,7 +926,7 @@ impl Library {
                 artist.get_name().to_owned(),
             );
             self.client()
-                .get_song_infos_by_query(query_albumartist_tag, true, &mut |batch| {
+                .get_song_infos_by_query(query_albumartist_tag, true, None, &mut |batch| {
                     batch
                         .into_iter()
                         .filter(|s: &SongInfo| {

@@ -1321,6 +1321,7 @@ impl MpdWrapper {
         &self,
         query: Query<'static>,
         use_fg: bool,
+        tagtypes: Option<Vec<&'static str>>,
         respond: &mut F,
     ) -> ClientResult<()>
     where
@@ -1332,10 +1333,10 @@ impl MpdWrapper {
             let (s, r) = oneshot::channel();
             let win = Window::from((curr_len as u32, (curr_len + BATCH_SIZE) as u32));
             let songs = if use_fg {
-                self.foreground(Task::Find(query.clone(), win, None, s), r)
+                self.foreground(Task::Find(query.clone(), win, tagtypes.clone(), s), r)
                     .await?
             } else {
-                self.background(Task::Find(query.clone(), win, None, s), r)
+                self.background(Task::Find(query.clone(), win, tagtypes.clone(), s), r)
                     .await?
             };
             if !songs.is_empty() {
@@ -1354,12 +1355,13 @@ impl MpdWrapper {
         &self,
         query: Query<'static>,
         use_fg: bool,
+        tagtypes: Option<Vec<&'static str>>,
         respond: &mut F,
     ) -> ClientResult<()>
     where
         F: FnMut(Vec<Song>),
     {
-        self.get_song_infos_by_query(query, use_fg, &mut |song_infos| {
+        self.get_song_infos_by_query(query, use_fg, tagtypes, &mut |song_infos| {
             respond(
                 song_infos
                     .into_iter()
