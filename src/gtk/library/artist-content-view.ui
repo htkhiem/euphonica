@@ -119,9 +119,11 @@
                               <object class="GtkLabel" id="name">
                                 <property name="halign">start</property>
                                 <property name="wrap">true</property>
-                                <property name="wrap-mode">2</property>
+                                <property name="wrap-mode">word</property>
+                                <property name="lines">3</property>
+                                <property name="ellipsize">end</property>
                                 <property name="justify">left</property>
-                                <property name="label">Untitled Album</property>
+                                <property name="label">Untitled Artist</property>
                                 <style>
                                   <class name="title-1"/>
                                 </style>

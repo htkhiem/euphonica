@@ -100,6 +100,7 @@
                       <object class="GtkLabel" id="title">
                         <property name="halign">start</property>
                         <property name="wrap">true</property>
+                        <property name="wrap-mode">word</property>
                         <property name="justify">left</property>
                         <property name="label">Untitled Album</property>
                         <property name="lines">3</property>
