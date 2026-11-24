@@ -25,7 +25,7 @@ use crate::{
     window::EuphonicaWindow,
 };
 
-use super::{MpdOutput, OutputControls, PlaybackControls, PlaybackState, Player, VolumeKnob};
+use super::{MpdOutput, OutputControls, PlaybackControls, PlaybackState, Player, VolumeControl, VolumeKnob};
 
 mod imp {
     use super::*;
@@ -90,6 +90,10 @@ mod imp {
         pub output_controls: TemplateChild<OutputControls>,
         #[template_child]
         pub vol_knob: TemplateChild<VolumeKnob>,
+        #[template_child]
+        pub gtk_volume_control: TemplateChild<VolumeControl>,
+        #[template_child]
+        pub volume_controls: TemplateChild<gtk::Box>,
 
         // Kept here so we can access it in snapshot()
         pub output_widgets: RefCell<Vec<MpdOutput>>,
@@ -200,6 +204,13 @@ mod imp {
             ui_settings
                 .bind("vol-knob-sensitivity", &knob, "sensitivity")
                 .mapping(|v: &Variant, _| Some(v.get::<f64>().unwrap().to_value()))
+                .build();
+            ui_settings
+                .bind("use-gtk-volume-control", &self.gtk_volume_control.get(), "visible")
+                .build();
+            ui_settings
+                .bind("use-gtk-volume-control", &self.vol_knob.get(), "visible")
+                .mapping(|v: &Variant, _| Some((!v.get::<bool>().unwrap()).to_value()))
                 .build();
 
             let pane_settings = settings_manager().child("state").child("queueview");
@@ -404,6 +415,7 @@ impl PlayerPane {
     ) {
         let imp = self.imp();
         self.imp().vol_knob.setup(player);
+        self.imp().gtk_volume_control.setup(player);
         let rg_btn = self.imp().rg_btn.get();
         player
             .bind_property("replaygain", &rg_btn, "icon-name")

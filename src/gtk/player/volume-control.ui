@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <template class="EuphonicaVolumeControl" parent="GtkBox">
+    <property name="orientation">horizontal</property>
+    <property name="spacing">6</property>
+    <property name="valign">center</property>
+    <child>
+      <object class="GtkButton" id="mute_button">
+        <property name="icon-name">audio-volume-muted-symbolic</property>
+        <property name="tooltip-text" translatable="true">Toggle mute</property>
+        <style>
+          <class name="flat"/>
+          <class name="circular"/>
+        </style>
+      </object>
+    </child>
+    <child>
+      <object class="GtkScale" id="scale">
+        <property name="orientation">horizontal</property>
+        <property name="width-request">120</property>
+        <property name="draw-value">false</property>
+        <property name="tooltip-text" translatable="true">Volume</property>
+        <property name="adjustment">
+          <object class="GtkAdjustment">
+            <property name="lower">0</property>
+            <property name="upper">100</property>
+            <property name="step-increment">1</property>
+            <property name="page-increment">10</property>
+          </object>
+        </property>
+      </object>
+    </child>
+    <child>
+      <object class="GtkLabel" id="readout">
+        <property name="width-chars">7</property>
+        <property name="xalign">1</property>
+        <property name="label">0%</property>
+        <style>
+          <class name="numeric"/>
+          <class name="dim-label"/>
+        </style>
+      </object>
+    </child>
+  </template>
+</interface>

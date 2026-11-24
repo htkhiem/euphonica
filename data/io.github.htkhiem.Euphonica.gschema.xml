@@ -399,6 +399,9 @@
 		<key name="vol-knob-sensitivity" type="d">
 			<default>1.0</default>
 		</key>
+		<key name="use-gtk-volume-control" type="b">
+			<default>false</default>
+		</key>
 		<key name="vol-knob-unit" enum='io.github.htkhiem.Euphonica.volumeunit'>
 			<default>'percents'</default>
 		</key>

@@ -52,6 +52,7 @@
     <file preprocess="xml-stripblanks">gtk/player/output.ui</file>
     <file preprocess="xml-stripblanks">gtk/player/output-controls.ui</file>
     <file preprocess="xml-stripblanks">gtk/player/volume-knob.ui</file>
+    <file preprocess="xml-stripblanks">gtk/player/volume-control.ui</file>
     <file preprocess="xml-stripblanks">gtk/preferences/dialog.ui</file>
     <file preprocess="xml-stripblanks">gtk/preferences/client.ui</file>
     <file preprocess="xml-stripblanks">gtk/preferences/integrations.ui</file>

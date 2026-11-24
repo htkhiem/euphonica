@@ -248,7 +248,13 @@
     </child>
     <child>
       <object class="AdwPreferencesGroup">
-        <property name="title" translatable="true">Volume Knob</property>
+        <property name="title" translatable="true">Volume Control</property>
+        <child>
+          <object class="AdwSwitchRow" id="use_gtk_volume_control">
+            <property name="title" translatable="true">Use GTK volume control</property>
+            <property name="subtitle" translatable="true">Use a slider instead of the volume knob</property>
+          </object>
+        </child>
         <child>
           <object class="AdwComboRow" id="vol_knob_unit">
             <property name="title" translatable="true">Display unit</property>
