@@ -400,6 +400,7 @@ impl Sidebar {
             "albums" => Some(self.imp().albums_btn.index()),
             "artists" => Some(self.imp().artists_btn.index()),
             "folders" => Some(self.imp().folders_btn.index()),
+            "songs" => Some(self.imp().songs_btn.index()),
             "playlists" => Some(self.imp().playlists_btn.index()),
             "dyn-playlists" => Some(self.imp().dyn_playlists_btn.index()),
             "recent" => Some(self.imp().recent_btn.index()),

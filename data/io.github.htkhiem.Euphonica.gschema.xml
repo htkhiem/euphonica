@@ -61,9 +61,10 @@
 		<value nick="albums" value="2"/>
 		<value nick="artists" value="3"/>
 		<value nick="folders" value="4"/>
-		<value nick="playlists" value="5"/>
-		<value nick="dyn-playlists" value="6"/>
-		<value nick="queue" value="7"/>
+		<value nick="songs" value="5"/>
+		<value nick="playlists" value="6"/>
+		<value nick="dyn-playlists" value="7"/>
+		<value nick="queue" value="8"/>
 	</enum>
 
 	<enum id="io.github.htkhiem.Euphonica.recentsubview">
