@@ -33,6 +33,7 @@
     <file preprocess="xml-stripblanks">gtk/library/discography-album.ui</file>
     <file preprocess="xml-stripblanks">gtk/library/folder-view.ui</file>
     <file preprocess="xml-stripblanks">gtk/library/generic-row.ui</file>
+    <file preprocess="xml-stripblanks">gtk/library/song-view.ui</file>
     <file preprocess="xml-stripblanks">gtk/library/dynamic-playlist-view.ui</file>
     <file preprocess="xml-stripblanks">gtk/library/dynamic-playlist-content-view.ui</file>
     <file preprocess="xml-stripblanks">gtk/library/dynamic-playlist-editor-view.ui</file>

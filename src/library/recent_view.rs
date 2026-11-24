@@ -557,19 +557,19 @@ impl RecentView {
             .recent_songs
             .bind_model(Some(&song_list), move |obj| {
                 let song = obj.downcast_ref::<Song>().unwrap();
-                let row = SongRow::new(Some(cache.clone()), None, window.as_ref(), Some(&library));
+                let row = SongRow::new(Some(cache.clone()), window.as_ref(), Some(&library));
                 // Manually bind attributes here
                 row.set_name(song.get_name());
                 row.set_quality_grade(song.get_quality_grade());
                 row.set_first_attrib_text(song.get_album_title());
-                row.set_second_attrib_text(Some(&song.get_artist_string()));
+                row.set_second_attrib_text(Some(&song.get_artist_str()));
                 row.set_duration(song.get_last_played_desc().as_deref());
 
                 let end_widget = RowAddButtons::new(&library);
                 end_widget.set_song(Some(song));
                 row.set_end_widget(&end_widget.into());
 
-                row.on_bind(song);
+                row.bind(song);
                 row.into()
             });
 

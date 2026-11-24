@@ -64,7 +64,6 @@ mod imp {
         pub genres: gio::ListStore,
         pub genres_initialized: Cell<bool>,
         // Folder view
-        // Files and folders
         pub folder_history: RefCell<Vec<String>>,
         pub folder_curr_idx: Cell<u32>, // 0 means at root.
         #[derivative(Default(value = "gio::ListStore::new::<INode>()"))]
@@ -72,6 +71,10 @@ mod imp {
         pub folder_inodes_initialized: Cell<bool>,
         pub playlist_cover_ids: RefCell<Option<(SignalHandlerId, SignalHandlerId)>>,
         pub dyn_playlist_cover_ids: RefCell<Option<(SignalHandlerId, SignalHandlerId)>>,
+        // Song view. Since this is usually a complete copy of the MPD library itself, maybe we can run off this in the future?
+        #[derivative(Default(value = "gio::ListStore::new::<Song>()"))]
+        pub songs: gio::ListStore,
+        pub songs_initialized: Cell<bool>,
 
         pub cache_state: WeakRef<CacheState>,
         pub player: OnceCell<Player>,
@@ -222,6 +225,8 @@ impl Library {
     }
 
     pub fn clear(&self) {
+        self.imp().songs.remove_all();
+        self.imp().songs_initialized.set(false);
         self.imp().genres.remove_all();
         self.imp().genres_initialized.set(false);
         self.imp().albums.remove_all();
@@ -550,6 +555,22 @@ impl Library {
             );
         }
         Ok(())
+    }
+
+    /// Get all the songs, for Song View.
+    pub async fn init_songs(&self, refresh: bool) -> ClientResult<()> {
+        if refresh || !self.imp().songs_initialized.get() {
+            self.imp().songs_initialized.set(true);
+            let list = self.imp().songs.clone(); // note: refcounted
+            list.remove_all();
+            self.client()
+                .get_songs_by_query(Query::new(), false, &mut |batch| {
+                    list.extend_from_slice(&batch);
+                })
+                .await
+        } else {
+            Ok(())
+        }
     }
 
     pub async fn clear_history(&self) -> ClientResult<()> {

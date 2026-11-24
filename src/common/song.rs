@@ -117,6 +117,8 @@ mod imp {
         pub name: OnceCell<String>,
         /// Cached concatenation of artist names.
         pub artist_string: OnceCell<String>,
+        /// Cached concatenation of albumartist names.
+        pub albumartist_string: OnceCell<String>,
         /// Cached parsed ArtistInfo structs. Use InitOnceArc instead of OnceArc to ensure only
         /// one init job can run at any time. Said init job will be BLOCKING so clone the whole
         /// InitOnceArc to a child thread first before running!
@@ -145,6 +147,7 @@ mod imp {
                 quality_grade: Cell::default(),
                 name: OnceCell::new(),
                 artist_string: OnceCell::new(),
+                albumartist_string: OnceCell::new(),
                 artists: InitOnceArc::new(),
                 album: InitOnceArc::new(),
                 stickers: RefCell::new(Stickers::default()),
@@ -200,7 +203,7 @@ mod imp {
                 "uri" => obj.get_uri().to_value(),
                 "name" => obj.get_name().to_value(),
                 // "last_mod" => obj.get_last_mod().to_value(),
-                "artist" => obj.get_artist_string().to_value(),
+                "artist" => obj.get_artist_str().to_value(),
                 "duration" => obj.get_duration().to_value(),
                 "rating" => obj.get_rating().unwrap_or(-1).to_value(),
                 "queue-id" => obj.get_queue_id().to_value(),
@@ -300,7 +303,7 @@ impl Song {
 
     /// Get artist names separated by commas. Will look weird if a song was from artists
     /// whose names contain commas themselves, like Earth, Wind & Fire.
-    pub fn get_artist_string(&self) -> &str {
+    pub fn get_artist_str(&self) -> &str {
         self.imp()
             .artist_string
             .get_or_init(|| self.get_inner().artists.join(", "))
@@ -310,6 +313,24 @@ impl Song {
     /// Get an iterator over artist tags for comparison/sorting purposes.
     pub fn get_artists(&self) -> impl Iterator<Item = &String> {
         self.get_inner().artists.iter()
+    }
+
+    pub fn get_albumartists(&self) -> impl Iterator<Item = &String> {
+        self.get_inner().albumartists.iter()
+    }
+
+    /// Get albumartist names separated by commas. Will look weird if a song was from albumartists
+    /// whose names contain commas themselves, like Earth, Wind & Fire.
+    pub fn get_albumartist_str(&self) -> &str {
+        self.imp()
+            .albumartist_string
+            .get_or_init(|| self.get_inner().albumartists.join(", "))
+            .as_str()
+    }
+
+    /// Get an iterator over genres.
+    pub fn get_genres(&self) -> impl Iterator<Item = &String> {
+        self.get_inner().genres.iter()
     }
 
     pub fn get_queue_id(&self) -> u32 {
@@ -434,83 +455,6 @@ impl Default for Song {
 
 impl From<SongInfo> for Song {
     fn from(song: SongInfo) -> Self {
-        // Most of the parsing is now done by our rust-mpd fork.
-        // This from() implementation now only takes care of Euphonica-specific stuff.
-
-        // // Parse artists
-        // let artists: Vec<ArtistInfo> = zip_longest(
-        //     // Flatten artist tag only since it's usually the less standardised one.
-        //     // ArtistSort and musicbrainz_artistid are expected to follow the Vorbis
-        //     // standard since they're likely tagged by proper autotagging software.
-        //     song.artists
-        //         .into_iter()
-        //         .map(|s| parse_mb_artist_tag(&s))
-        //         .flatten()
-        //         .map(|s| s.to_owned()),
-        //     zip_longest(song.artistsorts, song.artist_mbids),
-        // )
-        // .map(|(name, (sort_tag, mbid))| ArtistInfo {
-        //     name,
-        //     sort_tag,
-        //     mbid,
-        //     genres: FxHashSet::default(),
-        //     example_uris: Vec::with_capacity(0),
-        //     is_composer: false,
-        //     is_albumartist: false,
-        // })
-        // .collect();
-
-        // Parse album information
-        // let mut album_info: Option<AlbumInfo> = if let Some(album) = song.album {
-        //     // Parse albumartists
-        //     let albumartists: Vec<ArtistInfo> = zip_longest(
-        //         // Flatten artist tag only since it's usually the less standardised one.
-        //         // ArtistSort and musicbrainz_artistid are expected to follow the Vorbis
-        //         // standard since they're likely tagged by proper autotagging software.
-        //         song.albumartists
-        //             .into_iter()
-        //             .map(|s| parse_mb_artist_tag(&s))
-        //             .flatten()
-        //             .map(|s| s.to_owned()),
-        //         zip_longest(song.albumartistsorts, song.albumartist_mbids),
-        //     )
-        //     .map(|(name, (sort_tag, mbid))| ArtistInfo {
-        //         name,
-        //         sort_tag,
-        //         mbid,
-        //         genres: FxHashSet::default(),
-        //         example_uris: Vec::with_capacity(0),
-        //         is_composer: false,
-        //         is_albumartist: true,
-        //     })
-        //     .collect();
-        //     if let Some(album) = res.album.as_mut() {
-        //         album.mbid = album_mbid;
-        //         album.albumsort = albumsort; //.or_else(|| {res.artist_tag.clone()});
-        //         album.albumartistsort = albumartistsort;
-        //         album.release_date = res.release_date;
-        //         album.date_tag = date_tag;
-        //         if !genre_tags.is_empty() {
-        //             album.add_genres_from_tags(&genre_tags);
-        //         }
-        //         // Assume the albumartist IDs are given in the same order as the albumartist tags
-        //         if let Some(album_artist_str) =
-        //             albumartist.as_ref().or_else(|| res.artist_tag.as_ref())
-        //         {
-        //             album.add_artists_from_string(album_artist_str);
-        //         }
-        //         album.albumartist = albumartist;
-        //         for (idx, id) in album_artist_mbids.drain(..).enumerate() {
-        //             if idx < album.artists.len() {
-        //                 let _ = album.artists[idx].mbid.replace(id);
-        //             }
-        //         }
-        //     }
-        //     Some(AlbumInfo::new(&song.file))
-        // } else {
-        //     None
-        // };
-
         let res: Self = glib::Object::new();
         let imp = res.imp();
         if let Some(place) = &song.place {

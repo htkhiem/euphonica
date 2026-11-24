@@ -271,20 +271,20 @@ impl DiscographyAlbum {
                 #[weak]
                 library,
                 #[upgrade_or]
-                SongRow::new(None, None, None, None).into(),
+                SongRow::new(None, None, None).into(),
                 move |song_obj| {
                     let song = song_obj
                         .downcast_ref::<Song>()
                         .expect("Must be a common::Song");
-                    let row = SongRow::new(None, None, window.as_ref(), Some(&library));
-                    row.on_bind(song);
+                    let row = SongRow::new(None, window.as_ref(), Some(&library));
+                    row.bind(song);
                     row.set_index_visible(true);
                     row.set_index(&song.get_track().to_string());
                     row.set_disc(&song.get_disc().to_string());
                     row.set_thumbnail_visible(false);
 
                     row.set_name(song.get_name());
-                    row.set_first_attrib_text(Some(&song.get_artist_string()));
+                    row.set_first_attrib_text(Some(&song.get_artist_str()));
                     row.set_duration(Some(&format_secs_as_duration(song.get_duration() as f64)));
 
                     row.set_quality_grade(song.get_quality_grade());

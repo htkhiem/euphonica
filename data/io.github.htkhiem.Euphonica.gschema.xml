@@ -481,6 +481,7 @@
 		<child schema="io.github.htkhiem.Euphonica.state.albumview" name="albumview"/>
 		<child schema="io.github.htkhiem.Euphonica.state.artistview" name="artistview"/>
 		<child schema="io.github.htkhiem.Euphonica.state.folderview" name="folderview"/>
+		<child schema="io.github.htkhiem.Euphonica.state.songview" name="songview"/>
 		<child schema="io.github.htkhiem.Euphonica.state.playlistview" name="playlistview"/>
 		<child schema="io.github.htkhiem.Euphonica.state.dynplaylistview" name="dynplaylistview"/>
 		<child schema="io.github.htkhiem.Euphonica.state.queueview" name="queueview"/>
@@ -589,6 +590,39 @@
 		<key name="sort-direction" enum='io.github.htkhiem.Euphonica.sortdir'>
 			<default>'asc'</default>
 			<summary>Folder View sort direction</summary>
+		</key>
+	</schema>
+
+	<schema id="io.github.htkhiem.Euphonica.state.songview" path="/io/github/htkhiem/Euphonica/state/songview/">
+		<!-- Song view state -->
+		<key name='sort-by' enum='io.github.htkhiem.Euphonica.sortby'>
+			<default>'album-artist'</default>
+			<summary>Song View sort criterion</summary>
+		</key>
+
+		<key name="sort-direction" enum='io.github.htkhiem.Euphonica.sortdir'>
+			<default>'asc'</default>
+			<summary>Song View sort direction</summary>
+		</key>
+
+		<key name='sort-by-2' enum='io.github.htkhiem.Euphonica.sortby'>
+			<default>'release-date'</default>
+			<summary>Song View second sort criterion</summary>
+		</key>
+
+		<key name="sort-direction-2" enum='io.github.htkhiem.Euphonica.sortdir'>
+			<default>'asc'</default>
+			<summary>Song View second sort direction</summary>
+		</key>
+
+		<key name='sort-by-3' enum='io.github.htkhiem.Euphonica.sortby'>
+			<default>'song-title'</default>
+			<summary>Song View third sort criterion</summary>
+		</key>
+
+		<key name="sort-direction-3" enum='io.github.htkhiem.Euphonica.sortdir'>
+			<default>'asc'</default>
+			<summary>Song View third sort direction</summary>
 		</key>
 	</schema>
 

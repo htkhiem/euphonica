@@ -1264,7 +1264,7 @@ impl ArtistContentView {
                 let item = list_item
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
-                let row = SongRow::new(Some(cache), None, window.as_ref(), Some(&library));
+                let row = SongRow::new(Some(cache), window.as_ref(), Some(&library));
                 item.property_expression("item")
                     .chain_property::<Song>("name")
                     .bind(&row, "name", gtk::Widget::NONE);
@@ -1310,7 +1310,7 @@ impl ArtistContentView {
                 .and_downcast::<RowAddButtons>()
                 .unwrap()
                 .set_song(Some(&item));
-            child.on_bind(&item);
+            child.bind(&item);
         });
 
         // When row goes out of sight, unbind from item to allow reuse with another.
@@ -1327,7 +1327,7 @@ impl ArtistContentView {
                 .and_downcast::<RowAddButtons>()
                 .unwrap()
                 .set_song(None);
-            child.on_unbind();
+            child.unbind();
         });
 
         // Set the factory of the list view

@@ -50,7 +50,7 @@
                                       <object class="GtkDropDown" id="sort_by">
                                         <property name="hexpand">true</property>
                                         <style>
-                                          <class name="album-sort-dropdown"/>
+                                          <class name="padded-dropdown"/>
                                         </style>
                                       </object>
                                     </child>
@@ -83,7 +83,7 @@
                                       <object class="GtkDropDown" id="sort_by_2">
                                         <property name="hexpand">true</property>
                                         <style>
-                                          <class name="album-sort-dropdown"/>
+                                          <class name="padded-dropdown"/>
                                         </style>
                                       </object>
                                     </child>
@@ -116,7 +116,7 @@
                                       <object class="GtkDropDown" id="sort_by_3">
                                         <property name="hexpand">true</property>
                                         <style>
-                                          <class name="album-sort-dropdown"/>
+                                          <class name="padded-dropdown"/>
                                         </style>
                                       </object>
                                     </child>

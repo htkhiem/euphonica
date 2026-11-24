@@ -36,6 +36,12 @@
 								<property name="icon-name">folder-symbolic</property>
 							</object>
 						</child>
+						<child>
+							<object class="AdwSidebarItem" id="songs_btn">
+								<property name="title" translatable="true">Songs</property>
+								<property name="icon-name">music-note-single-symbolic</property>
+							</object>
+						</child>
 					</object>
 				</child>
 				<child>

@@ -93,7 +93,7 @@ mod imp {
         pub collapsed: Cell<bool>,
 
         pub initializing: Cell<bool>,
-        pub window: OnceCell<WeakRef<EuphonicaWindow>>,
+        pub window: WeakRef<EuphonicaWindow>,
     }
 
     #[glib::object_subclass]
@@ -425,13 +425,9 @@ impl AlbumView {
         window: &EuphonicaWindow,
     ) {
         self.imp().library.set(Some(library));
-        let weak = WeakRef::new();
-        weak.set(Some(window));
-
         self.imp()
             .window
-            .set(weak)
-            .expect("AlbumView window already set");
+            .set(Some(window));
         self.setup_gridview(library, cache.clone());
 
         // Set up genres and tags filters

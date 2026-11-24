@@ -55,6 +55,8 @@ mod imp {
         #[template_child]
         pub folders_btn: TemplateChild<adw::SidebarItem>,
         #[template_child]
+        pub songs_btn: TemplateChild<adw::SidebarItem>,
+        #[template_child]
         pub playlists_section: TemplateChild<adw::SidebarSection>,
         #[template_child]
         pub playlists_btn: TemplateChild<adw::SidebarItem>,
@@ -174,6 +176,8 @@ impl Sidebar {
                 stack.set_visible_child_name("artists");
             } else if item == imp.folders_btn.get() {
                 stack.set_visible_child_name("folders");
+            } else if item == imp.songs_btn.get() {
+                stack.set_visible_child_name("songs");
             } else if item == imp.dyn_playlists_btn.get() {
                 stack.set_visible_child_name("dyn-playlists");
                 dyn_playlist_view.pop();

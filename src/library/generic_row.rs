@@ -15,14 +15,14 @@ thread_local! {
     static FOLDER_ICON: LazyCell<gtk::IconPaintable> = LazyCell::new(|| {
         let theme: gtk::IconTheme = gdk::Display::default().map(|disp| gtk::IconTheme::for_display(&disp)).unwrap_or_default();
 
-        dbg!(theme.lookup_icon(
+        theme.lookup_icon(
             "inode-directory",
             &["folder", "folder-symbolic"],
             32,
             1, // scale
             gtk::TextDirection::None,
             gtk::IconLookupFlags::NONE,
-        ))
+        )
     });
 
     static PLAYLIST_ICON: LazyCell<gtk::IconPaintable> = LazyCell::new(|| {
