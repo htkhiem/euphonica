@@ -2,7 +2,9 @@ use gtk::{Ordering, gio, gio::prelude::SettingsExt};
 use strum_macros::{Display, EnumMessage, EnumString, VariantArray};
 
 use crate::{
-    common::Song, library::{SortCriterion, SortDirection, SortTier}, utils::{g_cmp_options, g_cmp_str_options, g_cmp_str_vecs}
+    common::Song,
+    library::{SortCriterion, SortDirection, SortTier},
+    utils::{g_cmp_options, g_cmp_str_options, g_cmp_str_vecs},
 };
 
 pub const SONG_SORT_SETTINGS: [(&str, &str); 3] = [
@@ -28,6 +30,8 @@ pub enum SongSortCriterion {
     ReleaseDate,
     #[strum(serialize = "last-modified", to_string = "Last Modified")]
     LastModified,
+    #[strum(serialize = "disc-track", to_string = "Disc & Track")]
+    DiscTrack,
 }
 
 impl SortCriterion for SongSortCriterion {}
@@ -81,8 +85,27 @@ impl SongSortCriterion {
                 b.get_last_modified(),
                 nulls_first,
                 ascending,
-                true   // MPD returns fixed casing, but by setting this to true we avoid having to_lowercase()
-            )
+                true, // MPD returns fixed casing, but by setting this to true we avoid having to_lowercase()
+            ),
+            Self::DiscTrack => {
+                // Combo option: disc first then track. No point sorting by one without the other.
+                let disc_res = g_cmp_options(
+                    Some(&a.get_disc()),
+                    Some(&b.get_disc()),
+                    nulls_first,
+                    ascending,
+                );
+                if disc_res != Ordering::Equal {
+                    disc_res
+                } else {
+                    g_cmp_options(
+                        Some(&a.get_track()),
+                        Some(&b.get_track()),
+                        nulls_first,
+                        ascending,
+                    )
+                }
+            }
         }
     }
 }
