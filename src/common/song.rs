@@ -407,14 +407,14 @@ impl Song {
         }
 
         // Album art, if available
-        if let Some(thumbnail_name) =
-            sqlite::find_cover_by_uri(&inner.file, true).expect("Sqlite DB error")
+        if let Some(hires_name) =
+            sqlite::find_cover_by_uri(&inner.file, false).expect("Sqlite DB error")
         {
-            let mut thumbnail_path = get_image_cache_path();
-            thumbnail_path.push(thumbnail_name);
-            if thumbnail_path.exists() {
+            let mut hires_path = get_image_cache_path();
+            hires_path.push(hires_name);
+            if hires_path.exists() {
                 let path_string =
-                    "file://".to_owned() + &thumbnail_path.into_os_string().into_string().unwrap();
+                    "file://".to_owned() + &hires_path.into_os_string().into_string().unwrap();
                 meta.set_art_url(Some(path_string));
             }
         }
