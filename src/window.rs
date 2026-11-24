@@ -1465,6 +1465,10 @@ impl EuphonicaWindow {
         self.imp().stack.get()
     }
 
+    pub fn get_sidebar(&self) -> Sidebar {
+        self.imp().sidebar.get()
+    }
+
     pub fn get_split_view(&self) -> adw::OverlaySplitView {
         self.imp().split_view.get()
     }

@@ -52,15 +52,15 @@ mod imp {
         #[template_child]
         pub albums_badge: TemplateChild<gtk::Button>,
         #[template_child]
-        pub albums_count: TemplateChild<gtk::Label>,
+        pub albums_count: TemplateChild<adw::ButtonContent>,
         #[template_child]
         pub artists_badge: TemplateChild<gtk::Button>,
         #[template_child]
-        pub artists_count: TemplateChild<gtk::Label>,
+        pub artists_count: TemplateChild<adw::ButtonContent>,
         #[template_child]
         pub songs_badge: TemplateChild<gtk::Button>,
         #[template_child]
-        pub songs_count: TemplateChild<gtk::Label>,
+        pub songs_count: TemplateChild<adw::ButtonContent>,
 
         // Rediscover
         #[template_child]
@@ -431,6 +431,30 @@ impl RecentView {
         let _ = self.imp().cache.set(cache.clone());
         self.imp().window.set(Some(window));
 
+        self.imp().albums_badge.connect_clicked(clone!(
+            #[weak]
+            window,
+            move |_| {
+                window.get_sidebar().set_view("albums");
+            }
+        ));
+
+        self.imp().artists_badge.connect_clicked(clone!(
+            #[weak]
+            window,
+            move |_| {
+                window.get_sidebar().set_view("artists");
+            }
+        ));
+
+        self.imp().songs_badge.connect_clicked(clone!(
+            #[weak]
+            window,
+            move |_| {
+                window.get_sidebar().set_view("songs");
+            }
+        ));
+
         self.imp()
             .history_changed_id
             .replace(Some(player.connect_closure(
@@ -493,11 +517,7 @@ impl RecentView {
     }
 
     async fn refresh_rediscover(&self) {
-        if let (Some(library), Some(cache), Some(win)) = (
-            self.imp().library.upgrade(),
-            self.imp().cache.get(),
-            self.imp().window.upgrade(),
-        ) {
+        if let Some(library) = self.imp().library.upgrade() {
             self.imp().rediscover_content_stack.show_placeholder();
             let rediscover_albums = &self.imp().rediscover_albums_list;
             let rediscover_artists = &self.imp().rediscover_artists_list;
@@ -520,11 +540,7 @@ impl RecentView {
     }
 
     async fn refresh_recent(&self) {
-        if let (Some(library), Some(cache), Some(win)) = (
-            self.imp().library.upgrade(),
-            self.imp().cache.get(),
-            self.imp().window.upgrade(),
-        ) {
+        if let Some(library) = self.imp().library.upgrade() {
             self.imp().recent_content_stack.show_placeholder();
             let recent_albums = &self.imp().recent_albums_list;
             let recent_artists = &self.imp().recent_artists_list;
