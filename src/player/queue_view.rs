@@ -285,7 +285,7 @@ mod imp {
                             // Match either title or artist
                             g_search_substr(Some(song.get_name()), &search_term, case_sensitive)
                                 || g_search_substr(
-                                    Some(song.get_artist_string()),
+                                    Some(song.get_artist_str()),
                                     &search_term,
                                     case_sensitive,
                                 )
@@ -297,7 +297,7 @@ mod imp {
                         2 => {
                             // Match only artist
                             g_search_substr(
-                                Some(song.get_artist_string()),
+                                Some(song.get_artist_str()),
                                 &search_term,
                                 case_sensitive,
                             )
@@ -490,7 +490,6 @@ impl QueueView {
                     .expect("Needs to be ListItem");
                 let row = SongRow::new(
                     Some(cache.clone()),
-                    Some(&player),
                     this.imp().window.upgrade().as_ref(),
                     this.imp().library.upgrade().as_ref(),
                 );
@@ -590,7 +589,7 @@ impl QueueView {
                         // To avoid problems with hotspot positioning quirks (caused by other rows changing padding upon hover)
                         // the icon will be a standalone copy of the original row.
                         // Additional benefit: we get to customise how it looks.
-                        let drag_widget = SongRow::new(None, None, None, None);
+                        let drag_widget = SongRow::new(None, None, None);
                         // Give it the same size as the real row
                         drag_widget.set_size_request(row.width(), row.height());
                         drag_widget.set_thumbnail_visible(false);
@@ -716,7 +715,7 @@ impl QueueView {
                     .expect("The child has to be a `SongRow`.");
 
                 // Within this binding fn is where the cached album art texture gets used.
-                child.on_bind(&item);
+                child.bind(&item);
 
                 this.imp()
                     .last_scroll_pos
@@ -734,7 +733,7 @@ impl QueueView {
                 .child()
                 .and_downcast::<SongRow>()
                 .expect("The child has to be a `SongRow`.");
-            child.on_unbind();
+            child.unbind();
         });
 
         factory.connect_teardown(clone!(

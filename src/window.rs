@@ -189,6 +189,8 @@ impl NavigationTarget {
 }
 
 mod imp {
+    use crate::library::SongView;
+
     use super::*;
 
     #[derive(Debug, Default, Properties, gtk::CompositeTemplate)]
@@ -211,6 +213,8 @@ mod imp {
         pub artist_view: TemplateChild<ArtistView>,
         #[template_child]
         pub folder_view: TemplateChild<FolderView>,
+        #[template_child]
+        pub song_view: TemplateChild<SongView>,
         #[template_child]
         pub dyn_playlist_view: TemplateChild<DynamicPlaylistView>,
         #[template_child]
@@ -564,6 +568,7 @@ mod imp {
                 self.album_view.upcast_ref::<gtk::Widget>(),
                 self.artist_view.upcast_ref::<gtk::Widget>(),
                 self.folder_view.upcast_ref::<gtk::Widget>(),
+                self.song_view.upcast_ref::<gtk::Widget>(),
                 self.playlist_view.upcast_ref::<gtk::Widget>(),
                 self.dyn_playlist_view.upcast_ref::<gtk::Widget>(),
                 self.queue_view.upcast_ref::<gtk::Widget>(),
@@ -1315,6 +1320,9 @@ impl EuphonicaWindow {
         win.imp()
             .folder_view
             .setup(app.get_library(), app.get_cache(), &win);
+        win.imp()
+            .song_view
+            .setup(app.get_library(), app.get_cache(), &win);
         win.imp().dyn_playlist_view.setup(
             app.get_library(),
             app.get_cache(),
@@ -1532,6 +1540,10 @@ impl EuphonicaWindow {
         self.imp().stack.get()
     }
 
+    pub fn get_sidebar(&self) -> Sidebar {
+        self.imp().sidebar.get()
+    }
+
     pub fn get_split_view(&self) -> adw::OverlaySplitView {
         self.imp().split_view.get()
     }
@@ -1691,6 +1703,9 @@ impl EuphonicaWindow {
                 "folders" => {
                     imp.folder_view.populate();
                 }
+                "songs" => {
+                    imp.song_view.populate();
+                }
                 "queue" => {
                     imp.queue_view.populate();
                 }
@@ -1713,6 +1728,9 @@ impl EuphonicaWindow {
                 }
                 "folders" => {
                     imp.folder_view.trigger_search();
+                }
+                "songs" => {
+                    imp.song_view.trigger_search();
                 }
                 "playlists" => {
                     imp.playlist_view.trigger_search();
@@ -1766,6 +1784,10 @@ impl EuphonicaWindow {
             imp.folder_view
                 .search_bar()
                 .set_key_capture_widget((curr_child == "folders").then_some(self));
+
+            imp.song_view
+                .search_bar()
+                .set_key_capture_widget((curr_child == "songs").then_some(self));
 
             imp.dyn_playlist_view
                 .search_bar()
@@ -2113,6 +2135,9 @@ impl EuphonicaWindow {
         let view_folders_action = gio::ActionEntry::builder("view-folders")
             .activate(move |this: &Self, _, _| this.switch_to_view("folders"))
             .build();
+        let view_songs_action = gio::ActionEntry::builder("view-songs")
+            .activate(move |this: &Self, _, _| this.switch_to_view("songs"))
+            .build();
         let view_dyn_playlists_action = gio::ActionEntry::builder("view-dynamic-playlists")
             .activate(move |this: &Self, _, _| this.switch_to_view("dyn-playlists"))
             .build();
@@ -2148,6 +2173,7 @@ impl EuphonicaWindow {
             view_albums_action,
             view_artists_action,
             view_folders_action,
+            view_songs_action,
             view_dyn_playlists_action,
             view_playlists_action,
             view_queue_action,

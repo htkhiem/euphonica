@@ -171,10 +171,11 @@
                     <property name="vexpand">true</property>
                     <property name="child">
                       <object class="GtkListView" id="list_view">
+                        <property name="margin-start">6</property>
+                        <property name="margin-end">6</property>
                         <property name="single-click-activate">false</property>
                         <style>
                           <class name="song-list"/>
-                          <class name="padding-12"/>
                         </style>
                       </object>
                     </property>

@@ -19,14 +19,12 @@
  */
 
 use std::borrow::Cow;
-use std::collections::HashMap;
-use std::sync::Mutex;
 use std::time::Duration;
 
 use async_channel::Sender;
 use gtk::glib::{self, clone};
 use mpd::search::{Operation, Window};
-use mpd::{Query, Term, song::Song as SongInfo};
+use mpd::{Query, Term};
 use search_provider::{
     ResultID, ResultMeta, ResultMetaBuilder, SearchProvider, SearchProviderImpl,
 };
@@ -74,7 +72,7 @@ pub fn start(client: &MpdWrapper, app: &EuphonicaApplication) {
 
     let imp = EuphonicaSearchProvider {
         fg,
-        main_thread_sender: main_thread_send
+        main_thread_sender: main_thread_send,
     };
 
     // Actual run loop for the search provider. Since our application struct

@@ -64,7 +64,6 @@ mod imp {
         pub genres: gio::ListStore,
         pub genres_initialized: Cell<bool>,
         // Folder view
-        // Files and folders
         pub folder_history: RefCell<Vec<String>>,
         pub folder_curr_idx: Cell<u32>, // 0 means at root.
         #[derivative(Default(value = "gio::ListStore::new::<INode>()"))]
@@ -72,6 +71,10 @@ mod imp {
         pub folder_inodes_initialized: Cell<bool>,
         pub playlist_cover_ids: RefCell<Option<(SignalHandlerId, SignalHandlerId)>>,
         pub dyn_playlist_cover_ids: RefCell<Option<(SignalHandlerId, SignalHandlerId)>>,
+        // Song view. Since this is usually a complete copy of the MPD library itself, maybe we can run off this in the future?
+        #[derivative(Default(value = "gio::ListStore::new::<Song>()"))]
+        pub songs: gio::ListStore,
+        pub songs_initialized: Cell<bool>,
 
         pub cache_state: WeakRef<CacheState>,
         pub player: OnceCell<Player>,
@@ -222,6 +225,8 @@ impl Library {
     }
 
     pub fn clear(&self) {
+        self.imp().songs.remove_all();
+        self.imp().songs_initialized.set(false);
         self.imp().genres.remove_all();
         self.imp().genres_initialized.set(false);
         self.imp().albums.remove_all();
@@ -283,7 +288,9 @@ impl Library {
                 );
             }
         }
-        self.client().get_songs_by_query(query, true, respond).await
+        self.client()
+            .get_songs_by_query(query, true, None, respond)
+            .await
     }
 
     /// Current number of songs in the queue, as tracked by the player.
@@ -292,32 +299,39 @@ impl Library {
         self.player().queue().n_items()
     }
 
-    /// Queue specific songs
+    /// Queue specific songs. Will pass Arcs of SongInfos to client threads to avoid copying.
+    /// Batching is handled internally by the clients. This is probably the most reliable
+    /// and least-blocking way of queuing large numbers of songs.
     pub async fn queue_songs(
         &self,
         songs: &[Song],
         replace: bool,
         play_from: Option<u32>,
     ) -> ClientResult<()> {
-        self.queue_uris(
-            songs
-                .iter()
-                .map(|s| s.get_uri().to_owned())
-                .collect::<Vec<String>>(),
-            replace,
-            play_from,
-        )
-        .await
+        let client = self.client();
+        if replace {
+            client.clear_queue().await?;
+        }
+        client
+            .add_multi_arc(
+                songs.iter().map(|s| s.get_inner_arc()).collect(),
+                false,
+                None,
+            )
+            .await?;
+        if let Some(pos) = play_from {
+            client.play_at(pos, false).await?;
+        }
+        Ok(())
     }
 
-    /// Queue a list of MPD URIs in the given order.
+    /// Queue a list of MPD URIs in the given order. Will pack into command lists.
     pub async fn queue_uris(
         &self,
         uris: Vec<String>,
         replace: bool,
         play_from: Option<u32>,
     ) -> ClientResult<()> {
-        // TODO: support executing this atomically as a command list
         let client = self.client();
         if replace {
             client.clear_queue().await?;
@@ -552,6 +566,42 @@ impl Library {
         Ok(())
     }
 
+    /// Get all the songs, for Song View.
+    pub async fn init_songs(&self, refresh: bool) -> ClientResult<()> {
+        if refresh || !self.imp().songs_initialized.get() {
+            self.imp().songs_initialized.set(true);
+            let list = self.imp().songs.clone(); // note: refcounted
+            list.remove_all();
+            let mut query = Query::new();
+            query.and(Term::Base, Cow::Borrowed(""));
+
+            // TODO: LIMIT TAGTYPES FOR PERF
+            self.client()
+                .get_songs_by_query(
+                    query,
+                    true,
+                    Some(vec![
+                        tags::TITLE,
+                        tags::ALBUM,
+                        tags::ARTIST,
+                        tags::ALBUMSORT,
+                        tags::ARTISTSORT,
+                        tags::ALBUM_MBID,
+                        tags::ARTIST_MBID,
+                        tags::DATE,
+                        tags::ORIGINAL_DATE,
+                        tags::GENRE,
+                    ]),
+                    &mut |batch| {
+                        list.extend_from_slice(&batch);
+                    },
+                )
+                .await
+        } else {
+            Ok(())
+        }
+    }
+
     pub async fn clear_history(&self) -> ClientResult<()> {
         gio::spawn_blocking(sqlite::clear_history)
             .await
@@ -597,6 +647,11 @@ impl Library {
     /// Get a reference to the local album artists store
     pub fn album_artists(&self) -> gio::ListStore {
         self.imp().albumartists.clone()
+    }
+
+    /// Get a reference to the local songs store
+    pub fn songs(&self) -> gio::ListStore {
+        self.imp().songs.clone()
     }
 
     /// Retrieve songs in a playlist
@@ -877,7 +932,7 @@ impl Library {
                 artist.get_name().to_owned(),
             );
             self.client()
-                .get_song_infos_by_query(query_artist_tag, true, &mut |batch| {
+                .get_song_infos_by_query(query_artist_tag, true, None, &mut |batch| {
                     batch
                         .into_iter()
                         .filter(|s| artist.is_in_song(s, false))
@@ -895,7 +950,7 @@ impl Library {
                 artist.get_name().to_owned(),
             );
             self.client()
-                .get_song_infos_by_query(query_albumartist_tag, true, &mut |batch| {
+                .get_song_infos_by_query(query_albumartist_tag, true, None, &mut |batch| {
                     batch
                         .into_iter()
                         .filter(|s: &SongInfo| {

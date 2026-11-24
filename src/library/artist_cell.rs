@@ -296,7 +296,11 @@ impl ArtistCell {
             .expect("ArtistCell cannot bind to cache");
         let imp = res.imp();
         let name = artist.get_name();
-        imp.name.set_label(if name.is_empty() {*EMPTY_ARTIST_STRING} else {name});
+        imp.name.set_label(if name.is_empty() {
+            *EMPTY_ARTIST_STRING
+        } else {
+            name
+        });
         let ui_settings = settings_manager().child("ui");
         ui_settings
             .bind("use-hires-for-album-cells", &res, "hires")

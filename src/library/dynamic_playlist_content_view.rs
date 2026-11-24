@@ -476,7 +476,7 @@ impl DynamicPlaylistContentView {
                 let item = list_item
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
-                let row = SongRow::new(Some(cache), None, Some(&window), Some(&library));
+                let row = SongRow::new(Some(cache), Some(&window), Some(&library));
                 row.set_index_visible(false);
                 row.set_thumbnail_visible(true);
                 item.property_expression("item")
@@ -527,7 +527,7 @@ impl DynamicPlaylistContentView {
                 .and_downcast::<SongRow>()
                 .expect("The child has to be an `SongRow`.");
             // Download album art
-            child.on_bind(&item);
+            child.bind(&item);
         });
 
         // When row goes out of sight, unbind from item to allow reuse with another.
@@ -539,7 +539,7 @@ impl DynamicPlaylistContentView {
                 .child()
                 .and_downcast::<SongRow>()
                 .expect("The child has to be an `SongRow`.");
-            child.on_unbind();
+            child.unbind();
         });
 
         // Set the factory of the list view

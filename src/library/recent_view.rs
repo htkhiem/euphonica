@@ -5,11 +5,10 @@ use std::{cell::Cell, sync::OnceLock};
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
-use chrono::DateTime;
 use chrono::Local;
 use chrono::Timelike;
 use gtk::{
-    CompositeTemplate, ListItem, SignalListItemFactory, SingleSelection, gio,
+    CompositeTemplate, ListItem, SignalListItemFactory, gio,
     glib::{self},
 };
 
@@ -17,21 +16,15 @@ use glib::{Properties, SignalHandlerId, WeakRef, clone, closure_local, subclass:
 
 use super::{AlbumCell, ArtistCell, Library};
 use crate::common::FadingScrolledWindow;
-use crate::library::recommendations;
 use crate::utils;
 use crate::{
     cache::Cache,
-    client::Result as ClientResult,
-    common::{
-        Album, Artist, ContentStack, RowAddButtons, RowDoublePressAction, Song, SongRow,
-        marquee::MarqueeWrapMode,
-    },
+    common::{Album, Artist, ContentStack, RowAddButtons, RowDoublePressAction, Song, SongRow},
     player::Player,
     utils::LazyInit,
     window::EuphonicaWindow,
 };
 use derivative::Derivative;
-use mpd::Stats;
 mod imp {
 
     use crate::utils::settings_manager;
@@ -52,15 +45,15 @@ mod imp {
         #[template_child]
         pub albums_badge: TemplateChild<gtk::Button>,
         #[template_child]
-        pub albums_count: TemplateChild<gtk::Label>,
+        pub albums_count: TemplateChild<adw::ButtonContent>,
         #[template_child]
         pub artists_badge: TemplateChild<gtk::Button>,
         #[template_child]
-        pub artists_count: TemplateChild<gtk::Label>,
+        pub artists_count: TemplateChild<adw::ButtonContent>,
         #[template_child]
         pub songs_badge: TemplateChild<gtk::Button>,
         #[template_child]
-        pub songs_count: TemplateChild<gtk::Label>,
+        pub songs_count: TemplateChild<adw::ButtonContent>,
 
         // Rediscover
         #[template_child]
@@ -431,6 +424,30 @@ impl RecentView {
         let _ = self.imp().cache.set(cache.clone());
         self.imp().window.set(Some(window));
 
+        self.imp().albums_badge.connect_clicked(clone!(
+            #[weak]
+            window,
+            move |_| {
+                window.get_sidebar().set_view("albums");
+            }
+        ));
+
+        self.imp().artists_badge.connect_clicked(clone!(
+            #[weak]
+            window,
+            move |_| {
+                window.get_sidebar().set_view("artists");
+            }
+        ));
+
+        self.imp().songs_badge.connect_clicked(clone!(
+            #[weak]
+            window,
+            move |_| {
+                window.get_sidebar().set_view("songs");
+            }
+        ));
+
         self.imp()
             .history_changed_id
             .replace(Some(player.connect_closure(
@@ -493,11 +510,7 @@ impl RecentView {
     }
 
     async fn refresh_rediscover(&self) {
-        if let (Some(library), Some(cache), Some(win)) = (
-            self.imp().library.upgrade(),
-            self.imp().cache.get(),
-            self.imp().window.upgrade(),
-        ) {
+        if let Some(library) = self.imp().library.upgrade() {
             self.imp().rediscover_content_stack.show_placeholder();
             let rediscover_albums = &self.imp().rediscover_albums_list;
             let rediscover_artists = &self.imp().rediscover_artists_list;
@@ -520,11 +533,7 @@ impl RecentView {
     }
 
     async fn refresh_recent(&self) {
-        if let (Some(library), Some(cache), Some(win)) = (
-            self.imp().library.upgrade(),
-            self.imp().cache.get(),
-            self.imp().window.upgrade(),
-        ) {
+        if let Some(library) = self.imp().library.upgrade() {
             self.imp().recent_content_stack.show_placeholder();
             let recent_albums = &self.imp().recent_albums_list;
             let recent_artists = &self.imp().recent_artists_list;
@@ -557,19 +566,19 @@ impl RecentView {
             .recent_songs
             .bind_model(Some(&song_list), move |obj| {
                 let song = obj.downcast_ref::<Song>().unwrap();
-                let row = SongRow::new(Some(cache.clone()), None, window.as_ref(), Some(&library));
+                let row = SongRow::new(Some(cache.clone()), window.as_ref(), Some(&library));
                 // Manually bind attributes here
                 row.set_name(song.get_name());
                 row.set_quality_grade(song.get_quality_grade());
                 row.set_first_attrib_text(song.get_album_title());
-                row.set_second_attrib_text(Some(&song.get_artist_string()));
+                row.set_second_attrib_text(Some(&song.get_artist_str()));
                 row.set_duration(song.get_last_played_desc().as_deref());
 
                 let end_widget = RowAddButtons::new(&library);
                 end_widget.set_song(Some(song));
                 row.set_end_widget(&end_widget.into());
 
-                row.on_bind(song);
+                row.bind(song);
                 row.into()
             });
 

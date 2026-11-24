@@ -69,34 +69,20 @@
                     </child>
                     <child>
                       <object class="AdwWrapBox">
+                        <property name="line-homogeneous">true</property>
                         <property name="child-spacing">6</property>
                         <property name="line-spacing">6</property>
                         <property name="justify">0</property>
                         <property name="align">0.5</property>
                         <child>
                           <object class="GtkButton" id="albums_badge">
+                            <style>
+                              <class name="pill"/>
+                            </style>
                             <child>
-                              <object class="GtkBox">
-                                <property name="orientation">1</property>
-                                <!-- <property name="spacing">6</property> -->
-                                <child>
-                                  <object class="GtkLabel">
-                                    <style>
-                                      <class name="accent"/>
-                                    </style>
-                                    <property name="label" translatable="true">Albums</property>
-                                  </object>
-                                </child>
-                                <child>
-                                  <object class="GtkLabel" id="albums_count">
-                                    <style>
-                                      <class name="title-1"/>
-                                      <class name="numeric"/>
-                                    </style>
-                                    <property name="valign">end</property>
-                                    <property name="label">-</property>
-                                  </object>
-                                </child>
+                              <object class="AdwButtonContent" id="albums_count">
+                                <property name="icon-name">library-music-symbolic</property>
+                                <property name="label">0</property>
                               </object>
                             </child>
                           </object>
@@ -104,28 +90,13 @@
 
                         <child>
                           <object class="GtkButton" id="artists_badge">
+                            <style>
+                              <class name="pill"/>
+                            </style>
                             <child>
-                              <object class="GtkBox">
-                                <property name="orientation">1</property>
-                                <!-- <property name="spacing">6</property> -->
-                                <child>
-                                  <object class="GtkLabel">
-                                    <style>
-                                      <class name="accent"/>
-                                    </style>
-                                    <property name="label" translatable="true">Artists</property>
-                                  </object>
-                                </child>
-                                <child>
-                                  <object class="GtkLabel" id="artists_count">
-                                    <style>
-                                      <class name="title-1"/>
-                                      <class name="numeric"/>
-                                    </style>
-                                    <property name="valign">end</property>
-                                    <property name="label">-</property>
-                                  </object>
-                                </child>
+                              <object class="AdwButtonContent" id="artists_count">
+                                <property name="icon-name">music-artist-symbolic</property>
+                                <property name="label">0</property>
                               </object>
                             </child>
                           </object>
@@ -133,28 +104,13 @@
 
                         <child>
                           <object class="GtkButton" id="songs_badge">
+                            <style>
+                              <class name="pill"/>
+                            </style>
                             <child>
-                              <object class="GtkBox">
-                                <property name="orientation">1</property>
-                                <!-- <property name="spacing">6</property> -->
-                                <child>
-                                  <object class="GtkLabel">
-                                    <style>
-                                      <class name="accent"/>
-                                    </style>
-                                    <property name="label" translatable="true">Songs</property>
-                                  </object>
-                                </child>
-                                <child>
-                                  <object class="GtkLabel" id="songs_count">
-                                    <style>
-                                      <class name="title-1"/>
-                                      <class name="numeric"/>
-                                    </style>
-                                    <property name="valign">end</property>
-                                    <property name="label">-</property>
-                                  </object>
-                                </child>
+                              <object class="AdwButtonContent" id="songs_count">
+                                <property name="icon-name">music-note-single-symbolic</property>
+                                <property name="label">0</property>
                               </object>
                             </child>
                           </object>

@@ -1661,8 +1661,7 @@ impl Player {
     }
 
     pub fn artist(&self) -> Option<String> {
-        self.current_song()
-            .map(|s| s.get_artist_string().to_owned())
+        self.current_song().map(|s| s.get_artist_str().to_owned())
     }
 
     pub fn album(&self) -> Option<String> {

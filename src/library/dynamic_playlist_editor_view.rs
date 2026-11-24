@@ -457,7 +457,7 @@ impl DynamicPlaylistEditorView {
                 let item = list_item
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
-                let row = SongRow::new(Some(cache), None, Some(&window), Some(&library));
+                let row = SongRow::new(Some(cache), Some(&window), Some(&library));
                 item.property_expression("item")
                     .chain_property::<Song>("name")
                     .bind(&row, "name", gtk::Widget::NONE);
@@ -503,7 +503,7 @@ impl DynamicPlaylistEditorView {
                 .expect("The child has to be a `SongRow`.");
 
             // Within this binding fn is where the cached album art texture gets used.
-            child.on_bind(&item);
+            child.bind(&item);
         });
 
         // When row goes out of sight, unbind from item to allow reuse with another.
@@ -515,7 +515,7 @@ impl DynamicPlaylistEditorView {
                 .child()
                 .and_downcast::<SongRow>()
                 .expect("The child has to be a `SongRow`.");
-            child.on_unbind();
+            child.unbind();
         });
 
         // Set the factory of the list view

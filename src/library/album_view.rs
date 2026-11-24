@@ -1,29 +1,27 @@
 use adw::prelude::*;
 use adw::subclass::prelude::*;
 use gtk::{
-    CompositeTemplate, ListItem, SignalListItemFactory, SingleSelection,
-    gio::{ActionEntry, SimpleActionGroup},
+    CompositeTemplate, ListItem, SignalListItemFactory, gio,
     glib::{self},
     glib::{Properties, SignalHandlerId, WeakRef, clone, subclass::Signal},
 };
 use std::cell::RefCell;
 use std::{cell::Cell, cmp::Ordering, rc::Rc, sync::OnceLock};
+use strum::{EnumMessage, VariantArray};
 
-use super::{AlbumCell, AlbumContentView, Library, TagsFilter};
+use super::{
+    AlbumCell, AlbumContentView, Library, TagsFilter,
+    album_sort::{ALBUM_SORT_SETTINGS, AlbumSortCriterion, album_sort_tiers, compare_albums},
+};
 use crate::{
     cache::{Cache, sqlite},
     client::ClientState,
     common::{Album, ContentStack, Rating},
-    utils::{
-        LazyInit, SearchableView, g_cmp_options, g_cmp_str_options, g_search_substr,
-        settings_manager,
-    },
+    utils::{LazyInit, SearchableView, g_search_substr, settings_manager},
     window::EuphonicaWindow,
 };
 
 mod imp {
-    use crate::utils::g_cmp_str_vecs;
-
     use super::*;
 
     #[derive(Debug, CompositeTemplate, Properties, Default)]
@@ -38,6 +36,18 @@ mod imp {
         // Search & filter widgets
         #[template_child]
         pub view_options_btn: TemplateChild<gtk::MenuButton>,
+        #[template_child]
+        pub sort_by: TemplateChild<gtk::DropDown>,
+        #[template_child]
+        pub sort_by_2: TemplateChild<gtk::DropDown>,
+        #[template_child]
+        pub sort_by_3: TemplateChild<gtk::DropDown>,
+        #[template_child]
+        pub descending: TemplateChild<gtk::ToggleButton>,
+        #[template_child]
+        pub descending_2: TemplateChild<gtk::ToggleButton>,
+        #[template_child]
+        pub descending_3: TemplateChild<gtk::ToggleButton>,
         #[template_child]
         pub search_btn: TemplateChild<gtk::ToggleButton>,
         #[template_child]
@@ -77,13 +87,13 @@ mod imp {
         // if they now match.
         pub last_search_len: Cell<usize>,
         pub library: WeakRef<Library>,
-        pub sort_by_id: RefCell<Option<SignalHandlerId>>,
-        pub sort_direction_id: RefCell<Option<SignalHandlerId>>,
+        pub sort_handlers: RefCell<Option<(gio::Settings, Vec<SignalHandlerId>)>>,
 
         #[property(get, set)]
         pub collapsed: Cell<bool>,
 
         pub initializing: Cell<bool>,
+        pub window: WeakRef<EuphonicaWindow>,
     }
 
     #[glib::object_subclass]
@@ -108,11 +118,10 @@ mod imp {
             while let Some(child) = self.obj().first_child() {
                 child.unparent();
             }
-            if let Some(id) = self.sort_by_id.take() {
-                self.sorter.disconnect(id);
-            }
-            if let Some(id) = self.sort_direction_id.take() {
-                self.sorter.disconnect(id);
+            if let Some((state, ids)) = self.sort_handlers.take() {
+                for id in ids {
+                    state.disconnect(id);
+                }
             }
         }
 
@@ -139,61 +148,22 @@ mod imp {
             let library_settings = settings.child("library");
 
             // Setup sorting
-            let view_options_btn = self.view_options_btn.get();
-            state
-                .bind("sort-direction", &view_options_btn, "icon-name")
-                .get_only()
-                .mapping(|dir, _| match dir.get::<String>().unwrap().as_ref() {
-                    "asc" => Some("view-sort-ascending-symbolic".to_value()),
-                    _ => Some("view-sort-descending-symbolic".to_value()),
-                })
-                .build();
-            // Note to self: to work with menus, an action's state must be boolean or string.
-            let action_sort_by = ActionEntry::builder("sort-by")
-                .parameter_type(Some(&String::static_variant_type()))
-                .state(state.enum_("sort-by").to_string().into())
-                .activate(clone!(
-                    #[weak(rename_to = this)]
-                    self,
-                    #[strong]
-                    state,
-                    move |_, action, param| {
-                        let param = param
-                            .expect("Could not get parameter.")
-                            .get::<String>()
-                            .expect("The value needs to be of type `String`.");
-                        let idx = param.parse::<i32>().unwrap();
-
-                        if state.set_enum("sort-by", idx).is_ok() {
-                            this.sorter.changed(gtk::SorterChange::Different);
-                            action.set_state(&param.to_variant());
-                        }
-                    }
-                ))
-                .build();
-
-            let action_sort_direction = ActionEntry::builder("sort-direction")
-                .parameter_type(Some(&String::static_variant_type()))
-                .state(state.enum_("sort-direction").to_string().into())
-                .activate(clone!(
-                    #[weak(rename_to = this)]
-                    self,
-                    #[strong]
-                    state,
-                    move |_, action, param| {
-                        let param = param
-                            .expect("Could not get parameter.")
-                            .get::<String>()
-                            .expect("The value needs to be of type `String`.");
-                        let idx = param.parse::<i32>().unwrap();
-
-                        if state.set_enum("sort-direction", idx).is_ok() {
-                            this.sorter.changed(gtk::SorterChange::Inverted);
-                            action.set_state(&param.to_variant());
-                        }
-                    }
-                ))
-                .build();
+            bind_sort_direction_icon(&state, "sort-direction", &self.view_options_btn.get());
+            let sort_by_model: gtk::StringList = AlbumSortCriterion::VARIANTS
+                .iter()
+                .map(ToString::to_string)
+                .collect();
+            let tier_widgets = [
+                (self.sort_by.get(), self.descending.get()),
+                (self.sort_by_2.get(), self.descending_2.get()),
+                (self.sort_by_3.get(), self.descending_3.get()),
+            ];
+            for (setting_keys, (sort_by, descending)) in
+                ALBUM_SORT_SETTINGS.into_iter().zip(tier_widgets)
+            {
+                sort_by.set_model(Some(&sort_by_model));
+                constructed_bind_sort_tier(&state, setting_keys, &sort_by, &descending);
+            }
 
             self.sorter.set_sort_func(clone!(
                 #[strong]
@@ -209,81 +179,36 @@ mod imp {
                         .downcast_ref::<Album>()
                         .expect("Sort obj has to be a common::Album.");
 
-                    // Should we sort ascending?
-                    let asc = state.enum_("sort-direction") > 0;
                     // Should the sorting be case-sensitive, i.e. uppercase goes first?
                     let case_sensitive = library_settings.boolean("sort-case-sensitive");
                     // Should nulls be put first or last?
                     let nulls_first = library_settings.boolean("sort-nulls-first");
 
-                    // Vary behaviour depending on sort menu
-                    match state.enum_("sort-by") {
-                        // Refer to the io.github.htkhiem.Euphonica.sortby enum the gschema
-                        3 => {
-                            // Album title
-                            g_cmp_str_options(
-                                Some(album1.get_sortable_title()),
-                                Some(album2.get_sortable_title()),
-                                nulls_first,
-                                asc,
-                                case_sensitive,
-                            )
-                        }
-                        4 => {
-                            // AlbumArtist
-                            g_cmp_str_vecs(
-                                album1.get_albumartists().collect(),
-                                album2.get_albumartists().collect(),
-                                nulls_first,
-                                asc,
-                                case_sensitive,
-                            )
-                        }
-                        5 => {
-                            // Release date
-                            g_cmp_options(
-                                album1.get_release_date().as_ref(),
-                                album2.get_release_date().as_ref(),
-                                nulls_first,
-                                asc,
-                            )
-                        }
-                        8 => {
-                            // Rating
-                            g_cmp_options(
-                                album1.get_rating().as_ref(),
-                                album2.get_rating().as_ref(),
-                                nulls_first,
-                                asc,
-                            )
-                        }
-                        _ => unreachable!(),
-                    }
+                    let tiers = album_sort_tiers(&state);
+                    compare_albums(album1, album2, &tiers, nulls_first, case_sensitive)
                 }
             ));
 
-            // Update when changing sort settings
-            self.sort_by_id.replace(Some(state.connect_changed(
-                Some("sort-by"),
-                clone!(
-                    #[weak(rename_to = this)]
-                    self,
-                    move |_, _| {
-                        this.sorter.changed(gtk::SorterChange::Different);
-                    }
-                ),
-            )));
-            self.sort_direction_id.replace(Some(state.connect_changed(
-                Some("sort-direction"),
-                clone!(
-                    #[weak(rename_to = this)]
-                    self,
-                    move |_, _| {
-                        // Don't actually sort, just flip the results :)
-                        this.sorter.changed(gtk::SorterChange::Inverted);
-                    }
-                ),
-            )));
+            // Update when changing sort settings.
+            // Not Inverted on a direction flip: the other tiers keep their own direction.
+            let sort_handler_ids = ALBUM_SORT_SETTINGS
+                .iter()
+                .flat_map(|(sort_by, sort_direction)| [sort_by, sort_direction])
+                .map(|name| {
+                    state.connect_changed(
+                        Some(name),
+                        clone!(
+                            #[weak(rename_to = this)]
+                            self,
+                            move |_, _| {
+                                this.sorter.changed(gtk::SorterChange::Different);
+                            }
+                        ),
+                    )
+                })
+                .collect();
+            self.sort_handlers
+                .replace(Some((state.clone(), sort_handler_ids)));
 
             // Set up search
             self.search_filter.set_filter_func(clone!(
@@ -411,17 +336,64 @@ mod imp {
                 .transform_to(|_, val: u32| Some(val > 0))
                 .sync_create()
                 .build();
-
-            // Create a new action group and add actions to it
-            let actions = SimpleActionGroup::new();
-            actions.add_action_entries([action_sort_by, action_sort_direction]);
-            self.obj().insert_action_group("album-view", Some(&actions));
         }
 
         fn signals() -> &'static [Signal] {
             static SIGNALS: OnceLock<Vec<Signal>> = OnceLock::new();
             SIGNALS.get_or_init(|| vec![Signal::builder("show-sidebar-clicked").build()])
         }
+    }
+
+    fn bind_sort_direction_icon(
+        state: &gio::Settings,
+        sort_direction_key: &str,
+        widget: &impl IsA<glib::Object>,
+    ) {
+        state
+            .bind(sort_direction_key, widget, "icon-name")
+            .get_only()
+            .mapping(|dir, _| match dir.get::<String>().unwrap().as_ref() {
+                "asc" => Some("view-sort-ascending-symbolic".to_value()),
+                _ => Some("view-sort-descending-symbolic".to_value()),
+            })
+            .build();
+    }
+
+    fn constructed_bind_sort_tier(
+        state: &gio::Settings,
+        (sort_by_key, sort_direction_key): (&str, &str),
+        sort_by: &gtk::DropDown,
+        descending: &gtk::ToggleButton,
+    ) {
+        // Failure to get mapping would make GSettings show the key's default instead,
+        // so a value without a dropdown item (e.g. `filename`) clears the selection.
+        state
+            .bind(sort_by_key, sort_by, "selected")
+            .mapping(|nick, _| {
+                let idx = nick
+                    .get::<String>()?
+                    .parse::<AlbumSortCriterion>()
+                    .map_or(gtk::INVALID_LIST_POSITION, |criterion| criterion as u32);
+                Some(idx.to_value())
+            })
+            .set_mapping(|idx, _| {
+                let criterion = AlbumSortCriterion::VARIANTS.get(idx.get::<u32>().ok()? as usize)?;
+                Some(criterion.get_serializations()[0].to_variant())
+            })
+            .build();
+        bind_sort_direction_icon(state, sort_direction_key, descending);
+        state
+            .bind(sort_direction_key, descending, "active")
+            .mapping(|dir, _| Some((dir.get::<String>()? == "desc").to_value()))
+            .set_mapping(|descending, _| {
+                let dir = if descending.get::<bool>().ok()? {
+                    "desc"
+                } else {
+                    "asc"
+                };
+                Some(dir.to_variant())
+            })
+            .build();
     }
 
     impl WidgetImpl for AlbumView {}
@@ -454,6 +426,7 @@ impl AlbumView {
         window: &EuphonicaWindow,
     ) {
         self.imp().library.set(Some(library));
+        self.imp().window.set(Some(window));
         self.setup_gridview(library, cache.clone(), window);
 
         // Set up genres and tags filters
