@@ -105,6 +105,7 @@ mod imp {
 
         fn constructed(&self) {
             self.parent_constructed();
+            self.nav_view.action_set_enabled("navigation.pop", false);
             self.stack.show_placeholder();
 
             self.obj()
@@ -337,7 +338,7 @@ impl PlaylistView {
             .cache
             .set(cache.clone())
             .expect("Cannot init PlaylistView with cache controller");
-        self.setup_listview();
+        self.setup_listview(window);
 
         self.imp()
             .conn_state_id
@@ -431,11 +432,15 @@ impl PlaylistView {
         }
     }
 
+    pub fn show_list(&self) {
+        self.imp().nav_view.pop_to_tag("list");
+    }
+
     pub fn search_bar(&self) -> gtk::SearchBar {
         self.imp().search_bar.get()
     }
 
-    fn setup_listview(&self) {
+    fn setup_listview(&self, window: &EuphonicaWindow) {
         let library = self.imp().library.upgrade().unwrap();
         let cache = self.imp().cache.get().unwrap();
         // client_state.connect_closure(
@@ -515,15 +520,15 @@ impl PlaylistView {
 
         // Setup click action
         self.imp().list_view.connect_activate(clone!(
-            #[weak(rename_to = this)]
-            self,
+            #[weak]
+            window,
             move |grid_view, position| {
                 let model = grid_view.model().expect("The model has to exist.");
                 let inode = model
                     .item(position)
                     .and_downcast::<INode>()
                     .expect("The item has to be a `common::INode`.");
-                this.on_playlist_clicked(&inode);
+                window.goto_playlist(&inode);
             }
         ));
     }

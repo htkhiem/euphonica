@@ -127,6 +127,7 @@ mod imp {
 
         fn constructed(&self) {
             self.parent_constructed();
+            self.nav_view.action_set_enabled("navigation.pop", false);            
             self.stack.show_placeholder();
 
             self.obj()
@@ -426,7 +427,7 @@ impl AlbumView {
     ) {
         self.imp().library.set(Some(library));
         self.imp().window.set(Some(window));
-        self.setup_gridview(library, cache.clone());
+        self.setup_gridview(library, cache.clone(), window);
 
         // Set up genres and tags filters
         self.imp().genres_filter_widget.setup(
@@ -511,7 +512,11 @@ impl AlbumView {
         }
     }
 
-    fn setup_gridview(&self, library: &Library, cache: Rc<Cache>) {
+    pub fn show_list(&self) {
+        self.imp().nav_view.pop_to_tag("list");
+    }
+
+    fn setup_gridview(&self, library: &Library, cache: Rc<Cache>, window: &EuphonicaWindow) {
         let settings = settings_manager().child("ui");
         // Setup search bar
         let album_list = self.imp().library.upgrade().unwrap().albums();
@@ -611,15 +616,15 @@ impl AlbumView {
 
         // Setup click action
         self.imp().grid_view.connect_activate(clone!(
-            #[weak(rename_to = this)]
-            self,
+            #[weak]
+            window,
             move |grid_view, position| {
                 let model = grid_view.model().expect("The model has to exist.");
                 let album = model
                     .item(position)
                     .and_downcast::<Album>()
                     .expect("The item has to be a `common::Album`.");
-                this.on_album_clicked(&album);
+                window.goto_album(&album);
             }
         ));
     }

@@ -107,6 +107,7 @@ mod imp {
 
         fn constructed(&self) {
             self.parent_constructed();
+            self.nav_view.action_set_enabled("navigation.pop", false);
             self.stack.show_placeholder();
 
             self.obj()
@@ -429,7 +430,11 @@ impl ArtistView {
         }
     }
 
-    fn setup_gridview(&self, cache: Rc<Cache>, _window: &EuphonicaWindow) {
+    pub fn show_list(&self) {
+        self.imp().nav_view.pop_to_tag("list");
+    }
+
+    fn setup_gridview(&self, cache: Rc<Cache>, window: &EuphonicaWindow) {
         let settings = settings_manager().child("ui");
         // Refresh upon reconnection.
         // User-initiated refreshes will also trigger a reconnection, which will
@@ -529,15 +534,15 @@ impl ArtistView {
 
         // Setup click action
         self.imp().grid_view.connect_activate(clone!(
-            #[weak(rename_to = this)]
-            self,
+            #[weak]
+            window,
             move |grid_view, position| {
                 let model = grid_view.model().expect("The model has to exist.");
                 let artist = model
                     .item(position)
                     .and_downcast::<Artist>()
                     .expect("The item has to be a `common::Artist`.");
-                this.on_artist_clicked(&artist);
+                window.goto_artist(&artist);
             }
         ));
     }

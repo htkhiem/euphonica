@@ -75,6 +75,7 @@ mod imp {
         pub win: WeakRef<EuphonicaWindow>,
         pub recent_dyn_playlists: OnceCell<gtk::SliceListModel>,
         pub recent_playlists: OnceCell<gtk::SliceListModel>,
+        pub startup_view: OnceCell<&'static str>,
     }
 
     #[glib::object_subclass]
@@ -391,7 +392,9 @@ impl Sidebar {
             view_to_show = View::try_from(state.enum_("last-view") as u32)
                 .expect("Invalid last-view setting value");
         }
-        self.set_view(view_to_show.as_str());
+        let startup_view = view_to_show.as_str();
+        let _ = self.imp().startup_view.set(startup_view);
+        self.set_view(startup_view);
     }
 
     pub fn set_view(&self, view_name: &str) {
@@ -413,5 +416,9 @@ impl Sidebar {
             inner.set_selected(idx);
             self.on_selection_changed();
         }
+    }
+
+    pub fn get_view(&self) -> &'static str {
+        self.imp().startup_view.get().copied().unwrap_or("recent")
     }
 }

@@ -251,6 +251,8 @@ mod imp {
             obj.set_accels_for_action("app.refresh", &["F5"]);
             obj.set_accels_for_action("app.update-db", &["F6"]);
             obj.set_accels_for_action("app.toggle-visualizer", &["F8"]);
+            obj.set_accels_for_action("win.navigate-back", &["<Alt>Left"]);
+            obj.set_accels_for_action("win.navigate-forward", &["<Alt>Right"]);
 
             // Playback shortcuts
             obj.set_accels_for_action("app.toggle-playback", &["<Ctrl>p"]);

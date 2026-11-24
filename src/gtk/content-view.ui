@@ -9,6 +9,21 @@
         <child type="top">
           <object class="AdwHeaderBar" id="header_bar">
             <property name="show-title">false</property>
+            <property name="show-back-button">false</property>
+            <child type="start">
+              <object class="GtkButton">
+                <property name="action-name">win.navigate-back</property>
+                <property name="icon-name">left-symbolic</property>
+                <property name="tooltip-text" translatable="true">Back</property>
+              </object>
+            </child>
+            <child type="start">
+              <object class="GtkButton">
+                <property name="action-name">win.navigate-forward</property>
+                <property name="icon-name">right-symbolic</property>
+                <property name="tooltip-text" translatable="true">Forward</property>
+              </object>
+            </child>            
           </object>
         </child>
         <property name="content">

@@ -14,6 +14,20 @@
 					        <object class="AdwHeaderBar">
                     <property name="show-title">false</property>
                     <child type="start">
+                      <object class="GtkButton">
+                        <property name="action-name">win.navigate-back</property>
+                        <property name="icon-name">left-symbolic</property>
+                        <property name="tooltip-text" translatable="true">Back</property>
+                      </object>
+                    </child>
+                    <child type="start">
+                      <object class="GtkButton">
+                        <property name="action-name">win.navigate-forward</property>
+                        <property name="icon-name">right-symbolic</property>
+                        <property name="tooltip-text" translatable="true">Forward</property>
+                      </object>
+                    </child>                    
+                    <child type="start">
                       <object class="GtkButton" id="show_sidebar">
                         <property name="icon-name">dock-left-symbolic</property>
                         <property name="tooltip-text" translatable="true">Show sidebar</property>
