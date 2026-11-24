@@ -2,6 +2,7 @@ mod recent_view;
 
 mod album_cell;
 mod album_content_view;
+mod album_sort;
 mod album_view;
 mod artist_tag_button;
 mod tag;

@@ -26,7 +26,115 @@
                     </child>
                     <child type="end">
                       <object class="GtkMenuButton" id="view_options_btn">
-                        <property name="menu-model">view_options_model</property>
+                        <property name="popover">
+                          <object class="GtkPopover">
+                            <child>
+                              <object class="GtkGrid">
+                                <property name="row-spacing">6</property>
+                                <property name="column-spacing">12</property>
+                                <child>
+                                  <object class="GtkLabel">
+                                    <property name="label">#1</property>
+                                    <layout>
+                                      <property name="column">0</property>
+                                      <property name="row">0</property>
+                                    </layout>
+                                  </object>
+                                </child>
+                                <child>
+                                  <object class="GtkBox">
+                                    <style>
+                                      <class name="linked"/>
+                                    </style>
+                                    <child>
+                                      <object class="GtkDropDown" id="sort_by">
+                                        <property name="hexpand">true</property>
+                                        <style>
+                                          <class name="album-sort-dropdown"/>
+                                        </style>
+                                      </object>
+                                    </child>
+                                    <child>
+                                      <object class="GtkToggleButton" id="descending">
+                                        <property name="tooltip-text" translatable="yes">Sort descending</property>
+                                      </object>
+                                    </child>
+                                    <layout>
+                                      <property name="column">1</property>
+                                      <property name="row">0</property>
+                                    </layout>
+                                  </object>
+                                </child>
+                                <child>
+                                  <object class="GtkLabel">
+                                    <property name="label">#2</property>
+                                    <layout>
+                                      <property name="column">0</property>
+                                      <property name="row">1</property>
+                                    </layout>
+                                  </object>
+                                </child>
+                                <child>
+                                  <object class="GtkBox">
+                                    <style>
+                                      <class name="linked"/>
+                                    </style>
+                                    <child>
+                                      <object class="GtkDropDown" id="sort_by_2">
+                                        <property name="hexpand">true</property>
+                                        <style>
+                                          <class name="album-sort-dropdown"/>
+                                        </style>
+                                      </object>
+                                    </child>
+                                    <child>
+                                      <object class="GtkToggleButton" id="descending_2">
+                                        <property name="tooltip-text" translatable="yes">Sort descending</property>
+                                      </object>
+                                    </child>
+                                    <layout>
+                                      <property name="column">1</property>
+                                      <property name="row">1</property>
+                                    </layout>
+                                  </object>
+                                </child>
+                                <child>
+                                  <object class="GtkLabel">
+                                    <property name="label">#3</property>
+                                    <layout>
+                                      <property name="column">0</property>
+                                      <property name="row">2</property>
+                                    </layout>
+                                  </object>
+                                </child>
+                                <child>
+                                  <object class="GtkBox">
+                                    <style>
+                                      <class name="linked"/>
+                                    </style>
+                                    <child>
+                                      <object class="GtkDropDown" id="sort_by_3">
+                                        <property name="hexpand">true</property>
+                                        <style>
+                                          <class name="album-sort-dropdown"/>
+                                        </style>
+                                      </object>
+                                    </child>
+                                    <child>
+                                      <object class="GtkToggleButton" id="descending_3">
+                                        <property name="tooltip-text" translatable="yes">Sort descending</property>
+                                      </object>
+                                    </child>
+                                    <layout>
+                                      <property name="column">1</property>
+                                      <property name="row">2</property>
+                                    </layout>
+                                  </object>
+                                </child>
+                              </object>
+                            </child>
+                          </object>
+                        </property>
                         <property name="icon-name">view-sort-ascending-symbolic</property>
                       </object>
                     </child>
@@ -148,43 +256,5 @@
         </child>
       </object>
     </child>
-    <menu id="view_options_model">
-      <section>
-        <attribute name="label" translatable="yes">Sort By</attribute>
-        <item>
-          <attribute name="label" translatable="true">Album Title</attribute>
-          <attribute name="action">album-view.sort-by</attribute>
-          <attribute name="target">3</attribute> <!-- See sortby enum -->
-        </item>
-        <item>
-          <attribute name="label">AlbumArtist</attribute>  <!-- Don't translate this as this is referring to the tag itself -->
-          <attribute name="action">album-view.sort-by</attribute>
-          <attribute name="target">4</attribute> <!-- See sortby enum -->
-        </item>
-        <item>
-          <attribute name="label" translatable="true">Release Date</attribute>
-          <attribute name="action">album-view.sort-by</attribute>
-          <attribute name="target">5</attribute> <!-- See sortby enum -->
-        </item>
-        <item>
-          <attribute name="label" translatable="true">Rating</attribute>
-          <attribute name="action">album-view.sort-by</attribute>
-          <attribute name="target">8</attribute> <!-- See sortby enum -->
-        </item>
-      </section>
-      <section>
-        <attribute name="label" translatable="yes">Sort Direction</attribute>
-        <item>
-          <attribute name="label" translatable="true">Ascending</attribute>
-          <attribute name="action">album-view.sort-direction</attribute>
-          <attribute name="target">1</attribute> <!-- See sortdir enum -->
-        </item>
-        <item>
-          <attribute name="label" translatable="true">Descending</attribute>
-          <attribute name="action">album-view.sort-direction</attribute>
-          <attribute name="target">0</attribute> <!-- See sortdir enum -->
-        </item>
-      </section>
-    </menu>
   </template>
 </interface>

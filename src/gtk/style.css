@@ -240,3 +240,8 @@ listview > row {
 .long-combo > .header > .suffixes {
 	min-width: 120px;
 }
+
+.album-sort-dropdown listview > row {
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
