@@ -288,7 +288,9 @@ impl Library {
                 );
             }
         }
-        self.client().get_songs_by_query(query, true, None, respond).await
+        self.client()
+            .get_songs_by_query(query, true, None, respond)
+            .await
     }
 
     /// Current number of songs in the queue, as tracked by the player.
@@ -310,7 +312,13 @@ impl Library {
         if replace {
             client.clear_queue().await?;
         }
-        client.add_multi_arc(songs.iter().map(|s| s.get_inner_arc()).collect(), false, None).await?;
+        client
+            .add_multi_arc(
+                songs.iter().map(|s| s.get_inner_arc()).collect(),
+                false,
+                None,
+            )
+            .await?;
         if let Some(pos) = play_from {
             client.play_at(pos, false).await?;
         }
@@ -569,9 +577,25 @@ impl Library {
 
             // TODO: LIMIT TAGTYPES FOR PERF
             self.client()
-                .get_songs_by_query(query, true, None, &mut |batch| {
-                    list.extend_from_slice(&batch);
-                })
+                .get_songs_by_query(
+                    query,
+                    true,
+                    Some(vec![
+                        tags::TITLE,
+                        tags::ALBUM,
+                        tags::ARTIST,
+                        tags::ALBUMSORT,
+                        tags::ARTISTSORT,
+                        tags::ALBUM_MBID,
+                        tags::ARTIST_MBID,
+                        tags::DATE,
+                        tags::ORIGINAL_DATE,
+                        tags::GENRE,
+                    ]),
+                    &mut |batch| {
+                        list.extend_from_slice(&batch);
+                    },
+                )
                 .await
         } else {
             Ok(())
@@ -908,7 +932,7 @@ impl Library {
                 artist.get_name().to_owned(),
             );
             self.client()
-                .get_song_infos_by_query(query_artist_tag, true, None,&mut |batch| {
+                .get_song_infos_by_query(query_artist_tag, true, None, &mut |batch| {
                     batch
                         .into_iter()
                         .filter(|s| artist.is_in_song(s, false))

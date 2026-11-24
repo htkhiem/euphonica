@@ -23,11 +23,12 @@ use strum::{EnumMessage, VariantArray};
 mod imp {
     use derivative::Derivative;
 
-use crate::{
+    use crate::{
         common::Song,
-        library::{add_to_playlist::AddToPlaylistButton, song_sort::{
-            SONG_SORT_SETTINGS, SongSortCriterion, compare_songs, song_sort_tiers,
-        }},
+        library::{
+            add_to_playlist::AddToPlaylistButton,
+            song_sort::{SONG_SORT_SETTINGS, SongSortCriterion, compare_songs, song_sort_tiers},
+        },
     };
 
     use super::*;
@@ -63,10 +64,6 @@ use crate::{
         pub search_bar: TemplateChild<gtk::SearchBar>,
         #[template_child]
         pub search_entry: TemplateChild<gtk::SearchEntry>,
-        #[template_child]
-        pub rating: TemplateChild<Rating>,
-        #[template_child]
-        pub rating_mode: TemplateChild<gtk::DropDown>,
         #[template_child]
         pub genres_filter_widget: TemplateChild<TagsFilter>,
         // TODO: maybe implement song tags & tag filtering??
@@ -244,21 +241,6 @@ use crate::{
                         .downcast_ref::<Song>()
                         .expect("Search obj has to be a common::Song.");
 
-                    // Filter by rating
-                    let this_rating = song.get_rating();
-                    let filter_rating = this.rating.value();
-                    let matches_rating = match this.rating_mode.selected() {
-                        0 => true,
-                        1 => this_rating.is_some() && this_rating.unwrap() >= filter_rating,
-                        2 => this_rating.is_some() && this_rating.unwrap() < filter_rating,
-                        3 => this_rating.is_some() && this_rating.unwrap() == filter_rating,
-                        _ => unimplemented!(),
-                    };
-
-                    if !matches_rating {
-                        return false;
-                    }
-
                     let search_term = this.search_entry.text();
                     if search_term.is_empty() {
                         return true;
@@ -316,6 +298,17 @@ use crate::{
                 }
             ));
 
+            self.search_mode.connect_notify_local(
+                Some("selected"),
+                clone!(
+                    #[weak(rename_to = this)]
+                    self,
+                    move |_, _| {
+                        this.search_filter.changed(gtk::FilterChange::Different);
+                    }
+                ),
+            );
+
             // Tags and genres filter are set on changes only
             self.genres_filter.set_filter_func(|_| true);
 
@@ -342,41 +335,6 @@ use crate::{
                     }
                 }
             ));
-
-            let rating = self.rating.get();
-            let rating_mode = self.rating_mode.get();
-            let search_mode = self.search_mode.get();
-            for mode in [&rating_mode, &search_mode] {
-                mode.connect_notify_local(
-                    Some("selected"),
-                    clone!(
-                        #[weak(rename_to = this)]
-                        self,
-                        move |_, _| {
-                            this.search_filter.changed(gtk::FilterChange::Different);
-                        }
-                    ),
-                );
-            }
-
-            rating.connect_notify_local(
-                Some("value"),
-                clone!(
-                    #[weak(rename_to = this)]
-                    self,
-                    move |_, _| {
-                        if this.rating_mode.selected() > 0 {
-                            this.search_filter.changed(gtk::FilterChange::Different);
-                        }
-                    }
-                ),
-            );
-
-            rating_mode
-                .bind_property("selected", &rating, "visible")
-                .transform_to(|_, val: u32| Some(val > 0))
-                .sync_create()
-                .build();
 
             // Change button labels depending on selection state
             self.sel_model.connect_selection_changed(clone!(
@@ -536,12 +494,13 @@ impl SongView {
                 // THE STORE HAS EVERYTHING, NOT JUST WHAT PASSED THE CURRENT FILTER.
                 if let Err(e) = library
                     .queue_songs(
-                        &sel_model.iter::<glib::Object>()
+                        &sel_model
+                            .iter::<glib::Object>()
                             .filter(|r| r.is_ok())
                             .map(|r| r.unwrap().downcast::<Song>().unwrap())
                             .collect::<Vec<Song>>(),
                         replace,
-                        play_from
+                        play_from,
                     )
                     .await
                 {
@@ -575,7 +534,6 @@ impl SongView {
                     this,
                     async move {
                         this.set_is_queuing(true);
-                        let library = this.imp().library.upgrade().unwrap();
                         this.queue_songs(true, Some(0)).await;
                         this.set_is_queuing(false);
                     }
@@ -592,7 +550,6 @@ impl SongView {
                     this,
                     async move {
                         this.set_is_queuing(true);
-                        let library = this.imp().library.upgrade().unwrap();
                         this.queue_songs(false, None).await;
                         this.set_is_queuing(false);
                     }
@@ -622,9 +579,7 @@ impl SongView {
                     async move {
                         this.set_is_queuing(true);
                         let library = this.imp().library.upgrade().unwrap();
-                        if let Err(e) =
-                            library.queue_songs(&[song], false, play_from).await
-                        {
+                        if let Err(e) = library.queue_songs(&[song], false, play_from).await {
                             dbg!(e);
                         }
                         this.set_is_queuing(false);
@@ -664,9 +619,7 @@ impl SongView {
 
         let list_view = self.imp().list_view.get();
         list_view.set_model(Some(sel_model));
-        self.imp()
-            .add_to_playlist
-            .bind_model(library, sel_model);
+        self.imp().add_to_playlist.bind_model(library, sel_model);
 
         self.imp().sel_all.connect_clicked(clone!(
             #[weak]

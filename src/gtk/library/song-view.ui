@@ -198,29 +198,6 @@
                               <object class="GtkSeparator"/>
                             </child>
                             <child>
-                              <object class="GtkDropDown" id="rating_mode">
-                                <property name="model">
-                                  <object class="GtkStringList">
-                                    <items>
-                                      <!-- Rust code matches by index, not string content, to avoid string comparisons.-->
-                                      <item translatable="yes">Any rating</item>
-                                      <item translatable="yes">At least</item>
-                                      <item translatable="yes">Below</item>
-                                      <item translatable="yes">Exactly</item>
-                                    </items>
-                                  </object>
-                                </property>
-                              </object>
-                            </child>
-                            <child>
-                              <object class="EuphonicaRating" id="rating">
-                                <property name="editable">true</property>
-                              </object>
-                            </child>
-                            <child>
-                              <object class="GtkSeparator"/>
-                            </child>
-                            <child>
                               <object class="EuphonicaTagsFilter" id="genres_filter_widget">
                                 <property name="label-text" translatable="true">Genres</property>
                               </object>

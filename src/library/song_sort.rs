@@ -28,8 +28,6 @@ pub enum SongSortCriterion {
     ReleaseDate,
     #[strum(serialize = "last-modified", to_string = "Last Modified")]
     LastModified,
-    #[strum(serialize = "rating", to_string = "Rating")]
-    Rating,
 }
 
 impl SortCriterion for SongSortCriterion {}
@@ -84,13 +82,7 @@ impl SongSortCriterion {
                 nulls_first,
                 ascending,
                 true   // MPD returns fixed casing, but by setting this to true we avoid having to_lowercase()
-            ),
-            Self::Rating => g_cmp_options(
-                a.get_rating().as_ref(),
-                b.get_rating().as_ref(),
-                nulls_first,
-                ascending,
-            ),
+            )
         }
     }
 }
