@@ -425,6 +425,7 @@ impl SongRow {
     }
 
     pub fn set_disc(&self, val: &str) {
+
         self.imp().disc.set_label(val);
     }
 
@@ -476,6 +477,7 @@ impl SongRow {
             .end_stack
             .visible_child_name()
             .is_some_and(|curr_name| curr_name.as_str() != new_name)
+            && self.imp().end_stack.child_by_name(new_name).is_some()
         {
             self.imp().end_stack.set_visible_child_name(new_name);
         }
