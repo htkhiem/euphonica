@@ -1230,24 +1230,26 @@ impl Connection {
                     Task::AddMultiple(uris, resp) => {
                         self.respond_with_client(|c| c.push_multiple(&uris), resp)
                     }
-                    Task::AddMultipleArc(songs, resp) => {
-                        self.respond_with_client(|c| {
+                    Task::AddMultipleArc(songs, resp) => self.respond_with_client(
+                        |c| {
                             let uris = songs.iter().map(|si| &si.file).collect::<Vec<&String>>();
                             c.push_multiple(&uris)
-                        }, resp)
-                    }
+                        },
+                        resp,
+                    ),
                     Task::Insert(uri, pos, resp) => {
                         self.respond_with_client(|c| c.insert(&uri, pos), resp)
                     }
                     Task::InsertMultiple(uris, pos, resp) => {
                         self.respond_with_client(|c| c.insert_multiple(&uris, pos), resp)
                     }
-                    Task::InsertMultipleArc(songs, pos, resp) => {
-                        self.respond_with_client(|c| {
+                    Task::InsertMultipleArc(songs, pos, resp) => self.respond_with_client(
+                        |c| {
                             let uris = songs.iter().map(|si| &si.file).collect::<Vec<&String>>();
                             c.insert_multiple(&uris, pos)
-                        }, resp)
-                    }
+                        },
+                        resp,
+                    ),
                     Task::FindAdd(query, resp) => {
                         self.respond_with_client(|c| c.findadd(&query), resp)
                     }

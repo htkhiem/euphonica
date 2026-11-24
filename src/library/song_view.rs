@@ -1,22 +1,17 @@
-use super::{
-    AlbumCell, AlbumContentView, Library, TagsFilter,
-    album_sort::{ALBUM_SORT_SETTINGS, AlbumSortCriterion, album_sort_tiers, compare_albums},
-};
+use super::{Library, TagsFilter};
 use crate::{
-    cache::{Cache, sqlite},
-    client::ClientState,
-    common::{Album, ContentStack, Rating, RowAddButtons, Song, SongRow},
+    cache::Cache,
+    common::{ContentStack, RowAddButtons, Song, SongRow},
     utils::{LazyInit, SearchableView, format_secs_as_duration, g_search_substr, settings_manager},
     window::EuphonicaWindow,
 };
 use adw::prelude::*;
 use adw::subclass::prelude::*;
 use gtk::{
-    CompositeTemplate, ListItem, SignalListItemFactory, SingleSelection, gio,
+    CompositeTemplate, ListItem, SignalListItemFactory, gio,
     glib::{self, Properties, SignalHandlerId, WeakRef, clone, closure_local, subclass::Signal},
 };
-use itertools::Itertools;
-use std::cell::{OnceCell, RefCell};
+use std::cell::RefCell;
 use std::{cell::Cell, cmp::Ordering, rc::Rc, sync::OnceLock};
 use strum::{EnumMessage, VariantArray};
 

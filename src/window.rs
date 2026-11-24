@@ -168,7 +168,7 @@ pub enum WindowMessage {
 mod imp {
     use crate::library::SongView;
 
-use super::*;
+    use super::*;
 
     #[derive(Debug, Default, Properties, gtk::CompositeTemplate)]
     #[properties(wrapper_type = super::EuphonicaWindow)]

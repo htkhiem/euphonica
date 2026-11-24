@@ -1,6 +1,6 @@
 use adw::prelude::*;
 use adw::subclass::prelude::*;
-use gtk::{CompositeTemplate, ListItem, SignalListItemFactory, SingleSelection, glib};
+use gtk::{CompositeTemplate, ListItem, SignalListItemFactory, glib};
 use std::cell::RefCell;
 use std::{cell::Cell, cmp::Ordering, rc::Rc, sync::OnceLock};
 

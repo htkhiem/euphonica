@@ -67,7 +67,6 @@ pub use playlist_view::PlaylistView;
 
 pub use controller::Library;
 
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SortDirection {
     Ascending,

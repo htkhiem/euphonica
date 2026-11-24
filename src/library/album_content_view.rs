@@ -1,6 +1,5 @@
 use super::{Library, Tag, TagsSection, artist_tag_button::ArtistTagButton};
 use crate::common::ArtistInfo;
-use crate::common::FadingScrolledWindow;
 use crate::meta_providers::models::AlbumMeta;
 use crate::meta_providers::models::MetaSource;
 use crate::utils::format_datetime_local_tz;
@@ -10,8 +9,7 @@ use crate::{
     cache::{Cache, CacheState, Error as CacheError, placeholders::EMPTY_ALBUM_STRING, sqlite},
     client::{ClientState, state::StickersSupportLevel},
     common::{
-        Album, Artist, ContentStack, ImageStack, Rating, RowAddButtons, RowDoublePressAction, Song,
-        SongRow,
+        Album, ContentStack, ImageStack, Rating, RowAddButtons, RowDoublePressAction, Song, SongRow,
     },
     library::{add_to_playlist::AddToPlaylistButton, tag_button::TagButton},
     utils::{format_secs_as_duration, tokio_runtime},

@@ -5,11 +5,10 @@ use std::{cell::Cell, sync::OnceLock};
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
-use chrono::DateTime;
 use chrono::Local;
 use chrono::Timelike;
 use gtk::{
-    CompositeTemplate, ListItem, SignalListItemFactory, SingleSelection, gio,
+    CompositeTemplate, ListItem, SignalListItemFactory, gio,
     glib::{self},
 };
 
@@ -17,21 +16,15 @@ use glib::{Properties, SignalHandlerId, WeakRef, clone, closure_local, subclass:
 
 use super::{AlbumCell, ArtistCell, Library};
 use crate::common::FadingScrolledWindow;
-use crate::library::recommendations;
 use crate::utils;
 use crate::{
     cache::Cache,
-    client::Result as ClientResult,
-    common::{
-        Album, Artist, ContentStack, RowAddButtons, RowDoublePressAction, Song, SongRow,
-        marquee::MarqueeWrapMode,
-    },
+    common::{Album, Artist, ContentStack, RowAddButtons, RowDoublePressAction, Song, SongRow},
     player::Player,
     utils::LazyInit,
     window::EuphonicaWindow,
 };
 use derivative::Derivative;
-use mpd::Stats;
 mod imp {
 
     use crate::utils::settings_manager;

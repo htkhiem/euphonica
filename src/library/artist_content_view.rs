@@ -32,7 +32,6 @@ mod imp {
     use time::OffsetDateTime;
 
     use crate::{
-        common::FadingScrolledWindow,
         library::{TagsSection, discography_album::DiscographyAlbum},
         meta_providers::models::{ArtistMeta, artist_type_to_index, index_to_artist_type},
         utils::g_cmp_options,

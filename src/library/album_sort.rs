@@ -2,7 +2,9 @@ use gtk::{Ordering, gio, gio::prelude::SettingsExt};
 use strum_macros::{Display, EnumMessage, EnumString, VariantArray};
 
 use crate::{
-    common::Album, library::{SortCriterion, SortDirection, SortTier}, utils::{g_cmp_options, g_cmp_str_options, g_cmp_str_vecs}
+    common::Album,
+    library::{SortCriterion, SortDirection, SortTier},
+    utils::{g_cmp_options, g_cmp_str_options, g_cmp_str_vecs},
 };
 
 pub const ALBUM_SORT_SETTINGS: [(&str, &str); 3] = [

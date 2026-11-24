@@ -423,7 +423,6 @@ impl SongRow {
     }
 
     pub fn set_disc(&self, val: &str) {
-
         self.imp().disc.set_label(val);
     }
 

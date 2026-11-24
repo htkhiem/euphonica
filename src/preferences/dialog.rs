@@ -5,7 +5,7 @@ use gtk::{CompositeTemplate, glib};
 
 use crate::{application::EuphonicaApplication, cache::Cache, player::Player};
 
-use super::{ClientPreferences, IntegrationsPreferences, AppPreferences, UIPreferences};
+use super::{AppPreferences, ClientPreferences, IntegrationsPreferences, UIPreferences};
 
 mod imp {
     use super::*;
