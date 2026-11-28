@@ -1497,17 +1497,24 @@ impl Player {
     pub async fn update_queue(&self) -> ClientResult<()> {
         let status = self.client()?.get_status().await?;
         let old_version = self.imp().queue_version.replace(status.queue_version);
+        // The queue version counter is per-server: if MPD restarted (or the
+        // server was swapped out), the new version can be LOWER than the
+        // cached one. Diffs from the old version are then meaningless (and
+        // queue IDs are stale), so treat this as a full re-fetch.
+        let version_reset = old_version > 0 && status.queue_version < old_version;
         if status.queue_version > old_version
             && status.queue_version > self.imp().expected_queue_version.get()
+            || version_reset
         {
             self.imp().expected_queue_version.set(status.queue_version);
-            if old_version == 0 {
+            if old_version == 0 || version_reset {
                 let queue = self.imp().queue.clone();
                 self.client()?
                     .get_current_queue(clone!(
                         #[weak]
                         queue,
                         move |songs| {
+                            queue.remove_all();
                             queue.extend_from_slice(&songs);
                         }
                     ))

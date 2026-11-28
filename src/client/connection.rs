@@ -17,8 +17,10 @@ use rustc_hash::FxHashSet;
 use std::os::{linux::net::SocketAddrExt, unix::net::SocketAddr};
 use std::{
     borrow::Cow, cmp::Ordering as StdOrdering, fs::File, io::Read, net::TcpStream, ops::Range,
-    os::unix::net::UnixStream, result, sync::Arc,
+    os::unix::net::UnixStream, result, sync::Arc, thread, time::Duration,
 };
+
+use std::time::Instant;
 
 use crate::{
     cache::sqlite,
@@ -35,6 +37,14 @@ use crate::{
 
 use super::StickerSetMode;
 use super::{BATCH_SIZE, FETCH_LIMIT, get_past_unix_timestamp, password};
+
+/// Read timeout for the idle client's connection.
+///
+/// The idle thread spends most of its time blocked in wait(),
+/// i.e. in a blocking read on the socket. Without a read timeout, a zombie
+/// connection would block forever, stopping the idle notifications that
+/// drive the player UI (issue #410).
+const IDLE_TIMEOUT: Duration = Duration::from_secs(4);
 
 fn cmp_options_nulls_last<T: Ord>(a: Option<&T>, b: Option<&T>) -> StdOrdering {
     match (a, b) {
@@ -435,7 +445,7 @@ pub enum Task {
 /// requests sequentially. We respond to the main thread via
 /// oneshot channels to appear synchronous.
 ///
-/// If constructed as a background client, we will go into
+/// If constructed as an idle client, we will go into
 /// idle mode after exhausting both queues. In this mode we will
 /// listen to server-side changes, but will be unable to respond
 /// to incoming tasks. To break out of idle mode, the wrapper must
@@ -450,33 +460,29 @@ pub struct Connection {
     client: Option<Client<StreamWrapper>>,
     /// MPD inter-client channel for communication between Euphonica connections
     wake_channel: Channel,
-    /// For sending idle subsystem notifications to the wrapper.
-    idle_sender: Option<Sender<Subsystem>>,
+    /// Number of re-connections after a failed action. Setting this to 0 also
+    /// disables the proactive reconnection path.
     max_retries: u32,
     retries_left: u32,
+    /// Flag to indicate whether we're expected to be connected. This controls
+    /// reconnection behaviour. For example, after a Disconnect, failing actions
+    /// won't trigger reconnections.
+    should_connect: bool,
 }
 
 impl Connection {
-    /// If idle_sender is given, will initialise this client as background
-    pub fn new(
-        receiver: Receiver<Task>,
-        // high_receiver: Receiver<Task<'a>>,
-        wake_channel: Channel,
-        idle_sender: Option<Sender<Subsystem>>,
-        max_retries: u32,
-    ) -> Self {
+    pub fn new(receiver: Receiver<Task>, wake_channel: Channel, max_retries: u32) -> Self {
         Self {
             receiver,
-            // high_receiver,
             client: None,
             wake_channel,
-            idle_sender,
             max_retries,
             retries_left: max_retries,
+            should_connect: false,
         }
     }
 
-    pub fn connect(&mut self) -> Result<Version> {
+    pub fn connect(&mut self, idle_sender: Option<Sender<Subsystem>>) -> Result<Version> {
         let settings = utils::settings_manager().child("client");
         let mut client = if settings.boolean("mpd-use-own-server") {
             // Currently hardcoded to use a Unix socket in Standalone Mode without any password.
@@ -549,10 +555,17 @@ impl Connection {
                 settings.uint("mpd-port")
             );
             eprintln!("Connecting to TCP socket {}", &addr);
-            mpd::Client::new(StreamWrapper::new_tcp(
-                TcpStream::connect(addr).map_err(|_| Error::Tcp)?,
-            ))
-            .map_err(Error::Mpd)?
+            let stream = TcpStream::connect(addr).map_err(|_| Error::Tcp)?;
+            if idle_sender.is_some() {
+                // Idle client only: bound the blocking idle read so we won't get
+                // stuck on a zombie connection.
+                // Not used on Unix sockets cuz I don't think we could ever have a zombie
+                // Unix socket.
+                stream
+                    .set_read_timeout(Some(IDLE_TIMEOUT))
+                    .map_err(|_| Error::Tcp)?;
+            }
+            mpd::Client::new(StreamWrapper::new_tcp(stream)).map_err(Error::Mpd)?
         };
 
         // Doubles as a litmus test to see if we are authenticated.
@@ -593,19 +606,17 @@ impl Connection {
         let version = client.version;
         self.client.replace(client);
 
-        // Do NOT reset retry counter here.
-        // Malformed commands may cause connection-closed-by-peer issues,
-        // after which a reconnection will always succeed due to there being
-        // no actual network issue.
-        // The auto retry loop will then attempt that command again, resulting
-        // in an infinite loop.
-        // As such, the retry counter shall only be reset after any successful
-        // command, not instantly after a successful reconnection.
-
+        self.should_connect = true;
+        // If we're the idle client, sync UI once on every connect.
+        if let Some(sender) = idle_sender {
+            let _ = sender.send_blocking(Subsystem::Player);
+            let _ = sender.send_blocking(Subsystem::Queue);
+        }
         Ok(version)
     }
 
     pub fn disconnect(&mut self) -> Result<()> {
+        self.should_connect = false;
         if let Some(mut client) = self.client.take() {
             client.close().map_err(Error::Mpd)?;
         }
@@ -613,12 +624,16 @@ impl Connection {
     }
 
     /// Auto-retry wrapper around the bare client object.
+    /// There are two reconnection mechanism: after a failed action (here)
+    /// and at the start of every loop iteration in Self::run().
+    /// Only ever called by a non-idle Connection.
     #[inline]
     fn client_then<F, T>(&mut self, then: F) -> Result<T>
     where
         F: Fn(&mut Client<StreamWrapper>) -> MpdResult<T>,
     {
         let final_res: Result<T>;
+        let mut retries_left = self.max_retries;
         loop {
             match self
                 .client
@@ -628,8 +643,6 @@ impl Connection {
                 }) {
                 Ok(res) => {
                     final_res = Ok(res);
-                    // Reset counter here instead of fn connect() (see note in old spot)
-                    self.retries_left = self.max_retries;
                     break;
                 }
                 Err(e) => match e {
@@ -637,9 +650,11 @@ impl Connection {
                         println!("Connection error while performing an action. Reconnecting...");
                         dbg!(&e);
                         let _ = self.disconnect();
-                        if self.retries_left > 0 {
-                            self.retries_left -= 1;
-                            let _ = self.connect();
+                        if retries_left > 0 {
+                            retries_left -= 1;
+                            if let Err(e) = self.connect(None) {
+                                eprintln!("Reconnect attempt failed: {e:?}");
+                            }
                         } else {
                             final_res = Err(e);
                             break;
@@ -959,21 +974,127 @@ impl Connection {
         Ok(songs)
     }
 
-    pub fn run(&mut self) -> Result<()> {
-        loop {
-            let mut curr_task: Option<Task> = None;
-            if !self.receiver.is_empty() || self.idle_sender.is_none() || self.client.is_none() {
-                curr_task = Some(
-                    self.receiver
-                        .recv_blocking()
-                        .expect("Unable to read from task queue"),
-                );
+    pub fn run(&mut self, idle_sender: Option<Sender<Subsystem>>) -> Result<()> {
+        if let Some(sender) = idle_sender {
+            // This is an idle-only client. Stay in idle mode.
+            // We don't handle anything other than listening to server-side changes.
+            // The only Tasks we expect to receive from the main thread are Connect and Disconnect. Other tasks are ignored.
+            // Since we need to maintain the connection (unlike other Connections whose connection may remain dead during periods
+            // of no activity with no consequences), the reconnection logic is a bit different here.
+            loop {
+                let mut task = None;
+                if !self.receiver.is_empty() {
+                    // Instant fetch
+                    task = Some(
+                        self.receiver
+                            .recv_blocking()
+                            .expect("Unable to read from task queue"),
+                    );
+                } else {
+                    // Receiver is empty. See if we're connected now.
+                    if let Some(client) = self.client.as_mut() {
+                        // If yes we can go into idle mode. Should the main thread wish to disconnect us they'll need to send
+                        // a message first, or wait until idle mode times out.
+                        let changes = match client.wait(&[]) {
+                            Ok(c) => c,
+                            // Client-side read timeout (see IDLE_TIMEOUT): the server may be alive but quiet.
+                            // Send a noidle to sound things out, and if normal, formally exit this idle phase.
+                            // If there's nothing else to do we'll re-enter idle mode on the next run loop.
+                            // Surface like this once in a while to avoid getting stuck on zombie connections.
+                            Err(MpdError::Io(io))
+                                if matches!(
+                                    io.kind(),
+                                    std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+                                ) =>
+                            {
+                                match client.noidle() {
+                                    Ok(queued) => queued,
+                                    Err(e) => {
+                                        eprintln!(
+                                            "[idle] noidle probe failed: {e:?}; connection dead, reconnecting"
+                                        );
+                                        self.client = None; // will reattempt connection on next loop
+                                        continue;
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                // Server-side error
+                                eprintln!(
+                                    "[idle] idle error: {e:?}; dropping client, continuing loop"
+                                );
+                                self.client = None; // will reattempt connection on next loop
+                                continue;
+                            }
+                        };
+                        for change in changes.iter() {
+                            match change {
+                                Subsystem::Message => {
+                                    // Right now we only use messages as a way to wake an idle client connection up.
+                                    // Otherwise there's nothing to act on.
+                                    // However, we still need to explicitly "read" the messages from the server
+                                    // otherwise no more idle notifications will be sent.
+                                    let _ = client.readmessages();
+                                }
+                                other => {
+                                    sender.send_blocking(*other).map_err(|_| Error::Internal)?;
+                                }
+                            }
+                        }
+                    } else {
+                        // No client => can't go into idle mode right now. Instead we'll see if we're meant to be connected:
+                        if self.should_connect {
+                            // Reattempt. Unlike with the foreground client, we're not limited by max_retries here (can't leave
+                            // an idle client dangling or the UI will be all weird).
+                            if let Err(e) = self.connect(Some(sender.clone())) {
+                                eprintln!("Reconnect attempt failed: {e:?}");
+                                // Back off before retrying else this is a hot loop.
+                                let retry_at = Instant::now() + Duration::from_secs(5);
+                                while Instant::now() < retry_at {
+                                    if !self.receiver.is_empty() {
+                                        break;
+                                    }
+                                    thread::sleep(Duration::from_millis(100));
+                                }
+                                continue;
+                            }
+                        } else {
+                            // Nothing to do: not told to connect yet, so we'll wait for that connect task from main thread.
+                            task = Some(
+                                self.receiver
+                                    .recv_blocking()
+                                    .expect("Unable to read from task queue"),
+                            );
+                        }
+                    }
+                }
+                if let Some(task) = task {
+                    match task {
+                        Task::Connect(resp) => {
+                            eprintln!("Starting idle-mode client");
+                            let _ = resp.send(self.connect(Some(sender.clone())));
+                        }
+                        Task::Disconnect(stop, resp) => {
+                            let res = self.disconnect();
+                            let is_ok = res.is_ok();
+                            let _ = resp.send(res);
+                            if is_ok && stop {
+                                break;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
             }
-
-            if let Some(task) = curr_task {
-                match task {
+        } else {
+            loop {
+                match self
+                    .receiver
+                    .recv_blocking()
+                    .expect("Unable to read from task queue")
+                {
                     Task::Connect(resp) => {
-                        let _ = resp.send(self.connect());
+                        let _ = resp.send(self.connect(None));
                     }
                     Task::Disconnect(stop, resp) => {
                         let res = self.disconnect();
@@ -1150,11 +1271,9 @@ impl Connection {
                     }
                     Task::UpdateDb(resp) => self.respond_with_client(|c| c.update(), resp),
                     Task::GetSongCount(resp) => self.respond_with_client(
-                        // Whole-library count using a catch-all filter
                         |c| {
-                            let mut q = Query::new();
-                            q.and(Term::Base, "");
-                            c.count(&q, None)
+                            // Use the stats command instead for speed
+                            Ok(c.stats()?.songs)
                         },
                         resp,
                     ),
@@ -1297,39 +1416,8 @@ impl Connection {
                         let _ = resp.send(result);
                     }
                 }
-            } else if let (Some(sender), Some(client)) =
-                (self.idle_sender.as_ref(), self.client.as_mut())
-            {
-                // println!("Entering idle mode...");
-                let changes = match client.wait(&[]) {
-                    Ok(c) => c,
-                    Err(e) => {
-                        // E.g. EOF when the (managed) server was killed while we were idle,
-                        // or MPD dropping us after its idle timeout. Drop the client and keep
-                        // looping so this thread can still service queued Disconnect/Connect
-                        // tasks instead of dying and permanently wedging the wrapper.
-                        eprintln!("[bg] idle error: {e:?}; dropping client, continuing loop");
-                        self.client = None;
-                        continue;
-                    }
-                };
-                for change in changes.iter() {
-                    match change {
-                        Subsystem::Message => {
-                            // Right now we only use messages as a way to wake an idle client connection up.
-                            // Otherwise there's nothing to act on.
-                            // However, we still need to explicitly "read" the messages from the server
-                            // otherwise no more idle notifications will be sent.
-                            let _ = client.readmessages();
-                        }
-                        other => {
-                            sender.send_blocking(*other).map_err(|_| Error::Internal)?;
-                        }
-                    }
-                }
             }
         }
-
         Ok(())
     }
 }
