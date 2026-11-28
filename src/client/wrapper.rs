@@ -25,6 +25,7 @@ use std::io::Cursor;
 use std::num::NonZero;
 use std::sync::Arc;
 use std::thread;
+use std::time::Duration;
 use std::{cell::RefCell, rc::Rc};
 use uuid::Uuid;
 
@@ -77,6 +78,10 @@ static META_STICKER_PAGE_SIZE: usize = 4096;
 // code (as the cache can now simply await cover art requests sent to the MPD
 // wrapper directly).
 
+/// How long Connect/Disconnect handshakes may take before the wrapper
+/// declares the client thread unresponsive.
+const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
+
 /// RAII guard that decrements the fg/bg task counters exactly once, whether
 /// the future it lives in completes normally or is aborted (dropped) mid-flight.
 /// Without it, aborted calls would never decrement and the counters would leak.
@@ -113,10 +118,12 @@ pub struct MpdWrapper {
     // (true) or disconnection request (false).
     _fg_handle: thread::JoinHandle<bool>,
     _bg_handle: thread::JoinHandle<bool>,
+    _idle_handle: thread::JoinHandle<bool>,
     // For heavy but parallelisable local tasks.
     state: ClientState,
-    fg_sender: Sender<Task>, // For sending tasks to the interactive client
-    bg_sender: Sender<Task>, // For sending tasks to the background client
+    fg_sender: Sender<Task>,   // For sending tasks to the interactive client
+    bg_sender: Sender<Task>,   // For sending tasks to the background client
+    idle_sender: Sender<Task>, // For sending tasks to the idle client
     client_version: RefCell<Option<Version>>,
     song_cache: RefCell<LruCache<u32, Song, BuildHasherDefault<NoHashHasher<u32>>>>,
     ping_handle: RefCell<Option<glib::JoinHandle<()>>>,
@@ -125,11 +132,13 @@ pub struct MpdWrapper {
 impl MpdWrapper {
     pub fn new() -> Rc<Self> {
         let ch_name = Uuid::new_v4().simple().to_string();
-        let wake_channel = Channel::new(&ch_name).unwrap();
-        let wake_channel_bg = wake_channel.clone();
+        let wake_ch = Channel::new(&ch_name).unwrap();
+        let wake_ch2 = wake_ch.clone();
+        let wake_ch3 = wake_ch.clone();
         let (fg_sender, fg_receiver) = async_channel::unbounded();
         let (bg_sender, bg_receiver) = async_channel::unbounded();
         let (idle_sender, idle_receiver) = async_channel::unbounded();
+        let (subsystem_sender, subsystem_receiver) = async_channel::unbounded();
         println!("Channel name: {}", &ch_name);
         let settings = settings_manager().child("client");
         let max_retries = if settings.boolean("mpd-auto-reconnect") {
@@ -139,18 +148,24 @@ impl MpdWrapper {
         };
         let wrapper = Rc::new(Self {
             _fg_handle: thread::spawn(move || {
-                Connection::new(fg_receiver, wake_channel, None, max_retries)
-                    .run()
+                Connection::new(fg_receiver, wake_ch, max_retries)
+                    .run(None)
                     .is_err()
             }),
             _bg_handle: thread::spawn(move || {
-                Connection::new(bg_receiver, wake_channel_bg, Some(idle_sender), max_retries)
-                    .run()
+                Connection::new(bg_receiver, wake_ch2, max_retries)
+                    .run(None)
+                    .is_err()
+            }),
+            _idle_handle: thread::spawn(move || {
+                Connection::new(idle_receiver, wake_ch3, max_retries)
+                    .run(Some(subsystem_sender))
                     .is_err()
             }),
             state: ClientState::default(),
             fg_sender,
             bg_sender,
+            idle_sender,
             client_version: RefCell::new(None),
             // Cache song infos so queue diffs can reuse them instead of re-fetching each
             // changed song by ID. Queue IDs are only ever reissued on MPD restart or
@@ -164,7 +179,7 @@ impl MpdWrapper {
             ping_handle: RefCell::default(),
         });
 
-        wrapper.clone().setup_channel(idle_receiver);
+        wrapper.clone().setup_channel(subsystem_receiver);
 
         wrapper
     }
@@ -209,12 +224,17 @@ impl MpdWrapper {
         }
 
         // Clients might be currently disconnected so don't exit on error.
-        // In case both are running, disconnect the background first as we need to use
-        // the foreground client to wake it up.
+        // In case they are running, disconnect the idle first as we need to use
+        // another client to wake it up.
         let (s, r) = oneshot::channel();
-        self.background(Task::Disconnect(stop, s), r).await?;
+        self.send_idle_task_timeout(Task::Disconnect(stop, s), r)
+            .await?;
         let (s, r) = oneshot::channel();
-        self.foreground(Task::Disconnect(stop, s), r).await?;
+        self.send_task_timeout(Task::Disconnect(stop, s), false, r)
+            .await?;
+        let (s, r) = oneshot::channel();
+        self.send_task_timeout(Task::Disconnect(stop, s), true, r)
+            .await?;
         self.state.set_connection_state(end_state);
         self.client_version.take();
         Ok(())
@@ -305,7 +325,7 @@ impl MpdWrapper {
     }
 
     pub async fn connect(self: Rc<Self>) -> ClientResult<()> {
-        // Disconnect both clients.
+        // Disconnect all clients.
         if let Err(e) = self.disconnect(false, ConnectionState::Connecting).await {
             eprintln!("Warning: did not cleanly disconnect");
             dbg!(e);
@@ -317,7 +337,7 @@ impl MpdWrapper {
             .await
             .expect("Broken FG sender");
         let version = self
-            .handle_connect_error(r.await.expect("Broken oneshot receiver"))
+            .handle_connect_error(self.bounded_handshake::<Version>(r, "fg").await)
             .await?;
 
         // Connection successful => start ping loop now.
@@ -333,7 +353,7 @@ impl MpdWrapper {
                 async move {
                     loop {
                         let (s, r) = oneshot::channel();
-                        match this.foreground(Task::Ping(s), r).await {
+                        match this.send_task(Task::Ping(s), false, r).await {
                             Ok(()) => {}
                             Err(ClientError::NotConnected) => {
                                 println!(
@@ -372,73 +392,130 @@ impl MpdWrapper {
         }
         self.client_version.replace(Some(version));
 
+        // Foreground done. Now connect background thread...
         let (s, r) = oneshot::channel();
         self.bg_sender
             .send(Task::Connect(s))
             .await
             .expect("Broken BG sender");
-        self.handle_connect_error(r.await.expect("Broken oneshot receiver"))
+        self.handle_connect_error(self.bounded_handshake::<Version>(r, "bg").await)
+            .await?;
+
+        // ...and idle thread too.
+        let (s, r) = oneshot::channel();
+        self.idle_sender
+            .send(Task::Connect(s))
+            .await
+            .expect("Broken BG sender");
+        self.handle_connect_error(self.bounded_handshake::<Version>(r, "idle").await)
             .await?;
 
         self.state.set_connection_state(ConnectionState::Connected);
         Ok(())
     }
 
-    async fn foreground<T>(
+    async fn send_task<T>(
         &self,
         task: Task,
+        background: bool,
         receiver: oneshot::Receiver<ClientResult<T>>,
     ) -> ClientResult<T> {
         // Decrement when this function returns OR when the future is dropped
         // (aborted by a view navigating away), exactly once in both cases.
-        let _guard = TaskGuard::new(self.state.clone(), false);
-        self.fg_sender.send(task).await.expect("Broken FG sender");
+        let _guard = TaskGuard::new(self.state.clone(), background);
+        if background {
+            self.bg_sender.send(task).await.expect("Broken BG sender");
+        } else {
+            self.fg_sender.send(task).await.expect("Broken FG sender");
+        }
         self.handle_error(receiver.await.expect("Broken oneshot receiver"))
             .await
     }
 
-    async fn background<T>(
+    /// Await a task oneshot response with timeout.
+    async fn bounded_handshake<T>(
+        &self,
+        receiver: oneshot::Receiver<ClientResult<T>>,
+        which: &'static str,
+    ) -> ClientResult<T> {
+        match glib::future_with_timeout(HANDSHAKE_TIMEOUT, receiver).await {
+            Ok(res) => res.expect("Broken oneshot receiver"),
+            Err(_) => {
+                eprintln!(
+                    "[{which}] no response to handshake within {HANDSHAKE_TIMEOUT:?}; client thread unresponsive"
+                );
+                Err(ClientError::Internal)
+            }
+        }
+    }
+
+    /// Bounded variant of send_idle_task for Connect/Disconnect handshakes.
+    /// The idle connection exclusively takes the above two, so its send_idle_task function
+    /// only comes with the timeout flavour.
+    async fn send_idle_task_timeout<T>(
         &self,
         task: Task,
         receiver: oneshot::Receiver<ClientResult<T>>,
     ) -> ClientResult<T> {
-        // Decrement when this function returns OR when the future is dropped
-        // (aborted by a view navigating away), exactly once in both cases.
         let _guard = TaskGuard::new(self.state.clone(), true);
-        self.bg_sender.send(task).await.expect("Broken BG sender");
-        // Wake background thread
+        self.idle_sender
+            .send(task)
+            .await
+            .expect("Broken idle sender");
+        // Wake idle thread
         let (s, r) = oneshot::channel();
         // Ignore errors here, client might be reconnecting itself
         let _ = self
-            .foreground(Task::SendMessage(String::from("wake"), s), r)
+            .send_task(Task::SendMessage(String::from("wake"), s), false, r)
             .await;
-        self.handle_error(receiver.await.expect("Broken oneshot receiver"))
+        self.handle_error(self.bounded_handshake(receiver, "idle").await)
             .await
+    }
+
+    /// Bounded variant of [`MpdWrapper::send_task`] for Connect/Disconnect.
+    async fn send_task_timeout<T>(
+        &self,
+        task: Task,
+        background: bool,
+        receiver: oneshot::Receiver<ClientResult<T>>,
+    ) -> ClientResult<T> {
+        let _guard = TaskGuard::new(self.state.clone(), false);
+        if background {
+            self.bg_sender.send(task).await.expect("Broken BG sender");
+        } else {
+            self.fg_sender.send(task).await.expect("Broken FG sender");
+        }
+        self.handle_error(
+            self.bounded_handshake(receiver, if background { "bg" } else { "fg" })
+                .await,
+        )
+        .await
     }
 
     pub async fn stats(&self) -> ClientResult<mpd::Stats> {
         let (s, r) = oneshot::channel();
-        self.foreground(Task::Stats(s), r).await
+        self.send_task(Task::Stats(s), false, r).await
     }
 
     pub async fn get_volume(&self) -> ClientResult<i8> {
         let (s, r) = oneshot::channel();
-        self.foreground(Task::GetVolume(s), r).await
+        self.send_task(Task::GetVolume(s), false, r).await
     }
 
     pub async fn set_volume(&self, vol: i8) -> ClientResult<()> {
         let (s, r) = oneshot::channel();
-        self.foreground(Task::SetVolume(vol, s), r).await
+        self.send_task(Task::SetVolume(vol, s), false, r).await
     }
 
     pub async fn get_outputs(&self) -> ClientResult<Vec<Output>> {
         let (s, r) = oneshot::channel();
-        self.foreground(Task::GetOutputs(s), r).await
+        self.send_task(Task::GetOutputs(s), false, r).await
     }
 
     pub async fn set_output(&self, id: u32, state: bool) -> ClientResult<()> {
         let (s, r) = oneshot::channel();
-        self.foreground(Task::SetOutput(id, state, s), r).await
+        self.send_task(Task::SetOutput(id, state, s), false, r)
+            .await
     }
 
     // Special handling for stickers, run AFTER the general error handling logic.
@@ -475,7 +552,7 @@ impl MpdWrapper {
         if self.state.stickers_support_level() >= min_lvl {
             let (s, r) = oneshot::channel();
             self.handle_sticker_error(
-                self.foreground(Task::GetSticker(typ, uri, name, s), r)
+                self.send_task(Task::GetSticker(typ, uri, name, s), false, r)
                     .await,
             )
         } else {
@@ -499,7 +576,7 @@ impl MpdWrapper {
         if self.state.stickers_support_level() >= min_lvl {
             let (s, r) = oneshot::channel();
             self.handle_sticker_error(
-                self.foreground(Task::GetCommonStickers(typ, uri, s), r)
+                self.send_task(Task::GetCommonStickers(typ, uri, s), false, r)
                     .await,
             )
         } else {
@@ -523,7 +600,7 @@ impl MpdWrapper {
         if self.state.stickers_support_level() >= min_lvl {
             let (s, r) = oneshot::channel();
             self.handle_sticker_error(
-                self.foreground(Task::SetSticker(typ, uri, name, value, mode, s), r)
+                self.send_task(Task::SetSticker(typ, uri, name, value, mode, s), false, r)
                     .await,
             )
         } else {
@@ -547,7 +624,7 @@ impl MpdWrapper {
         if self.state.stickers_support_level() >= min_lvl {
             let (s, r) = oneshot::channel();
             self.handle_sticker_error(
-                self.foreground(Task::GetStickers(typ, uri.to_string(), names, s), r)
+                self.send_task(Task::GetStickers(typ, uri.to_string(), names, s), false, r)
                     .await,
             )
         } else {
@@ -569,7 +646,7 @@ impl MpdWrapper {
         if self.state.stickers_support_level() >= min_lvl {
             let (s, r) = oneshot::channel();
             self.handle_sticker_error(
-                self.foreground(Task::DeleteSticker(typ, uri, name, s), r)
+                self.send_task(Task::DeleteSticker(typ, uri, name, s), false, r)
                     .await,
             )
         } else {
@@ -593,7 +670,7 @@ impl MpdWrapper {
         if self.state.stickers_support_level() >= min_lvl {
             let (s, r) = oneshot::channel();
             self.handle_sticker_error(
-                self.foreground(Task::DeleteStickers(typ, uri, names, s), r)
+                self.send_task(Task::DeleteStickers(typ, uri, names, s), true, r)
                     .await,
             )
         } else {
@@ -617,7 +694,7 @@ impl MpdWrapper {
         if self.state.stickers_support_level() >= min_lvl {
             let (s, r) = oneshot::channel();
             self.handle_sticker_error(
-                self.foreground(Task::SetStickers(typ, uri, names_values, s), r)
+                self.send_task(Task::SetStickers(typ, uri, names_values, s), true, r)
                     .await,
             )
         } else {
@@ -637,13 +714,13 @@ impl MpdWrapper {
 
     pub async fn get_playlists(&self) -> ClientResult<Vec<INode>> {
         let (s, r) = oneshot::channel();
-        self.handle_playlist_error(self.foreground(Task::GetPlaylists(s), r).await)
+        self.handle_playlist_error(self.send_task(Task::GetPlaylists(s), false, r).await)
             .map(|infos| infos.into_iter().map(INode::from).collect::<Vec<INode>>())
     }
 
     pub async fn load_playlist(&self, name: String) -> ClientResult<()> {
         let (s, r) = oneshot::channel();
-        self.handle_playlist_error(self.foreground(Task::LoadPlaylist(name, s), r).await)
+        self.handle_playlist_error(self.send_task(Task::LoadPlaylist(name, s), true, r).await)
     }
 
     pub async fn save_queue_as_playlist(
@@ -653,7 +730,7 @@ impl MpdWrapper {
     ) -> ClientResult<()> {
         let (s, r) = oneshot::channel();
         self.handle_playlist_error(
-            self.foreground(Task::SaveQueueAsPlaylist(name, save_mode, s), r)
+            self.send_task(Task::SaveQueueAsPlaylist(name, save_mode, s), true, r)
                 .await,
         )
     }
@@ -661,25 +738,31 @@ impl MpdWrapper {
     pub async fn rename_playlist(&self, old_name: String, new_name: String) -> ClientResult<()> {
         let (s, r) = oneshot::channel();
         self.handle_playlist_error(
-            self.foreground(Task::RenamePlaylist(old_name, new_name, s), r)
+            self.send_task(Task::RenamePlaylist(old_name, new_name, s), false, r)
                 .await,
         )
     }
 
     pub async fn edit_playlist(&self, actions: Vec<EditAction<'static>>) -> ClientResult<()> {
         let (s, r) = oneshot::channel();
-        self.handle_playlist_error(self.foreground(Task::EditPlaylist(actions, s), r).await)
+        self.handle_playlist_error(
+            self.send_task(Task::EditPlaylist(actions, s), true, r)
+                .await,
+        )
     }
 
     pub async fn delete_playlist(&self, name: String) -> ClientResult<()> {
         let (s, r) = oneshot::channel();
-        self.handle_playlist_error(self.foreground(Task::DeletePlaylist(name, s), r).await)
+        self.handle_playlist_error(
+            self.send_task(Task::DeletePlaylist(name, s), false, r)
+                .await,
+        )
     }
 
     pub async fn get_status(&self) -> ClientResult<Status> {
         // Stop borrowing main client as soon as possible
         let (s, r) = oneshot::channel();
-        self.handle_playlist_error(self.foreground(Task::GetStatus(s), r).await)
+        self.handle_playlist_error(self.send_task(Task::GetStatus(s), false, r).await)
     }
 
     /// Fetch the current queue in an asynchronous batchwise manner.
@@ -697,11 +780,12 @@ impl MpdWrapper {
         while more && (curr_len) < FETCH_LIMIT {
             let (s, r) = oneshot::channel();
             match self
-                .foreground(
+                .send_task(
                     Task::GetQueue(
                         Window::from((curr_len as u32, (curr_len + BATCH_SIZE) as u32)),
                         s,
                     ),
+                    false,
                     r,
                 )
                 .await
@@ -753,12 +837,13 @@ impl MpdWrapper {
         while curr_len < total_len as usize {
             let (s, r) = oneshot::channel();
             let changes = self
-                .background(
+                .send_task(
                     Task::GetQueueChanges(
                         curr_version,
                         Window::from((curr_len as u32, (curr_len + BATCH_SIZE) as u32)),
                         s,
                     ),
+                    true,
                     r,
                 )
                 .await?;
@@ -778,7 +863,7 @@ impl MpdWrapper {
                     } else {
                         let (s, r) = oneshot::channel();
                         if let Some(song_info) = self
-                            .background(Task::GetSongAtQueueId(change.id, s), r)
+                            .send_task(Task::GetSongAtQueueId(change.id, s), true, r)
                             .await?
                         {
                             let song = Song::from(song_info);
@@ -810,7 +895,10 @@ impl MpdWrapper {
         fetch_stickers: bool,
     ) -> ClientResult<Option<Song>> {
         let (s, r) = oneshot::channel();
-        if let Some(song_info) = self.foreground(Task::GetSongAtQueueId(id, s), r).await? {
+        if let Some(song_info) = self
+            .send_task(Task::GetSongAtQueueId(id, s), false, r)
+            .await?
+        {
             let res = Song::from(song_info);
             if fetch_stickers {
                 // Error handling is already performed for us
@@ -829,103 +917,110 @@ impl MpdWrapper {
 
     pub async fn set_playback_flow(&self, flow: PlaybackFlow) -> ClientResult<()> {
         let (s, r) = oneshot::channel();
-        self.foreground(Task::SetPlaybackFlow(flow, s), r).await
+        self.send_task(Task::SetPlaybackFlow(flow, s), false, r)
+            .await
     }
 
     pub async fn set_crossfade(&self, fade: f64) -> ClientResult<()> {
         let (s, r) = oneshot::channel();
-        self.foreground(Task::SetCrossfade(fade as i64, s), r).await
+        self.send_task(Task::SetCrossfade(fade as i64, s), false, r)
+            .await
     }
 
     pub async fn set_replaygain(&self, mode: mpd::status::ReplayGain) -> ClientResult<()> {
         let (s, r) = oneshot::channel();
-        self.foreground(Task::SetReplayGain(mode, s), r).await
+        self.send_task(Task::SetReplayGain(mode, s), false, r).await
     }
 
     pub async fn set_mixramp_db(&self, db: f32) -> ClientResult<()> {
         let (s, r) = oneshot::channel();
-        self.foreground(Task::SetMixRampDb(db, s), r).await
+        self.send_task(Task::SetMixRampDb(db, s), false, r).await
     }
 
     pub async fn set_mixramp_delay(&self, delay: f64) -> ClientResult<()> {
         let (s, r) = oneshot::channel();
-        self.foreground(Task::SetMixRampDelay(delay, s), r).await
+        self.send_task(Task::SetMixRampDelay(delay, s), false, r)
+            .await
     }
 
     pub async fn set_random(&self, state: bool) -> ClientResult<()> {
         let (s, r) = oneshot::channel();
-        self.foreground(Task::SetRandom(state, s), r).await
+        self.send_task(Task::SetRandom(state, s), false, r).await
     }
 
     pub async fn set_consume(&self, state: bool) -> ClientResult<()> {
         let (s, r) = oneshot::channel();
-        self.foreground(Task::SetConsume(state, s), r).await
+        self.send_task(Task::SetConsume(state, s), false, r).await
     }
 
     pub async fn pause(&self, is_pause: bool) -> ClientResult<()> {
         let (s, r) = oneshot::channel();
-        self.foreground(Task::Pause(is_pause, s), r).await
+        self.send_task(Task::Pause(is_pause, s), false, r).await
     }
 
     pub async fn stop(&self) -> ClientResult<()> {
         let (s, r) = oneshot::channel();
-        self.foreground(Task::Stop(s), r).await
+        self.send_task(Task::Stop(s), false, r).await
     }
 
     pub async fn prev(&self) -> ClientResult<()> {
         let (s, r) = oneshot::channel();
-        self.foreground(Task::Prev(s), r).await
+        self.send_task(Task::Prev(s), false, r).await
     }
 
     pub async fn next(&self) -> ClientResult<()> {
         let (s, r) = oneshot::channel();
-        self.foreground(Task::Next(s), r).await
+        self.send_task(Task::Next(s), false, r).await
     }
 
     pub async fn play_at(&self, id_or_pos: u32, is_id: bool) -> ClientResult<()> {
         let (s, r) = oneshot::channel();
         if is_id {
-            self.foreground(Task::PlayAtId(Id(id_or_pos), s), r).await
+            self.send_task(Task::PlayAtId(Id(id_or_pos), s), false, r)
+                .await
         } else {
-            self.foreground(Task::PlayAtPos(id_or_pos, s), r).await
+            self.send_task(Task::PlayAtPos(id_or_pos, s), false, r)
+                .await
         }
     }
 
     pub async fn swap_pos(&self, pos1: u32, pos2: u32) -> ClientResult<()> {
         let (s, r) = oneshot::channel();
-        self.foreground(Task::SwapPos(pos1, pos2, s), r).await
+        self.send_task(Task::SwapPos(pos1, pos2, s), false, r).await
     }
 
     pub async fn move_id(&self, from_id: u32, to_pos: usize) -> ClientResult<()> {
         let (s, r) = oneshot::channel();
-        self.foreground(Task::MoveId(from_id, to_pos, s), r).await
+        self.send_task(Task::MoveId(from_id, to_pos, s), false, r)
+            .await
     }
 
     pub async fn delete_at_pos(&self, pos: u32) -> ClientResult<()> {
         let (s, r) = oneshot::channel();
-        self.foreground(Task::DeleteAtPos(pos, s), r).await
+        self.send_task(Task::DeleteAtPos(pos, s), false, r).await
     }
 
     pub async fn clear_queue(&self) -> ClientResult<()> {
         let (s, r) = oneshot::channel();
-        self.foreground(Task::ClearQueue(s), r).await
+        self.send_task(Task::ClearQueue(s), false, r).await
     }
 
     pub async fn seek_current_song(&self, position: f64) -> ClientResult<()> {
         let (s, r) = oneshot::channel();
-        self.foreground(Task::Seek(position, s), r).await
+        self.send_task(Task::Seek(position, s), false, r).await
     }
 
     pub async fn update_db(&self) -> ClientResult<u32> {
         let (s, r) = oneshot::channel();
-        self.foreground(Task::UpdateDb(s), r).await
+        // Returns quickly instead of waiting for DB update to complete, so no point using background client.
+        self.send_task(Task::UpdateDb(s), false, r).await
     }
 
     /// Count the number of songs currently in the database.
     /// Does live counts during DB updates.
     pub async fn count_songs(&self) -> ClientResult<u32> {
         let (s, r) = oneshot::channel();
-        self.foreground(Task::GetSongCount(s), r).await
+        self.send_task(Task::GetSongCount(s), false, r).await
     }
 
     pub async fn get_embedded_cover(
@@ -936,7 +1031,8 @@ impl MpdWrapper {
         // (resizing, transcoding, writing to disk) will be done with a threadpool, whose
         // handle is held by the this thread (the main one).
         let (s, r) = oneshot::channel();
-        self.background(Task::GetEmbeddedCover(song, s), r).await
+        self.send_task(Task::GetEmbeddedCover(song, s), true, r)
+            .await
     }
 
     pub async fn get_folder_cover(
@@ -944,7 +1040,8 @@ impl MpdWrapper {
         song: Arc<SongInfo>,
     ) -> ClientResult<Option<Option<Vec<u8>>>> {
         let (s, r) = oneshot::channel();
-        self.background(Task::GetFolderCover(song, s), r).await
+        self.send_task(Task::GetFolderCover(song, s), true, r)
+            .await
     }
 
     /// Fetch albums and albumartists together for efficiency.
@@ -966,13 +1063,14 @@ impl MpdWrapper {
 
         let (s, r) = oneshot::channel();
         let grouped_vals = self
-            .foreground(
+            .send_task(
                 Task::List(
                     Term::Tag(tags::ALBUM.into()),
                     query,
                     Some(tags::ALBUMARTIST),
                     s,
                 ),
+                true,
                 r,
             )
             .await?;
@@ -1015,7 +1113,7 @@ impl MpdWrapper {
             let (s, r) = oneshot::channel();
             songs.append(
                 &mut self
-                    .foreground(
+                    .send_task(
                         Task::FindMultiple(
                             chunk,
                             Some(vec![
@@ -1031,6 +1129,7 @@ impl MpdWrapper {
                             ]),
                             s,
                         ),
+                        true,
                         r,
                     )
                     .await?,
@@ -1145,7 +1244,7 @@ impl MpdWrapper {
         F: FnMut(Vec<String>),
     {
         let (s, r) = oneshot::channel();
-        let split_genres: Vec<String> = self.foreground(Task::ListGenres(s), r).await?;
+        let split_genres: Vec<String> = self.send_task(Task::ListGenres(s), true, r).await?;
         respond(split_genres);
         Ok(())
     }
@@ -1179,12 +1278,13 @@ impl MpdWrapper {
 
         let (s, r) = oneshot::channel();
         Ok(self
-            .foreground(
+            .send_task(
                 Task::FindMultiple(
                     queries_windows,
                     Some(vec![tags::ALBUM, tags::ALBUMARTIST, tags::ALBUM_MBID]),
                     s,
                 ),
+                true,
                 r,
             )
             .await?
@@ -1249,12 +1349,13 @@ impl MpdWrapper {
         let (album_s, album_r) = oneshot::channel();
         let (artist_s, artist_r) = oneshot::channel();
         Ok((
-            self.foreground(
+            self.send_task(
                 Task::FindMultiple(
                     album_queries_windows,
                     Some(vec![tags::ALBUM, tags::ALBUMARTIST, tags::ALBUM_MBID]),
                     album_s,
                 ),
+                true,
                 album_r,
             )
             .await?
@@ -1266,7 +1367,7 @@ impl MpdWrapper {
             // Artists are more complicated, I'll just write this as a block lol
             {
                 let songs = self
-                    .foreground(
+                    .send_task(
                         Task::FindMultiple(
                             artist_queries_windows,
                             // From now on we need more info to disambiguate artists
@@ -1279,6 +1380,7 @@ impl MpdWrapper {
                             ]),
                             artist_s,
                         ),
+                        true,
                         artist_r,
                     )
                     .await?;
@@ -1332,13 +1434,13 @@ impl MpdWrapper {
         while more && (curr_len) < FETCH_LIMIT {
             let (s, r) = oneshot::channel();
             let win = Window::from((curr_len as u32, (curr_len + BATCH_SIZE) as u32));
-            let songs = if use_fg {
-                self.foreground(Task::Find(query.clone(), win, tagtypes.clone(), s), r)
-                    .await?
-            } else {
-                self.background(Task::Find(query.clone(), win, tagtypes.clone(), s), r)
-                    .await?
-            };
+            let songs = self
+                .send_task(
+                    Task::Find(query.clone(), win, tagtypes.clone(), s),
+                    !use_fg,
+                    r,
+                )
+                .await?;
             if !songs.is_empty() {
                 respond(songs);
                 curr_len += BATCH_SIZE;
@@ -1388,13 +1490,14 @@ impl MpdWrapper {
 
         let (s, r) = oneshot::channel();
         let grouped_vals = self
-            .foreground(
+            .send_task(
                 Task::List(
                     Term::Tag(tags::GENRE.into()),
                     Query::new(),
                     Some(tags::ARTIST),
                     s,
                 ),
+                true,
                 r,
             )
             .await?;
@@ -1447,8 +1550,9 @@ impl MpdWrapper {
             let (s, r) = oneshot::channel();
             songs.append(
                 &mut self
-                    .foreground(
+                    .send_task(
                         Task::FindMultiple(chunk, Some(tagtypes_to_load.into()), s),
+                        true,
                         r,
                     )
                     .await?,
@@ -1515,7 +1619,7 @@ impl MpdWrapper {
 
         let (s, r) = oneshot::channel();
         let songs = self
-            .foreground(
+            .send_task(
                 Task::FindMultiple(
                     queries_windows,
                     Some(vec![
@@ -1527,6 +1631,7 @@ impl MpdWrapper {
                     ]),
                     s,
                 ),
+                true,
                 r,
             )
             .await?;
@@ -1559,7 +1664,7 @@ impl MpdWrapper {
 
     pub async fn lsinfo(&self, path: String) -> ClientResult<Vec<INode>> {
         let (s, r) = oneshot::channel();
-        self.foreground(Task::LsInfo(path, s), r)
+        self.send_task(Task::LsInfo(path, s), true, r)
             .await
             .map(|infos| infos.into_iter().map(INode::from).collect::<Vec<INode>>())
     }
@@ -1574,7 +1679,9 @@ impl MpdWrapper {
             .ok_or(ClientError::NotConnected)?;
         if client_version.1 < 24 {
             let (s, r) = oneshot::channel();
-            let songs = self.background(Task::GetPlaylist(name, None, s), r).await?;
+            let songs = self
+                .send_task(Task::GetPlaylist(name, None, s), true, r)
+                .await?;
             if !songs.is_empty() {
                 respond(songs);
             }
@@ -1585,12 +1692,13 @@ impl MpdWrapper {
             while more && (curr_len as usize) < FETCH_LIMIT {
                 let (s, r) = oneshot::channel();
                 let songs = self
-                    .background(
+                    .send_task(
                         Task::GetPlaylist(
                             name.clone(),
                             Some(curr_len..(curr_len + BATCH_SIZE as u32)),
                             s,
                         ),
+                        true,
                         r,
                     )
                     .await?;
@@ -1630,7 +1738,7 @@ impl MpdWrapper {
         query.and(Term::File, uri);
         let (s, r) = oneshot::channel();
         let mut found_songs = self
-            .foreground(Task::FindRaw(query, Window::from((0, 1)), s), r)
+            .send_task(Task::FindRaw(query, Window::from((0, 1)), s), false, r)
             .await?;
         if !found_songs.is_empty() {
             Ok(Some(std::mem::take(&mut found_songs[0])))
@@ -1650,7 +1758,7 @@ impl MpdWrapper {
         query.and(Term::File, uri.clone());
         let (s, r) = oneshot::channel();
         let mut found_songs = self
-            .foreground(Task::Find(query, Window::from((0, 1)), None, s), r)
+            .send_task(Task::Find(query, Window::from((0, 1)), None, s), false, r)
             .await?;
         if !found_songs.is_empty() {
             let song = std::mem::take(&mut found_songs[0]);
@@ -1690,7 +1798,7 @@ impl MpdWrapper {
             .unwrap();
 
         let (s, r) = oneshot::channel();
-        self.foreground(
+        self.send_task(
             Task::FindMultiple(
                 queries_windows,
                 Some(vec![
@@ -1703,6 +1811,7 @@ impl MpdWrapper {
                 ]),
                 s,
             ),
+            true,
             r,
         )
         .await?
@@ -1734,7 +1843,7 @@ impl MpdWrapper {
         while more && (curr_len) < FETCH_LIMIT {
             let (s, r) = oneshot::channel();
             let stickers = self
-                .background(
+                .send_task(
                     Task::FindSticker(
                         typ,
                         uri.clone(),
@@ -1742,6 +1851,7 @@ impl MpdWrapper {
                         Window::from((curr_len as u32, (curr_len + BATCH_SIZE) as u32)),
                         s,
                     ),
+                    true,
                     r,
                 )
                 .await?;
@@ -1757,7 +1867,7 @@ impl MpdWrapper {
 
     pub async fn find_add(&self, query: Query<'static>) -> ClientResult<()> {
         let (s, r) = oneshot::channel();
-        self.foreground(Task::FindAdd(query, s), r).await
+        self.send_task(Task::FindAdd(query, s), true, r).await
     }
 
     /// When queuing multiple URIs, will use the background client & command list for efficiency.
@@ -1781,11 +1891,11 @@ impl MpdWrapper {
                     .collect();
                 if let Some(pos) = insert_pos {
                     let (s, r) = oneshot::channel();
-                    self.background(Task::InsertMultiple(batch, pos, s), r)
+                    self.send_task(Task::InsertMultiple(batch, pos, s), true, r)
                         .await?;
                 } else {
                     let (s, r) = oneshot::channel();
-                    self.background(Task::AddMultiple(batch, s), r).await?;
+                    self.send_task(Task::AddMultiple(batch, s), true, r).await?;
                 }
                 inserted += to_insert;
             }
@@ -1796,11 +1906,11 @@ impl MpdWrapper {
             self.find_add(query).await?;
         } else if let Some(pos) = insert_pos {
             let (s, r) = oneshot::channel();
-            self.foreground(Task::Insert(std::mem::take(&mut uris[0]), pos, s), r)
+            self.send_task(Task::Insert(std::mem::take(&mut uris[0]), pos, s), false, r)
                 .await?;
         } else {
             let (s, r) = oneshot::channel();
-            self.foreground(Task::Add(std::mem::take(&mut uris[0]), s), r)
+            self.send_task(Task::Add(std::mem::take(&mut uris[0]), s), false, r)
                 .await?;
         }
 
@@ -1828,11 +1938,12 @@ impl MpdWrapper {
                     .collect();
                 if let Some(pos) = insert_pos {
                     let (s, r) = oneshot::channel();
-                    self.background(Task::InsertMultipleArc(batch, pos, s), r)
+                    self.send_task(Task::InsertMultipleArc(batch, pos, s), true, r)
                         .await?;
                 } else {
                     let (s, r) = oneshot::channel();
-                    self.background(Task::AddMultipleArc(batch, s), r).await?;
+                    self.send_task(Task::AddMultipleArc(batch, s), true, r)
+                        .await?;
                 }
                 inserted += to_insert;
             }
@@ -1843,11 +1954,11 @@ impl MpdWrapper {
             self.find_add(query).await?;
         } else if let Some(pos) = insert_pos {
             let (s, r) = oneshot::channel();
-            self.foreground(Task::Insert(songs[0].file.to_owned(), pos, s), r)
+            self.send_task(Task::Insert(songs[0].file.to_owned(), pos, s), false, r)
                 .await?;
         } else {
             let (s, r) = oneshot::channel();
-            self.foreground(Task::Add(songs[0].file.to_owned(), s), r)
+            self.send_task(Task::Add(songs[0].file.to_owned(), s), false, r)
                 .await?;
         }
 
@@ -1861,7 +1972,7 @@ impl MpdWrapper {
     ) -> ClientResult<Vec<Song>> {
         let (s, r) = oneshot::channel();
         Ok(self
-            .foreground(Task::ResolveDynamicPlaylist(dp, cache, s), r)
+            .send_task(Task::ResolveDynamicPlaylist(dp, cache, s), true, r)
             .await?
             .into_iter()
             .map(Song::from)
@@ -1892,7 +2003,7 @@ impl MpdWrapper {
         .unwrap()
         .map_err(|_| ClientError::Internal)?;
         let (s, r) = oneshot::channel();
-        self.background(Task::AddMultiple(uris, s), r).await
+        self.send_task(Task::AddMultiple(uris, s), true, r).await
     }
 
     #[inline]

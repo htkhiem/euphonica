@@ -360,14 +360,11 @@ mod imp {
                 #[weak(rename_to = this)]
                 self,
                 move |_, _, _, _| {
-                    eprintln!("RELEASED");
                     let (Some(player), Some(song)) = (
-                        dbg!(this.player.upgrade()),
-                        dbg!(
-                            this.sel_model
-                                .get()
-                                .and_then(|model| model.selected_item().and_downcast::<Song>())
-                        ),
+                        this.player.upgrade(),
+                        this.sel_model
+                            .get()
+                            .and_then(|model| model.selected_item().and_downcast::<Song>()),
                     ) else {
                         return;
                     };
